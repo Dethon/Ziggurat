@@ -13,8 +13,9 @@ namespace Domain.Agents;
 // conversation and a mount is visible to the model (ADR 0021).
 //
 // A directory per conversation and one per message, keeping the name the person used. The
-// per-message directory is what removes collisions entirely, so two `scan.pdf`s in one
-// conversation both survive without anything being renamed.
+// per-message directory is what separates one message's files from another's, so two `scan.pdf`s
+// sent in one conversation both survive; two in the *same* message are separated one level
+// further down. Nothing is ever renamed, which is the property the layout exists to keep.
 public static class AttachmentLanding
 {
     public const string Root = "uploads";
