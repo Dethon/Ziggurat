@@ -25,6 +25,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"attachments-{Guid.NewGuid():N}");
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 8, 9, 12, 0, 0, TimeSpan.Zero));
+    private readonly ChannelInbox _inbox;
     private readonly SessionService _sessionService = new();
     private readonly StreamService _streamService;
     private readonly AttachmentSettings _settings;
@@ -42,6 +43,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
             TicketTtlSeconds = 60
         };
 
+        _inbox = new ChannelInbox(_time);
         _store = new AttachmentStore(_settings, _time, NullLogger<AttachmentStore>.Instance);
         _attachments = new AttachmentService(
             _settings,
@@ -58,7 +60,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
             _sessionService,
             _streamService,
             approvalService: null!,
-            new ChannelNotificationEmitter(new ChannelInbox(_time), DeliveryPolicy.Broadcast),
+            new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
             redisStateService: null!,
             pushSubscriptionStore: null!,
@@ -132,6 +134,34 @@ public sealed class ChatHubAttachmentTests : IDisposable
     {
         _hub.CreateAttachmentDownload("7-42/deadbeef").ShouldBeNull();
     }
+
+    // The references are what the agent is woken with. Bytes never ride the hub, so if they do
+    // not reach the notification the turn has nothing to hydrate.
+    [Fact]
+    public async Task TheAttachmentList_ReachesTheChannelNotification()
+    {
+        var reference = await StoreAsync("default");
+
+        // Broadcast discards an item with no subscriber registered, so the agent's pump has to
+        // have polled once before the emit for this to be about the notification at all.
+        await ReceiveAsync();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await foreach (var _ in _hub.SendMessage(TopicId, "look", null, null, [reference], cts.Token))
+        {
+        }
+
+        var notification = (await ReceiveAsync())
+            .Select(item => item.Message)
+            .OfType<ChannelMessageNotification>()
+            .ShouldHaveSingleItem();
+
+        notification.Attachments.ShouldNotBeNull();
+        notification.Attachments!.Single().FileName.ShouldBe("photo.png");
+    }
+
+    private Task<IReadOnlyList<ChannelInboxItem>> ReceiveAsync() =>
+        _inbox.ReceiveAsync("channel-signalr", TimeSpan.Zero, CancellationToken.None);
 
     private async Task<AttachmentReference> StoreAsync(string spaceSlug)
     {

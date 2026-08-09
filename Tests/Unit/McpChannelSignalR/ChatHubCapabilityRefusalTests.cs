@@ -72,11 +72,24 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
     [Fact]
     public async Task AnIncapableModel_IsRefusedBeforeAnythingIsEmitted()
     {
+        // Registered first: Broadcast discards an item with no subscriber, so without this the
+        // empty batch below would be empty whether or not anything was emitted.
+        await ReceivedAsync();
+
         var chunks = await SendAsync(configPatch: null, [_photo]);
 
         chunks.ShouldContain(c => !string.IsNullOrEmpty(c.Error) && c.IsComplete);
         chunks.ShouldContain(c => (c.Error ?? "").Contains("text/only"));
         (await ReceivedAsync()).ShouldBeEmpty();
+    }
+
+    // No turn was created, so no browser is shown a message that was never taken.
+    [Fact]
+    public async Task ARefusal_PutsNoUserMessageOnTheTopicsStream()
+    {
+        var chunks = await SendAsync(configPatch: null, [_photo]);
+
+        chunks.ShouldAllBe(c => c.UserMessage == null);
     }
 
     [Fact]
@@ -106,6 +119,7 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
     [Fact]
     public async Task AnEnqueuedMessageWithAnIncapableModel_IsRefusedTheSameWay()
     {
+        await ReceivedAsync();
         var (channel, _) = _streamService.GetOrCreateStream(TopicId, "hola", "fran", CancellationToken.None);
         var subscription = channel.Subscribe();
 

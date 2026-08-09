@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.WebChat;
 using Domain.Tools.FileSystem;
 using Microsoft.Extensions.Logging;
 
@@ -33,10 +34,22 @@ public static class AttachmentLanding
             return [];
         }
 
+        var directory =
+            $"{mountPoint}/{Root}/{AttachmentEndpointPaths.ConversationDirectory(conversationId)}/{messageKey}";
+        var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         var landed = new List<string>();
         foreach (var attachment in attachments)
         {
-            var path = $"{mountPoint}/{Root}/{ConversationDirectory(conversationId)}/{messageKey}/{attachment.FileName}";
+            // The per-message directory separates one message's files from another's, which is
+            // every collision between messages. Within one message two files can still share a
+            // name — a person picking `scan.pdf` from two folders — and there the second gets a
+            // directory of its own rather than overwriting the first or being renamed. Nothing is
+            // renamed either way, which is the property the layout exists to keep.
+            var path = taken.Add(attachment.FileName)
+                ? $"{directory}/{attachment.FileName}"
+                : $"{directory}/{Disambiguate(attachment)}/{attachment.FileName}";
+
             if (await TryWriteAsync(registry, path, attachment, fetch, logger, ct))
             {
                 landed.Add(path);
@@ -45,6 +58,11 @@ public static class AttachmentLanding
 
         return landed;
     }
+
+    // The attachment's own id, which is what already tells two same-named files apart in the
+    // upload store. Its last segment alone: the first is the conversation, already in the path.
+    private static string Disambiguate(AttachmentReference attachment) =>
+        attachment.Id.Split('/').Last();
 
     // The sandbox is the mount that can run something, which is the whole reason a file belongs
     // there. Asking the capability rather than the name keeps this from depending on one server's
@@ -96,8 +114,6 @@ public static class AttachmentLanding
 
     public static string Describe(IReadOnlyList<string> paths) =>
         $"[The attached files are in the sandbox at: {string.Join(", ", paths)}]";
-
-    private static string ConversationDirectory(string conversationId) => conversationId.Replace(':', '-');
 
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> One(ReadOnlyMemory<byte> bytes)
     {

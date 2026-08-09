@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 
@@ -13,7 +14,7 @@ public interface IStreamingService
         StoredTopic topic,
         string message,
         string? correlationId = null,
-        IReadOnlyList<Domain.DTOs.Channel.AttachmentReference>? attachments = null);
+        IReadOnlyList<AttachmentReference>? attachments = null);
 
     // Two moments, deliberately apart. Showing takes what the server said the reply had
     // written and puts it on screen; reading attaches to the wire, and that call does not

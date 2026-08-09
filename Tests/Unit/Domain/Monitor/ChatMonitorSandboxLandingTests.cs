@@ -83,6 +83,25 @@ public class ChatMonitorSandboxLandingTests
         sandbox.Writes.ShouldAllBe(w => w.Path.EndsWith("/photo.png"));
     }
 
+    // The per-message directory separates one message's files from another's. Within one message
+    // two files can still share a name, and there the second gets a directory of its own rather
+    // than overwriting the first — the model must not be told two files exist where one does.
+    [Fact]
+    public async Task TwoFilesWithTheSameNameInOneMessage_BothSurviveAndAreNamedApart()
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo, _sameNameAgain);
+
+        sandbox.Writes.Count.ShouldBe(2);
+        sandbox.Writes.Select(w => w.Path).Distinct().Count().ShouldBe(2);
+        sandbox.Writes.ShouldAllBe(w => w.Path.EndsWith("/photo.png"));
+
+        agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        messages!.Single().GetSandboxPaths()!.Distinct().Count().ShouldBe(2);
+    }
+
     [Fact]
     public async Task AnAgentWithNoSandbox_StillGetsTheAttachmentAsModelContext()
     {

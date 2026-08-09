@@ -1,4 +1,3 @@
-using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Settings;
 
@@ -44,14 +43,13 @@ public sealed class AttachmentService(
 
         var ticket = tickets.MintDownload(attachmentId);
         return new AttachmentDownload(
-            $"{AttachmentEndpoints.DownloadPath}/{attachmentId}?ticket={ticket.Token}",
+            $"{AttachmentEndpointPaths.Attachments}/{attachmentId}"
+            + $"?{AttachmentEndpointPaths.TicketQueryParameter}={ticket.Token}",
             ticket.ExpiresAt);
     }
 
     public Task<byte[]?> ReadBytesAsync(string attachmentId, CancellationToken ct) =>
         store.ReadBytesAsync(attachmentId, ct);
-
-    public AttachmentReference? Find(string attachmentId) => store.Find(attachmentId)?.Reference;
 
     public void DeleteConversation(string conversationId) => store.DeleteConversation(conversationId);
 

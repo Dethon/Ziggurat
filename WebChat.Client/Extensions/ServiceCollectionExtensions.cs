@@ -37,6 +37,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<SpaceStore>();
             services.AddScoped<AgentActivityStore>();
             services.AddScoped<ComposerStore>();
+            services.AddScoped<ComposerTopic>();
 
             services.AddScoped<RenderCoordinator>();
 

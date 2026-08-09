@@ -1,3 +1,4 @@
+using Domain.DTOs.WebChat;
 using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,14 +9,10 @@ namespace McpChannelSignalR.Attachments;
 // message size limit stays untouched because bytes never ride the hub.
 public static class AttachmentEndpoints
 {
-    public const string TicketHeader = "X-Attachment-Ticket";
-    public const string UploadPath = "/api/attachments";
-    public const string DownloadPath = "/api/attachments";
-
     public static void Map(IEndpointRouteBuilder app)
     {
-        app.MapPost(UploadPath, UploadAsync).DisableAntiforgery();
-        app.MapGet($"{DownloadPath}/{{conversation}}/{{attachment}}", DownloadAsync);
+        app.MapPost(AttachmentEndpointPaths.Attachments, UploadAsync).DisableAntiforgery();
+        app.MapGet($"{AttachmentEndpointPaths.Attachments}/{{conversation}}/{{attachment}}", Download);
     }
 
     private static async Task<IResult> UploadAsync(
@@ -26,7 +23,7 @@ public static class AttachmentEndpoints
         AttachmentSettings settings,
         CancellationToken ct)
     {
-        var token = context.Request.Headers[TicketHeader].FirstOrDefault();
+        var token = context.Request.Headers[AttachmentEndpointPaths.TicketHeader].FirstOrDefault();
         var scope = tickets.ResolveUpload(token, topicId);
         if (scope is null)
         {
@@ -45,35 +42,43 @@ public static class AttachmentEndpoints
         }
 
         var file = form.Files[0];
-        if (file.Length > settings.MaxBytesPerFile)
+        if (Refuse(file, settings) is { } refusal)
         {
-            return Results.Text(
-                $"{file.FileName} is {file.Length} bytes, above the {settings.MaxBytesPerFile} byte limit.",
-                statusCode: StatusCodes.Status413PayloadTooLarge);
-        }
-
-        var mediaType = file.ContentType ?? string.Empty;
-        if (!settings.AllowedMediaTypes.Contains(mediaType, StringComparer.OrdinalIgnoreCase))
-        {
-            return Results.Text(
-                $"{mediaType} is not a kind this chat accepts; attach an image or a PDF.",
-                statusCode: StatusCodes.Status415UnsupportedMediaType);
+            return refusal;
         }
 
         // Counted last, so a refused file does not spend one of the message's slots.
         if (!scope.TryTakeSlot(settings.MaxFilesPerMessage))
         {
-            return Results.BadRequest(
-                $"A message takes at most {settings.MaxFilesPerMessage} files.");
+            return Results.BadRequest(AttachmentRefusals.TooManyFiles(settings.MaxFilesPerMessage));
         }
 
         await using var content = file.OpenReadStream();
         var reference = await store.SaveAsync(
-            scope.ConversationId, scope.SpaceSlug, file.FileName, mediaType, content, ct);
+            scope.ConversationId, scope.SpaceSlug, file.FileName, file.ContentType ?? string.Empty, content, ct);
         return Results.Ok(reference);
     }
 
-    private static IResult DownloadAsync(
+    // The same rules the composer applies at pick time, from the same wording, because they are
+    // the same rules — the composer only gets to say them sooner.
+    private static IResult? Refuse(IFormFile file, AttachmentSettings settings)
+    {
+        if (file.Length > settings.MaxBytesPerFile)
+        {
+            return Results.Text(
+                AttachmentRefusals.TooLarge(file.FileName, settings.MaxBytesPerFile),
+                statusCode: StatusCodes.Status413PayloadTooLarge);
+        }
+
+        var mediaType = file.ContentType ?? string.Empty;
+        return settings.AllowedMediaTypes.Contains(mediaType, StringComparer.OrdinalIgnoreCase)
+            ? null
+            : Results.Text(
+                AttachmentRefusals.UnsupportedKind(mediaType),
+                statusCode: StatusCodes.Status415UnsupportedMediaType);
+    }
+
+    private static IResult Download(
         string conversation,
         string attachment,
         [FromQuery] string? ticket,

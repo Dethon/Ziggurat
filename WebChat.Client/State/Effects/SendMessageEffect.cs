@@ -112,11 +112,10 @@ public sealed class SendMessageEffect : IDisposable
         // Read before the send, which is what clears the composer: the bubble the person sees
         // has to carry what they attached. A retry brings its own, because the message it is
         // re-sending emptied the composer when it first went out.
-        var attached = action.Attachments?.ToList()
-            ?? _composerStore.State.For(action.TopicId)
-                .Where(a => a is { Status: AttachmentStatus.Ready, Reference: not null })
-                .Select(a => a.Reference!)
-                .ToList();
+        var attached = action.Attachments
+            ?? ComposerSelectors.References(
+                ComposerSelectors.Ready(_composerStore.State.For(action.TopicId)))
+            ?? [];
 
         if (string.IsNullOrEmpty(action.TopicId))
         {

@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 
@@ -26,5 +27,4 @@ public interface IAttachmentUploader
         CancellationToken ct);
 }
 
-public sealed record UploadOutcome(
-    Domain.DTOs.Channel.AttachmentReference? Reference, string? Error);
+public sealed record UploadOutcome(AttachmentReference? Reference, string? Error);

@@ -29,9 +29,11 @@ upload store is deliberately not mounted. See ADR `0021`.
 ## Comments
 
 The per-message directory removes collisions between messages, which is what the ticket and
-ADR `0021` describe, and the test pins that case: two `photo.png`s sent in two messages of one
-conversation both land. It does not remove collisions *within* one message — attaching two files
-named `photo.png` to the same message writes one over the other, because the layout the ADR fixes
-(`~/uploads/<conversation>/<message-id>/<filename>`) has nothing left to separate them by. Left
-as designed rather than renamed, since renaming is what the ADR ruled out; a follow-up would need
-a new decision about the layout.
+ADR `0021` describe, and a test pins that case: two `photo.png`s sent in two messages of one
+conversation both land.
+
+It does not, on its own, cover two files with the same name *within* one message — a person
+picking `scan.pdf` from two folders — and story 29 asks for that too ("two files with the same
+name in one conversation"). The second file now gets a directory of its own, named by its
+attachment id, under the message directory. Nothing is renamed, which is the property the ADR's
+layout exists to keep, and the normal case keeps exactly the path the ADR names.

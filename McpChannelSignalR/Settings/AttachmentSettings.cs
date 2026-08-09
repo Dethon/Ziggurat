@@ -1,7 +1,9 @@
 namespace McpChannelSignalR.Settings;
 
-// What the operator gets to tune about attachments. Everything here is a generic knob and lives
-// in appsettings.json; only StoragePath is per-deployment, because it names a volume.
+// What the operator gets to tune about attachments. All of it is generic and lives in
+// appsettings.json — including StoragePath, which is where the store sits *inside* the container
+// and is the same everywhere. What varies per deployment is the volume mounted there, which is
+// the compose file's business rather than a setting.
 public record AttachmentSettings
 {
     public string StoragePath { get; init; } = "/data/uploads";

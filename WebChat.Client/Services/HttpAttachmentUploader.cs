@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 
@@ -19,9 +20,6 @@ public sealed class HttpAttachmentUploader(
     AttachmentEndpointResolver endpoints,
     ILogger<HttpAttachmentUploader> logger) : IAttachmentUploader
 {
-    public const string UploadPath = "/api/attachments";
-    public const string TicketHeader = "X-Attachment-Ticket";
-
     public async Task<UploadOutcome> UploadAsync(
         string topicId,
         string ticket,
@@ -39,7 +37,7 @@ public sealed class HttpAttachmentUploader(
             body.Add(part, "file", file.FileName);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = body };
-            request.Headers.Add(TicketHeader, ticket);
+            request.Headers.Add(AttachmentEndpointPaths.TicketHeader, ticket);
 
             using var response = await httpClient.SendAsync(request, ct);
             if (!response.IsSuccessStatusCode)
@@ -65,7 +63,8 @@ public sealed class HttpAttachmentUploader(
     }
 
     private async Task<string> ResolveUploadUrlAsync(string topicId) =>
-        $"{await endpoints.ResolveAsync(UploadPath)}?topicId={Uri.EscapeDataString(topicId)}";
+        $"{await endpoints.ResolveAsync(AttachmentEndpointPaths.Attachments)}"
+        + $"?{AttachmentEndpointPaths.TopicQueryParameter}={Uri.EscapeDataString(topicId)}";
 
     private static async Task<string> DescribeAsync(
         HttpResponseMessage response, PickedFile file, CancellationToken ct)

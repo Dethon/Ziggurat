@@ -11,13 +11,14 @@
 
 @code {
     // One control for every platform: the phone offers photo library, camera and file browsing
-    // from it, and the installed app behaves exactly as the browser tab does.
-    private const string AcceptedKinds = "image/png,image/jpeg,image/gif,image/webp,application/pdf";
+    // from it, and the installed app behaves exactly as the browser tab does. What it offers comes
+    // from the server's own list once that has arrived — a picker offering a kind the server
+    // would refuse is a picker promising something it cannot deliver.
+    private const string DefaultAcceptedKinds = "image/png,image/jpeg,image/gif,image/webp,application/pdf";
 
     private string _inputText = "";
     private ElementReference _textareaRef;
     private ElementReference _composerRef;
-    private InputFile? _fileInput;
     private string? _topicId;
     private string? _selectedAgentId;
     private bool _isStreaming;
@@ -51,6 +52,8 @@
 
         Subscribe(ComposerStore.StateObservable, state => state.AttachmentsByTopic, _ => UpdateAttachments());
 
+        Subscribe(ComposerStore.StateObservable, state => state.Limits, _ => StateHasChanged());
+
         // Switching model is the fix for a capability refusal, so the refusal has to follow it.
         Subscribe(AgentSettingsStore.StateObservable, state => state.ByAgent, _ => UpdateAttachments());
     }
@@ -81,6 +84,11 @@
             : ComposerSelectors.CapabilityRefusal(
                 AgentSettingsStore.State, TopicsStore.State.Agents, _selectedAgentId, _attachments);
     }
+
+    private string AcceptedKinds =>
+        ComposerStore.State.Limits is { AllowedMediaTypes.Count: > 0 } limits
+            ? string.Join(",", limits.AllowedMediaTypes)
+            : DefaultAcceptedKinds;
 
     private int ReadyCount => _attachments.Count(a => a.Status == AttachmentStatus.Ready);
 
@@ -190,8 +198,7 @@
 
     <div class="input-wrapper">
         <label class="btn btn-secondary attach-button" title="Attach a file">
-            <InputFile @ref="_fileInput"
-                       class="attach-input"
+            <InputFile class="attach-input"
                        OnChange="HandleFilesPicked"
                        multiple
                        accept="@AcceptedKinds"

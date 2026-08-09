@@ -23,8 +23,6 @@ public sealed record ComposerAttachment
     public int PercentComplete { get; init; }
     public AttachmentReference? Reference { get; init; }
     public string? Error { get; init; }
-
-    public bool IsImage => MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed record ComposerState

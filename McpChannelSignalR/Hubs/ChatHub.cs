@@ -192,6 +192,7 @@ public sealed class ChatHub(
         }
 
         var userId = GetRegisteredUserId() ?? "Anonymous";
+        var conversationId = $"{session.ChatId}:{session.ThreadId}";
 
         var (broadcastChannel, linkedToken) =
             streamService.GetOrCreateStream(topicId, message, userId, cancellationToken);
@@ -200,22 +201,10 @@ public sealed class ChatHub(
         // Subscribe before emitting so no early reply chunks are lost
         var subscription = broadcastChannel.Subscribe();
 
-        // Write user message to buffer for other browsers
-        var timestamp = DateTimeOffset.UtcNow;
-        var userMessage = new ChatStreamMessage
-        {
-            Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp),
-            Attachments = attachments
-        };
-        await streamService.WriteMessageAsync(topicId, userMessage);
-
-        var conversationId = $"{session.ChatId}:{session.ThreadId}";
-
-        // Refused before anything is emitted, for the race where the model changes between
-        // picking a file and sending it: no turn is created and no agent is woken. The answer
-        // goes out on the same stream-error path an undeliverable message uses, so every browser
-        // on the topic sees the same end.
+        // Refused before anything is written or emitted, for the race where the model changes
+        // between picking a file and sending it: no turn is created, no agent is woken, and no
+        // browser is shown a message that was never taken. The answer goes out on the same
+        // stream-error path an undeliverable message uses, so every browser sees the same end.
         if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
         {
             await AnswerRefusedAsync(topicId, conversationId, refused);
@@ -227,6 +216,16 @@ public sealed class ChatHub(
 
             yield break;
         }
+
+        // Write user message to buffer for other browsers
+        var timestamp = DateTimeOffset.UtcNow;
+        var userMessage = new ChatStreamMessage
+        {
+            Content = message,
+            UserMessage = new UserMessageInfo(userId, timestamp),
+            Attachments = attachments
+        };
+        await streamService.WriteMessageAsync(topicId, userMessage);
 
         var delivered = await notificationEmitter.EmitAsync(
             new ChannelMessageNotification
@@ -281,6 +280,13 @@ public sealed class ChatHub(
         }
 
         var userId = GetRegisteredUserId() ?? "Anonymous";
+        var conversationId = $"{session.ChatId}:{session.ThreadId}";
+
+        if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
+        {
+            await AnswerRefusedAsync(topicId, conversationId, refused);
+            return true;
+        }
 
         var timestamp = DateTimeOffset.UtcNow;
         var userMessage = new ChatStreamMessage
@@ -290,13 +296,6 @@ public sealed class ChatHub(
             Attachments = attachments
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
-
-        var conversationId = $"{session.ChatId}:{session.ThreadId}";
-        if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
-        {
-            await AnswerRefusedAsync(topicId, conversationId, refused);
-            return true;
-        }
 
         var delivered = await notificationEmitter.EmitAsync(new ChannelMessageNotification
         {

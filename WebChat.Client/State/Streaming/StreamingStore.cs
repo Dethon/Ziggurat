@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Domain.DTOs.Channel;
 
 namespace WebChat.Client.State.Streaming;
 
@@ -25,7 +26,7 @@ public record ResetStreamingContent(string TopicId) : IAction;
 public record SendMessage(
     string? TopicId,
     string Message,
-    IReadOnlyList<Domain.DTOs.Channel.AttachmentReference>? Attachments = null) : IAction;
+    IReadOnlyList<AttachmentReference>? Attachments = null) : IAction;
 
 public record CancelStreaming(string TopicId) : IAction;
 

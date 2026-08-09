@@ -1,10 +1,12 @@
 using System.Text;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.State.Composer;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 
@@ -223,6 +225,63 @@ public sealed class ComposerAttachmentTests
         await TestChat.Eventually(() =>
             client.Messages.State.MessagesByTopic.GetValueOrDefault("topic-1", [])
                 .Any(m => m.Attachments is { Count: 1 }));
+    }
+
+    // The transcript is a record and not a session: what a history load holds is what a person
+    // sees after a reload.
+    [Fact]
+    public async Task AHistoryLoad_PutsItsAttachmentsOnTheTranscript()
+    {
+        await using var client = await StartAsync();
+
+        client.Service<IMessagePipeline>().LoadHistory("topic-1", [
+            new ChatHistoryMessage(
+                "msg-1", "user", "", "fran", DateTimeOffset.UtcNow,
+                [new AttachmentReference
+                {
+                    Id = "7-42/abc", FileName = "photo.png", MediaType = "image/png", SizeBytes = 4
+                }])
+        ]);
+
+        var loaded = client.Messages.State.MessagesByTopic["topic-1"].ShouldHaveSingleItem();
+        loaded.Attachments.ShouldNotBeNull();
+        loaded.Attachments!.Single().FileName.ShouldBe("photo.png");
+
+        // A message that carried only files has no text and still has to show.
+        loaded.HasContent.ShouldBeTrue();
+    }
+
+    // The ticket is what counts a message's files server-side, so a fresh one per pick would let
+    // two picks of ten put twenty into one message.
+    [Fact]
+    public async Task SeveralPicksIntoOneMessage_ShareOneUploadTicket()
+    {
+        await using var client = await StartAsync();
+
+        client.Dispatcher.Dispatch(new AttachFiles("topic-1", [Png("one.png")]));
+        await TestChat.Eventually(() => Attachments(client).Count(a => a.Status == AttachmentStatus.Ready) == 1);
+
+        client.Dispatcher.Dispatch(new AttachFiles("topic-1", [Png("two.png")]));
+        await TestChat.Eventually(() => Attachments(client).Count(a => a.Status == AttachmentStatus.Ready) == 2);
+
+        client.Transport.Calls.Count(c => c.MethodName == "CreateUploadTicket").ShouldBe(1);
+    }
+
+    // A ticket belongs to the message being composed, so the next message gets its own.
+    [Fact]
+    public async Task TheNextMessage_MintsItsOwnTicket()
+    {
+        await using var client = await StartAsync();
+
+        client.Dispatcher.Dispatch(new AttachFiles("topic-1", [Png("one.png")]));
+        await TestChat.Eventually(() => Attachments(client).Any(a => a.Status == AttachmentStatus.Ready));
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "here"));
+        await TestChat.Eventually(() => Attachments(client).Count == 0);
+
+        client.Dispatcher.Dispatch(new AttachFiles("topic-1", [Png("two.png")]));
+        await TestChat.Eventually(() => Attachments(client).Any(a => a.Status == AttachmentStatus.Ready));
+
+        client.Transport.Calls.Count(c => c.MethodName == "CreateUploadTicket").ShouldBe(2);
     }
 
     private static IReadOnlyList<ComposerAttachment> Attachments(ScriptedChatClient client) =>

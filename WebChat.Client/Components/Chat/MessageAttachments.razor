@@ -28,7 +28,7 @@
     }
 
     private static bool IsImage(AttachmentReference attachment) =>
-        attachment.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+        AttachmentRefusals.IsImage(attachment.MediaType);
 
     private async Task Download(AttachmentReference attachment)
     {

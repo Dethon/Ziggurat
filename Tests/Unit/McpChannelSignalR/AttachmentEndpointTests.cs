@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.Builder;
@@ -214,7 +215,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         { Content = body };
         if (ticket is not null)
         {
-            request.Headers.Add(AttachmentEndpoints.TicketHeader, ticket);
+            request.Headers.Add(AttachmentEndpointPaths.TicketHeader, ticket);
         }
 
         return await _client.SendAsync(request);

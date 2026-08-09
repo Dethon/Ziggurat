@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.DTOs.WebChat;
 using Microsoft.Extensions.AI;
 
 namespace Infrastructure.Agents.ChatClients;
@@ -180,7 +181,7 @@ internal static class MessageTruncator
     // a document is billed on what it parses to, which does track its size — up to the ceiling.
     private static int EstimateAttachmentTokens(DataContent content)
     {
-        return content.MediaType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true
+        return AttachmentRefusals.IsImage(content.MediaType)
             ? ImageTokens
             : (int)Math.Min(MaxAttachmentTokens, content.Data.Length / (long)DocumentBytesPerToken);
     }

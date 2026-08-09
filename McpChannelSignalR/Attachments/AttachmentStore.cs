@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using McpChannelSignalR.Settings;
 
 namespace McpChannelSignalR.Attachments;
@@ -188,9 +189,8 @@ public sealed class AttachmentStore(
         return Path.Combine(settings.StoragePath, segments[0], segments[1]);
     }
 
-    // A conversation id is "<chatId>:<threadId>"; the colon is the only character in it that a
-    // path cannot take.
-    public static string ConversationKey(string conversationId) => conversationId.Replace(':', '-');
+    public static string ConversationKey(string conversationId) =>
+        AttachmentEndpointPaths.ConversationDirectory(conversationId);
 
     private static bool IsSafeSegment(string segment) =>
         segment.Length > 0

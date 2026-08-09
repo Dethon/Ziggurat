@@ -1,14 +1,10 @@
 using System.Collections.Concurrent;
-using Domain.Conversations;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Composer;
-using WebChat.Client.State.Messages;
-using WebChat.Client.State.Space;
 using WebChat.Client.State.Toast;
-using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
 
@@ -19,47 +15,49 @@ public sealed class AttachmentEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
     private readonly ComposerStore _composerStore;
-    private readonly TopicsStore _topicsStore;
-    private readonly SpaceStore _spaceStore;
+    private readonly ComposerTopic _composerTopic;
     private readonly IAttachmentService _attachmentService;
     private readonly IAttachmentUploader _uploader;
-    private readonly IChatSessionService _sessionService;
-    private readonly ITopicService _topicService;
     private readonly ILogger<AttachmentEffect> _logger;
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _uploads = new();
+
+    // One ticket per message being composed, not per pick. The ticket is what counts a message's
+    // files server-side, so minting a fresh one for every pick would let two picks of ten files
+    // put twenty into one message with only the client's own check to stop it. It is dropped when
+    // the composer empties, which is when the message it belonged to was sent.
+    private readonly ConcurrentDictionary<string, UploadTicket> _tickets = new();
+
     private readonly IDisposable _attachRegistration;
     private readonly IDisposable _removeRegistration;
+    private readonly IDisposable _clearRegistration;
 
     public AttachmentEffect(
         Dispatcher dispatcher,
         ComposerStore composerStore,
-        TopicsStore topicsStore,
-        SpaceStore spaceStore,
+        ComposerTopic composerTopic,
         IAttachmentService attachmentService,
         IAttachmentUploader uploader,
-        IChatSessionService sessionService,
-        ITopicService topicService,
         ILogger<AttachmentEffect> logger)
     {
         _dispatcher = dispatcher;
         _composerStore = composerStore;
-        _topicsStore = topicsStore;
-        _spaceStore = spaceStore;
+        _composerTopic = composerTopic;
         _attachmentService = attachmentService;
         _uploader = uploader;
-        _sessionService = sessionService;
-        _topicService = topicService;
         _logger = logger;
 
         _attachRegistration = dispatcher.RegisterHandler<AttachFiles>(action =>
             HandleAttachAsync(action).LogFaults(_logger, nameof(AttachFiles)));
         _removeRegistration = dispatcher.RegisterHandler<RemoveAttachment>(CancelUpload);
+        _clearRegistration = dispatcher.RegisterHandler<ClearAttachments>(
+            action => _tickets.TryRemove(action.TopicId, out _));
     }
 
     public void Dispose()
     {
         _attachRegistration.Dispose();
         _removeRegistration.Dispose();
+        _clearRegistration.Dispose();
         foreach (var upload in _uploads.Values)
         {
             upload.Cancel();
@@ -81,15 +79,15 @@ public sealed class AttachmentEffect : IDisposable
     private async Task HandleAttachAsync(AttachFiles action)
     {
         var limits = await EnsureLimitsAsync();
-        var topicId = await EnsureTopicAsync(action);
+        var topicId = await _composerTopic.EnsureAsync(action.TopicId, action.Files);
         if (topicId is null)
         {
             _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
             return;
         }
 
-        var ticket = await _attachmentService.CreateUploadTicketAsync(topicId);
-        if (!ticket.IsLive || ticket.Value is null)
+        var ticket = await EnsureTicketAsync(topicId);
+        if (ticket is null)
         {
             _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
             return;
@@ -98,7 +96,7 @@ public sealed class AttachmentEffect : IDisposable
         // Started together rather than one after another: waiting on the network is what the
         // person is being spared, and each file reports its own progress.
         await Task.WhenAll(action.Files.Select(file =>
-            AttachOneAsync(topicId, ticket.Value.Token, file, limits)));
+            AttachOneAsync(topicId, ticket.Token, file, limits)));
     }
 
     private async Task AttachOneAsync(
@@ -112,14 +110,13 @@ public sealed class AttachmentEffect : IDisposable
             SizeBytes = file.SizeBytes
         };
 
-        if (Refuse(file, limits, ComposerSelectors.Sendable(_composerStore.State.For(topicId)).Count()) is { } refusal)
+        _dispatcher.Dispatch(new AttachmentPicked(topicId, attachment));
+
+        if (Refuse(file, limits, topicId) is { } refusal)
         {
-            _dispatcher.Dispatch(new AttachmentPicked(topicId, attachment));
             _dispatcher.Dispatch(new AttachmentFailed(topicId, attachment.LocalId, refusal));
             return;
         }
-
-        _dispatcher.Dispatch(new AttachmentPicked(topicId, attachment));
 
         var cts = new CancellationTokenSource();
         _uploads[UploadKey(topicId, attachment.LocalId)] = cts;
@@ -152,27 +149,26 @@ public sealed class AttachmentEffect : IDisposable
         }
     }
 
-    // The same rules the endpoint enforces, applied before a byte moves. The server refuses these
-    // cases too; this is only about the person finding out immediately.
-    private static string? Refuse(PickedFile file, AttachmentLimits? limits, int alreadyAttached)
+    // The same rules the endpoint enforces, in the same words. The server refuses these cases
+    // too; this is only about the person finding out immediately. A file already refused does not
+    // count towards the maximum, because it is going nowhere — and this file is already in the
+    // composer by now, so the count includes it.
+    private string? Refuse(PickedFile file, AttachmentLimits? limits, string topicId)
     {
         if (limits is null)
         {
             return null;
         }
 
-        if (file.SizeBytes > limits.MaxBytesPerFile)
+        var refusal = AttachmentRefusals.For(file.FileName, file.MediaType, file.SizeBytes, limits);
+        if (refusal is not null)
         {
-            return $"{file.FileName} is larger than the {limits.MaxBytesPerFile / (1024 * 1024)} MB limit.";
+            return refusal;
         }
 
-        if (!limits.AllowedMediaTypes.Contains(file.MediaType, StringComparer.OrdinalIgnoreCase))
-        {
-            return $"{file.FileName} is not a kind this chat accepts; attach an image or a PDF.";
-        }
-
-        return alreadyAttached >= limits.MaxFilesPerMessage
-            ? $"A message takes at most {limits.MaxFilesPerMessage} files."
+        var attached = ComposerSelectors.Sendable(_composerStore.State.For(topicId)).Count();
+        return attached > limits.MaxFilesPerMessage
+            ? AttachmentRefusals.TooManyFiles(limits.MaxFilesPerMessage)
             : null;
     }
 
@@ -192,62 +188,21 @@ public sealed class AttachmentEffect : IDisposable
         return limits.Value;
     }
 
-    // A ticket is scoped to a topic, so there has to be one. Picking a file into an empty
-    // composer is the person starting a conversation with a file rather than a sentence, so the
-    // conversation is started here and named after the file.
-    private async Task<string?> EnsureTopicAsync(AttachFiles action)
+    private async Task<UploadTicket?> EnsureTicketAsync(string topicId)
     {
-        if (!string.IsNullOrEmpty(action.TopicId))
+        if (_tickets.TryGetValue(topicId, out var held) && held.ExpiresAt > DateTimeOffset.UtcNow)
         {
-            return await StartSessionIfNeededAsync(action.TopicId);
+            return held;
         }
 
-        var state = _topicsStore.State;
-        if (state.SelectedAgentId is null || action.Files.Count == 0)
+        var minted = await _attachmentService.CreateUploadTicketAsync(topicId);
+        if (minted is not { IsLive: true, Value: not null })
         {
             return null;
         }
 
-        var identity = ConversationIdGenerator.Create();
-        var topic = new StoredTopic
-        {
-            TopicId = identity.TopicId,
-            ChatId = identity.ChatId,
-            ThreadId = identity.ThreadId,
-            AgentId = state.SelectedAgentId,
-            Name = action.Files[0].FileName,
-            CreatedAt = DateTime.UtcNow,
-            SpaceSlug = _spaceStore.State.CurrentSlug
-        };
-
-        var started = await _sessionService.StartSessionAsync(topic);
-        if (!started.IsLive || !started.Value)
-        {
-            return null;
-        }
-
-        _dispatcher.Dispatch(new AddTopic(topic));
-        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        await _topicService.SaveTopicAsync(topic.ToMetadata(), isNew: true);
-        return topic.TopicId;
-    }
-
-    private async Task<string?> StartSessionIfNeededAsync(string topicId)
-    {
-        if (_sessionService.CurrentTopic?.TopicId == topicId)
-        {
-            return topicId;
-        }
-
-        var topic = _topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topicId);
-        if (topic is null)
-        {
-            return null;
-        }
-
-        var started = await _sessionService.StartSessionAsync(topic);
-        return started is { IsLive: true, Value: true } ? topicId : null;
+        _tickets[topicId] = minted.Value;
+        return minted.Value;
     }
 
     private static string UploadKey(string topicId, string localId) => $"{topicId}/{localId}";
