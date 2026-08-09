@@ -14,14 +14,21 @@ This is the first slice a person can use: attach a photo, send, get an answer ab
 
 **Blocked by:** 01 — Upload store and its endpoints; 03 — An attachment reaches the model.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] One file control covers desktop, mobile and the installed app, offering images and PDFs.
-- [ ] Pasting an image from the clipboard attaches it.
-- [ ] Dropping files onto the composer attaches them.
-- [ ] Each file uploads on being picked, with its own progress.
-- [ ] A file can be cancelled while uploading and removed before sending.
-- [ ] A message with attachments and no text can be sent.
-- [ ] Oversized files and unsupported kinds are refused at pick time with a readable reason.
-- [ ] The send carries the references for every file that finished uploading.
-- [ ] Client tests drive the store's actions against the fake hub connection, covering picking, progress, cancel, remove and text-free send.
+- [x] One file control covers desktop, mobile and the installed app, offering images and PDFs.
+- [x] Pasting an image from the clipboard attaches it.
+- [x] Dropping files onto the composer attaches them.
+- [x] Each file uploads on being picked, with its own progress.
+- [x] A file can be cancelled while uploading and removed before sending.
+- [x] A message with attachments and no text can be sent.
+- [x] Oversized files and unsupported kinds are refused at pick time with a readable reason.
+- [x] The send carries the references for every file that finished uploading.
+- [x] Client tests drive the store's actions against the fake hub connection, covering picking, progress, cancel, remove and text-free send.
+
+## Comments
+
+A ticket is scoped to a topic, so attaching needs one. Picking a file into a composer with no
+conversation selected now starts the conversation first, named after the file, and then uploads —
+the same session start the send path does, one step earlier. Without it the first thing a person
+could do in a fresh WebChat would be refused.

@@ -13,11 +13,11 @@ catalogue a channel receives.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Accepted input kinds are read from the provider's model list for the agent's default model and every patchable model.
-- [ ] The values are cached and refreshed hourly without a restart.
-- [ ] A failed refresh leaves the previous values in place.
-- [ ] With no cached values and a failed first lookup, capability is permissive.
-- [ ] The agent catalogue carries the accepted kinds per model and reaches channels through the existing registration, including on reconnect.
-- [ ] Tests drive the lookup against a stubbed provider response, covering parsing, refresh, last-known-good and the permissive fallback.
+- [x] Accepted input kinds are read from the provider's model list for the agent's default model and every patchable model.
+- [x] The values are cached and refreshed hourly without a restart.
+- [x] A failed refresh leaves the previous values in place.
+- [x] With no cached values and a failed first lookup, capability is permissive.
+- [x] The agent catalogue carries the accepted kinds per model and reaches channels through the existing registration, including on reconnect.
+- [x] Tests drive the lookup against a stubbed provider response, covering parsing, refresh, last-known-good and the permissive fallback.

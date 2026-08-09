@@ -15,12 +15,12 @@ reached through a channel tool rather than mounted.
 
 **Blocked by:** 01 — Upload store and its endpoints.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The hub call and the channel message carry a list of attachment references.
-- [ ] The channel message shape is transport-neutral, so another channel could populate it without redesign.
-- [ ] The agent fetches an attachment's bytes through a channel-protocol tool that the model cannot see.
-- [ ] The user's turn reaches the model with the file content beside the text, for images and for PDFs.
-- [ ] The persisted history holds the reference and never the bytes.
-- [ ] Hydration happens on the way to the model and never on the way in; nothing writes bytes back into the history.
-- [ ] Monitor-level tests assert what the agent received, and chat-client-level tests assert what reached the model.
+- [x] The hub call and the channel message carry a list of attachment references.
+- [x] The channel message shape is transport-neutral, so another channel could populate it without redesign.
+- [x] The agent fetches an attachment's bytes through a channel-protocol tool that the model cannot see.
+- [x] The user's turn reaches the model with the file content beside the text, for images and for PDFs.
+- [x] The persisted history holds the reference and never the bytes.
+- [x] Hydration happens on the way to the model and never on the way in; nothing writes bytes back into the history.
+- [x] Monitor-level tests assert what the agent received, and chat-client-level tests assert what reached the model.

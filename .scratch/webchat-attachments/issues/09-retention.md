@@ -15,11 +15,11 @@ is for.
 
 **Blocked by:** 01 — Upload store and its endpoints.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Deleting a topic removes that conversation's files from the upload store.
-- [ ] A sweep removes files older than the configured retention window.
-- [ ] Files uploaded for a message that was never sent are collected by the sweep.
-- [ ] Sandbox copies are never swept.
-- [ ] The retention window is a setting, defaulting to the same window the conversation history uses.
-- [ ] A swept file's reference still reads back as a placeholder rather than an error.
+- [x] Deleting a topic removes that conversation's files from the upload store.
+- [x] A sweep removes files older than the configured retention window.
+- [x] Files uploaded for a message that was never sent are collected by the sweep.
+- [x] Sandbox copies are never swept.
+- [x] The retention window is a setting, defaulting to the same window the conversation history uses.
+- [x] A swept file's reference still reads back as a placeholder rather than an error.

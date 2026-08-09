@@ -18,12 +18,12 @@ See ADR `0020`.
 
 **Blocked by:** 03 — An attachment reaches the model.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Hydration depth is a setting, counted in messages, defaulting to twenty, applied to every attachment kind.
-- [ ] An attachment within the depth reaches the model as content.
-- [ ] An attachment beyond the depth reaches the model as a placeholder naming the file.
-- [ ] A reference whose file is gone produces the same placeholder regardless of depth.
-- [ ] The transcript keeps showing the attachment after the model has stopped seeing it.
-- [ ] The token estimate accounts for attachment content.
-- [ ] Tests drive the chat client over a stand-in inner client and assert on the messages that reached it.
+- [x] Hydration depth is a setting, counted in messages, defaulting to twenty, applied to every attachment kind.
+- [x] An attachment within the depth reaches the model as content.
+- [x] An attachment beyond the depth reaches the model as a placeholder naming the file.
+- [x] A reference whose file is gone produces the same placeholder regardless of depth.
+- [x] The transcript keeps showing the attachment after the model has stopped seeing it.
+- [x] The token estimate accounts for attachment content.
+- [x] Tests drive the chat client over a stand-in inner client and assert on the messages that reached it.

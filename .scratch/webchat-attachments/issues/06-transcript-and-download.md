@@ -15,13 +15,13 @@ reload, see it still there.
 
 **Blocked by:** 04 — Composer attachments.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Attachments appear in the transcript of the browser that sent them.
-- [ ] They appear in another browser watching the same topic.
-- [ ] They are still there after a reload.
-- [ ] Images render as thumbnails; other files as a chip carrying the filename.
-- [ ] Clicking mints a short-lived download URL and returns the file.
-- [ ] A download request from outside the attachment's space is refused.
-- [ ] A message with attachments and no text survives the history read.
-- [ ] An end-to-end browser test covers attach, send, see, reload, see.
+- [x] Attachments appear in the transcript of the browser that sent them.
+- [x] They appear in another browser watching the same topic.
+- [x] They are still there after a reload.
+- [x] Images render as thumbnails; other files as a chip carrying the filename.
+- [x] Clicking mints a short-lived download URL and returns the file.
+- [x] A download request from outside the attachment's space is refused.
+- [x] A message with attachments and no text survives the history read.
+- [x] An end-to-end browser test covers attach, send, see, reload, see.

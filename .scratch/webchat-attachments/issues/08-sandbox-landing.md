@@ -16,12 +16,22 @@ upload store is deliberately not mounted. See ADR `0021`.
 
 **Blocked by:** 03 — An attachment reaches the model.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Each attachment is written into the sandbox under a per-conversation, per-message directory, keeping the user's filename.
-- [ ] The message names the file's virtual path so the model can act on it unprompted.
-- [ ] Two files with the same name in one conversation both survive.
-- [ ] An agent with no sandbox still receives the attachment as model context and nothing fails.
-- [ ] A failed sandbox write leaves the turn intact and the attachment still reaches the model.
-- [ ] The upload store is not mounted, and attachments are not reachable from any mount other than a sandbox.
-- [ ] Monitor-level tests cover the sandbox path in the message, the sandbox-less agent, and the failed write.
+- [x] Each attachment is written into the sandbox under a per-conversation, per-message directory, keeping the user's filename.
+- [x] The message names the file's virtual path so the model can act on it unprompted.
+- [x] Two files with the same name in one conversation both survive.
+- [x] An agent with no sandbox still receives the attachment as model context and nothing fails.
+- [x] A failed sandbox write leaves the turn intact and the attachment still reaches the model.
+- [x] The upload store is not mounted, and attachments are not reachable from any mount other than a sandbox.
+- [x] Monitor-level tests cover the sandbox path in the message, the sandbox-less agent, and the failed write.
+
+## Comments
+
+The per-message directory removes collisions between messages, which is what the ticket and
+ADR `0021` describe, and the test pins that case: two `photo.png`s sent in two messages of one
+conversation both land. It does not remove collisions *within* one message — attaching two files
+named `photo.png` to the same message writes one over the other, because the layout the ADR fixes
+(`~/uploads/<conversation>/<message-id>/<filename>`) has nothing left to separate them by. Left
+as designed rather than renamed, since renaming is what the ADR ruled out; a follow-up would need
+a new decision about the layout.

@@ -13,15 +13,15 @@ read it back, and watch every refusal case be refused.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The live connection mints an upload ticket scoped to one topic with a short, configured TTL.
-- [ ] A file uploaded with a valid ticket is stored and answered with an attachment reference.
-- [ ] The stored bytes can be read back through the download endpoint, unchanged.
-- [ ] Upload is refused with no ticket, an expired ticket, or a ticket for another topic.
-- [ ] A file above the configured maximum size is refused, and so is a media type outside images and PDF.
-- [ ] More files than the configured per-message maximum are refused.
-- [ ] One file per HTTP request; the hub's own message size limit is untouched.
-- [ ] Maximum bytes, maximum files and ticket TTL are settings, not constants.
-- [ ] The upload store's location is a per-deployment volume, and the reverse proxy routes the upload and download paths to the channel server.
-- [ ] Endpoint tests drive the real routes over a test-server host with real multipart bodies, in the style of the voice channel's endpoint suites.
+- [x] The live connection mints an upload ticket scoped to one topic with a short, configured TTL.
+- [x] A file uploaded with a valid ticket is stored and answered with an attachment reference.
+- [x] The stored bytes can be read back through the download endpoint, unchanged.
+- [x] Upload is refused with no ticket, an expired ticket, or a ticket for another topic.
+- [x] A file above the configured maximum size is refused, and so is a media type outside images and PDF.
+- [x] More files than the configured per-message maximum are refused.
+- [x] One file per HTTP request; the hub's own message size limit is untouched.
+- [x] Maximum bytes, maximum files and ticket TTL are settings, not constants.
+- [x] The upload store's location is a per-deployment volume, and the reverse proxy routes the upload and download paths to the channel server.
+- [x] Endpoint tests drive the real routes over a test-server host with real multipart bodies, in the style of the voice channel's endpoint suites.
