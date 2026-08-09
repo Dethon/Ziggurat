@@ -93,6 +93,35 @@ public sealed class NotLiveRemainingReadTests
         stream.Release();
     }
 
+    // The reply is shown before the wire that carries the rest of it is open, so the transport
+    // can die in between. What was shown is real — the server said the reply had written it —
+    // so it is kept as a message instead of being taken back off the screen.
+    [Fact]
+    public async Task AStreamResume_ThatShowedTheReplyAndThenLostTheTransport_KeepsWhatItShowed()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        var topic = StoredTopic.FromMetadata(TestChat.Topic("topic-1"));
+        client.Dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
+
+        // The connection drops after the stream state comes back, so attaching to the stream
+        // is the call that cannot be made.
+        transport.Answer("GetStreamState", _ =>
+        {
+            transport.State = HubConnectionState.Reconnecting;
+            return new StreamState(
+                true, [new ChatStreamMessage { Content = "half written", MessageId = "m-1" }], "m-1", null, null);
+        });
+
+        await client.Service<IStreamResumeService>().TryResumeStreamAsync(topic);
+
+        client.Messages.State.MessagesByTopic["topic-1"]
+            .ShouldContain(message => message.Content == "half written");
+        client.Streaming.State.StreamingTopics.ShouldBeEmpty();
+        client.Service<TopicStreams>().Snapshot("topic-1").HasStream.ShouldBeFalse();
+        client.Toasts.State.Toasts.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task APendingApprovalRead_ThatCouldNotBeMade_LeavesThePromptOnScreen()
     {

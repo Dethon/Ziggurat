@@ -97,8 +97,8 @@ public sealed class StreamingServiceTests : IDisposable
             return false;
         }
 
-        var started = await _service.TryStartResumeStreamAsync(
-            lease, topic, streamingMessage, startMessageId);
+        _service.TryShowResumedStream(lease, streamingMessage, startMessageId);
+        var started = await _service.TryReadResumedStreamAsync(lease, topic);
         if (!started)
         {
             lease.Complete();
@@ -750,11 +750,11 @@ public sealed class StreamingServiceTests : IDisposable
 
         var resumed = _topicStreams.TryBeginResume(topic.TopicId)!;
         var running = new TaskCompletionSource();
-        _topicStreams.TryStream(
+        _topicStreams.TryShowResumed(
             resumed,
             new ChatMessageModel { Role = "assistant", Content = "half written" },
-            "msg-1",
-            _ => running.Task).ShouldBeTrue();
+            "msg-1").ShouldBeTrue();
+        _topicStreams.Read(resumed, _ => running.Task);
         _messagingService.LetTheSendAnswer();
         await send;
 

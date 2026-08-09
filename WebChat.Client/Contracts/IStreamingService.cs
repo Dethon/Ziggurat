@@ -9,6 +9,11 @@ public interface IStreamingService
 {
     Task SendMessageAsync(StoredTopic topic, string message, string? correlationId = null);
 
-    Task<bool> TryStartResumeStreamAsync(
-        StreamLease lease, StoredTopic topic, ChatMessageModel streamingMessage, string startMessageId);
+    // Two moments, deliberately apart. Showing takes what the server said the reply had
+    // written and puts it on screen; reading attaches to the wire, and that call does not
+    // come back until the reply's next chunk does. A caller that did them as one would show
+    // the reply only once the agent spoke again.
+    bool TryShowResumedStream(StreamLease lease, ChatMessageModel streamingMessage, string? startMessageId);
+
+    Task<bool> TryReadResumedStreamAsync(StreamLease lease, StoredTopic topic);
 }

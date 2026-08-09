@@ -84,11 +84,18 @@ public sealed class StreamResumeService(
             state.BufferedMessages, existingHistory, state.CurrentPrompt, state.CurrentSenderId);
 
         // Upgrade the resume to a stream before replaying the buffer into it: the upgrade is
-        // what creates the live buffer the replay fills.
-        var started = await streamingService.TryStartResumeStreamAsync(
-            lease, topic, result.StreamingMessage, state.CurrentMessageId);
+        // what creates the live buffer the replay fills. It comes before opening the wire
+        // because opening it waits for the reply's next chunk, and the whole point of a resume
+        // is that a client joining mid-reply sees the reply now.
+        if (!streamingService.TryShowResumedStream(lease, result.StreamingMessage, state.CurrentMessageId))
+        {
+            return false;
+        }
 
         pipeline.ResumeFromBuffer(result, topic.TopicId, state.CurrentMessageId);
-        return started;
+
+        // A wire that cannot be opened leaves the caller to end the stream, which keeps what
+        // was just shown as a message rather than taking it back off the screen.
+        return await streamingService.TryReadResumedStreamAsync(lease, topic);
     }
 }

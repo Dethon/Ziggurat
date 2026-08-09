@@ -71,26 +71,23 @@ public sealed class StreamingService(
 
     // The lease already holds the topic, so there is nothing left to decide here and no lock to
     // take: the resume that was granted it is the only one that can get this far.
-    public async Task<bool> TryStartResumeStreamAsync(
-        StreamLease lease,
-        StoredTopic topic,
-        ChatMessageModel streamingMessage,
-        string startMessageId)
+    public bool TryShowResumedStream(
+        StreamLease lease, ChatMessageModel streamingMessage, string? startMessageId) =>
+        topicStreams.TryShowResumed(lease, streamingMessage, startMessageId);
+
+    // Opening the stream is what waits for the reply's next chunk, so it happens after the
+    // reply is already showing. Recovery the user never asked for: nothing is said when it
+    // cannot be opened — the caller ends the stream, which keeps what was shown as a message.
+    public async Task<bool> TryReadResumedStreamAsync(StreamLease lease, StoredTopic topic)
     {
         var chunks = await messagingService.ResumeStreamAsync(topic.TopicId);
-
-        // Recovery the user never asked for: announce nothing and say nothing. Announcing
-        // first would leave a stream marked started that can never say it completed.
         if (!chunks.IsLive)
         {
             return false;
         }
 
-        return topicStreams.TryStream(
-            lease,
-            streamingMessage,
-            startMessageId,
-            running => ProcessStreamAsync(topic, chunks.Value!, running));
+        topicStreams.Read(lease, running => ProcessStreamAsync(topic, chunks.Value!, running));
+        return true;
     }
 
     private async Task StartNewStreamAsync(

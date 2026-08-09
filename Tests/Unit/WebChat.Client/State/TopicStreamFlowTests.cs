@@ -230,6 +230,30 @@ public sealed class TopicStreamFlowTests
         resumed.Release();
     }
 
+    // Between chunks the reply says nothing — a tool call can hold it for minutes — so attaching
+    // to the stream is a wait with no end in sight. What the reply has written so far came back
+    // from GetStreamState before that wait began, and it belongs on screen then, not whenever
+    // the agent next speaks.
+    [Fact]
+    public async Task AResume_WhileTheReplyIsBetweenChunks_ShowsWhatItHasWrittenWithoutWaiting()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        var resumed = new GatedChatStream { Opening = null };
+        transport.Answer("GetStreamState", new StreamState(
+            true, [new ChatStreamMessage { Content = "half written", MessageId = "m-1" }], "m-1", "hello", null));
+        transport.Answer("ResumeStream", _ => resumed.Chunks());
+
+        transport.Raise("OnStreamStarted", new StreamStartedNotification("topic-1"));
+
+        await TestChat.Eventually(() =>
+            client.Streaming.State.StreamingByTopic.GetValueOrDefault("topic-1")?.Content == "half written");
+        client.Messages.State.MessagesByTopic["topic-1"]
+            .ShouldContain(message => message.Role == "user" && message.Content == "hello");
+        resumed.Release();
+    }
+
     [Fact]
     public async Task APushedStreamStart_WhenTheServerHasNothingInProgress_LeavesTheTopicIdle()
     {

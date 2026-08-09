@@ -102,12 +102,12 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         }
     }
 
-    // The resume found a reply in progress: the same record becomes the stream, in place.
-    public bool TryStream(
-        StreamLease lease,
-        ChatMessageModel message,
-        string? currentMessageId,
-        Func<StreamLease, Task> run)
+    // The resume found a reply in progress: the same record becomes the stream, in place, with
+    // what the reply has written so far as its accumulator. This happens before the resume has
+    // a wire to read, because attaching to one waits for the reply's next chunk and between
+    // chunks — a tool call, a slow first token — that can be minutes away. What the server
+    // already said the reply had written is showable now.
+    public bool TryShowResumed(StreamLease lease, ChatMessageModel message, string? currentMessageId)
     {
         lock (_lock)
         {
@@ -122,9 +122,12 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         }
 
         dispatcher.Dispatch(new StreamStarted(lease.TopicId));
-        Attach(lease, run);
         return true;
     }
+
+    // The loop that reads the wire, on the stream a resume is already showing. Opening one and
+    // reading it are two moments for a resume, so they are two calls.
+    public void Read(StreamLease lease, Func<StreamLease, Task> run) => Attach(lease, run);
 
     public TopicStreamSnapshot Snapshot(string topicId)
     {

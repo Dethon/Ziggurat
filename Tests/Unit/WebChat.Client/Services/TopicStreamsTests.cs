@@ -336,11 +336,11 @@ public sealed class TopicStreamsTests : IDisposable
     }
 
     [Fact]
-    public void TryStream_AResumingLease_UpgradesTheSameRecordInPlace()
+    public void TryShowResumed_AResumingLease_UpgradesTheSameRecordInPlace()
     {
         var lease = _streams.TryBeginResume("topic-1")!;
 
-        var upgraded = _streams.TryStream(lease, Assistant("already written"), "msg-1", _ => _running.Task);
+        var upgraded = _streams.TryShowResumed(lease, Assistant("already written"), "msg-1");
 
         upgraded.ShouldBeTrue();
         _streams.Snapshot("topic-1").IsStreaming.ShouldBeTrue();
@@ -348,14 +348,29 @@ public sealed class TopicStreamsTests : IDisposable
             .ShouldBe("already written and the rest");
     }
 
+    // Showing comes before the wire is open, so the topic is streaming with nothing reading it
+    // yet. That window is the reply's own: what it wrote is on screen and no second stream can
+    // claim the topic.
     [Fact]
-    public void TryStream_AStaleLease_Refuses()
+    public void TryShowResumed_BeforeTheWireIsRead_HoldsTheTopicAndShowsTheReply()
+    {
+        var lease = _streams.TryBeginResume("topic-1")!;
+
+        _streams.TryShowResumed(lease, Assistant("already written"), "msg-1");
+        _streams.PublishCurrent("topic-1");
+
+        _streams.TryOpen("topic-1", Assistant(), null, _ => _running.Task).ShouldBeNull();
+        _streamingStore.State.StreamingByTopic["topic-1"].Content.ShouldBe("already written");
+    }
+
+    [Fact]
+    public void TryShowResumed_AStaleLease_Refuses()
     {
         var stale = _streams.TryBeginResume("topic-1")!;
         stale.Complete();
         Open();
 
-        _streams.TryStream(stale, Assistant(), "msg-1", _ => _running.Task).ShouldBeFalse();
+        _streams.TryShowResumed(stale, Assistant(), "msg-1").ShouldBeFalse();
     }
 
     [Fact]
