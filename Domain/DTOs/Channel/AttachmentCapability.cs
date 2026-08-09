@@ -35,7 +35,9 @@ public static class AttachmentCapability
     }
 
     // Null when the attachments may go. Otherwise a sentence naming the model and the reason, so
-    // the person knows which one to switch to.
+    // the person knows which one to switch to. Deliberately says nothing about what happens to
+    // the files: the composer keeps them and the server's own guard cannot, so each caller adds
+    // that part itself rather than one of them promising something it cannot keep.
     public static string? Refusal(
         AgentCatalogEntry? agent, string? patchedModel, IEnumerable<string> mediaTypes)
     {
@@ -54,7 +56,7 @@ public static class AttachmentCapability
 
         var model = EffectiveModel(agent, patchedModel) ?? "The selected model";
         var kinds = string.Join(" or ", refused.Select(Describe));
-        return $"{model} cannot read {kinds}. Pick a different model and your files stay attached.";
+        return $"{model} cannot read {kinds}. Pick a different model and send it again.";
     }
 
     private static string Describe(AttachmentKind kind) =>

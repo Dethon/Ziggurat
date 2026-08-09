@@ -112,7 +112,7 @@ public sealed class AttachmentEffect : IDisposable
             SizeBytes = file.SizeBytes
         };
 
-        if (Refuse(file, limits, _composerStore.State.For(topicId).Count) is { } refusal)
+        if (Refuse(file, limits, ComposerSelectors.Sendable(_composerStore.State.For(topicId)).Count()) is { } refusal)
         {
             _dispatcher.Dispatch(new AttachmentPicked(topicId, attachment));
             _dispatcher.Dispatch(new AttachmentFailed(topicId, attachment.LocalId, refusal));

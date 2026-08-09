@@ -27,7 +27,11 @@ public sealed class StreamingService(
     // between asking and acting.
     private readonly SemaphoreSlim _streamLock = new(1, 1);
 
-    public async Task SendMessageAsync(StoredTopic topic, string message, string? correlationId = null)
+    public async Task SendMessageAsync(
+        StoredTopic topic,
+        string message,
+        string? correlationId = null,
+        IReadOnlyList<AttachmentReference>? attachments = null)
     {
         await _streamLock.WaitAsync();
         try
@@ -35,7 +39,10 @@ public sealed class StreamingService(
             var configPatch = GetConfigPatch(topic);
             // Read before the send and cleared after it, so an attachment cannot ride a second
             // message: the composer is emptied by the same action that sends its contents.
-            var attachments = ReadyAttachments(topic.TopicId);
+            // A retry brings its own references and leaves the composer alone; everything else
+            // sends what the composer holds and empties exactly that.
+            var sending = attachments is null ? ReadyAttachments(topic.TopicId) : [];
+            attachments ??= References(sending);
 
             // Read once, and carried into the send: the round trip below is long enough for a
             // resume to claim the topic, and what may be ended afterwards is the stream this
@@ -43,7 +50,8 @@ public sealed class StreamingService(
             var seen = topicStreams.Snapshot(topic.TopicId);
             if (!seen.HasStream)
             {
-                await StartNewStreamAsync(topic, message, correlationId, configPatch, attachments, seen);
+                await StartNewStreamAsync(
+                    topic, message, correlationId, configPatch, attachments, sending, seen);
                 return;
             }
 
@@ -61,11 +69,12 @@ public sealed class StreamingService(
 
             if (!enqueued.Value)
             {
-                await StartNewStreamAsync(topic, message, correlationId, configPatch, attachments, seen);
+                await StartNewStreamAsync(
+                    topic, message, correlationId, configPatch, attachments, sending, seen);
                 return;
             }
 
-            ClearAttachments(topic.TopicId, attachments);
+            ClearSent(topic.TopicId, sending);
         }
         finally
         {
@@ -79,20 +88,22 @@ public sealed class StreamingService(
 
     // Only the files that finished. One still uploading has no reference to send, and a refused
     // one never will; both stay in the composer rather than silently going along.
-    private IReadOnlyList<AttachmentReference>? ReadyAttachments(string topicId)
-    {
-        var ready = composerStore.State.For(topicId)
-            .Where(a => a.Status == AttachmentStatus.Ready && a.Reference is not null)
-            .Select(a => a.Reference!)
+    private IReadOnlyList<ComposerAttachment> ReadyAttachments(string topicId) =>
+        composerStore.State.For(topicId)
+            .Where(a => a is { Status: AttachmentStatus.Ready, Reference: not null })
             .ToList();
-        return ready.Count == 0 ? null : ready;
-    }
 
-    private void ClearAttachments(string topicId, IReadOnlyList<AttachmentReference>? sent)
+    private static IReadOnlyList<AttachmentReference>? References(
+        IReadOnlyList<ComposerAttachment> attachments) =>
+        attachments.Count == 0 ? null : attachments.Select(a => a.Reference!).ToList();
+
+    // By local id, so a file picked during the send's round trip stays in the composer instead of
+    // being swept away with the ones that travelled.
+    private void ClearSent(string topicId, IReadOnlyList<ComposerAttachment> sent)
     {
-        if (sent is { Count: > 0 })
+        if (sent.Count > 0)
         {
-            dispatcher.Dispatch(new ClearAttachments(topicId));
+            dispatcher.Dispatch(new ClearAttachments(topicId, sent.Select(a => a.LocalId).ToList()));
         }
     }
 
@@ -123,6 +134,7 @@ public sealed class StreamingService(
         string? correlationId,
         AgentConfigPatch? configPatch,
         IReadOnlyList<AttachmentReference>? attachments,
+        IReadOnlyList<ComposerAttachment> sending,
         TopicStreamSnapshot seen)
     {
         var chunks = await OpenSendStreamAsync(topic, message, correlationId, configPatch, attachments);
@@ -134,7 +146,7 @@ public sealed class StreamingService(
             return;
         }
 
-        ClearAttachments(topic.TopicId, attachments);
+        ClearSent(topic.TopicId, sending);
 
         // Reached either on an idle topic, where there was nothing to end, or after the server
         // said there was nothing to enqueue onto — which means the reply we saw is over. Ending

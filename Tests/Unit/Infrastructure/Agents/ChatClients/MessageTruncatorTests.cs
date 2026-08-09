@@ -86,6 +86,27 @@ public class MessageTruncatorTests
         MessageTruncator.EstimateMessageTokens(small).ShouldBeGreaterThan(100);
     }
 
+    // A document's file size tracks its images far more than its text, so an uncapped estimate
+    // would put a 20 MB scan past the whole context window and make the truncator drop every
+    // earlier message to make room for one attachment.
+    [Fact]
+    public void Truncate_AVeryLargeDocumentAttachment_DoesNotDropTheConversation()
+    {
+        var history = Enumerable.Range(0, 10)
+            .Select(i => new ChatMessage(i % 2 == 0 ? ChatRole.User : ChatRole.Assistant, $"message {i}"))
+            .ToList();
+        history.Add(new ChatMessage(ChatRole.User,
+            [new TextContent("what is in this?"), new DataContent(new byte[20 * 1024 * 1024], "application/pdf")]));
+
+        var kept = MessageTruncator.Truncate(
+            history, maxContextTokens: 800_000,
+            out var dropped, out _, out _, out var overflow);
+
+        overflow.ShouldBeFalse();
+        dropped.ShouldBe(0);
+        kept.Count.ShouldBe(history.Count);
+    }
+
     [Fact]
     public void Truncate_NullMaxTokens_ReturnsOriginalUnchanged()
     {

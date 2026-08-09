@@ -22,7 +22,9 @@ public record AttachmentFailed(string TopicId, string LocalId, string Reason) : 
 // to abort. One action, so a person who does not know which case they are in still gets both.
 public record RemoveAttachment(string TopicId, string LocalId) : IAction;
 
-public record ClearAttachments(string TopicId) : IAction;
+// Named rather than wholesale: a file picked while the send was in flight has not been sent, and
+// clearing the topic's whole list would throw it away with no trace.
+public record ClearAttachments(string TopicId, IReadOnlyList<string> LocalIds) : IAction;
 
 public sealed class ComposerStore : IDisposable
 {
@@ -75,7 +77,11 @@ public sealed class ComposerStore : IDisposable
 
         ClearAttachments a => state with
         {
-            AttachmentsByTopic = state.AttachmentsByTopic.Without(a.TopicId)
+            AttachmentsByTopic = state.AttachmentsByTopic.With(
+                a.TopicId,
+                (IReadOnlyList<ComposerAttachment>)state.For(a.TopicId)
+                    .Where(x => !a.LocalIds.Contains(x.LocalId))
+                    .ToList())
         },
 
         _ => state

@@ -110,11 +110,13 @@ public sealed class SendMessageEffect : IDisposable
         StoredTopic topic;
 
         // Read before the send, which is what clears the composer: the bubble the person sees
-        // has to carry what they attached.
-        var attached = _composerStore.State.For(action.TopicId)
-            .Where(a => a.Status == AttachmentStatus.Ready && a.Reference is not null)
-            .Select(a => a.Reference!)
-            .ToList();
+        // has to carry what they attached. A retry brings its own, because the message it is
+        // re-sending emptied the composer when it first went out.
+        var attached = action.Attachments?.ToList()
+            ?? _composerStore.State.For(action.TopicId)
+                .Where(a => a is { Status: AttachmentStatus.Ready, Reference: not null })
+                .Select(a => a.Reference!)
+                .ToList();
 
         if (string.IsNullOrEmpty(action.TopicId))
         {
@@ -187,7 +189,8 @@ public sealed class SendMessageEffect : IDisposable
         // Delegate to streaming service (handles stream reuse internally). Awaited so a fault
         // opening the send lands in the catch above; the call returns once the stream is open,
         // not when the reply completes.
-        await _streamingService.SendMessageAsync(topic, action.Message, correlationId);
+        await _streamingService.SendMessageAsync(
+            topic, action.Message, correlationId, action.Attachments);
     }
 
     // A message with attachments and no text is a normal thing to send, so the conversation is
@@ -208,7 +211,10 @@ public sealed class SendMessageEffect : IDisposable
         var lastUserMessage = messages.LastOrDefault(m => m.Role == "user");
         if (lastUserMessage is not null)
         {
-            _dispatcher.Dispatch(new SendMessage(action.TopicId, lastUserMessage.Content));
+            // With its files. A message can now be nothing but attachments, so re-sending the
+            // text alone would ask the model about a picture it was never given.
+            _dispatcher.Dispatch(new SendMessage(
+                action.TopicId, lastUserMessage.Content, lastUserMessage.Attachments));
         }
     }
 

@@ -48,8 +48,10 @@ public class ChatMonitorSandboxLandingTests
         written.Bytes.ShouldBe([1, 2, 3, 4]);
     }
 
+    // Recorded on the message rather than written into its text: hydration is what names the
+    // path to the model, so the transcript a person reads never grows an internal path.
     [Fact]
-    public async Task TheMessage_NamesTheVirtualPathSoTheModelCanActOnItUnprompted()
+    public async Task TheMessage_CarriesTheVirtualPathSoTheModelCanActOnItUnprompted()
     {
         var sandbox = new RecordingSandbox();
         var agent = AgentWith(sandbox);
@@ -57,9 +59,13 @@ public class ChatMonitorSandboxLandingTests
         await RunAsync(agent, _photo);
 
         agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
-        var text = string.Join("", messages!.Single().Contents.OfType<TextContent>().Select(c => c.Text));
-        text.ShouldContain("/sandbox/uploads/7-42/");
-        text.ShouldContain("photo.png");
+        var message = messages!.Single();
+        var path = message.GetSandboxPaths().ShouldHaveSingleItem();
+        path.ShouldStartWith("/sandbox/uploads/7-42/");
+        path.ShouldEndWith("/photo.png");
+
+        string.Join("", message.Contents.OfType<TextContent>().Select(c => c.Text))
+            .ShouldNotContain("/sandbox/");
     }
 
     // The per-message directory is what removes collisions: sending scan.pdf twice in one
@@ -87,8 +93,7 @@ public class ChatMonitorSandboxLandingTests
         agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
         var message = messages!.Single();
         message.GetAttachments().ShouldBe([_photo]);
-        string.Join("", message.Contents.OfType<TextContent>().Select(c => c.Text))
-            .ShouldNotContain("/sandbox/");
+        message.GetSandboxPaths().ShouldBeNull();
     }
 
     [Fact]
@@ -102,8 +107,7 @@ public class ChatMonitorSandboxLandingTests
         agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
         var message = messages!.Single();
         message.GetAttachments().ShouldBe([_photo]);
-        string.Join("", message.Contents.OfType<TextContent>().Select(c => c.Text))
-            .ShouldNotContain("/sandbox/");
+        message.GetSandboxPaths().ShouldBeNull();
     }
 
     private static FakeAiAgent AgentWith(RecordingSandbox? sandbox)

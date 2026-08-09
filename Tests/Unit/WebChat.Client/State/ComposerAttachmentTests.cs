@@ -116,6 +116,42 @@ public sealed class ComposerAttachmentTests
         await TestChat.Eventually(() => Attachments(client).Count == 0);
     }
 
+    // The clear names the files that travelled. A file picked while the send's round trip was in
+    // flight has not been sent, and sweeping the topic's whole list would throw it away silently.
+    [Fact]
+    public async Task AFileAttachedDuringTheSend_StaysInTheComposer()
+    {
+        await using var client = await StartAsync();
+
+        client.Dispatcher.Dispatch(new AttachFiles("topic-1", [Png("first.png")]));
+        await TestChat.Eventually(() => Attachments(client).Any(a => a.Status == AttachmentStatus.Ready));
+
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "here"));
+        client.Dispatcher.Dispatch(new AttachFiles("topic-1", [Png("second.png")]));
+
+        await TestChat.Eventually(() =>
+            Attachments(client).Any(a => a.FileName == "second.png" && a.Status == AttachmentStatus.Ready));
+        await TestChat.Eventually(() => Attachments(client).All(a => a.FileName != "first.png"));
+        Attachments(client).Select(a => a.FileName).ShouldBe(["second.png"]);
+    }
+
+    // A refused file is going nowhere, so it must not spend one of the message's slots.
+    [Fact]
+    public async Task AFileTheComposerRefused_DoesNotConsumeAPerMessageSlot()
+    {
+        await using var client = await StartAsync();
+
+        client.Dispatcher.Dispatch(new AttachFiles(
+            "topic-1", [new PickedFile("notes.txt", "text/plain", 10, Open)]));
+        await TestChat.Eventually(() => Attachments(client).Any(a => a.Status == AttachmentStatus.Failed));
+
+        client.Dispatcher.Dispatch(new AttachFiles(
+            "topic-1", Enumerable.Range(0, 10).Select(i => Png($"photo-{i}.png")).ToList()));
+
+        await TestChat.Eventually(() =>
+            Attachments(client).Count(a => a.Status == AttachmentStatus.Ready) == 10);
+    }
+
     [Fact]
     public async Task AnOversizedFile_IsRefusedAtPickTimeWithoutUploading()
     {
@@ -154,6 +190,26 @@ public sealed class ComposerAttachmentTests
         Attachments(client).Single().Error.ShouldBe("the server said no");
     }
 
+    // A message can be nothing but attachments now, so re-sending its text alone would ask the
+    // model about a picture it was never given. The composer was emptied by the first send.
+    [Fact]
+    public async Task RetryingAFailedMessage_SendsItsAttachmentsAgain()
+    {
+        await using var client = await StartAsync();
+
+        client.Dispatcher.Dispatch(new AttachFiles("topic-1", [Png("photo.png")]));
+        await TestChat.Eventually(() => Attachments(client).Any(a => a.Status == AttachmentStatus.Ready));
+
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "what is this?"));
+        await TestChat.Eventually(() => SentAttachments(client) is { Count: 1 });
+        await TestChat.Eventually(() => Attachments(client).Count == 0);
+
+        client.Dispatcher.Dispatch(new RetryLastMessage("topic-1"));
+
+        await TestChat.Eventually(() => SendCalls(client) == 2);
+        SentAttachments(client)!.Single().FileName.ShouldBe("photo.png");
+    }
+
     [Fact]
     public async Task TheMessageInTheTranscript_CarriesWhatWasAttached()
     {
@@ -171,6 +227,9 @@ public sealed class ComposerAttachmentTests
 
     private static IReadOnlyList<ComposerAttachment> Attachments(ScriptedChatClient client) =>
         client.Composer.State.For("topic-1");
+
+    private static int SendCalls(ScriptedChatClient client) =>
+        client.Transport.Calls.Count(c => c.MethodName is "SendMessage" or "EnqueueMessage");
 
     private static IReadOnlyList<AttachmentReference>? SentAttachments(ScriptedChatClient client) =>
         client.Transport.Calls

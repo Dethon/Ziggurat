@@ -475,12 +475,10 @@ internal sealed class ConversationGroup(
             logger,
             _turnCt);
 
-        if (landed.Count > 0)
-        {
-            // Named in the message rather than left for the model to discover, so "have a look at
-            // this" is enough and no tool has to be advertised.
-            userMessage.Contents = [.. userMessage.Contents, new TextContent(AttachmentLanding.Describe(landed))];
-        }
+        // Recorded on the message rather than written into its text: the model is told on the
+        // way out, by the same step that puts the bytes back, so the transcript a person reads
+        // never grows an internal path.
+        userMessage.SetSandboxPaths(landed);
     }
 
     // Deliver each message's reply to the channel that actually sent it. The group is keyed

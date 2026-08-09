@@ -83,6 +83,7 @@ public sealed class WebChatLiveConnectionRegistrationTests
         services.AddScoped<ITopicService, TopicService>();
         services.AddScoped<IAgentService, AgentService>();
         services.AddScoped<IApprovalService, ApprovalService>();
+        services.AddScoped<AttachmentEndpointResolver>();
         services.AddScoped<IAttachmentService, AttachmentService>();
         services.AddScoped<IAttachmentUploader, HttpAttachmentUploader>();
         services.AddScoped<ApprovalResponder>();

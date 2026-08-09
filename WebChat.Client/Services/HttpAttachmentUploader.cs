@@ -10,10 +10,16 @@ namespace WebChat.Client.Services;
 // One file per request, deliberately: the web host's default body cap is below the combined size
 // of a full message's attachments at the configured maximum. The hub's own message size limit is
 // untouched, because bytes never ride the hub.
-public sealed class HttpAttachmentUploader(HttpClient httpClient, ILogger<HttpAttachmentUploader> logger)
-    : IAttachmentUploader
+//
+// The upload store lives on the channel server, which is where the hub lives too — never on the
+// host that served this page. So the address is resolved the same way the hub connection resolves
+// its own: same origin behind the reverse proxy, the configured agent URL otherwise.
+public sealed class HttpAttachmentUploader(
+    HttpClient httpClient,
+    AttachmentEndpointResolver endpoints,
+    ILogger<HttpAttachmentUploader> logger) : IAttachmentUploader
 {
-    public const string UploadPath = "api/attachments";
+    public const string UploadPath = "/api/attachments";
     public const string TicketHeader = "X-Attachment-Ticket";
 
     public async Task<UploadOutcome> UploadAsync(
@@ -25,17 +31,14 @@ public sealed class HttpAttachmentUploader(HttpClient httpClient, ILogger<HttpAt
     {
         try
         {
+            var url = await ResolveUploadUrlAsync(topicId);
             await using var content = await file.OpenRead(ct);
             using var body = new MultipartFormDataContent();
             var part = new StreamContent(new ProgressStream(content, file.SizeBytes, onProgress));
             part.Headers.ContentType = new MediaTypeHeaderValue(file.MediaType);
             body.Add(part, "file", file.FileName);
 
-            using var request = new HttpRequestMessage(
-                HttpMethod.Post, $"{UploadPath}?topicId={Uri.EscapeDataString(topicId)}")
-            {
-                Content = body
-            };
+            using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = body };
             request.Headers.Add(TicketHeader, ticket);
 
             using var response = await httpClient.SendAsync(request, ct);
@@ -60,6 +63,9 @@ public sealed class HttpAttachmentUploader(HttpClient httpClient, ILogger<HttpAt
             return new UploadOutcome(null, $"{file.FileName} could not be uploaded.");
         }
     }
+
+    private async Task<string> ResolveUploadUrlAsync(string topicId) =>
+        $"{await endpoints.ResolveAsync(UploadPath)}?topicId={Uri.EscapeDataString(topicId)}";
 
     private static async Task<string> DescribeAsync(
         HttpResponseMessage response, PickedFile file, CancellationToken ct)

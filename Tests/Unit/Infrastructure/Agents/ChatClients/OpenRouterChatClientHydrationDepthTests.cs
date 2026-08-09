@@ -63,6 +63,22 @@ public class OpenRouterChatClientHydrationDepthTests
             .ShouldContain("scan.pdf");
     }
 
+    // A sandbox path is not a byte: the file stays in the sandbox long after the bytes stop
+    // being sent, so the model keeps being told where it is.
+    [Fact]
+    public async Task ASandboxPath_ReachesTheModelAndOutlivesTheHydrationDistance()
+    {
+        var messages = Conversation(attachmentAt: 0, length: 5);
+        messages[0].SetSandboxPaths(["/sandbox/uploads/7-42/turn/photo.png"]);
+
+        var captured = await SendAsync(messages, depth: 1);
+
+        var text = string.Join("", captured[0].Contents.OfType<TextContent>().Select(c => c.Text));
+        text.ShouldContain("/sandbox/uploads/7-42/turn/photo.png");
+        captured[0].Contents.OfType<DataContent>().ShouldBeEmpty();
+        messages[0].Contents.OfType<TextContent>().ShouldAllBe(c => !c.Text.Contains("/sandbox/"));
+    }
+
     [Fact]
     public async Task AReferenceWhoseFileIsGone_ProducesTheSamePlaceholderAtAnyDistance()
     {
@@ -85,6 +101,27 @@ public class OpenRouterChatClientHydrationDepthTests
 
         captured[0].Contents.OfType<DataContent>().ShouldBeEmpty();
         captured[1].Contents.OfType<DataContent>().ShouldHaveSingleItem();
+    }
+
+    // The function-calling client re-sends the whole list once per tool iteration, growing it by
+    // a call and a result each time. Counting those would push an attachment out of its own turn
+    // partway through and tell the model the file it was just given is gone.
+    [Fact]
+    public async Task ToolCallsAddedDuringTheTurn_DoNotPushAnAttachmentOutOfItsOwnTurn()
+    {
+        var messages = new List<ChatMessage>
+        {
+            WithAttachment(new ChatMessage(ChatRole.User, "look at this"), _photo)
+        };
+        messages.AddRange(Enumerable.Range(0, 12).SelectMany(i => new[]
+        {
+            new ChatMessage(ChatRole.Assistant, [new FunctionCallContent($"call-{i}", "search", null)]),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent($"call-{i}", "a result")])
+        }));
+
+        var captured = await SendAsync(messages, depth: 3);
+
+        captured[0].Contents.OfType<DataContent>().ShouldHaveSingleItem();
     }
 
     [Fact]

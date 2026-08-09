@@ -133,6 +133,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         services.AddScoped<ITopicService, TopicService>();
         services.AddScoped<IAgentService, AgentService>();
         services.AddScoped<IApprovalService, ApprovalService>();
+        services.AddScoped<AttachmentEndpointResolver>();
         services.AddScoped<IAttachmentService, AttachmentService>();
         services.AddScoped<ApprovalResponder>();
 

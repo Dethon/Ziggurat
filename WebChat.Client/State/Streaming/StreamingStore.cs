@@ -19,7 +19,13 @@ public record StreamCompleted(string TopicId) : IAction;
 
 public record ResetStreamingContent(string TopicId) : IAction;
 
-public record SendMessage(string? TopicId, string Message) : IAction;
+// Attachments are normally read from the composer at send time; they ride the action only when
+// the caller already knows them and the composer no longer does — a retry of a message that was
+// sent, and cleared, before it failed.
+public record SendMessage(
+    string? TopicId,
+    string Message,
+    IReadOnlyList<Domain.DTOs.Channel.AttachmentReference>? Attachments = null) : IAction;
 
 public record CancelStreaming(string TopicId) : IAction;
 

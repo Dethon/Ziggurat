@@ -18,6 +18,7 @@ public static class ChatMessageExtensions
     private const string ConfigPatchKey = "ConfigPatch";
     private const string AttachmentsKey = "Attachments";
     private const string AttachmentChannelIdKey = "AttachmentChannelId";
+    private const string SandboxPathsKey = "SandboxPaths";
 
     extension(ChatMessage message)
     {
@@ -238,6 +239,32 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[AttachmentChannelIdKey] = channelId;
+        }
+
+        // Where this turn's attachments landed in the agent's sandbox. Metadata rather than text
+        // for the same reason the references are: the model is told on the way out, and the
+        // transcript a person reads must not grow an internal path. It outlives hydration, so a
+        // later turn can still act on the file after the bytes stop being sent.
+        public IReadOnlyList<string>? GetSandboxPaths()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(SandboxPathsKey);
+            return value switch
+            {
+                IReadOnlyList<string> paths => paths,
+                JsonElement je => je.Deserialize<IReadOnlyList<string>>(ChannelProtocol.SerializerOptions),
+                _ => null
+            };
+        }
+
+        public void SetSandboxPaths(IReadOnlyList<string>? paths)
+        {
+            if (paths is null or { Count: 0 })
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[SandboxPathsKey] = paths;
         }
     }
 

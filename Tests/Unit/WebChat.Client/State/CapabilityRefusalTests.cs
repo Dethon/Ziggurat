@@ -55,6 +55,44 @@ public class CapabilityRefusalTests
         refusal.ShouldNotBeNull();
         refusal.ShouldContain("text/only");
         refusal.ShouldContain("images");
+
+        // The composer keeps the files, so the composer is what gets to promise it.
+        refusal.ShouldContain("stay attached");
+    }
+
+    // A file the composer already refused is going nowhere, so letting it block the send would
+    // leave a person unable to send with no way to see why.
+    [Fact]
+    public void AFailedAttachment_DoesNotBlockTheSend()
+    {
+        var failed = _photo with
+        {
+            LocalId = "local-2",
+            FileName = "scan.pdf",
+            MediaType = "application/pdf",
+            Status = AttachmentStatus.Failed,
+            Reference = null
+        };
+        IReadOnlyList<AgentCatalogEntry> seesImages =
+        [
+            new AgentCatalogEntry(
+                AgentId, "Jack", null,
+                DefaultModel: "sees/pictures",
+                DefaultModelAttachmentKinds: [AttachmentKind.Image])
+        ];
+
+        ComposerSelectors.CapabilityRefusal(Settings(null), seesImages, AgentId, [_photo, failed])
+            .ShouldBeNull();
+    }
+
+    // The server's own guard cannot keep the files, so its wording must not claim to.
+    [Fact]
+    public void TheSharedRefusal_PromisesNothingAboutTheFiles()
+    {
+        var refusal = AttachmentCapability.Refusal(_agents[0], null, ["image/png"]);
+
+        refusal.ShouldNotBeNull();
+        refusal.ShouldNotContain("stay attached");
     }
 
     [Fact]

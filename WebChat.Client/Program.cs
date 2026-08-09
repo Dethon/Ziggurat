@@ -27,6 +27,7 @@ builder.Services.AddScoped<IChatMessagingService, ChatMessagingService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 builder.Services.AddScoped<IApprovalService, ApprovalService>();
+builder.Services.AddScoped<AttachmentEndpointResolver>();
 builder.Services.AddScoped<IAttachmentService, AttachmentService>();
 builder.Services.AddScoped<IAttachmentUploader, HttpAttachmentUploader>();
 builder.Services.AddScoped<ApprovalResponder>();

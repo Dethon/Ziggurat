@@ -22,13 +22,29 @@ public static class ComposerSelectors
         AgentSettingsState settings,
         IReadOnlyList<AgentCatalogEntry> agents,
         string agentId,
-        IReadOnlyList<ComposerAttachment> attachments) =>
-        attachments.Count == 0
-            ? null
-            : AttachmentCapability.Refusal(
-                Agent(agents, agentId),
-                Patched(settings, agentId),
-                attachments.Select(a => a.MediaType));
+        IReadOnlyList<ComposerAttachment> attachments)
+    {
+        // Only what the send would actually carry. A file the composer already refused is going
+        // nowhere, so letting it block the send would leave a person unable to send until they
+        // worked out that a failed chip was the reason.
+        var going = Sendable(attachments).ToList();
+        if (going.Count == 0)
+        {
+            return null;
+        }
+
+        var refusal = AttachmentCapability.Refusal(
+            Agent(agents, agentId), Patched(settings, agentId), going.Select(a => a.MediaType));
+
+        // The composer keeps the files, unlike the server's own guard, so it is the composer that
+        // gets to promise it.
+        return refusal is null ? null : $"{refusal} Your files stay attached.";
+    }
+
+    // Everything that has been accepted, whether or not it has finished uploading: a file still
+    // going up counts against the per-message maximum, and one already refused does not.
+    public static IEnumerable<ComposerAttachment> Sendable(IReadOnlyList<ComposerAttachment> attachments) =>
+        attachments.Where(a => a.Status != AttachmentStatus.Failed);
 
     public static bool HasUploadInFlight(IReadOnlyList<ComposerAttachment> attachments) =>
         attachments.Any(a => a.Status == AttachmentStatus.Uploading);
