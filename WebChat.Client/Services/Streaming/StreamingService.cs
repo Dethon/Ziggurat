@@ -5,6 +5,7 @@ using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.Composer;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
@@ -18,6 +19,7 @@ public sealed class StreamingService(
     TopicsStore topicsStore,
     MessagesStore messagesStore,
     AgentSettingsStore agentSettingsStore,
+    ComposerStore composerStore,
     TopicStreams topicStreams) : IStreamingService
 {
     // Serialises deciding whether to open a stream and opening it. TopicStreams answers who
@@ -31,6 +33,9 @@ public sealed class StreamingService(
         try
         {
             var configPatch = GetConfigPatch(topic);
+            // Read before the send and cleared after it, so an attachment cannot ride a second
+            // message: the composer is emptied by the same action that sends its contents.
+            var attachments = ReadyAttachments(topic.TopicId);
 
             // Read once, and carried into the send: the round trip below is long enough for a
             // resume to claim the topic, and what may be ended afterwards is the stream this
@@ -38,12 +43,12 @@ public sealed class StreamingService(
             var seen = topicStreams.Snapshot(topic.TopicId);
             if (!seen.HasStream)
             {
-                await StartNewStreamAsync(topic, message, correlationId, configPatch, seen);
+                await StartNewStreamAsync(topic, message, correlationId, configPatch, attachments, seen);
                 return;
             }
 
             var enqueued = await messagingService.EnqueueMessageAsync(
-                topic.TopicId, message, correlationId, configPatch);
+                topic.TopicId, message, correlationId, configPatch, attachments);
 
             // A not-live enqueue is not the server saying "there is no stream to enqueue
             // onto". Falling through here would open a second stream over a transport that
@@ -56,8 +61,11 @@ public sealed class StreamingService(
 
             if (!enqueued.Value)
             {
-                await StartNewStreamAsync(topic, message, correlationId, configPatch, seen);
+                await StartNewStreamAsync(topic, message, correlationId, configPatch, attachments, seen);
+                return;
             }
+
+            ClearAttachments(topic.TopicId, attachments);
         }
         finally
         {
@@ -68,6 +76,25 @@ public sealed class StreamingService(
     private AgentConfigPatch? GetConfigPatch(StoredTopic topic) =>
         AgentSettingsSelectors.GetConfigPatch(
             agentSettingsStore.State, topicsStore.State.Agents, topic.AgentId);
+
+    // Only the files that finished. One still uploading has no reference to send, and a refused
+    // one never will; both stay in the composer rather than silently going along.
+    private IReadOnlyList<AttachmentReference>? ReadyAttachments(string topicId)
+    {
+        var ready = composerStore.State.For(topicId)
+            .Where(a => a.Status == AttachmentStatus.Ready && a.Reference is not null)
+            .Select(a => a.Reference!)
+            .ToList();
+        return ready.Count == 0 ? null : ready;
+    }
+
+    private void ClearAttachments(string topicId, IReadOnlyList<AttachmentReference>? sent)
+    {
+        if (sent is { Count: > 0 })
+        {
+            dispatcher.Dispatch(new ClearAttachments(topicId));
+        }
+    }
 
     // The lease already holds the topic, so there is nothing left to decide here and no lock to
     // take: the resume that was granted it is the only one that can get this far.
@@ -95,9 +122,10 @@ public sealed class StreamingService(
         string message,
         string? correlationId,
         AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments,
         TopicStreamSnapshot seen)
     {
-        var chunks = await OpenSendStreamAsync(topic, message, correlationId, configPatch);
+        var chunks = await OpenSendStreamAsync(topic, message, correlationId, configPatch, attachments);
 
         // Open only a stream that has actually started. The old order announced first and
         // discovered afterwards, which is how a user was shown a reply that never spoke.
@@ -105,6 +133,8 @@ public sealed class StreamingService(
         {
             return;
         }
+
+        ClearAttachments(topic.TopicId, attachments);
 
         // Reached either on an idle topic, where there was nothing to end, or after the server
         // said there was nothing to enqueue onto — which means the reply we saw is over. Ending
@@ -124,9 +154,11 @@ public sealed class StreamingService(
     // Null means the send could not be made and the user has been told. The send is theirs, so
     // this is the one stream verb that raises a toast.
     private async Task<IAsyncEnumerable<ChatStreamMessage>?> OpenSendStreamAsync(
-        StoredTopic topic, string message, string? correlationId, AgentConfigPatch? configPatch)
+        StoredTopic topic, string message, string? correlationId, AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments)
     {
-        var chunks = await messagingService.SendMessageAsync(topic.TopicId, message, correlationId, configPatch);
+        var chunks = await messagingService.SendMessageAsync(
+            topic.TopicId, message, correlationId, configPatch, attachments);
         if (chunks.IsLive)
         {
             return chunks.Value!;

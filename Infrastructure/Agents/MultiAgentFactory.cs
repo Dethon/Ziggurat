@@ -122,7 +122,10 @@ public sealed class MultiAgentFactory(
             sessionId,
             providerRouting: providerRouting,
             transportHandler: transportHandler,
-            attachmentSource: serviceProvider.GetService<IAttachmentSource>(),
+            // Optional in both senses: a host with no channel connections registers none, and a
+            // client built without a container has no way to ask. Neither is an error — the turn
+            // simply reaches the model with no bytes put back.
+            attachmentSource: serviceProvider?.GetService<IAttachmentSource>(),
             hydrationDepthMessages: openRouterConfig.HydrationDepthMessages);
     }
 }

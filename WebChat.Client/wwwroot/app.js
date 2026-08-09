@@ -114,6 +114,54 @@ window.chatInput = {
     reset: function (element) {
         if (!element) return;
         element.style.height = 'auto';
+    },
+
+    // Pasting a screenshot and dropping files both end up in the composer's own file input, so
+    // there is one path into the picker rather than three. The input's change event is what the
+    // component is already listening to.
+    bindFileDrops: function (composer) {
+        if (!composer) return;
+        const input = composer.querySelector('input[type=file]');
+        if (!input) return;
+
+        const hand = function (files) {
+            if (!files || files.length === 0) return false;
+            const transfer = new DataTransfer();
+            for (const file of files) transfer.items.add(file);
+            input.files = transfer.files;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        };
+
+        composer.addEventListener('dragover', function (e) { e.preventDefault(); });
+        composer.addEventListener('drop', function (e) {
+            if (hand(e.dataTransfer && e.dataTransfer.files)) e.preventDefault();
+        });
+
+        // Paste is bound on the document: a screenshot is pasted wherever the caret happens to
+        // be, and the composer's textarea is not always focused when it lands.
+        document.addEventListener('paste', function (e) {
+            if (!e.clipboardData) return;
+            const files = Array.from(e.clipboardData.files || []);
+            if (files.length > 0 && hand(files)) e.preventDefault();
+        });
+    }
+};
+
+// ===================================
+// Attachments
+// ===================================
+
+window.attachments = {
+    open: function (url, fileName) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName || '';
+        link.target = '_blank';
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     }
 };
 

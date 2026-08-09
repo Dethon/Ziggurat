@@ -6,15 +6,26 @@
 @inject TopicsStore TopicsStore
 @inject StreamingStore StreamingStore
 @inject ConnectionStore ConnectionStore
+@inject ComposerStore ComposerStore
+@inject AgentSettingsStore AgentSettingsStore
 
 @code {
+    // One control for every platform: the phone offers photo library, camera and file browsing
+    // from it, and the installed app behaves exactly as the browser tab does.
+    private const string AcceptedKinds = "image/png,image/jpeg,image/gif,image/webp,application/pdf";
+
     private string _inputText = "";
     private ElementReference _textareaRef;
+    private ElementReference _composerRef;
+    private InputFile? _fileInput;
     private string? _topicId;
     private string? _selectedAgentId;
     private bool _isStreaming;
     private bool _isConnected;
     private bool _disabled;
+    private bool _draggingOver;
+    private IReadOnlyList<ComposerAttachment> _attachments = [];
+    private string? _capabilityRefusal;
 
     protected override void OnInitialized()
     {
@@ -24,6 +35,7 @@
             _selectedAgentId = tuple.SelectedAgentId;
             UpdateDisabledState();
             UpdateStreamingStatus();
+            UpdateAttachments();
         });
 
         Subscribe(StreamingStore.StateObservable, state => state.StreamingTopics, _ =>
@@ -36,6 +48,19 @@
             _isConnected = status == ConnStatus.Connected;
             UpdateDisabledState();
         });
+
+        Subscribe(ComposerStore.StateObservable, state => state.AttachmentsByTopic, _ => UpdateAttachments());
+
+        // Switching model is the fix for a capability refusal, so the refusal has to follow it.
+        Subscribe(AgentSettingsStore.StateObservable, state => state.ByAgent, _ => UpdateAttachments());
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Js.InvokeVoidAsync("chatInput.bindFileDrops", _composerRef);
+        }
     }
 
     private void UpdateStreamingStatus()
@@ -48,9 +73,53 @@
         _disabled = string.IsNullOrEmpty(_selectedAgentId) || !_isConnected;
     }
 
+    private void UpdateAttachments()
+    {
+        _attachments = ComposerStore.State.For(_topicId);
+        _capabilityRefusal = _selectedAgentId is null
+            ? null
+            : ComposerSelectors.CapabilityRefusal(
+                AgentSettingsStore.State, TopicsStore.State.Agents, _selectedAgentId, _attachments);
+    }
+
+    private int ReadyCount => _attachments.Count(a => a.Status == AttachmentStatus.Ready);
+
+    private bool UploadInFlight => ComposerSelectors.HasUploadInFlight(_attachments);
+
+    private bool CanSend => ChatInputLogic.CanSend(
+        _disabled, _inputText, _isStreaming, ReadyCount, UploadInFlight, _capabilityRefusal);
+
+    private async Task HandleFilesPicked(InputFileChangeEventArgs e)
+    {
+        var picked = e.GetMultipleFiles(maximumFileCount: 50)
+            .Select(file => new PickedFile(
+                file.Name,
+                string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType,
+                file.Size,
+                // The cap is the browser's read limit rather than a rule of this feature; the
+                // effect refuses an oversized file before it ever opens the stream.
+                ct => Task.FromResult(file.OpenReadStream(long.MaxValue, ct))))
+            .ToList();
+
+        if (picked.Count > 0)
+        {
+            Dispatcher.Dispatch(new AttachFiles(_topicId, picked));
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private void RemoveAttachment(ComposerAttachment attachment)
+    {
+        if (_topicId is not null)
+        {
+            Dispatcher.Dispatch(new RemoveAttachment(_topicId, attachment.LocalId));
+        }
+    }
+
     private async Task HandleSubmit()
     {
-        if (!ChatInputLogic.CanSend(_disabled, _inputText, _isStreaming))
+        if (!CanSend)
         {
             return;
         }
@@ -79,10 +148,57 @@
             Dispatcher.Dispatch(new CancelStreaming(_topicId));
         }
     }
+
+    private void HandleDragEnter() => _draggingOver = true;
+
+    private void HandleDragLeave() => _draggingOver = false;
 }
 
-<div class="input-container">
+<div class="input-container @(_draggingOver ? "dragging" : "")"
+     @ref="_composerRef"
+     @ondragenter="HandleDragEnter"
+     @ondragleave="HandleDragLeave"
+     @ondrop="HandleDragLeave">
+
+    @if (_capabilityRefusal is not null)
+    {
+        <div class="composer-refusal" role="alert">@_capabilityRefusal</div>
+    }
+
+    @if (_attachments.Count > 0)
+    {
+        <div class="composer-attachments">
+            @foreach (var attachment in _attachments)
+            {
+                <div class="composer-attachment @attachment.Status.ToString().ToLowerInvariant()">
+                    <span class="attachment-name">@attachment.FileName</span>
+                    @if (attachment.Status == AttachmentStatus.Uploading)
+                    {
+                        <progress class="attachment-progress" max="100" value="@attachment.PercentComplete"></progress>
+                    }
+                    @if (attachment.Status == AttachmentStatus.Failed)
+                    {
+                        <span class="attachment-error">@attachment.Error</span>
+                    }
+                    <button class="attachment-remove"
+                            title="@(attachment.Status == AttachmentStatus.Uploading ? "Cancel" : "Remove")"
+                            @onclick="() => RemoveAttachment(attachment)">×</button>
+                </div>
+            }
+        </div>
+    }
+
     <div class="input-wrapper">
+        <label class="btn btn-secondary attach-button" title="Attach a file">
+            <InputFile @ref="_fileInput"
+                       class="attach-input"
+                       OnChange="HandleFilesPicked"
+                       multiple
+                       accept="@AcceptedKinds"
+                       disabled="@_disabled" />
+            +
+        </label>
+
         <textarea @ref="_textareaRef"
                   class="chat-input"
                   placeholder="Type your message..."
@@ -101,7 +217,7 @@
     }
     <button class="btn btn-primary"
             @onclick="HandleSubmit"
-            disabled="@(!ChatInputLogic.CanSend(_disabled, _inputText, _isStreaming))">
+            disabled="@(!CanSend)">
         Send
     </button>
 </div>

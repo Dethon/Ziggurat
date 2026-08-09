@@ -76,8 +76,11 @@ public sealed class RedisStateService(IConnectionMultiplexer redis)
                 m.Role.Value,
                 string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)),
                 m.GetSenderId(),
-                m.GetTimestamp()))
-            .Where(m => !string.IsNullOrWhiteSpace(m.Content))
+                m.GetTimestamp(),
+                m.GetAttachments()))
+            // A message that carried only files has no text and must still survive: dropping it
+            // would make an image-only message vanish on reload.
+            .Where(m => !string.IsNullOrWhiteSpace(m.Content) || m.Attachments is { Count: > 0 })
             .ToList();
     }
 

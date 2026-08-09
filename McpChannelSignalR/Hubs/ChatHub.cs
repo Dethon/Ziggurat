@@ -211,6 +211,23 @@ public sealed class ChatHub(
         await streamService.WriteMessageAsync(topicId, userMessage);
 
         var conversationId = $"{session.ChatId}:{session.ThreadId}";
+
+        // Refused before anything is emitted, for the race where the model changes between
+        // picking a file and sending it: no turn is created and no agent is woken. The answer
+        // goes out on the same stream-error path an undeliverable message uses, so every browser
+        // on the topic sees the same end.
+        if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
+        {
+            await AnswerRefusedAsync(topicId, conversationId, refused);
+            await foreach (var refusalChunk in
+                subscription.ReadAllAsync(linkedToken).IgnoreCancellation(cancellationToken))
+            {
+                yield return refusalChunk;
+            }
+
+            yield break;
+        }
+
         var delivered = await notificationEmitter.EmitAsync(
             new ChannelMessageNotification
             {
@@ -275,6 +292,12 @@ public sealed class ChatHub(
         await streamService.WriteMessageAsync(topicId, userMessage);
 
         var conversationId = $"{session.ChatId}:{session.ThreadId}";
+        if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
+        {
+            await AnswerRefusedAsync(topicId, conversationId, refused);
+            return true;
+        }
+
         var delivered = await notificationEmitter.EmitAsync(new ChannelMessageNotification
         {
             ConversationId = conversationId,
@@ -296,6 +319,39 @@ public sealed class ChatHub(
         // channel took this prompt; what it could not do is find anyone listening, and the stream
         // above has just been told so.
         return true;
+    }
+
+    // The composer already blocks this case; this is the guard for the race where the model
+    // changed between picking a file and sending it. The agent does not check a third time.
+    private string? CapabilityRefusal(
+        string? agentId,
+        AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments)
+    {
+        if (attachments is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        return AttachmentCapability.Refusal(
+            agentId is null ? null : catalog.Get(agentId),
+            configPatch?.Model,
+            attachments.Select(a => a.MediaType));
+    }
+
+    private async Task AnswerRefusedAsync(string topicId, string conversationId, string refusal)
+    {
+        logger.LogInformation(
+            "Refusing a message with attachments for conversation {ConversationId} (topic {TopicId}): {Reason}",
+            conversationId, topicId, refusal);
+
+        await streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = conversationId,
+            Content = refusal,
+            ContentType = ReplyContentType.Error,
+            IsComplete = true
+        });
     }
 
     // The not-live answer, in the shape a turn already ends in: an error reply on the topic's

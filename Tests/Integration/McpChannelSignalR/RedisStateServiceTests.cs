@@ -1,5 +1,7 @@
 using Domain.Agents;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
+using Domain.Extensions;
 using Infrastructure.StateManagers;
 using McpChannelSignalR.Services;
 using Microsoft.Extensions.AI;
@@ -45,5 +47,62 @@ public class RedisStateServiceTests(RedisFixture redis) : IClassFixture<RedisFix
         var history = await _sut.GetHistoryAsync(agentId, chatId, threadId);
 
         history.Select(h => h.Content).ShouldBe(["hello there", "hi, how can I help?"]);
+    }
+
+    // The read keeps only text and used to discard a message whose text was empty, which would
+    // make an image-only message vanish on reload. The transcript is a record of what was sent.
+    [Fact]
+    public async Task GetHistoryAsync_AMessageWithAttachmentsAndNoText_SurvivesTheRead()
+    {
+        const string agentId = "agent-attach";
+        const long chatId = 901;
+        const long threadId = 0;
+        var key = new AgentKey($"{chatId}:{threadId}", agentId).ToString();
+
+        var photo = new AttachmentReference
+        {
+            Id = "901-0/abc",
+            FileName = "photo.png",
+            MediaType = "image/png",
+            SizeBytes = 4
+        };
+        var message = new ChatMessage(ChatRole.User, "");
+        message.SetAttachments([photo]);
+
+        var store = new RedisThreadStateStore(redis.Connection, TimeSpan.FromMinutes(5));
+        await store.AppendMessagesAsync(key, [message]);
+
+        var history = await _sut.GetHistoryAsync(agentId, chatId, threadId);
+
+        var read = history.ShouldHaveSingleItem();
+        read.Content.ShouldBeNullOrEmpty();
+        read.Attachments.ShouldNotBeNull();
+        read.Attachments!.Single().FileName.ShouldBe("photo.png");
+    }
+
+    [Fact]
+    public async Task GetHistoryAsync_ProjectsAttachmentsAlongsideTheText()
+    {
+        const string agentId = "agent-attach-text";
+        const long chatId = 902;
+        const long threadId = 0;
+        var key = new AgentKey($"{chatId}:{threadId}", agentId).ToString();
+
+        var message = new ChatMessage(ChatRole.User, "what is in this?");
+        message.SetAttachments([
+            new AttachmentReference
+            {
+                Id = "902-0/def", FileName = "scan.pdf", MediaType = "application/pdf", SizeBytes = 9
+            }
+        ]);
+
+        var store = new RedisThreadStateStore(redis.Connection, TimeSpan.FromMinutes(5));
+        await store.AppendMessagesAsync(key, [message]);
+
+        var history = await _sut.GetHistoryAsync(agentId, chatId, threadId);
+
+        var read = history.ShouldHaveSingleItem();
+        read.Content.ShouldBe("what is in this?");
+        read.Attachments!.Single().MediaType.ShouldBe("application/pdf");
     }
 }

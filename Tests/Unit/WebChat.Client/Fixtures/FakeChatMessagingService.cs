@@ -17,6 +17,8 @@ public sealed class FakeChatMessagingService : IChatMessagingService
 
     public AgentConfigPatch? LastConfigPatch { get; private set; }
 
+    public IReadOnlyList<AttachmentReference>? LastAttachments { get; private set; }
+
     public void SetExceptionToThrow(Exception? exception)
     {
         _exceptionToThrow = exception;
@@ -91,9 +93,11 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     public void LetTheSendAnswer() => _sendAnswer?.TrySetResult();
 
     public async Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendMessageAsync(string topicId, string message,
-        string? correlationId = null, AgentConfigPatch? configPatch = null)
+        string? correlationId = null, AgentConfigPatch? configPatch = null,
+        IReadOnlyList<AttachmentReference>? attachments = null)
     {
         LastConfigPatch = configPatch;
+        LastAttachments = attachments;
         if (_sendAnswer is not null)
         {
             await _sendAnswer.Task;
@@ -180,9 +184,11 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     }
 
     public Task<HubResult<bool>> EnqueueMessageAsync(
-        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
+        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null,
+        IReadOnlyList<AttachmentReference>? attachments = null)
     {
         LastConfigPatch = configPatch;
+        LastAttachments = attachments;
         return Task.FromResult(NotLive
             ? HubResult<bool>.NotLive
             : HubResult<bool>.Answered(_enqueueResult));

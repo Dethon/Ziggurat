@@ -7,6 +7,7 @@ using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.Composer;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
@@ -47,6 +48,7 @@ public sealed class StreamingServiceTests : IDisposable
             _topicsStore,
             _messagesStore,
             _agentSettingsStore,
+            new ComposerStore(_dispatcher),
             _topicStreams);
     }
 

@@ -1,4 +1,5 @@
 @using Markdig
+@using WebChat.Client.Components.Chat
 @inject UserIdentityStore UserIdentityStore
 @inject IJSRuntime Js
 
@@ -166,6 +167,8 @@
                 }
             </div>
         }
+
+        <MessageAttachments Attachments="@Message.Attachments" />
 
         <div class="message-content">
             @((MarkupString)RenderMarkdown(Message.Content))
