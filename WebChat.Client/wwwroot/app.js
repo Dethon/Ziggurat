@@ -278,7 +278,9 @@ Object.assign(window.hearthSheet, {
         // The grabber handle is the primary drag affordance — let drags start on it.
         const onHandle = !!e.target.closest('.hearth-handle');
         // Otherwise don't start a drag from a control where the press means something else.
-        if (!onHandle && e.target.closest('button, dialog, input, textarea, select')) return;
+        // The dropdown backdrop now spans the viewport, so a press on it must stay a dismiss tap:
+        // a drag would swallow the trailing click (see _onUp) and leave the dropdown open.
+        if (!onHandle && e.target.closest('button, dialog, input, textarea, select, .dropdown-backdrop')) return;
         // The conversation list owns its own pull-to-collapse via touch handlers (so it keeps
         // native scroll momentum); the pointer drag covers only the sheet chrome.
         if (h._rows && h._rows.contains(e.target)) return;

@@ -70,6 +70,29 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
     }
 
     [SkippableFact]
+    public async Task MobileViewport_TapOutsideTheAgentDropdownClosesIt()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync();
+        await page.SetViewportSizeAsync(390, 844);
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
+        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+
+        await page.Locator(".hearth-peek .agent-chip").ClickAsync();
+        var menu = page.Locator(".hearth-peek .agent-combo-menu");
+        await Assertions.Expect(menu).ToBeVisibleAsync();
+
+        // Tap the chat area well above the sheet. The dismiss backdrop has to reach up there,
+        // so click by coordinate instead of by locator — the backdrop covers what we aim at.
+        await page.Mouse.ClickAsync(195, 300);
+
+        await Assertions.Expect(menu).Not.ToBeVisibleAsync();
+    }
+
+    [SkippableFact]
     public async Task DesktopViewport_KeepsConnectionStatusInHeader()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
