@@ -78,12 +78,10 @@ public class OpenRouterChatClientAttachmentTests
     [Fact]
     public async Task AClientWithNoAttachmentSource_SendsTheTurnUnchanged()
     {
-        var captured = await SendAsync(UserTurnWith(_photo), NoSource);
+        var captured = await SendAsync(UserTurnWith(_photo), source: null);
 
         captured.Last(m => m.Role == ChatRole.User).Contents.OfType<DataContent>().ShouldBeEmpty();
     }
-
-    private static readonly IAttachmentSource? NoSource = null;
 
     private static ChatMessage UserTurnWith(params AttachmentReference[] attachments)
     {
@@ -93,8 +91,10 @@ public class OpenRouterChatClientAttachmentTests
         return message;
     }
 
-    private async Task<IReadOnlyList<ChatMessage>> SendAsync(
-        ChatMessage turn, IAttachmentSource? source = null, bool useStub = true)
+    private Task<IReadOnlyList<ChatMessage>> SendAsync(ChatMessage turn)
+        => SendAsync(turn, new StubAttachmentSource(_bytes));
+
+    private async Task<IReadOnlyList<ChatMessage>> SendAsync(ChatMessage turn, IAttachmentSource? source)
     {
         IReadOnlyList<ChatMessage> captured = [];
         _innerClient
@@ -109,7 +109,7 @@ public class OpenRouterChatClientAttachmentTests
         var sut = new OpenRouterChatClient(
             _innerClient.Object,
             "test-model",
-            attachmentSource: source ?? (useStub ? new StubAttachmentSource(_bytes) : null));
+            attachmentSource: source);
 
         await foreach (var _ in sut.GetStreamingResponseAsync([turn]))
         {
@@ -117,9 +117,6 @@ public class OpenRouterChatClientAttachmentTests
 
         return captured;
     }
-
-    private async Task<IReadOnlyList<ChatMessage>> SendAsync(ChatMessage turn, IAttachmentSource? source)
-        => await SendAsync(turn, source, useStub: false);
 
     private sealed class StubAttachmentSource(byte[] bytes) : IAttachmentSource
     {

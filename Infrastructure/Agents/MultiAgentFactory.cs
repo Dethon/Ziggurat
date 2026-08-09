@@ -122,7 +122,8 @@ public sealed class MultiAgentFactory(
             sessionId,
             providerRouting: providerRouting,
             transportHandler: transportHandler,
-            attachmentSource: serviceProvider.GetService<IAttachmentSource>());
+            attachmentSource: serviceProvider.GetService<IAttachmentSource>(),
+            hydrationDepthMessages: openRouterConfig.HydrationDepthMessages);
     }
 }
 
@@ -133,6 +134,7 @@ public record OpenRouterConfig
     public int? MaxContextTokens { get; init; }
     public ProviderRouting? ProviderRouting { get; init; }
     public IReadOnlyList<string>? PatchableModelIds { get; init; }
+    public int HydrationDepthMessages { get; init; } = AttachmentHydration.DefaultDepthMessages;
 }
 
 public sealed class AgentRegistryOptions

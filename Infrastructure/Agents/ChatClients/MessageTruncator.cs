@@ -10,6 +10,12 @@ internal static class MessageTruncator
     private const int PerToolOverhead = 4;
     private const double SafetyRatio = 0.95;
 
+    // What an image costs whatever its file size, and how much of a document one token stands for.
+    // Both are the middle of the range the providers publish rather than a measurement of any one
+    // file; the point is that a 1 MB PDF stops counting as four tokens.
+    private const int ImageTokens = 1_500;
+    private const int DocumentBytesPerToken = 20;
+
     public static int EstimateTokens(string text)
         => string.IsNullOrEmpty(text) ? 0 : (text.Length + 3) / 4;
 
@@ -158,6 +164,18 @@ internal static class MessageTruncator
         FunctionCallContent fc => EstimateTokens(JsonSerializer.Serialize(
             new { name = fc.Name, arguments = fc.Arguments })),
         FunctionResultContent fr => EstimateTokens(JsonSerializer.Serialize(fr.Result)),
+        DataContent d => EstimateAttachmentTokens(d),
         _ => OtherContentOverhead
     };
+
+    // Without a case here an attachment counts as a fixed handful of tokens and truncation goes
+    // blind on a large document. The two kinds do not scale the same way: a provider resizes an
+    // image into its own tile scheme before billing, so the file's size says almost nothing, while
+    // a document is billed on what it parses to, which does track its size.
+    private static int EstimateAttachmentTokens(DataContent content)
+    {
+        return content.MediaType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true
+            ? ImageTokens
+            : (int)Math.Min(int.MaxValue, content.Data.Length / (long)DocumentBytesPerToken);
+    }
 }

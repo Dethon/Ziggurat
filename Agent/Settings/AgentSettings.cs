@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using JetBrains.Annotations;
@@ -12,6 +13,14 @@ public record AgentSettings
     public ChannelEndpoint[] ChannelEndpoints { get; init; } = [];
     public SubAgentDefinition[] SubAgents { get; init; } = [];
     public PatchableModel[] PatchableModels { get; init; } = [];
+    public AttachmentConfiguration Attachments { get; init; } = new();
+}
+
+public record AttachmentConfiguration
+{
+    // How far back an attachment stays visible to the model, counted in messages. Trading token
+    // cost against how long follow-up questions about a photo keep working.
+    public int HydrationDepthMessages { get; [UsedImplicitly] init; } = AttachmentHydration.DefaultDepthMessages;
 }
 
 public record OpenRouterConfiguration

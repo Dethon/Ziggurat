@@ -29,6 +29,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
     private readonly IAttachmentSource? _attachmentSource;
+    private readonly int _hydrationDepthMessages;
 
     public OpenRouterChatClient(
         string endpoint,
@@ -40,13 +41,15 @@ public sealed class OpenRouterChatClient : IChatClient
         TimeProvider? timeProvider = null,
         ProviderRouting? providerRouting = null,
         HttpMessageHandler? transportHandler = null,
-        IAttachmentSource? attachmentSource = null)
+        IAttachmentSource? attachmentSource = null,
+        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
+        _hydrationDepthMessages = hydrationDepthMessages;
         _httpClient = CreateHttpClient(
             _reasoningQueue, _costQueue, _cachedTokenQueue, sessionId, providerRouting, transportHandler);
         _transport = new HttpClientPipelineTransport(_httpClient);
@@ -59,13 +62,15 @@ public sealed class OpenRouterChatClient : IChatClient
         int? maxContextTokens = null,
         IMetricsPublisher? metricsPublisher = null,
         TimeProvider? timeProvider = null,
-        IAttachmentSource? attachmentSource = null)
+        IAttachmentSource? attachmentSource = null,
+        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
+        _hydrationDepthMessages = hydrationDepthMessages;
         _client = innerClient;
     }
 
@@ -92,7 +97,8 @@ public sealed class OpenRouterChatClient : IChatClient
         var decorated = messages
             .Select(x => TurnDecoration.Apply(x, _timeProvider.LocalTimeZone))
             .ToList();
-        var transformedMessages = await AttachmentHydration.ApplyAsync(decorated, _attachmentSource, ct);
+        var transformedMessages = await AttachmentHydration.ApplyAsync(
+            decorated, _attachmentSource, _hydrationDepthMessages, ct);
 
         // The model a per-message config patch resolved to rides this request's own options
         // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on

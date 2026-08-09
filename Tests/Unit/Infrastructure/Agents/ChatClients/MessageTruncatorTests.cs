@@ -58,6 +58,34 @@ public class MessageTruncatorTests
         MessageTruncator.EstimateMessageTokens(msg).ShouldBe(2 + 4);
     }
 
+    // Without an attachment case a 1 MB document counts as a fixed handful of tokens and
+    // truncation goes blind on the very message most likely to overflow the window.
+    [Fact]
+    public void EstimateMessageTokens_ADocumentAttachment_CountsWithItsSize()
+    {
+        var small = new ChatMessage(ChatRole.User,
+            [new DataContent(new byte[2_000], "application/pdf")]);
+        var large = new ChatMessage(ChatRole.User,
+            [new DataContent(new byte[200_000], "application/pdf")]);
+
+        MessageTruncator.EstimateMessageTokens(small)
+            .ShouldBeLessThan(MessageTruncator.EstimateMessageTokens(large));
+        MessageTruncator.EstimateMessageTokens(large).ShouldBeGreaterThan(1_000);
+    }
+
+    // A provider resizes an image into its own tile scheme before billing, so the file's size
+    // says almost nothing about what it costs.
+    [Fact]
+    public void EstimateMessageTokens_AnImageAttachment_CountsTheSameWhateverItsSize()
+    {
+        var small = new ChatMessage(ChatRole.User, [new DataContent(new byte[2_000], "image/png")]);
+        var large = new ChatMessage(ChatRole.User, [new DataContent(new byte[2_000_000], "image/png")]);
+
+        MessageTruncator.EstimateMessageTokens(small)
+            .ShouldBe(MessageTruncator.EstimateMessageTokens(large));
+        MessageTruncator.EstimateMessageTokens(small).ShouldBeGreaterThan(100);
+    }
+
     [Fact]
     public void Truncate_NullMaxTokens_ReturnsOriginalUnchanged()
     {

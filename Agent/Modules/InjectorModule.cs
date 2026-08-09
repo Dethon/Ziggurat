@@ -28,7 +28,8 @@ public static class InjectorModule
                 ApiKey = settings.OpenRouter.ApiKey,
                 MaxContextTokens = settings.OpenRouter.MaxContextTokens,
                 ProviderRouting = settings.OpenRouter.ProviderRouting,
-                PatchableModelIds = settings.PatchableModels.Select(m => m.Id).ToList()
+                PatchableModelIds = settings.PatchableModels.Select(m => m.Id).ToList(),
+                HydrationDepthMessages = settings.Attachments.HydrationDepthMessages
             };
 
             services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);
