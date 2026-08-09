@@ -52,6 +52,6 @@ If your output contradicts an existing ADR, surface it explicitly rather than si
 
 ## Status in this repo
 
-Single-context. `docs/adr/` exists and holds ADR-0001. There is no `CONTEXT.md` yet — that is fine and expected; `/domain-modeling` creates it lazily when a term actually needs pinning down. Don't create it upfront.
+Single-context. `CONTEXT.md` at the root is the glossary — what each term means here and which near-synonyms to avoid for it; it holds no implementation detail. `docs/adr/` holds the numbered decision records, currently through ADR-0021.
 
 Note that `CLAUDE.md` and `.claude/rules/*.md` already carry a good deal of subsystem vocabulary (channel architecture, virtual filesystem, voice, scheduling, observability). Read those too; a future `CONTEXT.md` should complement them rather than duplicate them.
