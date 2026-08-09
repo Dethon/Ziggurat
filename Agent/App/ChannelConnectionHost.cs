@@ -10,7 +10,7 @@ namespace Agent.App;
 public class ChannelConnectionHost(
     ChannelEndpoint[] endpoints,
     IReadOnlyList<IMcpChannelConnection> connections,
-    IReadOnlyList<AgentCatalogEntry> agentCatalog,
+    Func<IReadOnlyList<AgentCatalogEntry>> agentCatalog,
     ILogger<ChannelConnectionHost> logger) : BackgroundService
 {
     private readonly Dictionary<string, string> _endpointMap = BuildEndpointMap(endpoints);

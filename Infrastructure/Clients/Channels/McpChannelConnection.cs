@@ -85,30 +85,49 @@ public sealed class McpChannelConnection(
     // Connect, register the catalog, watch health, reconnect, re-register — for as long as the
     // token lives. The order is here rather than in a caller because the order is about this.
     public async Task RunAsync(
-        string endpoint, IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
+        string endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct)
     {
         var interval = healthCheckInterval ?? _defaultHealthCheckInterval;
         try
         {
             await WithRetryAsync(endpoint, reconnect: false, ct);
-            var registered = await TryRegisterAgentsAsync(agents, ct);
+            var entries = catalog();
+            var registered = await TryRegisterAgentsAsync(entries, ct);
+            var lastRegistered = registered ? Fingerprint(entries) : null;
 
             while (!ct.IsCancellationRequested)
             {
                 await Task.Delay(interval, ct);
+                entries = catalog();
 
                 if (!await IsHealthyAsync(ct))
                 {
                     logger?.LogWarning("Channel {ChannelId} health check failed, reconnecting", ChannelId);
                     await WithRetryAsync(endpoint, reconnect: true, ct);
-                    registered = await TryRegisterAgentsAsync(agents, ct);
+                    registered = await TryRegisterAgentsAsync(entries, ct);
                 }
                 else if (!registered)
                 {
                     // The link is healthy but a previous registration failed; retry until it sticks
                     // so the channel is not left serving an empty catalog indefinitely.
-                    registered = await TryRegisterAgentsAsync(agents, ct);
+                    registered = await TryRegisterAgentsAsync(entries, ct);
                 }
+                else if (Fingerprint(entries) != lastRegistered)
+                {
+                    // The catalog is not constant: attachment capability is discovered from the
+                    // model provider and refreshed hourly. A model that gains image support has to
+                    // reach the channels without a restart, and re-registering is how the channel
+                    // already learns a catalog.
+                    logger?.LogInformation(
+                        "The agent catalog changed; re-registering it with channel {ChannelId}", ChannelId);
+                    registered = await TryRegisterAgentsAsync(entries, ct);
+                }
+                else
+                {
+                    continue;
+                }
+
+                lastRegistered = registered ? Fingerprint(entries) : lastRegistered;
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -166,6 +185,12 @@ public sealed class McpChannelConnection(
         // The only way out of the loop other than a successful dial is the token, so say that.
         ct.ThrowIfCancellationRequested();
     }
+
+    // Value equality over a catalog whose members are lists, which records compare by reference.
+    // The wire shape is the comparison that matters anyway: two catalogs that serialize the same
+    // are the same as far as the channel is concerned.
+    private static string Fingerprint(IReadOnlyList<AgentCatalogEntry> agents) =>
+        JsonSerializer.Serialize(agents, ChannelProtocol.SerializerOptions);
 
     private async Task<bool> TryRegisterAgentsAsync(
         IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)

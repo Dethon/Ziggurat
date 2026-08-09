@@ -39,7 +39,7 @@ public class McpChannelConnectionRunTests
             "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var run = connection.RunAsync(server.Endpoint, _catalog, cts.Token);
+        var run = connection.RunAsync(server.Endpoint, () => _catalog, cts.Token);
 
         await _registered.WaitAsync(cts.Token);
         Volatile.Read(ref _registerCalls).ShouldBe(1);
@@ -56,6 +56,44 @@ public class McpChannelConnectionRunTests
     }
 
 
+    // Attachment capability is discovered from the model provider and refreshed hourly, so the
+    // catalog is not constant. A model that gains image support has to reach the channels while
+    // the agent runs, and the registration the channel already has is how it learns.
+    [Fact]
+    public async Task RunAsync_TheCatalogChangesWhileConnected_RegistersItAgainWithoutAReconnect()
+    {
+        await ResetAsync();
+
+        var catalog = _catalog;
+        await using var server = await StartServerAsync();
+        await using var connection = new McpChannelConnection(
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var run = connection.RunAsync(server.Endpoint, () => catalog, cts.Token);
+
+        await _registered.WaitAsync(cts.Token);
+        Volatile.Read(ref _registerCalls).ShouldBe(1);
+
+        catalog =
+        [
+            new AgentCatalogEntry(
+                "jonas", "Jonas", "general",
+                DefaultModelAttachmentKinds: [AttachmentKind.Image])
+        ];
+
+        await _registered.WaitAsync(cts.Token);
+        Volatile.Read(ref _registerCalls).ShouldBe(2);
+
+        // The catalog is stable again, so nothing further is registered: a change re-registers,
+        // a health tick on its own does not.
+        await Task.Delay(300, cts.Token);
+        Volatile.Read(ref _registerCalls).ShouldBe(2);
+
+        await cts.CancelAsync();
+        await run;
+    }
+
     [Fact]
     public async Task RunAsync_TheServerIsNotThereYet_KeepsRetryingUntilItIs()
     {
@@ -68,7 +106,7 @@ public class McpChannelConnectionRunTests
         await using var connection = new McpChannelConnection(
             "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        var run = connection.RunAsync(endpoint, _catalog, cts.Token);
+        var run = connection.RunAsync(endpoint, () => _catalog, cts.Token);
 
         await using var server = await StartServerAsync(port);
 
@@ -96,7 +134,7 @@ public class McpChannelConnectionRunTests
             "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var run = connection.RunAsync($"http://localhost:{port}/mcp", _catalog, cts.Token);
+        var run = connection.RunAsync($"http://localhost:{port}/mcp", () => _catalog, cts.Token);
 
         var registered = _registered.WaitAsync(cts.Token);
         var first = await Task.WhenAny(run, registered);
@@ -127,7 +165,7 @@ public class McpChannelConnectionRunTests
             "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var run = connection.RunAsync($"http://localhost:{port}/mcp", _catalog, cts.Token);
+        var run = connection.RunAsync($"http://localhost:{port}/mcp", () => _catalog, cts.Token);
 
         await _registered.WaitAsync(cts.Token);
         Volatile.Read(ref _registerRejected).ShouldBe(1);
@@ -153,7 +191,7 @@ public class McpChannelConnectionRunTests
             "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        var run = connection.RunAsync(server.Endpoint, _catalog, cts.Token);
+        var run = connection.RunAsync(server.Endpoint, () => _catalog, cts.Token);
 
         await _registered.WaitAsync(cts.Token);
         await _registered.WaitAsync(cts.Token);
@@ -202,7 +240,7 @@ public class McpChannelConnectionRunTests
             healthCheckInterval: TimeSpan.FromMilliseconds(50));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var run = connection.RunAsync(server.Endpoint, _catalog, cts.Token);
+        var run = connection.RunAsync(server.Endpoint, () => _catalog, cts.Token);
 
         await _registered.WaitAsync(cts.Token);
         (await probeArrived.WaitAsync(TimeSpan.FromSeconds(30))).ShouldBeTrue();
