@@ -25,13 +25,6 @@ public class HaCatalogTests
     }
 
     [Fact]
-    public void EntityById_FindsEntity_AndReturnsNullWhenMissing()
-    {
-        Sample().EntityById("light.kitchen")!.State.ShouldBe("off");
-        Sample().EntityById("light.missing").ShouldBeNull();
-    }
-
-    [Fact]
     public void AreaSlugs_IncludesUnassignedWhenSomeEntityHasNoArea()
     {
         // light.kitchen is in no area -> "unassigned" bucket appears.

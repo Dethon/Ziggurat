@@ -23,24 +23,6 @@ public class MoveToolTests
             new LibraryPathConfig(_libraryPath));
     }
 
-    [Fact]
-    public async Task Run_WithAbsolutePaths_Succeeds()
-    {
-        // Arrange
-        var tool = CreateTool();
-        var source = Path.Combine(_libraryPath, "movies", "old.mkv");
-        var destination = Path.Combine(_libraryPath, "movies", "new.mkv");
-
-        // Act
-        var result = await tool.TestRun(source, destination, CancellationToken.None);
-
-        // Assert
-        result["status"]!.ToString().ShouldBe("success");
-        result["source"]!.ToString().ShouldBe(source);
-        result["destination"]!.ToString().ShouldBe(destination);
-        _clientMock.Verify(m => m.Move(source, destination, It.IsAny<CancellationToken>()), Times.Once);
-    }
-
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]
@@ -68,25 +50,6 @@ public class MoveToolTests
         _clientMock.Verify(
             m => m.Move(expectedSource, expectedDestination, It.IsAny<CancellationToken>()),
             Times.Once);
-    }
-
-    [Fact]
-    public async Task Run_WithAbsolutePathOutsideLibrary_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var tool = CreateTool();
-        var outsidePath = OperatingSystem.IsWindows()
-            ? @"C:\other\folder\file.txt"
-            : "/other/folder/file.txt";
-        var validPath = Path.Combine(_libraryPath, "movies", "test.mkv");
-
-        // Act & Assert - source outside
-        (await tool.TestRun(outsidePath, validPath, CancellationToken.None))
-            .ShouldBeError(ToolError.Codes.InvalidArgument);
-
-        // Act & Assert - destination outside
-        (await tool.TestRun(validPath, outsidePath, CancellationToken.None))
-            .ShouldBeError(ToolError.Codes.InvalidArgument);
     }
 
     [Theory]

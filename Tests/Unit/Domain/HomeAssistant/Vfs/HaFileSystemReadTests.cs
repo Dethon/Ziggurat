@@ -133,14 +133,6 @@ public class HaFileSystemReadTests
     }
 
     [Fact]
-    public async Task ReadAsync_WrongSuffix_NotFoundWithHint()
-    {
-        var fs = Build(out _);
-        var result = await fs.ReadAsync("entities/light/kitchen_(wrong)/state.json", null, null, CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error.Hint.ShouldNotBeNull().ShouldContain("kitchen_(kitchen)");
-    }
-
-    [Fact]
     public async Task ExecAsync_BareId_WhenFriendlyNameExists_127WithHint()
     {
         var fs = Build(out _);

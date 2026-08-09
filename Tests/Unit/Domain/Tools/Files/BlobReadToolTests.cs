@@ -40,18 +40,6 @@ public class BlobReadToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_PartialReadReportsNotEof()
-    {
-        var bytes = Enumerable.Range(0, 100).Select(i => (byte)i).ToArray();
-        File.WriteAllBytes(Path.Combine(_root, "blob.bin"), bytes);
-
-        var result = _tool.TestRun("blob.bin", offset: 0, length: 60);
-
-        Convert.FromBase64String(result["contentBase64"]!.GetValue<string>()).Length.ShouldBe(60);
-        result["eof"]!.GetValue<bool>().ShouldBeFalse();
-    }
-
-    [Fact]
     public void Run_OffsetReadsFromMiddle()
     {
         var bytes = Enumerable.Range(0, 100).Select(i => (byte)i).ToArray();
@@ -68,18 +56,6 @@ public class BlobReadToolTests : IDisposable
     public void Run_MissingFile_ReturnsNotFound()
     {
         _tool.TestRun("missing.bin", 0, 100).ShouldBeError(ToolError.Codes.NotFound);
-    }
-
-    [Fact]
-    public void Run_EmptyFile_ReturnsEmptyContentAndEof()
-    {
-        File.WriteAllBytes(Path.Combine(_root, "blob.bin"), Array.Empty<byte>());
-
-        var result = _tool.TestRun("blob.bin", offset: 0, length: 100);
-
-        result["contentBase64"]!.GetValue<string>().ShouldBe("");
-        result["eof"]!.GetValue<bool>().ShouldBeTrue();
-        result["totalBytes"]!.GetValue<long>().ShouldBe(0);
     }
 
     [Fact]

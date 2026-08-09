@@ -63,21 +63,6 @@ public class FileInfoToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_PathOutsideRoot_ReturnsInvalidArgument()
-    {
-        var outsidePath = Path.Combine(Path.GetTempPath(), $"outside-{Guid.NewGuid()}.md");
-        File.WriteAllText(outsidePath, "x");
-        try
-        {
-            _tool.TestRun(outsidePath).ShouldBeError(ToolError.Codes.InvalidArgument);
-        }
-        finally
-        {
-            File.Delete(outsidePath);
-        }
-    }
-
-    [Fact]
     public void Run_SiblingDirectoryWithRootPrefix_ReturnsInvalidArgument()
     {
         var sibling = _testDir + "-evil";

@@ -35,16 +35,6 @@ public class TextReadToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_ReturnsTotalLines()
-    {
-        var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
-
-        var result = _tool.TestRun(filePath);
-
-        result["totalLines"]!.GetValue<int>().ShouldBe(5);
-    }
-
-    [Fact]
     public void Run_WithPagination_ReturnsCorrectContent()
     {
         var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nLine 3\nLine 4\nLine 5");

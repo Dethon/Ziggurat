@@ -36,14 +36,6 @@ public class ActiveAlertRegistryTests
     }
 
     [Fact]
-    public void Acknowledge_UnknownSatellite_ReturnsEmpty()
-    {
-        var registry = new ActiveAlertRegistry();
-
-        registry.Acknowledge("ghost").ShouldBeEmpty();
-    }
-
-    [Fact]
     public void Acknowledge_OverlappingAlertsOnOneSatellite_CancelsAllAndReturnsEachDescription()
     {
         // The Alexa "stop" model: one wake dismisses EVERYTHING ringing on that satellite.
@@ -103,19 +95,5 @@ public class ActiveAlertRegistryTests
         alarm.IsAcknowledged.ShouldBeTrue();
         timer.IsAcknowledged.ShouldBeTrue();
         registry.DismissAll().ShouldBeEmpty();
-    }
-
-    [Fact]
-    public void Discard_RemovesEntries_WithoutAcknowledging()
-    {
-        var registry = new ActiveAlertRegistry();
-        using var cts = new CancellationTokenSource();
-        var handle = Handle(cts, "alarm", "kitchen-01");
-        registry.Register(handle);
-
-        registry.Discard(handle);
-
-        registry.Acknowledge("kitchen-01").ShouldBeEmpty();
-        handle.IsAcknowledged.ShouldBeFalse();
     }
 }

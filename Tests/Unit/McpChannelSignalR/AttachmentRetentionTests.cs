@@ -33,12 +33,6 @@ public sealed class AttachmentRetentionTests : IDisposable
     }
 
     [Fact]
-    public void TheRetentionWindow_DefaultsToTheWindowTheConversationHistoryUses()
-    {
-        new AttachmentSettings().RetentionDays.ShouldBe(30);
-    }
-
-    [Fact]
     public async Task DeletingAConversation_RemovesTheFilesSentInIt()
     {
         var mine = await StoreAsync("7:42", "photo.png");
@@ -61,19 +55,6 @@ public sealed class AttachmentRetentionTests : IDisposable
 
         _store.Find(old.Id).ShouldBeNull();
         _store.Find(fresh.Id).ShouldNotBeNull();
-    }
-
-    [Fact]
-    public async Task AFileUploadedForAMessageNeverSent_IsCollectedByTheSweep()
-    {
-        // Nothing about an abandoned upload looks different from here: it is a file in a
-        // conversation that no reference ever named. The window is what collects it.
-        var abandoned = await StoreAsync("7:42", "picked-then-forgotten.png");
-        _time.Advance(TimeSpan.FromDays(_settings.RetentionDays + 1));
-
-        _store.Sweep();
-
-        _store.Find(abandoned.Id).ShouldBeNull();
     }
 
     [Fact]

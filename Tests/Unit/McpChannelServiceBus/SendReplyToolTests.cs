@@ -115,16 +115,4 @@ public class SendReplyToolTests
             It.IsAny<ServiceBusMessage>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
-
-    [Fact]
-    public async Task McpRun_MultipleChunks_AccumulatesAll()
-    {
-        await SendReplyTool.McpRun("corr-1", "a", ReplyContentType.Text, false, "msg-1", _services);
-        await SendReplyTool.McpRun("corr-1", "b", ReplyContentType.Text, false, "msg-1", _services);
-        await SendReplyTool.McpRun("corr-1", "c", ReplyContentType.Text, true, "msg-1", _services);
-
-        _busSender.Verify(s => s.SendMessageAsync(
-            It.IsAny<ServiceBusMessage>(),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
 }

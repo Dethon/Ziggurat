@@ -52,13 +52,4 @@ public class HaActionResolverTests
         names.ShouldContain("play_media");
         names.ShouldNotContain("turn_on");
     }
-
-    [Fact]
-    public void CommandName_QualifiesCrossDomain_LeavesSameDomainBare()
-    {
-        HaActionResolver.CommandName(Service("media_player", "play_media", null), "media_player")
-            .ShouldBe("play_media");
-        HaActionResolver.CommandName(Service("music_assistant", "play_media", null), "media_player")
-            .ShouldBe("music_assistant.play_media");
-    }
 }

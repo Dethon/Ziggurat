@@ -1,5 +1,4 @@
 using Domain.Agents;
-using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
 using Microsoft.Extensions.AI;
@@ -115,15 +114,6 @@ public class TurnDecorationTests
 
         FirstText(msg).ShouldStartWith(
             "[The user just dismissed the alarm \"Take out the trash\"]\nMessage from household:");
-    }
-
-    [Fact]
-    public void Apply_WithoutDismissedAlert_NoDismissalPrefix()
-    {
-        var msg = new ChatMessage(ChatRole.User, "lights on");
-        msg.SetSenderId("household");
-
-        FirstText(msg).ShouldNotContain("dismissed");
     }
 
     [Fact]

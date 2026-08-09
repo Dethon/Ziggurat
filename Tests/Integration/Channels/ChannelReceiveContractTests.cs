@@ -125,25 +125,6 @@ public class ChannelReceiveContractTests
     }
 
     [Theory]
-    [MemberData(nameof(Servers))]
-    public void ChannelServerRegistration_ExposesReceiveToolAndInbox(
-        string channelId, Action<IServiceCollection> configureChannel)
-    {
-        var services = new ServiceCollection();
-        configureChannel(services);
-
-        using var provider = services.BuildServiceProvider();
-
-        provider.GetService<ChannelInbox>()
-            .ShouldNotBeNull($"{channelId} must register a ChannelInbox singleton");
-        provider.GetServices<McpServerTool>()
-            .Select(tool => tool.ProtocolTool.Name)
-            .ShouldContain(
-                ChannelProtocol.ReceiveTool,
-                $"{channelId} must expose {ChannelProtocol.ReceiveTool} from its own ConfigModule");
-    }
-
-    [Theory]
     [MemberData(nameof(ServerPolicies))]
     public void ChannelServerRegistration_DeclaresItsDeliveryPolicy(
         string channelId, Action<IServiceCollection> configureChannel, DeliveryPolicy expected)

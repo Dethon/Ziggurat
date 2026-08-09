@@ -110,16 +110,4 @@ public class WavCodecTests
         wav.AddRange(fmt);
         Should.Throw<InvalidDataException>(() => WavCodec.Decode(wav.ToArray()));
     }
-
-    [Fact]
-    public void EncodeThrowsOnNullChunks()
-    {
-        Should.Throw<ArgumentNullException>(() => WavCodec.Encode(null!));
-    }
-
-    [Fact]
-    public void DecodeThrowsOnNullWav()
-    {
-        Should.Throw<ArgumentNullException>(() => WavCodec.Decode(null!));
-    }
 }

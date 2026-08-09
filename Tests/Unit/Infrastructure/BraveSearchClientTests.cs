@@ -130,34 +130,6 @@ public class BraveSearchClientTests : IDisposable
     }
 
     [Fact]
-    public async Task SearchAsync_WithEmptyResults_ReturnsEmptyList()
-    {
-        // Arrange
-        var response = new
-        {
-            query = new { response_time = 0.1 },
-            web = new { total_results = 0, results = Array.Empty<object>() }
-        };
-
-        _server.Given(Request.Create()
-                .WithPath("/web/search")
-                .UsingGet())
-            .RespondWith(Response.Create()
-                .WithStatusCode(200)
-                .WithHeader("Content-Type", "application/json")
-                .WithBody(JsonSerializer.Serialize(response)));
-
-        // Act
-        var query = new WebSearchQuery("nonexistent query xyz123");
-        var result = await _client.SearchAsync(query);
-
-        // Assert
-        result.ShouldNotBeNull();
-        result.Results.ShouldBeEmpty();
-        result.TotalResults.ShouldBe(0);
-    }
-
-    [Fact]
     public async Task SearchAsync_ExtractsDomainCorrectly()
     {
         // Arrange

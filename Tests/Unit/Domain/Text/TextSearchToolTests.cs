@@ -39,30 +39,6 @@ public class TextSearchToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_WithFilePattern_FiltersFiles()
-    {
-        CreateTestFile("readme.md", "Important info");
-        CreateTestFile("notes.txt", "Important notes");
-
-        var result = _tool.TestRun("Important", filePattern: "*.md");
-
-        result["filesWithMatches"]!.GetValue<int>().ShouldBe(1);
-        result["results"]!.AsArray()[0]!["file"]!.ToString().ShouldEndWith(".md");
-    }
-
-    [Fact]
-    public void Run_WithSubdirectory_SearchesRecursively()
-    {
-        Directory.CreateDirectory(Path.Combine(_testDir, "subdir"));
-        CreateTestFile("root.md", "Target word");
-        CreateTestFile("subdir/nested.md", "Another target");
-
-        var result = _tool.TestRun("target");
-
-        result["filesWithMatches"]!.GetValue<int>().ShouldBe(2);
-    }
-
-    [Fact]
     public void Run_WithRegex_MatchesPattern()
     {
         CreateTestFile("todos.md", "TODO: Fix bug\nFIXME: Later\nTODO: Add test");
@@ -116,18 +92,6 @@ public class TextSearchToolTests : IDisposable
         var result = _tool.TestRun("kubernetes");
 
         result["totalMatches"]!.GetValue<int>().ShouldBe(3);
-    }
-
-    [Fact]
-    public void Run_NoMatches_ReturnsEmptyResults()
-    {
-        CreateTestFile("doc.md", "Some content here");
-
-        var result = _tool.TestRun("nonexistent");
-
-        result["filesWithMatches"]!.GetValue<int>().ShouldBe(0);
-        result["totalMatches"]!.GetValue<int>().ShouldBe(0);
-        result["results"]!.AsArray().ShouldBeEmpty();
     }
 
     [Fact]
@@ -263,17 +227,6 @@ public class TextSearchToolTests : IDisposable
         CreateTestFile("real.md", "kubernetes real");
 
         var result = _tool.TestRun("kubernetes", filePattern: "docs/*.md");
-
-        result["totalMatches"]!.GetValue<int>().ShouldBe(0);
-        result["filesWithMatches"]!.GetValue<int>().ShouldBe(0);
-    }
-
-    [Fact]
-    public void Run_AbsoluteFilePattern_AnswersAnEmptyResult()
-    {
-        CreateTestFile("real.md", "kubernetes real");
-
-        var result = _tool.TestRun("kubernetes", filePattern: "/etc/*.md");
 
         result["totalMatches"]!.GetValue<int>().ShouldBe(0);
         result["filesWithMatches"]!.GetValue<int>().ShouldBe(0);

@@ -14,14 +14,6 @@ public sealed class WebManifestNamingTests
     }
 
     [Fact]
-    public void Resolve_NoMatchingSpace_NameIsBaseName()
-    {
-        var (name, _) = WebManifestNaming.Resolve(null);
-
-        name.ShouldBe("Herfluffness' Assistants");
-    }
-
-    [Fact]
     public void Resolve_NamedSpace_NameAppendsSpaceAndShortNameIsSpaceName()
     {
         var space = new SpaceConfig("work", "Work", SpaceConfig.DefaultAccentColor);

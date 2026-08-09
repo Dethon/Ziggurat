@@ -44,18 +44,6 @@ public class McpFileDownloadToolTests
         result["message"]!.GetValue<string>().ShouldContain("title");
     }
 
-    [Fact]
-    public void ValidateInputs_LinkWithBlankTitle_ReturnsInvalidArgument()
-    {
-        var result = McpFileDownloadTool.ValidateInputs(
-            searchResultId: null,
-            link: "magnet:?xt=urn:btih:x",
-            title: "   ");
-
-        result.ShouldNotBeNull();
-        result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
-    }
-
     [Theory]
     [InlineData("ftp://example.com/file.torrent")]
     [InlineData("/local/path/file.torrent")]

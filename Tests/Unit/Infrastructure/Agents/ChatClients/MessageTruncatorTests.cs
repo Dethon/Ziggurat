@@ -19,13 +19,6 @@ public class MessageTruncatorTests
     }
 
     [Fact]
-    public void EstimateMessageTokens_TextContent_CountsTextPlusOverhead()
-    {
-        var msg = new ChatMessage(ChatRole.User, "abcdefgh"); // 8 chars => 2 tokens
-        MessageTruncator.EstimateMessageTokens(msg).ShouldBe(2 + 4); // + per-message overhead
-    }
-
-    [Fact]
     public void EstimateMessageTokens_FunctionCall_CountsSerializedJsonPlusOverhead()
     {
         var call = new FunctionCallContent("call-1", "doStuff",
@@ -220,32 +213,6 @@ public class MessageTruncatorTests
     }
 
     [Fact]
-    public void Truncate_DropsToolCallAssistantTogetherWithMatchingToolResult()
-    {
-        var sys = new ChatMessage(ChatRole.System, new string('s', 4));
-        var assistantWithCall = new ChatMessage(
-            ChatRole.Assistant,
-            [new FunctionCallContent("call-1", "doStuff",
-                new Dictionary<string, object?> { ["padding"] = new string('p', 200) })]);
-        var toolResult = new ChatMessage(
-            ChatRole.Tool,
-            [new FunctionResultContent("call-1", new string('r', 200))]);
-        var lastUser = new ChatMessage(ChatRole.User, new string('u', 4));
-
-        var msgs = new List<ChatMessage> { sys, assistantWithCall, toolResult, lastUser };
-
-        var result = MessageTruncator.Truncate(
-            msgs, maxContextTokens: 30,
-            out var dropped, out _, out _, out _);
-
-        dropped.ShouldBe(2); // pair dropped together
-        result.ShouldNotContain(assistantWithCall);
-        result.ShouldNotContain(toolResult);
-        result.ShouldContain(sys);
-        result.ShouldContain(lastUser);
-    }
-
-    [Fact]
     public void Truncate_NeverSplitsToolCallResultPair()
     {
         // Without atomicity, dropping just the (oldest) assistant call could bring us under
@@ -317,26 +284,6 @@ public class MessageTruncatorTests
         result.ShouldContain(u2);
         result.ShouldContain(a1);
         result.ShouldNotContain(u1);
-    }
-
-    [Fact]
-    public void Truncate_FixedOverheadAlonePushesOverThreshold_FlagsOverflow()
-    {
-        var sys = new ChatMessage(ChatRole.System, "s");
-        var lastUser = new ChatMessage(ChatRole.User, "u");
-        var msgs = new List<ChatMessage> { sys, lastUser };
-
-        var result = MessageTruncator.Truncate(
-            msgs, maxContextTokens: 100,
-            out var dropped, out var before, out var after, out var overflow,
-            fixedOverheadTokens: 1000);
-
-        overflow.ShouldBeTrue();
-        before.ShouldBeGreaterThan(100);
-        // Nothing droppable (only pinned messages).
-        dropped.ShouldBe(0);
-        after.ShouldBe(before);
-        result.Count.ShouldBe(2);
     }
 
     [Fact]

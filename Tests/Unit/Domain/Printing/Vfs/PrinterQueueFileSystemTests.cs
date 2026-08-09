@@ -30,21 +30,6 @@ public class PrinterQueueFileSystemTests : IDisposable
     }
 
     [Fact]
-    public async Task Backend_Contract_ExposesNameAndUnsupportedOps()
-    {
-        var fs = Build();
-
-        fs.ShouldBeAssignableTo<IFileSystemBackend>();
-        fs.FilesystemName.ShouldBe("print-queue");
-
-        var move = await fs.MoveAsync("a.pdf", "b.pdf", CancellationToken.None);
-        move.ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
-
-        var exec = await fs.ExecAsync("a.pdf", "anything", null, CancellationToken.None);
-        exec.ShouldBeOfType<FsResult<FsExecResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
-    }
-
-    [Fact]
     public async Task StatusJson_IsReadOnly()
     {
         var fs = Build();

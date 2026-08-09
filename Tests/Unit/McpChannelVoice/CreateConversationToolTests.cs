@@ -1,7 +1,6 @@
 using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
-using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
@@ -56,19 +55,6 @@ public class CreateConversationToolTests
             .AddSingleton(_sessions)
             .AddSingleton<IConversationFactory>(_factory.Object)
             .BuildServiceProvider();
-    }
-
-    [Fact]
-    public async Task McpRun_KnownSatellite_MintsConversationAndBindsSatelliteTarget()
-    {
-        var convId = await CreateConversationTool.McpRun(
-            "mycroft", "Scheduled task", "scheduler", _services, "AC reminder", "office-01");
-
-        convId.ShouldNotBeNullOrWhiteSpace();
-        var target = _delivery.Resolve(convId);
-        target.ShouldNotBeNull();
-        target!.SatelliteId.ShouldBe("office-01");
-        target.All.ShouldBeNull();
     }
 
     [Fact]

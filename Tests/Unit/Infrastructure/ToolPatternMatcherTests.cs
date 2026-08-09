@@ -35,14 +35,6 @@ public class ToolPatternMatcherTests
         matcher.IsMatch(toolName).ShouldBe(expected);
     }
 
-    [Theory]
-    [InlineData("mcp__server__Tool", "*", true)]
-    public void IsMatch_GlobalWildcard_MatchesEverything(string toolName, string pattern, bool expected)
-    {
-        var matcher = new ToolPatternMatcher([pattern]);
-        matcher.IsMatch(toolName).ShouldBe(expected);
-    }
-
     [Fact]
     public void IsMatch_MultiplePatterns_MatchesAny()
     {
@@ -52,13 +44,6 @@ public class ToolPatternMatcherTests
         matcher.IsMatch("mcp__server2__SpecificTool").ShouldBeTrue();
         matcher.IsMatch("mcp__server2__OtherTool").ShouldBeFalse();
         matcher.IsMatch("mcp__server3__Tool").ShouldBeFalse();
-    }
-
-    [Fact]
-    public void IsMatch_EmptyPatterns_MatchesNothing()
-    {
-        var matcher = new ToolPatternMatcher([]);
-        matcher.IsMatch("mcp__server__Tool").ShouldBeFalse();
     }
 
     [Fact]

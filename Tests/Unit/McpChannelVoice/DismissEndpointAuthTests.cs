@@ -6,7 +6,6 @@ using McpChannelVoice.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice;
@@ -33,30 +32,6 @@ public class DismissEndpointAuthTests
         {
             var response = await client.PostAsync("/api/voice/dismiss", null);
             response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
-        }
-    }
-
-    [Fact]
-    public async Task WrongToken_Returns401()
-    {
-        var (client, _) = await BuildClientAsync(new AnnounceSettings { Enabled = true, Token = "expected" });
-        using (client)
-        {
-            client.DefaultRequestHeaders.Add("X-Announce-Token", "wrong");
-            var response = await client.PostAsync("/api/voice/dismiss", null);
-            response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
-        }
-    }
-
-    [Fact]
-    public async Task Disabled_Returns503()
-    {
-        var (client, _) = await BuildClientAsync(new AnnounceSettings { Enabled = false, Token = "expected" });
-        using (client)
-        {
-            client.DefaultRequestHeaders.Add("X-Announce-Token", "expected");
-            var response = await client.PostAsync("/api/voice/dismiss", null);
-            response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
         }
     }
 

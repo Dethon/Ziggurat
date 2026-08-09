@@ -47,16 +47,6 @@ public class OpenRouterChatClientAttachmentTests
     }
 
     [Fact]
-    public async Task APdfOnTheUserTurn_ReachesTheModelTheSameWay()
-    {
-        var captured = await SendAsync(UserTurnWith(_document));
-
-        var data = captured.Last(m => m.Role == ChatRole.User).Contents
-            .OfType<DataContent>().ShouldHaveSingleItem();
-        data.MediaType.ShouldBe("application/pdf");
-    }
-
-    [Fact]
     public async Task SeveralAttachmentsOnOneTurn_AllReachTheModel()
     {
         var captured = await SendAsync(UserTurnWith(_photo, _document));

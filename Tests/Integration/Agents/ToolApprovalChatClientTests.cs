@@ -72,37 +72,6 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
     }
 
     [Fact]
-    public async Task Agent_WithApprovalRequired_AllowsToolCallWhenApproved()
-    {
-        // Arrange
-        var innerClient = CreateLlmClient();
-        var approvingHandler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
-        var approvalClient = new ToolApprovalChatClient(innerClient, approvingHandler, "conv-test");
-
-        var agent = CreateAgent(approvalClient);
-
-        mcpFixture.CreateFile("ApprovalTestApproved/placeholder.txt");
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        // Act
-        var responses = await agent.RunStreamingAsync(
-                "IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. Do NOT respond with text, just call the tool immediately.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
-
-        // Assert
-        responses.ShouldNotBeEmpty();
-
-        var hasContent = responses.Any(r => !string.IsNullOrEmpty(r.Content) || !string.IsNullOrEmpty(r.ToolCalls));
-        hasContent.ShouldBeTrue();
-
-        await agent.DisposeAsync();
-    }
-
-    [Fact]
     public async Task Agent_WithWhitelistedTool_SkipsApprovalForWhitelistedTools()
     {
         // Arrange

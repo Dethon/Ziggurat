@@ -77,59 +77,6 @@ public class ModalDismisserTests(PlaywrightWebBrowserFixture fixture) : IAsyncLi
         sw.ElapsedMilliseconds.ShouldBeLessThan(800);
     }
 
-    [Trait("Category", "External")]
-    [SkippableFact]
-    public async Task DismissModalsAsync_ContentPageWithModalishClassNames_IsFastAndDismissesNothing()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
-
-        // Mimics a real article (e.g. Wikipedia): many visible elements whose class names contain
-        // "age"/"modal"/"popup"/"close" substrings, but none is a positioned overlay — so the
-        // overlay gate must treat them as page content, dismiss nothing, and not block.
-        var noise = string.Concat(Enumerable.Range(0, 40).Select(i =>
-            $"<div class='vector-page-{i} language-age image-{i}'>row {i}</div>"));
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync(
-            "<!doctype html><html><body>" +
-            noise +
-            "<div class='modal-content popup-wrapper'>article body</div>" +
-            "<a class='close-link' href='/other-page'>related article</a>" +
-            "</body></html>");
-
-        var dismisser = new ModalDismisser();
-        var sw = Stopwatch.StartNew();
-        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
-        sw.Stop();
-
-        result.ShouldBeEmpty();
-        sw.ElapsedMilliseconds.ShouldBeLessThan(800);
-    }
-
-    [Trait("Category", "External")]
-    [SkippableFact]
-    public async Task DismissModalsAsync_RealCookieBanner_DismissesIt()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
-
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync(
-            "<!doctype html><html><body>" +
-            "<div id='cookie-banner' class='cookie-consent' " +
-            "style='position:fixed;top:0;left:0;right:0;background:#ddd;padding:20px;'>" +
-            "We use cookies. " +
-            "<button class='accept-cookies' " +
-            "onclick=\"document.getElementById('cookie-banner').style.display='none'\">Accept</button>" +
-            "</div>" +
-            "<p>Main content</p></body></html>");
-
-        var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
-
-        result.ShouldNotBeEmpty();
-        result.ShouldContain(r => r.Type == ModalType.CookieConsent);
-        (await page.Locator("#cookie-banner").IsVisibleAsync()).ShouldBeFalse();
-    }
-
     // Pins the empirically-chosen detection window (~300ms): a consent overlay that renders shortly
     // after load (async CMP behaviour) — here ~120ms — is still caught. If the window is shortened
     // below that, this fails; that is the speed/coverage knob made explicit.

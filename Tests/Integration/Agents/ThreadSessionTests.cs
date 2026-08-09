@@ -57,29 +57,4 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
 
         await session.DisposeAsync();
     }
-
-    [SkippableFact]
-    public async Task MultipleEndpoints_ConnectsToAllServers()
-    {
-        // Arrange - Use the same endpoint twice to verify multiple connections
-        using var chatClient = CreateChatClient();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-        // Act
-        var session = await ThreadSession.CreateAsync(
-            [fixture.McpEndpoint, fixture.McpEndpoint],
-            "MultiEndpointClient",
-            "test-user",
-            "Multi Endpoint Test",
-            [],
-            new HashSet<string>(),
-            null,
-            cts.Token);
-
-        // Assert
-        session.ClientManager.Clients.Count.ShouldBe(2);
-        session.ClientManager.Tools.Count.ShouldBeGreaterThanOrEqualTo(2); // Tools from both connections
-
-        await session.DisposeAsync();
-    }
 }

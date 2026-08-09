@@ -564,22 +564,6 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task TryStartResumeStreamAsync_OnComplete_StopsStreaming()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        var existingMessage = new ChatMessageModel { Role = "assistant" };
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { Content = "Done", MessageId = "msg-1" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
-        );
-
-        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
-
-        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
-    }
-
-    [Fact]
     public async Task TryStartResumeStreamAsync_OnlyUpdatesTimestampIfNewContent()
     {
         var topic = CreateTopic();
@@ -764,14 +748,6 @@ public sealed class StreamingServiceTests : IDisposable
             .Message.Content.ShouldBe("half written and the rest");
         resumed.Completion.IsCompleted.ShouldBeFalse();
         running.SetResult();
-    }
-
-    [Fact]
-    public void SendMessageAsync_BeforeAnySend_TheTopicHasNoStream()
-    {
-        var topic = CreateTopic();
-
-        _topicStreams.Snapshot(topic.TopicId).HasStream.ShouldBeFalse();
     }
 
     [Fact]

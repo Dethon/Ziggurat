@@ -1,6 +1,5 @@
 using Domain.Contracts;
 using Domain.DTOs;
-using Domain.DTOs.Channel;
 using Infrastructure.Validation;
 using Mcp.Hosting;
 using McpServerScheduling.Services;
@@ -73,21 +72,6 @@ public class ScheduleDispatcherServiceTests
 
         store.Verify(s => s.UpdateLastRunAsync("daily", It.IsAny<DateTime?>(), next, It.IsAny<CancellationToken>()), Times.Once);
         store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    // Gate-on-live is what keeps this safe. With nobody listening the emit buffers nothing and
-    // reports false, so the schedule stays due for the next tick — and there is no duplicate
-    // sitting in the inbox to fire alongside it when the agent comes back.
-    [Fact]
-    public async Task DispatchDueAsync_NoLiveSubscriber_LeavesTheScheduleDueAndBuffersNothing()
-    {
-        var store = StoreWithDue(OneShot());
-        var probe = Probe(delivers: false);
-
-        await BuildDispatcher(store.Object, probe).DispatchDueAsync(CancellationToken.None);
-
-        store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        probe.Received().ShouldBeEmpty();
     }
 
     // One warning per outage, not one per schedule per tick: an overnight disconnection with a

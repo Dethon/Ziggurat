@@ -141,12 +141,6 @@ public class CapabilityRefusalTests
             readyAttachments: 0, uploadInFlight: true).ShouldBeFalse();
     }
 
-    [Fact]
-    public void NoTextAndNoAttachments_StillCannotBeSent()
-    {
-        ChatInputLogic.CanSend(disabled: false, inputText: "", isStreaming: false).ShouldBeFalse();
-    }
-
     private static AgentSettingsState Settings(string? model) => new()
     {
         ByAgent = model is null

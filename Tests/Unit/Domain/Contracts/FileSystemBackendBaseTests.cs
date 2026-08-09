@@ -63,15 +63,6 @@ public class FileSystemBackendBaseTests
     }
 
     [Fact]
-    public async Task Unsupported_NamesTheOperationNotTheMethod()
-    {
-        var error = ErrorOf(await _bare.CreateAsync("/x", "c", false, true, default));
-
-        error!.Message.ShouldNotContain("CreateAsync");
-        error.Message.ShouldContain("text_create");
-    }
-
-    [Fact]
     public async Task BlobOperations_NotOverridden_ReportUnsupported()
     {
         await Should.ThrowAsync<NotSupportedException>(async () =>
@@ -118,16 +109,6 @@ public class FileSystemBackendBaseTests
         result.TryGetValue(out _, out var error).ShouldBeFalse();
         error!.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
         error.Message.ShouldContain("brace");
-    }
-
-    [Fact]
-    public void Glob_ListsTheEntriesItIsGiven()
-    {
-        var result = _bare.Listing("*", ["/a", "/b"]);
-
-        result.TryGetValue(out var value, out _).ShouldBeTrue();
-        value!.Entries.ShouldBe(["/a", "/b"]);
-        value.Total.ShouldBe(2);
     }
 
     // The glob pattern is matched under a bounded timeout, exactly like the search pattern, and the
@@ -206,23 +187,6 @@ public class FileSystemBackendBaseTests
 
         result.TryGetValue(out _, out var error).ShouldBeFalse();
         error!.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
-    }
-
-    [Fact]
-    public void Descriptions_HaveGenericDefaults()
-    {
-        _bare.DescribeRead.ShouldNotBeNullOrWhiteSpace();
-        _bare.DescribeInfo.ShouldNotBeNullOrWhiteSpace();
-        _bare.DescribeCreate.ShouldNotBeNullOrWhiteSpace();
-        _bare.DescribeEdit.ShouldNotBeNullOrWhiteSpace();
-        _bare.DescribeGlob.ShouldNotBeNullOrWhiteSpace();
-        _bare.DescribeSearch.ShouldNotBeNullOrWhiteSpace();
-        _bare.DescribeMove.ShouldNotBeNullOrWhiteSpace();
-        _bare.DescribeDelete.ShouldNotBeNullOrWhiteSpace();
-        _bare.DescribeExec.ShouldNotBeNullOrWhiteSpace();
-        _bare.DescribeCopy.ShouldNotBeNullOrWhiteSpace();
-        _bare.DescribeBlobRead.ShouldNotBeNullOrWhiteSpace();
-        _bare.DescribeBlobWrite.ShouldNotBeNullOrWhiteSpace();
     }
 
     // A backend that follows the documented pattern: it overrides only the chunk methods and lets

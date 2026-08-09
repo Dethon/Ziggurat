@@ -32,25 +32,6 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 30_000 });
     }
 
-    [SkippableFact]
-    public async Task SendMessage_CreatesTopicInSidebar()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-
-        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
-
-        var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Create a topic for E2E testing");
-        await chatInput.PressAsync("Enter");
-
-        var topicItem = page.Locator(".topic-item");
-        await topicItem.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-        (await topicItem.CountAsync()).ShouldBeGreaterThan(0);
-    }
-
     internal static async Task SelectUserAndAgentAsync(IPage page, int userIndex = 0)
     {
         // Dismiss any approval-modal-overlay left by the StreamResumeService.

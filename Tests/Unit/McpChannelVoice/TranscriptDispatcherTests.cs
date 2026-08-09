@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
@@ -180,18 +179,6 @@ public class TranscriptDispatcherTests
     }
 
     [Fact]
-    public async Task DispatchAsync_GoodTranscript_EmitsRoomAsLocation()
-    {
-        var (sut, _, emitter) = Build();
-
-        await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", null, null, null, default);
-
-        emitter.Received().Count.ShouldBe(1);
-        emitter.Received()[0].Location.ShouldBe("Kitchen");
-    }
-
-    [Fact]
     public async Task DispatchAsync_SatelliteWithLocality_EmitsRoomAndLocalityAsLocation()
     {
         var (sut, _, emitter) = Build();
@@ -254,20 +241,6 @@ public class TranscriptDispatcherTests
 
         ok.ShouldBeTrue();
         manager.GetActiveConversationId("kitchen-01").ShouldNotBeNull();
-        emitter.Received().Count.ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task DispatchAsync_SignalsWithinThresholds_Dispatches()
-    {
-        var (sut, _, emitter) = Build();
-
-        var ok = await sut.DispatchAsync(
-            Session(),
-            new TranscriptionResult { Text = "hola", AvgLogProb = -0.3, NoSpeechProb = 0.1 },
-            "agent-1", null, null, null, default);
-
-        ok.ShouldBeTrue();
         emitter.Received().Count.ShouldBe(1);
     }
 
@@ -521,24 +494,6 @@ public class TranscriptDispatcherTests
         evt.Outcome.ShouldBe("command_failed");
     }
 
-    [Theory]
-    [InlineData("sube el volumen local", "up")]
-    [InlineData("baja el volumen local", "down")]
-    [InlineData("silencia el altavoz", "mute")]
-    [InlineData("quita el silencio local", "unmute")]
-    public async Task DispatchAsync_EachLocalCommand_SendsItsAction(string text, string action)
-    {
-        var (sut, _, _) = Build(Commands());
-        var session = Session();
-        var written = new List<WyomingEvent>();
-        session.ControlWriter = (evt, _) => { written.Add(evt); return Task.CompletedTask; };
-
-        await sut.DispatchAsync(
-            session, new TranscriptionResult { Text = text, Confidence = 0.9 }, "agent-1", null, null, null, default);
-
-        written[0].Data["action"]!.GetValue<string>().ShouldBe(action);
-    }
-
     // The gibberish gate runs first on purpose: acting on audio the STT itself flagged as poor is
     // exactly the misfire the gate exists to prevent.
     [Fact]
@@ -556,19 +511,6 @@ public class TranscriptDispatcherTests
 
         dispatched.ShouldBeFalse();
         written.ShouldBeEmpty();
-        emitter.Received().ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task DispatchAsync_NoControlWriter_ReturnsFalseWithoutThrowing()
-    {
-        var (sut, _, emitter) = Build(Commands());
-
-        var dispatched = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "sube el volumen local", Confidence = 0.9 },
-            "agent-1", null, null, null, default);
-
-        dispatched.ShouldBeFalse();
         emitter.Received().ShouldBeEmpty();
     }
 

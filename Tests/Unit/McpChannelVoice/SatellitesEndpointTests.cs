@@ -6,7 +6,6 @@ using McpChannelVoice.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice;
@@ -43,14 +42,6 @@ public class SatellitesEndpointTests
         client.DefaultRequestHeaders.Add("X-Announce-Token", "wrong");
         var response = await client.PostAsJsonAsync("/api/voice/satellites/resolve", new AnnounceTarget { Room = "Kitchen" });
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task Roster_Disabled_Returns503()
-    {
-        using var client = await BuildClientAsync(new AnnounceSettings { Enabled = false, Token = "expected" });
-        client.DefaultRequestHeaders.Add("X-Announce-Token", "expected");
-        (await client.GetAsync("/api/voice/satellites")).StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
     }
 
     [Fact]

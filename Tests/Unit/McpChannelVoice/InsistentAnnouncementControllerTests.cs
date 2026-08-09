@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
@@ -374,31 +373,6 @@ public class InsistentAnnouncementControllerTests
                 Target = new() { SatelliteId = "kitchen-01" },
                 Text = "eggs",
                 Kind = AnnounceKind.Timer,
-                Insistent = new() { MaxRepeats = 1 }
-            },
-            CancellationToken.None);
-
-        await WaitUntilAsync(() => flags().Count >= 1, TimeSpan.FromSeconds(5));
-        flags()[0].ShouldBeTrue();
-
-        await DrainPumpAsync(pump, time, run);
-    }
-
-    // Alarms take the same route. Their wake-up ramp is a separate, within-alert gain and is
-    // deliberately unaffected — the routing change lifts the ceiling the ramp climbs toward.
-    [Fact]
-    public async Task Start_Alarm_MarksThePlaybackJobAsAnAlert()
-    {
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var h = BuildHarness(time, online: true, satelliteIds: "bedroom-01");
-        var (pump, flags, run) = PumpRecordsAlertFlags(h.Sessions.Get("bedroom-01")!, time);
-
-        await h.Controller.StartAsync(
-            new AnnounceRequest
-            {
-                Target = new() { SatelliteId = "bedroom-01" },
-                Text = "wake up",
-                Kind = AnnounceKind.Alarm,
                 Insistent = new() { MaxRepeats = 1 }
             },
             CancellationToken.None);

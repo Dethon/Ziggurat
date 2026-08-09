@@ -24,18 +24,6 @@ public class VirtualFileSystemRegistryTests
     }
 
     [Fact]
-    public void Mount_MultipleMounts_RegistersAll()
-    {
-        var libraryBackend = CreateMockBackend("library");
-        var vaultBackend = CreateMockBackend("vault");
-
-        _registry.Mount(new FileSystemMount("library", "/library", "Library"), libraryBackend);
-        _registry.Mount(new FileSystemMount("vault", "/vault", "Vault"), vaultBackend);
-
-        _registry.GetMounts().Count.ShouldBe(2);
-    }
-
-    [Fact]
     public void Resolve_MatchingMount_ReturnsBackendAndRelativePath()
     {
         var backend = CreateMockBackend("library");

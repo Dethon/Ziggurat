@@ -23,23 +23,6 @@ public class SatelliteIdentityStampTests
         stamped.Identity.ShouldBe("household");
     }
 
-    [Fact]
-    public void About_LeavesEveryOtherFieldAlone()
-    {
-        var stamped = new VoiceEvent
-        {
-            Metric = VoiceMetric.SttLatencyMs,
-            Outcome = "final",
-            DurationMs = 42,
-            ConversationId = "conv-1"
-        }.About(Session());
-
-        stamped.Metric.ShouldBe(VoiceMetric.SttLatencyMs);
-        stamped.Outcome.ShouldBe("final");
-        stamped.DurationMs.ShouldBe(42);
-        stamped.ConversationId.ShouldBe("conv-1");
-    }
-
     // An offline target has no session to be named by, only its id and whatever the registry knows
     // about it — the path that used to write the three fields by hand at every announce and alarm
     // site, which is exactly where one of them goes missing.

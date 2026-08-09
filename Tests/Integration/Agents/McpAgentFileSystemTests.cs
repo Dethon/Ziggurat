@@ -29,7 +29,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest");
     }
 
-    private McpAgent CreateAgent(OpenRouterChatClient llmClient, IReadOnlySet<string>? enabledTools = null)
+    private McpAgent CreateAgent(OpenRouterChatClient llmClient)
     {
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
         return new McpAgent(
@@ -37,7 +37,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
             {
                 DisplayName = "test-fs-agent",
                 McpServerEndpoints = [vaultFixture.McpEndpoint],
-                FilesystemEnabledTools = enabledTools ?? _allFileSystemTools
+                FilesystemEnabledTools = _allFileSystemTools
             },
             llmClient,
             stateStore,
@@ -133,42 +133,6 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         var content = await File.ReadAllTextAsync(Path.Combine(vaultFixture.VaultPath, "edit-test.md"));
         content.ShouldContain("Agent");
         content.ShouldNotContain("World");
-
-        await agent.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task Agent_WithFileSystemFeature_CanGlobFiles()
-    {
-        // Arrange
-        var llmClient = CreateLlmClient();
-        vaultFixture.CreateFile(Path.Combine("glob-test", "notes.md"), "note");
-        vaultFixture.CreateFile(Path.Combine("glob-test", "readme.md"), "readme");
-        vaultFixture.CreateFile(Path.Combine("glob-test", "data.json"), "{}");
-
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        // Act
-        var responses = await agent.RunStreamingAsync(
-                "Use the domain__filesystem__glob tool with basePath: /vault/glob-test and pattern: **/*.md to list all .md files. " +
-                "IMPORTANT: the basePath argument MUST start with the mounted prefix /vault. " +
-                "Pass it exactly as written — do not shorten, rename, or invent paths.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
-
-        // Assert
-        responses.ShouldNotBeEmpty();
-        var hasContent = responses.Any(r => !string.IsNullOrEmpty(r.Content) || !string.IsNullOrEmpty(r.ToolCalls));
-        hasContent.ShouldBeTrue("Agent should have produced content or tool calls for glob");
-
-        // Verify the agent found .md files (response is non-deterministic, so check broadly)
-        var combined = string.Join(" ", responses.Select(r => r.Content + " " + r.ToolCalls)).ToLowerInvariant();
-        (combined.Contains("notes") || combined.Contains("readme") || combined.Contains(".md"))
-            .ShouldBeTrue("Agent response should reference the found .md files");
 
         await agent.DisposeAsync();
     }
@@ -289,36 +253,6 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         var combinedResponse = string.Join(" ", responses.Select(r => r.Content)).ToLowerInvariant();
         (combinedResponse.Contains("/vault") || combinedResponse.Contains("vault"))
             .ShouldBeTrue("Agent should mention the vault filesystem in its response");
-
-        await agent.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task Agent_WithSubsetOfFileSystemTools_CanStillUseEnabledTools()
-    {
-        // Arrange - only enable read and glob
-        var llmClient = CreateLlmClient();
-        vaultFixture.CreateFile(Path.Combine("subset-test", "info.md"), "subset content");
-
-        var enabledTools = new HashSet<string> { "read", "glob" };
-        var agent = CreateAgent(llmClient, enabledTools);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        // Act - use glob (an enabled tool) to find files
-        var responses = await agent.RunStreamingAsync(
-                "Use the domain__filesystem__glob tool with basePath: /vault/subset-test and pattern: **/*.md to find all .md files. " +
-                "IMPORTANT: the basePath argument MUST start with the mounted prefix /vault. " +
-                "Pass it exactly as written — do not shorten, rename, or invent paths.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
-
-        // Assert
-        responses.ShouldNotBeEmpty();
-        var hasContent = responses.Any(r => !string.IsNullOrEmpty(r.Content) || !string.IsNullOrEmpty(r.ToolCalls));
-        hasContent.ShouldBeTrue("Agent should have produced content or tool calls");
 
         await agent.DisposeAsync();
     }

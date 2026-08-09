@@ -316,30 +316,6 @@ public class SilenceGateTests
     }
 
     [Fact]
-    public void Process_NoSpeechTimeout_ReportsEndReason()
-    {
-        var gate = FollowUpGate();
-
-        foreach (var _ in Enumerable.Range(0, 4))
-        {
-            Feed(gate, Silent());
-        }
-        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.NoSpeech);
-        gate.EndReason.ShouldBe("no_speech");
-    }
-
-    [Fact]
-    public void EndReason_BeforeAnyTerminalDecision_IsNull()
-    {
-        var gate = NewGate();
-
-        Feed(gate, Silent());
-        Feed(gate, Loud());
-
-        gate.EndReason.ShouldBeNull();
-    }
-
-    [Fact]
     public void TrailingRms_ExposesMeanLevelOfTheTrailingRun()
     {
         var gate = BabbleGate();

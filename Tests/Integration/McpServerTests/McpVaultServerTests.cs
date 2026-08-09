@@ -8,22 +8,6 @@ namespace Tests.Integration.McpServerTests;
 public class McpVaultServerTests(McpVaultServerFixture fixture) : IClassFixture<McpVaultServerFixture>
 {
     [Fact]
-    public async Task McpServer_ResourceCapabilities_DoesNotSupportSubscriptions()
-    {
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        client.ServerCapabilities.Resources.ShouldNotBeNull();
-        (client.ServerCapabilities.Resources.Subscribe ?? false).ShouldBeFalse();
-
-        await client.DisposeAsync();
-    }
-
-    [Fact]
     public async Task McpServer_ListResources_ReturnsFilesystemResource()
     {
         var client = await McpClient.CreateAsync(

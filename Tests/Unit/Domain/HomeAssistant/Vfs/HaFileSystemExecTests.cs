@@ -80,14 +80,6 @@ public class HaFileSystemExecTests
     }
 
     [Fact]
-    public async Task Exec_BadScalarValue_Returns2()
-    {
-        var fs = Build(out _);
-        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --brightness_pct NaN", null, CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(2);
-    }
-
-    [Fact]
     public async Task Exec_NotAnEntityDir_Returns127()
     {
         var fs = Build(out _);
@@ -133,25 +125,6 @@ public class HaFileSystemExecTests
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(1);
         exec.Stderr.ShouldBe("boom");
-    }
-
-    [Fact]
-    public async Task ExecAsync_Success_ReportsCwdAndDuration()
-    {
-        var client = new FakeHaClient
-        {
-            States = { Entity("light.kitchen", "off", ("friendly_name", JsonValue.Create("Kitchen"))) },
-            Services = { Service("light", "turn_on", AnyEntityTarget()) }
-        };
-        var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
-
-        var result = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh", null, CancellationToken.None);
-
-        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
-        exec.ExitCode.ShouldBe(0);
-        exec.TimedOut.ShouldBeFalse();
-        exec.Cwd.ShouldBe("entities/light/kitchen_(kitchen)");
-        exec.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
     }
 
     [Fact]

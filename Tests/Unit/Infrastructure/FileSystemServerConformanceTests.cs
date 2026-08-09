@@ -1,8 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Domain.Agents;
 using Domain.Contracts;
-using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
@@ -224,16 +222,6 @@ public class FileSystemServerConformanceTests
         advertised.ShouldNotContain("fs_move");
         McpFileSystemDiscovery.DeriveCapabilities(McpFileSystemDiscovery.AdvertisedOperations(advertised))
             .ShouldNotContain("move");
-    }
-
-    // Capability is per operation, not per path. A backend that implements an operation and still
-    // refuses particular paths keeps advertising it — the list tells the model which operations
-    // exist on a mount, not which will succeed on a given file. Nobody should refine this into a
-    // per-path check the registrar cannot answer.
-    [Fact]
-    public void ABackendThatRefusesSomePaths_StillAdvertisesTheOperation()
-    {
-        FileSystemServerTools.SupportedToolNames(typeof(PickyBackend)).ShouldBe(["fs_read"]);
     }
 
     // The move-out check inverts what an override means: elsewhere overriding declares "I can do

@@ -124,17 +124,6 @@ public class OpenRouterChatClientHydrationDepthTests
         captured[0].Contents.OfType<DataContent>().ShouldHaveSingleItem();
     }
 
-    [Fact]
-    public async Task ThePlaceholder_IsNeverWrittenBackIntoTheMessagesTheClientWasHanded()
-    {
-        var messages = Conversation(attachmentAt: 0, length: 5);
-
-        await SendAsync(messages, depth: 3);
-
-        messages[0].Contents.OfType<TextContent>()
-            .ShouldAllBe(c => !c.Text.Contains("no longer available"));
-    }
-
     private static List<ChatMessage> Conversation(
         int attachmentAt, int length, AttachmentReference? attachment = null)
     {

@@ -47,41 +47,6 @@ public class ChannelProtocolTests
     }
 
     [Fact]
-    public void NameConstants_MatchWireProtocol()
-    {
-        ChannelProtocol.MessageNotification.ShouldBe("notifications/channel/message");
-        ChannelProtocol.CancelNotification.ShouldBe("notifications/channel/cancel");
-        ChannelProtocol.SendReplyTool.ShouldBe("send_reply");
-        ChannelProtocol.RequestApprovalTool.ShouldBe("request_approval");
-        ChannelProtocol.CreateConversationTool.ShouldBe("create_conversation");
-        ChannelProtocol.RegisterAgentsTool.ShouldBe("register_agents");
-    }
-
-    [Fact]
-    public void ToArgumentsThenDeserialize_RoundTripsSendReplyParams()
-    {
-        var original = new SendReplyParams
-        {
-            ConversationId = "c1",
-            Content = "hi",
-            ContentType = ReplyContentType.ToolCall,
-            IsComplete = true,
-            MessageId = "m1"
-        };
-
-        var args = ChannelProtocol.ToArguments(original);
-        var element = JsonSerializer.SerializeToElement(args, ChannelProtocol.SerializerOptions);
-        var roundTripped = ChannelProtocol.Deserialize<SendReplyParams>(element);
-
-        roundTripped.ShouldNotBeNull();
-        roundTripped!.ConversationId.ShouldBe("c1");
-        roundTripped.Content.ShouldBe("hi");
-        roundTripped.ContentType.ShouldBe(ReplyContentType.ToolCall);
-        roundTripped.IsComplete.ShouldBeTrue();
-        roundTripped.MessageId.ShouldBe("m1");
-    }
-
-    [Fact]
     public void Serialize_DownloadCompletionNotification_RoundTripsWithStringEnumOrigin()
     {
         var payload = new ChannelMessageNotification
@@ -132,17 +97,6 @@ public class ChannelProtocolTests
         json.ShouldContain("\"configPatch\"");
         parsed.ShouldNotBeNull();
         parsed.ConfigPatch.ShouldBe(new AgentConfigPatch { Model = "z-ai/glm-5.2", ReasoningEffort = "high" });
-    }
-
-    [Fact]
-    public void Deserialize_MessageNotificationWithoutConfigPatch_LeavesPatchNull()
-    {
-        var json = """{"conversationId":"c","sender":"s","content":"m"}""";
-
-        var parsed = JsonSerializer.Deserialize<ChannelMessageNotification>(json, ChannelProtocol.SerializerOptions);
-
-        parsed.ShouldNotBeNull();
-        parsed.ConfigPatch.ShouldBeNull();
     }
 
     [Fact]

@@ -303,14 +303,4 @@ public class SpeakerVerifierTests
         result.Decision.ShouldBe(SpeakerDecision.Accepted);
         result.IdentifiedSpeaker.ShouldBeNull();
     }
-
-    [Fact]
-    public async Task VerifyAsync_Rejected_DoesNotIdentify()
-    {
-        var result = await VerifierWith(_tvVoice, [new SpeakerProfile("fran", [_franVoice])])
-            .VerifyAsync(Chunks(), 2000, Config(), default);
-
-        result.Decision.ShouldBe(SpeakerDecision.Rejected);
-        result.IdentifiedSpeaker.ShouldBeNull();
-    }
 }

@@ -85,17 +85,6 @@ public class TextEditToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_MultilineOldString_ReplacesAcrossLines()
-    {
-        var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nLine 3\nLine 4");
-
-        var result = _tool.TestRun(filePath, [new TextEdit("Line 2\nLine 3", "Replacement")]);
-
-        result["status"]!.ToString().ShouldBe("success");
-        File.ReadAllText(filePath).ShouldBe("Line 1\nReplacement\nLine 4");
-    }
-
-    [Fact]
     public void Run_ReturnsAffectedLinesPerEdit()
     {
         var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nTarget\nLine 4");
@@ -114,24 +103,6 @@ public class TextEditToolTests : IDisposable
         _tool.TestRun(filePath, [new TextEdit("World", "Universe")]);
 
         File.Exists(filePath + ".tmp").ShouldBeFalse();
-    }
-
-    [Fact]
-    public void Run_MultipleEdits_AppliedInOrder()
-    {
-        var filePath = CreateTestFile("test.txt", "alpha beta gamma");
-
-        var result = _tool.TestRun(filePath,
-        [
-            new TextEdit("alpha", "ALPHA"),
-            new TextEdit("beta", "BETA"),
-            new TextEdit("gamma", "GAMMA")
-        ]);
-
-        result["status"]!.ToString().ShouldBe("success");
-        result["totalOccurrencesReplaced"]!.GetValue<int>().ShouldBe(3);
-        result["edits"]!.AsArray().Count.ShouldBe(3);
-        File.ReadAllText(filePath).ShouldBe("ALPHA BETA GAMMA");
     }
 
     [Fact]

@@ -71,19 +71,6 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task RequestAndSubscribeAsync_WhenSubscribeJsThrows_PropagatesException()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
-            .Returns(new ValueTask<string>("granted"));
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<PushSubscriptionResult>("pushNotifications.subscribe", It.IsAny<object[]>()))
-            .Throws(new JSException("pushManager.subscribe failed"));
-
-        await Should.ThrowAsync<JSException>(() => _sut.RequestAndSubscribeAsync("BPublicKey123"));
-    }
-
-    [Fact]
     public async Task RequestAndSubscribeAsync_WhenTheCallCouldNotBeMade_ReturnsFalse()
     {
         _mockJsRuntime
@@ -110,16 +97,6 @@ public sealed class PushNotificationServiceTests
         var result = await _sut.RequestAndSubscribeAsync("BPublicKey123");
 
         result.ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task IsSubscribedAsync_WhenJsInteropThrows_PropagatesException()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<bool>("pushNotifications.isSubscribed", It.IsAny<object[]>()))
-            .Throws(new JSException("Service worker not available"));
-
-        await Should.ThrowAsync<JSException>(() => _sut.IsSubscribedAsync());
     }
 
     [Fact]

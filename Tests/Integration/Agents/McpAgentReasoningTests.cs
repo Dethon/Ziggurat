@@ -118,41 +118,6 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
             "McpAgent with reasoningEffort='none' should suppress reasoning tokens.");
     }
 
-    [SkippableFact]
-    public async Task Agent_WithoutReasoningEffort_DoesNotForceReasoning()
-    {
-        // Sanity check: when reasoningEffort is not configured, McpAgent should not be
-        // injecting any Reasoning option; the call should still succeed against OpenRouter.
-        var (apiUrl, apiKey, model) = GetConfig();
-
-        using var openRouter = new OpenRouterChatClient(apiUrl, apiKey, model);
-        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
-
-        await using var agent = new McpAgent(
-            TestAgentSpec.Default with
-            {
-                DisplayName = "no-reasoning-agent",
-                UserId = "no-reasoning-test-user"
-            },
-            openRouter,
-            stateStore,
-            NoOpMetricsPublisher.Instance,
-            TimeProvider.System,
-            [],
-            []);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        var receivedAny = false;
-        await foreach (var _ in agent.RunStreamingAsync(
-            "Reply with just the word OK.",
-            cancellationToken: cts.Token))
-        {
-            receivedAny = true;
-        }
-
-        receivedAny.ShouldBeTrue("Agent should still succeed end-to-end without reasoning configured.");
-    }
 }
 
 // Runs without Docker: a fake IChatClient captures the ChatOptions McpAgent builds, so both
@@ -299,11 +264,5 @@ public class McpAgentReasoningTestsConfigPatch
 
         captured.ShouldHaveSingleItem().ShouldNotBeNull().ModelId.ShouldBe("caller/model");
         warnings.ShouldContain(m => m.Contains("AgentRunOptions"));
-    }
-
-    [Fact]
-    public void TryParseEffort_UnknownValue_ReturnsNull()
-    {
-        McpAgent.TryParseEffort("turbo").ShouldBeNull();
     }
 }

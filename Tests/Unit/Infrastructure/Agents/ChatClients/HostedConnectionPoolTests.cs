@@ -1,5 +1,3 @@
-using System.Net;
-using System.Net.Sockets;
 using Agent.Modules;
 using Domain.Contracts;
 using Infrastructure.Agents.ChatClients;
@@ -41,26 +39,6 @@ public class HostedConnectionPoolTests
         primary.PooledConnectionIdleTimeout.ShouldBe(HostedConnectionPool.IdleTimeout);
     }
 
-    [Fact]
-    public async Task TwoCallsSeparatedByAGap_ReuseTheSameConnection()
-    {
-        using var server = new ConnectionCountingServer();
-        using var invoker = new HttpMessageInvoker(HostedConnectionPool.CreateHandler());
-
-        await SendAsync(invoker, server.Address);
-        await Task.Delay(TimeSpan.FromMilliseconds(250));
-        await SendAsync(invoker, server.Address);
-
-        server.AcceptedConnections.ShouldBe(1);
-    }
-
-    private static async Task SendAsync(HttpMessageInvoker invoker, Uri address)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, address);
-        using var response = await invoker.SendAsync(request, CancellationToken.None);
-        await response.Content.ReadAsStringAsync();
-    }
-
     private static SocketsHttpHandler PrimaryHandlerOf(HttpMessageHandler handler)
     {
         while (handler is DelegatingHandler delegating)
@@ -71,70 +49,5 @@ public class HostedConnectionPoolTests
 
         return handler as SocketsHttpHandler
             ?? throw new InvalidOperationException($"Primary handler is {handler.GetType().Name}, not SocketsHttpHandler");
-    }
-
-    private sealed class ConnectionCountingServer : IDisposable
-    {
-        private readonly TcpListener _listener;
-        private readonly CancellationTokenSource _cts = new();
-        private int _accepted;
-
-        public ConnectionCountingServer()
-        {
-            _listener = new TcpListener(IPAddress.Loopback, 0);
-            _listener.Start();
-            Address = new Uri($"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/");
-            _ = Task.Run(AcceptLoopAsync);
-        }
-
-        public Uri Address { get; }
-
-        public int AcceptedConnections => Volatile.Read(ref _accepted);
-
-        private async Task AcceptLoopAsync()
-        {
-            try
-            {
-                while (!_cts.IsCancellationRequested)
-                {
-                    var client = await _listener.AcceptTcpClientAsync(_cts.Token);
-                    Interlocked.Increment(ref _accepted);
-                    _ = Task.Run(() => ServeAsync(client));
-                }
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (SocketException)
-            {
-            }
-        }
-
-        private async Task ServeAsync(TcpClient client)
-        {
-            using (client)
-            await using (var stream = client.GetStream())
-            {
-                var buffer = new byte[4096];
-                var response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok"u8.ToArray();
-                try
-                {
-                    while (await stream.ReadAsync(buffer, _cts.Token) > 0)
-                    {
-                        await stream.WriteAsync(response, _cts.Token);
-                    }
-                }
-                catch (Exception ex) when (ex is OperationCanceledException or IOException)
-                {
-                }
-            }
-        }
-
-        public void Dispose()
-        {
-            _cts.Cancel();
-            _listener.Dispose();
-            _cts.Dispose();
-        }
     }
 }

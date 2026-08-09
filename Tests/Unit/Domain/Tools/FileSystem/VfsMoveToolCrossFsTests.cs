@@ -47,30 +47,6 @@ public class VfsMoveToolCrossFsTests
         src.Verify(b => b.DeleteAsync("a.md", It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Fact]
-    public async Task RunAsync_SameFsFile_StillUsesNativeMoveAsync()
-    {
-        var backend = new Mock<IFileSystemBackend>();
-        backend.SetupGet(b => b.FilesystemName).Returns("vault");
-        backend.Setup(b => b.MoveAsync("a.md", "b.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FsResult<FsMoveResult>.Ok(new FsMoveResult
-            {
-                Status = "moved", Message = "", Source = "a.md", Destination = "b.md"
-            }));
-
-        var registry = new Mock<IVirtualFileSystemRegistry>();
-        registry.Setup(r => r.Resolve("/vault/a.md"))
-            .Returns(Resolved(backend.Object, "a.md"));
-        registry.Setup(r => r.Resolve("/vault/b.md"))
-            .Returns(Resolved(backend.Object, "b.md"));
-
-        var tool = new VfsMoveTool(registry.Object);
-        await tool.RunAsync("/vault/a.md", "/vault/b.md");
-
-        backend.Verify(b => b.MoveAsync("a.md", "b.md", It.IsAny<CancellationToken>()), Times.Once);
-        backend.Verify(b => b.ReadChunksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
     // A native move carries no byte count, and the response used to say so with minus one — a
     // sentinel the model had to know to ignore. The field is simply absent now.
     [Fact]

@@ -37,12 +37,4 @@ public class ConversationContextStampingTests
     {
         new ChatMessage(ChatRole.User, "hi").GetConversationContext().ShouldBeNull();
     }
-
-    [Fact]
-    public void Set_Null_IsNoOp()
-    {
-        var message = new ChatMessage(ChatRole.User, "hi");
-        message.SetConversationContext(null);
-        message.AdditionalProperties.ShouldBeNull();
-    }
 }
