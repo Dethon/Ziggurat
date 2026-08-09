@@ -404,7 +404,8 @@ public sealed class McpChannelConnection(
             SatelliteId = notification.SatelliteId,
             DismissedAlert = notification.DismissedAlert,
             ConfigPatch = notification.ConfigPatch,
-            TurnKey = notification.TurnKey
+            TurnKey = notification.TurnKey,
+            Attachments = notification.Attachments
         };
 
         _messageChannel.Writer.TryWrite(message);
@@ -500,6 +501,55 @@ public sealed class McpChannelConnection(
                 Requests = requests
             }),
             cancellationToken: ct);
+    }
+
+    // Null on every way of not getting bytes — no client, no such tool, a refusal, a reconnect
+    // under the call. Hydration turns all of them into the same placeholder, so a file that
+    // cannot be fetched costs the turn its picture and nothing else.
+    public async Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct)
+    {
+        var client = _client;
+        if (client is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (!await OffersToolAsync(client, ChannelProtocol.FetchAttachmentTool, ct))
+            {
+                return null;
+            }
+
+            var result = await client.CallToolAsync(
+                ChannelProtocol.FetchAttachmentTool,
+                new Dictionary<string, object?> { ["attachmentId"] = attachmentId },
+                cancellationToken: ct);
+
+            if (result.IsError == true)
+            {
+                logger?.LogWarning(
+                    "Channel {ChannelId} refused to hand over attachment {AttachmentId}",
+                    ChannelId, attachmentId);
+                return null;
+            }
+
+            var text = result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
+            return string.IsNullOrWhiteSpace(text) ? null : Convert.FromBase64String(text);
+        }
+        catch (Exception ex) when (ex is McpException or ObjectDisposedException or FormatException)
+        {
+            logger?.LogWarning(ex,
+                "Fetching attachment {AttachmentId} from channel {ChannelId} failed",
+                attachmentId, ChannelId);
+            return null;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // A reconnect disposed the client under the call. That is "not connected", which here
+            // is a missing file rather than a failure the caller has to handle.
+            return null;
+        }
     }
 
     public async Task<string?> CreateConversationAsync(

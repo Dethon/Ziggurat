@@ -85,6 +85,9 @@ public static class InjectorModule
             return services
                 .AddSingleton<IReadOnlyList<IChannelConnection>>(sp =>
                     sp.GetServices<IChannelConnection>().ToList())
+                .AddSingleton<IAttachmentSource>(sp => new ChannelAttachmentSource(
+                    sp.GetRequiredService<IReadOnlyList<IChannelConnection>>(),
+                    sp.GetService<ILogger<ChannelAttachmentSource>>()))
                 .AddSingleton<ChatMonitor>()
                 .AddHostedService<ChatMonitoring>()
                 .AddHostedService(sp =>

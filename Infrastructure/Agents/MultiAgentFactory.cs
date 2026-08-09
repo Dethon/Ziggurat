@@ -121,7 +121,8 @@ public sealed class MultiAgentFactory(
             effectivePublisher,
             sessionId,
             providerRouting: providerRouting,
-            transportHandler: transportHandler);
+            transportHandler: transportHandler,
+            attachmentSource: serviceProvider.GetService<IAttachmentSource>());
     }
 }
 

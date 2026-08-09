@@ -21,7 +21,7 @@ public sealed class ChatHub(
     IAgentCatalog catalog,
     RedisStateService redisStateService,
     IPushSubscriptionStore pushSubscriptionStore,
-    AttachmentService attachments,
+    AttachmentService attachmentService,
     ILogger<ChatHub> logger) : Hub
 {
     // What the browser is told when the emit reached nobody. The message may still be sitting in a
@@ -98,7 +98,7 @@ public sealed class ChatHub(
         await Groups.AddToGroupAsync(Context.ConnectionId, $"space:{spaceSlug}");
     }
 
-    public AttachmentLimits GetAttachmentLimits() => attachments.Limits;
+    public AttachmentLimits GetAttachmentLimits() => attachmentService.Limits;
 
     // The ticket is scoped to the topic being composed in, so a caller can only put bytes against
     // a conversation the connection already has a session for.
@@ -114,7 +114,7 @@ public sealed class ChatHub(
             throw new HubException("Session not found. Please start a session first.");
         }
 
-        return attachments.MintUpload(
+        return attachmentService.MintUpload(
             topicId, $"{session.ChatId}:{session.ThreadId}", CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
     }
 
@@ -122,7 +122,7 @@ public sealed class ChatHub(
     // every space, so a long-lived URL would be readable by anyone holding it.
     public AttachmentDownload? CreateAttachmentDownload(string attachmentId)
     {
-        return attachments.MintDownload(attachmentId, CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
+        return attachmentService.MintDownload(attachmentId, CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
     }
 
     public bool IsProcessing(string topicId)
@@ -168,6 +168,7 @@ public sealed class ChatHub(
         string message,
         string? correlationId,
         AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (!IsRegistered)
@@ -204,7 +205,8 @@ public sealed class ChatHub(
         var userMessage = new ChatStreamMessage
         {
             Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp)
+            UserMessage = new UserMessageInfo(userId, timestamp),
+            Attachments = attachments
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
 
@@ -217,6 +219,7 @@ public sealed class ChatHub(
                 Content = message,
                 AgentId = session.AgentId,
                 ConfigPatch = configPatch,
+                Attachments = attachments,
                 Timestamp = DateTimeOffset.UtcNow
             },
             cancellationToken);
@@ -238,7 +241,12 @@ public sealed class ChatHub(
         }
     }
 
-    public async Task<bool> EnqueueMessage(string topicId, string message, string? correlationId, AgentConfigPatch? configPatch)
+    public async Task<bool> EnqueueMessage(
+        string topicId,
+        string message,
+        string? correlationId,
+        AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments = null)
     {
         if (!IsRegistered)
         {
@@ -261,7 +269,8 @@ public sealed class ChatHub(
         var userMessage = new ChatStreamMessage
         {
             Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp)
+            UserMessage = new UserMessageInfo(userId, timestamp),
+            Attachments = attachments
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
 
@@ -273,6 +282,7 @@ public sealed class ChatHub(
             Content = message,
             AgentId = session.AgentId,
             ConfigPatch = configPatch,
+            Attachments = attachments,
             Timestamp = DateTimeOffset.UtcNow
         });
 
@@ -360,7 +370,7 @@ public sealed class ChatHub(
 
         // Removing a conversation removes what was in it. The sweep would reach these eventually;
         // deleting a topic is the person saying they want them gone now.
-        attachments.DeleteConversation($"{chatId}:{threadId}");
+        attachmentService.DeleteConversation($"{chatId}:{threadId}");
     }
 
     public async Task SubscribePush(PushSubscriptionDto subscription)

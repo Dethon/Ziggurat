@@ -208,6 +208,11 @@ internal sealed class FakeChannelConnection : IChannelConnection
     public Task<ToolApprovalResult> RequestApprovalAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
         => Task.FromResult(new ToolApprovalResult());
 
+    public Dictionary<string, byte[]> Attachments { get; } = [];
+
+    public Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct)
+        => Task.FromResult(Attachments.GetValueOrDefault(attachmentId));
+
     public Task NotifyAutoApprovedAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
     {
         NotifyAutoApprovedCalls.Add((conversationId, requests));

@@ -27,5 +27,11 @@ public record ChannelMessageNotification
     // answer to it later. Voice-only today; every other channel leaves it null and the conversation
     // group mints one.
     public string? TurnKey { get; init; }
+
+    // Files sent with this message, as references rather than bytes. Part of the shared protocol
+    // and deliberately transport-neutral: another channel populates the same list without a
+    // redesign. Only the SignalR channel populates it today.
+    public IReadOnlyList<AttachmentReference>? Attachments { get; init; }
+
     public DateTimeOffset Timestamp { get; init; }
 }

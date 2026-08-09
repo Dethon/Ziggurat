@@ -42,7 +42,7 @@ public class ChatHubNotLiveTests
             new Mock<IAgentCatalog>().Object,
             redisStateService: null!,
             pushSubscriptionStore: null!,
-            attachments: null!,
+            attachmentService: null!,
             NullLogger<ChatHub>.Instance)
         {
             Context = new RegisteredCaller()
@@ -57,7 +57,7 @@ public class ChatHubNotLiveTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var chunks = new List<ChatStreamMessage>();
 
-        await foreach (var chunk in _hub.SendMessage(TopicId, "hola", null, null, cts.Token))
+        await foreach (var chunk in _hub.SendMessage(TopicId, "hola", null, null, null, cts.Token))
         {
             chunks.Add(chunk);
         }
@@ -107,14 +107,14 @@ public class ChatHubNotLiveTests
             new Mock<IAgentCatalog>().Object,
             redisStateService: null!,
             pushSubscriptionStore: null!,
-            attachments: null!,
+            attachmentService: null!,
             factory.CreateLogger<ChatHub>())
         {
             Context = new RegisteredCaller()
         };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await foreach (var _ in hub.SendMessage(TopicId, "hola", null, null, cts.Token))
+        await foreach (var _ in hub.SendMessage(TopicId, "hola", null, null, null, cts.Token))
         {
         }
 

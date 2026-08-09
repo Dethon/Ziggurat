@@ -68,6 +68,7 @@ public static class ConfigModule
             .WithTools<RequestApprovalTool>()
             .WithTools<CreateConversationTool>()
             .WithTools<RegisterAgentsTool>()
+            .WithTools<FetchAttachmentTool>()
             // Broadcast: a subscriber that is idle but not yet pruned still receives, so a brief
             // agent gap does not lose a message the browser has already been told was sent.
             .AddChannelServer(DeliveryPolicy.Broadcast);

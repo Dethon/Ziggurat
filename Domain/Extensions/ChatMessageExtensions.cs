@@ -16,6 +16,8 @@ public static class ChatMessageExtensions
     private const string DismissedAlertKey = "DismissedAlert";
     private const string ConversationContextKey = "ConversationContext";
     private const string ConfigPatchKey = "ConfigPatch";
+    private const string AttachmentsKey = "Attachments";
+    private const string AttachmentChannelIdKey = "AttachmentChannelId";
 
     extension(ChatMessage message)
     {
@@ -187,6 +189,55 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[ConfigPatchKey] = patch;
+        }
+
+        // References, never bytes: this is what the persisted message carries, so a history read
+        // costs the same whether or not files were sent (ADR 0020).
+        public IReadOnlyList<AttachmentReference>? GetAttachments()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(AttachmentsKey);
+            return value switch
+            {
+                IReadOnlyList<AttachmentReference> attachments => attachments,
+                JsonElement je => je.Deserialize<IReadOnlyList<AttachmentReference>>(
+                    ChannelProtocol.SerializerOptions),
+                _ => null
+            };
+        }
+
+        public void SetAttachments(IReadOnlyList<AttachmentReference>? attachments)
+        {
+            if (attachments is null or { Count: 0 })
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[AttachmentsKey] = attachments;
+        }
+
+        // Which channel's upload store holds the bytes. Hydration reads it to know who to ask;
+        // the reference itself stays transport-neutral.
+        public string? GetAttachmentChannelId()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(AttachmentChannelIdKey);
+            return value switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+        }
+
+        public void SetAttachmentChannelId(string? channelId)
+        {
+            if (string.IsNullOrWhiteSpace(channelId))
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[AttachmentChannelIdKey] = channelId;
         }
     }
 
