@@ -23,6 +23,7 @@ internal sealed class ThreadSession : IAsyncDisposable
     public IReadOnlyList<AITool> Tools => _data.Tools;
     public McpClientManager ClientManager => _data.ClientManager;
     public IReadOnlyList<string> FileSystemPrompts => _data.FileSystemPrompts;
+    public IVirtualFileSystemRegistry? FileSystemRegistry => _data.FileSystemRegistry;
 
     private ThreadSession(ThreadSessionData data)
     {

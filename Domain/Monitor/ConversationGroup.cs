@@ -451,7 +451,36 @@ internal sealed class ConversationGroup(
         // abandoned-warmup observer must not name it a second time.
         _warmupSurfaced = true;
         await state.Warmup;
+        // After the warmup, because the mounts only exist once the session has been built. An
+        // agent with no sandbox lands nothing and keeps the attachment as model context, which is
+        // the whole feature for that agent.
+        await LandAttachmentsAsync(x.Channel, turn, state, userMessage);
         return StreamAgentTurn(state, userMessage, turn);
+    }
+
+    private async Task LandAttachmentsAsync(
+        IChannelConnection channel, Turn turn, GroupState state, ChatMessage userMessage)
+    {
+        if (turn.Message.Attachments is not { Count: > 0 } attachments)
+        {
+            return;
+        }
+
+        var landed = await AttachmentLanding.LandAsync(
+            state.Agent.GetFileSystemRegistry(state.Thread),
+            attachments,
+            (id, ct) => channel.FetchAttachmentAsync(id, ct),
+            state.DeliveryKey.ConversationId,
+            turn.TurnKey,
+            logger,
+            _turnCt);
+
+        if (landed.Count > 0)
+        {
+            // Named in the message rather than left for the model to discover, so "have a look at
+            // this" is enough and no tool has to be advertised.
+            userMessage.Contents = [.. userMessage.Contents, new TextContent(AttachmentLanding.Describe(landed))];
+        }
     }
 
     // Deliver each message's reply to the channel that actually sent it. The group is keyed

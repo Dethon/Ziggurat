@@ -36,6 +36,11 @@ internal sealed class FakeAiAgent : DisposableAgent
 
     public Exception? WarmupExceptionToThrow { get; init; }
 
+    public IVirtualFileSystemRegistry? FileSystemRegistry { get; set; }
+
+    public override IVirtualFileSystemRegistry? GetFileSystemRegistry(AgentSession thread)
+        => FileSystemRegistry;
+
     public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
     {
         Interlocked.Increment(ref WarmupCalls);
