@@ -29,7 +29,7 @@ public abstract class E2EFixtureBase : IAsyncLifetime
         await E2EPhase.RunAsync(fixtureName, "container startup", ContainerStartupTimeout, StartContainersAsync);
     }
 
-    public async Task<IPage> CreatePageAsync()
+    public async Task<IPage> CreatePageAsync(bool hasTouch = false)
     {
         if (_browser is null)
         {
@@ -42,7 +42,7 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             await ctx.CloseAsync();
         }
 
-        var context = await _browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true });
+        var context = await _browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true, HasTouch = hasTouch });
         await StartTraceAsync(context);
 
         // The app references third-party CDNs (Google Fonts, avatar service) as render-blocking

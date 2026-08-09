@@ -105,6 +105,117 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.Locator(".header .header-conversation-name")).ToBeHiddenAsync();
     }
 
+    // Dragging the sheet open arms a trailing-click swallow (app.js _onUp). A genuine tap that
+    // follows the drag starts with its own pointerdown, which must disarm the swallow — only the
+    // stray click of the drag gesture itself (mouse release, no new pointerdown) may be eaten.
+    // The drag and the tap are dispatched synthetically from inside the page so the tap lands a
+    // deterministic 120ms after the drag ends, inside the swallow window.
+    [SkippableFact]
+    public async Task MobileViewport_TapRightAfterDraggingTheSheetOpenSelectsTheTopic()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync(hasTouch: true);
+        await page.SetViewportSizeAsync(390, 844);
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+
+        await CreateTopicAsync(page, "Drag tap target topic message");
+        await CreateTopicAsync(page, "Drag tap decoy topic message");
+
+        var switched = await page.EvaluateAsync<bool>(
+            """
+            () => new Promise(resolve => {
+                const peek = document.querySelector('.hearth-peek');
+                const p = (y, id) => ({ bubbles: true, cancelable: true, pointerId: id, isPrimary: true, clientX: 195, clientY: y });
+                peek.dispatchEvent(new PointerEvent('pointerdown', p(800, 1)));
+                let y = 800;
+                const step = () => {
+                    y -= 60;
+                    document.dispatchEvent(new PointerEvent('pointermove', p(y, 1)));
+                    if (y > 380) { requestAnimationFrame(step); return; }
+                    document.dispatchEvent(new PointerEvent('pointerup', p(y, 1)));
+                    setTimeout(tap, 120);
+                };
+                const tap = () => {
+                    const row = [...document.querySelectorAll('.topic-item')]
+                        .find(r => r.textContent.includes('Drag tap target'));
+                    row.dispatchEvent(new PointerEvent('pointerdown', p(300, 2)));
+                    row.dispatchEvent(new PointerEvent('pointerup', p(300, 2)));
+                    row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                    setTimeout(() => resolve(row.classList.contains('selected')), 600);
+                };
+                requestAnimationFrame(step);
+            })
+            """);
+
+        switched.ShouldBeTrue("the tap 120ms after the drag must select the topic, not be swallowed");
+    }
+
+    // A tap whose finger drifts a few pixels must stay a tap. On a list too short to scroll both
+    // edge flags are true, so the pull-to-collapse handler used to convert any ≥8px drift into a
+    // sheet gesture and swallow the click — browsers deliver touchmove for drifts well below
+    // their own click slop, so real thumb taps died. Drift below the tap slop must not engage
+    // the sheet nor swallow the click that follows.
+    [SkippableFact]
+    public async Task MobileViewport_ATapThatDriftsAFewPixelsStillSelectsTheTopic()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync(hasTouch: true);
+        await page.SetViewportSizeAsync(390, 844);
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+
+        await CreateTopicAsync(page, "Drift tap target topic message");
+        await CreateTopicAsync(page, "Drift tap decoy topic message");
+
+        await TapHearthHandleAsync(page);
+        await TapHearthHandleAsync(page);
+        await Assertions.Expect(page.Locator(".hearth-search-input")).ToBeVisibleAsync();
+
+        var switched = await page.EvaluateAsync<bool>(
+            """
+            () => new Promise(resolve => {
+                const row = [...document.querySelectorAll('.topic-item')]
+                    .find(r => r.textContent.includes('Drift tap target'));
+                const rect = row.getBoundingClientRect();
+                const x = rect.x + rect.width / 2;
+                const y0 = rect.y + rect.height / 2;
+                const touch = y => new Touch({ identifier: 1, target: row, clientX: x, clientY: y });
+                const ev = (type, y) => new TouchEvent(type, {
+                    bubbles: true, cancelable: true,
+                    touches: type === 'touchend' ? [] : [touch(y)],
+                    changedTouches: [touch(y)]
+                });
+                row.dispatchEvent(ev('touchstart', y0));
+                row.dispatchEvent(ev('touchmove', y0 + 6));
+                row.dispatchEvent(ev('touchmove', y0 + 12));
+                row.dispatchEvent(ev('touchend', y0 + 12));
+                setTimeout(() => {
+                    const p = { bubbles: true, cancelable: true, pointerId: 3, isPrimary: true, clientX: x, clientY: y0 + 12 };
+                    row.dispatchEvent(new PointerEvent('pointerdown', p));
+                    row.dispatchEvent(new PointerEvent('pointerup', p));
+                    row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                    setTimeout(() => resolve(row.classList.contains('selected')), 600);
+                }, 80);
+            })
+            """);
+
+        switched.ShouldBeTrue("a 12px-drift tap must still select the topic, not become a sheet gesture");
+    }
+
+    private static async Task CreateTopicAsync(IPage page, string message)
+    {
+        var chatInput = page.Locator("textarea.chat-input");
+        await page.Locator(".hearth-new:visible").First.ClickAsync();
+        await Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 10_000 });
+        await chatInput.FillAsync(message);
+        await chatInput.PressAsync("Enter");
+        await page.Locator(".topic-item", new PageLocatorOptions { HasText = message[..16] })
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+    }
+
     // A pending approval leaked by a sibling test (the approval-flow tests in WebChatE2ETests)
     // can be replayed onto this fresh page by StreamResumeService, raising a full-viewport
     // .approval-modal-overlay (z-index 1000) that intercepts the handle tap and fails the click

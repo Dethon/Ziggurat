@@ -372,14 +372,28 @@ Object.assign(window.hearthSheet, {
         document.removeEventListener('pointermove', h._onMove);
         document.removeEventListener('pointerup', h._onUp);
         const wasDrag = h._axisLocked === 'y';
+        const traveled = Math.abs(h._lastY - h._startY);
         h._settle();
-        // After a real drag that began on the handle, swallow the trailing click so the
-        // handle's @onclick (CycleDetent) doesn't fire on top of the committed detent.
-        if (wasDrag) {
-            const swallow = function (ev) { ev.stopPropagation(); ev.preventDefault(); };
-            document.addEventListener('click', swallow, { capture: true, once: true });
-            setTimeout(() => document.removeEventListener('click', swallow, true), 350);
+        // After a real drag, swallow the trailing click so the handle's @onclick
+        // (CycleDetent) doesn't fire on top of the committed detent. Below the tap slop
+        // the gesture was a tap whose finger drifted, and its click is the intent.
+        const TAP_SLOP = 24;                        // px, tunable (spec §10)
+        if (wasDrag && traveled >= TAP_SLOP) h._swallowTrailingClick();
+    },
+
+    // A drag's own trailing click (a mouse release always sends one) arrives with no new
+    // pointerdown in front of it. A genuine follow-up tap starts with one, so the first
+    // pointerdown disarms the swallow instead of letting it eat the tap that switches
+    // conversations right after the sheet was dragged open.
+    _swallowTrailingClick: function () {
+        function cleanup() {
+            document.removeEventListener('click', swallow, true);
+            document.removeEventListener('pointerdown', cleanup, true);
         }
+        function swallow(ev) { ev.stopPropagation(); ev.preventDefault(); cleanup(); }
+        document.addEventListener('click', swallow, { capture: true });
+        document.addEventListener('pointerdown', cleanup, { capture: true });
+        setTimeout(cleanup, 350);
     },
 
     _settle: function () {
@@ -417,16 +431,24 @@ Object.assign(window.hearthSheet, {
         const y = e.touches[0].clientY;
         const dy = y - h._rowsStartY;
         if (h._rowsMode === null) {
-            if (Math.abs(dy) < 8) return;           // wait for a clear vertical intent
+            // On a list too short to scroll both edge flags are true, so this decides for
+            // every touch. Below the tap slop the movement is a tap whose finger drifted —
+            // engaging the sheet would eat the tap's click on browsers that deliver
+            // touchmove under their own click slop (tunable, spec §10).
+            const TAP_SLOP = 24;
+            if (Math.abs(dy) < TAP_SLOP) return;
             // Pull down at the top collapses; pull up at the bottom expands. Otherwise hand
             // the gesture back to the browser for normal (momentum) scrolling.
-            if ((h._rowsAtTop && dy > 0) || (h._rowsAtBottom && dy < 0)) { h._rowsMode = 'sheet'; h._el.classList.add('dragging'); }
+            if ((h._rowsAtTop && dy > 0) || (h._rowsAtBottom && dy < 0)) {
+                h._rowsMode = 'sheet'; h._el.classList.add('dragging');
+                h._rowsStartY = y;                  // track from here: no slop-sized jump
+            }
             else { h._rowsMode = 'native'; return; }
         }
         e.preventDefault();
         const base = h._el.getBoundingClientRect().height;
         const restPeek = base - 64;
-        const offset = Math.min(restPeek, Math.max(0, h._startOffset + dy));
+        const offset = Math.min(restPeek, Math.max(0, h._startOffset + (y - h._rowsStartY)));
         h._el.style.setProperty('--sheet-offset', offset + 'px');
         h._vy = (y - h._lastY) / Math.max(1, e.timeStamp - h._lastT);
         h._lastY = y; h._lastT = e.timeStamp;
@@ -439,9 +461,7 @@ Object.assign(window.hearthSheet, {
             h._axisLocked = 'y';
             h._settle();
             // Swallow the trailing click so a pull-to-collapse doesn't also select a topic.
-            const swallow = function (ev) { ev.stopPropagation(); ev.preventDefault(); };
-            document.addEventListener('click', swallow, { capture: true, once: true });
-            setTimeout(() => document.removeEventListener('click', swallow, true), 350);
+            h._swallowTrailingClick();
         }
         h._rowsMode = null;
     },
