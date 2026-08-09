@@ -6,6 +6,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
 using Mcp.Hosting;
+using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.SignalR;
@@ -20,6 +21,7 @@ public sealed class ChatHub(
     IAgentCatalog catalog,
     RedisStateService redisStateService,
     IPushSubscriptionStore pushSubscriptionStore,
+    AttachmentService attachments,
     ILogger<ChatHub> logger) : Hub
 {
     // What the browser is told when the emit reached nobody. The message may still be sitting in a
@@ -94,6 +96,33 @@ public sealed class ChatHub(
 
         Context.Items["SpaceSlug"] = spaceSlug;
         await Groups.AddToGroupAsync(Context.ConnectionId, $"space:{spaceSlug}");
+    }
+
+    public AttachmentLimits GetAttachmentLimits() => attachments.Limits;
+
+    // The ticket is scoped to the topic being composed in, so a caller can only put bytes against
+    // a conversation the connection already has a session for.
+    public UploadTicket CreateUploadTicket(string topicId)
+    {
+        if (!IsRegistered)
+        {
+            throw new HubException("User not registered. Call RegisterUser first.");
+        }
+
+        if (!sessionService.TryGetSession(topicId, out var session) || session is null)
+        {
+            throw new HubException("Session not found. Please start a session first.");
+        }
+
+        return attachments.MintUpload(
+            topicId, $"{session.ChatId}:{session.ThreadId}", CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
+    }
+
+    // Minted when the transcript renders an attachment, not published: one upload store serves
+    // every space, so a long-lived URL would be readable by anyone holding it.
+    public AttachmentDownload? CreateAttachmentDownload(string attachmentId)
+    {
+        return attachments.MintDownload(attachmentId, CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
     }
 
     public bool IsProcessing(string topicId)
@@ -328,6 +357,10 @@ public sealed class ChatHub(
         var agentKey = new AgentKey($"{chatId}:{threadId}", agentId);
         await redisStateService.DeleteMessagesAsync(agentKey);
         await redisStateService.DeleteTopicAsync(agentId, chatId, topicId);
+
+        // Removing a conversation removes what was in it. The sweep would reach these eventually;
+        // deleting a topic is the person saying they want them gone now.
+        attachments.DeleteConversation($"{chatId}:{threadId}");
     }
 
     public async Task SubscribePush(PushSubscriptionDto subscription)

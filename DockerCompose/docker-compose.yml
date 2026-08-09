@@ -394,6 +394,8 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelSignalR/Dockerfile
+    volumes:
+      - chat-uploads:/data/uploads
     restart: unless-stopped
     env_file:
       - .env
@@ -797,3 +799,4 @@ networks:
 
 volumes:
   printer-spool:
+  chat-uploads:

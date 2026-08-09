@@ -42,6 +42,7 @@ public class ChatHubNotLiveTests
             new Mock<IAgentCatalog>().Object,
             redisStateService: null!,
             pushSubscriptionStore: null!,
+            attachments: null!,
             NullLogger<ChatHub>.Instance)
         {
             Context = new RegisteredCaller()
@@ -106,6 +107,7 @@ public class ChatHubNotLiveTests
             new Mock<IAgentCatalog>().Object,
             redisStateService: null!,
             pushSubscriptionStore: null!,
+            attachments: null!,
             factory.CreateLogger<ChatHub>())
         {
             Context = new RegisteredCaller()

@@ -4,6 +4,7 @@ using Infrastructure.Clients.Push;
 using Infrastructure.Conversations;
 using Infrastructure.StateManagers;
 using Mcp.Hosting;
+using McpChannelSignalR.Attachments;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
@@ -34,7 +35,12 @@ public static class ConfigModule
             .AddSingleton<ApprovalService>()
             .AddSingleton<IApprovalService>(sp => sp.GetRequiredService<ApprovalService>())
             .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()
-            .AddSingleton<IPushSubscriptionStore, RedisPushSubscriptionStore>();
+            .AddSingleton<IPushSubscriptionStore, RedisPushSubscriptionStore>()
+            .AddSingleton(settings.Attachments)
+            .AddSingleton<AttachmentTickets>()
+            .AddSingleton<AttachmentStore>()
+            .AddSingleton<AttachmentService>()
+            .AddHostedService<AttachmentSweeper>();
 
         if (settings.WebPush?.IsConfigured == true)
         {

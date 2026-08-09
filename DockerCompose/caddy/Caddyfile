@@ -7,6 +7,10 @@ assistants.herfluffness.com {
         reverse_proxy mcp-channel-signalr:8080
     }
 
+    handle /api/attachments* {
+        reverse_proxy mcp-channel-signalr:8080
+    }
+
     handle /api/agents* {
         reverse_proxy agent:8080
     }
@@ -32,6 +36,10 @@ sexy.herfluffness.com {
     }
 
     handle /hubs/* {
+        reverse_proxy mcp-channel-signalr:8080
+    }
+
+    handle /api/attachments* {
         reverse_proxy mcp-channel-signalr:8080
     }
 

@@ -4,6 +4,7 @@ public record ChannelSettings
 {
     public required string RedisConnectionString { get; init; }
     public WebPushConfig? WebPush { get; init; }
+    public AttachmentSettings Attachments { get; init; } = new();
 }
 
 public record WebPushConfig

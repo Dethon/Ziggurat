@@ -1,4 +1,5 @@
 using Mcp.Hosting;
+using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Hubs;
 using McpChannelSignalR.Modules;
 using McpChannelSignalR.Settings;
@@ -20,6 +21,7 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 app.UseCors();
 app.MapHub<ChatHub>("/hubs/chat");
+AttachmentEndpoints.Map(app);
 app.MapMcp("/mcp");
 
 await app.RunAsync();
