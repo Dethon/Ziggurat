@@ -31,13 +31,37 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
 
         await page.Locator(".message-content").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
 
+        // The wait above only proves the typed bubble rendered — topic two's reply is still
+        // streaming, and every chunk bumps its LastMessageAt, which is the key the rows are
+        // ordered by. A click aimed at "Topic one" then lands on whichever row slid under it,
+        // and when that row is topic two, HandleTopicClick sees the selection is unchanged and
+        // dispatches nothing: the click "succeeds" and the messages never switch. Wait for the
+        // order to stop moving first.
+        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page);
+
         // Can't rely on position — other tests' topics may also be visible.
         var topic1 = page.Locator(".topic-item", new PageLocatorOptions { HasText = "Topic one" });
         await topic1.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
-        await WebChatE2ETests.ClickThroughApprovalsAsync(page, topic1);
 
-        var messageContent = page.Locator(".message-content", new PageLocatorOptions { HasText = "Topic one message for E2E" });
-        await messageContent.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
+        // .First, because the agent often quotes the message back and then two bubbles carry the
+        // text — a strict-mode violation, which fails outright instead of waiting.
+        //
+        // A row can still move under a late approval or a resumed stream, and a miss is silent,
+        // so the click is retried when the messages didn't switch.
+        var messageContent = page
+            .Locator(".message-content", new PageLocatorOptions { HasText = "Topic one message for E2E" }).First;
+        for (var attempt = 0; ; attempt++)
+        {
+            await WebChatE2ETests.ClickThroughApprovalsAsync(page, topic1);
+            try
+            {
+                await messageContent.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
+                break;
+            }
+            catch (TimeoutException) when (attempt < 2)
+            {
+            }
+        }
     }
 
     // The title only shows in the top bar on a phone, and that is where it is renamed: tap it,
