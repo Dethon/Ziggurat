@@ -26,6 +26,36 @@ public record RemoveAttachment(string TopicId, string LocalId) : IAction;
 // clearing the topic's whole list would throw it away with no trace.
 public record ClearAttachments(string TopicId, IReadOnlyList<string> LocalIds) : IAction;
 
+// What the browser reports as a dictation runs. It owns the microphone, the encoder, the gesture
+// thresholds and the upload, and calls in only at decisions.
+public record DictationStarted : IAction;
+
+public record DictationLatched : IAction;
+
+// The recording is over and the words are on their way.
+public record DictationEnded : IAction;
+
+public record DictationTranscribed(string Text) : IAction;
+
+// Thrown away: slid to discard, the trash button, Escape, a topic change, or a hidden tab. No
+// request was made and nothing reaches the composer.
+public record DictationDiscarded : IAction;
+
+public record DictationFailed(string Reason) : IAction;
+
+// The microphone cannot be used at all here — permission refused, or a browser without the APIs.
+// The control stops trying for the session.
+public record DictationUnavailable(string Reason) : IAction;
+
+// A press too short to be a hold. Nothing was recorded and nothing is being said about failure.
+public record DictationMisTapped(string Hint) : IAction;
+
+// The two ways a latched dictation ends, and the way any dictation ends early. The effect is what
+// reaches the microphone; the state moves when the browser reports back.
+public record StopDictation : IAction;
+
+public record DiscardDictation : IAction;
+
 public sealed class ComposerStore : IDisposable
 {
     private readonly Store<ComposerState> _store;
@@ -45,6 +75,51 @@ public sealed class ComposerStore : IDisposable
     private static ComposerState Reduce(ComposerState state, IAction action) => action switch
     {
         AttachmentLimitsLoaded a => state with { Limits = a.Limits },
+
+        // A new dictation clears whatever the last one left on screen: a refusal about a recording
+        // that no longer exists is noise the moment a new one starts.
+        DictationStarted => Dictating(state, DictationStatus.Recording),
+
+        DictationLatched => Dictating(state, DictationStatus.Latched),
+
+        DictationEnded => state with
+        {
+            Dictation = state.Dictation with { Status = DictationStatus.Transcribing }
+        },
+
+        DictationTranscribed a => state with
+        {
+            Dictation = state.Dictation with
+            {
+                Status = DictationStatus.Idle,
+                Transcript = new PendingTranscript(a.Text, Stamp())
+            }
+        },
+
+        DictationDiscarded => state with
+        {
+            Dictation = state.Dictation with { Status = DictationStatus.Idle }
+        },
+
+        DictationFailed a => state with
+        {
+            Dictation = state.Dictation with { Status = DictationStatus.Idle, Refusal = a.Reason }
+        },
+
+        DictationUnavailable a => state with
+        {
+            Dictation = state.Dictation with
+            {
+                Status = DictationStatus.Idle,
+                Unavailable = true,
+                Refusal = a.Reason
+            }
+        },
+
+        DictationMisTapped a => state with
+        {
+            Dictation = state.Dictation with { Status = DictationStatus.Idle, Hint = a.Hint }
+        },
 
         AttachmentPicked a => state with
         {
@@ -86,6 +161,17 @@ public sealed class ComposerStore : IDisposable
 
         _ => state
     };
+
+    private static ComposerState Dictating(ComposerState state, DictationStatus status) => state with
+    {
+        Dictation = state.Dictation with { Status = status, Refusal = null, Hint = null }
+    };
+
+    // Monotonic within the session, which is all the composer needs to tell one transcript from
+    // the next one carrying the same words.
+    private static long Stamp() => Interlocked.Increment(ref _stamp);
+
+    private static long _stamp;
 
     private static ComposerState Map(
         ComposerState state, string topicId, string localId, Func<ComposerAttachment, ComposerAttachment> transform)

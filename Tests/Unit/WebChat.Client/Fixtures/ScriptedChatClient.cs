@@ -61,7 +61,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
             typeof(TopicSelectionEffect), typeof(TopicDeleteEffect), typeof(InitializationEffect),
             typeof(AgentSelectionEffect), typeof(UserIdentityEffect), typeof(SpaceEffect),
             typeof(AgentActivityEffect), typeof(AgentSettingsEffect), typeof(StreamResumeEffect),
-            typeof(AttachmentEffect), typeof(TopicRenameEffect)
+            typeof(AttachmentEffect), typeof(DictationEffect), typeof(TopicRenameEffect)
         }.ToList().ForEach(type => Services.GetRequiredService(type));
     }
 
@@ -94,6 +94,8 @@ public sealed class ScriptedChatClient : IAsyncDisposable
     public ComposerStore Composer => Services.GetRequiredService<ComposerStore>();
 
     public FakeAttachmentUploader Uploader { get; } = new();
+
+    public FakeDictationBridge Dictation { get; } = new();
 
     public UserIdentityStore UserIdentity => Services.GetRequiredService<UserIdentityStore>();
 
@@ -135,6 +137,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         services.AddScoped<IApprovalService, ApprovalService>();
         services.AddScoped<AttachmentEndpointResolver>();
         services.AddScoped<IAttachmentService, AttachmentService>();
+        services.AddScoped<IDictationService, DictationService>();
         services.AddScoped<ApprovalResponder>();
 
         services.AddWebChatStores();
@@ -152,6 +155,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         services.AddScoped<ILocalStorageService>(_ => LocalStorage);
         services.AddScoped<IPushSubscriptionService>(_ => new FakePushSubscriptionService());
         services.AddScoped<IAttachmentUploader>(_ => Uploader);
+        services.AddScoped<IDictationBridge>(_ => Dictation);
 
         return services;
     }
@@ -170,6 +174,8 @@ public sealed class ScriptedChatClient : IAsyncDisposable
             25L * 1024 * 1024, 10, ["image/png", "image/jpeg", "application/pdf"]));
         connection.Answer("CreateUploadTicket",
             new UploadTicket("ticket-1", DateTimeOffset.UtcNow.AddMinutes(15)));
+        connection.Answer("CreateDictationTicket",
+            new DictationTicket("dictation-ticket-1", DateTimeOffset.UtcNow.AddMinutes(15)));
         connection.Answer("CreateAttachmentDownload",
             (object?[] args) => new AttachmentDownload(
                 $"/api/attachments/{args[0]}?ticket=download-1", DateTimeOffset.UtcNow.AddMinutes(15)));
