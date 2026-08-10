@@ -7,7 +7,7 @@ namespace Tests.Integration.Fixtures;
 // Spins the real lemonade STT/TTS server (DockerCompose/lemonade) as a testcontainer instead of
 // leaning on a manually-run compose service. Forces the CPU whisper.cpp tier (STT_BACKEND=cpu) so
 // the fixture is portable -- the test pins the transcription *contract*, not GPU throughput, so no
-// /dev/dri passthrough is needed. The Whisper-Medium + Kokoro models are multi-GB runtime downloads
+// /dev/dri passthrough is needed. The whisper + Kokoro models are multi-GB runtime downloads
 // the compose stack provisions into DockerCompose/volumes/lemonade-*; we bind-mount those (the same
 // paths the compose service uses) rather than re-download them inside a test, so their presence is a
 // hard precondition. The image itself is not: LemonadeImageFixture builds it when it is missing.

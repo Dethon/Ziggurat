@@ -56,6 +56,16 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
 
     private JsonObject RunEntrypoint(params (string Key, string Value)[] env)
     {
+        var result = RunEntrypointRaw(env);
+        result.Exit.ShouldBe(0, $"entrypoint failed: {result.StdErr}");
+
+        var config = File.ReadAllText(Path.Combine(_configDir, "config.json"));
+        return JsonNode.Parse(config)!.AsObject();
+    }
+
+    private (int Exit, string StdOut, string StdErr) RunEntrypointRaw(
+        params (string Key, string Value)[] env)
+    {
         // The entrypoint is a Linux shell run through a Linux container over a unix-mode bind
         // mount; only assert it on a Linux host rather than hard-failing elsewhere.
         Skip.IfNot(OperatingSystem.IsLinux(), "lemonade entrypoint test requires a Linux docker host");
@@ -77,11 +87,20 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
         }
         args.AddRange([LemonadeImageFixture.Image, "/entrypoint.sh"]);
 
-        var result = Run("docker", args);
+        return Run("docker", args);
+    }
+
+    // The pre-pull payload is echoed before the STT_CONFIG_ONLY seam precisely so it can be
+    // asserted without starting the server or reaching a registry.
+    private JsonObject PullPayload(params (string Key, string Value)[] env)
+    {
+        var result = RunEntrypointRaw(env);
         result.Exit.ShouldBe(0, $"entrypoint failed: {result.StdErr}");
 
-        var config = File.ReadAllText(Path.Combine(_configDir, "config.json"));
-        return JsonNode.Parse(config)!.AsObject();
+        var line = result.StdOut
+            .Split('\n')
+            .Single(l => l.StartsWith("lemonade: stt pull payload=", StringComparison.Ordinal));
+        return JsonNode.Parse(line["lemonade: stt pull payload=".Length..])!.AsObject();
     }
 
     private static string WhisperArgs(JsonObject config) =>
@@ -211,6 +230,52 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
         whisperArgs.ShouldNotContain("--vad");
         whisperArgs.ShouldContain("--beam-size 5");
         whisperArgs.ShouldContain("--prompt \"Asistente de voz");
+    }
+
+    // A built-in model is already in Lemonade's registry, so naming it is the whole request —
+    // sending registration fields for one would claim ownership of a name we do not own.
+    [SkippableFact]
+    public void Entrypoint_BuiltInModel_PullsByNameAlone()
+    {
+        SeedVadModel();
+
+        var payload = PullPayload(("STT_BACKEND", "cpu"), ("STT_MODEL", "Whisper-Large-v3-Turbo"));
+
+        payload["model_name"]!.GetValue<string>().ShouldBe("Whisper-Large-v3-Turbo");
+        payload.ContainsKey("recipe").ShouldBeFalse();
+        payload.ContainsKey("checkpoints").ShouldBeFalse();
+    }
+
+    // A `user.` model is in no registry until we put it there, and /api/v1/pull doubles as the
+    // registration endpoint: without recipe + checkpoints it answers a 400 demanding the very
+    // `user.` namespace it was already given.
+    [SkippableFact]
+    public void Entrypoint_UserModel_RegistersItsCheckpointOnPull()
+    {
+        SeedVadModel();
+
+        var payload = PullPayload(
+            ("STT_BACKEND", "cpu"),
+            ("STT_MODEL", "user.Whisper-Large-v3-Turbo-ES"),
+            ("STT_MODEL_CHECKPOINT", "some-org/some-repo:ggml-model.bin"));
+
+        payload["model_name"]!.GetValue<string>().ShouldBe("user.Whisper-Large-v3-Turbo-ES");
+        payload["recipe"]!.GetValue<string>().ShouldBe("whispercpp");
+        payload["checkpoints"]!["main"]!.GetValue<string>().ShouldBe("some-org/some-repo:ggml-model.bin");
+    }
+
+    // Config error, not a network blip: an unregisterable user model would start a container whose
+    // every transcription 400s, so it fails at boot naming the variable that is missing.
+    [SkippableFact]
+    public void Entrypoint_UserModelWithoutCheckpoint_FailsFast()
+    {
+        SeedVadModel();
+
+        var result = RunEntrypointRaw(
+            ("STT_BACKEND", "cpu"), ("STT_MODEL", "user.Whisper-Large-v3-Turbo-ES"));
+
+        result.Exit.ShouldNotBe(0);
+        result.StdErr.ShouldContain("STT_MODEL_CHECKPOINT");
     }
 
     [SkippableFact]

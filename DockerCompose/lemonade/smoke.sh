@@ -7,7 +7,7 @@
 set -eu
 HOST="${1:-localhost:13305}"
 # Override for the NPU tier: sh lemonade/smoke.sh localhost:13305 whisper-v3-turbo-FLM
-MODEL="${2:-${STT_MODEL:-Whisper-Medium}}"
+MODEL="${2:-${STT_MODEL:-Whisper-Large-v3-Turbo}}"
 
 echo "== health =="
 curl -fsS "http://$HOST/api/v1/health" && echo

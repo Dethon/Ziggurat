@@ -58,7 +58,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="lemonade")
     ap.add_argument("--port", type=int, default=13305)
-    ap.add_argument("--model", default="Whisper-Medium")
+    ap.add_argument("--model", default="Whisper-Large-v3-Turbo")
     ap.add_argument("--prompt", default=None, help="whisper initial prompt posted with each clip")
     ap.add_argument("--manifest", required=True, help="jsonl of {'wav': path}")
     ap.add_argument("--out", required=True)
