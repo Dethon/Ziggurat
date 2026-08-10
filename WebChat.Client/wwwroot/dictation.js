@@ -182,7 +182,9 @@ window.dictation = {
             ending: false,
             ticket: null,
             stream: null,
-            ctx: null
+            ctx: null,
+            encoder: null,
+            drained: null
         };
         this._run = run;
         // Minted while the microphone opens rather than after it: the two round trips overlap, and
@@ -228,16 +230,29 @@ window.dictation = {
         }
 
         run.stream = await navigator.mediaDevices.getUserMedia({
-            audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
+            audio: {
+                channelCount: 1,
+                // Everything a phone does for a voice call is wrong for a transcriber. Asking for
+                // echo cancellation opens the microphone on the platform's voice path, and the
+                // noise suppression and automatic gain that come with it are tuned for a person
+                // listening down a line — they gate quiet speech and chew the starts of words.
+                // Nothing in a dictation is ever played, so there is no echo to cancel, and
+                // whisper does better on what the microphone actually heard.
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false
+            }
         });
         if (run.ending || this._run !== run) {
-            this._stopTracks(run);
+            this._teardown(run);
             return;
         }
 
-        // 16 kHz asked of the graph, so the browser resamples the microphone for us and the
-        // worklet has nothing to convert.
-        const ctx = new AudioContext({ sampleRate: 16000 });
+        // The graph runs at the device's own rate. Asking for 16 kHz instead puts a resampler we
+        // did not write inside the capture path, and what it does with a phone's microphone is not
+        // what it does with a laptop's; the worklet converts to 16 kHz afterwards, identically
+        // everywhere.
+        const ctx = new AudioContext();
         run.ctx = ctx;
         // A context created outside a gesture starts suspended, and a suspended graph never pulls
         // the worklet — the recording would be silence of exactly the right length.
@@ -246,28 +261,33 @@ window.dictation = {
         }
         await ctx.audioWorklet.addModule('dictation-encoder.js');
         if (run.ending || this._run !== run) {
-            this._stopTracks(run);
+            this._teardown(run);
             return;
         }
 
         const source = ctx.createMediaStreamSource(run.stream);
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 256;
-        const encoder = new AudioWorkletNode(ctx, 'dictation-encoder');
+        // No outputs: a worklet with none is still pulled, so nothing has to be connected onward to
+        // make the recording run. Reaching the speakers is what puts an Android device on its
+        // voice-call route, where the microphone it then opens is not the one that was asked for —
+        // and there was never anything here to hear.
+        const encoder = new AudioWorkletNode(ctx, 'dictation-encoder', { numberOfOutputs: 0 });
         encoder.port.onmessage = e => {
+            // The encoder answers a flush with a word rather than samples.
+            if (typeof e.data === 'string') {
+                if (run.drained) run.drained();
+                return;
+            }
             run.chunks.push(e.data);
             run.samples += e.data.length;
         };
-        // A node the graph does not pull is a node that never runs, and the only sink is the
-        // speakers — so the chain ends at a silent gain rather than at the microphone being
-        // played back into the room.
-        const silence = ctx.createGain();
-        silence.gain.value = 0;
+        // The level meter hangs off the microphone rather than sitting in the recording path, so
+        // what is drawn on screen cannot change what is encoded.
         source.connect(analyser);
-        analyser.connect(encoder);
-        encoder.connect(silence);
-        silence.connect(ctx.destination);
+        source.connect(encoder);
         run.analyser = analyser;
+        run.encoder = encoder;
     },
 
     _latch: function () {
@@ -287,7 +307,11 @@ window.dictation = {
         if (!run || run.ending) return;
         run.ending = true;
         this._stopClock(run);
-        this._teardown(run);
+        // The microphone closes now — the indicator going out is what answers letting go — but the
+        // graph stays up a moment longer, until the encoder has handed over the batch it was still
+        // filling.
+        this._stopTracks(run);
+        this._clearHints();
         this._run = null;
         this._invoke('Ended');
         this._transcribe(run);
@@ -304,8 +328,27 @@ window.dictation = {
         this._invoke('Discarded');
     },
 
+    // The encoder posts in batches rather than once per render quantum, so up to an eighth of a
+    // second is still on the audio thread when a dictation ends — which is usually the end of the
+    // last word. Ask for it, and do not wait forever: a graph that has already gone away answers
+    // nothing, and what was collected is still a recording.
+    _drain: function (run) {
+        if (!run.encoder) return Promise.resolve();
+        return new Promise(resolve => {
+            const timer = setTimeout(resolve, 300);
+            run.drained = () => { clearTimeout(timer); resolve(); };
+            try {
+                run.encoder.port.postMessage('flush');
+            } catch (e) {
+                run.drained();
+            }
+        });
+    },
+
     _transcribe: async function (run) {
         try {
+            await this._drain(run);
+            this._closeContext(run);
             const ticket = await run.ticket;
             if (!ticket) {
                 this._invoke('Failed', run.ticketRefusal
@@ -337,6 +380,9 @@ window.dictation = {
             this._invoke('Transcribed', text);
         } catch (err) {
             this._invoke('Failed', 'I could not turn that recording into words.');
+        } finally {
+            // Whatever the upload did, the graph does not outlive it.
+            this._closeContext(run);
         }
     },
 
@@ -362,21 +408,40 @@ window.dictation = {
         ascii(36, 'data');
         view.setUint32(40, bytes, true);
 
+        const gain = this._gain(run);
         let offset = 44;
         for (const chunk of run.chunks) {
             for (let i = 0; i < chunk.length; i++, offset += 2) {
-                view.setInt16(offset, chunk[i], true);
+                const lifted = Math.round(chunk[i] * gain);
+                view.setInt16(offset, Math.max(-32768, Math.min(32767, lifted)), true);
             }
         }
         return new Blob([buffer], { type: 'audio/wav' });
     },
 
+    // Nothing on the capture side applies automatic gain any more, and a phone held at arm's length
+    // records quietly. This is only ever a lift and it is capped, so a recording of a quiet room
+    // stays a recording of a quiet room rather than being pulled up to full scale as noise.
+    _gain: function (run) {
+        const peak = run.chunks.reduce(
+            (loudest, chunk) => chunk.reduce((most, s) => Math.max(most, Math.abs(s)), loudest), 0);
+        return peak === 0 ? 1 : Math.max(1, Math.min(8, 29000 / peak));
+    },
+
     _teardown: function (run) {
         this._stopTracks(run);
+        this._closeContext(run);
+        this._clearHints();
+    },
+
+    _closeContext: function (run) {
         if (run.ctx) {
             try { run.ctx.close(); } catch (e) { /* already closed */ }
             run.ctx = null;
         }
+    },
+
+    _clearHints: function () {
         this._setStripVar('--dictation-travel', 0);
         this._setStripVar('--dictation-level', 0);
     },

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.E2E.Fixtures;
@@ -55,6 +56,139 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         // A recording of nothing has a header and no samples, which is what a graph that never
         // pulled the worklet produces.
         BitConverter.ToInt32(wav, 40).ShouldBeGreaterThan(0);
+    }
+
+    // A phone is not a desktop here. Asking for echo cancellation opens the microphone on the
+    // platform's voice-call path, whose noise suppression and automatic gain are tuned for a human
+    // listening down a phone line rather than for a transcriber, and an audio graph that reaches
+    // the speakers is what puts an Android device on that path in the first place. Nothing in a
+    // dictation is ever played, so nothing here should ask for either.
+    [SkippableFact]
+    public async Task TheMicrophoneIsOpenedForARecorderRatherThanForAPhoneCall()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        fixture.TranscriptionStatus = 200;
+        fixture.Transcript = "hola";
+
+        var page = await OpenAsync();
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+
+        var opened = JsonDocument.Parse(await page.EvaluateAsync<string>(
+            """
+            () => {
+                const run = window.dictation._run;
+                const settings = run.stream.getAudioTracks()[0].getSettings();
+                const probe = new AudioContext();
+                const deviceRate = probe.sampleRate;
+                probe.close();
+                return JSON.stringify({
+                    echoCancellation: settings.echoCancellation,
+                    noiseSuppression: settings.noiseSuppression,
+                    autoGainControl: settings.autoGainControl,
+                    encoderOutputs: run.encoder ? run.encoder.numberOfOutputs : null,
+                    contextRate: run.ctx.sampleRate,
+                    deviceRate: deviceRate
+                });
+            }
+            """)).RootElement;
+
+        await TouchAsync(cdp, "touchEnd");
+
+        // Reported rather than merely absent: a browser that does not say cannot be taken to agree.
+        opened.GetProperty("echoCancellation").GetBoolean().ShouldBeFalse();
+        opened.GetProperty("noiseSuppression").GetBoolean().ShouldBeFalse();
+        opened.GetProperty("autoGainControl").GetBoolean().ShouldBeFalse();
+
+        // The worklet is the end of the chain. A node with no outputs is still pulled, so nothing
+        // has to be connected onward to the speakers to make the recording run.
+        opened.GetProperty("encoderOutputs").GetInt32().ShouldBe(0);
+
+        // The graph runs at whatever rate the device runs at. Asking a phone for a 16 kHz graph
+        // puts a resampler we cannot see in the capture path; the one that produces the 16 kHz the
+        // transcriber needs is ours, downstream, and the same on every device.
+        opened.GetProperty("contextRate").GetDouble()
+            .ShouldBe(opened.GetProperty("deviceRate").GetDouble());
+    }
+
+    // The level meter hangs off the microphone now rather than sitting in the recording path, so
+    // that what is drawn cannot change what is encoded. It still has to be hearing something: a
+    // meter stuck at zero is the one thing that would tell someone their input device is misrouted,
+    // and it would be saying it about a microphone that is working.
+    [SkippableFact]
+    public async Task WhileRecording_TheLevelMeterFollowsWhatTheMicrophoneHears()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        fixture.TranscriptionStatus = 200;
+        fixture.Transcript = "hola";
+
+        var page = await OpenAsync();
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await page.WaitForFunctionAsync(
+            """
+            () => {
+                const strip = document.querySelector('.dictation-strip');
+                return strip
+                    && parseFloat(strip.style.getPropertyValue('--dictation-level') || '0') > 0.01;
+            }
+            """,
+            null,
+            new PageWaitForFunctionOptions { Timeout = 15_000 });
+
+        await TouchAsync(cdp, "touchEnd");
+    }
+
+    // Dropping to 16 kHz is the step that can quietly ruin a recording: everything above 8 kHz in
+    // the captured signal folds back down on top of the speech unless it is filtered away first.
+    // The fake microphone plays a 1 kHz tone that must survive and a 12 kHz tone that must not
+    // reappear at 4 kHz.
+    [SkippableFact]
+    public async Task TheUploadedAudioKeepsTheSpeechBandAndFoldsNothingBackIntoIt()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        fixture.TranscriptionStatus = 200;
+        fixture.Transcript = "hola";
+
+        var page = await OpenAsync();
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        await Task.Delay(1_400);
+        await TouchAsync(cdp, "touchEnd");
+
+        await Assertions.Expect(page.Locator("textarea.chat-input"))
+            .ToHaveValueAsync("hola", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+
+        var samples = FakeMicrophoneAudio.Samples(fixture.LastAudio.ShouldNotBeNull());
+        // Past the microphone opening and short of it closing, so neither end's transient is
+        // measured as content.
+        var window = samples.Skip(FakeMicrophoneAudio.TranscriptionRate / 5).Take(8192).ToArray();
+        window.Length.ShouldBe(8192, "the recording is too short to measure");
+
+        var speech = FakeMicrophoneAudio.MagnitudeAt(
+            window, FakeMicrophoneAudio.SpeechToneHz, FakeMicrophoneAudio.TranscriptionRate);
+        var alias = FakeMicrophoneAudio.MagnitudeAt(
+            window, FakeMicrophoneAudio.AliasHz, FakeMicrophoneAudio.TranscriptionRate);
+
+        // Neither silence nor a wall of clipping: a recording that is either is one no transcriber
+        // can do anything with, however clean its spectrum.
+        var rms = Math.Sqrt(window.Sum(s => s * s) / window.Length);
+        rms.ShouldBeGreaterThan(0.02);
+        rms.ShouldBeLessThan(0.71);
+
+        speech.ShouldBeGreaterThan(0.01, "the 1 kHz tone did not survive the recording");
+        var decibels = 20 * Math.Log10(alias / speech);
+        decibels.ShouldBeLessThan(-20, $"12 kHz folded back to 4 kHz at {decibels:F1} dB");
     }
 
     // Nobody should have to hold a key down, so a keyboard press starts a latched dictation

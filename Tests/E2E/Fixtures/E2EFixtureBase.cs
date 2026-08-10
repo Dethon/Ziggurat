@@ -17,12 +17,15 @@ public abstract class E2EFixtureBase : IAsyncLifetime
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
             Headless = headless,
-            // A dictation needs a microphone. The fake device answers getUserMedia with a
-            // generated tone and the fake UI grants the permission prompt, so a recording is real
-            // input through the real pipeline with no hardware and nobody to click "allow".
+            // A dictation needs a microphone. The fake device answers getUserMedia and the fake UI
+            // grants the permission prompt, so a recording is real input through the real pipeline
+            // with no hardware and nobody to click "allow". It is fed a known two-tone file rather
+            // than Chromium's default beep, so a test can ask what came out the far end and not
+            // merely how many bytes did.
             Args =
             [
                 "--use-fake-device-for-media-stream",
+                $"--use-file-for-fake-audio-capture={FakeMicrophoneAudio.WriteToTempFile()}",
                 "--use-fake-ui-for-media-stream",
                 "--autoplay-policy=no-user-gesture-required"
             ]
