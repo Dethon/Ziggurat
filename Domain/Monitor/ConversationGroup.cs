@@ -467,11 +467,12 @@ internal sealed class ConversationGroup(
         }
 
         var landed = await AttachmentLanding.LandAsync(
-            state.Agent.GetFileSystemRegistry(state.Thread),
-            attachments,
-            (id, ct) => channel.FetchAttachmentAsync(id, ct),
-            state.DeliveryKey.ConversationId,
-            turn.TurnKey,
+            new AttachmentLanding.Landing(
+                state.Agent.GetFileSystemRegistry(state.Thread),
+                attachments,
+                (id, ct) => channel.FetchAttachmentAsync(id, ct),
+                state.DeliveryKey.ConversationId,
+                turn.TurnKey),
             logger,
             _turnCt);
 

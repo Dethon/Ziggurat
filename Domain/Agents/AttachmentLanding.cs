@@ -20,15 +20,19 @@ public static class AttachmentLanding
 {
     public const string Root = "uploads";
 
+    // One message's files on their way to the sandbox: where they can land, what they are, how
+    // their bytes are fetched, and the conversation and message that name their directory.
+    public sealed record Landing(
+        IVirtualFileSystemRegistry? Registry,
+        IReadOnlyList<AttachmentReference> Attachments,
+        Func<string, CancellationToken, Task<byte[]?>> Fetch,
+        string ConversationId,
+        string MessageKey);
+
     public static async Task<IReadOnlyList<string>> LandAsync(
-        IVirtualFileSystemRegistry? registry,
-        IReadOnlyList<AttachmentReference> attachments,
-        Func<string, CancellationToken, Task<byte[]?>> fetch,
-        string conversationId,
-        string messageKey,
-        ILogger logger,
-        CancellationToken ct)
+        Landing landing, ILogger logger, CancellationToken ct)
     {
+        var (registry, attachments, fetch, conversationId, messageKey) = landing;
         var mountPoint = FindSandboxMountPoint(registry);
         if (registry is null || mountPoint is null || attachments.Count == 0)
         {
