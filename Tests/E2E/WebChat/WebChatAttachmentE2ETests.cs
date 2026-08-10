@@ -67,8 +67,9 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         // A reload restores the record, not the session: nothing is selected until the person
         // opens a conversation, so open it again before asking after its attachments.
         await WebChatE2ETests.DismissApprovalOverlayAsync(page);
-        // A conversation started by attaching a file is named after the file.
-        await page.Locator(".topic-item", new PageLocatorOptions { HasText = "e2e-photo" })
+        // A conversation started by attaching a file is named after the file only until the
+        // opening message arrives, and that rename is persisted, so the row carries the text.
+        await page.Locator(".topic-item", new PageLocatorOptions { HasText = "What is in this picture?" })
             .First.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
 
         var afterReload = page.Locator(".chat-message.user .message-attachments");
