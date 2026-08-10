@@ -20,12 +20,12 @@ The polling service takes a time provider so the debounce is drivable in tests.
 
 **Blocked by:** 01 — A photo or a document reaches the model.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Photos sharing a media-group id produce one notification carrying every reference.
-- [ ] The group's caption becomes the turn's content, wherever in the group it arrived.
-- [ ] Each arrival resets the window, so an item arriving within the debounce joins its group.
-- [ ] A group with no further arrivals releases after the debounce, without waiting for the album to be full.
-- [ ] A message with no media-group id is unaffected and emits immediately.
-- [ ] Two interleaved groups do not merge.
-- [ ] Tests drive the debounce through a fake time provider rather than by waiting.
+- [x] Photos sharing a media-group id produce one notification carrying every reference.
+- [x] The group's caption becomes the turn's content, wherever in the group it arrived.
+- [x] Each arrival resets the window, so an item arriving within the debounce joins its group.
+- [x] A group with no further arrivals releases after the debounce, without waiting for the album to be full.
+- [x] A message with no media-group id is unaffected and emits immediately.
+- [x] Two interleaved groups do not merge.
+- [x] Tests drive the debounce through a fake time provider rather than by waiting.

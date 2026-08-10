@@ -20,11 +20,11 @@ per-message model override, so the model a turn will run on is always the agent'
 
 **Blocked by:** 02 — A file that cannot be sent is refused in the chat.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The channel accepts the agent catalogue registration and replaces any previously registered set.
-- [ ] Attaching an image to an agent whose model does not accept images produces a reply naming the model, and no turn is emitted.
-- [ ] The same holds for documents against a model that does not accept them.
-- [ ] With no catalogue registered, or an agent absent from it, attachments go through.
-- [ ] A message whose attachments the model accepts is unaffected.
-- [ ] Tests register a catalogue through the tool's own entry point and then drive media through the polling service, asserting both the reply and the absence of a notification.
+- [x] The channel accepts the agent catalogue registration and replaces any previously registered set.
+- [x] Attaching an image to an agent whose model does not accept images produces a reply naming the model, and no turn is emitted.
+- [x] The same holds for documents against a model that does not accept them.
+- [x] With no catalogue registered, or an agent absent from it, attachments go through.
+- [x] A message whose attachments the model accepts is unaffected.
+- [x] Tests register a catalogue through the tool's own entry point and then drive media through the polling service, asserting both the reply and the absence of a notification.

@@ -13,11 +13,11 @@ costs nothing to determine.
 
 **Blocked by:** 02 — A file that cannot be sent is refused in the chat.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A static sticker becomes an image attachment and reaches the model.
-- [ ] A static sticker is subject to the capability stop like any other image, once 04 has landed.
-- [ ] An animated sticker, a video sticker, an animation and a video note are dropped with no reply.
-- [ ] A message whose only media is dropped expressive media still runs as a text turn when it has a caption.
-- [ ] An unresolvable document or video keeps the reply from 02.
-- [ ] Tests cover each media shape and assert on the presence or absence of both the notification and the reply.
+- [x] A static sticker becomes an image attachment and reaches the model.
+- [x] A static sticker is subject to the capability stop like any other image, once 04 has landed.
+- [x] An animated sticker, a video sticker, an animation and a video note are dropped with no reply.
+- [x] A message whose only media is dropped expressive media still runs as a text turn when it has a caption.
+- [x] An unresolvable document or video keeps the reply from 02.
+- [x] Tests cover each media shape and assert on the presence or absence of both the notification and the reply.

@@ -16,11 +16,11 @@ This ticket establishes the refusal reply that 04 reuses and 05 suppresses.
 
 **Blocked by:** 01 — A photo or a document reaches the model.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A file above the download limit is refused without any download being attempted.
-- [ ] A file whose kind resolves to nothing is refused.
-- [ ] A refused file is dropped and the turn still runs, carrying the caption and the remaining attachments.
-- [ ] A message whose every file is refused still runs as a text turn when it has a caption, and runs no turn at all when it has none — the reply is the whole response.
-- [ ] All refusals for one message produce a single reply quoting the message that failed and naming the files.
-- [ ] Tests cover each ground, the mixed case where some files survive, and the reply's content and quoting.
+- [x] A file above the download limit is refused without any download being attempted.
+- [x] A file whose kind resolves to nothing is refused.
+- [x] A refused file is dropped and the turn still runs, carrying the caption and the remaining attachments.
+- [x] A message whose every file is refused still runs as a text turn when it has a caption, and runs no turn at all when it has none — the reply is the whole response.
+- [x] All refusals for one message produce a single reply quoting the message that failed and naming the files.
+- [x] Tests cover each ground, the mixed case where some files survive, and the reply's content and quoting.

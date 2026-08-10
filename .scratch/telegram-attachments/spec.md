@@ -1,6 +1,6 @@
 # Telegram attachments
 
-Status: ready-for-agent
+Status: resolved
 Date: 2026-08-10
 
 Vocabulary is pinned in `CONTEXT.md` under "Chat attachments": **attachment**, **attachment

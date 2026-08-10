@@ -25,15 +25,15 @@ Anything that is not a photo or a document is ignored exactly as it is today; re
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A photo with a qualifying caption produces a channel message notification carrying one attachment reference and the caption as its content.
-- [ ] A document with a qualifying caption does the same, keeping the filename Telegram carried.
-- [ ] A message with attachments and no caption produces a turn with empty content rather than being dropped.
-- [ ] A media message that does not qualify under the addressing rule is still ignored.
-- [ ] Kind resolution uses the mime type first and the filename extension when it is absent or generic; an image sent as a file resolves to an image.
-- [ ] A reference id names the agent and Telegram's file handle; media with no filename is named after its message id with an extension derived from the mime type.
-- [ ] The fetch-attachment tool returns the bytes for a known reference, resolving the bot from the reference alone with no prior chat mapping.
-- [ ] The fetch-attachment tool answers empty for a reference it cannot fetch, rather than failing.
-- [ ] Domain comments stating that only the SignalR channel populates attachments are corrected.
-- [ ] Tests drive real Telegram updates through the polling service against a mocked bot client and assert on the notification reaching the channel inbox; the tool is tested through its own entry point. The existing test asserting that a photo message is ignored inverts.
+- [x] A photo with a qualifying caption produces a channel message notification carrying one attachment reference and the caption as its content.
+- [x] A document with a qualifying caption does the same, keeping the filename Telegram carried.
+- [x] A message with attachments and no caption produces a turn with empty content rather than being dropped.
+- [x] A media message that does not qualify under the addressing rule is still ignored.
+- [x] Kind resolution uses the mime type first and the filename extension when it is absent or generic; an image sent as a file resolves to an image.
+- [x] A reference id names the agent and Telegram's file handle; media with no filename is named after its message id with an extension derived from the mime type.
+- [x] The fetch-attachment tool returns the bytes for a known reference, resolving the bot from the reference alone with no prior chat mapping.
+- [x] The fetch-attachment tool answers empty for a reference it cannot fetch, rather than failing.
+- [x] Domain comments stating that only the SignalR channel populates attachments are corrected.
+- [x] Tests drive real Telegram updates through the polling service against a mocked bot client and assert on the notification reaching the channel inbox; the tool is tested through its own entry point. The existing test asserting that a photo message is ignored inverts.

@@ -43,8 +43,14 @@ internal static class AttachmentIntake
 
         if (AttachmentKinds.ForMediaType(mediaType) is null)
         {
-            return (null, new IntakeRefusal(
-                message.Id, $"I could not take \"{name}\": I can only read images and PDFs."));
+            // An animated sticker, a video note, a voice message: the person chose an expression
+            // rather than a file, so complaining about unsupported file types is noise. An
+            // unresolvable document or video keeps the refusal, because attaching one was
+            // deliberate.
+            return media.Intent == MediaIntent.Performed
+                ? (null, null)
+                : (null, new IntakeRefusal(
+                    message.Id, $"I could not take \"{name}\": I can only read images and PDFs."));
         }
 
         // Read off the update, so a file too large to fetch is refused while the person is still
