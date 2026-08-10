@@ -13,15 +13,20 @@ public sealed class AttachmentTickets(AttachmentSettings settings, TimeProvider 
     private readonly ConcurrentDictionary<string, UploadScope> _uploads = new();
     private readonly ConcurrentDictionary<string, DownloadScope> _downloads = new();
 
-    public sealed record UploadScope(
-        string TopicId,
-        string ConversationId,
-        string? SpaceSlug,
-        DateTimeOffset ExpiresAt)
+    // A class, not a record: the slot counter mutates, and a scope's identity is the ticket that
+    // resolved it rather than its values.
+    public sealed class UploadScope(
+        string topicId,
+        string conversationId,
+        string? spaceSlug,
+        DateTimeOffset expiresAt)
     {
         private int _used;
 
-        public int Used => _used;
+        public string TopicId { get; } = topicId;
+        public string ConversationId { get; } = conversationId;
+        public string? SpaceSlug { get; } = spaceSlug;
+        public DateTimeOffset ExpiresAt { get; } = expiresAt;
 
         public bool TryTakeSlot(int maximum) => Interlocked.Increment(ref _used) <= maximum;
     }
