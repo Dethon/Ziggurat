@@ -1,5 +1,3 @@
-using Domain.DTOs.Channel;
-
 namespace McpChannelTelegram.Services;
 
 // Mime type first, filename extension second. Telegram carries no type at all for a photo and
@@ -8,6 +6,14 @@ namespace McpChannelTelegram.Services;
 internal static class MediaTypes
 {
     private const string BinaryExtension = ".bin";
+
+    // What a client says when it means "some bytes" — the only types the extension may overrule.
+    private static readonly HashSet<string> Generic = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "application/octet-stream",
+        "application/binary",
+        "binary/octet-stream"
+    };
 
     private static readonly Dictionary<string, string> ByExtension = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -38,12 +44,14 @@ internal static class MediaTypes
             ["image/heif"] = ".heif"
         };
 
-    // The extension gets its say whenever the declared type resolves to no kind, which covers both
-    // a missing type and a generic one without having to keep a list of what "generic" means.
+    // The extension gets its say only where Telegram said nothing or said "some bytes". A declared
+    // type that resolves to no kind is Telegram being specific, and letting a filename overrule it
+    // would ship an animation named giphy.gif to the model as an image whose bytes are MP4.
     public static string? Resolve(TelegramMedia media) =>
-        AttachmentKinds.ForMediaType(media.MimeType) is not null
-            ? media.MimeType
-            : FromExtension(media.FileName) ?? media.MimeType;
+        IsUninformative(media.MimeType) ? FromExtension(media.FileName) ?? media.MimeType : media.MimeType;
+
+    private static bool IsUninformative(string? mediaType) =>
+        string.IsNullOrWhiteSpace(mediaType) || Generic.Contains(mediaType);
 
     // A document keeps the name Telegram carried. Media that has none — a photo, a sticker — is
     // named after the message it arrived in: the extension is load-bearing once the file lands in

@@ -109,6 +109,25 @@ public class TelegramBotServiceStickerTests : IDisposable
         _harness.Sent.ShouldBeEmpty();
     }
 
+    // A GIF sent through Telegram is an MP4 that kept its old name. Letting the filename overrule
+    // a type Telegram was specific about would ship those bytes to the model as an image.
+    [Fact]
+    public async Task AnAnimationWhoseFilenameLooksLikeAnImage_IsStillDropped()
+    {
+        await DriveAsync(message => message.Animation = new Animation
+        {
+            FileId = "anim-1",
+            FileUniqueId = "u-anim",
+            Width = 320,
+            Height = 240,
+            Duration = 3,
+            FileName = "giphy.gif",
+            MimeType = "video/mp4"
+        });
+
+        await ShouldBeSilentlyDroppedAsync();
+    }
+
     // Attaching a video was deliberate, so it keeps the refusal a document gets.
     [Fact]
     public async Task AnUnresolvableVideo_StillDrawsTheRefusal()

@@ -13,13 +13,13 @@ public sealed class TelegramBotService : BackgroundService
 {
     private const int PollTimeoutSeconds = 30;
 
-    private readonly BotRegistry botRegistry;
-    private readonly ChannelSettings settings;
-    private readonly ChannelNotificationEmitter notificationEmitter;
-    private readonly ApprovalCallbackRouter approvalCallbackRouter;
-    private readonly IAgentCatalog agentCatalog;
-    private readonly ILogger<TelegramBotService> logger;
-    private readonly AlbumBuffer albums;
+    private readonly BotRegistry _botRegistry;
+    private readonly ChannelSettings _settings;
+    private readonly ChannelNotificationEmitter _notificationEmitter;
+    private readonly ApprovalCallbackRouter _approvalCallbackRouter;
+    private readonly IAgentCatalog _agentCatalog;
+    private readonly ILogger<TelegramBotService> _logger;
+    private readonly AlbumBuffer _albums;
 
     public TelegramBotService(
         BotRegistry botRegistry,
@@ -30,34 +30,34 @@ public sealed class TelegramBotService : BackgroundService
         TimeProvider timeProvider,
         ILogger<TelegramBotService> logger)
     {
-        this.botRegistry = botRegistry;
-        this.settings = settings;
-        this.notificationEmitter = notificationEmitter;
-        this.approvalCallbackRouter = approvalCallbackRouter;
-        this.agentCatalog = agentCatalog;
-        this.logger = logger;
-        albums = new AlbumBuffer(timeProvider, ReleaseAlbumAsync);
+        _botRegistry = botRegistry;
+        _settings = settings;
+        _notificationEmitter = notificationEmitter;
+        _approvalCallbackRouter = approvalCallbackRouter;
+        _agentCatalog = agentCatalog;
+        _logger = logger;
+        _albums = new AlbumBuffer(timeProvider, ReleaseAlbumAsync);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("Telegram bot polling started. Allowed usernames: {Usernames}",
-            string.Join(", ", settings.AllowedUsernames));
+        _logger.LogInformation("Telegram bot polling started. Allowed usernames: {Usernames}",
+            string.Join(", ", _settings.AllowedUsernames));
 
-        var pollers = botRegistry.GetAllBots()
+        var pollers = _botRegistry.GetAllBots()
             .Select(b => PollBotAsync(b.AgentId, b.Client, stoppingToken))
             .ToArray();
 
         await Task.WhenAll(pollers);
 
-        logger.LogInformation("Telegram bot polling stopped");
+        _logger.LogInformation("Telegram bot polling stopped");
     }
 
     private async Task PollBotAsync(string agentId, ITelegramBotClient botClient, CancellationToken stoppingToken)
     {
         int? offset = null;
 
-        logger.LogInformation("Started polling for agent {AgentId}", agentId);
+        _logger.LogInformation("Started polling for agent {AgentId}", agentId);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -85,19 +85,19 @@ public sealed class TelegramBotService : BackgroundService
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Telegram polling error for agent {AgentId}: {Message}", agentId, ex.Message);
+                _logger.LogError(ex, "Telegram polling error for agent {AgentId}: {Message}", agentId, ex.Message);
                 await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
             }
         }
 
-        logger.LogInformation("Stopped polling for agent {AgentId}", agentId);
+        _logger.LogInformation("Stopped polling for agent {AgentId}", agentId);
     }
 
     private async Task ProcessUpdateAsync(string agentId, ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
     {
         if (update.CallbackQuery is not null)
         {
-            await approvalCallbackRouter.HandleCallbackQueryAsync(botClient, update.CallbackQuery, cancellationToken);
+            await _approvalCallbackRouter.HandleCallbackQueryAsync(botClient, update.CallbackQuery, cancellationToken);
             return;
         }
 
@@ -110,7 +110,7 @@ public sealed class TelegramBotService : BackgroundService
         // turn carries every reference and the caption, wherever in the group it landed.
         if (message.MediaGroupId is not null)
         {
-            albums.Add(agentId, botClient, message);
+            _albums.Add(agentId, botClient, message);
             return;
         }
 
@@ -128,7 +128,7 @@ public sealed class TelegramBotService : BackgroundService
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to handle a released Telegram album for agent {AgentId}", album.AgentId);
+            _logger.LogError(ex, "Failed to handle a released Telegram album for agent {AgentId}", album.AgentId);
         }
     }
 
@@ -162,7 +162,7 @@ public sealed class TelegramBotService : BackgroundService
                      ?? first.Chat.FirstName
                      ?? $"{first.Chat.Id}";
 
-        if (!settings.AllowedUsernames.Contains(sender))
+        if (!_settings.AllowedUsernames.Contains(sender))
         {
             await botClient.SendMessage(
                 first.Chat.Id,
@@ -176,43 +176,12 @@ public sealed class TelegramBotService : BackgroundService
         var threadId = first.MessageThreadId ?? chatId;
         var conversationId = $"{chatId}:{threadId}";
 
-        botRegistry.RegisterChatAgent(chatId, agentId);
+        _botRegistry.RegisterChatAgent(chatId, agentId);
 
-        // The same resolution WebChat asks, from the same catalogue shape, so the two channels
-        // cannot disagree about which model is refusing. Permissive wherever the catalogue is
-        // silent — a cold start, or a blip at the provider, must not remove the feature. Telegram
-        // has no per-message model override, so the model a turn runs on is the agent's default.
-        var capabilityRefusal = intake.Attachments.Count > 0
-            ? AttachmentCapability.Refusal(
-                agentCatalog.Get(agentId), null, intake.Attachments.Select(a => a.MediaType))
-            : null;
+        var turnStops = await ReportRefusalsAsync(agentId, botClient, first, intake, cancellationToken);
 
-        // One reply for the whole message, quoting the item that failed and naming its file, the
-        // way the unauthorised-user reply already works.
-        var reasons = intake.Refusals
-            .Select(refusal => refusal.Reason)
-            .Concat(capabilityRefusal is null ? [] : [capabilityRefusal])
-            .ToList();
-
-        if (reasons.Count > 0)
-        {
-            await botClient.SendMessage(
-                chatId,
-                string.Join("\n", reasons),
-                replyParameters: intake.Refusals.Count > 0 ? intake.Refusals[0].MessageId : first.MessageId,
-                cancellationToken: cancellationToken);
-        }
-
-        // Unlike the per-file grounds above, this one is a property of the turn: a model that
-        // cannot read what was attached would answer as though nothing had been sent, and an
-        // answer that silently ignores the question is worse than no answer.
-        if (capabilityRefusal is not null)
-        {
-            return;
-        }
-
-        // Nothing survived and there was nothing else to say, so the reply is the whole response.
-        if (content.Length == 0 && intake.Attachments.Count == 0)
+        // Nothing survived, or the model cannot read what did, so the reply is the whole response.
+        if (turnStops || (content.Length == 0 && intake.Attachments.Count == 0))
         {
             return;
         }
@@ -225,7 +194,7 @@ public sealed class TelegramBotService : BackgroundService
         // subscriber), and even before the agent's first poll after a server restart or an idle
         // eviction. A late reconnect still delivers, bounded only by the inbox capacity. The emit's
         // return value is read for the warning alone.
-        var live = await notificationEmitter.EmitAsync(
+        var live = await _notificationEmitter.EmitAsync(
             new ChannelMessageNotification
             {
                 ConversationId = conversationId,
@@ -239,12 +208,50 @@ public sealed class TelegramBotService : BackgroundService
 
         if (!live)
         {
-            logger.LogWarning(
+            _logger.LogWarning(
                 "No live channel_receive subscriber; buffering message from {Sender} for later delivery", sender);
         }
 
-        logger.LogDebug("Emitted message notification for conversation {ConversationId} from {Sender} (agent: {AgentId})",
+        _logger.LogDebug("Emitted message notification for conversation {ConversationId} from {Sender} (agent: {AgentId})",
             conversationId, sender, agentId);
+    }
+
+    // Every refusal for one message in a single reply quoting the item that failed and naming its
+    // file, the way the unauthorised-user reply already works. Answers whether the turn stops:
+    // the two grounds the intake found are properties of one file and drop only that file, while a
+    // model that cannot read what was attached would answer as though nothing had been sent, and
+    // an answer that silently ignores the question is worse than no answer.
+    private async Task<bool> ReportRefusalsAsync(
+        string agentId,
+        ITelegramBotClient botClient,
+        Message first,
+        Intake intake,
+        CancellationToken cancellationToken)
+    {
+        // The same resolution WebChat asks, from the same catalogue shape, so the two channels
+        // cannot disagree about which model is refusing. Permissive wherever the catalogue is
+        // silent — a cold start, or a blip at the provider, must not remove the feature. Telegram
+        // has no per-message model override, so the model a turn runs on is the agent's default.
+        var capabilityRefusal = intake.Attachments.Count > 0
+            ? AttachmentCapability.Refusal(
+                _agentCatalog.Get(agentId), null, intake.Attachments.Select(a => a.MediaType))
+            : null;
+
+        var reasons = intake.Refusals
+            .Select(refusal => refusal.Reason)
+            .Concat(capabilityRefusal is null ? [] : [capabilityRefusal])
+            .ToList();
+
+        if (reasons.Count > 0)
+        {
+            await botClient.SendMessage(
+                first.Chat.Id,
+                string.Join("\n", reasons),
+                replyParameters: intake.Refusals.Count > 0 ? intake.Refusals[0].MessageId : first.MessageId,
+                cancellationToken: cancellationToken);
+        }
+
+        return capabilityRefusal is not null;
     }
 
     // Unchanged from the day this channel only took text, with the caption standing in for it: a
@@ -255,7 +262,7 @@ public sealed class TelegramBotService : BackgroundService
 
     public override void Dispose()
     {
-        albums.Dispose();
+        _albums.Dispose();
         base.Dispose();
     }
 }

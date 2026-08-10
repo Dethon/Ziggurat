@@ -39,11 +39,12 @@ internal sealed class AlbumBuffer(TimeProvider time, Func<Album, Task> release) 
             if (_pending.TryGetValue(key, out var pending))
             {
                 pending.Messages.Add(message);
+                pending.LastArrival = time.GetUtcNow();
                 pending.Timer.Change(Debounce, Timeout.InfiniteTimeSpan);
                 return;
             }
 
-            pending = new Pending(agentId, client);
+            pending = new Pending(agentId, client) { LastArrival = time.GetUtcNow() };
             pending.Messages.Add(message);
             _pending[key] = pending;
             pending.Timer = time.CreateTimer(_ => Release(key), null, Debounce, Timeout.InfiniteTimeSpan);
@@ -55,10 +56,20 @@ internal sealed class AlbumBuffer(TimeProvider time, Func<Album, Task> release) 
         Pending? pending;
         lock (_gate)
         {
-            if (!_pending.Remove(key, out pending))
+            if (!_pending.TryGetValue(key, out pending))
             {
                 return;
             }
+
+            // An item that landed after this timer fired but before it took the gate has already
+            // pushed the window out. Backing off here rather than releasing is what stops that
+            // straggler from becoming a second turn with the rest of its album missing.
+            if (time.GetUtcNow() - pending.LastArrival < Debounce)
+            {
+                return;
+            }
+
+            _pending.Remove(key);
         }
 
         pending.Timer.Dispose();
@@ -81,6 +92,7 @@ internal sealed class AlbumBuffer(TimeProvider time, Func<Album, Task> release) 
         public string AgentId { get; } = agentId;
         public ITelegramBotClient Client { get; } = client;
         public List<Message> Messages { get; } = [];
+        public DateTimeOffset LastArrival { get; set; }
         public ITimer Timer { get; set; } = null!;
     }
 }
