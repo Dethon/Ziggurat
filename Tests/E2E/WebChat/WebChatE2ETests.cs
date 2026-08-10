@@ -26,10 +26,13 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         await userMessage.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
 
         // Wait for agent response — the assistant message element may appear early (with empty content
-        // during "thinking"), so use Expect to poll until it has non-empty text content.
+        // during "thinking"), so use Expect to poll until it has non-empty text content. 90s, not
+        // 30s: the agent runs with --reasoning and shares its provider slots with every other
+        // conversation the suite has already created, so the first text token can lag well past
+        // half a minute while the model is provably alive and thinking.
         var assistantMessage = page.Locator(".chat-message.assistant .message-content");
         await Assertions.Expect(assistantMessage.First)
-            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 30_000 });
+            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 90_000 });
     }
 
     internal static async Task SelectUserAndAgentAsync(IPage page, int userIndex = 0)

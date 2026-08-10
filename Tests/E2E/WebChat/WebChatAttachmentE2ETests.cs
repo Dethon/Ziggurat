@@ -56,9 +56,11 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         await attachment.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // The reply is the proof the turn reached the agent and its record was written; reloading
-        // before it races the history read against the agent's own persistence.
+        // before it races the history read against the agent's own persistence. 90s for the same
+        // reason as SendMessage_AppearsInChat: reasoning plus shared provider slots can hold the
+        // first text token past half a minute.
         await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").First)
-            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 30_000 });
+            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 90_000 });
 
         await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
@@ -72,5 +74,29 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         var afterReload = page.Locator(".chat-message.user .message-attachments");
         await afterReload.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
         (await afterReload.CountAsync()).ShouldBeGreaterThan(0);
+    }
+
+    // The attach control is a label wearing the button class, so it only looks like the rest of
+    // the composer for as long as it takes the same size as them. The phone breakpoint shrinks
+    // every button, and a control that opts out of that shrink stands taller than the field and
+    // the send button beside it.
+    [SkippableFact]
+    public async Task OnAPhoneViewport_TheAttachButtonIsAsTallAsTheSendButton()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync();
+        await page.SetViewportSizeAsync(390, 844);
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+
+        var attachBox = await page.Locator("label.attach-button").BoundingBoxAsync();
+        var sendBox = await page.Locator("button.btn-primary", new PageLocatorOptions { HasText = "Send" })
+            .BoundingBoxAsync();
+
+        attachBox.ShouldNotBeNull();
+        sendBox.ShouldNotBeNull();
+        attachBox.Height.ShouldBe(sendBox.Height, tolerance: 1);
     }
 }
