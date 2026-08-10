@@ -97,7 +97,7 @@
     private bool CanSend => ChatInputLogic.CanSend(
         _disabled, _inputText, _isStreaming, ReadyCount, UploadInFlight, _capabilityRefusal);
 
-    private async Task HandleFilesPicked(InputFileChangeEventArgs e)
+    private void HandleFilesPicked(InputFileChangeEventArgs e)
     {
         var picked = e.GetMultipleFiles(maximumFileCount: 50)
             .Select(file => new PickedFile(
@@ -113,8 +113,6 @@
         {
             Dispatcher.Dispatch(new AttachFiles(_topicId, picked));
         }
-
-        await Task.CompletedTask;
     }
 
     private void RemoveAttachment(ComposerAttachment attachment)
