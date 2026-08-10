@@ -201,6 +201,29 @@ to the agent or the conversation, so it changes when the model does, and it is a
 asked of the model the turn will actually run on.
 _Avoid_: modality support, model features, vision support
 
+## Dictation
+
+**Dictation**:
+One run of a microphone that ends as words. It is never a message and never becomes
+one: the audio lives only until the words are out of it, nothing keeps it afterwards,
+and what is finally sent cannot be told apart from typing. A person holding a button
+in the chat client and a person recording in Telegram are both dictating. It may also
+end with nothing said, the audio thrown away before any words are asked of it, which
+is not a failure and leaves no trace at all.
+_Avoid_: voice message, audio message, recording, voice note
+
+**Transcript**:
+The words a stretch of audio turns out to hold, and the only part of it anything
+downstream ever sees. It carries no trace of the audio — not how long it was, how loud
+it was, or that there was audio at all.
+_Avoid_: transcription, recognition result, speech text
+
+**Latched dictation** (chat client only):
+A dictation carrying on with nothing held down. It is the same dictation and not a new
+one: the same audio keeps accumulating under the same clock, and only the way it can end
+changes, from letting go to pressing.
+_Avoid_: locked recording, hands-free, toggle mode
+
 ## Channel connection
 
 **Connection generation**:
