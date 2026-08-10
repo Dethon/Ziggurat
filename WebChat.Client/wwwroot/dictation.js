@@ -212,7 +212,12 @@ window.dictation = {
 
         this._open(run).then(() => {
             if (this._run !== run || run.ending) return;
-            this._invoke(latched ? 'Latched' : 'Started');
+            // How the recording can end, as it stands now rather than as the press left it: opening
+            // the microphone takes as long as the device takes, and a finger can travel the whole
+            // way up inside that. Reported as the press, this arrives behind the latch and undoes
+            // it — leaving a recording that says "slide to cancel" to a finger that is no longer
+            // there, with no way out but reloading the page.
+            this._invoke(run.latched ? 'Latched' : 'Started');
             this._startClock(run);
         }).catch(err => {
             if (this._run === run) this._run = null;
