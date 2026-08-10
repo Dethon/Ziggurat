@@ -4,20 +4,40 @@ using Mcp.Hosting;
 using McpChannelTelegram.Settings;
 using Telegram.Bot;
 using Telegram.Bot.Types;
-using Telegram.Bot.Types.Enums;
 
 namespace McpChannelTelegram.Services;
 
-public sealed class TelegramBotService(
-    BotRegistry botRegistry,
-    ChannelSettings settings,
-    ChannelNotificationEmitter notificationEmitter,
-    ApprovalCallbackRouter approvalCallbackRouter,
-    IAgentCatalog agentCatalog,
-    TimeProvider timeProvider,
-    ILogger<TelegramBotService> logger) : BackgroundService
+// The pump, and nothing more: it reads updates and hands each one on. The album buffer beside it
+// owns the only clock, and the intake owns every rule that turns a message into attachments.
+public sealed class TelegramBotService : BackgroundService
 {
     private const int PollTimeoutSeconds = 30;
+
+    private readonly BotRegistry botRegistry;
+    private readonly ChannelSettings settings;
+    private readonly ChannelNotificationEmitter notificationEmitter;
+    private readonly ApprovalCallbackRouter approvalCallbackRouter;
+    private readonly IAgentCatalog agentCatalog;
+    private readonly ILogger<TelegramBotService> logger;
+    private readonly AlbumBuffer albums;
+
+    public TelegramBotService(
+        BotRegistry botRegistry,
+        ChannelSettings settings,
+        ChannelNotificationEmitter notificationEmitter,
+        ApprovalCallbackRouter approvalCallbackRouter,
+        IAgentCatalog agentCatalog,
+        TimeProvider timeProvider,
+        ILogger<TelegramBotService> logger)
+    {
+        this.botRegistry = botRegistry;
+        this.settings = settings;
+        this.notificationEmitter = notificationEmitter;
+        this.approvalCallbackRouter = approvalCallbackRouter;
+        this.agentCatalog = agentCatalog;
+        this.logger = logger;
+        albums = new AlbumBuffer(timeProvider, ReleaseAlbumAsync);
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -86,7 +106,30 @@ public sealed class TelegramBotService(
             return;
         }
 
+        // An album arrives as one update per file. It is held until the group goes quiet, so the
+        // turn carries every reference and the caption, wherever in the group it landed.
+        if (message.MediaGroupId is not null)
+        {
+            albums.Add(agentId, botClient, message);
+            return;
+        }
+
         await HandleMessagesAsync(agentId, botClient, [message], cancellationToken);
+    }
+
+    // The buffer cannot tell a sender to try again, so a released group must never throw back at
+    // it. It also runs uncancelled: the group was already acknowledged to Telegram, and dropping
+    // it because the pump has stopped would lose files nobody can resend.
+    private async Task ReleaseAlbumAsync(Album album)
+    {
+        try
+        {
+            await HandleMessagesAsync(album.AgentId, album.Client, album.Messages, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to handle a released Telegram album for agent {AgentId}", album.AgentId);
+        }
     }
 
     private async Task HandleMessagesAsync(
@@ -170,4 +213,10 @@ public sealed class TelegramBotService(
     // exactly the same rule, and one with an empty caption is a legitimate turn.
     private static bool IsBotMessage(string content, IReadOnlyList<Message> messages) =>
         content.StartsWith('/') || messages.Any(m => m.MessageThreadId.HasValue);
+
+    public override void Dispose()
+    {
+        albums.Dispose();
+        base.Dispose();
+    }
 }

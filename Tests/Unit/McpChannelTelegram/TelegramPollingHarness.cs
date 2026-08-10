@@ -74,16 +74,22 @@ internal sealed class TelegramPollingHarness : IDisposable
     public IReadOnlyList<SendMessageRequest> Sent => [.. _sent];
 
     // One poll answers with these updates; the next cancels, which is how the pump stops.
-    public void Enqueue(params Update[] updates)
+    public void Enqueue(params Update[] updates) => EnqueueSequence((TimeSpan.Zero, updates));
+
+    // Several polls, each preceded by the time that passed since the one before it — which is how
+    // an album's items arrive, one as each file finishes uploading.
+    public void EnqueueSequence(params (TimeSpan Elapsed, Update[] Updates)[] batches)
     {
         var callCount = 0;
         BotClient
             .Setup(b => b.SendRequest(It.IsAny<GetUpdatesRequest>(), It.IsAny<CancellationToken>()))
             .Returns((GetUpdatesRequest _, CancellationToken ct) =>
             {
-                if (Interlocked.Increment(ref callCount) == 1)
+                var index = Interlocked.Increment(ref callCount) - 1;
+                if (index < batches.Length)
                 {
-                    return Task.FromResult(updates);
+                    Time.Advance(batches[index].Elapsed);
+                    return Task.FromResult(batches[index].Updates);
                 }
 
                 _cts.Cancel();
