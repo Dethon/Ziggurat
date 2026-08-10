@@ -6,9 +6,10 @@ public record TranscriptionClientConfig
 {
     public string BaseUrl { get; init; } = "http://lemonade:13305/v1";
 
-    // Lemonade catalog name. The instance pulls models lazily and also holds Large-v3-Turbo, so
-    // this is worth a setting rather than a constant.
-    public string Model { get; init; } = "Whisper-Medium";
+    // Lemonade catalog name, and the same one the container was warmed with (`STT_MODEL`): the two
+    // must agree or the model that decodes is not the model that was pre-pulled. A setting rather
+    // than a constant because the instance pulls lazily and holds more than one.
+    public string Model { get; init; } = "Whisper-Large-v3-Turbo";
 
     public string? Language { get; init; }
 

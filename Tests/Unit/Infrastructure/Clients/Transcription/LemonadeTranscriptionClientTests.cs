@@ -115,7 +115,7 @@ public class LemonadeTranscriptionClientTests
         handler.LastUri!.ToString().ShouldBe("http://lemonade:13305/v1/audio/transcriptions");
         handler.FileMediaType.ShouldBe("audio/wav");
         handler.FileBytes.ShouldBe(audio);
-        handler.Fields["model"].ShouldBe("Whisper-Medium");
+        handler.Fields["model"].ShouldBe("Whisper-Large-v3-Turbo");   // config default
         handler.Fields["response_format"].ShouldBe("verbose_json");
         handler.Fields["language"].ShouldBe("es");
     }
