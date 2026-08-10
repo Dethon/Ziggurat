@@ -21,9 +21,9 @@ public interface IChannelConnection : IToolApprovalHandler
     // position in five argument lists.
     Task SendReplyAsync(SendReplyParams reply, CancellationToken ct);
 
-    // An attachment's bytes, by naming its reference. The upload store is never mounted, so this
-    // is the only way in (ADR 0021). Null is "not connected", and also "the file is gone": both
-    // hydrate to a placeholder naming the file rather than failing the turn.
+    // An attachment's bytes, by naming its reference. Where they rest is never mounted, so this is
+    // the only way in (ADR 0021). Null is "not connected", and also "the file could not be had":
+    // both hydrate to a placeholder naming the file rather than failing the turn.
     Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct);
 
     Task<string?> CreateConversationAsync(

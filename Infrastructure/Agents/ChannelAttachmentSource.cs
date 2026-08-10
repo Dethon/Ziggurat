@@ -7,10 +7,12 @@ namespace Infrastructure.Agents;
 // The agent's way to an attachment's bytes: ask the channel that took the file, the same way it
 // asks that channel to send a reply. Nothing is mounted, so there is no other route (ADR 0021).
 //
-// Answers are cached because a reference is immutable — the upload store never rewrites a file,
-// it only sweeps one. Without a cache the whole file crosses MCP again on every function-calling
-// iteration of a turn, which for a 20 MB PDF and eight tool calls is eight base64 round trips on
-// the critical path before the model says anything.
+// Answers are cached because a reference is immutable — an upload store never rewrites a file, it
+// only sweeps one, and a Telegram file handle names one file for as long as the bot exists. It is
+// also the only cache there is on the Telegram side, where a fetch is an internet round trip
+// rather than a disk read (ADR 0022). Without a cache the whole file crosses MCP again on every
+// function-calling iteration of a turn, which for a 20 MB PDF and eight tool calls is eight base64
+// round trips on the critical path before the model says anything.
 public sealed class ChannelAttachmentSource(
     IReadOnlyList<IChannelConnection> connections,
     ILogger<ChannelAttachmentSource>? logger = null) : IAttachmentSource

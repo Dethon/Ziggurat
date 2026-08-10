@@ -1,158 +1,98 @@
 using Domain.Channels;
-using Domain.DTOs.Channel;
-using Mcp.Hosting;
-using McpChannelTelegram.Services;
-using McpChannelTelegram.Settings;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Time.Testing;
-using Moq;
 using Shouldly;
-using Telegram.Bot;
-using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
-using Telegram.Bot.Types.Enums;
 
 namespace Tests.Unit.McpChannelTelegram;
 
 public class TelegramBotServiceTests : IDisposable
 {
-    private readonly Mock<ITelegramBotClient> _botClient = new();
-    private readonly FakeTimeProvider _time = new();
-    private readonly ChannelInbox _inbox;
-    private readonly ChannelNotificationEmitter _emitter;
-    private readonly ApprovalCallbackRouter _callbackRouter = new();
-    private readonly BotRegistry _botRegistry;
-    private readonly TelegramBotService _sut;
-    private readonly CancellationTokenSource _cts = new();
+    private readonly TelegramPollingHarness _harness = new();
 
-    public TelegramBotServiceTests()
-    {
-        _inbox = new ChannelInbox(_time);
-        _emitter = new ChannelNotificationEmitter(
-            _inbox, DeliveryPolicy.BufferAlways, ChannelProtocol.ChannelClientNamePrefix + "telegram");
-        var settings = new ChannelSettings
-        {
-            Bots = [new AgentBotConfig { AgentId = "jack", BotToken = "unused" }],
-            AllowedUsernames = ["alice", "bob"]
-        };
-        _botRegistry = new BotRegistry(new Dictionary<string, ITelegramBotClient>
-        {
-            ["jack"] = _botClient.Object
-        });
-        _sut = new TelegramBotService(
-            _botRegistry,
-            settings,
-            _emitter,
-            _callbackRouter,
-            new Mock<ILogger<TelegramBotService>>().Object);
-    }
-
+    // Inverted when Telegram gained attachments: a photo used to be dropped by the poll loop
+    // before anything else looked at it. It now qualifies under the same addressing rule text
+    // does, with the caption standing in for the text.
     [Fact]
-    public async Task ExecuteAsync_NonTextMessage_IsIgnored()
+    public async Task ExecuteAsync_PhotoWithAQualifyingCaption_IsTakenAsATurn()
     {
-        SetupPollingSequence([
-            new Update
-            {
-                Id = 1,
-                Message = new Message
-                {
-                    Id = 10,
-                    Date = DateTime.UtcNow,
-                    Chat = new Chat { Id = 100, Type = ChatType.Private },
-                    Photo = [new PhotoSize { FileId = "p1", FileUniqueId = "u1", Width = 100, Height = 100 }]
-                }
-            }
-        ]);
-        await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
+        var message = TelegramPollingHarness.MediaMessage(caption: "/ask what is this");
+        message.Photo = TelegramPollingHarness.Photo();
 
-        await RunServiceBriefly();
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update { Id = 1, Message = message });
+        await _harness.RunAsync();
 
-        _botClient.Verify(b => b.SendRequest(
-            It.IsAny<SendMessageRequest>(),
-            It.IsAny<CancellationToken>()), Times.Never);
+        (await _harness.ReceiveAsync()).Count.ShouldBe(1);
+        _harness.Sent.ShouldBeEmpty();
     }
 
     [Fact]
     public async Task ExecuteAsync_UnauthorizedUser_SendsRejection()
     {
-        SetupPollingSequence([
-            new Update
-            {
-                Id = 1,
-                Message = CreateTextMessage("/hello", 100, "eve")
-            }
-        ]);
-        await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage("/hello", username: "eve")
+        });
 
-        await RunServiceBriefly();
+        await _harness.RunAsync();
 
-        _botClient.Verify(b => b.SendRequest(
-            It.Is<SendMessageRequest>(r => r.Text == "You are not authorized to use this bot."),
-            It.IsAny<CancellationToken>()), Times.Once);
+        _harness.Sent.ShouldHaveSingleItem().Text.ShouldBe("You are not authorized to use this bot.");
     }
 
     [Fact]
     public async Task ExecuteAsync_MessageWithoutSlashOrThread_IsIgnored()
     {
-        SetupPollingSequence([
-            new Update
-            {
-                Id = 1,
-                Message = CreateTextMessage("just chatting", 100, "alice")
-            }
-        ]);
-        await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage("just chatting")
+        });
 
-        await RunServiceBriefly();
+        await _harness.RunAsync();
 
-        _botClient.Verify(b => b.SendRequest(
-            It.IsAny<SendMessageRequest>(),
-            It.IsAny<CancellationToken>()), Times.Never);
+        _harness.Sent.ShouldBeEmpty();
+        (await _harness.ReceiveAsync()).ShouldBeEmpty();
     }
 
     [Fact]
     public async Task ExecuteAsync_SlashCommand_FromAuthorizedUser_EmitsNotification()
     {
-        SetupPollingSequence([
-            new Update
-            {
-                Id = 1,
-                Message = CreateTextMessage("/ask what is 2+2", 100, "alice")
-            }
-        ]);
-        await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage("/ask what is 2+2")
+        });
 
-        await RunServiceBriefly();
+        await _harness.RunAsync();
 
         // No rejection message sent — the message was valid and emitted
-        _botClient.Verify(b => b.SendRequest(
-            It.IsAny<SendMessageRequest>(),
-            It.IsAny<CancellationToken>()), Times.Never);
-        (await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None)).Count.ShouldBe(1);
+        _harness.Sent.ShouldBeEmpty();
+        (await _harness.ReceiveAsync()).Count.ShouldBe(1);
     }
 
     [Fact]
     public async Task ExecuteAsync_CallbackQuery_RoutesToApprovalRouter()
     {
-        var (approvalId, resultTask) = _callbackRouter.RegisterApproval(TimeSpan.FromSeconds(10), CancellationToken.None);
+        var (approvalId, resultTask) =
+            _harness.CallbackRouter.RegisterApproval(TimeSpan.FromSeconds(10), CancellationToken.None);
 
-        SetupPollingSequence([
-            new Update
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            CallbackQuery = new CallbackQuery
             {
-                Id = 1,
-                CallbackQuery = new CallbackQuery
-                {
-                    Id = "cb-1",
-                    Data = $"tool_approve:{approvalId}",
-                    From = new User { Id = 1, IsBot = false, FirstName = "Alice" }
-                }
+                Id = "cb-1",
+                Data = $"tool_approve:{approvalId}",
+                From = new User { Id = 1, IsBot = false, FirstName = "Alice" }
             }
-        ]);
+        });
 
-        await RunServiceBriefly();
+        await _harness.RunAsync();
 
-        var result = await resultTask;
-        result.ShouldBe("approved");
+        (await resultTask).ShouldBe("approved");
     }
 
     // No subscriber is registered at all here — the cold-start case. Two things are pinned:
@@ -162,23 +102,12 @@ public class TelegramBotServiceTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_NoActiveSessions_BuffersSilentlyWithoutRejectingTheSender()
     {
-        SetupPollingSequence([
-            new Update
-            {
-                Id = 1,
-                Message = CreateTextMessage("/hello", 100, "alice")
-            }
-        ]);
+        _harness.Enqueue(new Update { Id = 1, Message = TelegramPollingHarness.TextMessage("/hello") });
 
-        await RunServiceBriefly();
+        await _harness.RunAsync();
 
-        _botClient.Verify(b => b.SendRequest(
-            It.IsAny<SendMessageRequest>(),
-            It.IsAny<CancellationToken>()), Times.Never);
-
-        var buffered = await _inbox.ReceiveAsync(
-            ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
-        buffered.ShouldHaveSingleItem().Message!.Content.ShouldBe("/hello");
+        _harness.Sent.ShouldBeEmpty();
+        (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Content.ShouldBe("/hello");
     }
 
     // Corrects a regression this suite itself introduced: an earlier round made Telegram gate its
@@ -193,21 +122,18 @@ public class TelegramBotServiceTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_SubscriberWentStaleWithoutRepolling_StillBuffersForALaterPoll()
     {
-        var subscriberId = ChannelProtocol.ChannelClientNamePrefix + "telegram";
-        await _inbox.ReceiveAsync(subscriberId, TimeSpan.Zero, CancellationToken.None);
-        _time.Advance(ChannelInbox._liveSubscriberFreshness + TimeSpan.FromSeconds(1));
+        await _harness.ReceiveAsync();
+        _harness.Time.Advance(ChannelInbox._liveSubscriberFreshness + TimeSpan.FromSeconds(1));
 
-        SetupPollingSequence([
-            new Update
-            {
-                Id = 1,
-                Message = CreateTextMessage("/ask what is 2+2", 100, "alice")
-            }
-        ]);
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage("/ask what is 2+2")
+        });
 
-        await RunServiceBriefly();
+        await _harness.RunAsync();
 
-        var batch = await _inbox.ReceiveAsync(subscriberId, TimeSpan.Zero, CancellationToken.None);
+        var batch = await _harness.ReceiveAsync();
         batch.Count.ShouldBe(1);
         batch[0].Message!.Content.ShouldBe("/ask what is 2+2");
     }
@@ -215,69 +141,32 @@ public class TelegramBotServiceTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_ValidMessage_RegistersChatAgent()
     {
-        SetupPollingSequence([
-            new Update
-            {
-                Id = 1,
-                Message = CreateTextMessage("/ask something", 100, "alice")
-            }
-        ]);
-        await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage("/ask something")
+        });
 
-        await RunServiceBriefly();
+        await _harness.RunAsync();
 
-        _botRegistry.GetBotForChat(100).ShouldNotBeNull();
+        _harness.BotRegistry.GetBotForChat(100).ShouldNotBeNull();
     }
 
     [Fact]
     public async Task ExecuteAsync_ThreadMessage_IsAccepted()
     {
-        var msg = CreateTextMessage("reply in thread", 100, "alice");
-        msg.MessageThreadId = 42;
+        var message = TelegramPollingHarness.TextMessage("reply in thread");
+        message.MessageThreadId = 42;
 
-        SetupPollingSequence([new Update { Id = 1, Message = msg }]);
-        await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update { Id = 1, Message = message });
 
-        await RunServiceBriefly();
+        await _harness.RunAsync();
 
         // Thread messages are accepted even without / prefix
-        _botRegistry.GetBotForChat(100).ShouldNotBeNull();
+        _harness.BotRegistry.GetBotForChat(100).ShouldNotBeNull();
     }
 
-    private void SetupPollingSequence(Update[] firstBatch)
-    {
-        var callCount = 0;
-        _botClient
-            .Setup(b => b.SendRequest(It.IsAny<GetUpdatesRequest>(), It.IsAny<CancellationToken>()))
-            .Returns((GetUpdatesRequest _, CancellationToken ct) =>
-            {
-                if (Interlocked.Increment(ref callCount) == 1)
-                {
-                    return Task.FromResult(firstBatch);
-                }
-
-                _cts.Cancel();
-                return Task.FromException<Update[]>(new OperationCanceledException(ct));
-            });
-    }
-
-    private async Task RunServiceBriefly()
-    {
-        _cts.CancelAfter(TimeSpan.FromSeconds(1));
-        await _sut.StartAsync(_cts.Token);
-        // Give polling loop time to process
-        await Task.Delay(200, CancellationToken.None);
-        await _sut.StopAsync(CancellationToken.None);
-    }
-
-    private static Message CreateTextMessage(string text, long chatId, string username) => new()
-    {
-        Id = 10,
-        Date = DateTime.UtcNow,
-        Text = text,
-        Chat = new Chat { Id = chatId, Type = ChatType.Private },
-        From = new User { Id = 1, IsBot = false, FirstName = username, Username = username }
-    };
-
-    public void Dispose() => _cts.Dispose();
+    public void Dispose() => _harness.Dispose();
 }

@@ -217,8 +217,8 @@ public static class ChatMessageExtensions
             message.AdditionalProperties[AttachmentsKey] = attachments;
         }
 
-        // Which channel's upload store holds the bytes. Hydration reads it to know who to ask;
-        // the reference itself stays transport-neutral.
+        // Which channel can still get the bytes. Hydration reads it to know who to ask; the
+        // reference itself stays transport-neutral.
         public string? GetAttachmentChannelId()
         {
             var value = message.AdditionalProperties?.GetValueOrDefault(AttachmentChannelIdKey);

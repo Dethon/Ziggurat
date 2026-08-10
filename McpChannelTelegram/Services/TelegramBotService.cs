@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Mcp.Hosting;
 using McpChannelTelegram.Settings;
@@ -12,6 +13,8 @@ public sealed class TelegramBotService(
     ChannelSettings settings,
     ChannelNotificationEmitter notificationEmitter,
     ApprovalCallbackRouter approvalCallbackRouter,
+    IAgentCatalog agentCatalog,
+    TimeProvider timeProvider,
     ILogger<TelegramBotService> logger) : BackgroundService
 {
     private const int PollTimeoutSeconds = 30;
@@ -78,33 +81,56 @@ public sealed class TelegramBotService(
             return;
         }
 
-        if (update.Message is not { Type: MessageType.Text } message || message.Text is null)
+        if (update.Message is not { } message)
         {
             return;
         }
 
-        if (!IsBotMessage(message))
+        await HandleMessagesAsync(agentId, botClient, [message], cancellationToken);
+    }
+
+    private async Task HandleMessagesAsync(
+        string agentId,
+        ITelegramBotClient botClient,
+        IReadOnlyList<Message> messages,
+        CancellationToken cancellationToken)
+    {
+        var first = messages[0];
+        var content = messages
+            .Select(m => m.Text ?? m.Caption)
+            .FirstOrDefault(text => !string.IsNullOrEmpty(text)) ?? string.Empty;
+
+        if (!IsBotMessage(content, messages))
         {
             return;
         }
 
-        var sender = message.From?.Username
-                     ?? message.Chat.Username
-                     ?? message.Chat.FirstName
-                     ?? $"{message.Chat.Id}";
+        var attachments = AttachmentIntake.Read(agentId, messages);
+
+        // A message with neither words nor files is not a turn: a service message in a forum
+        // thread qualifies under the addressing rule and must still cost nothing.
+        if (content.Length == 0 && attachments.Count == 0)
+        {
+            return;
+        }
+
+        var sender = first.From?.Username
+                     ?? first.Chat.Username
+                     ?? first.Chat.FirstName
+                     ?? $"{first.Chat.Id}";
 
         if (!settings.AllowedUsernames.Contains(sender))
         {
             await botClient.SendMessage(
-                message.Chat.Id,
+                first.Chat.Id,
                 "You are not authorized to use this bot.",
-                replyParameters: message.MessageId,
+                replyParameters: first.MessageId,
                 cancellationToken: cancellationToken);
             return;
         }
 
-        var chatId = message.Chat.Id;
-        var threadId = message.MessageThreadId ?? chatId;
+        var chatId = first.Chat.Id;
+        var threadId = first.MessageThreadId ?? chatId;
         var conversationId = $"{chatId}:{threadId}";
 
         botRegistry.RegisterChatAgent(chatId, agentId);
@@ -122,8 +148,9 @@ public sealed class TelegramBotService(
             {
                 ConversationId = conversationId,
                 Sender = sender,
-                Content = message.Text,
+                Content = content,
                 AgentId = agentId,
+                Attachments = attachments.Count > 0 ? attachments : null,
                 Timestamp = DateTimeOffset.UtcNow
             },
             cancellationToken);
@@ -138,8 +165,9 @@ public sealed class TelegramBotService(
             conversationId, sender, agentId);
     }
 
-    private static bool IsBotMessage(Message message)
-    {
-        return message.Text is not null && (message.Text.StartsWith('/') || message.MessageThreadId.HasValue);
-    }
+    // Unchanged from the day this channel only took text, with the caption standing in for it: a
+    // command prefix, or any message in a forum thread. A media message therefore qualifies under
+    // exactly the same rule, and one with an empty caption is a legitimate turn.
+    private static bool IsBotMessage(string content, IReadOnlyList<Message> messages) =>
+        content.StartsWith('/') || messages.Any(m => m.MessageThreadId.HasValue);
 }
