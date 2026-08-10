@@ -11,7 +11,13 @@ public record HostedConnectionKeepAliveOptions
     // Below HostedConnectionPool.IdleTimeout, so a connection is never left idle long enough
     // for the pool to drop it. Raised lifetimes alone are not enough: at 35 turns a day most
     // gaps are longer than any idle timeout worth configuring.
-    public static readonly TimeSpan DefaultInterval = TimeSpan.FromMinutes(2);
+    //
+    // The interval also sets how long the pool sits cold after ConnectionLifetime expires a
+    // connection, because the next ping is what re-establishes it: a fraction of
+    // interval / (lifetime + interval) of the time, and whatever calls first inside that
+    // window pays the handshake. Shortening the interval buys that fraction down at a cost
+    // in pings, and 30s (2/min) is where the two stop being worth trading.
+    public static readonly TimeSpan DefaultInterval = TimeSpan.FromSeconds(30);
 
     public required string BaseAddress { get; init; }
     public string? ApiKey { get; init; }
