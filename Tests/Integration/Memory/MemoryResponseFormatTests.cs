@@ -60,14 +60,12 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
         var (apiUrl, apiKey, model) = GetConfig();
         var (extractor, warnings) = CreateExtractor(apiUrl, apiKey, model);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
         var result = await LlmAttempt.UntilAsync(
-            () => extractor.ExtractAsync(
+            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => extractor.ExtractAsync(
                 [new ChatMessage(ChatRole.User,
                     "I'm a senior Python developer at Google. I prefer dark mode and use Vim keybindings. " +
                     "I'm currently learning Rust and working on a distributed cache project.")],
-                "test_user", cts.Token),
+                "test_user", ct)),
             candidates => candidates.Count > 0);
 
         result.ShouldNotBeEmpty(LlmAttempt.Explain(
@@ -90,11 +88,9 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
         var (apiUrl, apiKey, model) = GetConfig();
         var (extractor, _) = CreateExtractor(apiUrl, apiKey, model);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        var result = await extractor.ExtractAsync(
+        var result = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => extractor.ExtractAsync(
             [new ChatMessage(ChatRole.User, "Hello, how are you?")],
-            "test_user", cts.Token);
+            "test_user", ct));
 
         result.Count.ShouldBeLessThanOrEqualTo(1);
     }
@@ -164,10 +160,8 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
             CreateMemory("mem_4", "User likes dark themes in all editors", MemoryCategory.Preference)
         };
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
         var result = await LlmAttempt.UntilAsync(
-            () => consolidator.ConsolidateAsync(memories, cts.Token),
+            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => consolidator.ConsolidateAsync(memories, ct)),
             decisions => decisions.Count > 0);
 
         result.ShouldNotBeEmpty(LlmAttempt.Explain(
@@ -203,9 +197,8 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
             CreateMemory("mem_3", "User is learning Japanese", MemoryCategory.Skill)
         };
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        var result = await consolidator.ConsolidateAsync(memories, cts.Token);
+        var result = await LlmAttempt.WithinAsync(
+            LlmAttempt.Budget, ct => consolidator.ConsolidateAsync(memories, ct));
 
         result.ShouldAllBe(d => d.Action != MergeAction.Merge,
             "Distinct, unrelated memories should not be merged");
@@ -279,10 +272,9 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
             CreateMemory("mem_7", "User is building an AI agent project", MemoryCategory.Project)
         };
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
         var result = await LlmAttempt.UntilAsync(
-            () => consolidator.SynthesizeProfileAsync("test_user", memories, cts.Token),
+            () => LlmAttempt.WithinAsync(
+                LlmAttempt.Budget, ct => consolidator.SynthesizeProfileAsync("test_user", memories, ct)),
             profile => !string.IsNullOrWhiteSpace(profile.Summary)
                        && profile.CommunicationStyle is not null
                        && profile.TechnicalContext is not null);

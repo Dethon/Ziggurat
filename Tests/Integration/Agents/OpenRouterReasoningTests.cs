@@ -7,6 +7,8 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
 
+using Tests.Integration.Fixtures;
+
 namespace Tests.Integration.Agents;
 
 [Trait("Category", "Llm")]
@@ -31,7 +33,6 @@ public class OpenRouterReasoningTests
         var (apiUrl, apiKey, model) = GetConfig();
 
         using var client = new OpenRouterChatClient(apiUrl, apiKey, model);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         var options = new ChatOptions
         {
@@ -42,17 +43,22 @@ public class OpenRouterReasoningTests
             }
         };
 
-        var updates = new List<ChatResponseUpdate>();
-        await foreach (var update in client.GetStreamingResponseAsync(
-                           [
-                               new ChatMessage(ChatRole.User,
-                                   "Solve 9.11 vs 9.9. Provide the answer. (Reasoning should be enabled.)")
-                           ],
-                           options,
-                           cts.Token))
+        var updates = await LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct =>
         {
-            updates.Add(update);
-        }
+            var collected = new List<ChatResponseUpdate>();
+            await foreach (var update in client.GetStreamingResponseAsync(
+                               [
+                                   new ChatMessage(ChatRole.User,
+                                       "Solve 9.11 vs 9.9. Provide the answer. (Reasoning should be enabled.)")
+                               ],
+                               options,
+                               ct))
+            {
+                collected.Add(update);
+            }
+
+            return collected;
+        });
 
         var reasoning = string.Join("", updates
             .SelectMany(u => u.Contents)

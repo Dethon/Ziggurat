@@ -1,4 +1,4 @@
-using Domain.Extensions;
+using Domain.DTOs;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
@@ -47,6 +47,10 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
             []);
     }
 
+    private Task<List<AiResponse>> RunAsync(
+        OpenRouterChatClient llmClient, string prompt, Func<IReadOnlyList<AiResponse>, bool> landed) =>
+        LlmAttempt.TurnAsync(() => CreateAgent(llmClient), prompt, landed);
+
     [SkippableFact]
     public async Task Agent_WithMultipleFileSystems_CanReadFromBoth()
     {
@@ -55,29 +59,20 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
         fsFixture.CreateLibraryFile("multi-read.md", "Library content alpha");
         fsFixture.CreateNotesFile("multi-read.md", "Notes content bravo");
 
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
         // Act
-        var responses = await agent.RunStreamingAsync(
-                "Read both of these files using the domain__filesystem__text_read tool and tell me their contents:\n" +
-                "- filePath: /library/multi-read.md\n" +
-                "- filePath: /notes/multi-read.md\n" +
-                "IMPORTANT: Every filePath MUST begin with one of the mounted prefixes (/library or /notes). " +
-                "Pass the filePath values exactly as written above — do not shorten, rename, or invent paths.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+        var responses = await RunAsync(llmClient,
+            "Read both of these files using the domain__filesystem__text_read tool and tell me their contents:\n" +
+            "- filePath: /library/multi-read.md\n" +
+            "- filePath: /notes/multi-read.md\n" +
+            "IMPORTANT: Every filePath MUST begin with one of the mounted prefixes (/library or /notes). " +
+            "Pass the filePath values exactly as written above — do not shorten, rename, or invent paths.",
+            landed: r => LlmAttempt.Combine(r).Contains("alpha") && LlmAttempt.Combine(r).Contains("bravo"));
 
         // Assert
         responses.ShouldNotBeEmpty();
         var combined = string.Join(" ", responses.Select(r => r.Content));
         combined.ShouldContain("alpha");
         combined.ShouldContain("bravo");
-
-        await agent.DisposeAsync();
     }
 
     [SkippableFact]
@@ -85,21 +80,16 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
     {
         // Arrange
         var llmClient = CreateLlmClient();
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
-        var responses = await agent.RunStreamingAsync(
-                "Create these two files using the domain__filesystem__text_create tool (one call per file):\n" +
-                "1. filePath: /library/multi-create.md   content: 'library file'\n" +
-                "2. filePath: /notes/multi-create.md     content: 'notes file'\n" +
-                "IMPORTANT: Every filePath MUST begin with one of the mounted prefixes (/library or /notes). " +
-                "Pass the filePath values exactly as written above — do not shorten, rename, or invent paths.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+        var responses = await RunAsync(llmClient,
+            "Create these two files using the domain__filesystem__text_create tool (one call per file):\n" +
+            "1. filePath: /library/multi-create.md   content: 'library file'\n" +
+            "2. filePath: /notes/multi-create.md     content: 'notes file'\n" +
+            "IMPORTANT: Every filePath MUST begin with one of the mounted prefixes (/library or /notes). " +
+            "Pass the filePath values exactly as written above — do not shorten, rename, or invent paths.",
+            landed: _ => File.Exists(Path.Combine(fsFixture.LibraryPath, "multi-create.md"))
+                         && File.Exists(Path.Combine(fsFixture.NotesPath, "multi-create.md")));
 
         // Assert
         responses.ShouldNotBeEmpty();
@@ -111,8 +101,6 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
         var notesFile = Path.Combine(fsFixture.NotesPath, "multi-create.md");
         File.Exists(notesFile).ShouldBeTrue("File should exist in notes filesystem");
         (await File.ReadAllTextAsync(notesFile)).ShouldContain("notes");
-
-        await agent.DisposeAsync();
     }
 
     [SkippableFact]
@@ -120,26 +108,18 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
     {
         // Arrange
         var llmClient = CreateLlmClient();
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
-        var responses = await agent.RunStreamingAsync(
-                "Based on your tool descriptions and system prompt alone, list every filesystem mount point " +
-                "that is available to you. Do NOT call any tools to answer this — just read the tool metadata " +
-                "you already have and reply in text.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+        var responses = await RunAsync(llmClient,
+            "Based on your tool descriptions and system prompt alone, list every filesystem mount point " +
+            "that is available to you. Do NOT call any tools to answer this — just read the tool metadata " +
+            "you already have and reply in text.",
+            landed: r => LlmAttempt.Combine(r).Contains("/library") && LlmAttempt.Combine(r).Contains("/notes"));
 
         // Assert
         responses.ShouldNotBeEmpty();
         var combined = string.Join(" ", responses.Select(r => r.Content)).ToLowerInvariant();
         combined.ShouldContain("/library");
         combined.ShouldContain("/notes");
-
-        await agent.DisposeAsync();
     }
 }

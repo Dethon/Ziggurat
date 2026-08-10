@@ -1,4 +1,4 @@
-using Domain.Extensions;
+using Domain.DTOs;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
@@ -47,6 +47,10 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
             []);
     }
 
+    private Task<List<AiResponse>> RunAsync(
+        OpenRouterChatClient llmClient, string prompt, Func<IReadOnlyList<AiResponse>, bool> landed) =>
+        LlmAttempt.TurnAsync(() => CreateAgent(llmClient), prompt, landed);
+
     [SkippableFact]
     public async Task Agent_WithFileSystemFeature_CanReadFile()
     {
@@ -54,26 +58,17 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         var llmClient = CreateLlmClient();
         vaultFixture.CreateFile("read-test.md", "# Secret Document\nThis is the content.");
 
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
         // Act
-        var responses = await agent.RunStreamingAsync(
-                "Use the domain__filesystem__text_read tool with filePath: /vault/read-test.md and tell me its content. " +
-                "IMPORTANT: the filePath argument MUST start with the mounted prefix /vault. " +
-                "Pass it exactly as written — do not shorten, rename, or invent paths.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+        var responses = await RunAsync(llmClient,
+            "Use the domain__filesystem__text_read tool with filePath: /vault/read-test.md and tell me its content. " +
+            "IMPORTANT: the filePath argument MUST start with the mounted prefix /vault. " +
+            "Pass it exactly as written — do not shorten, rename, or invent paths.",
+            landed: r => LlmAttempt.Combine(r).Contains("Secret Document"));
 
         // Assert
         responses.ShouldNotBeEmpty();
         var combinedResponse = string.Join(" ", responses.Select(r => r.Content));
         combinedResponse.ShouldContain("Secret Document");
-
-        await agent.DisposeAsync();
     }
 
     [SkippableFact]
@@ -81,21 +76,15 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
     {
         // Arrange
         var llmClient = CreateLlmClient();
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
-        var responses = await agent.RunStreamingAsync(
-                "Use the domain__filesystem__text_create tool with:\n" +
-                "- filePath: /vault/created-by-agent.md\n" +
-                "- content: '# Created\nHello from agent'\n" +
-                "IMPORTANT: the filePath argument MUST start with the mounted prefix /vault. " +
-                "Pass it exactly as written — do not shorten, rename, or invent paths.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+        var responses = await RunAsync(llmClient,
+            "Use the domain__filesystem__text_create tool with:\n" +
+            "- filePath: /vault/created-by-agent.md\n" +
+            "- content: '# Created\nHello from agent'\n" +
+            "IMPORTANT: the filePath argument MUST start with the mounted prefix /vault. " +
+            "Pass it exactly as written — do not shorten, rename, or invent paths.",
+            landed: _ => File.Exists(Path.Combine(vaultFixture.VaultPath, "created-by-agent.md")));
 
         // Assert
         responses.ShouldNotBeEmpty();
@@ -103,8 +92,6 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         File.Exists(filePath).ShouldBeTrue("Agent should have created the file");
         var content = await File.ReadAllTextAsync(filePath);
         content.ShouldContain("Created");
-
-        await agent.DisposeAsync();
     }
 
     [SkippableFact]
@@ -114,27 +101,18 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         var llmClient = CreateLlmClient();
         vaultFixture.CreateFile("edit-test.md", "Hello World");
 
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
         // Act
-        var responses = await agent.RunStreamingAsync(
-                "Use the domain__filesystem__text_edit tool with filePath: /vault/edit-test.md and edits: [{ oldString: 'World', newString: 'Agent' }]. " +
-                "IMPORTANT: the filePath argument MUST start with the mounted prefix /vault. " +
-                "Pass it exactly as written — do not shorten, rename, or invent paths.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+        var responses = await RunAsync(llmClient,
+            "Use the domain__filesystem__text_edit tool with filePath: /vault/edit-test.md and edits: [{ oldString: 'World', newString: 'Agent' }]. " +
+            "IMPORTANT: the filePath argument MUST start with the mounted prefix /vault. " +
+            "Pass it exactly as written — do not shorten, rename, or invent paths.",
+            landed: _ => File.ReadAllText(Path.Combine(vaultFixture.VaultPath, "edit-test.md")).Contains("Agent"));
 
         // Assert
         responses.ShouldNotBeEmpty();
         var content = await File.ReadAllTextAsync(Path.Combine(vaultFixture.VaultPath, "edit-test.md"));
         content.ShouldContain("Agent");
         content.ShouldNotContain("World");
-
-        await agent.DisposeAsync();
     }
 
     [SkippableFact]
@@ -145,26 +123,17 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         vaultFixture.CreateFile(Path.Combine("search-test", "doc1.md"), "The quick brown fox jumps over the lazy dog.");
         vaultFixture.CreateFile(Path.Combine("search-test", "doc2.md"), "A different document without the target phrase.");
 
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
         // Act
-        var responses = await agent.RunStreamingAsync(
-                "Use the domain__filesystem__text_search tool with directoryPath: /vault/search-test and query: 'quick brown fox'. " +
-                "IMPORTANT: the directoryPath argument MUST start with the mounted prefix /vault. " +
-                "Pass it exactly as written — do not shorten, rename, or invent paths.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+        var responses = await RunAsync(llmClient,
+            "Use the domain__filesystem__text_search tool with directoryPath: /vault/search-test and query: 'quick brown fox'. " +
+            "IMPORTANT: the directoryPath argument MUST start with the mounted prefix /vault. " +
+            "Pass it exactly as written — do not shorten, rename, or invent paths.",
+            landed: r => LlmAttempt.Combine(r).Contains("doc1"));
 
         // Assert
         responses.ShouldNotBeEmpty();
-        var combinedResponse = string.Join(" ", responses.Select(r => r.Content + " " + r.ToolCalls));
+        var combinedResponse = LlmAttempt.Combine(responses);
         combinedResponse.ShouldContain("doc1");
-
-        await agent.DisposeAsync();
     }
 
     [SkippableFact]
@@ -175,28 +144,19 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         vaultFixture.CreateFile(Path.Combine("move-src", "moveme.md"), "move content");
         Directory.CreateDirectory(Path.Combine(vaultFixture.VaultPath, "move-dst"));
 
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
         // Act
-        var responses = await agent.RunStreamingAsync(
-                "Use the domain__filesystem__move tool with:\n" +
-                "- sourcePath: /vault/move-src/moveme.md\n" +
-                "- destinationPath: /vault/move-dst/moveme.md\n" +
-                "IMPORTANT: both path arguments MUST start with the mounted prefix /vault. " +
-                "Pass them exactly as written — do not shorten, rename, or invent paths.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+        var responses = await RunAsync(llmClient,
+            "Use the domain__filesystem__move tool with:\n" +
+            "- sourcePath: /vault/move-src/moveme.md\n" +
+            "- destinationPath: /vault/move-dst/moveme.md\n" +
+            "IMPORTANT: both path arguments MUST start with the mounted prefix /vault. " +
+            "Pass them exactly as written — do not shorten, rename, or invent paths.",
+            landed: _ => File.Exists(Path.Combine(vaultFixture.VaultPath, "move-dst", "moveme.md")));
 
         // Assert
         responses.ShouldNotBeEmpty();
         File.Exists(Path.Combine(vaultFixture.VaultPath, "move-dst", "moveme.md")).ShouldBeTrue();
         File.Exists(Path.Combine(vaultFixture.VaultPath, "move-src", "moveme.md")).ShouldBeFalse();
-
-        await agent.DisposeAsync();
     }
 
     [SkippableFact]
@@ -206,25 +166,16 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         var llmClient = CreateLlmClient();
         vaultFixture.CreateFile("remove-me.md", "to be deleted");
 
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
         // Act
-        var responses = await agent.RunStreamingAsync(
-                "Use the domain__filesystem__remove tool with path: /vault/remove-me.md to delete that file. " +
-                "IMPORTANT: the path argument MUST start with the mounted prefix /vault. " +
-                "Pass it exactly as written — do not shorten, rename, or invent paths.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+        var responses = await RunAsync(llmClient,
+            "Use the domain__filesystem__remove tool with path: /vault/remove-me.md to delete that file. " +
+            "IMPORTANT: the path argument MUST start with the mounted prefix /vault. " +
+            "Pass it exactly as written — do not shorten, rename, or invent paths.",
+            landed: _ => !File.Exists(Path.Combine(vaultFixture.VaultPath, "remove-me.md")));
 
         // Assert
         responses.ShouldNotBeEmpty();
         File.Exists(Path.Combine(vaultFixture.VaultPath, "remove-me.md")).ShouldBeFalse();
-
-        await agent.DisposeAsync();
     }
 
     [SkippableFact]
@@ -234,26 +185,17 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         var llmClient = CreateLlmClient();
         vaultFixture.CreateFile("prompt-test.md", "test");
 
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
         // Act - ask about available filesystems to verify prompt injection
-        var responses = await agent.RunStreamingAsync(
-                "Based on your tool descriptions and system prompt alone, list every filesystem mount point " +
-                "that is available to you. Do NOT call any tools to answer this — just read the tool metadata " +
-                "you already have and reply in text.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+        var responses = await RunAsync(llmClient,
+            "Based on your tool descriptions and system prompt alone, list every filesystem mount point " +
+            "that is available to you. Do NOT call any tools to answer this — just read the tool metadata " +
+            "you already have and reply in text.",
+            landed: r => LlmAttempt.Combine(r).Contains("vault", StringComparison.OrdinalIgnoreCase));
 
         // Assert
         responses.ShouldNotBeEmpty();
         var combinedResponse = string.Join(" ", responses.Select(r => r.Content)).ToLowerInvariant();
         (combinedResponse.Contains("/vault") || combinedResponse.Contains("vault"))
             .ShouldBeTrue("Agent should mention the vault filesystem in its response");
-
-        await agent.DisposeAsync();
     }
 }
