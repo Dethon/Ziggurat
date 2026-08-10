@@ -2575,6 +2575,16 @@ select:focus:not(:focus-visible) {
     .header-conversation-name.glow { text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent); }
     .header-conversation-time { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-muted); }
 
+    /* Tapping the title swaps it for this field in place, so the field keeps the title's type
+       and box. 1rem because anything smaller makes iOS Safari zoom the page on focus. */
+    .header-conversation-edit {
+        font-family: 'Fraunces', serif; font-weight: 600; font-size: 1rem;
+        color: var(--text-primary); background: var(--bg-primary);
+        border: 1px solid var(--accent); border-radius: 6px;
+        padding: 1px 6px; margin: -2px -4px; width: 100%; min-width: 0;
+    }
+    .header-conversation-edit:focus { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+
     /* Peek-bar new-chat button (mobile) */
     .hearth-peek .hearth-new { flex-shrink: 0; width: 32px; height: 32px; border-radius: 10px; border: none;
         background: var(--accent); color: var(--user-text); font-size: 1.2rem; cursor: pointer; }

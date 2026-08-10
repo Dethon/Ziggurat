@@ -61,7 +61,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
             typeof(TopicSelectionEffect), typeof(TopicDeleteEffect), typeof(InitializationEffect),
             typeof(AgentSelectionEffect), typeof(UserIdentityEffect), typeof(SpaceEffect),
             typeof(AgentActivityEffect), typeof(AgentSettingsEffect), typeof(StreamResumeEffect),
-            typeof(AttachmentEffect)
+            typeof(AttachmentEffect), typeof(TopicRenameEffect)
         }.ToList().ForEach(type => Services.GetRequiredService(type));
     }
 

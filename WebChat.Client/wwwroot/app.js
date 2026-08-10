@@ -501,6 +501,19 @@ window.clipboardHelper = {
     }
 };
 
+// The field replaces the title in place, so the name it opens with is the one already on
+// screen: selecting it means typing replaces the title and a tap places the caret instead.
+// rAF because the input only exists after Blazor's render commits.
+window.inlineEdit = {
+    focusAndSelect: function (el) {
+        if (!el) return;
+        requestAnimationFrame(() => {
+            el.focus();
+            el.select();
+        });
+    }
+};
+
 // ===================================
 // Element Utilities
 // ===================================

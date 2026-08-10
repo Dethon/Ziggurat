@@ -62,5 +62,6 @@ _ = app.Services.GetRequiredService<AgentActivityEffect>();
 _ = app.Services.GetRequiredService<AgentSettingsEffect>();
 _ = app.Services.GetRequiredService<StreamResumeEffect>();
 _ = app.Services.GetRequiredService<AttachmentEffect>();
+_ = app.Services.GetRequiredService<TopicRenameEffect>();
 
 await app.RunAsync();
