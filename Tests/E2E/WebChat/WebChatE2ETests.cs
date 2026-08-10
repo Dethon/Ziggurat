@@ -177,7 +177,18 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
                 await DismissApprovalOverlayAsync(page);
                 if (await backdrop.IsVisibleAsync())
                 {
-                    await backdrop.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                    // Close by coordinate, not by locator: the backdrop's own centre sits under
+                    // the open menu, so a locator click on it is intercepted by a menu item and
+                    // its timeout would escape this recovery. The avatar button's spot is always
+                    // covered by the backdrop while the menu is open, so a raw click there lands
+                    // on the backdrop and closes the dropdown.
+                    var avatarBox = await avatarButton.BoundingBoxAsync();
+                    if (avatarBox is not null)
+                    {
+                        await page.Mouse.ClickAsync(
+                            (float)(avatarBox.X + avatarBox.Width / 2),
+                            (float)(avatarBox.Y + avatarBox.Height / 2));
+                    }
                 }
             }
         }

@@ -86,6 +86,8 @@ public class WebChatE2EFixture : E2EFixtureBase
             .WithEnvironment("REDISCONNECTIONSTRING", "redis:6379")
             .WithEnvironment("AGENTS__0__ID", "test-agent")
             .WithEnvironment("AGENTS__0__NAME", "Test Agent")
+            .WithEnvironment("AGENTS__1__ID", "vision-agent")
+            .WithEnvironment("AGENTS__1__NAME", "Vision Agent")
             // POST negotiate succeeds only after Kestrel has fully bound routes; TCP-only
             // checks return before the app is actually serving requests.
             .WithWaitStrategy(Wait.ForUnixContainer()
@@ -112,6 +114,18 @@ public class WebChatE2EFixture : E2EFixtureBase
                   "name": "Test Agent",
                   "model": "~deepseek/deepseek-v4-flash-latest",
                   "mcpServerEndpoints": [ "http://mcp-vault:8080/mcp" ],
+                  "whitelistPatterns": ["__none__"]
+                },
+                {
+                  // The attachment E2E needs a model that accepts image input: capability is
+                  // discovered from the provider and the composer refuses the send otherwise.
+                  // Its own agent, because the other tests are tuned against the default
+                  // agent's model; no tool endpoints, so the reply is always text and never
+                  // an approval prompt.
+                  "id": "vision-agent",
+                  "name": "Vision Agent",
+                  "model": "google/gemini-3.1-flash-lite",
+                  "mcpServerEndpoints": [],
                   "whitelistPatterns": ["__none__"]
                 }
               ],
@@ -169,6 +183,11 @@ public class WebChatE2EFixture : E2EFixtureBase
         var testCaddyfile =
             ":80 {\n" +
             "    handle /hubs/* {\n" +
+            "        reverse_proxy mcp-channel-signalr:8080\n" +
+            "    }\n" +
+            // The upload store lives beside the hub; without this route an upload POST lands on
+            // the static webui and comes back 405, mirroring DockerCompose/caddy/Caddyfile.
+            "    handle /api/attachments* {\n" +
             "        reverse_proxy mcp-channel-signalr:8080\n" +
             "    }\n" +
             "    handle /api/agents* {\n" +

@@ -143,7 +143,13 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
                     row.dispatchEvent(new PointerEvent('pointerdown', p(300, 2)));
                     row.dispatchEvent(new PointerEvent('pointerup', p(300, 2)));
                     row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                    setTimeout(() => resolve(row.classList.contains('selected')), 600);
+                    // Poll rather than a fixed delay: the class arrives on the next Blazor
+                    // render, which under full-suite load can take well over half a second.
+                    const deadline = performance.now() + 5000;
+                    const settled = () => row.classList.contains('selected') ? resolve(true)
+                        : performance.now() > deadline ? resolve(false)
+                        : setTimeout(settled, 100);
+                    settled();
                 };
                 requestAnimationFrame(step);
             })
@@ -197,7 +203,13 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
                     row.dispatchEvent(new PointerEvent('pointerdown', p));
                     row.dispatchEvent(new PointerEvent('pointerup', p));
                     row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                    setTimeout(() => resolve(row.classList.contains('selected')), 600);
+                    // Poll rather than a fixed delay: the class arrives on the next Blazor
+                    // render, which under full-suite load can take well over half a second.
+                    const deadline = performance.now() + 5000;
+                    const settled = () => row.classList.contains('selected') ? resolve(true)
+                        : performance.now() > deadline ? resolve(false)
+                        : setTimeout(settled, 100);
+                    settled();
                 }, 80);
             })
             """);
@@ -208,7 +220,25 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
     private static async Task CreateTopicAsync(IPage page, string message)
     {
         var chatInput = page.Locator("textarea.chat-input");
-        await page.Locator(".hearth-new:visible").First.ClickAsync();
+
+        // The same dismiss-and-retry guard as TapHearthHandleAsync: a pending approval leaked
+        // by a sibling test can raise the full-viewport overlay at any moment and intercept
+        // this click.
+        var newTopic = page.Locator(".hearth-new:visible").First;
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            await WebChatE2ETests.DismissApprovalOverlayAsync(page);
+            try
+            {
+                await newTopic.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                break;
+            }
+            catch (TimeoutException) when (attempt < 2)
+            {
+                // Overlay re-armed between dismissal and the click; loop to dismiss and retry.
+            }
+        }
+
         await Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 10_000 });
         await chatInput.FillAsync(message);
         await chatInput.PressAsync("Enter");

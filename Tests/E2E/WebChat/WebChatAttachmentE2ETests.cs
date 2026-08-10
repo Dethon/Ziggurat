@@ -25,6 +25,11 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
+        // The stack's default agent runs a text-only model, and the composer refuses to send an
+        // image to a model that cannot read one — this test runs on the vision agent.
+        await page.Locator(".agent-seg", new PageLocatorOptions { HasText = "Vision Agent" })
+            .ClickAsync(new LocatorClickOptions { Timeout = 10_000 });
+
         // The file-input API rather than a real dialog: one control serves the picker, the paste
         // and the drop, so driving the input is driving all three.
         await page.Locator("input[type=file]").SetInputFilesAsync(new FilePayload
@@ -34,9 +39,14 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
             Buffer = _onePixelPng
         });
 
-        // Uploaded and ready: the chip shows the name and the send button comes back.
-        await Assertions.Expect(page.Locator(".composer-attachment"))
+        // Uploaded and ready — the bare chip is not enough, a refused upload keeps its chip too,
+        // with a failed class and the send then travelling without the file.
+        await Assertions.Expect(page.Locator(".composer-attachment.ready"))
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+
+        // A capability refusal disables the send silently, so without this check a model that
+        // cannot read images fails the test as an unexplained timeout further down.
+        await Assertions.Expect(page.Locator(".composer-refusal")).ToBeHiddenAsync();
 
         var chatInput = page.Locator("textarea.chat-input");
         await chatInput.FillAsync("What is in this picture?");
@@ -45,7 +55,19 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         var attachment = page.Locator(".chat-message.user .message-attachments");
         await attachment.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
+        // The reply is the proof the turn reached the agent and its record was written; reloading
+        // before it races the history read against the agent's own persistence.
+        await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").First)
+            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 30_000 });
+
         await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+        // A reload restores the record, not the session: nothing is selected until the person
+        // opens a conversation, so open it again before asking after its attachments.
+        await WebChatE2ETests.DismissApprovalOverlayAsync(page);
+        // A conversation started by attaching a file is named after the file.
+        await page.Locator(".topic-item", new PageLocatorOptions { HasText = "e2e-photo" })
+            .First.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
 
         var afterReload = page.Locator(".chat-message.user .message-attachments");
         await afterReload.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
