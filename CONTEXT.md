@@ -181,10 +181,11 @@ files were ever sent.
 _Avoid_: file id, attachment metadata, pointer, handle
 
 **Upload store**:
-Where an attachment's bytes rest between being sent and being read. It is a holding
-area and not a place anyone works: nothing is edited there, nothing is found there by
-looking, its contents are reached only by naming a reference, and everything in it is
-eventually swept.
+Where an attachment's bytes rest between being sent and being read, for a channel that
+would otherwise have nowhere to keep them. It is a holding area and not a place anyone
+works: nothing is edited there, nothing is found there by looking, its contents are
+reached only by naming a reference, and what it holds is eventually swept. A channel
+whose transport already keeps the file has none.
 _Avoid_: attachment store, staging mount, uploads folder
 
 **Hydration**:
