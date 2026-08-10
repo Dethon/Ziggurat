@@ -339,6 +339,13 @@ Object.assign(window.hearthSheet, {
         this._rows = sheet.querySelector('.hearth-rows');
         // Drag the sheet from anywhere in the chrome (handle, search, agent strip, padding).
         sheet.addEventListener('pointerdown', this._onDown);
+        // Chromium decides what a gesture was from the touch stream, and the pointer handlers
+        // above never touch it. Leaving a fast drag's touchmoves unconsumed puts the input
+        // pipeline in a state where the next tap arrives as pointerdown/touchstart/pointerup/
+        // touchend and no click at all, for about a second — which is why flicking the drawer
+        // open and then picking a conversation cost two taps. preventDefault on pointermove
+        // does not reach that decision; only the touch event does.
+        sheet.addEventListener('touchmove', this._onSheetTouchMove, { passive: false });
         // The conversation list scrolls natively; a pull-down at its very top collapses the
         // sheet. Touch handlers (not pointer) so normal list scrolling keeps its momentum.
         if (this._rows) {
@@ -397,6 +404,13 @@ Object.assign(window.hearthSheet, {
         h._vy = (e.clientY - h._lastY) / Math.max(1, e.timeStamp - h._lastT);
         h._lastY = e.clientY; h._lastT = e.timeStamp;
         e.preventDefault();
+    },
+
+    // Gated on _dragging rather than on the axis lock: the lock only engages 8px in, and the
+    // moves before it are part of the same gesture. _onDown leaves _dragging false for touches
+    // inside the conversation list, so its native scrolling is untouched.
+    _onSheetTouchMove: function (e) {
+        if (window.hearthSheet._dragging) e.preventDefault();
     },
 
     _onUp: function () {
