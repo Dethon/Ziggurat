@@ -17,10 +17,10 @@ replies are ticket 03.
 
 **Status:** ready-for-agent
 
-- [ ] A voice note sent to the bot produces a channel notification whose content is the transcript
-- [ ] Ogg/Opus is decoded to 16 kHz mono s16le in managed code, with no native dependency and no change to any container image
-- [ ] The resulting turn carries the same sender, delivery identity and turn key a typed message would
-- [ ] No attachment reference is produced for a voice note, and nothing is written to any store
-- [ ] Audio files, documents, video notes and stickers behave exactly as they do today
-- [ ] Driven through the existing Telegram polling harness with a fake transcriber, asserting on the notification that reached the channel inbox
-- [ ] The decode is unit-tested as a pure step: a real Ogg/Opus fixture in, correct sample count and rate out
+- [x] A voice note sent to the bot produces a channel notification whose content is the transcript
+- [x] Ogg/Opus is decoded to 16 kHz mono s16le in managed code, with no native dependency and no change to any container image
+- [x] The resulting turn carries the same sender, delivery identity and turn key a typed message would
+- [x] No attachment reference is produced for a voice note, and nothing is written to any store
+- [x] Audio files, documents, video notes and stickers behave exactly as they do today
+- [x] Driven through the existing Telegram polling harness with a fake transcriber, asserting on the notification that reached the channel inbox
+- [x] The decode is unit-tested as a pure step: a real Ogg/Opus fixture in, correct sample count and rate out

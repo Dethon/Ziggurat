@@ -13,8 +13,9 @@ COPY ["Infrastructure/", "Infrastructure/"]
 COPY ["Mcp.Hosting/", "Mcp.Hosting/"]
 ARG BUILD_CONFIGURATION=Release
 # Every channel server publishes with BuildProjectReferences=false, so the projects they reference
-# have to be built here. Mcp.Hosting references Domain and the MCP server package only — it
-# must never gain Infrastructure, or the two channel servers that depend on Domain alone inherit
-# Infrastructure's whole stack.
+# have to be built here. Mcp.Hosting references Domain and the MCP server package only — it must
+# never gain Infrastructure, or the channel server that depends on Domain alone (ServiceBus)
+# inherits Infrastructure's whole stack without ever asking for it. Telegram asked: it dictates,
+# and the shared transcription client lives in Infrastructure.
 RUN dotnet build "Infrastructure/Infrastructure.csproj" -c $BUILD_CONFIGURATION --no-restore \
     && dotnet build "Mcp.Hosting/Mcp.Hosting.csproj" -c $BUILD_CONFIGURATION --no-restore

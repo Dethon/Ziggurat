@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Infrastructure.Clients.Transcription;
 using Mcp.Hosting;
 using McpChannelTelegram.McpTools;
 using McpChannelTelegram.Services;
@@ -12,8 +13,18 @@ public static class ConfigModule
 {
     public static IServiceCollection ConfigureChannel(this IServiceCollection services, ChannelSettings settings)
     {
+        // Streaming TTS is not this channel's business, but the shared Lemonade client is named the
+        // same everywhere, so a transcription always goes out on a registration that exists.
+        services.AddHttpClient(LemonadeTranscriptionClient.ClientName);
+
         services
             .AddSingleton(new BotRegistry(settings.Bots))
+            .AddSingleton(settings.Dictation)
+            .AddSingleton<IAudioTranscriber>(sp => new LemonadeTranscriptionClient(
+                sp.GetRequiredService<IHttpClientFactory>(),
+                settings.Dictation.Transcription,
+                sp.GetRequiredService<ILogger<LemonadeTranscriptionClient>>()))
+            .AddSingleton<VoiceNoteDictation>()
             .AddSingleton<MessageAccumulator>()
             .AddSingleton<ApprovalCallbackRouter>()
             .AddSingleton(TimeProvider.System)

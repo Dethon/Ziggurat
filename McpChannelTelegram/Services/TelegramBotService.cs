@@ -18,6 +18,7 @@ public sealed class TelegramBotService : BackgroundService
     private readonly ChannelNotificationEmitter _notificationEmitter;
     private readonly ApprovalCallbackRouter _approvalCallbackRouter;
     private readonly IAgentCatalog _agentCatalog;
+    private readonly VoiceNoteDictation _dictation;
     private readonly ILogger<TelegramBotService> _logger;
     private readonly AlbumBuffer _albums;
 
@@ -27,6 +28,7 @@ public sealed class TelegramBotService : BackgroundService
         ChannelNotificationEmitter notificationEmitter,
         ApprovalCallbackRouter approvalCallbackRouter,
         IAgentCatalog agentCatalog,
+        VoiceNoteDictation dictation,
         TimeProvider timeProvider,
         ILogger<TelegramBotService> logger)
     {
@@ -35,6 +37,7 @@ public sealed class TelegramBotService : BackgroundService
         _notificationEmitter = notificationEmitter;
         _approvalCallbackRouter = approvalCallbackRouter;
         _agentCatalog = agentCatalog;
+        _dictation = dictation;
         _logger = logger;
         _albums = new AlbumBuffer(timeProvider, ReleaseAlbumAsync);
     }
@@ -150,9 +153,13 @@ public sealed class TelegramBotService : BackgroundService
 
         var intake = AttachmentIntake.Read(agentId, messages);
 
+        // A voice note is the one piece of media that becomes words rather than a file, so it is
+        // read here and not by the intake, which mints references.
+        var voice = messages.Select(m => m.Voice).OfType<Voice>().FirstOrDefault();
+
         // A message with neither words nor files is not a turn: a service message in a forum
         // thread qualifies under the addressing rule and must still cost nothing.
-        if (content.Length == 0 && intake.Attachments.Count == 0 && intake.Refusals.Count == 0)
+        if (content.Length == 0 && voice is null && intake.Attachments.Count == 0 && intake.Refusals.Count == 0)
         {
             return;
         }
@@ -181,9 +188,18 @@ public sealed class TelegramBotService : BackgroundService
         var turnStops = await ReportRefusalsAsync(agentId, botClient, first, intake, cancellationToken);
 
         // Nothing survived, or the model cannot read what did, so the reply is the whole response.
-        if (turnStops || (content.Length == 0 && intake.Attachments.Count == 0))
+        if (turnStops || (content.Length == 0 && voice is null && intake.Attachments.Count == 0))
         {
             return;
+        }
+
+        // Transcribed after the authorisation check, so a stranger's voice note costs no download
+        // and no transcription. A caption is words the person said too, so both reach the agent:
+        // the caption, a newline, then the transcript.
+        if (voice is not null)
+        {
+            var transcript = await _dictation.ReadAsync(botClient, voice, cancellationToken);
+            content = string.Join("\n", new[] { content, transcript }.Where(part => part.Length > 0));
         }
 
         // Unlike ServiceBus (broker-level abandon/redeliver) or Schedule/Library (a durable record

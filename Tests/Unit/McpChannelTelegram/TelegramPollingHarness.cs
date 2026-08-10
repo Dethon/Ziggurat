@@ -43,11 +43,13 @@ internal sealed class TelegramPollingHarness : IDisposable
             new ChannelSettings
             {
                 Bots = [new AgentBotConfig { AgentId = AgentId, BotToken = "unused" }],
-                AllowedUsernames = allowedUsernames.Length > 0 ? allowedUsernames : ["alice", "bob"]
+                AllowedUsernames = allowedUsernames.Length > 0 ? allowedUsernames : ["alice", "bob"],
+                Dictation = Dictation
             },
             Emitter,
             CallbackRouter,
             Catalog,
+            new VoiceNoteDictation(Transcriber, Dictation, new Mock<ILogger<VoiceNoteDictation>>().Object),
             Time,
             new Mock<ILogger<TelegramBotService>>().Object);
 
@@ -63,6 +65,8 @@ internal sealed class TelegramPollingHarness : IDisposable
     }
 
     public Mock<ITelegramBotClient> BotClient { get; } = new();
+    public FakeTranscriber Transcriber { get; } = new();
+    public DictationSettings Dictation { get; } = new();
     public FakeTimeProvider Time { get; } = new();
     public ApprovalCallbackRouter CallbackRouter { get; } = new();
     public MutableAgentCatalog Catalog { get; } = new();
@@ -153,6 +157,43 @@ internal sealed class TelegramPollingHarness : IDisposable
     [
         new() { FileId = fileId, FileUniqueId = "u-" + fileId, Width = 1280, Height = 720, FileSize = sizeBytes }
     ];
+
+    public static Voice VoiceNote(
+        string fileId = "voice-1",
+        int durationSeconds = 2,
+        string? mimeType = "audio/ogg",
+        long? sizeBytes = 8054) => new()
+        {
+            FileId = fileId,
+            FileUniqueId = "u-" + fileId,
+            Duration = durationSeconds,
+            MimeType = mimeType,
+            FileSize = sizeBytes
+        };
+
+    // A real Ogg/Opus file (libopus, 48 kHz mono, VoIP), which is what Telegram sends. The decode
+    // is real in these tests; only the transcriber is faked.
+    public static byte[] OggOpusFixture { get; } = File.ReadAllBytes(
+        Path.Combine(AppContext.BaseDirectory, "Unit/McpChannelTelegram/Fixtures/voice-note.ogg"));
+
+    public void GivenTelegramHolds(string fileId, byte[] bytes, string path)
+    {
+        BotClient
+            .Setup(b => b.SendRequest(
+                It.Is<GetFileRequest>(r => r.FileId == fileId), It.IsAny<CancellationToken>()))
+            .Returns((GetFileRequest request, CancellationToken _) => Task.FromResult(new TGFile
+            {
+                FileId = request.FileId,
+                FileUniqueId = "u-" + request.FileId,
+                FilePath = path,
+                FileSize = bytes.Length
+            }));
+
+        BotClient
+            .Setup(b => b.DownloadFile(path, It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+            .Returns((string _, Stream destination, CancellationToken ct) =>
+                destination.WriteAsync(bytes, ct).AsTask());
+    }
 
     public static Document Document(
         string fileId = "doc-1",

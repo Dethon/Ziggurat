@@ -69,6 +69,7 @@
   <ItemGroup>
     <None Include="Unit/McpChannelVoice/Verification/Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Integration/McpChannelVoice/Fixtures/speaker-wavs/**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Unit/McpChannelTelegram/Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
