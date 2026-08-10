@@ -20,10 +20,6 @@ public static class ConfigModule
     {
         var redisMultiplexer = ConnectionMultiplexer.Connect(settings.RedisConnectionString);
 
-        // The shared Lemonade client is named the same in every server that transcribes, so a
-        // dictation always goes out on a registration that exists.
-        services.AddHttpClient(LemonadeTranscriptionClient.ClientName);
-
         services
             .AddSingleton<IConnectionMultiplexer>(redisMultiplexer)
             .AddSingleton<MutableAgentCatalog>()
@@ -45,10 +41,7 @@ public static class ConfigModule
             .AddSingleton(settings.Attachments)
             .AddMetricsPublishing("mcp-channel-signalr")
             .AddSingleton(settings.Dictation)
-            .AddSingleton<IAudioTranscriber>(sp => new LemonadeTranscriptionClient(
-                sp.GetRequiredService<IHttpClientFactory>(),
-                settings.Dictation.Transcription,
-                sp.GetRequiredService<ILogger<LemonadeTranscriptionClient>>()))
+            .AddLemonadeTranscription(settings.Dictation.Transcription)
             .AddSingleton<AttachmentTickets>()
             .AddSingleton<AttachmentStore>()
             .AddSingleton<AttachmentService>()

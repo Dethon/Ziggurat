@@ -7,25 +7,13 @@ namespace McpChannelVoice.Services.Stt;
 
 // The satellites' end of the shared transcription client: one utterance segment arrives as a chunk
 // stream, is buffered into a WAV blob (mono s16le at the incoming rate — the satellites send
-// 16 kHz), and is posted by LemonadeTranscriptionClient like every other dictation. What stays here
-// is what only the hub has: the chunk stream itself and the whisper biasing prompt, which is
-// composed per satellite from the room, the locality and the prior segment's text.
+// 16 kHz), and is posted through the injected IAudioTranscriber like every other dictation. What
+// stays here is what only the hub has: the chunk stream itself and the whisper biasing prompt,
+// which is composed per satellite from the room, the locality and the prior segment's text.
 public sealed class OpenAiSpeechToText(
-    IHttpClientFactory httpFactory,
-    OpenAiSttConfig config,
-    ILogger<OpenAiSpeechToText> logger) : ISpeechToText
+    IAudioTranscriber transcriber,
+    OpenAiSttConfig config) : ISpeechToText
 {
-    private readonly IAudioTranscriber _transcriber = new LemonadeTranscriptionClient(
-        httpFactory,
-        new TranscriptionClientConfig
-        {
-            BaseUrl = config.BaseUrl,
-            Model = config.Model,
-            Language = config.Language,
-            RequestTimeout = config.RequestTimeout
-        },
-        logger);
-
     public async Task<TranscriptionResult> TranscribeAsync(
         IAsyncEnumerable<AudioChunk> audio,
         TranscriptionOptions options,
@@ -43,12 +31,10 @@ public sealed class OpenAiSpeechToText(
             return new TranscriptionResult { Text = "" };
         }
 
-        var format = chunks[0].Format;
-        return await _transcriber.TranscribeAsync(
+        return await transcriber.TranscribeAsync(
             new TranscriptionRequest
             {
-                Audio = WavAudio.FromPcm(
-                    Concatenate(chunks, dataBytes), format.SampleRateHz, format.Channels, format.SampleWidthBytes),
+                Audio = WavAudio.FromPcm(Concatenate(chunks, dataBytes), chunks[0].Format),
                 MediaType = WavAudio.MediaType,
                 FileName = "utterance.wav",
                 Language = options.Language,

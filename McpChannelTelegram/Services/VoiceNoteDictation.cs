@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Domain.Contracts;
+using Domain.DTOs.Metrics;
 using Domain.DTOs.Voice;
 using Infrastructure.Clients.Transcription;
 using McpChannelTelegram.Settings;
@@ -9,8 +10,12 @@ using Telegram.Bot.Types;
 namespace McpChannelTelegram.Services;
 
 // What one voice note became: the words, or the short reply saying they could not be made out.
-// Exactly one of the two is set.
-public sealed record Dictation(string? Transcript, string? Refusal);
+public abstract record Dictation
+{
+    public sealed record Words(string Transcript) : Dictation;
+
+    public sealed record Refused(string Reply) : Dictation;
+}
 
 // One voice note turned into words: refused on its reported length before a byte is fetched,
 // otherwise downloaded, decoded if whisper cannot read the container itself, and transcribed.
@@ -28,7 +33,7 @@ public sealed class VoiceNoteDictation(
     // The satellites' own speech-to-text members, recorded from this call site too: the dashboard
     // needs no new metric family to show transcription for the channels people type into, only the
     // channel dimension to tell the three apart.
-    private const string Channel = "telegram";
+    private const string Channel = VoiceChannels.Telegram;
 
     // Said rather than nothing: being misheard and being ignored are indistinguishable from the
     // other end, and only one of them is worth recording again for.
@@ -40,7 +45,7 @@ public sealed class VoiceNoteDictation(
         // the person is still standing there rather than after a download nothing will use.
         if (voice.Duration > settings.MaxLength.TotalSeconds)
         {
-            return new Dictation(null, TooLongReply());
+            return new Dictation.Refused(TooLongReply());
         }
 
         try
@@ -49,7 +54,7 @@ public sealed class VoiceNoteDictation(
             if (AudioContainer.Sniff(audio.Span) is not { } container)
             {
                 logger.LogInformation("A voice note arrived in a container nothing here recognises");
-                return new Dictation(null, CouldNotUnderstand);
+                return new Dictation.Refused(CouldNotUnderstand);
             }
 
             var clock = Stopwatch.StartNew();
@@ -62,8 +67,8 @@ public sealed class VoiceNoteDictation(
                 Channel, worthATurn ? "dispatched" : "rejected", result, clock.ElapsedMilliseconds);
 
             return worthATurn
-                ? new Dictation(result.Text.Trim(), null)
-                : new Dictation(null, CouldNotUnderstand);
+                ? new Dictation.Words(result.Text.Trim())
+                : new Dictation.Refused(CouldNotUnderstand);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -73,7 +78,7 @@ public sealed class VoiceNoteDictation(
         {
             logger.LogWarning(ex, "Could not transcribe a Telegram voice note: {Message}", ex.Message);
             metrics.RecordFailure(Channel, ex);
-            return new Dictation(null, CouldNotUnderstand);
+            return new Dictation.Refused(CouldNotUnderstand);
         }
     }
 
@@ -97,9 +102,7 @@ public sealed class VoiceNoteDictation(
         container.NeedsDecoding
             ? new TranscriptionRequest
             {
-                Audio = WavAudio.FromPcm(
-                    OpusVoiceNote.DecodeToPcm(audio),
-                    OpusVoiceNote.SampleRateHz, OpusVoiceNote.Channels, OpusVoiceNote.SampleWidthBytes),
+                Audio = WavAudio.FromPcm(OpusVoiceNote.DecodeToPcm(audio), OpusVoiceNote.Format),
                 MediaType = WavAudio.MediaType
             }
             : new TranscriptionRequest { Audio = audio, MediaType = container.MediaType };

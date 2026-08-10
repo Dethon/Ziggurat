@@ -1,5 +1,6 @@
 using Concentus;
 using Concentus.Oggfile;
+using Domain.DTOs.Voice;
 
 namespace McpChannelTelegram.Services;
 
@@ -15,9 +16,18 @@ namespace McpChannelTelegram.Services;
 internal static class OpusVoiceNote
 {
     private const int OpusRateHz = 48_000;
-    public const int SampleRateHz = 16_000;
-    public const int Channels = 1;
-    public const int SampleWidthBytes = 2;
+    private const int SampleRateHz = 16_000;
+    private const int Channels = 1;
+    private const int SampleWidthBytes = 2;
+
+    // The shape DecodeToPcm answers in, as the one value a caller wrapping it in a RIFF header
+    // needs.
+    public static AudioFormat Format { get; } = new()
+    {
+        SampleRateHz = SampleRateHz,
+        Channels = Channels,
+        SampleWidthBytes = SampleWidthBytes
+    };
 
     // Concentus 2 probes for a native libopus and falls back to its managed implementation. The
     // channel image has no such library, and a decode that silently depends on one being installed

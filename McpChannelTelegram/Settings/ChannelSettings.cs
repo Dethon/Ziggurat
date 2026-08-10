@@ -19,19 +19,11 @@ public record AgentBotConfig
     public required string BotToken { get; init; }
 }
 
-// Chat dictation gets its own section rather than sharing the voice channel's, whose short-phrase
-// prompt and room placeholders are tuned for satellite commands and would skew a long spoken
-// paragraph.
-public record DictationSettings
+// What only Telegram needs on top of the shared chat settings: the gibberish gate the satellites
+// already use — whisper answers a recording of nothing with a plausible sentence it has seen in a
+// thousand subtitle files. A null signal fails open.
+public record DictationSettings : ChatDictationSettings
 {
-    public TranscriptionClientConfig Transcription { get; init; } = new() { Language = "es" };
-
-    // The same two minutes WebChat's recording stops itself at, checked against the duration
-    // Telegram reports before the file is fetched.
-    public TimeSpan MaxLength { get; init; } = TimeSpan.FromMinutes(2);
-
-    // The gibberish gate the satellites already use: whisper answers a recording of nothing with a
-    // plausible sentence it has seen in a thousand subtitle files. A null signal fails open.
     public double AvgLogProbThreshold { get; init; } = -1.0;
     public double NoSpeechProbThreshold { get; init; } = 0.6;
 }

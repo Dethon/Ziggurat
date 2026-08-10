@@ -15,20 +15,13 @@ public static class ConfigModule
 {
     public static IServiceCollection ConfigureChannel(this IServiceCollection services, ChannelSettings settings)
     {
-        // Streaming TTS is not this channel's business, but the shared Lemonade client is named the
-        // same everywhere, so a transcription always goes out on a registration that exists.
-        services.AddHttpClient(LemonadeTranscriptionClient.ClientName);
-
         services
             .AddSingleton<IConnectionMultiplexer>(
                 _ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
             .AddMetricsPublishing("mcp-channel-telegram")
             .AddSingleton(new BotRegistry(settings.Bots))
             .AddSingleton(settings.Dictation)
-            .AddSingleton<IAudioTranscriber>(sp => new LemonadeTranscriptionClient(
-                sp.GetRequiredService<IHttpClientFactory>(),
-                settings.Dictation.Transcription,
-                sp.GetRequiredService<ILogger<LemonadeTranscriptionClient>>()))
+            .AddLemonadeTranscription(settings.Dictation.Transcription)
             .AddSingleton<VoiceNoteDictation>()
             .AddSingleton<MessageAccumulator>()
             .AddSingleton<ApprovalCallbackRouter>()

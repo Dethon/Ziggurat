@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Domain.Contracts;
+using Domain.DTOs.Metrics;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
 using Infrastructure.Clients.Transcription;
@@ -17,7 +18,7 @@ public static class DictationEndpoints
     // WebChat is deliberately not gated on the confidence floors — the person reads the words
     // before sending them — so the outcome here says the transcript reached a composer, not that
     // anything judged it.
-    private const string Channel = "web";
+    private const string Channel = VoiceChannels.Web;
 
     public static void Map(IEndpointRouteBuilder app)
     {

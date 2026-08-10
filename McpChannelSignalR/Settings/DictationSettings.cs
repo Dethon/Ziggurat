@@ -2,17 +2,10 @@ using Infrastructure.Clients.Transcription;
 
 namespace McpChannelSignalR.Settings;
 
-// Chat dictation gets its own section rather than sharing the voice channel's, whose short-phrase
-// prompt and room placeholders are tuned for satellite commands and would skew a long spoken
-// paragraph. All of it is generic and lives in appsettings.json alone.
-public record DictationSettings
+// What only the browser's dictation needs on top of the shared chat settings: the mis-tap floor
+// the composer obeys and the byte cap the endpoint enforces.
+public record DictationSettings : ChatDictationSettings
 {
-    public TranscriptionClientConfig Transcription { get; init; } = new() { Language = "es" };
-
-    // A pocketed phone must not record indefinitely. The browser is handed this so it can stop
-    // itself, and the endpoint enforces it anyway rather than trusting what arrives.
-    public TimeSpan MaxLength { get; init; } = TimeSpan.FromMinutes(2);
-
     // Below this a press is a mis-tap: nothing is recorded and nothing is sent.
     public TimeSpan MinLength { get; init; } = TimeSpan.FromMilliseconds(400);
 

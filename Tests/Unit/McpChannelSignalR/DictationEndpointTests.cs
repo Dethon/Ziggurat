@@ -234,7 +234,8 @@ public sealed class DictationEndpointTests : IAsyncLifetime
     // What the browser actually posts: 16 kHz mono s16le WAV. The endpoint decides the container
     // from these bytes, so a test that posted zeroes would be posting nothing recognisable.
     private static byte[] Wav(int payloadBytes) =>
-        WavAudio.FromPcm(new byte[payloadBytes], 16_000, 1, 2);
+        WavAudio.FromPcm(
+            new byte[payloadBytes], new AudioFormat { SampleRateHz = 16_000, Channels = 1, SampleWidthBytes = 2 });
 
     private async Task<HttpResponseMessage> PostAsync(string? ticket, string space, byte[] audio)
     {

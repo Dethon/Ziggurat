@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using Domain.DTOs.Voice;
 
 namespace Infrastructure.Clients.Transcription;
 
@@ -10,7 +11,7 @@ public static class WavAudio
 {
     public const string MediaType = "audio/wav";
 
-    public static byte[] FromPcm(ReadOnlySpan<byte> pcm, int sampleRateHz, int channels, int sampleWidthBytes)
+    public static byte[] FromPcm(ReadOnlySpan<byte> pcm, AudioFormat format)
     {
         var wav = new byte[44 + pcm.Length];
         var span = wav.AsSpan();
@@ -20,11 +21,12 @@ public static class WavAudio
         Encoding.ASCII.GetBytes("fmt ", span[12..]);
         BinaryPrimitives.WriteInt32LittleEndian(span[16..], 16);
         BinaryPrimitives.WriteInt16LittleEndian(span[20..], 1); // PCM
-        BinaryPrimitives.WriteInt16LittleEndian(span[22..], (short)channels);
-        BinaryPrimitives.WriteInt32LittleEndian(span[24..], sampleRateHz);
-        BinaryPrimitives.WriteInt32LittleEndian(span[28..], sampleRateHz * sampleWidthBytes * channels);
-        BinaryPrimitives.WriteInt16LittleEndian(span[32..], (short)(sampleWidthBytes * channels));
-        BinaryPrimitives.WriteInt16LittleEndian(span[34..], (short)(sampleWidthBytes * 8));
+        BinaryPrimitives.WriteInt16LittleEndian(span[22..], (short)format.Channels);
+        BinaryPrimitives.WriteInt32LittleEndian(span[24..], format.SampleRateHz);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            span[28..], format.SampleRateHz * format.SampleWidthBytes * format.Channels);
+        BinaryPrimitives.WriteInt16LittleEndian(span[32..], (short)(format.SampleWidthBytes * format.Channels));
+        BinaryPrimitives.WriteInt16LittleEndian(span[34..], (short)(format.SampleWidthBytes * 8));
         Encoding.ASCII.GetBytes("data", span[36..]);
         BinaryPrimitives.WriteInt32LittleEndian(span[40..], pcm.Length);
         pcm.CopyTo(span[44..]);

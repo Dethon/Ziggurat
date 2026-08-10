@@ -1,3 +1,5 @@
+using Infrastructure.Clients.Transcription;
+
 namespace McpChannelVoice.Settings;
 
 public record SttSettings
@@ -44,6 +46,16 @@ public record OpenAiSttConfig
     // shared Lemonade HttpClient has an infinite timeout for streaming TTS, so without this a
     // Lemonade that accepts connections but never answers stalls the utterance indefinitely.
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(60);
+
+    // The shared transcription client's slice of this config. What only the hub has — the prompt
+    // template, the gibberish gate, the streaming knobs — stays here.
+    public TranscriptionClientConfig ToTranscriptionClientConfig() => new()
+    {
+        BaseUrl = BaseUrl,
+        Model = Model,
+        Language = Language,
+        RequestTimeout = RequestTimeout
+    };
 }
 
 public record SegmentedSttConfig
