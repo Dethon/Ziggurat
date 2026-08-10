@@ -102,6 +102,25 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     internal static Task DismissApprovalOverlayAsync(IPage page) =>
         RejectEveryVisibleApprovalAsync(page, TimeSpan.FromSeconds(15));
 
+    // The one guard for any single click a leaked approval overlay can intercept: dismiss
+    // whatever is showing, click, and on interception dismiss and try again. The overlay rides
+    // a fire-and-forget resume chain, so it can arrive between the dismissal and the click.
+    internal static async Task ClickThroughApprovalsAsync(IPage page, ILocator target)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            await DismissApprovalOverlayAsync(page);
+            try
+            {
+                await target.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                return;
+            }
+            catch (TimeoutException) when (attempt < 2)
+            {
+            }
+        }
+    }
+
     // The prompt on screen is the oldest request still waiting (ApprovalState.Pending is a
     // queue), so answering one surfaces the next in the same instant and the overlay never
     // hides in between. Rejecting once and expecting a clear screen fails whenever the agent

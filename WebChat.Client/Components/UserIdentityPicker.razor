@@ -16,7 +16,8 @@
 
     @if (_dropdownOpen)
     {
-        <div class="dropdown-backdrop" @onclick="CloseDropdown"></div>
+        @* Close on pointerdown, not click — see AgentSelector's backdrop. *@
+        <div class="dropdown-backdrop" @onpointerdown="CloseDropdown"></div>
         <div class="user-dropdown-menu">
             @foreach (var user in _availableUsers)
             {

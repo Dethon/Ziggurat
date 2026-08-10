@@ -24,7 +24,10 @@
 
         @if (_open)
         {
-            <div class="dropdown-backdrop" @onclick="Close"></div>
+            @* Close on pointerdown, not click — see AgentSelector's backdrop. This menu stays
+               open after a model pick by design, so the dismissing tap being swallowed cost a
+               tap on every conversation selection that followed. *@
+            <div class="dropdown-backdrop" @onpointerdown="Close"></div>
             <div class="agent-config-menu" role="dialog" aria-label="Agent model and reasoning effort">
                 <label class="agent-config-row">
                     <span class="agent-config-label">Model</span>

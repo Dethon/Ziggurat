@@ -35,7 +35,10 @@ else
 
         @if (_open)
         {
-            <div class="dropdown-backdrop" @onclick="Close"></div>
+            @* Close on pointerdown, not click: the backdrop is gone before the browser
+               synthesizes the tap's click, so the same tap also reaches what it aimed at
+               (on a phone, the conversation row under the finger). *@
+            <div class="dropdown-backdrop" @onpointerdown="Close"></div>
             <div class="agent-combo-menu" role="listbox" aria-label="Select agent">
                 @foreach (var agent in Agents)
                 {

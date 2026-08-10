@@ -92,6 +92,42 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(menu).Not.ToBeVisibleAsync();
     }
 
+    // An open dropdown paints a viewport-spanning dismiss backdrop over everything, including
+    // the conversation list — and the config menu deliberately stays open after picking a model,
+    // so on a phone the very next tap was spent dismissing instead of selecting. Closing on
+    // pointerdown removes the backdrop before the browser synthesizes the tap's click, so one
+    // tap both dismisses the menu and selects the topic under the finger. Touchscreen.Tap, not
+    // Mouse.Click: only the touch sequence hit-tests the click after the re-render.
+    [SkippableFact]
+    public async Task MobileViewport_ATapOnATopicWhileTheAgentMenuIsOpen_SelectsItInThatSameTap()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync(hasTouch: true);
+        await page.SetViewportSizeAsync(390, 844);
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+
+        await CreateTopicAsync(page, "Menu tap target topic message");
+        await CreateTopicAsync(page, "Menu tap decoy topic message");
+
+        await TapHearthHandleAsync(page);
+
+        await page.Locator(".hearth-peek .agent-chip").ClickAsync();
+        var menu = page.Locator(".hearth-peek .agent-combo-menu");
+        await Assertions.Expect(menu).ToBeVisibleAsync();
+
+        var row = page.Locator(".topic-item", new PageLocatorOptions { HasText = "Menu tap target" }).First;
+        var box = (await row.BoundingBoxAsync()).ShouldNotBeNull();
+        await page.Touchscreen.TapAsync(
+            (float)(box.X + box.Width / 2), (float)(box.Y + box.Height / 2));
+
+        await Assertions.Expect(menu).Not.ToBeVisibleAsync();
+        await Assertions.Expect(row).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bselected\b"),
+            new LocatorAssertionsToHaveClassOptions { Timeout = 10_000 });
+    }
+
     [SkippableFact]
     public async Task DesktopViewport_KeepsConnectionStatusInHeader()
     {
