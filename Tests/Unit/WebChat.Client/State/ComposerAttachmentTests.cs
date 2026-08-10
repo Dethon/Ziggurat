@@ -164,7 +164,7 @@ public sealed class ComposerAttachmentTests
 
         await TestChat.Eventually(() => Attachments(client).Any(a => a.Status == AttachmentStatus.Failed));
         client.Uploader.Uploaded.ShouldBeEmpty();
-        Attachments(client).Single().Error.ShouldContain("huge.png");
+        Attachments(client).Single().Error!.ShouldContain("huge.png");
     }
 
     [Fact]
@@ -177,7 +177,7 @@ public sealed class ComposerAttachmentTests
 
         await TestChat.Eventually(() => Attachments(client).Any(a => a.Status == AttachmentStatus.Failed));
         client.Uploader.Uploaded.ShouldBeEmpty();
-        Attachments(client).Single().Error.ShouldContain("image or a PDF");
+        Attachments(client).Single().Error!.ShouldContain("image or a PDF");
     }
 
     [Fact]
