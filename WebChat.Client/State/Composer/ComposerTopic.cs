@@ -44,6 +44,7 @@ public sealed class ComposerTopic(
             ThreadId = identity.ThreadId,
             AgentId = state.SelectedAgentId,
             Name = files[0].FileName,
+            NameFromFile = true,
             CreatedAt = DateTime.UtcNow,
             SpaceSlug = spaceStore.State.CurrentSlug
         };

@@ -14,6 +14,12 @@ public class StoredTopic
     public string? LastReadMessageId { get; set; }
     public string SpaceSlug { get; set; } = "default";
 
+    // True while the name is the stand-in a conversation started by a file was given: the file's
+    // own name, because at that moment nothing had been typed. The first message with text takes
+    // the name over. Not part of the metadata, so it never survives a reload — by then the
+    // conversation has its real name and messages of its own.
+    public bool NameFromFile { get; set; }
+
     public static StoredTopic FromMetadata(TopicMetadata metadata)
     {
         return new StoredTopic

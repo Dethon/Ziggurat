@@ -162,6 +162,8 @@ public sealed class SendMessageEffect : IDisposable
         else
         {
             topic = state.Topics.First(t => t.TopicId == action.TopicId);
+            RenameFromOpeningText(topic, action.Message, attached);
+
             if (_sessionService.CurrentTopic?.TopicId != topic.TopicId)
             {
                 var started = await _sessionService.StartSessionAsync(topic);
@@ -190,6 +192,25 @@ public sealed class SendMessageEffect : IDisposable
         // not when the reply completes.
         await _streamingService.SendMessageAsync(
             topic, action.Message, correlationId, action.Attachments);
+    }
+
+    // Picking a file with nothing selected starts the conversation there and then, before a word
+    // has been typed, so it is named after the file. The opening message is what the person meant
+    // to call it, and it renames the conversation the way the header field does — the file's name
+    // stands only when the message is nothing but files.
+    //
+    // Bounded to the opening turn by two conditions, not one: the marker is gone the moment the
+    // rename lands, and an empty transcript keeps a send that races a history load from renaming
+    // a conversation already under way.
+    private void RenameFromOpeningText(
+        StoredTopic topic, string message, IReadOnlyList<AttachmentReference> attached)
+    {
+        var opening = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []).Count == 0;
+
+        if (topic.NameFromFile && opening && !string.IsNullOrWhiteSpace(message))
+        {
+            _dispatcher.Dispatch(new RenameTopic(topic.TopicId, TopicName(message, attached)));
+        }
     }
 
     // A message with attachments and no text is a normal thing to send, so the conversation is

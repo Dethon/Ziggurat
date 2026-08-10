@@ -284,6 +284,76 @@ public sealed class ComposerAttachmentTests
         client.Transport.Calls.Count(c => c.MethodName == "CreateUploadTicket").ShouldBe(2);
     }
 
+    // A conversation started by picking a file exists before there is anything to call it, so the
+    // file's name stands in. What the person types is the better name and it arrives one step
+    // later, with the first message.
+    [Fact]
+    public async Task AConversationStartedByAFile_IsNamedAfterTheTextSentWithIt()
+    {
+        await using var client = await StartWithoutTopicAsync();
+
+        client.Dispatcher.Dispatch(new AttachFiles(null, [Png("photo.png")]));
+        await TestChat.Eventually(() => Started(client) is not null);
+
+        var topicId = Started(client)!.TopicId;
+        await TestChat.Eventually(() =>
+            client.Composer.State.For(topicId).Any(a => a.Status == AttachmentStatus.Ready));
+
+        client.Dispatcher.Dispatch(new SendMessage(topicId, "what is in this picture?"));
+
+        await TestChat.Eventually(() => Started(client)!.Name == "what is in this picture?");
+        client.Transport.Calls
+            .Where(c => c.MethodName == "SaveTopic")
+            .Select(c => ((TopicMetadata)c.Arguments[0]!).Name)
+            .Last()
+            .ShouldBe("what is in this picture?");
+    }
+
+    // Nothing typed leaves the file's name as the only thing the conversation could be called.
+    [Fact]
+    public async Task AConversationStartedByAFileAndSentWithNoText_KeepsTheFileName()
+    {
+        await using var client = await StartWithoutTopicAsync();
+
+        client.Dispatcher.Dispatch(new AttachFiles(null, [Png("photo.png")]));
+        await TestChat.Eventually(() => Started(client) is not null);
+
+        var topicId = Started(client)!.TopicId;
+        await TestChat.Eventually(() =>
+            client.Composer.State.For(topicId).Any(a => a.Status == AttachmentStatus.Ready));
+
+        client.Dispatcher.Dispatch(new SendMessage(topicId, ""));
+
+        await TestChat.Eventually(() => SendCalls(client) == 1);
+        Started(client)!.Name.ShouldBe("photo.png");
+    }
+
+    // Only the turn that opened the conversation renames it: a later message is a message, not a
+    // second chance to title what is already under way.
+    [Fact]
+    public async Task ASecondMessage_LeavesTheNameAlone()
+    {
+        await using var client = await StartWithoutTopicAsync();
+
+        client.Dispatcher.Dispatch(new AttachFiles(null, [Png("photo.png")]));
+        await TestChat.Eventually(() => Started(client) is not null);
+
+        var topicId = Started(client)!.TopicId;
+        await TestChat.Eventually(() =>
+            client.Composer.State.For(topicId).Any(a => a.Status == AttachmentStatus.Ready));
+
+        client.Dispatcher.Dispatch(new SendMessage(topicId, "first"));
+        await TestChat.Eventually(() => Started(client)!.Name == "first");
+
+        client.Dispatcher.Dispatch(new SendMessage(topicId, "second"));
+
+        await TestChat.Eventually(() => SendCalls(client) == 2);
+        Started(client)!.Name.ShouldBe("first");
+    }
+
+    private static StoredTopic? Started(ScriptedChatClient client) =>
+        client.Topics.State.Topics.FirstOrDefault();
+
     private static IReadOnlyList<ComposerAttachment> Attachments(ScriptedChatClient client) =>
         client.Composer.State.For("topic-1");
 
@@ -301,6 +371,21 @@ public sealed class ComposerAttachmentTests
 
     private static Task<Stream> Open(CancellationToken ct) =>
         Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes("bytes")));
+
+    // The composer as it is on a fresh client: an agent chosen and no conversation to attach to.
+    private static async Task<ScriptedChatClient> StartWithoutTopicAsync()
+    {
+        var client = new ScriptedChatClient();
+        await client.ConnectAsync();
+        client.Dispatcher.Dispatch(new SetAgents([
+            new AgentCatalogEntry(
+                "agent-1", "Agent One", null,
+                DefaultModel: "sees/everything",
+                DefaultModelAttachmentKinds: AttachmentKinds.All)
+        ]));
+        client.Dispatcher.Dispatch(new SelectAgent("agent-1"));
+        return client;
+    }
 
     private static async Task<ScriptedChatClient> StartAsync()
     {
