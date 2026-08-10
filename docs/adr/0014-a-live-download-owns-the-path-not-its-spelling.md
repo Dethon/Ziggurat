@@ -56,7 +56,9 @@ One path per call, five intents, one message each:
   and the destination end of a move all carry this one reason.
 - **`MoveOut`** — refuses moving a live download's directory, an ancestor of it, or
   anything inside it, because the download keeps writing and recreates what it lost while
-  the moved copy is orphaned.
+  the moved copy is orphaned. ADR-0023 narrows this one intent to downloads that have not
+  finished: a seeding torrent stays listed, and refusing on that blocked the organising
+  move the completion alert asks for.
 - **`Delete`** — refuses a live status.json and any path that is neither a download
   directory nor a status.json.
 

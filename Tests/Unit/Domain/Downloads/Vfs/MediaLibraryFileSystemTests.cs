@@ -1,5 +1,6 @@
 using System.Text;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
 using Domain.Tools.Config;
@@ -320,7 +321,7 @@ public class MediaLibraryFileSystemTests : IDisposable
 
         var error = move.ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error;
         error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
-        error.Message.ShouldContain("live download");
+        error.Message.ShouldContain("has not finished");
     }
 
     // The other half of the same boundary. A payload file inside a live download is not "above" the
@@ -359,6 +360,65 @@ public class MediaLibraryFileSystemTests : IDisposable
         var error = move.ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error;
         error.Message.ShouldContain("downloads/42/payload.mkv");
         error.Message.ShouldContain("moving across that boundary");
+    }
+
+    // Organising a finished download into the library is exactly what the completion alert asks the
+    // agent to do, and qBittorrent keeps the torrent listed while it seeds — so "the client still
+    // lists it" cannot be what refuses the move. Only a download that is still writing can.
+    [Theory]
+    [InlineData("downloads/42/payload.mkv", "Movies/payload.mkv")]
+    [InlineData("downloads/42", "Movies/Show")]
+    public async Task Move_OfAFinishedDownloadsFiles_StillMoves(string source, string destination)
+    {
+        _client.Add(Item(42, DownloadState.Completed));
+
+        (await _sut.MoveAsync(source, destination, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
+    }
+
+    // Finished is the only state that frees the files. A paused download resumes into them and a
+    // failed one is a partial file the agent should cancel rather than file away.
+    [Theory]
+    [InlineData(DownloadState.InProgress)]
+    [InlineData(DownloadState.Paused)]
+    [InlineData(DownloadState.Failed)]
+    public async Task Move_OfADownloadThatHasNotFinished_IsRefused(DownloadState state)
+    {
+        _client.Add(Item(42, state));
+
+        var error = (await _sut.MoveAsync("downloads/42/payload.mkv", "Movies/payload.mkv", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        error.Message.ShouldContain("has not finished");
+    }
+
+    // The way out opens when the download finishes; the way in does not. Delete-as-cancel removes
+    // the directory whole for as long as the client owns the id, so anything landing inside it still
+    // dies with the download.
+    [Fact]
+    public async Task Move_IntoAFinishedDownloadsDirectory_IsStillRefused()
+    {
+        _client.Add(Item(42, DownloadState.Completed));
+
+        (await _sut.MoveAsync("Movies/payload.mkv", "downloads/42/payload.mkv", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveResult>.Err>()
+            .Error.Message.ShouldContain("removed when the download is cancelled");
+    }
+
+    // A finished download's status file is still rendered for as long as the client lists the
+    // torrent, so there are no bytes on disk to move. Letting the move through would answer
+    // not_found for a path fs_info, fs_glob and fs_read all report as existing.
+    [Fact]
+    public async Task Move_OfAFinishedDownloadsStatusFile_IsStillRefused()
+    {
+        _client.Add(Item(42, DownloadState.Completed));
+
+        var error = (await _sut.MoveAsync("downloads/42/status.json", "Movies/status.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        error.Message.ShouldContain("rendered");
     }
 
     [Fact]
@@ -512,7 +572,7 @@ public class MediaLibraryFileSystemTests : IDisposable
         var result = await new VfsMoveTool(registry.Object).RunAsync("/media/downloads/42", "/vault/42");
 
         result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
-        result["message"]!.GetValue<string>().ShouldContain("live download");
+        result["message"]!.GetValue<string>().ShouldContain("has not finished");
         _client.CleanedUp.ShouldBeEmpty();
         _client.Items.ShouldContain(i => i.Id == 42);
         destination.Verify(b => b.WriteChunksAsync(It.IsAny<string>(),

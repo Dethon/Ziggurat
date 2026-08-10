@@ -37,12 +37,24 @@ public sealed class DownloadsOverlay(
     };
 
     // True when this path and a live download's directory overlap: the directory itself, any
-    // ancestor of it (moving a parent takes the directory with it), and anything under it (the
-    // payload files the download is still writing). Deleting such a path is the documented cancel,
-    // but moving it is not — on the way out the download keeps writing and recreates what it lost,
-    // leaving the moved copy orphaned, and on the way in whatever landed inside is destroyed the
-    // moment the download is cancelled.
-    private async Task<bool> TouchesLiveDownloadAsync(string path, CancellationToken ct)
+    // ancestor of it (moving a parent takes the directory with it), and anything under it. Whatever
+    // lands in there is destroyed the moment the download is cancelled, and a download the client
+    // still lists can still be cancelled however far along it is.
+    private Task<bool> TouchesLiveDownloadAsync(string path, CancellationToken ct) =>
+        OverlapsADownloadAsync(path, _ => true, ct);
+
+    // The same overlap, asked only of the downloads that are still writing. A finished download is
+    // not: its files stopped changing, and moving them into the library is what the completion alert
+    // asks the agent to do. qBittorrent keeps a finished torrent listed while it seeds, so "the
+    // client still lists it" would refuse that move forever — the download would have to be
+    // cancelled, which deletes the very files being organised. Only Completed frees them: a paused
+    // download resumes into its files, and a failed one left a partial the agent should cancel
+    // rather than file away.
+    private Task<bool> TouchesUnfinishedDownloadAsync(string path, CancellationToken ct) =>
+        OverlapsADownloadAsync(path, i => i.State is not DownloadState.Completed, ct);
+
+    private async Task<bool> OverlapsADownloadAsync(
+        string path, Func<DownloadItem, bool> which, CancellationToken ct)
     {
         // The same canonical spelling the classifier uses, so 'downloads/./42' overlaps the live
         // download it names instead of reading as an unrelated string.
@@ -53,6 +65,7 @@ public sealed class DownloadsOverlay(
 
         var items = await downloadClient.GetDownloadItems(ct);
         return items
+            .Where(which)
             .Select(i => $"{MediaFilesystem.DownloadsSubdir}/{i.Id}")
             .Any(dir => candidate.Length == 0
                         || dir.Equals(candidate, StringComparison.Ordinal)
@@ -73,7 +86,11 @@ public sealed class DownloadsOverlay(
             DownloadsIntent.TextRead when node.Kind != DownloadNodeKind.StatusFile => TextReadRefusal(),
             DownloadsIntent.ByteRead when await IsLiveStatusFileAsync(node, ct) => ByteReadRefusal(path),
             DownloadsIntent.Land when await TouchesLiveDownloadAsync(path, ct) => LandRefusal(path),
-            DownloadsIntent.MoveOut when await TouchesLiveDownloadAsync(path, ct) => MoveOutRefusal(path),
+            DownloadsIntent.MoveOut when await TouchesUnfinishedDownloadAsync(path, ct) => MoveOutRefusal(path),
+            // Asked after the boundary, so a download still running is told the more useful thing.
+            // What is left is a finished download's status file: still rendered, so there is nothing
+            // on disk for the move to take.
+            DownloadsIntent.MoveOut when await IsLiveStatusFileAsync(node, ct) => StatusFileMoveRefusal(path),
             DownloadsIntent.Delete => await DeleteRefusalAsync(node, path, ct),
             _ => null
         };
@@ -101,15 +118,25 @@ public sealed class DownloadsOverlay(
         "Wait for the download to finish, or put the file somewhere outside "
         + $"{MediaFilesystem.DownloadsSubdir}/<id>.");
 
-    // The way out of the boundary: the download keeps writing and recreates what it lost, so the
-    // moved copy is orphaned the moment it lands.
+    // The way out of the boundary, while the download is still writing: it recreates what it lost,
+    // so the moved copy is orphaned the moment it lands. Once the download finishes this reason is
+    // gone with it, and the files move like any others.
     private static ToolErrorResult MoveOutRefusal(string path) => Error(
         ToolError.Codes.UnsupportedOperation,
-        $"'{path}' belongs to a live download; moving across that boundary would leave the download "
-        + "writing into files the move cannot follow, and anything moved inside is removed when the "
-        + "download is cancelled.",
-        $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait for it to "
-        + "finish, then move the files.");
+        $"'{path}' belongs to a download that has not finished; moving across that boundary would "
+        + "leave the download writing into files the move cannot follow.",
+        $"Wait for it to finish and move the files then, or delete {MediaFilesystem.DownloadsSubdir}"
+        + "/<id> to cancel the download.");
+
+    // A status file is rendered on read for as long as the client owns the id, finished or not, so a
+    // move would find nothing on disk to take and answer not_found for a path fs_info, fs_glob and
+    // fs_read all report as existing.
+    private static ToolErrorResult StatusFileMoveRefusal(string path) => Error(
+        ToolError.Codes.UnsupportedOperation,
+        $"'{path}' is a download's status file: a view rendered when it is read, not bytes on disk, "
+        + "so there is nothing to move.",
+        "Move the download's payload files instead; the status file disappears on its own once no "
+        + "download owns the id.");
 
     // Delete's two refusals. Everything it does — the cancel, the routing removal, the leftover
     // recovery — is not here: the rule answers "may I" and never acts.
