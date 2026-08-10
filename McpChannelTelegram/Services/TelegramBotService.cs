@@ -178,16 +178,37 @@ public sealed class TelegramBotService : BackgroundService
 
         botRegistry.RegisterChatAgent(chatId, agentId);
 
+        // The same resolution WebChat asks, from the same catalogue shape, so the two channels
+        // cannot disagree about which model is refusing. Permissive wherever the catalogue is
+        // silent — a cold start, or a blip at the provider, must not remove the feature. Telegram
+        // has no per-message model override, so the model a turn runs on is the agent's default.
+        var capabilityRefusal = intake.Attachments.Count > 0
+            ? AttachmentCapability.Refusal(
+                agentCatalog.Get(agentId), null, intake.Attachments.Select(a => a.MediaType))
+            : null;
+
         // One reply for the whole message, quoting the item that failed and naming its file, the
-        // way the unauthorised-user reply already works. Every ground here is a property of one
-        // file, so the offending one is dropped and the turn below runs on the survivors.
-        if (intake.Refusals.Count > 0)
+        // way the unauthorised-user reply already works.
+        var reasons = intake.Refusals
+            .Select(refusal => refusal.Reason)
+            .Concat(capabilityRefusal is null ? [] : [capabilityRefusal])
+            .ToList();
+
+        if (reasons.Count > 0)
         {
             await botClient.SendMessage(
                 chatId,
-                string.Join("\n", intake.Refusals.Select(refusal => refusal.Reason)),
-                replyParameters: intake.Refusals[0].MessageId,
+                string.Join("\n", reasons),
+                replyParameters: intake.Refusals.Count > 0 ? intake.Refusals[0].MessageId : first.MessageId,
                 cancellationToken: cancellationToken);
+        }
+
+        // Unlike the per-file grounds above, this one is a property of the turn: a model that
+        // cannot read what was attached would answer as though nothing had been sent, and an
+        // answer that silently ignores the question is worse than no answer.
+        if (capabilityRefusal is not null)
+        {
+            return;
         }
 
         // Nothing survived and there was nothing else to say, so the reply is the whole response.
