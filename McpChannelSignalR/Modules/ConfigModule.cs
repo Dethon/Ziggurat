@@ -60,7 +60,7 @@ public static class ConfigModule
             services.AddSingleton<IPushNotificationService, NullPushNotificationService>();
         }
 
-        services.AddSignalR();
+        services.AddChatSignalR();
 
         services
             .AddMcpHost(settings)
@@ -75,4 +75,14 @@ public static class ConfigModule
 
         return services;
     }
+
+    // How long a browser may go silent before the server calls it gone. The default thirty seconds
+    // is shorter than a person picking a photo on a phone: the picker holds the page down, a frozen
+    // page sends no keepalive, and the connection dies mid-pick. Two minutes is the browser's own
+    // tolerance for a silent server (six minutes, keepalive every ten seconds) read from this side,
+    // and costs nothing to hold — this hub keeps no per-connection state to release.
+    private static readonly TimeSpan _frozenPageTolerance = TimeSpan.FromMinutes(2);
+
+    internal static IServiceCollection AddChatSignalR(this IServiceCollection services) =>
+        services.AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance).Services;
 }

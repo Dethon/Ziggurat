@@ -18,6 +18,7 @@ public sealed class AttachmentEffect : IDisposable
     private readonly ComposerTopic _composerTopic;
     private readonly IAttachmentService _attachmentService;
     private readonly IAttachmentUploader _uploader;
+    private readonly IChatLiveConnection _liveConnection;
     private readonly ILogger<AttachmentEffect> _logger;
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _uploads = new();
 
@@ -37,6 +38,7 @@ public sealed class AttachmentEffect : IDisposable
         ComposerTopic composerTopic,
         IAttachmentService attachmentService,
         IAttachmentUploader uploader,
+        IChatLiveConnection liveConnection,
         ILogger<AttachmentEffect> logger)
     {
         _dispatcher = dispatcher;
@@ -44,6 +46,7 @@ public sealed class AttachmentEffect : IDisposable
         _composerTopic = composerTopic;
         _attachmentService = attachmentService;
         _uploader = uploader;
+        _liveConnection = liveConnection;
         _logger = logger;
 
         _attachRegistration = dispatcher.RegisterHandler<AttachFiles>(action =>
@@ -78,6 +81,17 @@ public sealed class AttachmentEffect : IDisposable
 
     private async Task HandleAttachAsync(AttachFiles action)
     {
+        // A pick is the one user action that arrives from a page that was backgrounded while it
+        // was being made: the picker holds the page down, and past the server's client timeout the
+        // connection is gone by the time the file comes back. Everything below needs the hub — the
+        // session, the limits, the ticket — so wait for the reconnect the resume already started
+        // rather than refusing a file over a connection that is seconds from being back.
+        if (!await _liveConnection.EnsureLiveAsync())
+        {
+            _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return;
+        }
+
         var limits = await EnsureLimitsAsync();
         var topicId = await _composerTopic.EnsureAsync(action.TopicId, action.Files);
         if (topicId is null)

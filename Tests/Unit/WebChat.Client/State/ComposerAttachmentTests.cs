@@ -137,6 +137,56 @@ public sealed class ComposerAttachmentTests
         Attachments(client).Select(a => a.FileName).ShouldBe(["second.png"]);
     }
 
+    // Opening the picker on a phone backgrounds the page, and a picker held open past the server's
+    // client timeout kills the connection while the person is still choosing. The file arrives with
+    // the resume, racing the reconnect the resume itself triggers, so refusing it on the spot
+    // refuses a file the connection is about to be able to carry.
+    [Fact]
+    public async Task AFilePicked_WhileTheConnectionIsDown_WaitsForTheReconnectAndUploads()
+    {
+        await using var client = await StartAsync();
+        client.GoNotLive();
+
+        client.Dispatcher.Dispatch(new AttachFiles("topic-1", [Png("photo.png")]));
+
+        await TestChat.Eventually(() => Attachments(client).Any(a => a.Status == AttachmentStatus.Ready));
+        client.Uploader.Uploaded.ShouldBe(["photo.png"]);
+        client.Toasts.State.Toasts.ShouldBeEmpty();
+    }
+
+    // The other half of what a picker costs on a phone: the page thaws holding a half-open socket
+    // that still reports Connected. Handing a file to that one buys a wait for the server timeout
+    // instead of an upload, so the pick settles whether the connection is real before using it.
+    [Fact]
+    public async Task AFilePicked_OntoAConnectionThatOnlyLooksLive_RebuildsItAndStillUploads()
+    {
+        await using var client = await StartAsync();
+        client.Transport.PingBehavior = _ => Task.FromResult(false);
+
+        client.Dispatcher.Dispatch(new AttachFiles("topic-1", [Png("photo.png")]));
+
+        await TestChat.Eventually(() => Attachments(client).Any(a => a.Status == AttachmentStatus.Ready));
+        client.Factory.Created.Count.ShouldBe(2);
+        client.Toasts.State.Toasts.ShouldBeEmpty();
+    }
+
+    // Waiting is for a connection that comes back. One that does not is the case the toast is for.
+    [Fact]
+    public async Task AFilePicked_WhileTheServerIsUnreachable_StillSaysSoAndUploadsNothing()
+    {
+        await using var client = await StartAsync();
+        client.GoNotLive();
+        client.Factory.CreateBehavior = () => new FakeHubConnection
+        {
+            StartBehavior = _ => throw new HttpRequestException("unreachable")
+        };
+
+        client.Dispatcher.Dispatch(new AttachFiles("topic-1", [Png("photo.png")]));
+
+        await TestChat.Eventually(() => client.Toasts.State.Toasts.Count == 1);
+        client.Uploader.Uploaded.ShouldBeEmpty();
+    }
+
     // A refused file is going nowhere, so it must not spend one of the message's slots.
     [Fact]
     public async Task AFileTheComposerRefused_DoesNotConsumeAPerMessageSlot()
