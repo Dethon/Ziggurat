@@ -12,8 +12,7 @@ public sealed class AttachmentService(
     AttachmentStore store,
     ILogger<AttachmentService> logger)
 {
-    public AttachmentLimits Limits { get; } = new(
-        settings.MaxBytesPerFile, settings.MaxFilesPerMessage, settings.AllowedMediaTypes);
+    public AttachmentLimits Limits { get; } = settings.Limits;
 
     public UploadTicket MintUpload(string topicId, string conversationId, string? spaceSlug) =>
         tickets.MintUpload(topicId, conversationId, spaceSlug);

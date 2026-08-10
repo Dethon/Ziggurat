@@ -1,3 +1,5 @@
+using Domain.DTOs.WebChat;
+
 namespace McpChannelSignalR.Settings;
 
 // What the operator gets to tune about attachments. All of it is generic and lives in
@@ -27,4 +29,8 @@ public record AttachmentSettings
         "image/webp",
         "application/pdf"
     ];
+
+    // The same three limits as the wire DTO the browser asks for, so the endpoint and the
+    // composer refuse from one set of numbers.
+    public AttachmentLimits Limits => new(MaxBytesPerFile, MaxFilesPerMessage, AllowedMediaTypes);
 }

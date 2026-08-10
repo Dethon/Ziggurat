@@ -60,7 +60,7 @@ internal static class AttachmentIntake
             return (null, new IntakeRefusal(
                 message.Id,
                 $"I could not take \"{name}\": it is {Megabytes(media.SizeBytes.Value)} and Telegram only " +
-                "lets me download files up to 20 MB."));
+                $"lets me download files up to {Megabytes(MaxDownloadBytes)}."));
         }
 
         return (new AttachmentReference

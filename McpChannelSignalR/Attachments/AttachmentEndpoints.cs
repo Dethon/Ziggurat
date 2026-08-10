@@ -59,24 +59,19 @@ public static class AttachmentEndpoints
         return Results.Ok(reference);
     }
 
-    // The same rules the composer applies at pick time, from the same wording, because they are
-    // the same rules — the composer only gets to say them sooner.
-    private static IResult? Refuse(IFormFile file, AttachmentSettings settings)
-    {
-        if (file.Length > settings.MaxBytesPerFile)
+    // The same rules the composer applies at pick time, from the same source, because they are
+    // the same rules — the composer only gets to say them sooner. Only the status code is this
+    // endpoint's own.
+    private static IResult? Refuse(IFormFile file, AttachmentSettings settings) =>
+        AttachmentRefusals.Refusal(
+            file.FileName, file.ContentType ?? string.Empty, file.Length, settings.Limits) switch
         {
-            return Results.Text(
-                AttachmentRefusals.TooLarge(file.FileName, settings.MaxBytesPerFile),
-                statusCode: StatusCodes.Status413PayloadTooLarge);
-        }
-
-        var mediaType = file.ContentType ?? string.Empty;
-        return settings.AllowedMediaTypes.Contains(mediaType, StringComparer.OrdinalIgnoreCase)
-            ? null
-            : Results.Text(
-                AttachmentRefusals.UnsupportedKind(mediaType),
-                statusCode: StatusCodes.Status415UnsupportedMediaType);
-    }
+            null => null,
+            { Kind: AttachmentRefusalKind.TooLarge } refusal => Results.Text(
+                refusal.Message, statusCode: StatusCodes.Status413PayloadTooLarge),
+            var refusal => Results.Text(
+                refusal.Message, statusCode: StatusCodes.Status415UnsupportedMediaType)
+        };
 
     private static IResult Download(
         string conversation,

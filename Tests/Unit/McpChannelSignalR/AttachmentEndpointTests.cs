@@ -151,7 +151,9 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             ticket.Token, TopicId, "x"u8.ToArray(), "notes.txt", "text/plain");
 
         response.StatusCode.ShouldBe(HttpStatusCode.UnsupportedMediaType);
-        (await response.Content.ReadAsStringAsync()).ShouldContain("text/plain");
+        // The same wording the composer would have used at pick time, quoting the same file.
+        (await response.Content.ReadAsStringAsync())
+            .ShouldBe(AttachmentRefusals.For("notes.txt", "text/plain", 1, _settings.Limits));
     }
 
     [Fact]

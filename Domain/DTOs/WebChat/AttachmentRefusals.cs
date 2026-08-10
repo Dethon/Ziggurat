@@ -21,18 +21,35 @@ public static class AttachmentRefusals
 
     // The composer applies the same rules before a byte moves; the endpoint applies them again on
     // arrival, because a ticket is all that stands between a public hostname and public disk.
-    public static string? For(string fileName, string mediaType, long sizeBytes, AttachmentLimits limits)
+    public static string? For(string fileName, string mediaType, long sizeBytes, AttachmentLimits limits) =>
+        Refusal(fileName, mediaType, sizeBytes, limits)?.Message;
+
+    // The kind is for the endpoint, which answers each refusal with its own status code; the
+    // composer only ever shows the message.
+    public static AttachmentRefusal? Refusal(
+        string fileName, string mediaType, long sizeBytes, AttachmentLimits limits)
     {
         if (sizeBytes > limits.MaxBytesPerFile)
         {
-            return TooLarge(fileName, limits.MaxBytesPerFile);
+            return new AttachmentRefusal(
+                AttachmentRefusalKind.TooLarge, TooLarge(fileName, limits.MaxBytesPerFile));
         }
 
         return limits.AllowedMediaTypes.Contains(mediaType, StringComparer.OrdinalIgnoreCase)
             ? null
-            : UnsupportedKind(fileName);
+            : new AttachmentRefusal(AttachmentRefusalKind.UnsupportedKind, UnsupportedKind(fileName));
     }
 
     public static bool IsImage(string? mediaType) =>
         AttachmentKinds.ForMediaType(mediaType) == AttachmentKind.Image;
 }
+
+[PublicAPI]
+public enum AttachmentRefusalKind
+{
+    TooLarge,
+    UnsupportedKind
+}
+
+[PublicAPI]
+public sealed record AttachmentRefusal(AttachmentRefusalKind Kind, string Message);
