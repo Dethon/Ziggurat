@@ -20,6 +20,8 @@ public sealed class AttachmentService(
     public AttachmentTickets.UploadScope? ResolveUploadScope(string token, string topicId) =>
         tickets.ResolveUpload(token, topicId);
 
+    public DictationTicket MintDictation(string spaceSlug) => tickets.MintDictation(spaceSlug);
+
     // Null for both refusals a caller can do nothing about: the file is gone, or it belongs to
     // another space. One upload store serves every space, so the space check is what stops a
     // minted URL from being a read over someone else's conversation.

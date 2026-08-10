@@ -1,10 +1,10 @@
 using Domain.Contracts;
 using Domain.DTOs.Voice;
 
-namespace Tests.Unit.McpChannelTelegram;
+namespace Tests.Unit;
 
-// The seam for every channel test: a Telegram test fails for reasons about Telegram, never about
-// whisper. What the adapter itself does against Lemonade is pinned once, at the HTTP boundary, in
+// The seam for every channel test: a Telegram or endpoint test fails for reasons about Telegram or
+// the endpoint, never about whisper. What the adapter itself does against Lemonade is pinned once, at the HTTP boundary, in
 // LemonadeTranscriptionClientTests.
 internal sealed class FakeTranscriber : IAudioTranscriber
 {

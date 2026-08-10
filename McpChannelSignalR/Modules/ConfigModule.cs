@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Clients.Push;
+using Infrastructure.Clients.Transcription;
 using Infrastructure.Conversations;
 using Infrastructure.StateManagers;
 using Mcp.Hosting;
@@ -17,6 +18,10 @@ public static class ConfigModule
     public static IServiceCollection ConfigureChannel(this IServiceCollection services, ChannelSettings settings)
     {
         var redisMultiplexer = ConnectionMultiplexer.Connect(settings.RedisConnectionString);
+
+        // The shared Lemonade client is named the same in every server that transcribes, so a
+        // dictation always goes out on a registration that exists.
+        services.AddHttpClient(LemonadeTranscriptionClient.ClientName);
 
         services
             .AddSingleton<IConnectionMultiplexer>(redisMultiplexer)
@@ -37,6 +42,11 @@ public static class ConfigModule
             .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()
             .AddSingleton<IPushSubscriptionStore, RedisPushSubscriptionStore>()
             .AddSingleton(settings.Attachments)
+            .AddSingleton(settings.Dictation)
+            .AddSingleton<IAudioTranscriber>(sp => new LemonadeTranscriptionClient(
+                sp.GetRequiredService<IHttpClientFactory>(),
+                settings.Dictation.Transcription,
+                sp.GetRequiredService<ILogger<LemonadeTranscriptionClient>>()))
             .AddSingleton<AttachmentTickets>()
             .AddSingleton<AttachmentStore>()
             .AddSingleton<AttachmentService>()

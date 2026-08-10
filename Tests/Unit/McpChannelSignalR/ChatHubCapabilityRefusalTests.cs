@@ -6,6 +6,7 @@ using Domain.DTOs.WebChat;
 using Mcp.Hosting;
 using McpChannelSignalR.Hubs;
 using McpChannelSignalR.Services;
+using McpChannelSignalR.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
@@ -59,6 +60,7 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
             redisStateService: null!,
             pushSubscriptionStore: null!,
             attachmentService: null!,
+            new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {
             Context = new RegisteredCaller()

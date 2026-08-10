@@ -16,9 +16,22 @@ public record DownloadTicket(string Token, DateTimeOffset ExpiresAt);
 [PublicAPI]
 public record AttachmentDownload(string Url, DateTimeOffset ExpiresAt);
 
-// What the composer needs to refuse a file as it is picked, rather than after it uploads.
+// Permission to turn one recording into words. Space-scoped rather than topic-scoped, because a
+// dictation produces composer text and must not force a conversation into existence.
+[PublicAPI]
+public record DictationTicket(string Token, DateTimeOffset ExpiresAt);
+
+// What comes back: the words, and nothing else. There is no reference, because there is nothing
+// stored to refer to.
+[PublicAPI]
+public record DictationTranscript(string Text);
+
+// What the composer needs to refuse a file as it is picked, rather than after it uploads — plus
+// the two numbers a dictation obeys, so changing either needs no new JavaScript shipped.
 [PublicAPI]
 public record AttachmentLimits(
     long MaxBytesPerFile,
     int MaxFilesPerMessage,
-    IReadOnlyList<string> AllowedMediaTypes);
+    IReadOnlyList<string> AllowedMediaTypes,
+    int MaxDictationMs = 120_000,
+    int MinDictationMs = 400);

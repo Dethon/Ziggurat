@@ -8,6 +8,7 @@ using Domain.Extensions;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Services;
+using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.SignalR;
 
 namespace McpChannelSignalR.Hubs;
@@ -21,6 +22,7 @@ public sealed class ChatHub(
     RedisStateService redisStateService,
     IPushSubscriptionStore pushSubscriptionStore,
     AttachmentService attachmentService,
+    DictationSettings dictationSettings,
     ILogger<ChatHub> logger) : Hub
 {
     // What the browser is told when the emit reached nobody. The message may still be sitting in a
@@ -97,7 +99,25 @@ public sealed class ChatHub(
         await Groups.AddToGroupAsync(Context.ConnectionId, $"space:{spaceSlug}");
     }
 
-    public AttachmentLimits GetAttachmentLimits() => attachmentService.Limits;
+    // One call, because the composer asks one question: what am I allowed to send. The recording
+    // cap and the mis-tap floor ride along so changing either needs no client deploy.
+    public AttachmentLimits GetAttachmentLimits() => attachmentService.Limits with
+    {
+        MaxDictationMs = (int)dictationSettings.MaxLength.TotalMilliseconds,
+        MinDictationMs = (int)dictationSettings.MinLength.TotalMilliseconds
+    };
+
+    // No topic and no session: a dictation lands in the composer, so it must be possible on a
+    // screen where no conversation has been started yet.
+    public DictationTicket CreateDictationTicket()
+    {
+        if (!IsRegistered)
+        {
+            throw new HubException("User not registered. Call RegisterUser first.");
+        }
+
+        return attachmentService.MintDictation(CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
+    }
 
     // The ticket is scoped to the topic being composed in, so a caller can only put bytes against
     // a conversation the connection already has a session for.

@@ -18,11 +18,11 @@ than trusting the client.
 
 **Status:** ready-for-agent
 
-- [ ] A registered user can mint a dictation ticket; an unregistered caller cannot
-- [ ] Posting audio with a valid ticket returns the transcript
-- [ ] An unknown, expired or wrong-space ticket is refused
-- [ ] Audio over the configured cap is refused, whatever the client claims
-- [ ] Nothing is written to the upload store, no attachment reference is minted, and no conversation is created by a transcription
-- [ ] The existing limits hub call carries the recording cap and the mis-tap floor
-- [ ] The reverse proxy routes the new path for every space host, so it does not fall through to the web client
-- [ ] Tested over the test server with a fake transcriber, in the style of the existing attachment endpoint tests
+- [x] A registered user can mint a dictation ticket; an unregistered caller cannot
+- [x] Posting audio with a valid ticket returns the transcript
+- [x] An unknown, expired or wrong-space ticket is refused
+- [x] Audio over the configured cap is refused, whatever the client claims
+- [x] Nothing is written to the upload store, no attachment reference is minted, and no conversation is created by a transcription
+- [x] The existing limits hub call carries the recording cap and the mis-tap floor
+- [x] The reverse proxy routes the new path for every space host, so it does not fall through to the web client
+- [x] Tested over the test server with a fake transcriber, in the style of the existing attachment endpoint tests
