@@ -467,6 +467,62 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.Locator(".chat-message.user")).ToHaveCountAsync(0);
     }
 
+    // Opening the microphone takes as long as the device takes, and a finger that has already
+    // decided does not wait for it. The latch is made against the recording that exists from the
+    // moment of the press, so what the browser reports when the graph finally comes up has to be
+    // where the gesture got to by then — not where it was when the finger landed. Reported as the
+    // press, it arrived behind the latch and undid it: the strip stayed, neither way out appeared,
+    // and the pointer that could have ended the recording had already been let go.
+    [SkippableFact]
+    public async Task LatchingWhileTheMicrophoneIsStillOpening_LeavesTheDictationLatched()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        fixture.TranscriptionStatus = 200;
+        fixture.Transcript = "enganchado antes de tiempo";
+
+        var page = await OpenAsync();
+        // A phone's microphone does not open in a frame. This is the same wait, made long enough
+        // for a gesture to be completed inside it rather than left to the machine's mood — and
+        // short enough that the whole case still finishes well inside the recording cap.
+        await page.EvaluateAsync(
+            """
+            () => {
+                const open = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+                navigator.mediaDevices.getUserMedia = constraints =>
+                    new Promise(resolve => setTimeout(() => resolve(open(constraints)), 900));
+            }
+            """);
+
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+
+        // No waiting for the strip: the whole point is that the gesture finishes first.
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        foreach (var step in Enumerable.Range(1, 5))
+        {
+            await TouchAsync(cdp, "touchMove", Point(mic.X, mic.Y - step * 16));
+            await Task.Delay(16);
+        }
+        await TouchAsync(cdp, "touchEnd");
+
+        var stop = page.Locator("[data-testid=dictation-stop]");
+        await Assertions.Expect(stop)
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+
+        // Past the moment the microphone finishes opening, which is when the press's own account of
+        // itself used to arrive and take the latch back.
+        await Task.Delay(1_400);
+        await Assertions.Expect(stop)
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 1_000 });
+        await Assertions.Expect(page.Locator("[data-testid=dictation-trash]")).ToBeVisibleAsync();
+
+        // And it is a working dictation, not merely a strip with the right buttons on it.
+        await stop.ClickAsync();
+        await Assertions.Expect(page.Locator("textarea.chat-input"))
+            .ToHaveValueAsync(
+                "enganchado antes de tiempo", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+    }
+
     [SkippableFact]
     public async Task WhenTheTranscriberFails_TheComposerSaysSoRatherThanNothingHappening()
     {
