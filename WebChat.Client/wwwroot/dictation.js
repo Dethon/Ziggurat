@@ -31,10 +31,6 @@ window.dictation = {
     },
 
     register: function (mic, ref, limits) {
-        // ?dictationlog=1 turns one dictation into a report on itself, printed into the composer
-        // instead of a transcript. A phone that records silence has no console anybody can read,
-        // and every guess about why is a guess about a device the tests cannot drive.
-        this._logging = /[?&]dictationlog=1/.test(location.search);
         if (this._mic === mic && this._ref) {
             this._limits = limits || this._limits;
             return;
@@ -188,9 +184,7 @@ window.dictation = {
             stream: null,
             ctx: null,
             encoder: null,
-            drained: null,
-            trace: [],
-            notedAt: -1000
+            drained: null
         };
         this._run = run;
         // Minted while the microphone opens rather than after it: the two round trips overlap, and
@@ -253,14 +247,6 @@ window.dictation = {
                 autoGainControl: true
             }
         });
-        // A track can go quiet without ending: Android mutes one when something else takes the
-        // audio, and a muted track reads as a live track recording silence.
-        const track = run.stream.getAudioTracks()[0];
-        this._note(run, 'mic ' + JSON.stringify(track.getSettings()));
-        track.addEventListener('mute', () => this._note(run, 'TRACK MUTED'));
-        track.addEventListener('unmute', () => this._note(run, 'track unmuted'));
-        track.addEventListener('ended', () => this._note(run, 'TRACK ENDED'));
-
         if (run.ending || this._run !== run) {
             this._teardown(run);
             return;
@@ -274,8 +260,6 @@ window.dictation = {
         run.ctx = ctx;
         // A context created outside a gesture starts suspended, and a suspended graph never pulls
         // the worklet — the recording would be silence of exactly the right length.
-        this._note(run, 'ctx ' + ctx.sampleRate + 'Hz ' + ctx.state);
-        ctx.onstatechange = () => this._note(run, 'ctx ' + ctx.state);
         if (ctx.state === 'suspended') {
             await ctx.resume();
         }
@@ -289,9 +273,6 @@ window.dictation = {
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 256;
         const encoder = new AudioWorkletNode(ctx, 'dictation-encoder');
-        // A worklet that throws stops being called and says nothing, which on screen is a
-        // recording of silence and nothing else.
-        encoder.onprocessorerror = () => this._note(run, 'WORKLET ERROR');
         encoder.port.onmessage = e => {
             // The encoder answers a flush with a word rather than samples.
             if (typeof e.data === 'string') {
@@ -372,32 +353,10 @@ window.dictation = {
         });
     },
 
-    // One dictation's account of itself, in place of its transcript. It lands in the composer
-    // rather than in the refusal line because the composer is a textarea: on a phone that is the
-    // difference between reading a report and being able to send it on.
-    _report: function (run) {
-        // The peak in its own right, not only the gain: a gain that has hit its ceiling says the
-        // recording was quiet without saying how quiet, which is the whole question.
-        const peak = this._peak(run);
-        this._note(run, 'end: ' + run.samples + ' samples, peak ' + peak + '/32767 ('
-            + (peak > 0 ? (20 * Math.log10(peak / 32768)).toFixed(1) : '-inf') + ' dBFS)'
-            + ', gain ' + this._gain(run).toFixed(2));
-        this._invoke('Transcribed', run.trace.join('\n'));
-    },
-
-    _note: function (run, text) {
-        if (!this._logging) return;
-        run.trace.push(((performance.now() - run.startedAt) / 1000).toFixed(2) + 's ' + text);
-    },
-
     _transcribe: async function (run) {
         try {
             await this._drain(run);
             this._closeContext(run);
-            if (this._logging) {
-                this._report(run);
-                return;
-            }
             const ticket = await run.ticket;
             if (!ticket) {
                 this._invoke('Failed', run.ticketRefusal
@@ -468,17 +427,13 @@ window.dictation = {
         return new Blob([buffer], { type: 'audio/wav' });
     },
 
-    // Nothing on the capture side applies automatic gain any more, and a phone held at arm's length
-    // records quietly. This is only ever a lift and it is capped, so a recording of a quiet room
-    // stays a recording of a quiet room rather than being pulled up to full scale as noise.
+    // A floor under the capture side's own automatic gain, for a phone held at arm's length. Only
+    // ever a lift and capped, so a recording of a quiet room stays a recording of a quiet room
+    // rather than being pulled up to full scale as noise.
     _gain: function (run) {
-        const peak = this._peak(run);
-        return peak === 0 ? 1 : Math.max(1, Math.min(8, 29000 / peak));
-    },
-
-    _peak: function (run) {
-        return run.chunks.reduce(
+        const peak = run.chunks.reduce(
             (loudest, chunk) => chunk.reduce((most, s) => Math.max(most, Math.abs(s)), loudest), 0);
+        return peak === 0 ? 1 : Math.max(1, Math.min(8, 29000 / peak));
     },
 
     _teardown: function (run) {
@@ -513,18 +468,6 @@ window.dictation = {
         const paint = () => {
             if (this._run !== run || run.ending) return;
             const elapsed = performance.now() - run.startedAt;
-            // Sampled from the paint loop rather than the audio thread on purpose: this keeps
-            // running when the graph stops, which is precisely the case being diagnosed.
-            if (this._logging && elapsed - run.notedAt >= 250) {
-                run.notedAt = elapsed;
-                const track = run.stream && run.stream.getAudioTracks()[0];
-                const rms = this._rms(run);
-                this._note(run, 'lvl=' + this._meter(rms).toFixed(2)
-                    + ' rms=' + (rms > 0 ? (20 * Math.log10(rms)).toFixed(1) : '-inf') + 'dB'
-                    + ' n=' + run.samples
-                    + ' ctx=' + (run.ctx ? run.ctx.state : 'closed')
-                    + ' trk=' + (track ? track.readyState + (track.muted ? '/MUTED' : '') : 'gone'));
-            }
             const strip = document.querySelector('.dictation-strip');
             if (strip) {
                 const timer = strip.querySelector('.dictation-timer');
@@ -544,11 +487,7 @@ window.dictation = {
         if (this._run !== run || run.ending) return;
         if (run.cap) clearTimeout(run.cap);
         const left = Math.max(0, this._limits.maxMs - (performance.now() - run.startedAt));
-        this._note(run, 'cap in ' + left + 'ms (max ' + this._limits.maxMs + ')');
-        run.cap = setTimeout(() => {
-            this._note(run, 'CAP FIRED');
-            this._finish();
-        }, left);
+        run.cap = setTimeout(() => this._finish(), left);
     },
 
     _stopClock: function (run) {
