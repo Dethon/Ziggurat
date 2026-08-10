@@ -21,7 +21,7 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
@@ -88,7 +88,7 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
 
         var page = await fixture.CreatePageAsync();
         await page.SetViewportSizeAsync(390, 844);
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 

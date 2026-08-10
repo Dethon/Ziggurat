@@ -10,6 +10,10 @@ namespace Tests.E2E.WebChat;
 // gestures go over CDP touch (Input.dispatchTouchEvent) rather than synthetic PointerEvents —
 // untrusted events call the handlers but never enter the input pipeline, which is how four hearth
 // fixes once went green while the phone kept failing.
+//
+// Opening a page costs about a second and a half of the suite before a single gesture is made, so a
+// case here is one page taken through everything that page can be asked about at once, rather than
+// one assertion per page.
 [Collection("WebChatE2E")]
 [Trait("Category", "E2E")]
 public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
@@ -17,6 +21,11 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
     // Comfortably past the 400 ms mis-tap floor and nowhere near the two-minute cap.
     private const int HoldMs = 900;
 
+    // Long enough that the recording holds the 8192 samples the spectrum below is measured over.
+    private const int SpectrumHoldMs = 1_400;
+
+    // The whole of a good dictation: a held microphone, a finger that drifts a little while it is
+    // held, words in the composer, and a recording whose bytes are what whisper can actually read.
     [SkippableFact]
     public async Task HoldingTheMicrophoneAndLettingGo_PutsTheWordsInTheComposerToSend()
     {
@@ -31,7 +40,15 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
         await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-        await Task.Delay(HoldMs);
+
+        // A finger that drifts a little is still a finger holding the button down: only distance
+        // past a threshold means anything, and this is well inside every one of them.
+        foreach (var step in Enumerable.Range(1, 4))
+        {
+            await TouchAsync(cdp, "touchMove", Point(mic.X - step * 5, mic.Y - step * 3));
+            await Task.Delay(60);
+        }
+        await Task.Delay(SpectrumHoldMs);
         await TouchAsync(cdp, "touchEnd");
 
         // The words land in the composer, not in a message: the person is always the one who
@@ -40,6 +57,12 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(composer)
             .ToHaveValueAsync("hola desde el micrófono", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
         await Assertions.Expect(page.Locator(".chat-message.user")).ToHaveCountAsync(0);
+
+        // One control in that spot, always the one the person is about to use: with something to
+        // send, the microphone is off screen rather than standing beside Send.
+        await Assertions.Expect(page.Locator("button.btn-primary", new PageLocatorOptions { HasText = "Send" }))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        await Assertions.Expect(page.Locator("[data-testid=dictation-mic]")).ToBeHiddenAsync();
 
         await composer.PressAsync("Enter");
         await Assertions.Expect(page.Locator(".chat-message.user").First)
@@ -56,6 +79,31 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         // A recording of nothing has a header and no samples, which is what a graph that never
         // pulled the worklet produces.
         BitConverter.ToInt32(wav, 40).ShouldBeGreaterThan(0);
+
+        // Dropping to 16 kHz is the step that can quietly ruin a recording: everything above 8 kHz
+        // in the captured signal folds back down on top of the speech unless it is filtered away
+        // first. The fake microphone plays a 1 kHz tone that must survive and a 12 kHz tone that
+        // must not reappear at 4 kHz.
+        var samples = FakeMicrophoneAudio.Samples(wav);
+        // Past the microphone opening and short of it closing, so neither end's transient is
+        // measured as content.
+        var window = samples.Skip(FakeMicrophoneAudio.TranscriptionRate / 5).Take(8192).ToArray();
+        window.Length.ShouldBe(8192, "the recording is too short to measure");
+
+        var speech = FakeMicrophoneAudio.MagnitudeAt(
+            window, FakeMicrophoneAudio.SpeechToneHz, FakeMicrophoneAudio.TranscriptionRate);
+        var alias = FakeMicrophoneAudio.MagnitudeAt(
+            window, FakeMicrophoneAudio.AliasHz, FakeMicrophoneAudio.TranscriptionRate);
+
+        // Neither silence nor a wall of clipping: a recording that is either is one no transcriber
+        // can do anything with, however clean its spectrum.
+        var rms = Math.Sqrt(window.Sum(s => s * s) / window.Length);
+        rms.ShouldBeGreaterThan(0.02);
+        rms.ShouldBeLessThan(0.71);
+
+        speech.ShouldBeGreaterThan(0.01, "the 1 kHz tone did not survive the recording");
+        var decibels = 20 * Math.Log10(alias / speech);
+        decibels.ShouldBeLessThan(-20, $"12 kHz folded back to 4 kHz at {decibels:F1} dB");
     }
 
     // A phone is not a desktop here, in two directions at once.
@@ -103,6 +151,21 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
 
+        // The level meter hangs off the microphone now rather than sitting in the recording path,
+        // so that what is drawn cannot change what is encoded. It still has to be hearing
+        // something: a meter stuck at zero is the one thing that would tell someone their input
+        // device is misrouted, and it would be saying it about a microphone that is working.
+        await page.WaitForFunctionAsync(
+            """
+            () => {
+                const strip = document.querySelector('.dictation-strip');
+                return strip
+                    && parseFloat(strip.style.getPropertyValue('--dictation-level') || '0') > 0.01;
+            }
+            """,
+            null,
+            new PageWaitForFunctionOptions { Timeout = 15_000 });
+
         var opened = JsonDocument.Parse(await page.EvaluateAsync<string>(
             """
             () => {
@@ -139,92 +202,27 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
             .ShouldBe(opened.GetProperty("deviceRate").GetDouble());
     }
 
-    // The level meter hangs off the microphone now rather than sitting in the recording path, so
-    // that what is drawn cannot change what is encoded. It still has to be hearing something: a
-    // meter stuck at zero is the one thing that would tell someone their input device is misrouted,
-    // and it would be saying it about a microphone that is working.
-    [SkippableFact]
-    public async Task WhileRecording_TheLevelMeterFollowsWhatTheMicrophoneHears()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "hola";
-
-        var page = await OpenAsync();
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
-
-        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await page.WaitForFunctionAsync(
-            """
-            () => {
-                const strip = document.querySelector('.dictation-strip');
-                return strip
-                    && parseFloat(strip.style.getPropertyValue('--dictation-level') || '0') > 0.01;
-            }
-            """,
-            null,
-            new PageWaitForFunctionOptions { Timeout = 15_000 });
-
-        await TouchAsync(cdp, "touchEnd");
-    }
-
-    // Dropping to 16 kHz is the step that can quietly ruin a recording: everything above 8 kHz in
-    // the captured signal folds back down on top of the speech unless it is filtered away first.
-    // The fake microphone plays a 1 kHz tone that must survive and a 12 kHz tone that must not
-    // reappear at 4 kHz.
-    [SkippableFact]
-    public async Task TheUploadedAudioKeepsTheSpeechBandAndFoldsNothingBackIntoIt()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "hola";
-
-        var page = await OpenAsync();
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
-
-        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-        await Task.Delay(1_400);
-        await TouchAsync(cdp, "touchEnd");
-
-        await Assertions.Expect(page.Locator("textarea.chat-input"))
-            .ToHaveValueAsync("hola", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
-
-        var samples = FakeMicrophoneAudio.Samples(fixture.LastAudio.ShouldNotBeNull());
-        // Past the microphone opening and short of it closing, so neither end's transient is
-        // measured as content.
-        var window = samples.Skip(FakeMicrophoneAudio.TranscriptionRate / 5).Take(8192).ToArray();
-        window.Length.ShouldBe(8192, "the recording is too short to measure");
-
-        var speech = FakeMicrophoneAudio.MagnitudeAt(
-            window, FakeMicrophoneAudio.SpeechToneHz, FakeMicrophoneAudio.TranscriptionRate);
-        var alias = FakeMicrophoneAudio.MagnitudeAt(
-            window, FakeMicrophoneAudio.AliasHz, FakeMicrophoneAudio.TranscriptionRate);
-
-        // Neither silence nor a wall of clipping: a recording that is either is one no transcriber
-        // can do anything with, however clean its spectrum.
-        var rms = Math.Sqrt(window.Sum(s => s * s) / window.Length);
-        rms.ShouldBeGreaterThan(0.02);
-        rms.ShouldBeLessThan(0.71);
-
-        speech.ShouldBeGreaterThan(0.01, "the 1 kHz tone did not survive the recording");
-        var decibels = 20 * Math.Log10(alias / speech);
-        decibels.ShouldBeLessThan(-20, $"12 kHz folded back to 4 kHz at {decibels:F1} dB");
-    }
-
+    // What the page is before anything is recorded: the meter's curve, and the drawn control that
+    // stands where Send does. Neither needs a microphone, so both are asked of the same page.
+    //
     // The meter exists to tell a microphone that is hearing something from one that is not, and a
     // phone held in the hand delivers speech around a hundredth of full scale. On a linear needle
     // that is zero to the eye, so the two cases it exists to separate looked the same — which is
     // how a real recording was read off a phone as nothing being captured at all.
+    //
+    // And a drawn microphone rather than an emoji: the platform's font decides what an emoji looks
+    // like, and on some of them it is neither the same shape nor the same colour as the icons
+    // beside it. A microphone is also a symmetrical object, and an eye reads a lopsided one as a
+    // mistake before it reads it as a microphone — the bounding box cannot see this, because the
+    // flared side stays inside the arc below it, so the outline itself is sampled and folded about
+    // the middle.
     [SkippableFact]
-    public async Task TheLevelMeter_ReadsAQuietMicrophoneAsQuietRatherThanAsNothing()
+    public async Task AtRest_TheMeterReadsAQuietMicrophoneAsQuietAndTheControlIsADrawnMicrophone()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await OpenAsync();
+
         var needle = await page.EvaluateAsync<double[]>(
             """
             () => [0, 0.001, 0.005, 0.03, 0.2, 1].map(rms => window.dictation._meter(rms))
@@ -241,10 +239,34 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         needle[5].ShouldBe(1);
         // And it only ever rises.
         needle.Zip(needle.Skip(1)).ShouldAllBe(pair => pair.Second >= pair.First);
+
+        var mic = page.Locator("[data-testid=dictation-mic]");
+        await Assertions.Expect(mic.Locator("svg")).ToBeVisibleAsync();
+        (await mic.InnerTextAsync()).ShouldNotContain("🎤");
+
+        var strayed = await page.EvaluateAsync<double>(
+            """
+            () => {
+                const path = document.querySelector('[data-testid=dictation-mic] path');
+                const length = path.getTotalLength();
+                const samples = Array.from({ length: 400 }, (_, i) => path.getPointAtLength(i * length / 400));
+                // The viewBox is 0 0 24 24, so the axis of a centred drawing is x = 12.
+                const mirrored = samples.map(p => ({ x: 24 - p.x, y: p.y }));
+                const distance = point => Math.min(...samples.map(
+                    s => Math.hypot(s.x - point.x, s.y - point.y)));
+                return Math.max(...mirrored.map(distance));
+            }
+            """);
+
+        // A sample every ~0.15 units of outline, so anything above a fifth of a unit is the drawing
+        // being asymmetrical rather than the sampling being coarse.
+        strayed.ShouldBeLessThan(0.2);
     }
 
     // Nobody should have to hold a key down, so a keyboard press starts a latched dictation
-    // outright — and Escape is how it is abandoned without reaching for the trash button.
+    // outright — and Escape is how it is abandoned without reaching for the trash button. The two
+    // buttons it puts on screen are drawn for the same reason the microphone is, and the one that
+    // ends the dictation reads as sending the words on rather than as halting a machine.
     [SkippableFact]
     public async Task PressingEnterOnTheMicrophone_LatchesAndEscapeThrowsItAway()
     {
@@ -258,8 +280,15 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await mic.PressAsync("Enter");
 
         // Latched from the start: the stop button is there without anything having been released.
-        await Assertions.Expect(page.Locator("[data-testid=dictation-stop]"))
+        var trash = page.Locator("[data-testid=dictation-trash]");
+        var stop = page.Locator("[data-testid=dictation-stop]");
+        await Assertions.Expect(stop)
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+
+        await Assertions.Expect(trash.Locator("svg")).ToBeVisibleAsync();
+        await Assertions.Expect(stop.Locator("svg")).ToBeVisibleAsync();
+        (await trash.InnerTextAsync()).ShouldNotContain("🗑");
+        (await stop.InnerTextAsync()).ShouldNotContain("■");
 
         await page.Keyboard.PressAsync("Escape");
 
@@ -291,35 +320,6 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await Task.Delay(1_500);
         await Assertions.Expect(page.Locator("textarea.chat-input")).ToHaveValueAsync("");
         await Assertions.Expect(page.Locator(".composer-refusal")).ToBeHiddenAsync();
-    }
-
-    // A finger that drifts a little is still a finger holding the button down: only distance past
-    // a threshold means anything, and this is well inside every one of them.
-    [SkippableFact]
-    public async Task APressThatDrifts_IsStillAHoldAndStillProducesWords()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "un dedo que se mueve un poco";
-
-        var page = await OpenAsync();
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
-
-        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-        foreach (var step in Enumerable.Range(1, 4))
-        {
-            await TouchAsync(cdp, "touchMove", Point(mic.X - step * 5, mic.Y - step * 3));
-            await Task.Delay(60);
-        }
-        await Task.Delay(HoldMs);
-        await TouchAsync(cdp, "touchEnd");
-
-        await Assertions.Expect(page.Locator("textarea.chat-input"))
-            .ToHaveValueAsync(
-                "un dedo que se mueve un poco", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
     }
 
     // A pocketed phone must not record indefinitely. The cap is the server's number, learned
@@ -377,11 +377,15 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
 
         await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
             .ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 15_000 });
-        // Nothing arrives late either: a discarded recording makes no request at all.
-        await Task.Delay(2_000);
+        // Nothing arrives late either: a discarded recording makes no request at all, and one that
+        // did would be answered by a stub on the same machine well inside this.
+        await Task.Delay(1_000);
         await Assertions.Expect(page.Locator("textarea.chat-input")).ToHaveValueAsync("");
     }
 
+    // Sliding up to latch is the one gesture nothing on screen announces, so the way up has to be
+    // visible under the finger that could make it — and gone the moment it has been made. Letting
+    // go then does not end the dictation: the stop button does.
     [SkippableFact]
     public async Task SlidingUpToLatchAndThenPressingStop_PutsTheWordsInTheComposer()
     {
@@ -392,10 +396,18 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
         var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var lift = page.Locator("[data-testid=dictation-lift]");
 
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+        await Assertions.Expect(lift)
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+
+        // It sits above the button it belongs to, which is the whole of what it says.
+        var hint = await lift.BoundingBoxAsync();
+        var button = await page.Locator("[data-testid=dictation-mic]").BoundingBoxAsync();
+        hint.ShouldNotBeNull();
+        button.ShouldNotBeNull();
+        (hint.Y + hint.Height).ShouldBeLessThanOrEqualTo(button.Y + 1);
 
         // Past the 56 px latch threshold, upward.
         foreach (var step in Enumerable.Range(1, 5))
@@ -405,10 +417,11 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         }
         await TouchAsync(cdp, "touchEnd");
 
-        // Letting go does not end a latched dictation: the stop button does.
         var stop = page.Locator("[data-testid=dictation-stop]");
         await Assertions.Expect(stop)
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        await Assertions.Expect(lift).ToBeHiddenAsync();
+
         await Task.Delay(HoldMs);
         await stop.ClickAsync();
 
@@ -519,44 +532,67 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.Locator(".composer-hint")).ToBeHiddenAsync();
     }
 
+    // The two ways a dictation that recorded fine can still end in words nobody gets, one page
+    // apiece being a page too many. A server that answers with a refusal has plainly been reached,
+    // so flattening the two into one sentence sends whoever is holding the phone looking at the
+    // network for a fault that is not there — the refusal's own words are the only thing that tells
+    // them where to look.
     [SkippableFact]
-    public async Task WhenTheTranscriberFails_TheComposerSaysSoRatherThanNothingHappening()
+    public async Task WhenADictationCannotBeCompleted_TheComposerSaysWhyRatherThanNothingHappening()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 500;
 
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var refusal = page.Locator(".composer-refusal");
 
-        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-        await Task.Delay(HoldMs);
-        await TouchAsync(cdp, "touchEnd");
+        // The ticket the browser could not mint, in the words the server refused it with.
+        await page.EvaluateAsync(
+            """
+            () => {
+                const ref = window.dictation._ref;
+                window.__mint = ref.invokeMethodAsync.bind(ref);
+                ref.invokeMethodAsync = (name, ...args) => name === 'MintTicketAsync'
+                    ? Promise.reject(new Error('User not registered. Call RegisterUser first.'))
+                    : window.__mint(name, ...args);
+            }
+            """);
 
-        await Assertions.Expect(page.Locator(".composer-refusal"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        await DictateAsync(cdp, page, HoldMs);
+        await Assertions.Expect(refusal)
+            .ToContainTextAsync("User not registered",
+                new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
+
+        // And the transcriber that took the recording and could not answer for it. Whisper's own
+        // complaint stops at the channel server, which answers the browser a bare 502, so what is
+        // asserted is the sentence the browser falls back to — named, so a refusal left over from
+        // the ticket above cannot be read as this one.
+        await page.EvaluateAsync("() => { window.dictation._ref.invokeMethodAsync = window.__mint; }");
+        fixture.TranscriptionStatus = 500;
+
+        await DictateAsync(cdp, page, HoldMs);
+        await Assertions.Expect(refusal)
+            .ToContainTextAsync("could not turn that recording into words",
+                new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
         await Assertions.Expect(page.Locator("textarea.chat-input")).ToHaveValueAsync("");
 
         fixture.TranscriptionStatus = 200;
     }
 
     // The strip takes the textarea's place rather than sitting above it, so the composer must not
-    // grow when the microphone opens — everything above it would jump at the worst moment.
+    // grow when the microphone opens — everything above it would jump at the worst moment. The
+    // strip and the microphone then stand side by side, so a strip that is shorter than the button
+    // reads as a control that has slipped out of the row; and latched, the two ways out — throw it
+    // away, or put the words in the box — are the only ways out there are, because no keyboard is
+    // behind them and letting go has already happened.
     [SkippableFact]
-    public async Task OnAPhoneViewport_TheRecordingStripLeavesTheComposersHeightAlone()
+    public async Task OnAPhoneViewport_TheStripKeepsTheComposersShapeAndBothWaysOutStayInIt()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
         fixture.TranscriptionStatus = 200;
         fixture.Transcript = "hola";
 
-        var page = await fixture.CreatePageAsync(hasTouch: true);
-        await page.SetViewportSizeAsync(390, 844);
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
-        await Assertions.Expect(page.Locator("[data-testid=dictation-mic]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        var page = await OpenAsync(width: 390, height: 844);
 
         var composer = page.Locator(".input-container");
         var before = await composer.BoundingBoxAsync();
@@ -572,30 +608,52 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         // than merely present.
         await Assertions.Expect(page.Locator("[data-testid=dictation-timer]")).ToBeVisibleAsync();
 
+        var strip = await page.Locator("[data-testid=dictation-strip]").BoundingBoxAsync();
+        var button = await page.Locator("[data-testid=dictation-mic]").BoundingBoxAsync();
+
+        // Past the 56 px latch threshold, upward, so the strip is asked the same question with the
+        // two buttons in it that it was asked with the level meter alone.
+        foreach (var step in Enumerable.Range(1, 5))
+        {
+            await TouchAsync(cdp, "touchMove", Point(mic.X, mic.Y - step * 16));
+            await Task.Delay(16);
+        }
         await TouchAsync(cdp, "touchEnd");
+
+        // Visible rather than merely present: a control pushed out of a strip that clips its
+        // overflow is a control that is not there.
+        await Assertions.Expect(page.Locator("[data-testid=dictation-stop]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        await Assertions.Expect(page.Locator("[data-testid=dictation-trash]")).ToBeVisibleAsync();
+
+        var latchedStrip = await page.Locator("[data-testid=dictation-strip]").BoundingBoxAsync();
+        var stop = await page.Locator("[data-testid=dictation-stop]").BoundingBoxAsync();
+
+        await page.Locator("[data-testid=dictation-trash]").ClickAsync();
 
         before.ShouldNotBeNull();
         during.ShouldNotBeNull();
         during.Height.ShouldBe(before.Height, tolerance: 1);
+
+        strip.ShouldNotBeNull();
+        button.ShouldNotBeNull();
+        strip.Height.ShouldBe(button.Height, tolerance: 1);
+
+        latchedStrip.ShouldNotBeNull();
+        stop.ShouldNotBeNull();
+        (stop.X + stop.Width).ShouldBeLessThanOrEqualTo(latchedStrip.X + latchedStrip.Width + 1);
     }
 
-    // The strip and the microphone stand side by side while recording, so a strip that is shorter
-    // than the button reads as a control that has slipped out of the row.
-    [SkippableTheory]
-    [InlineData(390, 844)]
-    [InlineData(1280, 900)]
-    public async Task WhileRecording_TheStripStandsAsTallAsTheMicrophoneBesideIt(int width, int height)
+    // The same row on a desktop, where the composer is wide and the strip has room to be any height
+    // it likes.
+    [SkippableFact]
+    public async Task OnADesktopViewport_TheStripStandsAsTallAsTheMicrophoneBesideIt()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
         fixture.TranscriptionStatus = 200;
         fixture.Transcript = "hola";
 
-        var page = await fixture.CreatePageAsync(hasTouch: true);
-        await page.SetViewportSizeAsync(width, height);
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
-        await Assertions.Expect(page.Locator("[data-testid=dictation-mic]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        var page = await OpenAsync(width: 1280, height: 900);
 
         var cdp = await page.Context.NewCDPSessionAsync(page);
         var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
@@ -613,209 +671,14 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         strip.Height.ShouldBe(button.Height, tolerance: 1);
     }
 
-    // Sliding up to latch is the one gesture nothing on screen announces, so it has to be visible
-    // under the finger that could make it — and gone the moment it has been made.
-    [SkippableFact]
-    public async Task HoldingTheMicrophone_ShowsTheWayUpToLatchUntilItIsLatched()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "hola";
-
-        var page = await OpenAsync();
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
-        var lift = page.Locator("[data-testid=dictation-lift]");
-
-        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Assertions.Expect(lift)
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-
-        // It sits above the button it belongs to, which is the whole of what it says.
-        var hint = await lift.BoundingBoxAsync();
-        var button = await page.Locator("[data-testid=dictation-mic]").BoundingBoxAsync();
-        hint.ShouldNotBeNull();
-        button.ShouldNotBeNull();
-        (hint.Y + hint.Height).ShouldBeLessThanOrEqualTo(button.Y + 1);
-
-        foreach (var step in Enumerable.Range(1, 5))
-        {
-            await TouchAsync(cdp, "touchMove", Point(mic.X, mic.Y - step * 16));
-            await Task.Delay(16);
-        }
-        await TouchAsync(cdp, "touchEnd");
-
-        await Assertions.Expect(page.Locator("[data-testid=dictation-stop]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-        await Assertions.Expect(lift).ToBeHiddenAsync();
-
-        await page.Locator("[data-testid=dictation-trash]").ClickAsync();
-    }
-
-    // A server that answers with a refusal has plainly been reached. Flattening the two into one
-    // sentence sends whoever is holding the phone looking at the network for a fault that is not
-    // there — the refusal's own words are the only thing that tells them where to look.
-    [SkippableFact]
-    public async Task WhenTheServerRefusesTheTicket_TheComposerSaysWhatItRefusedWith()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await OpenAsync();
-        await page.EvaluateAsync(
-            """
-            () => {
-                const ref = window.dictation._ref;
-                const original = ref.invokeMethodAsync.bind(ref);
-                ref.invokeMethodAsync = (name, ...args) => name === 'MintTicketAsync'
-                    ? Promise.reject(new Error('User not registered. Call RegisterUser first.'))
-                    : original(name, ...args);
-            }
-            """);
-
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
-        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-        await Task.Delay(HoldMs);
-        await TouchAsync(cdp, "touchEnd");
-
-        await Assertions.Expect(page.Locator(".composer-refusal"))
-            .ToContainTextAsync("User not registered",
-                new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
-    }
-
-    // One control in that spot, always the one the person is about to use: with something to send,
-    // the microphone is off screen rather than standing beside Send.
-    [SkippableFact]
-    public async Task WithSomethingToSend_TheMicrophoneIsNotOnScreen()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await OpenAsync();
-        await page.Locator("textarea.chat-input").FillAsync("unas palabras escritas");
-
-        await Assertions.Expect(page.Locator("button.btn-primary", new PageLocatorOptions { HasText = "Send" }))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-        await Assertions.Expect(page.Locator("[data-testid=dictation-mic]")).ToBeHiddenAsync();
-    }
-
-    // Latched on a phone, the two ways out — throw it away, or put the words in the box — are the
-    // only ways out there are: no keyboard is behind them and letting go has already happened.
-    [SkippableFact]
-    public async Task LatchedOnAPhone_TheStripStillOffersBothWaysOut()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "hola";
-
-        var page = await fixture.CreatePageAsync(hasTouch: true);
-        await page.SetViewportSizeAsync(390, 844);
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
-        await Assertions.Expect(page.Locator("[data-testid=dictation-mic]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
-
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
-        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-
-        foreach (var step in Enumerable.Range(1, 5))
-        {
-            await TouchAsync(cdp, "touchMove", Point(mic.X, mic.Y - step * 16));
-            await Task.Delay(16);
-        }
-        await TouchAsync(cdp, "touchEnd");
-
-        // Visible rather than merely present: a control pushed out of a strip that clips its
-        // overflow is a control that is not there.
-        await Assertions.Expect(page.Locator("[data-testid=dictation-stop]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-        await Assertions.Expect(page.Locator("[data-testid=dictation-trash]")).ToBeVisibleAsync();
-
-        var strip = await page.Locator("[data-testid=dictation-strip]").BoundingBoxAsync();
-        var stop = await page.Locator("[data-testid=dictation-stop]").BoundingBoxAsync();
-        strip.ShouldNotBeNull();
-        stop.ShouldNotBeNull();
-        (stop.X + stop.Width).ShouldBeLessThanOrEqualTo(strip.X + strip.Width + 1);
-
-        await page.Locator("[data-testid=dictation-trash]").ClickAsync();
-    }
-
-    // The two buttons in the strip are drawn for the same reason the microphone is, and the one
-    // that ends the dictation reads as sending the words on rather than as halting a machine.
-    [SkippableFact]
-    public async Task TheLatchedControls_AreDrawnIconsRatherThanEmoji()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "hola";
-
-        var page = await OpenAsync();
-        await page.Locator("[data-testid=dictation-mic]").PressAsync("Enter");
-
-        var trash = page.Locator("[data-testid=dictation-trash]");
-        var stop = page.Locator("[data-testid=dictation-stop]");
-        await Assertions.Expect(trash)
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-
-        await Assertions.Expect(trash.Locator("svg")).ToBeVisibleAsync();
-        await Assertions.Expect(stop.Locator("svg")).ToBeVisibleAsync();
-        (await trash.InnerTextAsync()).ShouldNotContain("🗑");
-        (await stop.InnerTextAsync()).ShouldNotContain("■");
-
-        await trash.ClickAsync();
-    }
-
-    // A microphone is a symmetrical object, and an eye reads a lopsided one as a mistake before it
-    // reads it as a microphone. The bounding box cannot see this — the flared side stays inside the
-    // arc below it — so the outline itself is sampled and folded about the middle.
-    [SkippableFact]
-    public async Task TheMicrophoneIcon_IsSymmetricalAboutItsOwnMiddle()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await OpenAsync();
-        var strayed = await page.EvaluateAsync<double>(
-            """
-            () => {
-                const path = document.querySelector('[data-testid=dictation-mic] path');
-                const length = path.getTotalLength();
-                const samples = Array.from({ length: 400 }, (_, i) => path.getPointAtLength(i * length / 400));
-                // The viewBox is 0 0 24 24, so the axis of a centred drawing is x = 12.
-                const mirrored = samples.map(p => ({ x: 24 - p.x, y: p.y }));
-                const distance = point => Math.min(...samples.map(
-                    s => Math.hypot(s.x - point.x, s.y - point.y)));
-                return Math.max(...mirrored.map(distance));
-            }
-            """);
-
-        // A sample every ~0.15 units of outline, so anything above a fifth of a unit is the drawing
-        // being asymmetrical rather than the sampling being coarse.
-        strayed.ShouldBeLessThan(0.2);
-    }
-
-    // A drawn microphone rather than an emoji: the platform's font decides what an emoji looks
-    // like, and on some of them it is neither the same shape nor the same colour as the icons
-    // beside it.
-    [SkippableFact]
-    public async Task TheMicrophoneControl_IsADrawnIconRatherThanAnEmoji()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await OpenAsync();
-        var mic = page.Locator("[data-testid=dictation-mic]");
-
-        await Assertions.Expect(mic.Locator("svg")).ToBeVisibleAsync();
-        (await mic.InnerTextAsync()).ShouldNotContain("🎤");
-    }
-
-    private async Task<IPage> OpenAsync()
+    private async Task<IPage> OpenAsync(int? width = null, int? height = null)
     {
         var page = await fixture.CreatePageAsync(hasTouch: true);
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        if (width is not null && height is not null)
+        {
+            await page.SetViewportSizeAsync(width.Value, height.Value);
+        }
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         // With nothing typed the right-hand control is the microphone; that is the premise of
@@ -823,6 +686,17 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.Locator("[data-testid=dictation-mic]"))
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
         return page;
+    }
+
+    // One held dictation, start to release, for cases that care only about how it ended.
+    private static async Task DictateAsync(ICDPSession cdp, IPage page, int holdMs)
+    {
+        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        await Task.Delay(holdMs);
+        await TouchAsync(cdp, "touchEnd");
     }
 
     private static async Task<(double X, double Y)> CentreOfAsync(IPage page, string selector)

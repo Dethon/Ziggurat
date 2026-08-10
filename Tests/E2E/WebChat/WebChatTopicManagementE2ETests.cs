@@ -13,12 +13,12 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Topic one message for E2E");
+        await chatInput.FillAsync("Topic one message for E2E — answer in one short sentence.");
         await chatInput.PressAsync("Enter");
 
         await page.Locator(".message-content").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
@@ -26,7 +26,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         await WebChatE2ETests.ClickThroughApprovalsAsync(page, page.Locator(".hearth-new:visible"));
 
         await Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 5_000 });
-        await chatInput.FillAsync("Topic two message for E2E");
+        await chatInput.FillAsync("Topic two message for E2E — answer in one short sentence.");
         await chatInput.PressAsync("Enter");
 
         await page.Locator(".message-content").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
@@ -73,12 +73,12 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
 
         var page = await fixture.CreatePageAsync();
         await page.SetViewportSizeAsync(390, 844);
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Topic to rename in E2E test");
+        await chatInput.FillAsync("Topic to rename in E2E test — answer in one short sentence.");
         await chatInput.PressAsync("Enter");
 
         // Renaming while the reply is still streaming races the read-marker save over the same
@@ -110,12 +110,12 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
 
         var page = await fixture.CreatePageAsync();
         await page.SetViewportSizeAsync(1280, 900);
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Topic to rename on the desktop E2E test");
+        await chatInput.FillAsync("Topic to rename on the desktop E2E test — answer in one short sentence.");
         await chatInput.PressAsync("Enter");
 
         await page.Locator(".message-content").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
@@ -142,12 +142,12 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Topic to delete in E2E test");
+        await chatInput.FillAsync("Topic to delete in E2E test — answer in one short sentence.");
         await chatInput.PressAsync("Enter");
 
         var ourTopic = page.Locator(".topic-item", new PageLocatorOptions { HasText = "Topic to delete" });

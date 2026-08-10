@@ -4,6 +4,10 @@ using Tests.E2E.Fixtures;
 
 namespace Tests.E2E.WebChat;
 
+// These load on NetworkIdle rather than through WebChatE2ETests.GotoWebChatAsync, which is the
+// faster default everywhere else. The cases here tap fixed coordinates while the sheet is in
+// motion, so what has finished rendering by the time the first tap lands is part of what they
+// measure: on the quicker load, the settle case found no row under its finger at all.
 [Collection("WebChatE2E")]
 [Trait("Category", "E2E")]
 public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
@@ -437,7 +441,9 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
         }
 
         await Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 10_000 });
-        await chatInput.FillAsync(message);
+        // These rows exist to be tapped; nothing here reads the reply. Asking for a short one keeps
+        // the row from being reordered by a long answer nobody is waiting to see.
+        await chatInput.FillAsync($"{message} — answer in one short sentence.");
         await chatInput.PressAsync("Enter");
         await page.Locator(".topic-item", new PageLocatorOptions { HasText = message[..16] })
             .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });

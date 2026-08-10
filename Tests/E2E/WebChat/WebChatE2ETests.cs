@@ -14,7 +14,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
@@ -47,6 +47,15 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             }
         }
     }
+
+    // DOMContentLoaded rather than NetworkIdle. Every case here goes on to wait for something the
+    // app can only show once it has booted and connected — the composer being enabled, a row, the
+    // microphone — so waiting for the network to fall quiet first buys nothing and costs its own
+    // half-second idle window plus the tail of the WASM payload, on every page the suite opens.
+    // The dashboard's pages deliberately keep NetworkIdle: they read counts straight off the
+    // document with no locator to wait on.
+    internal static Task GotoWebChatAsync(IPage page, string url) =>
+        page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
 
     internal static async Task SelectUserAndAgentAsync(IPage page, int userIndex = 0)
     {
@@ -126,6 +135,13 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     // conversation slid under the coordinate. Wait until the order stops moving before aiming at
     // anything by coordinate, and keep rejecting approval prompts, because .approval-modal-overlay
     // (z-index 1000) covers the whole viewport and swallows the gesture.
+    //
+    // The rule is unchanged — two readings a second apart that agree, with nothing streaming — but
+    // the wait now falls between them rather than before the first, so a caller whose replies landed
+    // long ago is told so on its first look instead of after a second of sleeping. Requiring more
+    // than one agreeing pair was tried and reverted: rows that reorder while two replies stream
+    // rarely agree twice running, and the case that used to settle in five seconds spent the whole
+    // seventy-five second cap.
     internal static async Task<string> WaitForRowsToStopMovingAsync(IPage page)
     {
         var deadline = DateTime.UtcNow.AddSeconds(75);
@@ -133,7 +149,6 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         while (DateTime.UtcNow < deadline)
         {
             await DismissApprovalOverlayAsync(page);
-            await page.WaitForTimeoutAsync(1_000);
             var snapshot = await page.EvaluateAsync<string>(
                 """
                 () => [...document.querySelectorAll('.topic-item')]
@@ -146,6 +161,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             }
 
             previous = snapshot;
+            await page.WaitForTimeoutAsync(1_000);
         }
 
         return $"{previous} (STILL MOVING at 75s cap)";
@@ -308,6 +324,8 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
+        // NetworkIdle, unlike everywhere else here: this case reads visibility off the document
+        // with nothing to wait on, so the load has to be the thing that settled it.
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         var avatarPlaceholder = page.Locator(".avatar-placeholder");
@@ -324,7 +342,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
 
         // The welcome/empty-state screen is the idle foreground state (no conversation selected).
         // Any CSS animation that loops forever here keeps the browser compositor awake every frame,
@@ -382,7 +400,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
 
         // The guarded helper, not a bare click: the approval overlay can be replayed onto this
         // page at any moment by StreamResumeService and would intercept the item click for as
@@ -395,9 +413,6 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         var avatarPlaceholder = page.Locator(".avatar-placeholder");
         (await avatarPlaceholder.IsVisibleAsync()).ShouldBeFalse();
-
-        // Wait for state propagation
-        await page.WaitForTimeoutAsync(1_000);
     }
 
     [SkippableFact]
@@ -406,7 +421,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
 
         // Allow up to 30 seconds for the hub to become reachable and the Blazor
         // client to complete the handshake.
@@ -421,7 +436,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
@@ -488,7 +503,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
@@ -524,7 +539,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 

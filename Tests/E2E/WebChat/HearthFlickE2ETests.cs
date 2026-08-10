@@ -66,7 +66,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync(hasTouch: true, isMobile: true);
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         var tag = Guid.NewGuid().ToString("N")[..4];
@@ -110,7 +110,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         // isMobile is not a synonym for hasTouch: it turns on Chromium's mobile emulation
         // (390x844, DSF 3, hasTouch) and with it the tap heuristics a phone is judged by.
         var page = await fixture.CreatePageAsync(hasTouch: true, isMobile: true);
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         // Topics from earlier runs survive in the stack, so unique names keep "the row I aimed at"
@@ -315,7 +315,15 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
             }
 
             await page.Locator(".hearth-handle").First.ClickAsync();
-            await page.WaitForTimeoutAsync(500);
+
+            // The detent lands with the sheet's own 280ms transition. Polled rather than waited
+            // out, because a sheet at Full needs two of these to get back down and a flat wait
+            // long enough for the worst one is paid on every attempt.
+            var settleBy = DateTime.UtcNow.AddMilliseconds(600);
+            while (DateTime.UtcNow < settleBy && await page.Locator(".hearth.detent-peek").CountAsync() == 0)
+            {
+                await page.WaitForTimeoutAsync(50);
+            }
         }
 
         throw new InvalidOperationException("Could not return the hearth sheet to the peek detent");
