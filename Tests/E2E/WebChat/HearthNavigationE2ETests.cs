@@ -112,6 +112,11 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
         await CreateTopicAsync(page, "Menu tap target topic message");
         await CreateTopicAsync(page, "Menu tap decoy topic message");
 
+        // The aim below is a coordinate resolved in one round trip and tapped in the next, so the
+        // list must not be reordering in between — rows sort by LastMessageAt and jump as replies
+        // land, which drops the tap on whichever conversation slid under the point.
+        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page);
+
         await TapHearthHandleAsync(page);
         await TapHearthHandleAsync(page);
         await Assertions.Expect(page.Locator(".hearth-search-input")).ToBeVisibleAsync();
@@ -143,12 +148,32 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
         var aimedAt = aim.GetProperty("name").GetString();
         aimedAt.ShouldNotBeNullOrEmpty();
 
+        // Assert against what elementFromPoint sees at touchstart, not against the row measured
+        // above: the aim is already one round trip old when the finger lands, and asserting on it
+        // would test the harness's timing rather than the app's behaviour.
+        await page.EvaluateAsync(
+            """
+            () => {
+                window.__under = null;
+                document.addEventListener('touchstart', e => {
+                    const t = e.touches[0];
+                    const hit = document.elementFromPoint(t.clientX, t.clientY);
+                    const row = hit ? hit.closest('.topic-item') : null;
+                    window.__under = row ? row.querySelector('.topic-name').textContent : null;
+                }, { capture: true, once: true });
+            }
+            """);
+
         await page.Touchscreen.TapAsync(
             (float)aim.GetProperty("x").GetDouble(), (float)aim.GetProperty("y").GetDouble());
 
         await Assertions.Expect(menu).Not.ToBeVisibleAsync();
+
+        var under = await page.EvaluateAsync<string?>("() => window.__under");
+        under.ShouldNotBeNullOrEmpty($"the tap aimed at \"{aimedAt}\" landed on no conversation row at all");
+
         await Assertions.Expect(
-                page.Locator(".topic-item.selected .topic-name", new PageLocatorOptions { HasText = aimedAt }))
+                page.Locator(".topic-item.selected .topic-name", new PageLocatorOptions { HasText = under }))
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 10_000 });
     }
 

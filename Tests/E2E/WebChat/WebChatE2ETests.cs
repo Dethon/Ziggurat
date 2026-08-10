@@ -121,6 +121,36 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         }
     }
 
+    // Rows are ordered by LastMessageAt desc and re-render while replies stream, so they reorder
+    // between an elementFromPoint aim and the tap that follows — the tap then lands on whichever
+    // conversation slid under the coordinate. Wait until the order stops moving before aiming at
+    // anything by coordinate, and keep rejecting approval prompts, because .approval-modal-overlay
+    // (z-index 1000) covers the whole viewport and swallows the gesture.
+    internal static async Task<string> WaitForRowsToStopMovingAsync(IPage page)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(75);
+        var previous = "";
+        while (DateTime.UtcNow < deadline)
+        {
+            await DismissApprovalOverlayAsync(page);
+            await page.WaitForTimeoutAsync(1_000);
+            var snapshot = await page.EvaluateAsync<string>(
+                """
+                () => [...document.querySelectorAll('.topic-item')]
+                    .map(r => (r.classList.contains('is-streaming') ? '*' : '')
+                        + r.querySelector('.topic-name').textContent.trim()).join('|')
+                """);
+            if (snapshot == previous && !snapshot.Contains('*'))
+            {
+                return snapshot;
+            }
+
+            previous = snapshot;
+        }
+
+        return $"{previous} (STILL MOVING at 75s cap)";
+    }
+
     // The prompt on screen is the oldest request still waiting (ApprovalState.Pending is a
     // queue), so answering one surfaces the next in the same instant and the overlay never
     // hides in between. Rejecting once and expecting a clear screen fails whenever the agent

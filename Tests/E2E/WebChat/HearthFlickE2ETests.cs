@@ -73,7 +73,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         await CreateTopicAsync(page, $"Scroll one {tag} answer briefly");
         await CreateTopicAsync(page, $"Scroll two {tag} answer briefly");
         await CreateTopicAsync(page, $"Scroll three {tag} answer briefly");
-        await WaitForRowsToStopMovingAsync(page);
+        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page);
 
         await EnsurePeekAsync(page);
         var cdp = await page.Context.NewCDPSessionAsync(page);
@@ -119,7 +119,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         await CreateTopicAsync(page, $"Row alpha {tag} answer briefly");
         await CreateTopicAsync(page, $"Row bravo {tag} answer briefly");
         await CreateTopicAsync(page, $"Row delta {tag} answer briefly");
-        var rowsAtRest = await WaitForRowsToStopMovingAsync(page);
+        var rowsAtRest = await WebChatE2ETests.WaitForRowsToStopMovingAsync(page);
 
         await EnsurePeekAsync(page);
         var overlayInTheWay = await page.Locator(".approval-modal-overlay").CountAsync();
@@ -444,36 +444,6 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         await chatInput.PressAsync("Enter");
         await page.Locator(".topic-item", new PageLocatorOptions { HasText = message[..16] })
             .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-    }
-
-    // Rows are ordered by LastMessageAt desc and re-render while replies stream, so they reorder
-    // between an elementFromPoint aim and the tap that follows. Wait until the order stops moving
-    // before aiming at anything — and keep rejecting approval prompts, because .approval-modal-overlay
-    // (z-index 1000) covers the whole viewport and swallows the gesture: the first run of this test
-    // dragged across the overlay and never touched the sheet at all.
-    private static async Task<string> WaitForRowsToStopMovingAsync(IPage page)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(75);
-        var previous = "";
-        while (DateTime.UtcNow < deadline)
-        {
-            await WebChatE2ETests.DismissApprovalOverlayAsync(page);
-            await page.WaitForTimeoutAsync(1_000);
-            var snapshot = await page.EvaluateAsync<string>(
-                """
-                () => [...document.querySelectorAll('.topic-item')]
-                    .map(r => (r.classList.contains('is-streaming') ? '*' : '')
-                        + r.querySelector('.topic-name').textContent.trim()).join('|')
-                """);
-            if (snapshot == previous && !snapshot.Contains('*'))
-            {
-                return snapshot;
-            }
-
-            previous = snapshot;
-        }
-
-        return $"{previous} (STILL MOVING at 75s cap)";
     }
 
     private static async Task<(float X, float Y)> CentreOfAsync(IPage page, string selector)
