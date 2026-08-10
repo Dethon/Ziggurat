@@ -263,6 +263,7 @@ h1, h2, h3 {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 1rem;
     padding: 0.875rem 1.25rem;
     background-color: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
@@ -297,10 +298,72 @@ h1, h2, h3 {
     gap: 1rem;
 }
 
-/* Conversation name + time in the top bar — mobile only; the desktop rail already
-   shows which conversation is selected. */
+/* Conversation name + time in the top bar. The rail already says which conversation is
+   selected, but this is the one place the name is editable, so it shows at every width. */
 .header-conversation {
-    display: none;
+    display: flex;
+    flex-direction: column;
+    /* Start-aligned so the hover plate and the field hug the title instead of stretching to
+       the whole flex line, and capped so neither runs the width of a desktop top bar. */
+    align-items: flex-start;
+    min-width: 0;
+    flex: 1;
+    max-width: 26rem;
+    /* Capped, it no longer fills the flex line, and the header's space-between would float it
+       into the middle of the bar. The auto margin eats that slack so it stays by the logo. */
+    margin-right: auto;
+}
+
+.header-conversation-name {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    /* The negative margin cancels the padding, so the hover plate is wider than the text
+       without moving the title off the baseline it sits on when nothing is hovering it. */
+    cursor: text;
+    border-radius: 6px;
+    padding: 1px 6px;
+    margin: -1px -6px;
+    transition: background-color var(--transition-fast);
+}
+
+.header-conversation-name:hover {
+    background: var(--bg-tertiary);
+}
+
+.header-conversation-name.glow {
+    text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.header-conversation-time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+
+/* Tapping the title swaps it for this field in place, so the field keeps the title's type
+   and box. 1rem because anything smaller makes iOS Safari zoom the page on focus. */
+.header-conversation-edit {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 1px 6px;
+    margin: -2px -6px;
+    width: 100%;
+    min-width: 0;
+}
+
+.header-conversation-edit:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .connection-status {
@@ -2569,21 +2632,10 @@ select:focus:not(:focus-visible) {
 
     .header { gap: 0.75rem; }
     .header-title { flex: 0 0 auto; }
-    .header-conversation { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-    .header-conversation-name { font-family: 'Fraunces', serif; font-weight: 600; color: var(--text-primary);
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .header-conversation-name.glow { text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent); }
-    .header-conversation-time { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-muted); }
-
-    /* Tapping the title swaps it for this field in place, so the field keeps the title's type
-       and box. 1rem because anything smaller makes iOS Safari zoom the page on focus. */
-    .header-conversation-edit {
-        font-family: 'Fraunces', serif; font-weight: 600; font-size: 1rem;
-        color: var(--text-primary); background: var(--bg-primary);
-        border: 1px solid var(--accent); border-radius: 6px;
-        padding: 1px 6px; margin: -2px -4px; width: 100%; min-width: 0;
-    }
-    .header-conversation-edit:focus { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+    /* The phone's top bar is the whole width the title has, so it takes all of it. */
+    .header-conversation { max-width: none; }
+    /* No hover plate on a touch screen: :hover sticks after a tap there. */
+    .header-conversation-name:hover { background: none; }
 
     /* Peek-bar new-chat button (mobile) */
     .hearth-peek .hearth-new { flex-shrink: 0; width: 32px; height: 32px; border-radius: 10px; border: none;
