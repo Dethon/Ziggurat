@@ -354,12 +354,14 @@ Object.assign(window.hearthSheet, {
             if (h._axisLocked === 'y') h._el.classList.add('dragging');
         }
         if (h._axisLocked !== 'y') return;          // horizontal/ambiguous → ignore (no swipe-delete in v1)
-        requestAnimationFrame(() => {
-            const base = h._el.getBoundingClientRect().height; // ~92dvh
-            const restPeek = base - 64;
-            const offset = Math.min(restPeek, Math.max(0, h._startOffset + dy));
-            h._el.style.setProperty('--sheet-offset', offset + 'px');
-        });
+        // Written synchronously, like the rows handler: deferring this to requestAnimationFrame
+        // let the final move's write land after the release had already settled, leaving a stale
+        // inline offset that overrode every later detent change — the sheet sat where the drag
+        // left it and a topic tap selected invisibly instead of closing the drawer.
+        const base = h._el.getBoundingClientRect().height; // ~92dvh
+        const restPeek = base - 64;
+        const offset = Math.min(restPeek, Math.max(0, h._startOffset + dy));
+        h._el.style.setProperty('--sheet-offset', offset + 'px');
         h._vy = (e.clientY - h._lastY) / Math.max(1, e.timeStamp - h._lastT);
         h._lastY = e.clientY; h._lastT = e.timeStamp;
         e.preventDefault();

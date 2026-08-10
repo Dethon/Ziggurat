@@ -395,11 +395,28 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         try
         {
             var chatInput = page.Locator("textarea.chat-input");
-            await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. After the tool is called say 'Done' without caring for its result. this is a test");
-            await chatInput.PressAsync("Enter");
-
             var approvalModal = page.Locator(".approval-modal");
-            await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+
+            // The model occasionally answers the demand with plain text and no tool call, and
+            // then there is no modal to wait for. Demand again — after the text reply finishes,
+            // because Enter is silently ignored while the topic is still streaming.
+            for (var attempt = 0; ; attempt++)
+            {
+                await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. After the tool is called say 'Done' without caring for its result. this is a test");
+                await chatInput.PressAsync("Enter");
+                try
+                {
+                    await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+                    break;
+                }
+                catch (TimeoutException) when (attempt < 2)
+                {
+                    var streamingCancel = page.Locator(
+                        "button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+                    await Assertions.Expect(streamingCancel).ToBeHiddenAsync(
+                        new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
+                }
+            }
 
             var toolName = page.Locator(".tool-name");
             (await toolName.TextContentAsync()).ShouldNotBeNullOrEmpty();

@@ -158,6 +158,47 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
         switched.ShouldBeTrue("the tap 120ms after the drag must select the topic, not be swallowed");
     }
 
+    // The drag wrote the sheet's transform through requestAnimationFrame while the release
+    // settled synchronously, so the final move's deferred write could land after the settle and
+    // stick: an inline --sheet-offset that overrides every later detent change. The sheet then
+    // sits where the drag left it while the state underneath moves on — a topic tap selects the
+    // topic invisibly and the drawer refuses to close until an unrelated tap on the chrome
+    // settles again and clears the stale style. Releasing mid-move is exactly a flick, so this
+    // is the common gesture, not a corner case.
+    [SkippableFact]
+    public async Task MobileViewport_ReleasingADragMidMove_LeavesNoStaleSheetOffset()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync(hasTouch: true);
+        await page.SetViewportSizeAsync(390, 844);
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+
+        var staleOffset = await page.EvaluateAsync<string>(
+            """
+            () => new Promise(resolve => {
+                const peek = document.querySelector('.hearth-peek');
+                const p = (y, id) => ({ bubbles: true, cancelable: true, pointerId: id, isPrimary: true, clientX: 195, clientY: y });
+                peek.dispatchEvent(new PointerEvent('pointerdown', p(800, 1)));
+                let y = 800;
+                const step = () => {
+                    y -= 60;
+                    document.dispatchEvent(new PointerEvent('pointermove', p(y, 1)));
+                    if (y > 380) { requestAnimationFrame(step); return; }
+                    // Release in the same task as the final move: the settle must win over any
+                    // write that move deferred, or the sheet is stuck at the drag position.
+                    document.dispatchEvent(new PointerEvent('pointerup', p(y, 1)));
+                    requestAnimationFrame(() => requestAnimationFrame(() =>
+                        resolve(document.querySelector('.hearth').style.getPropertyValue('--sheet-offset'))));
+                };
+                requestAnimationFrame(step);
+            })
+            """);
+
+        staleOffset.ShouldBe("", "the drag's deferred style write must not outlive the settle");
+    }
+
     // A tap whose finger drifts a few pixels must stay a tap. On a list too short to scroll both
     // edge flags are true, so the pull-to-collapse handler used to convert any ≥8px drift into a
     // sheet gesture and swallow the click — browsers deliver touchmove for drifts well below
