@@ -62,8 +62,13 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
     // A phone is not a desktop here, in two directions at once.
     //
     // Asking for echo cancellation opens the microphone on the platform's voice-call path, whose
-    // noise suppression and automatic gain are tuned for a human listening down a phone line rather
-    // than for a transcriber. Nothing in a dictation is ever played, so nothing should ask for it.
+    // noise suppression is tuned for a human listening down a phone line rather than for a
+    // transcriber. Nothing in a dictation is ever played, so nothing should ask for either.
+    //
+    // Automatic gain is the exception, and it was learned the hard way: with it off, an Android
+    // phone held in the hand and spoken to normally delivered a recording whose loudest peak was
+    // under a tenth of full scale, some 20 dB below speech. It is the one part of that chain whose
+    // job is the level rather than the shape of the sound, so it stays on.
     //
     // And the graph must still arrive at the context's destination. Chromium renders one that
     // reaches no output; Android does not, and every node in it — the worklet and the level meter
@@ -123,7 +128,7 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         // Reported rather than merely absent: a browser that does not say cannot be taken to agree.
         opened.GetProperty("echoCancellation").GetBoolean().ShouldBeFalse();
         opened.GetProperty("noiseSuppression").GetBoolean().ShouldBeFalse();
-        opened.GetProperty("autoGainControl").GetBoolean().ShouldBeFalse();
+        opened.GetProperty("autoGainControl").GetBoolean().ShouldBeTrue();
 
         // A graph that ends nowhere is a graph an Android device never runs.
         opened.GetProperty("reachedTheOutput").GetBoolean().ShouldBeTrue();

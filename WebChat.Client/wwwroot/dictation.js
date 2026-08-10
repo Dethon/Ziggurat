@@ -238,15 +238,19 @@ window.dictation = {
         run.stream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 channelCount: 1,
-                // Everything a phone does for a voice call is wrong for a transcriber. Asking for
-                // echo cancellation opens the microphone on the platform's voice path, and the
-                // noise suppression and automatic gain that come with it are tuned for a person
-                // listening down a line — they gate quiet speech and chew the starts of words.
-                // Nothing in a dictation is ever played, so there is no echo to cancel, and
-                // whisper does better on what the microphone actually heard.
+                // Echo cancellation opens the microphone on the platform's voice path, and the
+                // noise suppression that comes with it is tuned for a person listening down a line
+                // — it gates quiet speech and chews the starts of words. Nothing in a dictation is
+                // ever played, so there is no echo to cancel, and whisper does better on what the
+                // microphone actually heard.
                 echoCancellation: false,
                 noiseSuppression: false,
-                autoGainControl: false
+                // Automatic gain is the exception, and it is not a preference. Asked for as false,
+                // an Android phone held in the hand and spoken to normally returned a recording
+                // whose loudest peak was under a tenth of full scale — some 20 dB below speech,
+                // flat enough to read as a room rather than a person. It is the one part of that
+                // chain that works on the level rather than the shape of the sound.
+                autoGainControl: true
             }
         });
         // A track can go quiet without ending: Android mutes one when something else takes the
@@ -372,7 +376,12 @@ window.dictation = {
     // rather than in the refusal line because the composer is a textarea: on a phone that is the
     // difference between reading a report and being able to send it on.
     _report: function (run) {
-        this._note(run, 'end: ' + run.samples + ' samples, gain ' + this._gain(run).toFixed(2));
+        // The peak in its own right, not only the gain: a gain that has hit its ceiling says the
+        // recording was quiet without saying how quiet, which is the whole question.
+        const peak = this._peak(run);
+        this._note(run, 'end: ' + run.samples + ' samples, peak ' + peak + '/32767 ('
+            + (peak > 0 ? (20 * Math.log10(peak / 32768)).toFixed(1) : '-inf') + ' dBFS)'
+            + ', gain ' + this._gain(run).toFixed(2));
         this._invoke('Transcribed', run.trace.join('\n'));
     },
 
@@ -463,9 +472,13 @@ window.dictation = {
     // records quietly. This is only ever a lift and it is capped, so a recording of a quiet room
     // stays a recording of a quiet room rather than being pulled up to full scale as noise.
     _gain: function (run) {
-        const peak = run.chunks.reduce(
-            (loudest, chunk) => chunk.reduce((most, s) => Math.max(most, Math.abs(s)), loudest), 0);
+        const peak = this._peak(run);
         return peak === 0 ? 1 : Math.max(1, Math.min(8, 29000 / peak));
+    },
+
+    _peak: function (run) {
+        return run.chunks.reduce(
+            (loudest, chunk) => chunk.reduce((most, s) => Math.max(most, Math.abs(s)), loudest), 0);
     },
 
     _teardown: function (run) {
