@@ -35,6 +35,8 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
     public Exception? ThrowOnDeleteTopic { get; set; }
 
+    public Exception? ThrowOnSaveTopic { get; set; }
+
     // Holds the delete open so a test can interleave user actions with the round trip.
     public TaskCompletionSource? DeleteGate { get; set; }
 
@@ -86,6 +88,11 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     public Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false)
     {
         recorder?.Record($"save:{topic.TopicId}");
+
+        if (ThrowOnSaveTopic is not null)
+        {
+            return Task.FromException<HubResult<Nothing>>(ThrowOnSaveTopic);
+        }
 
         if (NotLive)
         {

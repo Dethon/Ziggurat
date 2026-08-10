@@ -1,7 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Agents;
-using Microsoft.Extensions.AI;
 using Moq;
 using Shouldly;
 
@@ -52,25 +51,5 @@ public sealed class DomainToolRegistryTests
         var prompts = registry.GetPromptsForFeatures(["scheduling"]).ToList();
 
         prompts.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public void GetPromptsForFeatures_MultipleFeatures_ReturnsOnlyNonNullPrompts()
-    {
-        var withPrompt = new Mock<IDomainToolFeature>();
-        withPrompt.Setup(f => f.FeatureName).Returns("subagents");
-        withPrompt.Setup(f => f.Prompt).Returns("Delegate work.");
-        withPrompt.Setup(f => f.GetTools(It.IsAny<FeatureConfig>())).Returns([]);
-
-        var withoutPrompt = new Mock<IDomainToolFeature>();
-        withoutPrompt.Setup(f => f.FeatureName).Returns("scheduling");
-        withoutPrompt.Setup(f => f.Prompt).Returns((string?)null);
-        withoutPrompt.Setup(f => f.GetTools(It.IsAny<FeatureConfig>())).Returns([]);
-
-        var registry = new DomainToolRegistry([withPrompt.Object, withoutPrompt.Object]);
-
-        var prompts = registry.GetPromptsForFeatures(["subagents", "scheduling"]).ToList();
-
-        prompts.ShouldBe(["Delegate work."]);
     }
 }

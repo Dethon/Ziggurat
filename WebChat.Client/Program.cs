@@ -27,6 +27,9 @@ builder.Services.AddScoped<IChatMessagingService, ChatMessagingService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 builder.Services.AddScoped<IApprovalService, ApprovalService>();
+builder.Services.AddScoped<AttachmentEndpointResolver>();
+builder.Services.AddScoped<IAttachmentService, AttachmentService>();
+builder.Services.AddScoped<IAttachmentUploader, HttpAttachmentUploader>();
 builder.Services.AddScoped<ApprovalResponder>();
 
 builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
@@ -58,5 +61,7 @@ _ = app.Services.GetRequiredService<SpaceEffect>();
 _ = app.Services.GetRequiredService<AgentActivityEffect>();
 _ = app.Services.GetRequiredService<AgentSettingsEffect>();
 _ = app.Services.GetRequiredService<StreamResumeEffect>();
+_ = app.Services.GetRequiredService<AttachmentEffect>();
+_ = app.Services.GetRequiredService<TopicRenameEffect>();
 
 await app.RunAsync();

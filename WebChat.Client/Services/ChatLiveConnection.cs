@@ -159,14 +159,35 @@ public sealed class ChatLiveConnection(
         _connectionEventDispatcher.HandleConnected();
     }
 
-    public async Task ReconnectIfNeededAsync()
+    // A trigger — a resume, a close, connectivity returning — rather than a request. Another
+    // reconnect already running is the work this one wanted done, so it leaves it to that one.
+    public Task ReconnectIfNeededAsync() => ReconnectAsync(waitForOneInFlight: false);
+
+    // Opening a file picker on a phone backgrounds the page, and one held open past the server's
+    // client timeout kills the connection while the person is still choosing. Their file arrives
+    // with the resume, racing the reconnect the resume itself triggered — so a caller carrying it
+    // waits for that reconnect to finish rather than being told the connection is down by the very
+    // rebuild that is about to bring it back. It goes through the same probe-or-rebuild as a
+    // resume, which is also what settles the other half of a picker's cost: the connection this
+    // caller is about to use may be a zombie that still reports Connected.
+    public async Task<bool> EnsureLiveAsync()
+    {
+        await ReconnectAsync(waitForOneInFlight: true);
+        return LiveHubConnection is not null;
+    }
+
+    private async Task ReconnectAsync(bool waitForOneInFlight)
     {
         if (_disposed)
         {
             return;
         }
 
-        if (!await _reconnectLock.WaitAsync(0))
+        if (waitForOneInFlight)
+        {
+            await _reconnectLock.WaitAsync();
+        }
+        else if (!await _reconnectLock.WaitAsync(0))
         {
             return;
         }

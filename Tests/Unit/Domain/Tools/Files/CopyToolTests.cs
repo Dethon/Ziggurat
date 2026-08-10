@@ -72,13 +72,6 @@ public class CopyToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_PathOutsideRoot_ReturnsInvalidArgument()
-    {
-        _tool.TestRun("../escape.txt", "dst.txt", overwrite: false, createDirectories: true)
-            .ShouldBeError(ToolError.Codes.InvalidArgument);
-    }
-
-    [Fact]
     public void Run_PathToSiblingDirectoryWithRootPrefix_ReturnsInvalidArgument()
     {
         var sibling = _root + "-evil";

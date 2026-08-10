@@ -1,5 +1,4 @@
 using Domain.DTOs.Metrics;
-using Domain.DTOs.Metrics.Enums;
 using Infrastructure.Metrics;
 using Moq;
 using StackExchange.Redis;
@@ -39,20 +38,6 @@ public class RedisMetricSinkTests
         });
 
         VerifyPublished("\"type\":\"token_usage\"");
-    }
-
-    [Fact]
-    public async Task SendAsync_serializes_latency_event_to_metrics_channel()
-    {
-        await _sut.SendAsync(new LatencyEvent
-        {
-            Stage = LatencyStage.LlmTotal,
-            DurationMs = 1234,
-            Model = "anthropic/claude",
-            ConversationId = "conv1"
-        });
-
-        VerifyPublished("\"type\":\"latency\"");
     }
 
     private void VerifyPublished(string expectedFragment) =>

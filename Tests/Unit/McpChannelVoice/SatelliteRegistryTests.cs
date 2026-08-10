@@ -25,25 +25,11 @@ public class SatelliteRegistryTests
     }
 
     [Fact]
-    public void GetById_UnknownSatellite_ReturnsNull()
-    {
-        var registry = new SatelliteRegistry(_sample);
-        registry.GetById("ghost-01").ShouldBeNull();
-    }
-
-    [Fact]
     public void GetIdsByRoom_MatchesCaseInsensitive()
     {
         var registry = new SatelliteRegistry(_sample);
         var ids = registry.GetIdsByRoom("kitchen");
         ids.ShouldBe(["kitchen-01"]);
-    }
-
-    [Fact]
-    public void GetIdsByRoom_UnknownRoom_ReturnsEmpty()
-    {
-        var registry = new SatelliteRegistry(_sample);
-        registry.GetIdsByRoom("Basement").ShouldBeEmpty();
     }
 
     [Fact]

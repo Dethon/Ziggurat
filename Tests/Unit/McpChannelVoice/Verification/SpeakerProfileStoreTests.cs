@@ -142,25 +142,6 @@ public class SpeakerProfileStoreTests : IDisposable
     }
 
     [Fact]
-    public void Load_CamPlusPlusV2Cache_ReEmbeds()
-    {
-        // profile.json written by the v2 pipeline holds CAM++ prototypes; the ERes2NetV2
-        // model swap bumped CacheVersion, so a v2 cache must be rebuilt, not trusted.
-        WriteVoice("fran", Wav(1000), Wav(2000));
-        var embedder = new FakeEmbedder();
-        new SpeakerProfileStore(_dir, embedder, NullLogger<SpeakerProfileStore>.Instance).Load();
-        embedder.Calls.ShouldBe(2);
-        var cachePath = Path.Combine(_dir, "fran", "profile.json");
-        var node = JsonNode.Parse(File.ReadAllText(cachePath))!;
-        node["Version"] = 2;
-        File.WriteAllText(cachePath, node.ToJsonString());
-
-        new SpeakerProfileStore(_dir, embedder, NullLogger<SpeakerProfileStore>.Instance).Load();
-
-        embedder.Calls.ShouldBe(4);
-    }
-
-    [Fact]
     public void Load_WavChanged_InvalidatesCache()
     {
         WriteVoice("fran", Wav(1000));

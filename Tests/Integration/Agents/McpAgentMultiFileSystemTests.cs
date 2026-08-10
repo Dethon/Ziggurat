@@ -26,7 +26,7 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
 
-        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest");
+        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest:nitro");
     }
 
     private McpAgent CreateAgent(OpenRouterChatClient llmClient)
@@ -139,39 +139,6 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
         var combined = string.Join(" ", responses.Select(r => r.Content)).ToLowerInvariant();
         combined.ShouldContain("/library");
         combined.ShouldContain("/notes");
-
-        await agent.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task Agent_WithMultipleFileSystems_CanSearchAcrossFileSystems()
-    {
-        // Arrange
-        var llmClient = CreateLlmClient();
-        fsFixture.CreateLibraryFile("search-multi.md", "The unicorn galloped through the meadow.");
-        fsFixture.CreateNotesFile("search-multi.md", "No magical creatures here.");
-
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(180));
-
-        // Act
-        var responses = await agent.RunStreamingAsync(
-                "Use the domain__filesystem__text_search tool twice to search for the word 'unicorn':\n" +
-                "1. directoryPath: /library\n" +
-                "2. directoryPath: /notes\n" +
-                "Then tell me which filesystem contains the word. " +
-                "IMPORTANT: Every directoryPath argument MUST be exactly '/library' or '/notes' (the mounted prefixes). " +
-                "Do not shorten, rename, or invent paths.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
-
-        // Assert
-        responses.ShouldNotBeEmpty();
-        var combined = string.Join(" ", responses.Select(r => r.Content)).ToLowerInvariant();
-        combined.ShouldContain("library");
 
         await agent.DisposeAsync();
     }

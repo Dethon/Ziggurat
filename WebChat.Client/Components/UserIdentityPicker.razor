@@ -1,8 +1,11 @@
+@using Microsoft.JSInterop
+@using WebChat.Client.Helpers
 @inherits StoreSubscriberComponent
 @inject UserIdentityStore Store
 @inject IDispatcher Dispatcher
+@inject IJSRuntime Js
 
-<div class="user-identity-picker @(_dropdownOpen ? "open" : "")">
+<div class="user-identity-picker @(_dropdownOpen ? "open" : "")" @ref="_root">
     <button class="avatar-button" @onclick="ToggleDropdown" @onclick:stopPropagation="true" title="@(_selectedUser?.Id ?? "Select user")">
         @if (_selectedUser is not null)
         {
@@ -16,7 +19,6 @@
 
     @if (_dropdownOpen)
     {
-        <div class="dropdown-backdrop" @onclick="CloseDropdown"></div>
         <div class="user-dropdown-menu">
             @foreach (var user in _availableUsers)
             {
@@ -34,6 +36,14 @@
     private bool _dropdownOpen;
     private UserConfig? _selectedUser;
     private IReadOnlyList<UserConfig> _availableUsers = [];
+    private ElementReference _root;
+    private OutsidePressWatcher? _watcher;
+
+    private OutsidePressWatcher Watcher => _watcher ??= new OutsidePressWatcher(Js, () =>
+    {
+        _dropdownOpen = false;
+        StateHasChanged();
+    });
 
     protected override void OnInitialized()
     {
@@ -53,9 +63,13 @@
         _dropdownOpen = !_dropdownOpen;
     }
 
-    private void CloseDropdown()
+    protected override Task OnAfterRenderAsync(bool firstRender) =>
+        Watcher.SyncAsync(_dropdownOpen, _root);
+
+    public override void Dispose()
     {
-        _dropdownOpen = false;
+        _watcher?.Dispose();
+        base.Dispose();
     }
 
     private void SelectUser(UserConfig user)

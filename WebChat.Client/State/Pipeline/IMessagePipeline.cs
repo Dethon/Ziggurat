@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
@@ -6,7 +7,9 @@ namespace WebChat.Client.State.Pipeline;
 
 public interface IMessagePipeline
 {
-    string SubmitUserMessage(string topicId, string content, string? senderId);
+    string SubmitUserMessage(
+        string topicId, string content, string? senderId,
+        IReadOnlyList<AttachmentReference>? attachments = null);
 
     void LoadHistory(string topicId, IEnumerable<ChatHistoryMessage> messages);
 

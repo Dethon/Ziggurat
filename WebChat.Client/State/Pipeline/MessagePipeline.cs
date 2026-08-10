@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
@@ -15,7 +16,9 @@ public sealed class MessagePipeline(
     private readonly Dictionary<string, string> _pendingUserMessages = new();
     private readonly Lock _lock = new();
 
-    public string SubmitUserMessage(string topicId, string content, string? senderId)
+    public string SubmitUserMessage(
+        string topicId, string content, string? senderId,
+        IReadOnlyList<AttachmentReference>? attachments = null)
     {
         var correlationId = Guid.NewGuid().ToString("N");
 
@@ -33,7 +36,8 @@ public sealed class MessagePipeline(
             Role = "user",
             Content = content,
             SenderId = senderId,
-            Timestamp = DateTimeOffset.UtcNow
+            Timestamp = DateTimeOffset.UtcNow,
+            Attachments = attachments
         }));
 
         return correlationId;
@@ -47,7 +51,8 @@ public sealed class MessagePipeline(
             Content = h.Content,
             MessageId = h.MessageId,
             SenderId = h.SenderId,
-            Timestamp = h.Timestamp
+            Timestamp = h.Timestamp,
+            Attachments = h.Attachments
         }).ToList();
 
         // MessagesLoaded records every message id it carries, so the finalized set follows.

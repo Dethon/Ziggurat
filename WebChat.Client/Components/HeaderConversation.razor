@@ -1,11 +1,26 @@
 @inherits StoreSubscriberComponent
+@using Microsoft.JSInterop
 @inject TopicsStore TopicsStore
 @inject StreamingStore StreamingStore
+@inject IDispatcher Dispatcher
+@inject IJSRuntime Js
 
 @if (Selected is { } topic)
 {
     <div class="header-conversation">
-        <span class="header-conversation-name @(SelectedIsStreaming ? "glow" : "")">@topic.Name</span>
+        @if (_editingTopicId == topic.TopicId)
+        {
+            <input class="header-conversation-edit" @ref="_nameInput" maxlength="120"
+                   @bind="_draft" @bind:event="oninput"
+                   @onkeydown="HandleKeyDown" @onblur="Commit"
+                   aria-label="Conversation name" />
+        }
+        else
+        {
+            <span class="header-conversation-name @(SelectedIsStreaming ? "glow" : "")"
+                  role="button" tabindex="0" title="Rename conversation"
+                  @onclick="() => BeginEdit(topic)">@topic.Name</span>
+        }
         <span class="header-conversation-time">@FormatTime(topic.LastMessageAt ?? topic.CreatedAt)</span>
     </div>
 }
@@ -15,6 +30,13 @@
     private string? _selectedTopicId;
     private IReadOnlySet<string> _streamingTopics = new HashSet<string>();
 
+    // Holds which conversation is being renamed rather than a bare flag, so switching
+    // conversations mid-edit closes the field instead of retitling the new one.
+    private string? _editingTopicId;
+    private string _draft = "";
+    private bool _focusPending;
+    private ElementReference _nameInput;
+
     protected override void OnInitialized()
     {
         Subscribe(TopicsStore.StateObservable, s => s.Topics, t => _topics = t);
@@ -22,8 +44,55 @@
         Subscribe(StreamingStore.StateObservable, s => s.StreamingTopics, ids => _streamingTopics = ids);
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPending)
+        {
+            return;
+        }
+
+        _focusPending = false;
+        try
+        {
+            await Js.InvokeVoidAsync("inlineEdit.focusAndSelect", _nameInput);
+        }
+        catch (JSException) { /* the field is still usable unfocused */ }
+    }
+
     private StoredTopic? Selected => _topics.FirstOrDefault(t => t.TopicId == _selectedTopicId);
     private bool SelectedIsStreaming => _selectedTopicId is not null && _streamingTopics.Contains(_selectedTopicId);
 
     private static string FormatTime(DateTime utc) => utc.ToLocalTime().ToString("MMM d, h:mm tt");
+
+    private void BeginEdit(StoredTopic topic)
+    {
+        _editingTopicId = topic.TopicId;
+        _draft = topic.Name;
+        _focusPending = true;
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            Commit();
+        }
+        else if (e.Key == "Escape")
+        {
+            _editingTopicId = null;
+        }
+    }
+
+    // Enter commits and then the field goes away, which blurs it — the cleared id keeps that
+    // trailing blur from dispatching the same rename twice, and makes Escape's cancel final.
+    private void Commit()
+    {
+        if (_editingTopicId is not { } topicId)
+        {
+            return;
+        }
+
+        _editingTopicId = null;
+        Dispatcher.Dispatch(new RenameTopic(topicId, _draft));
+    }
 }

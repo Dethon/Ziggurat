@@ -451,7 +451,35 @@ internal sealed class ConversationGroup(
         // abandoned-warmup observer must not name it a second time.
         _warmupSurfaced = true;
         await state.Warmup;
+        // After the warmup, because the mounts only exist once the session has been built. An
+        // agent with no sandbox lands nothing and keeps the attachment as model context, which is
+        // the whole feature for that agent.
+        await LandAttachmentsAsync(x.Channel, turn, state, userMessage);
         return StreamAgentTurn(state, userMessage, turn);
+    }
+
+    private async Task LandAttachmentsAsync(
+        IChannelConnection channel, Turn turn, GroupState state, ChatMessage userMessage)
+    {
+        if (turn.Message.Attachments is not { Count: > 0 } attachments)
+        {
+            return;
+        }
+
+        var landed = await AttachmentLanding.LandAsync(
+            new AttachmentLanding.Landing(
+                state.Agent.GetFileSystemRegistry(state.Thread),
+                attachments,
+                (id, ct) => channel.FetchAttachmentAsync(id, ct),
+                state.DeliveryKey.ConversationId,
+                turn.TurnKey),
+            logger,
+            _turnCt);
+
+        // Recorded on the message rather than written into its text: the model is told on the
+        // way out, by the same step that puts the bytes back, so the transcript a person reads
+        // never grows an internal path.
+        userMessage.SetSandboxPaths(landed);
     }
 
     // Deliver each message's reply to the channel that actually sent it. The group is keyed
@@ -487,6 +515,12 @@ internal sealed class ConversationGroup(
         userMessage.SetSatelliteId(message.SatelliteId);
         userMessage.SetDismissedAlert(message.DismissedAlert);
         userMessage.SetConfigPatch(message.ConfigPatch);
+        // References only. The bytes rest wherever the channel keeps them and are put back on the
+        // way to the model, so a history read costs the same whether or not files were sent
+        // (ADR 0020). The channel id rides along because it names who still holds them.
+        userMessage.SetAttachments(message.Attachments);
+        userMessage.SetAttachmentChannelId(
+            message.Attachments is { Count: > 0 } ? message.ChannelId : null);
         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
         userMessage.SetConversationContext(
             DeliveryTargetResolver.BuildConversationContext(message, turn.Targets));

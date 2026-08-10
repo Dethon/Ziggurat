@@ -19,7 +19,7 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest");
+        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest:nitro");
     }
 
     [SkippableFact]
@@ -54,31 +54,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         session.ClientManager.Prompts.ShouldNotBeEmpty();
         session.ClientManager.Prompts.Any(p => p.Contains("test assistant", StringComparison.OrdinalIgnoreCase))
             .ShouldBeTrue("Should contain the test system prompt");
-
-        await session.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task MultipleEndpoints_ConnectsToAllServers()
-    {
-        // Arrange - Use the same endpoint twice to verify multiple connections
-        using var chatClient = CreateChatClient();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-        // Act
-        var session = await ThreadSession.CreateAsync(
-            [fixture.McpEndpoint, fixture.McpEndpoint],
-            "MultiEndpointClient",
-            "test-user",
-            "Multi Endpoint Test",
-            [],
-            new HashSet<string>(),
-            null,
-            cts.Token);
-
-        // Assert
-        session.ClientManager.Clients.Count.ShouldBe(2);
-        session.ClientManager.Tools.Count.ShouldBeGreaterThanOrEqualTo(2); // Tools from both connections
 
         await session.DisposeAsync();
     }

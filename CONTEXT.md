@@ -164,6 +164,43 @@ end it, and a stale one can do neither — once the topic has moved on to anothe
 reply, the lease that opened the old one no longer speaks for it.
 _Avoid_: stream handle, stream token, stream id
 
+## Chat attachments
+
+**Attachment**:
+A file a person sends as part of a turn. It is part of what they said rather than
+something added on their behalf, so it is never decoration, and it reaches the model
+as content of the same message as the text. A turn may carry attachments and no text
+at all.
+_Avoid_: upload, file, media, blob
+
+**Attachment reference**:
+What stands in for an attachment everywhere the bytes are not wanted: where the file
+rests, what kind it is, what it is called and how large it is. It is what a
+conversation's history keeps, so reading a history costs the same whether or not
+files were ever sent.
+_Avoid_: file id, attachment metadata, pointer, handle
+
+**Upload store**:
+Where an attachment's bytes rest between being sent and being read, for a channel that
+would otherwise have nowhere to keep them. It is a holding area and not a place anyone
+works: nothing is edited there, nothing is found there by looking, its contents are
+reached only by naming a reference, and what it holds is eventually swept. A channel
+whose transport already keeps the file has none.
+_Avoid_: attachment store, staging mount, uploads folder
+
+**Hydration**:
+Putting an attachment's bytes back where its reference sits, on the way to the model
+and never on the way in. It reaches back a fixed distance, so an attachment stops
+being visible to the model long before its reference leaves the history. A reference
+whose bytes are gone hydrates to a placeholder naming the file.
+_Avoid_: rehydration, inlining, resolving, expansion
+
+**Attachment capability**:
+Whether a model accepts a kind of attachment at all. It belongs to the model and not
+to the agent or the conversation, so it changes when the model does, and it is always
+asked of the model the turn will actually run on.
+_Avoid_: modality support, model features, vision support
+
 ## Channel connection
 
 **Connection generation**:

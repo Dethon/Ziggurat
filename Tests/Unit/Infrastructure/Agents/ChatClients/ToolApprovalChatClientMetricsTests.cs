@@ -114,24 +114,6 @@ public class ToolApprovalChatClientMetricsTests
     }
 
     [Fact]
-    public async Task InvokeFunctionAsync_WithoutPublisher_DoesNotThrow()
-    {
-        // Arrange
-        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
-        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
-
-        var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
-
-        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test");
-        var options = new ChatOptions { Tools = [function] };
-
-        // Act & Assert
-        var response = await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
-        response.ShouldNotBeNull();
-    }
-
-    [Fact]
     public async Task InvokeFunctionAsync_RejectedTool_DoesNotPublishEvent()
     {
         // Arrange

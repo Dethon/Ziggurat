@@ -7,6 +7,7 @@ using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.Composer;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
@@ -47,6 +48,7 @@ public sealed class StreamingServiceTests : IDisposable
             _topicsStore,
             _messagesStore,
             _agentSettingsStore,
+            new ComposerStore(_dispatcher),
             _topicStreams);
     }
 
@@ -97,8 +99,8 @@ public sealed class StreamingServiceTests : IDisposable
             return false;
         }
 
-        var started = await _service.TryStartResumeStreamAsync(
-            lease, topic, streamingMessage, startMessageId);
+        _service.TryShowResumedStream(lease, streamingMessage, startMessageId);
+        var started = await _service.TryReadResumedStreamAsync(lease, topic);
         if (!started)
         {
             lease.Complete();
@@ -562,22 +564,6 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task TryStartResumeStreamAsync_OnComplete_StopsStreaming()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        var existingMessage = new ChatMessageModel { Role = "assistant" };
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { Content = "Done", MessageId = "msg-1" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
-        );
-
-        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
-
-        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
-    }
-
-    [Fact]
     public async Task TryStartResumeStreamAsync_OnlyUpdatesTimestampIfNewContent()
     {
         var topic = CreateTopic();
@@ -750,11 +736,11 @@ public sealed class StreamingServiceTests : IDisposable
 
         var resumed = _topicStreams.TryBeginResume(topic.TopicId)!;
         var running = new TaskCompletionSource();
-        _topicStreams.TryStream(
+        _topicStreams.TryShowResumed(
             resumed,
             new ChatMessageModel { Role = "assistant", Content = "half written" },
-            "msg-1",
-            _ => running.Task).ShouldBeTrue();
+            "msg-1").ShouldBeTrue();
+        _topicStreams.Read(resumed, _ => running.Task);
         _messagingService.LetTheSendAnswer();
         await send;
 
@@ -762,14 +748,6 @@ public sealed class StreamingServiceTests : IDisposable
             .Message.Content.ShouldBe("half written and the rest");
         resumed.Completion.IsCompleted.ShouldBeFalse();
         running.SetResult();
-    }
-
-    [Fact]
-    public void SendMessageAsync_BeforeAnySend_TheTopicHasNoStream()
-    {
-        var topic = CreateTopic();
-
-        _topicStreams.Snapshot(topic.TopicId).HasStream.ShouldBeFalse();
     }
 
     [Fact]

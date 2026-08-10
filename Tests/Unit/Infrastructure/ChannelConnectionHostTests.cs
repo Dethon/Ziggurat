@@ -28,7 +28,7 @@ public class ChannelConnectionHostTests
             new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9001" },
             new ChannelEndpoint { ChannelId = "ch-2", Endpoint = "http://localhost:9002" }
         };
-        var sut = new ChannelConnectionHost(endpoints, [first, second], _catalog, _logger);
+        var sut = new ChannelConnectionHost(endpoints, [first, second], () => _catalog, _logger);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         _ = sut.StartAsync(cts.Token);
@@ -47,7 +47,7 @@ public class ChannelConnectionHostTests
         var configured = new FakeMcpChannelConnection("ch-1");
         var unconfigured = new FakeMcpChannelConnection("ch-2");
         var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9001" } };
-        var sut = new ChannelConnectionHost(endpoints, [configured, unconfigured], _catalog, _logger);
+        var sut = new ChannelConnectionHost(endpoints, [configured, unconfigured], () => _catalog, _logger);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         _ = sut.StartAsync(cts.Token);
@@ -70,7 +70,7 @@ public class ChannelConnectionHostTests
         var warnings = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
         using var factory = LoggerFactory.Create(builder => builder.AddProvider(warnings));
         var sut = new ChannelConnectionHost(
-            endpoints, [connection], _catalog, factory.CreateLogger<ChannelConnectionHost>());
+            endpoints, [connection], () => _catalog, factory.CreateLogger<ChannelConnectionHost>());
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         _ = sut.StartAsync(cts.Token);
@@ -93,7 +93,7 @@ public class ChannelConnectionHostTests
         };
 
         var error = Should.Throw<InvalidOperationException>(
-            () => new ChannelConnectionHost(endpoints, [connection], _catalog, _logger));
+            () => new ChannelConnectionHost(endpoints, [connection], () => _catalog, _logger));
 
         error.Message.ShouldContain("ch-1");
         connection.RunCount.ShouldBe(0);
@@ -104,7 +104,7 @@ public class ChannelConnectionHostTests
     {
         var fake = new FakeMcpChannelConnection("ch-1");
         var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9001" } };
-        var sut = new ChannelConnectionHost(endpoints, [fake], _catalog, _logger);
+        var sut = new ChannelConnectionHost(endpoints, [fake], () => _catalog, _logger);
 
         using var cts = new CancellationTokenSource();
         var task = sut.StartAsync(cts.Token);
@@ -130,10 +130,10 @@ internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelCo
     public IReadOnlyList<AgentCatalogEntry>? Agents { get; private set; }
 
     public async Task RunAsync(
-        string endpoint, IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
+        string endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct)
     {
         Endpoint = endpoint;
-        Agents = agents;
+        Agents = catalog();
         Interlocked.Increment(ref _runCount);
         _started.TrySetResult();
 

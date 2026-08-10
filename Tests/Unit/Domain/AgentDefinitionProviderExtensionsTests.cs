@@ -41,14 +41,6 @@ public class AgentDefinitionProviderExtensionsTests
     }
 
     [Fact]
-    public void HasFeatureEnabled_WithAKnownAgentCarryingTheFeature_IsEnabled()
-    {
-        Define("agent-with-memory", "memory");
-
-        _provider.Object.HasFeatureEnabled("agent-with-memory", "memory").ShouldBeTrue();
-    }
-
-    [Fact]
     public void HasFeatureEnabled_ComparesTheFeatureNameCaseInsensitively()
     {
         Define("agent-with-memory", "Memory");

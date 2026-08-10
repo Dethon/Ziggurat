@@ -5,19 +5,10 @@ AI agent via Telegram/WebChat/MessageBus using .NET 10 LTS, MCP, and OpenRouter 
 
 `satellite/` is `nabu-satellite`, a standalone Rust crate outside the .NET solution — read `satellite/CLAUDE.md` before touching it.
 
-## Verify Before Assuming
-
-Before proposing any architectural change or debugging hypothesis, verify your assumptions against the actual state (read the file, run the command, check the config). Never assume something is missing or broken without evidence.
-
-## Communication Style
-
-Use plain language and short sentences, in replies and in docs. Avoid jargon and overly compressed phrasing.
-
 ## Build, Test & Format
 
 - `Tests/Unit` runs standalone. `Tests/Integration` and E2E tests (`[Trait("Category", "E2E")]`) need Docker, but their fixtures spin up the containers themselves (testcontainers for integration, the compose stack for E2E) — just run `dotnet test`; set `PLAYWRIGHT_HEADLESS=false` to watch the browser.
 - The pre-commit hook (`.githooks/pre-commit`, wired via `core.hooksPath`) runs `dotnet format` over staged `.cs` files and re-stages them **whole** — partial/hunk staging does not survive a commit; make the working tree match the commit you want.
-- `.editorconfig` sets `insert_final_newline = false`: `.cs` files have **no trailing newline**.
 
 ## Rules & TDD
 

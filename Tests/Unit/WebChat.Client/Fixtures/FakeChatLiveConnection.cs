@@ -23,6 +23,8 @@ public sealed class FakeChatLiveConnection(CallRecorder? recorder = null) : ICha
 
     public Task ReconnectIfNeededAsync() => Task.CompletedTask;
 
+    public Task<bool> EnsureLiveAsync() => Task.FromResult(false);
+
     // Not live throughout: this fake stands in for the whole live connection in tests that
     // are about something else. A test about a hub call uses the real live connection over
     // FakeHubConnection instead.

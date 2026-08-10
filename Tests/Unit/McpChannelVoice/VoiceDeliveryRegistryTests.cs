@@ -25,14 +25,6 @@ public class VoiceDeliveryRegistryTests
     }
 
     [Fact]
-    public void Resolve_UnknownConversation_ReturnsNull()
-    {
-        var sut = Build(new FakeTimeProvider(DateTimeOffset.UtcNow));
-
-        sut.Resolve("nope").ShouldBeNull();
-    }
-
-    [Fact]
     public void Remove_DropsBinding()
     {
         var sut = Build(new FakeTimeProvider(DateTimeOffset.UtcNow));

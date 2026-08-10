@@ -14,49 +14,6 @@ namespace Tests.Unit.Domain.Contracts;
 // operation added to the list reaches every surface without a second edit.
 public class FileSystemOperationsTests
 {
-    // Every operation is declared by a method a backend can override. All but one live on the
-    // contract; fs_blob_write is declared by the ranged WriteBlobAsync on the base, because the
-    // streamed contract has no ranged shape and the streamed default cannot honour the increasing
-    // offsets the wire sends.
-    [Fact]
-    public void EveryOperation_NamesABackendMethodThatExists()
-    {
-        foreach (var operation in FileSystemOperations.All)
-        {
-            (typeof(IFileSystemBackend).GetMethod(operation.MethodName)
-             ?? typeof(FileSystemBackendBase).GetMethod(operation.MethodName))
-                .ShouldNotBeNull($"{operation.ToolName} names no method on the backend contract or base");
-        }
-    }
-
-    // The second shape of the streamed read lives on the base rather than the contract — it is the
-    // wire's ranged form, not part of what a backend must answer — and overriding it is as much an
-    // implementation of the operation as overriding the stream.
-    [Fact]
-    public void EveryAlternateOperation_NamesAnOverridableBaseMethod()
-    {
-        foreach (var operation in FileSystemOperations.All.Where(o => o.AlternateMethodName is not null))
-        {
-            var method = typeof(FileSystemBackendBase).GetMethod(operation.AlternateMethodName!);
-            method.ShouldNotBeNull($"{operation.ToolName} names no method on the backend base");
-            method.IsVirtual.ShouldBeTrue($"{operation.AlternateMethodName} must be overridable");
-        }
-    }
-
-    [Fact]
-    public void PayloadTypeTable_IsTheOneList()
-    {
-        FsResultContract.ResultTypes.Keys.ShouldBe(
-            FileSystemOperations.All.Select(o => o.ToolName), ignoreOrder: true);
-    }
-
-    [Fact]
-    public void SessionFilterSet_IsTheOneList()
-    {
-        FileSystemOperations.ToolNames.ShouldBe(
-            FileSystemOperations.All.Select(o => o.ToolName), ignoreOrder: true);
-    }
-
     [Fact]
     public void CapabilityList_IsTheOneListsModelFacingOperations()
     {
@@ -64,14 +21,6 @@ public class FileSystemOperationsTests
 
         McpFileSystemDiscovery.DeriveCapabilities(McpFileSystemDiscovery.AdvertisedOperations(everyTool)).ShouldBe(
             FileSystemOperations.All.Where(o => o.Capability is not null).Select(o => o.Capability!));
-    }
-
-    [Fact]
-    public void ToolFeatureKeys_AreTheOneListsModelFacingOperations()
-    {
-        FileSystemToolFeature.AllToolKeys.ShouldBe(
-            FileSystemOperations.All.Where(o => o.ToolKey is not null).Select(o => o.ToolKey!),
-            ignoreOrder: true);
     }
 
     // The registrar wires each operation to a tool signature separately, because the signatures

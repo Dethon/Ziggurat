@@ -114,6 +114,92 @@ window.chatInput = {
     reset: function (element) {
         if (!element) return;
         element.style.height = 'auto';
+    },
+
+    // Pasting a screenshot and dropping files both end up in the composer's own file input, so
+    // there is one path into the picker rather than three. The input's change event is what the
+    // component is already listening to.
+    bindFileDrops: function (composer) {
+        if (!composer) return;
+        const input = composer.querySelector('input[type=file]');
+        if (!input) return;
+
+        const hand = function (files) {
+            if (!files || files.length === 0) return false;
+            const transfer = new DataTransfer();
+            for (const file of files) transfer.items.add(file);
+            input.files = transfer.files;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        };
+
+        composer.addEventListener('dragover', function (e) { e.preventDefault(); });
+        composer.addEventListener('drop', function (e) {
+            if (hand(e.dataTransfer && e.dataTransfer.files)) e.preventDefault();
+        });
+
+        // Paste is bound on the document: a screenshot is pasted wherever the caret happens to
+        // be, and the composer's textarea is not always focused when it lands. One document
+        // listener at a time — each rebind replaces the last, whose composer is gone, so a stack
+        // of them would hand every paste to detached inputs too.
+        if (this._onPaste) document.removeEventListener('paste', this._onPaste);
+        this._onPaste = function (e) {
+            if (!e.clipboardData) return;
+            const files = Array.from(e.clipboardData.files || []);
+            if (files.length > 0 && hand(files)) e.preventDefault();
+        };
+        document.addEventListener('paste', this._onPaste);
+    }
+};
+
+// ===================================
+// Dismissing a dropdown
+// ===================================
+
+// A dropdown closes when a press lands outside it, and that press must still reach whatever it
+// was aimed at. A full-screen backdrop cannot do this: it is the topmost thing under the finger,
+// so it eats the press. On a phone the menus sit over the conversation list, which made every
+// selection after using one cost two taps — one to dismiss, one to land.
+//
+// Listening on the document instead, in the capture phase, and never calling preventDefault or
+// stopPropagation: the press closes the menu on its way to the row it was meant for.
+window.outsidePress = {
+    _watchers: new Map(),
+
+    watch: function (root, dotnetRef) {
+        if (!root) return;
+        this.unwatch(root);
+        const onDown = e => {
+            if (root.contains(e.target)) return;
+            window.outsidePress.unwatch(root);
+            dotnetRef.invokeMethodAsync('CloseFromOutsidePress');
+        };
+        document.addEventListener('pointerdown', onDown, { capture: true });
+        this._watchers.set(root, onDown);
+    },
+
+    unwatch: function (root) {
+        const onDown = root && this._watchers.get(root);
+        if (!onDown) return;
+        document.removeEventListener('pointerdown', onDown, true);
+        this._watchers.delete(root);
+    }
+};
+
+// ===================================
+// Attachments
+// ===================================
+
+window.attachments = {
+    open: function (url, fileName) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName || '';
+        link.target = '_blank';
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     }
 };
 
@@ -257,6 +343,13 @@ Object.assign(window.hearthSheet, {
         this._rows = sheet.querySelector('.hearth-rows');
         // Drag the sheet from anywhere in the chrome (handle, search, agent strip, padding).
         sheet.addEventListener('pointerdown', this._onDown);
+        // Chromium decides what a gesture was from the touch stream, and the pointer handlers
+        // above never touch it. Leaving a fast drag's touchmoves unconsumed puts the input
+        // pipeline in a state where the next tap arrives as pointerdown/touchstart/pointerup/
+        // touchend and no click at all, for about a second — which is why flicking the drawer
+        // open and then picking a conversation cost two taps. preventDefault on pointermove
+        // does not reach that decision; only the touch event does.
+        sheet.addEventListener('touchmove', this._onSheetTouchMove, { passive: false });
         // The conversation list scrolls natively; a pull-down at its very top collapses the
         // sheet. Touch handlers (not pointer) so normal list scrolling keeps its momentum.
         if (this._rows) {
@@ -304,15 +397,24 @@ Object.assign(window.hearthSheet, {
             if (h._axisLocked === 'y') h._el.classList.add('dragging');
         }
         if (h._axisLocked !== 'y') return;          // horizontal/ambiguous → ignore (no swipe-delete in v1)
-        requestAnimationFrame(() => {
-            const base = h._el.getBoundingClientRect().height; // ~92dvh
-            const restPeek = base - 64;
-            const offset = Math.min(restPeek, Math.max(0, h._startOffset + dy));
-            h._el.style.setProperty('--sheet-offset', offset + 'px');
-        });
+        // Written synchronously, like the rows handler: deferring this to requestAnimationFrame
+        // let the final move's write land after the release had already settled, leaving a stale
+        // inline offset that overrode every later detent change — the sheet sat where the drag
+        // left it and a topic tap selected invisibly instead of closing the drawer.
+        const base = h._el.getBoundingClientRect().height; // ~92dvh
+        const restPeek = base - 64;
+        const offset = Math.min(restPeek, Math.max(0, h._startOffset + dy));
+        h._el.style.setProperty('--sheet-offset', offset + 'px');
         h._vy = (e.clientY - h._lastY) / Math.max(1, e.timeStamp - h._lastT);
         h._lastY = e.clientY; h._lastT = e.timeStamp;
         e.preventDefault();
+    },
+
+    // Gated on _dragging rather than on the axis lock: the lock only engages 8px in, and the
+    // moves before it are part of the same gesture. _onDown leaves _dragging false for touches
+    // inside the conversation list, so its native scrolling is untouched.
+    _onSheetTouchMove: function (e) {
+        if (window.hearthSheet._dragging) e.preventDefault();
     },
 
     _onUp: function () {
@@ -322,14 +424,28 @@ Object.assign(window.hearthSheet, {
         document.removeEventListener('pointermove', h._onMove);
         document.removeEventListener('pointerup', h._onUp);
         const wasDrag = h._axisLocked === 'y';
+        const traveled = Math.abs(h._lastY - h._startY);
         h._settle();
-        // After a real drag that began on the handle, swallow the trailing click so the
-        // handle's @onclick (CycleDetent) doesn't fire on top of the committed detent.
-        if (wasDrag) {
-            const swallow = function (ev) { ev.stopPropagation(); ev.preventDefault(); };
-            document.addEventListener('click', swallow, { capture: true, once: true });
-            setTimeout(() => document.removeEventListener('click', swallow, true), 350);
+        // After a real drag, swallow the trailing click so the handle's @onclick
+        // (CycleDetent) doesn't fire on top of the committed detent. Below the tap slop
+        // the gesture was a tap whose finger drifted, and its click is the intent.
+        const TAP_SLOP = 24;                        // px, tunable (spec §10)
+        if (wasDrag && traveled >= TAP_SLOP) h._swallowTrailingClick();
+    },
+
+    // A drag's own trailing click (a mouse release always sends one) arrives with no new
+    // pointerdown in front of it. A genuine follow-up tap starts with one, so the first
+    // pointerdown disarms the swallow instead of letting it eat the tap that switches
+    // conversations right after the sheet was dragged open.
+    _swallowTrailingClick: function () {
+        function cleanup() {
+            document.removeEventListener('click', swallow, true);
+            document.removeEventListener('pointerdown', cleanup, true);
         }
+        function swallow(ev) { ev.stopPropagation(); ev.preventDefault(); cleanup(); }
+        document.addEventListener('click', swallow, { capture: true });
+        document.addEventListener('pointerdown', cleanup, { capture: true });
+        setTimeout(cleanup, 350);
     },
 
     _settle: function () {
@@ -367,16 +483,24 @@ Object.assign(window.hearthSheet, {
         const y = e.touches[0].clientY;
         const dy = y - h._rowsStartY;
         if (h._rowsMode === null) {
-            if (Math.abs(dy) < 8) return;           // wait for a clear vertical intent
+            // On a list too short to scroll both edge flags are true, so this decides for
+            // every touch. Below the tap slop the movement is a tap whose finger drifted —
+            // engaging the sheet would eat the tap's click on browsers that deliver
+            // touchmove under their own click slop (tunable, spec §10).
+            const TAP_SLOP = 24;
+            if (Math.abs(dy) < TAP_SLOP) return;
             // Pull down at the top collapses; pull up at the bottom expands. Otherwise hand
             // the gesture back to the browser for normal (momentum) scrolling.
-            if ((h._rowsAtTop && dy > 0) || (h._rowsAtBottom && dy < 0)) { h._rowsMode = 'sheet'; h._el.classList.add('dragging'); }
+            if ((h._rowsAtTop && dy > 0) || (h._rowsAtBottom && dy < 0)) {
+                h._rowsMode = 'sheet'; h._el.classList.add('dragging');
+                h._rowsStartY = y;                  // track from here: no slop-sized jump
+            }
             else { h._rowsMode = 'native'; return; }
         }
         e.preventDefault();
         const base = h._el.getBoundingClientRect().height;
         const restPeek = base - 64;
-        const offset = Math.min(restPeek, Math.max(0, h._startOffset + dy));
+        const offset = Math.min(restPeek, Math.max(0, h._startOffset + (y - h._rowsStartY)));
         h._el.style.setProperty('--sheet-offset', offset + 'px');
         h._vy = (y - h._lastY) / Math.max(1, e.timeStamp - h._lastT);
         h._lastY = y; h._lastT = e.timeStamp;
@@ -389,9 +513,7 @@ Object.assign(window.hearthSheet, {
             h._axisLocked = 'y';
             h._settle();
             // Swallow the trailing click so a pull-to-collapse doesn't also select a topic.
-            const swallow = function (ev) { ev.stopPropagation(); ev.preventDefault(); };
-            document.addEventListener('click', swallow, { capture: true, once: true });
-            setTimeout(() => document.removeEventListener('click', swallow, true), 350);
+            h._swallowTrailingClick();
         }
         h._rowsMode = null;
     },
@@ -426,6 +548,19 @@ window.clipboardHelper = {
             document.execCommand('copy');
             document.body.removeChild(ta);
         }
+    }
+};
+
+// The field replaces the title in place, so the name it opens with is the one already on
+// screen: selecting it means typing replaces the title and a tap places the caret instead.
+// rAF because the input only exists after Blazor's render commits.
+window.inlineEdit = {
+    focusAndSelect: function (el) {
+        if (!el) return;
+        requestAnimationFrame(() => {
+            el.focus();
+            el.select();
+        });
     }
 };
 

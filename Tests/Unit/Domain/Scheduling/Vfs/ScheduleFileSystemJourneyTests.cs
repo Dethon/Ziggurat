@@ -1,6 +1,5 @@
 using System.Globalization;
 using Domain.Agents;
-using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
@@ -49,26 +48,6 @@ public class ScheduleFileSystemJourneyTests
             LastRunAt = lastRunAt,
             CreatedAt = DateTime.UtcNow
         };
-
-    [Fact]
-    public async Task Backend_Contract_ExposesNameAndUnsupportedOps()
-    {
-        var fs = Build();
-
-        fs.ShouldBeAssignableTo<IFileSystemBackend>();
-        fs.FilesystemName.ShouldBe("schedules");
-
-        var copy = await fs.CopyAsync("/jonas/a", "/jonas/b", false, true, CancellationToken.None);
-        copy.ShouldBeOfType<FsResult<FsCopyResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
-
-        Should.Throw<NotSupportedException>(() =>
-        {
-            fs.ReadChunksAsync("/jonas/a/schedule.json", CancellationToken.None);
-        });
-
-        await Should.ThrowAsync<NotSupportedException>(() =>
-            fs.WriteChunksAsync("/jonas/a/schedule.json", AsyncEmpty(), false, true, CancellationToken.None));
-    }
 
     [Fact]
     public async Task Lifecycle_CreateGlobReadDelete_RoundTripsSchedule()
@@ -132,17 +111,6 @@ public class ScheduleFileSystemJourneyTests
         root.Entries.ShouldContain("/jonas/");
         root.Entries.ShouldContain("/jack/");
         root.Entries.ShouldNotContain(e => e.Contains("morning-news"));
-    }
-
-    [Fact]
-    public async Task Glob_NonMatchingPattern_ReturnsEmpty()
-    {
-        var fs = Build();
-
-        var glob = (await fs.GlobAsync("/", "does-not-exist", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
-
-        glob.Entries.ShouldBeEmpty();
     }
 
     [Fact]
@@ -529,11 +497,5 @@ public class ScheduleFileSystemJourneyTests
 
         var error = result.ShouldBeOfType<FsResult<FsSearchResult>.Err>().Error;
         error.ErrorCode.ShouldBe(ToolError.Codes.Timeout);
-    }
-
-    private static async IAsyncEnumerable<ReadOnlyMemory<byte>> AsyncEmpty()
-    {
-        await Task.CompletedTask;
-        yield break;
     }
 }

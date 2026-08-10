@@ -23,4 +23,9 @@ public record ChannelMessage
     // recognise the answer to it — mints it here; everyone else leaves it null and the conversation
     // group mints one as it builds the turn.
     public string? TurnKey { get; init; }
+
+    // Files sent with this message, as references rather than bytes. Where the bytes rest is the
+    // channel's own business — an upload store, or the transport that already keeps them — and
+    // they are fetched back only on the way to the model (ADR 0020).
+    public IReadOnlyList<AttachmentReference>? Attachments { get; init; }
 }

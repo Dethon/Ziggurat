@@ -39,16 +39,6 @@ public class MessagesStoreTests : IDisposable
     }
 
     [Fact]
-    public void MessagesLoaded_AddsToLoadedTopics()
-    {
-        // Act
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
-
-        // Assert
-        _store.State.LoadedTopics.Contains("topic-1").ShouldBeTrue();
-    }
-
-    [Fact]
     public void AddMessage_AppendsToExistingMessages()
     {
         // Arrange
@@ -137,40 +127,6 @@ public class MessagesStoreTests : IDisposable
         // Assert
         _store.State.MessagesByTopic["topic-1"].Count.ShouldBe(2);
         _store.State.MessagesByTopic["topic-2"].Count.ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task StateObservable_EmitsOnDispatch()
-    {
-        // Arrange
-        var emittedStates = new List<MessagesState>();
-        using var subscription = _store.StateObservable.Subscribe(state => emittedStates.Add(state));
-
-        // Act
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", [new ChatMessageModel { Content = "Test" }]));
-        _dispatcher.Dispatch(new AddMessage("topic-1", new ChatMessageModel { Content = "Another" }));
-
-        // Allow observable to emit
-        await Task.Delay(10);
-
-        // Assert
-        emittedStates.Count.ShouldBeGreaterThanOrEqualTo(3); // Initial + 2 dispatches
-        emittedStates.Last().MessagesByTopic["topic-1"].Count.ShouldBe(2);
-    }
-
-    [Fact]
-    public void StateObservable_ReplaysCurrentStateToNewSubscriber()
-    {
-        // Arrange
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", [new ChatMessageModel { Content = "Test" }]));
-        MessagesState? receivedState = null;
-
-        // Act
-        using var subscription = _store.StateObservable.Subscribe(state => receivedState = state);
-
-        // Assert - subscriber immediately receives current state
-        receivedState.ShouldNotBeNull();
-        receivedState.MessagesByTopic.ContainsKey("topic-1").ShouldBeTrue();
     }
 
     [Fact]

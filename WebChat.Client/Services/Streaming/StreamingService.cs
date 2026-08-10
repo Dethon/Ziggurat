@@ -5,6 +5,7 @@ using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.Composer;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
@@ -18,6 +19,7 @@ public sealed class StreamingService(
     TopicsStore topicsStore,
     MessagesStore messagesStore,
     AgentSettingsStore agentSettingsStore,
+    ComposerStore composerStore,
     TopicStreams topicStreams) : IStreamingService
 {
     // Serialises deciding whether to open a stream and opening it. TopicStreams answers who
@@ -25,12 +27,25 @@ public sealed class StreamingService(
     // between asking and acting.
     private readonly SemaphoreSlim _streamLock = new(1, 1);
 
-    public async Task SendMessageAsync(StoredTopic topic, string message, string? correlationId = null)
+    public async Task SendMessageAsync(
+        StoredTopic topic,
+        string message,
+        string? correlationId = null,
+        IReadOnlyList<AttachmentReference>? attachments = null)
     {
         await _streamLock.WaitAsync();
         try
         {
-            var configPatch = GetConfigPatch(topic);
+            // Read before the send and cleared after it, so an attachment cannot ride a second
+            // message. A retry brings its own references and leaves the composer alone;
+            // everything else sends what the composer holds and empties exactly that.
+            var sending = attachments is null
+                ? ComposerSelectors.Ready(composerStore.State.For(topic.TopicId))
+                : [];
+            var outgoing = new Outgoing(
+                topic, message, correlationId, GetConfigPatch(topic),
+                attachments ?? ComposerSelectors.References(sending),
+                sending);
 
             // Read once, and carried into the send: the round trip below is long enough for a
             // resume to claim the topic, and what may be ended afterwards is the stream this
@@ -38,26 +53,11 @@ public sealed class StreamingService(
             var seen = topicStreams.Snapshot(topic.TopicId);
             if (!seen.HasStream)
             {
-                await StartNewStreamAsync(topic, message, correlationId, configPatch, seen);
+                await StartNewStreamAsync(outgoing, seen);
                 return;
             }
 
-            var enqueued = await messagingService.EnqueueMessageAsync(
-                topic.TopicId, message, correlationId, configPatch);
-
-            // A not-live enqueue is not the server saying "there is no stream to enqueue
-            // onto". Falling through here would open a second stream over a transport that
-            // cannot carry it and show the user a reply that has already failed.
-            if (!enqueued.IsLive)
-            {
-                dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
-                return;
-            }
-
-            if (!enqueued.Value)
-            {
-                await StartNewStreamAsync(topic, message, correlationId, configPatch, seen);
-            }
+            await EnqueueOrStartAsync(outgoing, seen);
         }
         finally
         {
@@ -65,42 +65,79 @@ public sealed class StreamingService(
         }
     }
 
+    // One message on its way out: what to say, where it goes, and the composer entries the send
+    // empties when it lands. Six arguments travelled together through four methods before this.
+    private sealed record Outgoing(
+        StoredTopic Topic,
+        string Message,
+        string? CorrelationId,
+        AgentConfigPatch? ConfigPatch,
+        IReadOnlyList<AttachmentReference>? Attachments,
+        IReadOnlyList<ComposerAttachment> Sending);
+
+    private async Task EnqueueOrStartAsync(Outgoing outgoing, TopicStreamSnapshot seen)
+    {
+        var enqueued = await messagingService.EnqueueMessageAsync(
+            outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
+            outgoing.ConfigPatch, outgoing.Attachments);
+
+        // A not-live enqueue is not the server saying "there is no stream to enqueue onto".
+        // Falling through here would open a second stream over a transport that cannot carry it
+        // and show the user a reply that has already failed.
+        if (!enqueued.IsLive)
+        {
+            dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return;
+        }
+
+        if (!enqueued.Value)
+        {
+            await StartNewStreamAsync(outgoing, seen);
+            return;
+        }
+
+        ClearSent(outgoing.Topic.TopicId, outgoing.Sending);
+    }
+
     private AgentConfigPatch? GetConfigPatch(StoredTopic topic) =>
         AgentSettingsSelectors.GetConfigPatch(
             agentSettingsStore.State, topicsStore.State.Agents, topic.AgentId);
 
+    // By local id, so a file picked during the send's round trip stays in the composer instead of
+    // being swept away with the ones that travelled.
+    private void ClearSent(string topicId, IReadOnlyList<ComposerAttachment> sent)
+    {
+        if (sent.Count > 0)
+        {
+            dispatcher.Dispatch(new ClearAttachments(topicId, sent.Select(a => a.LocalId).ToList()));
+        }
+    }
+
     // The lease already holds the topic, so there is nothing left to decide here and no lock to
     // take: the resume that was granted it is the only one that can get this far.
-    public async Task<bool> TryStartResumeStreamAsync(
-        StreamLease lease,
-        StoredTopic topic,
-        ChatMessageModel streamingMessage,
-        string startMessageId)
+    public bool TryShowResumedStream(
+        StreamLease lease, ChatMessageModel streamingMessage, string? startMessageId) =>
+        topicStreams.TryShowResumed(lease, streamingMessage, startMessageId);
+
+    // Opening the stream is what waits for the reply's next chunk, so it happens after the
+    // reply is already showing. Recovery the user never asked for: nothing is said when it
+    // cannot be opened — the caller ends the stream, which keeps what was shown as a message.
+    public async Task<bool> TryReadResumedStreamAsync(StreamLease lease, StoredTopic topic)
     {
         var chunks = await messagingService.ResumeStreamAsync(topic.TopicId);
-
-        // Recovery the user never asked for: announce nothing and say nothing. Announcing
-        // first would leave a stream marked started that can never say it completed.
         if (!chunks.IsLive)
         {
             return false;
         }
 
-        return topicStreams.TryStream(
-            lease,
-            streamingMessage,
-            startMessageId,
-            running => ProcessStreamAsync(topic, chunks.Value!, running));
+        topicStreams.Read(lease, running => ProcessStreamAsync(topic, chunks.Value!, running));
+        return true;
     }
 
-    private async Task StartNewStreamAsync(
-        StoredTopic topic,
-        string message,
-        string? correlationId,
-        AgentConfigPatch? configPatch,
-        TopicStreamSnapshot seen)
+    private async Task StartNewStreamAsync(Outgoing outgoing, TopicStreamSnapshot seen)
     {
-        var chunks = await OpenSendStreamAsync(topic, message, correlationId, configPatch);
+        var topic = outgoing.Topic;
+        var chunks = await OpenSendStreamAsync(outgoing);
 
         // Open only a stream that has actually started. The old order announced first and
         // discovered afterwards, which is how a user was shown a reply that never spoke.
@@ -108,6 +145,8 @@ public sealed class StreamingService(
         {
             return;
         }
+
+        ClearSent(topic.TopicId, outgoing.Sending);
 
         // Reached either on an idle topic, where there was nothing to end, or after the server
         // said there was nothing to enqueue onto — which means the reply we saw is over. Ending
@@ -126,10 +165,11 @@ public sealed class StreamingService(
 
     // Null means the send could not be made and the user has been told. The send is theirs, so
     // this is the one stream verb that raises a toast.
-    private async Task<IAsyncEnumerable<ChatStreamMessage>?> OpenSendStreamAsync(
-        StoredTopic topic, string message, string? correlationId, AgentConfigPatch? configPatch)
+    private async Task<IAsyncEnumerable<ChatStreamMessage>?> OpenSendStreamAsync(Outgoing outgoing)
     {
-        var chunks = await messagingService.SendMessageAsync(topic.TopicId, message, correlationId, configPatch);
+        var chunks = await messagingService.SendMessageAsync(
+            outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
+            outgoing.ConfigPatch, outgoing.Attachments);
         if (chunks.IsLive)
         {
             return chunks.Value!;

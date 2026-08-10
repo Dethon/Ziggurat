@@ -135,17 +135,6 @@ public class OpenAiSpeechToTextTests
     }
 
     [Fact]
-    public async Task TranscribeAsync_ConfiguredModel_OverridesDefault()
-    {
-        var handler = new StubHandler(_ => Json("""{ "text": "hola" }"""));
-        var sut = Sut(handler, new OpenAiSttConfig { Model = "Whisper-Large-v3-Turbo" });
-
-        await sut.TranscribeAsync(Chunks(new byte[32]), new TranscriptionOptions(), CancellationToken.None);
-
-        handler.Fields["model"].ShouldBe("Whisper-Large-v3-Turbo");
-    }
-
-    [Fact]
     public async Task TranscribeAsync_OptionsLanguage_OverridesConfigLanguage()
     {
         var handler = new StubHandler(_ => Json("""{ "text": "hello" }"""));

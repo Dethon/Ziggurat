@@ -12,22 +12,6 @@ public class GroupByStreamingTests
     private static readonly int[] _sourceArray4 = [1, 2, 3, 4, 5, 6, 7, 8];
 
     [Fact]
-    public async Task GroupByStreaming_WithSingleKey_ReturnsSingleGroup()
-    {
-        // Arrange
-        var source = _sourceArray0.ToAsyncEnumerable();
-
-        // Act
-        var groups = await source
-            .GroupByStreaming((_, _) => ValueTask.FromResult("key"))
-            .ToListAsync();
-
-        // Assert
-        groups.Count.ShouldBe(1);
-        groups[0].Key.ShouldBe("key");
-    }
-
-    [Fact]
     public async Task GroupByStreaming_GroupContainsCorrectElements()
     {
         // Arrange

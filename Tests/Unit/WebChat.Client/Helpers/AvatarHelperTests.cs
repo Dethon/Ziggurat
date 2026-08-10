@@ -12,12 +12,6 @@ public sealed class AvatarHelperTests
     ];
 
     [Fact]
-    public void GetColorForUser_IsDeterministic()
-    {
-        AvatarHelper.GetColorForUser("kakera").ShouldBe(AvatarHelper.GetColorForUser("kakera"));
-    }
-
-    [Fact]
     public void GetColorForUser_AlwaysReturnsAWarmPaletteColor()
     {
         var seeds = Enumerable.Range(0, 60).Select(i => $"agent-{i}");

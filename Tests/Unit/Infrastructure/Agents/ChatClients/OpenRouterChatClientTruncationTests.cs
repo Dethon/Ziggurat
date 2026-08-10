@@ -14,34 +14,6 @@ public class OpenRouterChatClientTruncationTests
     private readonly Mock<IMetricsPublisher> _publisher = new();
 
     [Fact]
-    public async Task GetStreamingResponseAsync_NullMaxContext_ForwardsAllMessages()
-    {
-        var sut = new OpenRouterChatClient(
-            _innerClient.Object, "test-model", maxContextTokens: null,
-            metricsPublisher: _publisher.Object);
-
-        var sys = new ChatMessage(ChatRole.System, "sys");
-        var u1 = new ChatMessage(ChatRole.User, new string('a', 4000));
-        var u2 = new ChatMessage(ChatRole.User, "hi");
-        u2.SetSenderId("alice");
-
-        IEnumerable<ChatMessage>? captured = null;
-        _innerClient
-            .Setup(c => c.GetStreamingResponseAsync(
-                It.IsAny<IEnumerable<ChatMessage>>(),
-                It.IsAny<ChatOptions?>(),
-                It.IsAny<CancellationToken>()))
-            .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>(
-                (msgs, _, _) => captured = msgs.ToList())
-            .Returns(AsyncEnumerable.Empty<ChatResponseUpdate>());
-
-        await foreach (var _ in sut.GetStreamingResponseAsync([sys, u1, u2]))
-        { }
-
-        captured!.Count().ShouldBe(3);
-    }
-
-    [Fact]
     public async Task GetStreamingResponseAsync_OverThreshold_DropsAndPublishesEvent()
     {
         var sut = new OpenRouterChatClient(

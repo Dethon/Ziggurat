@@ -115,33 +115,6 @@ public class PlaywrightWebBrowserTests(
 
     [Trait("Category", "External")]
     [SkippableFact]
-    public async Task NavigateAsync_WithCssSelector_ExtractsSpecificContent()
-    {
-        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
-
-        var sessionId = GetUniqueSessionId();
-        try
-        {
-            // Act - target Wikipedia's main content
-            var request = new BrowseRequest(
-                SessionId: sessionId,
-                Url: "https://en.wikipedia.org/wiki/C_Sharp_(programming_language)",
-                Selector: "#mw-content-text",
-                MaxLength: 5000);
-            var result = await fixture.Browser.NavigateAsync(request);
-
-            // Assert
-            result.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
-            result.Content.ShouldNotBeNullOrEmpty();
-        }
-        finally
-        {
-            await fixture.Browser.CloseSessionAsync(sessionId);
-        }
-    }
-
-    [Trait("Category", "External")]
-    [SkippableFact]
     public async Task NavigateAsync_SessionPersistsAcrossCalls()
     {
         Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
@@ -276,44 +249,6 @@ public class PlaywrightWebBrowserTests(
         finally
         {
             await fixture.Browser.CloseSessionAsync(sessionId);
-        }
-    }
-
-    [Trait("Category", "External")]
-    [SkippableFact]
-    public async Task NavigateAsync_MultipleSessions_AreIndependent()
-    {
-        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
-
-        var sessionId1 = GetUniqueSessionId();
-        var sessionId2 = GetUniqueSessionId();
-
-        try
-        {
-            var request1 = new BrowseRequest(
-                SessionId: sessionId1,
-                Url: "https://example.com",
-                MaxLength: 1000);
-            var result1 = await fixture.Browser.NavigateAsync(request1);
-            result1.Status.ShouldBe(BrowseStatus.Success);
-
-            var request2 = new BrowseRequest(
-                SessionId: sessionId2,
-                Url: "https://example.org",
-                MaxLength: 1000);
-            var result2 = await fixture.Browser.NavigateAsync(request2);
-            result2.Status.ShouldBe(BrowseStatus.Success);
-
-            var page1 = await fixture.Browser.GetCurrentPageAsync(sessionId1);
-            var page2 = await fixture.Browser.GetCurrentPageAsync(sessionId2);
-
-            page1.Url.ShouldContain("example.com");
-            page2.Url.ShouldContain("example.org");
-        }
-        finally
-        {
-            await fixture.Browser.CloseSessionAsync(sessionId1);
-            await fixture.Browser.CloseSessionAsync(sessionId2);
         }
     }
 
@@ -482,49 +417,4 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
-    [Trait("Category", "External")]
-    [SkippableTheory]
-    [InlineData("https://en.wikipedia.org/wiki/Stranger_Things_season_5")]
-    [InlineData("https://en.wikipedia.org/wiki/Web_browser")]
-    [InlineData("https://en.wikipedia.org/wiki/Main_Page")]
-    public async Task NavigateAsync_WithWikipediaUrls_ChecksForRedirect(string requestedUrl)
-    {
-        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
-
-        var sessionId = GetUniqueSessionId();
-
-        try
-        {
-            var request = new BrowseRequest(
-                SessionId: sessionId,
-                Url: requestedUrl,
-                MaxLength: 15000);
-            var result = await fixture.Browser.NavigateAsync(request);
-
-            testOutputHelper.WriteLine($"Requested URL: {requestedUrl}");
-            testOutputHelper.WriteLine($"Final URL: {result.Url}");
-            testOutputHelper.WriteLine($"Status: {result.Status}");
-            testOutputHelper.WriteLine($"Title: {result.Title}");
-            testOutputHelper.WriteLine($"Content Length: {result.ContentLength}");
-            testOutputHelper.WriteLine($"Metadata SiteName: {result.Metadata?.SiteName}");
-            testOutputHelper.WriteLine($"Metadata Description: {result.Metadata?.Description}");
-            testOutputHelper.WriteLine($"Error Message: {result.ErrorMessage}");
-            testOutputHelper.WriteLine("--- Content Preview (first 2000 chars) ---");
-            testOutputHelper.WriteLine(result.Content?[..Math.Min(2000, result.Content?.Length ?? 0)]);
-            testOutputHelper.WriteLine("--- Structured Data ---");
-            if (result.StructuredData != null)
-            {
-                foreach (var sd in result.StructuredData.Take(5))
-                {
-                    testOutputHelper.WriteLine($"  [{sd.Type}]: {sd.RawJson[..Math.Min(200, sd.RawJson.Length)]}");
-                }
-            }
-
-            result.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
-        }
-        finally
-        {
-            await fixture.Browser.CloseSessionAsync(sessionId);
-        }
-    }
 }

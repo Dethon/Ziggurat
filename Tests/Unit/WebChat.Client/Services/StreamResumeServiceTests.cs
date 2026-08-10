@@ -7,6 +7,7 @@ using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.Composer;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
@@ -48,6 +49,7 @@ public sealed class StreamResumeServiceTests : IDisposable
             _topicsStore,
             _messagesStore,
             _agentSettingsStore,
+            new ComposerStore(_dispatcher),
             _topicStreams);
         var pipeline = new MessagePipeline(_dispatcher, _messagesStore, _topicStreams,
             NullLogger<MessagePipeline>.Instance);

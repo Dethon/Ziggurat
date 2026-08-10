@@ -6,6 +6,7 @@ using Domain.DTOs.Channel;
 using Domain.Monitor;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Clients;
 using Infrastructure.Clients.Channels;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
@@ -27,7 +28,8 @@ public static class InjectorModule
                 ApiKey = settings.OpenRouter.ApiKey,
                 MaxContextTokens = settings.OpenRouter.MaxContextTokens,
                 ProviderRouting = settings.OpenRouter.ProviderRouting,
-                PatchableModelIds = settings.PatchableModels.Select(m => m.Id).ToList()
+                PatchableModelIds = settings.PatchableModels.Select(m => m.Id).ToList(),
+                HydrationDepthMessages = settings.Attachments.HydrationDepthMessages
             };
 
             services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);
@@ -58,7 +60,17 @@ public static class InjectorModule
                     },
                     sp.GetRequiredService<IMetricsPublisher>(),
                     TimeProvider.System,
-                    sp.GetRequiredService<ILogger<HostedConnectionKeepAlive>>()));
+                    sp.GetRequiredService<ILogger<HostedConnectionKeepAlive>>()))
+                // Shares the chat clients' pool for the same reason the keep-alive does.
+                .AddSingleton(sp => new OpenRouterModelCapabilities(
+                    new HttpClient(HostedConnectionPool.Shared, disposeHandler: false)
+                    {
+                        BaseAddress = new Uri(settings.OpenRouter.ApiUrl)
+                    },
+                    sp.GetRequiredService<ILogger<OpenRouterModelCapabilities>>()))
+                .AddSingleton<IModelCapabilityCatalog>(sp =>
+                    sp.GetRequiredService<OpenRouterModelCapabilities>())
+                .AddHostedService<ModelCapabilityRefresher>();
         }
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
@@ -74,16 +86,21 @@ public static class InjectorModule
             return services
                 .AddSingleton<IReadOnlyList<IChannelConnection>>(sp =>
                     sp.GetServices<IChannelConnection>().ToList())
+                .AddSingleton<IAttachmentSource>(sp => new ChannelAttachmentSource(
+                    sp.GetRequiredService<IReadOnlyList<IChannelConnection>>(),
+                    sp.GetService<ILogger<ChannelAttachmentSource>>()))
                 .AddSingleton<ChatMonitor>()
                 .AddHostedService<ChatMonitoring>()
                 .AddHostedService(sp =>
                     new ChannelConnectionHost(
                         settings.ChannelEndpoints,
                         sp.GetServices<IChannelConnection>().OfType<IMcpChannelConnection>().ToList(),
-                        settings.Agents.Select(a => new AgentCatalogEntry(
-                            a.Id, a.Name, a.Description,
-                            a.Model, a.ReasoningEffort,
-                            settings.PatchableModels, AgentConfigPatch.SupportedEfforts)).ToList(),
+                        // Read per registration, not captured once: attachment capability is
+                        // discovered from the model provider and refreshed while the agent runs.
+                        () => AgentCatalogBuilder.Build(
+                            settings.Agents,
+                            settings.PatchableModels,
+                            sp.GetRequiredService<IModelCapabilityCatalog>()),
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>()));
         }
 

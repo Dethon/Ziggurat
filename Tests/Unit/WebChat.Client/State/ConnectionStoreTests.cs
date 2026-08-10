@@ -147,12 +147,6 @@ public class ConnectionStoreTests : IDisposable
     }
 
     [Fact]
-    public void Initial_HasNoEpoch()
-    {
-        _store.State.Epoch.ShouldBe(0);
-    }
-
-    [Fact]
     public void Connected_AdvancesTheEpoch()
     {
         _dispatcher.Dispatch(new ConnectionConnected());

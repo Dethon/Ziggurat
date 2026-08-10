@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.DTOs.Channel;
 using Microsoft.Extensions.AI;
 
 namespace Infrastructure.Agents.ChatClients;
@@ -9,6 +10,18 @@ internal static class MessageTruncator
     private const int OtherContentOverhead = 4;
     private const int PerToolOverhead = 4;
     private const double SafetyRatio = 0.95;
+
+    // What an image costs whatever its file size, and how much of a document one token stands for.
+    // Both come from the range the providers publish rather than a measurement of any one file;
+    // the point is that a 1 MB PDF stops counting as four tokens.
+    //
+    // The ceiling is the load-bearing part. A document's file size tracks its images far more
+    // than its text, so a 20 MB scan would otherwise estimate past the whole context window and
+    // make the truncator drop every earlier message to make room for it. ADR 0020 puts a heavy
+    // PDF at about 50,000 tokens, so that is where an attachment's estimate stops.
+    private const int ImageTokens = 1_500;
+    private const int DocumentBytesPerToken = 50;
+    private const int MaxAttachmentTokens = 50_000;
 
     public static int EstimateTokens(string text)
         => string.IsNullOrEmpty(text) ? 0 : (text.Length + 3) / 4;
@@ -158,6 +171,18 @@ internal static class MessageTruncator
         FunctionCallContent fc => EstimateTokens(JsonSerializer.Serialize(
             new { name = fc.Name, arguments = fc.Arguments })),
         FunctionResultContent fr => EstimateTokens(JsonSerializer.Serialize(fr.Result)),
+        DataContent d => EstimateAttachmentTokens(d),
         _ => OtherContentOverhead
     };
+
+    // Without a case here an attachment counts as a fixed handful of tokens and truncation goes
+    // blind on a large document. The two kinds do not scale the same way: a provider resizes an
+    // image into its own tile scheme before billing, so the file's size says almost nothing, while
+    // a document is billed on what it parses to, which does track its size — up to the ceiling.
+    private static int EstimateAttachmentTokens(DataContent content)
+    {
+        return AttachmentKinds.IsImage(content.MediaType)
+            ? ImageTokens
+            : (int)Math.Min(MaxAttachmentTokens, content.Data.Length / (long)DocumentBytesPerToken);
+    }
 }

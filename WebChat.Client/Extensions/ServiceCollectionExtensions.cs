@@ -4,6 +4,7 @@ using WebChat.Client.State;
 using WebChat.Client.State.AgentActivity;
 using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.Composer;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
@@ -35,6 +36,8 @@ public static class ServiceCollectionExtensions
             services.AddScoped<AgentSettingsStore>();
             services.AddScoped<SpaceStore>();
             services.AddScoped<AgentActivityStore>();
+            services.AddScoped<ComposerStore>();
+            services.AddScoped<ComposerTopic>();
 
             services.AddScoped<RenderCoordinator>();
 
@@ -75,6 +78,8 @@ public static class ServiceCollectionExtensions
             services.AddScoped<AgentActivityEffect>();
             services.AddScoped<AgentSettingsEffect>();
             services.AddScoped<StreamResumeEffect>();
+            services.AddScoped<AttachmentEffect>();
+            services.AddScoped<TopicRenameEffect>();
 
             return services;
         }

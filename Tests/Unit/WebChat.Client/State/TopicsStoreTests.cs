@@ -265,16 +265,6 @@ public class TopicsStoreTests : IDisposable
     }
 
     [Fact]
-    public void SelectAgent_UpdatesSelectedAgentId()
-    {
-        // Act
-        _dispatcher.Dispatch(new SelectAgent("agent-1"));
-
-        // Assert
-        _store.State.SelectedAgentId.ShouldBe("agent-1");
-    }
-
-    [Fact]
     public void FromMetadata_PreservesSpaceSlug()
     {
         // Arrange

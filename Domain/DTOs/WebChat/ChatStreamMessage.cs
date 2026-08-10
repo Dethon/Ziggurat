@@ -1,3 +1,5 @@
+using Domain.DTOs.Channel;
+
 namespace Domain.DTOs.WebChat;
 
 public record ChatStreamMessage
@@ -12,4 +14,8 @@ public record ChatStreamMessage
     public long SequenceNumber { get; init; }
     public UserMessageInfo? UserMessage { get; init; }
     public DateTimeOffset? Timestamp { get; init; }
+
+    // Files sent with a user message. References only: the browser mints a download URL when the
+    // transcript renders one.
+    public IReadOnlyList<AttachmentReference>? Attachments { get; init; }
 }

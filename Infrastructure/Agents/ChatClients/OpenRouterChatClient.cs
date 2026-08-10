@@ -28,6 +28,8 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly int? _maxContextTokens;
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
+    private readonly IAttachmentSource? _attachmentSource;
+    private readonly int _hydrationDepthMessages;
 
     public OpenRouterChatClient(
         string endpoint,
@@ -38,12 +40,16 @@ public sealed class OpenRouterChatClient : IChatClient
         string? sessionId = null,
         TimeProvider? timeProvider = null,
         ProviderRouting? providerRouting = null,
-        HttpMessageHandler? transportHandler = null)
+        HttpMessageHandler? transportHandler = null,
+        IAttachmentSource? attachmentSource = null,
+        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _attachmentSource = attachmentSource;
+        _hydrationDepthMessages = hydrationDepthMessages;
         _httpClient = CreateHttpClient(
             _reasoningQueue, _costQueue, _cachedTokenQueue, sessionId, providerRouting, transportHandler);
         _transport = new HttpClientPipelineTransport(_httpClient);
@@ -55,12 +61,16 @@ public sealed class OpenRouterChatClient : IChatClient
         string model,
         int? maxContextTokens = null,
         IMetricsPublisher? metricsPublisher = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IAttachmentSource? attachmentSource = null,
+        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _attachmentSource = attachmentSource;
+        _hydrationDepthMessages = hydrationDepthMessages;
         _client = innerClient;
     }
 
@@ -82,10 +92,13 @@ public sealed class OpenRouterChatClient : IChatClient
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         // Decorated on the way out and never on the way in: what the client sends carries the
-        // sender, the local time and the recall block, and what gets persisted stays as typed.
-        var transformedMessages = messages
+        // sender, the local time, the recall block and the bytes of any attachment, and what gets
+        // persisted stays as typed.
+        var decorated = messages
             .Select(x => TurnDecoration.Apply(x, _timeProvider.LocalTimeZone))
             .ToList();
+        var transformedMessages = await AttachmentHydration.ApplyAsync(
+            decorated, _attachmentSource, _hydrationDepthMessages, ct);
 
         // The model a per-message config patch resolved to rides this request's own options
         // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on

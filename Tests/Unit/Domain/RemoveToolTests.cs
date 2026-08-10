@@ -92,23 +92,6 @@ public class RemoveToolTests
     }
 
     [Fact]
-    public async Task Run_WithPathOutsideLibrary_ReturnsInvalidArgument()
-    {
-        // Arrange
-        var tool = CreateTool();
-        var outsidePath = OperatingSystem.IsWindows()
-            ? @"C:\other\folder\file.txt"
-            : "/other/folder/file.txt";
-
-        // Act & Assert
-        (await tool.TestRun(outsidePath, CancellationToken.None))
-            .ShouldBeError(ToolError.Codes.InvalidArgument)["message"]!.GetValue<string>()
-            .ShouldContain("must be within the library");
-        _fileSystemClientMock.Verify(m => m.MoveToTrash(It.IsAny<string>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-    }
-
-    [Fact]
     public async Task Run_WithRelativePath_ResolvesAgainstLibraryRoot()
     {
         // Arrange

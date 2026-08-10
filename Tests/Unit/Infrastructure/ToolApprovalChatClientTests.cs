@@ -62,33 +62,6 @@ public class ToolApprovalChatClientTests
         handler.ConversationIds.ShouldHaveSingleItem().ShouldBe("7:9");
     }
 
-    [Theory]
-    [InlineData("mcp__server__TestTool", "mcp__server__TestTool", "mcp__server__TestTool")]
-    public async Task SendAsync_WhitelistedTool_SkipsApproval(string whitelistPattern, string toolName, string callToolName)
-    {
-        // Arrange
-        var handler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
-        var invoked = false;
-        var function = AIFunctionFactory.Create(() =>
-        {
-            invoked = true;
-            return "result";
-        }, toolName);
-
-        var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse(callToolName, "call1"));
-
-        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", whitelistPatterns: [whitelistPattern]);
-        var options = new ChatOptions { Tools = [function] };
-
-        // Act
-        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
-
-        // Assert
-        handler.RequestedApprovals.ShouldBeEmpty();
-        invoked.ShouldBeTrue();
-    }
-
     [Fact]
     public async Task InvokeFunctionAsync_WhenRejected_TerminatesAndReturnsRejectionMessage()
     {

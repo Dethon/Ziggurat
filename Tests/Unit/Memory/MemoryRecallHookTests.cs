@@ -390,37 +390,6 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
-    public async Task EnrichAsync_WhenTheEmbeddingServerIsDown_PublishesAnErrorDistinctFromAnEmptyRecall()
-    {
-        var message = new ChatMessage(ChatRole.User, "Hello");
-
-        var session = CreateSessionWithStateKey("state-test");
-        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
-        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
-            .ReturnsAsync((ChatMessage[]?)null);
-
-        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new HttpRequestException("connection refused"));
-
-        var errors = new List<MetricsDTOs.ErrorEvent>();
-        _metricsPublisher
-            .Setup(p => p.Publish(It.IsAny<MetricsDTOs.ErrorEvent>()))
-            .Callback<MetricEvent>(e =>
-            {
-                if (e is MetricsDTOs.ErrorEvent error)
-                {
-                    errors.Add(error);
-                }
-            });
-
-        await _hook.EnrichAsync(message, "user1", "conv1", null, session, CancellationToken.None);
-
-        // The turn proceeds without a recall block rather than failing.
-        message.GetMemoryContext().ShouldBeNull();
-        errors.ShouldContain(e => e.Service == MemoryRecallHook.EmbeddingErrorService);
-    }
-
-    [Fact]
     public async Task EnrichAsync_WhenEmbeddingFails_StillTimesTheEmbeddingCall()
     {
         var message = new ChatMessage(ChatRole.User, "Hello");

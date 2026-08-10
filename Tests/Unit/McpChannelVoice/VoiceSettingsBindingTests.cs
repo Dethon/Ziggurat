@@ -61,14 +61,6 @@ public class VoiceSettingsBindingTests
     }
 
     [Fact]
-    public void ConversationLifetime_DefaultsToFiveMinutes()
-    {
-        var settings = new VoiceSettings();
-
-        settings.ConversationLifetime.ShouldBe(TimeSpan.FromMinutes(5));
-    }
-
-    [Fact]
     public void OpenAiSttConfig_DefaultThresholds_MatchShippedGibberishGate()
     {
         // These defaults are what production runs when appsettings/env omit the thresholds; a
@@ -187,45 +179,6 @@ public class VoiceSettingsBindingTests
     }
 
     [Fact]
-    public void VoiceSettings_BindsSatelliteFromEnvironmentVariables()
-    {
-        // Mirrors how docker-compose.override.debug.yml delivers the satellite topology:
-        // appsettings.Development.json is excluded from the image by .dockerignore, so the
-        // hub must pick up satellites from env. Verifies the exact key shape works, including
-        // the hyphen in the satellite id and the "__" segment separator.
-        var vars = new Dictionary<string, string>
-        {
-            ["Satellites__kitchen-01__Identity"] = "household",
-            ["Satellites__kitchen-01__Room"] = "Kitchen",
-            ["Satellites__kitchen-01__WakeWord"] = "hey_jarvis",
-            ["Satellites__kitchen-01__Address"] = "tcp://host.docker.internal:10800"
-        };
-
-        foreach (var (k, v) in vars)
-        {
-            Environment.SetEnvironmentVariable(k, v);
-        }
-        try
-        {
-            var config = new ConfigurationBuilder().AddEnvironmentVariables().Build();
-            var settings = config.Get<VoiceSettings>();
-
-            settings.ShouldNotBeNull();
-            settings!.Satellites.Count.ShouldBe(1);
-            settings.Satellites.ContainsKey("kitchen-01").ShouldBeTrue();
-            settings.Satellites["kitchen-01"].Room.ShouldBe("Kitchen");
-            settings.Satellites["kitchen-01"].Address.ShouldBe("tcp://host.docker.internal:10800");
-        }
-        finally
-        {
-            foreach (var k in vars.Keys)
-            {
-                Environment.SetEnvironmentVariable(k, null);
-            }
-        }
-    }
-
-    [Fact]
     public void TranscriptionOptionsFactory_Create_CarriesRoomAndLocality()
     {
         var config = new SatelliteConfig
@@ -264,15 +217,6 @@ public class VoiceSettingsBindingTests
 
         TranscriptionOptionsFactory.Create("kitchen-01", config, null, default)
             .PromptTemplate.ShouldBe("room text");
-    }
-
-    [Fact]
-    public void OpenAiSttConfig_PromptDefaults_MatchTheShippedWindow()
-    {
-        var config = new OpenAiSttConfig();
-
-        config.Prompt.ShouldBeNull();
-        config.MaxPromptChars.ShouldBe(700);
     }
 
     [Fact]

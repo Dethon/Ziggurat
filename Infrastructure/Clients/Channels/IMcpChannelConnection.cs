@@ -30,5 +30,9 @@ public interface IMcpChannelConnection
     // Runs this connection for its lifetime: connect with retry, register the agent catalog, watch
     // health, and on a failed check reconnect with retry and re-register. Returns when ct is
     // cancelled, and does not throw for a link that is merely down.
-    Task RunAsync(string endpoint, IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct);
+    //
+    // The catalog is a function rather than a list because it is not constant: attachment
+    // capability is discovered from the model provider and refreshed hourly, so every registration
+    // has to read what is true now rather than what was true when the host started.
+    Task RunAsync(string endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct);
 }

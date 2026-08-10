@@ -17,6 +17,8 @@ public sealed class FakeChatMessagingService : IChatMessagingService
 
     public AgentConfigPatch? LastConfigPatch { get; private set; }
 
+    public IReadOnlyList<AttachmentReference>? LastAttachments { get; private set; }
+
     public void SetExceptionToThrow(Exception? exception)
     {
         _exceptionToThrow = exception;
@@ -91,9 +93,11 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     public void LetTheSendAnswer() => _sendAnswer?.TrySetResult();
 
     public async Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendMessageAsync(string topicId, string message,
-        string? correlationId = null, AgentConfigPatch? configPatch = null)
+        string? correlationId = null, AgentConfigPatch? configPatch = null,
+        IReadOnlyList<AttachmentReference>? attachments = null)
     {
         LastConfigPatch = configPatch;
+        LastAttachments = attachments;
         if (_sendAnswer is not null)
         {
             await _sendAnswer.Task;
@@ -104,6 +108,10 @@ public sealed class FakeChatMessagingService : IChatMessagingService
             : HubResult<IAsyncEnumerable<ChatStreamMessage>>.Answered(SendChunks());
     }
 
+    // Answers before the wire would: the real connection opens a hub stream by pulling its
+    // first chunk, so a real resume does not come back until the reply next speaks. That
+    // timing is modelled one seam down, in FakeHubConnection, and pinned by
+    // TopicStreamFlowTests.AResume_WhileTheReplyIsBetweenChunks_ShowsWhatItHasWrittenWithoutWaiting.
     public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId) =>
         Task.FromResult(NotLive
             ? HubResult<IAsyncEnumerable<ChatStreamMessage>>.NotLive
@@ -176,9 +184,11 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     }
 
     public Task<HubResult<bool>> EnqueueMessageAsync(
-        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
+        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null,
+        IReadOnlyList<AttachmentReference>? attachments = null)
     {
         LastConfigPatch = configPatch;
+        LastAttachments = attachments;
         return Task.FromResult(NotLive
             ? HubResult<bool>.NotLive
             : HubResult<bool>.Answered(_enqueueResult));

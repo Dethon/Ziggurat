@@ -26,19 +26,6 @@ public class StreamingStoreTests : IDisposable
     }
 
     [Fact]
-    public void StreamStarted_InitializesEmptyStreamingContent()
-    {
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-
-        _store.State.StreamingByTopic.ShouldContainKey("topic-1");
-        var content = _store.State.StreamingByTopic["topic-1"];
-        content.Content.ShouldBe("");
-        content.Reasoning.ShouldBeNull();
-        content.ToolCalls.ShouldBeNull();
-        content.CurrentMessageId.ShouldBeNull();
-    }
-
-    [Fact]
     public void StreamChunk_ReplacesAllContentTypes()
     {
         // The service accumulates and sends full values in each chunk

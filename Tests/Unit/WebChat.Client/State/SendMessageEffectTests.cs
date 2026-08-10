@@ -6,6 +6,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
+using WebChat.Client.State.Composer;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
@@ -58,6 +59,7 @@ public sealed class SendMessageEffectTests : IDisposable
             new FakeChatMessagingService(),
             _userIdentityStore,
             pipeline,
+            new ComposerStore(_dispatcher),
             _spaceStore,
             _logger);
     }

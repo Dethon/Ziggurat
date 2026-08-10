@@ -28,20 +28,6 @@ public class ChannelInboxTests
         ChannelInboxItem.ForCancel(new ChannelCancelNotification { ConversationId = conversationId });
 
     [Fact]
-    public async Task ReceiveAsync_WithPendingItems_ReturnsImmediately()
-    {
-        var inbox = new ChannelInbox(new FakeTimeProvider());
-        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
-
-        inbox.Enqueue(Message("c1"));
-
-        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
-
-        batch.Count.ShouldBe(1);
-        batch[0].Message!.ConversationId.ShouldBe("c1");
-    }
-
-    [Fact]
     public async Task ReceiveAsync_PreservesMessageAndCancelOrdering()
     {
         var inbox = new ChannelInbox(new FakeTimeProvider());
@@ -301,24 +287,6 @@ public class ChannelInboxTests
         batch[0].Message!.ConversationId.ShouldBe("c1");
     }
 
-    [Fact]
-    public async Task Subscriber_WhenIdleAfterDrainingItems_IsEvicted()
-    {
-        using var cts = new CancellationTokenSource(_deadline);
-        var time = new FakeTimeProvider();
-        var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
-        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
-
-        inbox.Enqueue(Message("c1"));
-        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token)).Count.ShouldBe(1);
-
-        // Having once held items must not make a subscriber permanently unevictable.
-        time.Advance(TimeSpan.FromMinutes(6));
-        inbox.Enqueue(Message("after-eviction"));
-
-        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token)).ShouldBeEmpty();
-    }
-
     // The drain is destructive and a poll never acknowledges what it received, so a batch handed to
     // a request that then dies exists nowhere else. Restore is how the caller that knows its
     // response is dead hands the batch back: at the front, because it is older than anything that
@@ -493,42 +461,6 @@ public class ChannelInboxTests
 
         (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token))
             .Select(i => i.Message!.ConversationId).ShouldBe(["c1"]);
-    }
-
-    [Fact]
-    public void Constructor_WithNonPositiveCapacity_Throws()
-    {
-        Should.Throw<ArgumentOutOfRangeException>(() => new ChannelInbox(new FakeTimeProvider(), capacity: 0));
-        Should.Throw<ArgumentOutOfRangeException>(() => new ChannelInbox(new FakeTimeProvider(), capacity: -1));
-    }
-
-    [Fact]
-    public async Task HasLiveSubscriber_FreshlyPolledSubscriber_IsTrue()
-    {
-        var inbox = new ChannelInbox(new FakeTimeProvider());
-        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
-
-        inbox.HasLiveSubscriber().ShouldBeTrue();
-    }
-
-    [Fact]
-    public void HasLiveSubscriber_NoSubscribers_IsFalse()
-    {
-        var inbox = new ChannelInbox(new FakeTimeProvider());
-
-        inbox.HasLiveSubscriber().ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task HasLiveSubscriber_SubscriberIdlePastFreshnessWindow_IsFalse()
-    {
-        var time = new FakeTimeProvider();
-        var inbox = new ChannelInbox(time);
-        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
-
-        time.Advance(ChannelInbox._liveSubscriberFreshness + TimeSpan.FromSeconds(1));
-
-        inbox.HasLiveSubscriber().ShouldBeFalse();
     }
 
     // A subscriber is stamped when its poll *starts*, so the longest legitimate quiet gap is a

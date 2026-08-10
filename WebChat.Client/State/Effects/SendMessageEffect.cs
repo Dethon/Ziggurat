@@ -1,8 +1,10 @@
 using Domain.Conversations;
+using Domain.DTOs.Channel;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State.Composer;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
@@ -25,6 +27,7 @@ public sealed class SendMessageEffect : IDisposable
     private readonly IChatMessagingService _messagingService;
     private readonly UserIdentityStore _userIdentityStore;
     private readonly IMessagePipeline _pipeline;
+    private readonly ComposerStore _composerStore;
     private readonly SpaceStore _spaceStore;
     private readonly ILogger<SendMessageEffect> _logger;
     private readonly IDisposable _sendMessageRegistration;
@@ -42,6 +45,7 @@ public sealed class SendMessageEffect : IDisposable
         IChatMessagingService messagingService,
         UserIdentityStore userIdentityStore,
         IMessagePipeline pipeline,
+        ComposerStore composerStore,
         SpaceStore spaceStore,
         ILogger<SendMessageEffect> logger)
     {
@@ -55,6 +59,7 @@ public sealed class SendMessageEffect : IDisposable
         _messagingService = messagingService;
         _userIdentityStore = userIdentityStore;
         _pipeline = pipeline;
+        _composerStore = composerStore;
         _spaceStore = spaceStore;
         _logger = logger;
 
@@ -104,9 +109,17 @@ public sealed class SendMessageEffect : IDisposable
         var state = _topicsStore.State;
         StoredTopic topic;
 
+        // Read before the send, which is what clears the composer: the bubble the person sees
+        // has to carry what they attached. A retry brings its own, because the message it is
+        // re-sending emptied the composer when it first went out.
+        var attached = action.Attachments
+            ?? ComposerSelectors.References(
+                ComposerSelectors.Ready(_composerStore.State.For(action.TopicId)))
+            ?? [];
+
         if (string.IsNullOrEmpty(action.TopicId))
         {
-            var topicName = action.Message.Length > 50 ? action.Message[..50] + "..." : action.Message;
+            var topicName = TopicName(action.Message, attached);
             var identity = ConversationIdGenerator.Create();
             topic = new StoredTopic
             {
@@ -149,6 +162,8 @@ public sealed class SendMessageEffect : IDisposable
         else
         {
             topic = state.Topics.First(t => t.TopicId == action.TopicId);
+            RenameFromOpeningText(topic, action.Message, attached);
+
             if (_sessionService.CurrentTopic?.TopicId != topic.TopicId)
             {
                 var started = await _sessionService.StartSessionAsync(topic);
@@ -169,12 +184,43 @@ public sealed class SendMessageEffect : IDisposable
         var currentUser = identityState.AvailableUsers
             .FirstOrDefault(u => u.Id == identityState.SelectedUserId);
 
-        var correlationId = _pipeline.SubmitUserMessage(topic.TopicId, action.Message, currentUser?.Id);
+        var correlationId = _pipeline.SubmitUserMessage(
+            topic.TopicId, action.Message, currentUser?.Id, attached.Count == 0 ? null : attached);
 
         // Delegate to streaming service (handles stream reuse internally). Awaited so a fault
         // opening the send lands in the catch above; the call returns once the stream is open,
         // not when the reply completes.
-        await _streamingService.SendMessageAsync(topic, action.Message, correlationId);
+        await _streamingService.SendMessageAsync(
+            topic, action.Message, correlationId, action.Attachments);
+    }
+
+    // Picking a file with nothing selected starts the conversation there and then, before a word
+    // has been typed, so it is named after the file. The opening message is what the person meant
+    // to call it, and it renames the conversation the way the header field does — the file's name
+    // stands only when the message is nothing but files.
+    //
+    // Bounded to the opening turn by two conditions, not one: the marker is gone the moment the
+    // rename lands, and an empty transcript keeps a send that races a history load from renaming
+    // a conversation already under way.
+    private void RenameFromOpeningText(
+        StoredTopic topic, string message, IReadOnlyList<AttachmentReference> attached)
+    {
+        var opening = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []).Count == 0;
+
+        if (topic.NameFromFile && opening && !string.IsNullOrWhiteSpace(message))
+        {
+            _dispatcher.Dispatch(new RenameTopic(topic.TopicId, TopicName(message, attached)));
+        }
+    }
+
+    // A message with attachments and no text is a normal thing to send, so the conversation is
+    // named after the first file rather than after nothing.
+    private static string TopicName(string message, IReadOnlyList<AttachmentReference> attached)
+    {
+        var source = string.IsNullOrWhiteSpace(message)
+            ? attached.FirstOrDefault()?.FileName ?? "New conversation"
+            : message;
+        return source.Length > 50 ? source[..50] + "..." : source;
     }
 
     private void HandleRetryLastMessage(RetryLastMessage action)
@@ -185,7 +231,10 @@ public sealed class SendMessageEffect : IDisposable
         var lastUserMessage = messages.LastOrDefault(m => m.Role == "user");
         if (lastUserMessage is not null)
         {
-            _dispatcher.Dispatch(new SendMessage(action.TopicId, lastUserMessage.Content));
+            // With its files. A message can now be nothing but attachments, so re-sending the
+            // text alone would ask the model about a picture it was never given.
+            _dispatcher.Dispatch(new SendMessage(
+                action.TopicId, lastUserMessage.Content, lastUserMessage.Attachments));
         }
     }
 

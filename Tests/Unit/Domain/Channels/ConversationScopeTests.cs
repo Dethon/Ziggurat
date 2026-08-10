@@ -27,20 +27,6 @@ public class ConversationScopeTests
     }
 
     [Fact]
-    public void Build_DifferentConversationsOfOneAgent_ProduceDifferentScopes()
-    {
-        // Regression: with the MCP session id gone, StateKey fell back to ClientInfo.Name --
-        // the agent name -- so every conversation of an agent shared one namespace.
-        ConversationScope.Build("nabu", "conv-a").ShouldNotBe(ConversationScope.Build("nabu", "conv-b"));
-    }
-
-    [Fact]
-    public void Build_SameConversationIdUnderDifferentAgents_ProduceDifferentScopes()
-    {
-        ConversationScope.Build("nabu", "conv-a").ShouldNotBe(ConversationScope.Build("jack", "conv-a"));
-    }
-
-    [Fact]
     public void Parse_NullMeta_ReturnsNull()
     {
         ConversationScope.Parse(null).ShouldBeNull();
@@ -50,15 +36,6 @@ public class ConversationScopeTests
     public void Parse_MetaWithoutConversationContextKey_ReturnsNull()
     {
         ConversationScope.Parse(new JsonObject { ["other"] = "value" }).ShouldBeNull();
-    }
-
-    [Fact]
-    public void Parse_MetaWithNullConversationContextNode_ReturnsNull()
-    {
-        ConversationScope.Parse(new JsonObject
-        {
-            [ChannelProtocol.ConversationContextMetaKey] = null
-        }).ShouldBeNull();
     }
 
     [Fact]

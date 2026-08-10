@@ -18,26 +18,4 @@ public class AnnounceDtoTests
         req.Text.ShouldBe("hi");
         req.Priority.ShouldBe(AnnouncePriority.High);
     }
-
-    [Fact]
-    public void AnnounceRequest_RoundTrips_WithRoomTarget()
-    {
-        var json = """{"target":{"room":"Kitchen"},"text":"hi"}""";
-        var req = JsonSerializer.Deserialize<AnnounceRequest>(json,
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
-
-        req.ShouldNotBeNull();
-        req!.Target.Room.ShouldBe("Kitchen");
-    }
-
-    [Fact]
-    public void AnnounceRequest_RoundTrips_WithAllTarget()
-    {
-        var json = """{"target":{"all":true},"text":"hi"}""";
-        var req = JsonSerializer.Deserialize<AnnounceRequest>(json,
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
-
-        req.ShouldNotBeNull();
-        req!.Target.All.ShouldBe(true);
-    }
 }

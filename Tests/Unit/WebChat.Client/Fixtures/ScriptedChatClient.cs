@@ -13,6 +13,7 @@ using WebChat.Client.State;
 using WebChat.Client.State.AgentActivity;
 using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.Composer;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
@@ -55,11 +56,12 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         {
             typeof(TopicsStore), typeof(MessagesStore), typeof(StreamingStore), typeof(ConnectionStore),
             typeof(ApprovalStore), typeof(UserIdentityStore), typeof(ToastStore), typeof(AgentSettingsStore),
-            typeof(SpaceStore), typeof(AgentActivityStore),
+            typeof(SpaceStore), typeof(AgentActivityStore), typeof(ComposerStore),
             typeof(SessionRecoveryEffect), typeof(ReconnectionEffect), typeof(SendMessageEffect),
             typeof(TopicSelectionEffect), typeof(TopicDeleteEffect), typeof(InitializationEffect),
             typeof(AgentSelectionEffect), typeof(UserIdentityEffect), typeof(SpaceEffect),
-            typeof(AgentActivityEffect), typeof(AgentSettingsEffect), typeof(StreamResumeEffect)
+            typeof(AgentActivityEffect), typeof(AgentSettingsEffect), typeof(StreamResumeEffect),
+            typeof(AttachmentEffect), typeof(TopicRenameEffect)
         }.ToList().ForEach(type => Services.GetRequiredService(type));
     }
 
@@ -88,6 +90,10 @@ public sealed class ScriptedChatClient : IAsyncDisposable
     public ConnectionStore Connection => Services.GetRequiredService<ConnectionStore>();
 
     public SpaceStore Space => Services.GetRequiredService<SpaceStore>();
+
+    public ComposerStore Composer => Services.GetRequiredService<ComposerStore>();
+
+    public FakeAttachmentUploader Uploader { get; } = new();
 
     public UserIdentityStore UserIdentity => Services.GetRequiredService<UserIdentityStore>();
 
@@ -127,6 +133,8 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         services.AddScoped<ITopicService, TopicService>();
         services.AddScoped<IAgentService, AgentService>();
         services.AddScoped<IApprovalService, ApprovalService>();
+        services.AddScoped<AttachmentEndpointResolver>();
+        services.AddScoped<IAttachmentService, AttachmentService>();
         services.AddScoped<ApprovalResponder>();
 
         services.AddWebChatStores();
@@ -143,6 +151,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         services.AddScoped<IConfigService>(_ => ConfigService);
         services.AddScoped<ILocalStorageService>(_ => LocalStorage);
         services.AddScoped<IPushSubscriptionService>(_ => new FakePushSubscriptionService());
+        services.AddScoped<IAttachmentUploader>(_ => Uploader);
 
         return services;
     }
@@ -157,6 +166,13 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         connection.Answer("GetStreamState", (object?)null);
         connection.Answer("GetPendingApprovalForTopic", (object?)null);
         connection.Answer("StartSession", true);
+        connection.Answer("GetAttachmentLimits", new AttachmentLimits(
+            25L * 1024 * 1024, 10, ["image/png", "image/jpeg", "application/pdf"]));
+        connection.Answer("CreateUploadTicket",
+            new UploadTicket("ticket-1", DateTimeOffset.UtcNow.AddMinutes(15)));
+        connection.Answer("CreateAttachmentDownload",
+            (object?[] args) => new AttachmentDownload(
+                $"/api/attachments/{args[0]}?ticket=download-1", DateTimeOffset.UtcNow.AddMinutes(15)));
         connection.Answer("EnqueueMessage", false);
         connection.Answer("RespondToApprovalAsync", true);
     }

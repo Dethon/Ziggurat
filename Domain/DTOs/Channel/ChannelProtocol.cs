@@ -16,6 +16,12 @@ public static class ChannelProtocol
     public const string RegisterAgentsTool = "register_agents";
     public const string ReceiveTool = "channel_receive";
 
+    // How the agent reaches an attachment's bytes: by naming a reference, never by mounting where
+    // they rest — a store of the channel's own on SignalR, Telegram's own hold on the file there
+    // (ADR 0022). Hidden from the model like every other channel-protocol tool: one store serves
+    // every conversation, so a visible mount would be a read over everyone else's files (ADR 0021).
+    public const string FetchAttachmentTool = "fetch_attachment";
+
     // How long a channel_receive call may be held open server-side before returning an empty
     // batch. Verified safe: a 45s hold completes on the SDK's default client timeout, and no
     // reverse proxy sits between the agent and a channel server (ChannelEndpoints are

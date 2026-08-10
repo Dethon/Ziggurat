@@ -56,7 +56,7 @@ public class VfsMoveToolIntegrationTests(MultiFileSystemFixture fx)
 
         result["ok"]!.GetValue<bool>().ShouldBeFalse();
         result["message"]!.GetValue<string>().ShouldContain("downloads/7");
-        result["message"]!.GetValue<string>().ShouldContain("live download");
+        result["message"]!.GetValue<string>().ShouldContain("has not finished");
         result["retryable"]!.GetValue<bool>().ShouldBeFalse();
         Directory.Exists(Path.Combine(fx.NotesPath, "7")).ShouldBeFalse();
         fx.Downloads.CleanedUp.ShouldBeEmpty();
@@ -86,6 +86,31 @@ public class VfsMoveToolIntegrationTests(MultiFileSystemFixture fx)
         result["message"]!.GetValue<string>().ShouldContain("only removes download directories");
         File.Exists(Path.Combine(fx.NotesPath, "film.mkv")).ShouldBeFalse();
         File.ReadAllText(Path.Combine(fx.MediaPath, "Movies", "film.mkv")).ShouldBe("a whole movie");
+    }
+
+    // The move the library exists for, over the wire the agent really uses: a download has finished,
+    // and its file is filed into the library on the same mount. qBittorrent keeps a finished torrent
+    // listed while it seeds, and treating that as "still live" refused this move forever — the only
+    // way past it was to delete downloads/<id>, which cancels the torrent and removes the very file
+    // being organised.
+    [Fact]
+    public async Task RunAsync_SameMountMoveOfAFinishedDownload_FilesItIntoTheLibrary()
+    {
+        fx.Downloads.Items.Clear();
+        fx.Downloads.Add(DownloadFakes.Item(id: 9, state: DownloadState.Completed));
+        fx.CreateMediaFile("downloads/9/payload.mkv", "a whole movie");
+        await using var mediaClient = await Connect(fx.MediaEndpoint);
+        var registry = new VirtualFileSystemRegistry();
+        await McpFileSystemDiscovery.DiscoverAndMountAsync(
+            [mediaClient], registry, NullLogger.Instance, CancellationToken.None);
+
+        var result = await new VfsMoveTool(registry)
+            .RunAsync("/media/downloads/9/payload.mkv", "/media/Movies/payload.mkv");
+
+        result["status"]!.GetValue<string>().ShouldBe("ok");
+        File.ReadAllText(Path.Combine(fx.MediaPath, "Movies", "payload.mkv")).ShouldBe("a whole movie");
+        File.Exists(Path.Combine(fx.MediaPath, "downloads", "9", "payload.mkv")).ShouldBeFalse();
+        fx.Downloads.CleanedUp.ShouldBeEmpty();
     }
 
     // A leftover is an ordinary file this mount does remove, so it leaves the way anything else on

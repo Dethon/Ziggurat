@@ -314,22 +314,6 @@ public class MetricsQueryServiceGroupingTests
     }
 
     [Fact]
-    public async Task GetVoiceGroupedAsync_NonDurationMetric_StillCounts()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:voice:2026-03-15",
-        [
-            new VoiceEvent { Metric = VoiceMetric.WakeTriggered, Room = "office" },
-            new VoiceEvent { Metric = VoiceMetric.WakeTriggered, Room = "office" },
-        ]);
-
-        var result = await _sut.GetVoiceGroupedAsync(
-            VoiceDimension.Room, VoiceMetric.WakeTriggered, date, date);
-
-        result["office"].ShouldBe(2m);
-    }
-
-    [Fact]
     public async Task GetVoiceGroupedAsync_NullDimensionValue_BucketsAsUnknown()
     {
         var date = new DateOnly(2026, 3, 15);

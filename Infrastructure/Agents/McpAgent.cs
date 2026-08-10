@@ -129,6 +129,12 @@ public sealed class McpAgent : DisposableAgent
         await GetOrCreateSessionAsync(thread, ct);
     }
 
+    // Only what the session already built. Nothing is created here: a caller asking before the
+    // session exists is asking about an agent that has not warmed up, and the answer is "no
+    // filesystem yet" rather than a session built as a side effect of the question.
+    public override IVirtualFileSystemRegistry? GetFileSystemRegistry(AgentSession thread) =>
+        _threadSessions.TryGetValue(thread, out var session) ? session.FileSystemRegistry : null;
+
     public override async ValueTask DisposeThreadSessionAsync(AgentSession thread)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);

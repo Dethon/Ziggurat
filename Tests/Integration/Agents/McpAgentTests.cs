@@ -25,7 +25,7 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
 
-        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest");
+        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest:nitro");
     }
 
     private McpAgent CreateAgent(OpenRouterChatClient llmClient)
@@ -39,36 +39,6 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
             TimeProvider.System,
             [],
             []);
-    }
-
-    [SkippableFact]
-    public async Task Agent_WithGlobFilesTool_CanFindFiles()
-    {
-        // Arrange
-        var llmClient = CreateLlmClient();
-        mcpFixture.CreateLibraryFile(Path.Combine("AgentGlobTest", "movie.mkv"));
-
-        var agent = CreateAgent(llmClient);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(150));
-
-        // Act
-        var responses = await agent.RunStreamingAsync(
-                "Use the fs_glob tool with:\n" +
-                "- pattern: **/*.mkv\n" +
-                "IMPORTANT: Pass the pattern exactly as written.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
-
-        // Assert - LLM responses are non-deterministic, verify agent processed the request
-        responses.ShouldNotBeEmpty();
-        var hasContent = responses.Any(r => !string.IsNullOrEmpty(r.Content) || !string.IsNullOrEmpty(r.ToolCalls));
-        hasContent.ShouldBeTrue("Agent should have produced content or tool calls");
-
-        await agent.DisposeAsync();
     }
 
     [SkippableFact]

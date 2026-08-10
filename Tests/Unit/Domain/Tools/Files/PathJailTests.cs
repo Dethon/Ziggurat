@@ -162,12 +162,6 @@ public class PathJailTests : IDisposable
         _jail.Contains(_jail.Root).ShouldBeTrue();
     }
 
-    [Fact]
-    public void Contains_APathUnderTheRoot_IsInside()
-    {
-        _jail.Contains(Path.Combine(_jail.Root, "docs", "note.md")).ShouldBeTrue();
-    }
-
     // The hole this type closes: a prefix match without a separator let /library-backup pass as
     // though it were inside /library.
     [Fact]

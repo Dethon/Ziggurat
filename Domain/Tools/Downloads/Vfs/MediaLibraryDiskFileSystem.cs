@@ -99,6 +99,12 @@ public sealed class MediaLibraryDiskFileSystem(
         ?? await downloads.TryDeleteAsync(path, ct)
         ?? await base.DeleteAsync(path, ct);
 
+    public override string DescribeMove =>
+        "Move or rename a file or directory within this filesystem — how a finished download is "
+        + $"filed into the library. A download still running refuses it: {MediaFilesystem.DownloadsSubdir}"
+        + "/<id>, anything inside it and any directory holding one cannot move until the download "
+        + "finishes.";
+
     // A move has two ends, so it asks the rule twice — once per end, with the intent belonging to
     // that end. The source is asked first, so a move that offends at both ends names the source.
     public override async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
@@ -110,7 +116,7 @@ public sealed class MediaLibraryDiskFileSystem(
     // registers the check. A move between two mounts never reaches MoveAsync — it streams the
     // payload out and then deletes the source — so the transfer machinery asks the source this
     // first. Both intents that streamed move is made of are asked, because a path that fails
-    // either one can never complete it: the way out of a live download's boundary, where the
+    // either one can never complete it: the way out of an unfinished download's boundary, where the
     // delete is the download's cancel, and the delete itself, which on this mount removes nothing
     // but download directories and leftovers. Answering Allow to a path the tail delete refuses
     // would stream gigabytes and then report a move that left a duplicate on both mounts. One call
@@ -137,10 +143,11 @@ public sealed class MediaLibraryDiskFileSystem(
 
     public override string DescribeMoveOutCheck =>
         "Refuses to let a path leave this filesystem when the move could not finish: anything a "
-        + $"live download owns ({MediaFilesystem.DownloadsSubdir}/<id>, what is inside it, and any "
-        + "directory holding one), and anything fs_delete here refuses, because a move off this "
-        + "filesystem ends by deleting the source. What may leave is what fs_delete removes: a "
-        + $"download directory and a leftover {DownloadsPath.StatusFileName} no live download owns.";
+        + $"download that has not finished owns ({MediaFilesystem.DownloadsSubdir}/<id>, what is "
+        + "inside it, and any directory holding one), and anything fs_delete here refuses, because a "
+        + "move off this filesystem ends by deleting the source. What may leave is what fs_delete "
+        + $"removes: a download directory and a leftover {DownloadsPath.StatusFileName} no live "
+        + "download owns.";
 
     // A copy reads one end and lands the other, so each end is asked with the intent belonging to
     // it. The read end is the byte read the streamed copy already asks, which is what refuses a

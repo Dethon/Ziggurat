@@ -27,5 +27,11 @@ public record ChannelMessageNotification
     // answer to it later. Voice-only today; every other channel leaves it null and the conversation
     // group mints one.
     public string? TurnKey { get; init; }
+
+    // Files sent with this message, as references rather than bytes. Part of the shared protocol
+    // and deliberately transport-neutral, which SignalR and Telegram both populate — one from an
+    // upload store of its own, the other from Telegram's own hold on the file (ADR 0022).
+    public IReadOnlyList<AttachmentReference>? Attachments { get; init; }
+
     public DateTimeOffset Timestamp { get; init; }
 }

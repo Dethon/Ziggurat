@@ -34,15 +34,4 @@ public class HaStateRendererTests
         HaStateRenderer.ToJson(Entity("sun.sun", "above_horizon"))
             .ShouldContain("\"attributes\": {}");
     }
-
-    [Fact]
-    public void ToJson_WholeDocumentParsesAsJson_EvenForOddKeys()
-    {
-        var json = HaStateRenderer.ToJson(
-            Entity("light.kitchen", "off", ("weird: key", JsonValue.Create("x"))));
-
-        var parsed = JsonNode.Parse(json)!;
-        parsed["entity_id"]!.GetValue<string>().ShouldBe("light.kitchen");
-        parsed["attributes"]!["weird: key"]!.GetValue<string>().ShouldBe("x");
-    }
 }

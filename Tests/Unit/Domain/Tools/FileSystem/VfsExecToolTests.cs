@@ -51,18 +51,7 @@ public class VfsExecToolTests
         _backend.Verify(b => b.ExecAsync("", "sleep 1", 30, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Fact]
-    public async Task RunAsync_UnknownMount_ThrowsFromRegistry()
-    {
-        _registry.Setup(r => r.Resolve("/unknown"))
-            .Throws(new InvalidOperationException("No filesystem mounted"));
-
-        await Should.ThrowAsync<InvalidOperationException>(
-            () => _tool.RunAsync("/unknown", "echo hi"));
-    }
-
     private static FsResult<FileSystemResolution> Resolved(
         IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
         new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));
-
 }

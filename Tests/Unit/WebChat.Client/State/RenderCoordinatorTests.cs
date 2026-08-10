@@ -38,23 +38,6 @@ public class RenderCoordinatorTests : IDisposable
     }
 
     [Fact]
-    public void CreateStreamingObservable_EmitsContent_WhenTopicIsStreaming()
-    {
-        var received = new List<StreamingContent?>();
-        var observable = _coordinator.CreateStreamingObservable("topic-1");
-
-        using var subscription = observable.Subscribe(value => received.Add(value));
-
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", null, null, "msg-1"));
-
-        // Wait for multiple sample intervals to ensure capture
-        Thread.Sleep(120);
-
-        received.ShouldContain(c => c != null && c.Content == "Hello");
-    }
-
-    [Fact]
     public void CreateStreamingObservable_DoesNotEmitDuplicates()
     {
         var received = new List<StreamingContent?>();

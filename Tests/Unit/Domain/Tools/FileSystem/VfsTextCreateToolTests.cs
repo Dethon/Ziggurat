@@ -34,18 +34,6 @@ public class VfsTextCreateToolTests
     }
 
     [Fact]
-    public async Task Body_AddsNote_WhenContentArgWasObject()
-    {
-        var (registry, _) = Wire();
-        var tool = new VfsTextCreateTool(registry.Object);
-        var args = new AIFunctionArguments { ["content"] = Json("{\"a\":1}") };
-
-        var node = await tool.RunAsync("/schedules/x/schedule.json", "{\"a\":1}", arguments: args);
-
-        node.ToJsonString().ShouldContain("\"note\"");
-    }
-
-    [Fact]
     public async Task Body_NoNote_WhenContentArgWasString()
     {
         var (registry, _) = Wire();

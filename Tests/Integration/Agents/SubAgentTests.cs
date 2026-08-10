@@ -53,7 +53,7 @@ public class SubAgentTests(RedisFixture redisFixture)
             Id = "echo-agent",
             Name = "Echo",
             Description = "Echoes back what you say",
-            Model = "~deepseek/deepseek-v4-flash-latest",
+            Model = "~deepseek/deepseek-v4-flash-latest:nitro",
             McpServerEndpoints = [],
             CustomInstructions = "You are a simple echo agent. Repeat back exactly what the user says, nothing more."
         };
@@ -69,7 +69,7 @@ public class SubAgentTests(RedisFixture redisFixture)
         var toolFeature = new SubAgentToolFeature(registryOptions);
 
         var llmClient = new OpenRouterChatClient(
-            openRouterConfig.ApiUrl, openRouterConfig.ApiKey, "~deepseek/deepseek-v4-flash-latest");
+            openRouterConfig.ApiUrl, openRouterConfig.ApiKey, "~deepseek/deepseek-v4-flash-latest:nitro");
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(5));
         using var effectiveClient = new ToolApprovalChatClient(llmClient, approvalHandler, "conv-test", ["domain__subagents__*"]);
 
@@ -113,7 +113,7 @@ public class SubAgentTests(RedisFixture redisFixture)
         {
             Id = "test-ephemeral",
             Name = "TestEphemeral",
-            Model = "~deepseek/deepseek-v4-flash-latest",
+            Model = "~deepseek/deepseek-v4-flash-latest:nitro",
             McpServerEndpoints = [],
             CustomInstructions = "Reply with exactly the word 'done'."
         };

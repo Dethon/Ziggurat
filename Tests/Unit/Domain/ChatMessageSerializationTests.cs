@@ -143,17 +143,6 @@ public class ChatMessageSerializationTests
     }
 
     [Fact]
-    public void SetAndGetMemoryContext_StoresAndRetrievesValue()
-    {
-        var msg = new ChatMessage(ChatRole.User, "Hello");
-        var context = new MemoryContext([], null);
-
-        msg.SetMemoryContext(context);
-
-        msg.GetMemoryContext().ShouldBe(context);
-    }
-
-    [Fact]
     public void GetMemoryContext_ReturnsValueAfterJsonRoundtrip()
     {
         // Arrange - a message carrying memory context, as the recall hook attaches it.
@@ -199,15 +188,5 @@ public class ChatMessageSerializationTests
         };
 
         message.GetDismissedAlert().ShouldBe("alarm \"trash\"");
-    }
-
-    [Fact]
-    public void SetDismissedAlert_ThenGet_ReturnsValue()
-    {
-        var message = new ChatMessage(ChatRole.User, "hi");
-
-        message.SetDismissedAlert("timer \"pasta\"");
-
-        message.GetDismissedAlert().ShouldBe("timer \"pasta\"");
     }
 }

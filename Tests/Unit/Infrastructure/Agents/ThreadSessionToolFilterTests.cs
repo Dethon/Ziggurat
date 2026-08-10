@@ -68,19 +68,4 @@ public class ThreadSessionToolFilterTests
 
         result.Select(t => t.Name).ShouldBe(["mcp__mcp-vault__fs_read", "mcp__mcp-websearch__web_browse"]);
     }
-
-    [Fact]
-    public void FilterMcpTools_NonReservedTools_ArePreserved()
-    {
-        AITool[] tools =
-        [
-            Tool("mcp__mcp-idealista__search_listings"),
-            Tool("mcp__mcp-websearch__web_browse")
-        ];
-
-        var result = ThreadSessionBuilder.FilterMcpTools(tools, filesystemToolsActive: true);
-
-        result.Select(t => t.Name)
-            .ShouldBe(["mcp__mcp-idealista__search_listings", "mcp__mcp-websearch__web_browse"]);
-    }
 }

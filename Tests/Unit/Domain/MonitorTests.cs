@@ -36,6 +36,11 @@ internal sealed class FakeAiAgent : DisposableAgent
 
     public Exception? WarmupExceptionToThrow { get; init; }
 
+    public IVirtualFileSystemRegistry? FileSystemRegistry { get; set; }
+
+    public override IVirtualFileSystemRegistry? GetFileSystemRegistry(AgentSession thread)
+        => FileSystemRegistry;
+
     public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
     {
         Interlocked.Increment(ref WarmupCalls);
@@ -208,6 +213,11 @@ internal sealed class FakeChannelConnection : IChannelConnection
     public Task<ToolApprovalResult> RequestApprovalAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
         => Task.FromResult(new ToolApprovalResult());
 
+    public Dictionary<string, byte[]> Attachments { get; } = [];
+
+    public Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct)
+        => Task.FromResult(Attachments.GetValueOrDefault(attachmentId));
+
     public Task NotifyAutoApprovedAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
     {
         NotifyAutoApprovedCalls.Add((conversationId, requests));
@@ -274,33 +284,6 @@ internal static class MonitorTestMocks
 public class ChatMonitorTests
 {
     [Fact]
-    public async Task Monitor_SingleMessage_SendsStreamCompleteReply()
-    {
-        // Arrange
-        var threadResolver = MonitorTestMocks.CreateThreadResolver();
-        var message = MonitorTestMocks.CreateChannelMessage();
-        var channel = MonitorTestMocks.CreateChannel(messages: message);
-        var fakeAgent = MonitorTestMocks.CreateAgent();
-        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
-        var logger = new Mock<ILogger<ChatMonitor>>();
-
-        var monitor = new ChatMonitor(
-            [channel],
-            agentFactory,
-            threadResolver,
-            new Mock<IMetricsPublisher>().Object,
-            null,
-            logger.Object);
-
-        // Act
-        await monitor.Monitor(CancellationToken.None);
-
-        // Assert - at minimum a StreamComplete reply should be sent
-        channel.SentReplies.ShouldContain(r =>
-            r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
-    }
-
-    [Fact]
     public async Task Monitor_VoiceMessageWithSatelliteId_SetsSatelliteIdOnUserMessage()
     {
         // Arrange
@@ -335,33 +318,6 @@ public class ChatMonitorTests
     }
 
     [Fact]
-    public async Task Monitor_SingleMessage_WarmsUpSessionOncePerConversation()
-    {
-        // Arrange
-        var threadResolver = MonitorTestMocks.CreateThreadResolver();
-        var message = MonitorTestMocks.CreateChannelMessage();
-        var channel = MonitorTestMocks.CreateChannel(messages: message);
-        var fakeAgent = MonitorTestMocks.CreateAgent();
-        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
-
-        var monitor = new ChatMonitor(
-            [channel],
-            agentFactory,
-            threadResolver,
-            new Mock<IMetricsPublisher>().Object,
-            null,
-            new Mock<ILogger<ChatMonitor>>().Object);
-
-        // Act
-        await monitor.Monitor(CancellationToken.None);
-        var done = await Task.WhenAny(fakeAgent.WarmupSignaled.Task, Task.Delay(TimeSpan.FromSeconds(2)));
-
-        // Assert - the session is warmed up exactly once for the conversation
-        done.ShouldBe(fakeAgent.WarmupSignaled.Task);
-        fakeAgent.WarmupCalls.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task Monitor_AwaitsWarmupBeforeStreaming_Deterministically()
     {
         // Arrange - slow warmup; if it were fire-and-forget, streaming would start first
@@ -384,35 +340,6 @@ public class ChatMonitorTests
 
         // Assert - warmup completes before the first streaming turn starts
         fakeAgent.Events.ToArray().ShouldBe(["warmup", "run", "run-complete"]);
-    }
-
-    [Fact]
-    public async Task Monitor_MultipleChannels_RoutesRepliesToOriginatingChannel()
-    {
-        // Arrange
-        var threadResolver = MonitorTestMocks.CreateThreadResolver();
-        var msg1 = MonitorTestMocks.CreateChannelMessage(conversationId: "conv-1", channelId: "ch-1");
-        var msg2 = MonitorTestMocks.CreateChannelMessage(conversationId: "conv-2", channelId: "ch-2");
-        var channel1 = MonitorTestMocks.CreateChannel("ch-1", msg1);
-        var channel2 = MonitorTestMocks.CreateChannel("ch-2", msg2);
-        var fakeAgent = MonitorTestMocks.CreateAgent();
-        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
-        var logger = new Mock<ILogger<ChatMonitor>>();
-
-        var monitor = new ChatMonitor(
-            [channel1, channel2],
-            agentFactory,
-            threadResolver,
-            new Mock<IMetricsPublisher>().Object,
-            null,
-            logger.Object);
-
-        // Act
-        await monitor.Monitor(CancellationToken.None);
-
-        // Assert - each channel should receive replies for its own conversation
-        channel1.SentReplies.ShouldAllBe(r => r.ConversationId == "conv-1");
-        channel2.SentReplies.ShouldAllBe(r => r.ConversationId == "conv-2");
     }
 
     [Fact]

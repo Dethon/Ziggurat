@@ -1,5 +1,8 @@
 @using Domain.DTOs.Channel
 @using WebChat.Client.Helpers
+@using Microsoft.JSInterop
+@implements IDisposable
+@inject IJSRuntime Js
 
 @if (Mode == SwitcherMode.Segmented)
 {
@@ -21,7 +24,7 @@
 }
 else
 {
-    <div class="agent-combo @(_open ? "open" : "")">
+    <div class="agent-combo @(_open ? "open" : "")" @ref="_root">
         <button class="agent-chip" @onclick="Toggle" @onclick:stopPropagation="true"
                 aria-haspopup="listbox" aria-expanded="@_open">
             <span class="agent-mono" style="background:@AvatarHelper.GetColorForUser(SelectedAgentId)">@AvatarHelper.GetInitials(SelectedAgentName)</span>
@@ -35,7 +38,6 @@ else
 
         @if (_open)
         {
-            <div class="dropdown-backdrop" @onclick="Close"></div>
             <div class="agent-combo-menu" role="listbox" aria-label="Select agent">
                 @foreach (var agent in Agents)
                 {
@@ -65,11 +67,23 @@ else
     [Parameter] public IReadOnlySet<string> ActiveAgentIds { get; set; } = new HashSet<string>();
 
     private bool _open;
+    private ElementReference _root;
+    private OutsidePressWatcher? _watcher;
+
+    private OutsidePressWatcher Watcher => _watcher ??= new OutsidePressWatcher(Js, () =>
+    {
+        _open = false;
+        StateHasChanged();
+    });
 
     private string SelectedAgentName => Agents.FirstOrDefault(a => a.Id == SelectedAgentId)?.Name ?? "Select agent";
 
     private void Toggle() => _open = !_open;
-    private void Close() => _open = false;
+
+    protected override Task OnAfterRenderAsync(bool firstRender) =>
+        Mode == SwitcherMode.Combo ? Watcher.SyncAsync(_open, _root) : Task.CompletedTask;
+
+    public void Dispose() => _watcher?.Dispose();
 
     private async Task Select(string agentId)
     {

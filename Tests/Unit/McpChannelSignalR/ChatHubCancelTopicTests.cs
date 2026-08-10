@@ -47,6 +47,7 @@ public class ChatHubCancelTopicTests : IDisposable
             new Mock<IAgentCatalog>().Object,
             redisStateService: null!,
             pushSubscriptionStore: null!,
+            attachmentService: null!,
             NullLogger<ChatHub>.Instance)
         {
             Context = new RegisteredCaller()

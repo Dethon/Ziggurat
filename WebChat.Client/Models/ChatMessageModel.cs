@@ -1,3 +1,5 @@
+using Domain.DTOs.Channel;
+
 namespace WebChat.Client.Models;
 
 public record ChatMessageModel
@@ -12,8 +14,13 @@ public record ChatMessageModel
     public DateTimeOffset? Timestamp { get; init; }
     public string? MessageId { get; init; }
 
+    // References, never bytes: the browser mints a short-lived download URL when the transcript
+    // renders one, so a reload costs the same whether or not files were sent.
+    public IReadOnlyList<AttachmentReference>? Attachments { get; init; }
+
     public bool HasContent =>
         !string.IsNullOrEmpty(Content) ||
         !string.IsNullOrEmpty(ToolCalls) ||
-        !string.IsNullOrEmpty(Reasoning);
+        !string.IsNullOrEmpty(Reasoning) ||
+        Attachments is { Count: > 0 };
 }

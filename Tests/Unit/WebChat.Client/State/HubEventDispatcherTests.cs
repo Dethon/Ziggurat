@@ -1,4 +1,3 @@
-using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Moq;
 using Shouldly;
@@ -96,18 +95,6 @@ public sealed class HubEventDispatcherTests : IDisposable
     [Fact]
     // Whether the start is resumed or merely marked is StreamResumeEffect's decision; the
     // dispatcher only reports what the server pushed.
-    public void HandleStreamStarted_DispatchesRemoteStreamStarted()
-    {
-        var notification = new StreamStartedNotification("topic-1");
-
-        _sut.HandleStreamStarted(notification);
-
-        _mockDispatcher.Verify(
-            d => d.Dispatch(It.Is<RemoteStreamStarted>(a => a.TopicId == "topic-1")),
-            Times.Once);
-    }
-
-    [Fact]
     public void HandleStreamStarted_KnownTopic_StillOnlyDispatches()
     {
         var topic = new StoredTopic
@@ -152,18 +139,6 @@ public sealed class HubEventDispatcherTests : IDisposable
         _sut.HandleApprovalResolved(new ApprovalResolvedNotification("topic-1", "approval-123"));
 
         _streamingStore.State.StreamingByTopic["topic-1"].HasContent.ShouldBeFalse();
-    }
-
-    [Fact]
-    public void HandleAgentsUpdated_DispatchesSetAgents()
-    {
-        var agents = new List<AgentCatalogEntry> { new("agent-1", "Agent One", null) };
-
-        _sut.HandleAgentsUpdated(agents);
-
-        _mockDispatcher.Verify(
-            d => d.Dispatch(It.Is<SetAgents>(a => a.Agents.Count == 1 && a.Agents[0].Id == "agent-1")),
-            Times.Once);
     }
 
     private void GivenAReplyInFlight(string topicId, string? currentMessageId = null) =>

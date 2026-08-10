@@ -20,9 +20,13 @@ public sealed class BotRegistry
     }
 
     public ITelegramBotClient GetBotForAgent(string agentId) =>
-        _botsByAgent.TryGetValue(agentId, out var client)
-            ? client
-            : throw new KeyNotFoundException($"No bot registered for agent '{agentId}'");
+        FindBotForAgent(agentId)
+        ?? throw new KeyNotFoundException($"No bot registered for agent '{agentId}'");
+
+    // An attachment reference names its agent, so a fetch resolves the bot from the reference
+    // alone with no chat mapping to consult — including from a cold start. A reference for an
+    // agent this server does not run is a miss rather than a failure.
+    public ITelegramBotClient? FindBotForAgent(string agentId) => _botsByAgent.GetValueOrDefault(agentId);
 
     public ITelegramBotClient? GetBotForChat(long chatId) =>
         _chatToAgent.TryGetValue(chatId, out var agentId) && _botsByAgent.TryGetValue(agentId, out var client)

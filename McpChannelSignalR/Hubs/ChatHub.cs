@@ -6,8 +6,8 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
 using Mcp.Hosting;
+using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Services;
-using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.SignalR;
 
 namespace McpChannelSignalR.Hubs;
@@ -20,6 +20,7 @@ public sealed class ChatHub(
     IAgentCatalog catalog,
     RedisStateService redisStateService,
     IPushSubscriptionStore pushSubscriptionStore,
+    AttachmentService attachmentService,
     ILogger<ChatHub> logger) : Hub
 {
     // What the browser is told when the emit reached nobody. The message may still be sitting in a
@@ -96,6 +97,38 @@ public sealed class ChatHub(
         await Groups.AddToGroupAsync(Context.ConnectionId, $"space:{spaceSlug}");
     }
 
+    public AttachmentLimits GetAttachmentLimits() => attachmentService.Limits;
+
+    // The ticket is scoped to the topic being composed in, so a caller can only put bytes against
+    // a conversation the connection already has a session for.
+    public UploadTicket CreateUploadTicket(string topicId)
+    {
+        if (!IsRegistered)
+        {
+            throw new HubException("User not registered. Call RegisterUser first.");
+        }
+
+        if (!sessionService.TryGetSession(topicId, out var session) || session is null)
+        {
+            throw new HubException("Session not found. Please start a session first.");
+        }
+
+        return attachmentService.MintUpload(
+            topicId, $"{session.ChatId}:{session.ThreadId}", CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
+    }
+
+    // Minted when the transcript renders an attachment, not published: one upload store serves
+    // every space, so a long-lived URL would be readable by anyone holding it.
+    public AttachmentDownload? CreateAttachmentDownload(string attachmentId)
+    {
+        if (!IsRegistered)
+        {
+            throw new HubException("User not registered. Call RegisterUser first.");
+        }
+
+        return attachmentService.MintDownload(attachmentId, CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
+    }
+
     public bool IsProcessing(string topicId)
     {
         return streamService.IsStreaming(topicId);
@@ -139,6 +172,7 @@ public sealed class ChatHub(
         string message,
         string? correlationId,
         AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (!IsRegistered)
@@ -162,6 +196,7 @@ public sealed class ChatHub(
         }
 
         var userId = GetRegisteredUserId() ?? "Anonymous";
+        var conversationId = $"{session.ChatId}:{session.ThreadId}";
 
         var (broadcastChannel, linkedToken) =
             streamService.GetOrCreateStream(topicId, message, userId, cancellationToken);
@@ -170,16 +205,32 @@ public sealed class ChatHub(
         // Subscribe before emitting so no early reply chunks are lost
         var subscription = broadcastChannel.Subscribe();
 
+        // Refused before anything is written or emitted, for the race where the model changes
+        // between picking a file and sending it: no turn is created, no agent is woken, and no
+        // browser is shown a message that was never taken. The answer goes out on the same
+        // stream-error path an undeliverable message uses, so every browser sees the same end.
+        if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
+        {
+            await AnswerRefusedAsync(topicId, conversationId, refused);
+            await foreach (var refusalChunk in
+                subscription.ReadAllAsync(linkedToken).IgnoreCancellation(cancellationToken))
+            {
+                yield return refusalChunk;
+            }
+
+            yield break;
+        }
+
         // Write user message to buffer for other browsers
         var timestamp = DateTimeOffset.UtcNow;
         var userMessage = new ChatStreamMessage
         {
             Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp)
+            UserMessage = new UserMessageInfo(userId, timestamp),
+            Attachments = attachments
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
 
-        var conversationId = $"{session.ChatId}:{session.ThreadId}";
         var delivered = await notificationEmitter.EmitAsync(
             new ChannelMessageNotification
             {
@@ -188,6 +239,7 @@ public sealed class ChatHub(
                 Content = message,
                 AgentId = session.AgentId,
                 ConfigPatch = configPatch,
+                Attachments = attachments,
                 Timestamp = DateTimeOffset.UtcNow
             },
             cancellationToken);
@@ -209,7 +261,12 @@ public sealed class ChatHub(
         }
     }
 
-    public async Task<bool> EnqueueMessage(string topicId, string message, string? correlationId, AgentConfigPatch? configPatch)
+    public async Task<bool> EnqueueMessage(
+        string topicId,
+        string message,
+        string? correlationId,
+        AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments = null)
     {
         if (!IsRegistered)
         {
@@ -227,16 +284,23 @@ public sealed class ChatHub(
         }
 
         var userId = GetRegisteredUserId() ?? "Anonymous";
+        var conversationId = $"{session.ChatId}:{session.ThreadId}";
+
+        if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
+        {
+            await AnswerRefusedAsync(topicId, conversationId, refused);
+            return true;
+        }
 
         var timestamp = DateTimeOffset.UtcNow;
         var userMessage = new ChatStreamMessage
         {
             Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp)
+            UserMessage = new UserMessageInfo(userId, timestamp),
+            Attachments = attachments
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
 
-        var conversationId = $"{session.ChatId}:{session.ThreadId}";
         var delivered = await notificationEmitter.EmitAsync(new ChannelMessageNotification
         {
             ConversationId = conversationId,
@@ -244,6 +308,7 @@ public sealed class ChatHub(
             Content = message,
             AgentId = session.AgentId,
             ConfigPatch = configPatch,
+            Attachments = attachments,
             Timestamp = DateTimeOffset.UtcNow
         });
 
@@ -257,6 +322,39 @@ public sealed class ChatHub(
         // channel took this prompt; what it could not do is find anyone listening, and the stream
         // above has just been told so.
         return true;
+    }
+
+    // The composer already blocks this case; this is the guard for the race where the model
+    // changed between picking a file and sending it. The agent does not check a third time.
+    private string? CapabilityRefusal(
+        string? agentId,
+        AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments)
+    {
+        if (attachments is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        return AttachmentCapability.Refusal(
+            agentId is null ? null : catalog.Get(agentId),
+            configPatch?.Model,
+            attachments.Select(a => a.MediaType));
+    }
+
+    private async Task AnswerRefusedAsync(string topicId, string conversationId, string refusal)
+    {
+        logger.LogInformation(
+            "Refusing a message with attachments for conversation {ConversationId} (topic {TopicId}): {Reason}",
+            conversationId, topicId, refusal);
+
+        await streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = conversationId,
+            Content = refusal,
+            ContentType = ReplyContentType.Error,
+            IsComplete = true
+        });
     }
 
     // The not-live answer, in the shape a turn already ends in: an error reply on the topic's
@@ -328,6 +426,10 @@ public sealed class ChatHub(
         var agentKey = new AgentKey($"{chatId}:{threadId}", agentId);
         await redisStateService.DeleteMessagesAsync(agentKey);
         await redisStateService.DeleteTopicAsync(agentId, chatId, topicId);
+
+        // Removing a conversation removes what was in it. The sweep would reach these eventually;
+        // deleting a topic is the person saying they want them gone now.
+        attachmentService.DeleteConversation($"{chatId}:{threadId}");
     }
 
     public async Task SubscribePush(PushSubscriptionDto subscription)

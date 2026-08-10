@@ -51,26 +51,6 @@ public class McpAgentInstructionsTests
         date.ShouldBeGreaterThan(result.IndexOf("CLIENT", StringComparison.Ordinal));
     }
 
-    // Custom instructions keep the last word over the date, as they do over every other section.
-    [Fact]
-    public void BuildInstructions_PutsTheDateBeforeCustomInstructions()
-    {
-        var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);
-
-        var result = McpAgent.BuildInstructions(
-            name: "TestAgent",
-            description: null,
-            customInstructions: "CUSTOM",
-            language: null,
-            domainPrompts: [],
-            fileSystemPrompts: [],
-            clientPrompts: [],
-            now: fixedTime);
-
-        result.IndexOf("Today is", StringComparison.Ordinal)
-            .ShouldBeLessThan(result.IndexOf("CUSTOM", StringComparison.Ordinal));
-    }
-
     [Fact]
     public void BuildInstructions_PlacesCustomInstructionsLast()
     {

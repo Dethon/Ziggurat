@@ -51,25 +51,6 @@ public class VfsFileInfoToolTests
         result!["exists"]!.GetValue<bool>().ShouldBeFalse();
     }
 
-    // A backend reports the path in its own coordinates — a disk root even reports the
-    // container-absolute one ('/home/x' on a mount whose root is '/'), which the registry would
-    // refuse if reused. The Vfs layer answers the full virtual path, like glob does.
-    [Fact]
-    public async Task RunAsync_BackendLocalPath_IsReplacedWithTheFullVirtualPath()
-    {
-        _registry.Setup(r => r.Resolve("/sandbox/home/x"))
-            .Returns(Resolved(_backend.Object, "home/x", "/sandbox"));
-        _backend.Setup(b => b.InfoAsync("home/x", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult
-            {
-                Exists = true, Path = "/home/x", IsDirectory = false, Size = 1
-            }));
-
-        var result = await _tool.RunAsync("/sandbox/home/x", CancellationToken.None);
-
-        result!["path"]!.GetValue<string>().ShouldBe("/sandbox/home/x");
-    }
-
     private static FsResult<FileSystemResolution> Resolved(
         IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
         new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));

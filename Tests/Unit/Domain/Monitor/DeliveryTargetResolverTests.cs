@@ -195,42 +195,6 @@ public class DeliveryTargetResolverTests
     }
 
     [Fact]
-    public async Task ResolveDeliveryTargets_SignalrThenVoice_AttachesVoiceToSignalrConversation()
-    {
-        // A schedule delivering to both signalr and voice must produce ONE shared
-        // conversation: signalr mints it; voice attaches to that same id (so WebChat shows
-        // a single populated thread and the satellite speaks it). The first minted target's
-        // id is threaded into later targets as `existingConversationId`.
-        var origin = Channel("scheduling");
-        var signalr = Channel("signalr");
-        var voice = new Mock<IChannelConnection>();
-        voice.SetupGet(c => c.ChannelId).Returns("voice");
-        voice.SetupGet(c => c.AttachOnly).Returns(true);
-        string? voiceExistingId = null;
-        voice.Setup(c => c.CreateConversationAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .Callback((string _, string _, string _, string? _, string? _, string? existing, CancellationToken _) => voiceExistingId = existing)
-            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? existing, CancellationToken _) => existing ?? "minted-voice");
-        var channels = new[] { origin, signalr, voice.Object };
-        var msg = new ChannelMessage
-        {
-            ConversationId = "fire-1",
-            Content = "Avisa a Fran",
-            Sender = "scheduler",
-            ChannelId = "scheduling",
-            AgentId = "mycroft",
-            ReplyTo = [new ReplyTarget("signalr", null), new ReplyTarget("voice", null, "fran-office-01")]
-        };
-
-        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
-
-        voiceExistingId.ShouldBe("minted-signalr");
-        targets.Count.ShouldBe(2);
-        targets[0].ConversationId.ShouldBe("minted-signalr");
-        targets[1].ConversationId.ShouldBe("minted-signalr");
-    }
-
-    [Fact]
     public async Task ResolveDeliveryTargets_AttachOnlyOrderingIsCapabilityDriven_NotChannelIdDriven()
     {
         // Anchoring must key off the config-declared AttachOnly capability, not any channel

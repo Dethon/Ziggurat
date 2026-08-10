@@ -1,0 +1,72 @@
+@using Domain.DTOs.Channel
+@inject IAttachmentService AttachmentService
+@inject IJSRuntime Js
+
+@code {
+    [Parameter] public IReadOnlyList<AttachmentReference>? Attachments { get; set; }
+
+    private readonly Dictionary<string, string> _previews = [];
+
+    // A thumbnail needs a URL the browser can fetch, and a download URL is minted rather than
+    // published — so an image asks for one as it renders, and other kinds only ask when clicked.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Attachments is null)
+        {
+            return;
+        }
+
+        foreach (var attachment in Attachments.Where(a => IsImage(a) && !_previews.ContainsKey(a.Id)))
+        {
+            var download = await AttachmentService.CreateDownloadAsync(attachment.Id);
+            if (download is { IsLive: true, Value: not null })
+            {
+                _previews[attachment.Id] = download.Value.Url;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private static bool IsImage(AttachmentReference attachment) =>
+        AttachmentKinds.IsImage(attachment.MediaType);
+
+    private async Task Download(AttachmentReference attachment)
+    {
+        var download = await AttachmentService.CreateDownloadAsync(attachment.Id);
+        if (download is { IsLive: true, Value: not null })
+        {
+            await Js.InvokeVoidAsync("attachments.open", download.Value.Url, attachment.FileName);
+        }
+    }
+
+    private static string DescribeSize(long bytes) =>
+        bytes >= 1024 * 1024
+            ? $"{bytes / (1024.0 * 1024.0):0.#} MB"
+            : $"{Math.Max(1, bytes / 1024)} KB";
+}
+
+@if (Attachments is { Count: > 0 })
+{
+    <div class="message-attachments">
+        @foreach (var attachment in Attachments)
+        {
+            @if (IsImage(attachment) && _previews.TryGetValue(attachment.Id, out var preview))
+            {
+                <button class="attachment-thumbnail"
+                        title="@attachment.FileName"
+                        @onclick="() => Download(attachment)">
+                    <img src="@preview" alt="@attachment.FileName" />
+                </button>
+            }
+            else
+            {
+                <button class="attachment-chip"
+                        title="@attachment.FileName"
+                        @onclick="() => Download(attachment)">
+                    <span class="attachment-name">@attachment.FileName</span>
+                    <span class="attachment-size">@DescribeSize(attachment.SizeBytes)</span>
+                </button>
+            }
+        }
+    </div>
+}

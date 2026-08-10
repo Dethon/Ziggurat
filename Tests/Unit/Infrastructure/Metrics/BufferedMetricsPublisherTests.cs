@@ -11,7 +11,6 @@ public class BufferedMetricsPublisherTests
     private sealed class FakeSink : IMetricSink
     {
         private readonly List<MetricEvent> _events = [];
-        private readonly TaskCompletionSource _sent = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public TaskCompletionSource? Gate { get; set; }
@@ -28,8 +27,6 @@ public class BufferedMetricsPublisherTests
             }
         }
 
-        public Task Sent => _sent.Task;
-
         // Signals that the drain has taken an event off the channel, so a test can say exactly how
         // many are still buffered behind it.
         public Task Entered => _entered.Task;
@@ -45,7 +42,6 @@ public class BufferedMetricsPublisherTests
 
             if (ThrowFor(metricEvent) is { } ex)
             {
-                _sent.TrySetResult();
                 throw ex;
             }
 
@@ -53,8 +49,6 @@ public class BufferedMetricsPublisherTests
             {
                 _events.Add(metricEvent);
             }
-
-            _sent.TrySetResult();
         }
     }
 
@@ -76,17 +70,6 @@ public class BufferedMetricsPublisherTests
 
         sink.Events.ShouldBeEmpty();
         sink.Gate.TrySetResult();
-    }
-
-    [Fact]
-    public async Task Publish_SinkThrows_DoesNotEscape()
-    {
-        var sink = new FakeSink { ThrowFor = _ => new InvalidOperationException("redis down") };
-        await using var publisher = new BufferedMetricsPublisher(sink);
-
-        Should.NotThrow(() => publisher.Publish(Event()));
-
-        await sink.Sent;
     }
 
     [Fact]

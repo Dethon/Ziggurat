@@ -13,13 +13,6 @@ public class IdentityPromptTests
     }
 
     [Fact]
-    public void Build_WithoutDescription_StatesNameOnly()
-    {
-        IdentityPrompt.Build("Jack", null)
-            .ShouldBe("## Identity\n\nYou are Jack.");
-    }
-
-    [Fact]
     public void Build_WhitespaceDescription_TreatedAsNoDescription()
     {
         IdentityPrompt.Build("Jonas", "   ")

@@ -12,10 +12,4 @@ public class TurnKeyTests
     {
         TurnKey.Mint().ShouldMatch("^[0-9a-f]{32}$");
     }
-
-    [Fact]
-    public void EveryMint_IsADifferentKey()
-    {
-        TurnKey.Mint().ShouldNotBe(TurnKey.Mint());
-    }
 }

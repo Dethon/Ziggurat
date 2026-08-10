@@ -12,10 +12,12 @@ public interface IChatMessagingService
     // round trip, so a caller still learns whether the server actually opened the stream only
     // once it starts consuming it, same as it always has for a live-but-empty stream.
     Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendMessageAsync(
-        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null);
+        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null,
+        IReadOnlyList<AttachmentReference>? attachments = null);
     Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId);
     Task<HubResult<StreamState>> GetStreamStateAsync(string topicId);
     Task<HubResult<Nothing>> CancelTopicAsync(string topicId);
     Task<HubResult<bool>> EnqueueMessageAsync(
-        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null);
+        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null,
+        IReadOnlyList<AttachmentReference>? attachments = null);
 }

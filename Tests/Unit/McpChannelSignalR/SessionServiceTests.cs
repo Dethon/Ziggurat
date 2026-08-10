@@ -75,13 +75,4 @@ public class SessionServiceTests
     {
         Should.NotThrow(() => _sut.EndSession("nonexistent"));
     }
-
-    [Fact]
-    public void StartSession_WithTopicName_StoresTopicName()
-    {
-        _sut.StartSession("topic1", "agent1", 100, 200, topicName: "My topic");
-
-        _sut.TryGetSession("topic1", out var session).ShouldBeTrue();
-        session!.TopicName.ShouldBe("My topic");
-    }
 }

@@ -4,6 +4,7 @@ using Infrastructure.Clients.Push;
 using Infrastructure.Conversations;
 using Infrastructure.StateManagers;
 using Mcp.Hosting;
+using McpChannelSignalR.Attachments;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
@@ -34,7 +35,12 @@ public static class ConfigModule
             .AddSingleton<ApprovalService>()
             .AddSingleton<IApprovalService>(sp => sp.GetRequiredService<ApprovalService>())
             .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()
-            .AddSingleton<IPushSubscriptionStore, RedisPushSubscriptionStore>();
+            .AddSingleton<IPushSubscriptionStore, RedisPushSubscriptionStore>()
+            .AddSingleton(settings.Attachments)
+            .AddSingleton<AttachmentTickets>()
+            .AddSingleton<AttachmentStore>()
+            .AddSingleton<AttachmentService>()
+            .AddHostedService<AttachmentSweeper>();
 
         if (settings.WebPush?.IsConfigured == true)
         {
@@ -54,7 +60,7 @@ public static class ConfigModule
             services.AddSingleton<IPushNotificationService, NullPushNotificationService>();
         }
 
-        services.AddSignalR();
+        services.AddChatSignalR();
 
         services
             .AddMcpHost(settings)
@@ -62,10 +68,21 @@ public static class ConfigModule
             .WithTools<RequestApprovalTool>()
             .WithTools<CreateConversationTool>()
             .WithTools<RegisterAgentsTool>()
+            .WithTools<FetchAttachmentTool>()
             // Broadcast: a subscriber that is idle but not yet pruned still receives, so a brief
             // agent gap does not lose a message the browser has already been told was sent.
             .AddChannelServer(DeliveryPolicy.Broadcast);
 
         return services;
     }
+
+    // How long a browser may go silent before the server calls it gone. The default thirty seconds
+    // is shorter than a person picking a photo on a phone: the picker holds the page down, a frozen
+    // page sends no keepalive, and the connection dies mid-pick. Two minutes is the browser's own
+    // tolerance for a silent server (six minutes, keepalive every ten seconds) read from this side,
+    // and costs nothing to hold — this hub keeps no per-connection state to release.
+    private static readonly TimeSpan _frozenPageTolerance = TimeSpan.FromMinutes(2);
+
+    internal static IServiceCollection AddChatSignalR(this IServiceCollection services) =>
+        services.AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance).Services;
 }

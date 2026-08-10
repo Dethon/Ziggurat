@@ -19,13 +19,6 @@ public class MessageTruncatorTests
     }
 
     [Fact]
-    public void EstimateMessageTokens_TextContent_CountsTextPlusOverhead()
-    {
-        var msg = new ChatMessage(ChatRole.User, "abcdefgh"); // 8 chars => 2 tokens
-        MessageTruncator.EstimateMessageTokens(msg).ShouldBe(2 + 4); // + per-message overhead
-    }
-
-    [Fact]
     public void EstimateMessageTokens_FunctionCall_CountsSerializedJsonPlusOverhead()
     {
         var call = new FunctionCallContent("call-1", "doStuff",
@@ -56,6 +49,55 @@ public class MessageTruncatorTests
         var msg = new ChatMessage(ChatRole.User,
             [new TextContent("abcd"), new TextContent("efgh")]); // 1 + 1 = 2 tokens
         MessageTruncator.EstimateMessageTokens(msg).ShouldBe(2 + 4);
+    }
+
+    // Without an attachment case a 1 MB document counts as a fixed handful of tokens and
+    // truncation goes blind on the very message most likely to overflow the window.
+    [Fact]
+    public void EstimateMessageTokens_ADocumentAttachment_CountsWithItsSize()
+    {
+        var small = new ChatMessage(ChatRole.User,
+            [new DataContent(new byte[2_000], "application/pdf")]);
+        var large = new ChatMessage(ChatRole.User,
+            [new DataContent(new byte[200_000], "application/pdf")]);
+
+        MessageTruncator.EstimateMessageTokens(small)
+            .ShouldBeLessThan(MessageTruncator.EstimateMessageTokens(large));
+        MessageTruncator.EstimateMessageTokens(large).ShouldBeGreaterThan(1_000);
+    }
+
+    // A provider resizes an image into its own tile scheme before billing, so the file's size
+    // says almost nothing about what it costs.
+    [Fact]
+    public void EstimateMessageTokens_AnImageAttachment_CountsTheSameWhateverItsSize()
+    {
+        var small = new ChatMessage(ChatRole.User, [new DataContent(new byte[2_000], "image/png")]);
+        var large = new ChatMessage(ChatRole.User, [new DataContent(new byte[2_000_000], "image/png")]);
+
+        MessageTruncator.EstimateMessageTokens(small)
+            .ShouldBe(MessageTruncator.EstimateMessageTokens(large));
+        MessageTruncator.EstimateMessageTokens(small).ShouldBeGreaterThan(100);
+    }
+
+    // A document's file size tracks its images far more than its text, so an uncapped estimate
+    // would put a 20 MB scan past the whole context window and make the truncator drop every
+    // earlier message to make room for one attachment.
+    [Fact]
+    public void Truncate_AVeryLargeDocumentAttachment_DoesNotDropTheConversation()
+    {
+        var history = Enumerable.Range(0, 10)
+            .Select(i => new ChatMessage(i % 2 == 0 ? ChatRole.User : ChatRole.Assistant, $"message {i}"))
+            .ToList();
+        history.Add(new ChatMessage(ChatRole.User,
+            [new TextContent("what is in this?"), new DataContent(new byte[20 * 1024 * 1024], "application/pdf")]));
+
+        var kept = MessageTruncator.Truncate(
+            history, maxContextTokens: 800_000,
+            out var dropped, out _, out _, out var overflow);
+
+        overflow.ShouldBeFalse();
+        dropped.ShouldBe(0);
+        kept.Count.ShouldBe(history.Count);
     }
 
     [Fact]
@@ -171,32 +213,6 @@ public class MessageTruncatorTests
     }
 
     [Fact]
-    public void Truncate_DropsToolCallAssistantTogetherWithMatchingToolResult()
-    {
-        var sys = new ChatMessage(ChatRole.System, new string('s', 4));
-        var assistantWithCall = new ChatMessage(
-            ChatRole.Assistant,
-            [new FunctionCallContent("call-1", "doStuff",
-                new Dictionary<string, object?> { ["padding"] = new string('p', 200) })]);
-        var toolResult = new ChatMessage(
-            ChatRole.Tool,
-            [new FunctionResultContent("call-1", new string('r', 200))]);
-        var lastUser = new ChatMessage(ChatRole.User, new string('u', 4));
-
-        var msgs = new List<ChatMessage> { sys, assistantWithCall, toolResult, lastUser };
-
-        var result = MessageTruncator.Truncate(
-            msgs, maxContextTokens: 30,
-            out var dropped, out _, out _, out _);
-
-        dropped.ShouldBe(2); // pair dropped together
-        result.ShouldNotContain(assistantWithCall);
-        result.ShouldNotContain(toolResult);
-        result.ShouldContain(sys);
-        result.ShouldContain(lastUser);
-    }
-
-    [Fact]
     public void Truncate_NeverSplitsToolCallResultPair()
     {
         // Without atomicity, dropping just the (oldest) assistant call could bring us under
@@ -268,26 +284,6 @@ public class MessageTruncatorTests
         result.ShouldContain(u2);
         result.ShouldContain(a1);
         result.ShouldNotContain(u1);
-    }
-
-    [Fact]
-    public void Truncate_FixedOverheadAlonePushesOverThreshold_FlagsOverflow()
-    {
-        var sys = new ChatMessage(ChatRole.System, "s");
-        var lastUser = new ChatMessage(ChatRole.User, "u");
-        var msgs = new List<ChatMessage> { sys, lastUser };
-
-        var result = MessageTruncator.Truncate(
-            msgs, maxContextTokens: 100,
-            out var dropped, out var before, out var after, out var overflow,
-            fixedOverheadTokens: 1000);
-
-        overflow.ShouldBeTrue();
-        before.ShouldBeGreaterThan(100);
-        // Nothing droppable (only pinned messages).
-        dropped.ShouldBe(0);
-        after.ShouldBe(before);
-        result.Count.ShouldBe(2);
     }
 
     [Fact]

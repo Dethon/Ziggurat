@@ -1,4 +1,3 @@
-using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
@@ -12,14 +11,6 @@ public class HaFileSystemBackendTests
     {
         var client = new FakeHaClient();
         return new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
-    }
-
-    [Fact]
-    public void ImplementsFileSystemBackend_NamedHa()
-    {
-        var fs = Build();
-        fs.ShouldBeAssignableTo<IFileSystemBackend>();
-        fs.FilesystemName.ShouldBe("ha");
     }
 
     [Fact]

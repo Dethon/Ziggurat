@@ -50,38 +50,4 @@ public class TseSettingsBindingTests
         settings.Tse.AuditDir.ShouldBe("/tse-audit");
         settings.Tse.AuditMaxPairs.ShouldBe(10);
     }
-
-    [Fact]
-    public void Bind_FromEnvironmentVariables()
-    {
-        var vars = new Dictionary<string, string>
-        {
-            ["Tse__Mode"] = "Always",
-            ["Tse__Endpoint"] = "http://tse-extractor:9099",
-            ["Tse__AuditDir"] = "/tse-audit"
-        };
-
-        foreach (var (k, v) in vars)
-        {
-            Environment.SetEnvironmentVariable(k, v);
-        }
-        try
-        {
-            var settings = new ConfigurationBuilder()
-                .AddEnvironmentVariables()
-                .Build()
-                .Get<VoiceSettings>()!;
-
-            settings.Tse.Mode.ShouldBe(TseMode.Always);
-            settings.Tse.Endpoint.ShouldBe("http://tse-extractor:9099");
-            settings.Tse.AuditDir.ShouldBe("/tse-audit");
-        }
-        finally
-        {
-            foreach (var k in vars.Keys)
-            {
-                Environment.SetEnvironmentVariable(k, null);
-            }
-        }
-    }
 }

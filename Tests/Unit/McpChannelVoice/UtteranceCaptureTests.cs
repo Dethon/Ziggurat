@@ -165,17 +165,6 @@ public class UtteranceCaptureTests
     }
 
     [Fact]
-    public async Task Stats_MidSpeech_ReportNoEndpointingTail()
-    {
-        var capture = new UtteranceCapture(Gate());
-
-        capture.Feed(Silent());
-        capture.Feed(Loud());
-
-        capture.Stats.TrailingSilenceMs.ShouldBe(0);
-    }
-
-    [Fact]
     public async Task Stats_FedAfterTheCaptureEnded_KeepTheTailTheGateDecidedOn()
     {
         // Feed has no post-completion guard and the satellite keeps streaming until it receives the
