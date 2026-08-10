@@ -17,10 +17,10 @@ bytes-in shape.
 
 **Status:** ready-for-agent
 
-- [ ] A transcription client in Infrastructure sends audio to lemonade and returns the text plus the confidence figures whisper reported
-- [ ] A domain contract takes complete audio and its media type and returns a transcript; the Infrastructure client implements it
-- [ ] The voice channel's streaming speech-to-text produces the same requests and the same results as before, now via the shared client
-- [ ] Model, base URL, language, prompt and request timeout are settings, in appsettings only — no compose or `.env` entries
-- [ ] The client's own tests pin the multipart form structurally (fields and file part read back), not by matching substrings in a serialized body
-- [ ] A lemonade error and a request timeout each surface as something a caller can act on, distinctly
-- [ ] Every existing voice speech-to-text, segmenter and prompt-builder test still passes untouched
+- [x] A transcription client in Infrastructure sends audio to lemonade and returns the text plus the confidence figures whisper reported
+- [x] A domain contract takes complete audio and its media type and returns a transcript; the Infrastructure client implements it
+- [x] The voice channel's streaming speech-to-text produces the same requests and the same results as before, now via the shared client
+- [x] Model, base URL, language, prompt and request timeout are settings, in appsettings only — no compose or `.env` entries
+- [x] The client's own tests pin the multipart form structurally (fields and file part read back), not by matching substrings in a serialized body
+- [x] A lemonade error and a request timeout each surface as something a caller can act on, distinctly
+- [x] Every existing voice speech-to-text, segmenter and prompt-builder test still passes untouched
