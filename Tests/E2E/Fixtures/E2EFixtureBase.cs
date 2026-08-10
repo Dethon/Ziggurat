@@ -29,7 +29,11 @@ public abstract class E2EFixtureBase : IAsyncLifetime
         await E2EPhase.RunAsync(fixtureName, "container startup", ContainerStartupTimeout, StartContainersAsync);
     }
 
-    public async Task<IPage> CreatePageAsync(bool hasTouch = false)
+    // isMobile is not a synonym for hasTouch: it turns on Chromium's mobile emulation — the
+    // meta-viewport, and with it the tap heuristics that decide whether a touch becomes a click.
+    // A gesture test that only sets hasTouch is still being judged by desktop rules, which is
+    // how a tap bug can reproduce on a phone and pass here.
+    public async Task<IPage> CreatePageAsync(bool hasTouch = false, bool isMobile = false)
     {
         if (_browser is null)
         {
@@ -42,7 +46,14 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             await ctx.CloseAsync();
         }
 
-        var context = await _browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true, HasTouch = hasTouch });
+        var context = await _browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            IgnoreHTTPSErrors = true,
+            HasTouch = hasTouch || isMobile,
+            IsMobile = isMobile,
+            DeviceScaleFactor = isMobile ? 3 : null,
+            ViewportSize = isMobile ? new ViewportSize { Width = 390, Height = 844 } : null
+        });
         await StartTraceAsync(context);
 
         // The app references third-party CDNs (Google Fonts, avatar service) as render-blocking

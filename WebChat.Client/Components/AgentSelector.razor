@@ -1,5 +1,8 @@
 @using Domain.DTOs.Channel
 @using WebChat.Client.Helpers
+@using Microsoft.JSInterop
+@implements IDisposable
+@inject IJSRuntime Js
 
 @if (Mode == SwitcherMode.Segmented)
 {
@@ -21,7 +24,7 @@
 }
 else
 {
-    <div class="agent-combo @(_open ? "open" : "")">
+    <div class="agent-combo @(_open ? "open" : "")" @ref="_root">
         <button class="agent-chip" @onclick="Toggle" @onclick:stopPropagation="true"
                 aria-haspopup="listbox" aria-expanded="@_open">
             <span class="agent-mono" style="background:@AvatarHelper.GetColorForUser(SelectedAgentId)">@AvatarHelper.GetInitials(SelectedAgentName)</span>
@@ -35,10 +38,6 @@ else
 
         @if (_open)
         {
-            @* Close on pointerdown, not click: the backdrop is gone before the browser
-               synthesizes the tap's click, so the same tap also reaches what it aimed at
-               (on a phone, the conversation row under the finger). *@
-            <div class="dropdown-backdrop" @onpointerdown="Close"></div>
             <div class="agent-combo-menu" role="listbox" aria-label="Select agent">
                 @foreach (var agent in Agents)
                 {
@@ -68,11 +67,47 @@ else
     [Parameter] public IReadOnlySet<string> ActiveAgentIds { get; set; } = new HashSet<string>();
 
     private bool _open;
+    private ElementReference _root;
+    private DotNetObjectReference<AgentSelector>? _selfRef;
+    private bool _watching;
 
     private string SelectedAgentName => Agents.FirstOrDefault(a => a.Id == SelectedAgentId)?.Name ?? "Select agent";
 
     private void Toggle() => _open = !_open;
-    private void Close() => _open = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Mode != SwitcherMode.Combo || _open == _watching)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_open)
+            {
+                _selfRef ??= DotNetObjectReference.Create(this);
+                await Js.InvokeVoidAsync("outsidePress.watch", _root, _selfRef);
+            }
+            else
+            {
+                await Js.InvokeVoidAsync("outsidePress.unwatch", _root);
+            }
+
+            _watching = _open;
+        }
+        catch (JSException) { /* the helper attaches on the next render */ }
+    }
+
+    [JSInvokable]
+    public void CloseFromOutsidePress()
+    {
+        _open = false;
+        _watching = false;
+        StateHasChanged();
+    }
+
+    public void Dispose() => _selfRef?.Dispose();
 
     private async Task Select(string agentId)
     {

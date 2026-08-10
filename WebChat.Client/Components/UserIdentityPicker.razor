@@ -1,8 +1,10 @@
+@using Microsoft.JSInterop
 @inherits StoreSubscriberComponent
 @inject UserIdentityStore Store
 @inject IDispatcher Dispatcher
+@inject IJSRuntime Js
 
-<div class="user-identity-picker @(_dropdownOpen ? "open" : "")">
+<div class="user-identity-picker @(_dropdownOpen ? "open" : "")" @ref="_root">
     <button class="avatar-button" @onclick="ToggleDropdown" @onclick:stopPropagation="true" title="@(_selectedUser?.Id ?? "Select user")">
         @if (_selectedUser is not null)
         {
@@ -16,8 +18,6 @@
 
     @if (_dropdownOpen)
     {
-        @* Close on pointerdown, not click — see AgentSelector's backdrop. *@
-        <div class="dropdown-backdrop" @onpointerdown="CloseDropdown"></div>
         <div class="user-dropdown-menu">
             @foreach (var user in _availableUsers)
             {
@@ -35,6 +35,9 @@
     private bool _dropdownOpen;
     private UserConfig? _selectedUser;
     private IReadOnlyList<UserConfig> _availableUsers = [];
+    private ElementReference _root;
+    private DotNetObjectReference<UserIdentityPicker>? _selfRef;
+    private bool _watching;
 
     protected override void OnInitialized()
     {
@@ -54,9 +57,42 @@
         _dropdownOpen = !_dropdownOpen;
     }
 
-    private void CloseDropdown()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_dropdownOpen == _watching)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_dropdownOpen)
+            {
+                _selfRef ??= DotNetObjectReference.Create(this);
+                await Js.InvokeVoidAsync("outsidePress.watch", _root, _selfRef);
+            }
+            else
+            {
+                await Js.InvokeVoidAsync("outsidePress.unwatch", _root);
+            }
+
+            _watching = _dropdownOpen;
+        }
+        catch (JSException) { /* the helper attaches on the next render */ }
+    }
+
+    [JSInvokable]
+    public void CloseFromOutsidePress()
     {
         _dropdownOpen = false;
+        _watching = false;
+        StateHasChanged();
+    }
+
+    public override void Dispose()
+    {
+        _selfRef?.Dispose();
+        base.Dispose();
     }
 
     private void SelectUser(UserConfig user)

@@ -499,19 +499,6 @@ h1, h2, h3 {
     transform: rotate(180deg);
 }
 
-/* Catches the tap that dismisses an open dropdown. A transformed ancestor (the mobile hearth
-   sheet) becomes the containing block for fixed positioning, so `inset: 0` would shrink this
-   to that ancestor's box and taps anywhere else on screen would miss it. Overshoot in every
-   direction so it spans the viewport wherever the dropdown is mounted; fixed elements add no
-   scrollable overflow, so the overshoot costs nothing. The z-index keeps it above sibling
-   controls that come later in the DOM (the config gear next to the agent chip) while staying
-   below the menus themselves. */
-.dropdown-backdrop {
-    position: fixed;
-    inset: -100dvh -100vw;
-    z-index: 1;
-}
-
 .dropdown-menu {
     position: absolute;
     top: calc(100% + 4px);

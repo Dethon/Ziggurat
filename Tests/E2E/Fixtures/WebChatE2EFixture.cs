@@ -108,6 +108,12 @@ public class WebChatE2EFixture : E2EFixtureBase
             {
               "openRouter": { "apiUrl": "https://openrouter.ai/api/v1/", "apiKey": "{{apiKey}}" },
               "redis": { "connectionString": "redis:6379" },
+              // Without these the model/effort menu never renders, so nothing in the suite ever
+              // exercised the control the drawer's gesture bugs live next to.
+              "patchableModels": [
+                { "id": "~deepseek/deepseek-v4-flash-latest:nitro", "name": "DeepSeek V4 Flash" },
+                { "id": "google/gemini-3.1-flash-lite", "name": "Gemini 3.1 Flash Lite" }
+              ],
               "agents": [
                 {
                   "id": "test-agent",

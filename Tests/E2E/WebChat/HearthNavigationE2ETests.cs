@@ -92,19 +92,20 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(menu).Not.ToBeVisibleAsync();
     }
 
-    // An open dropdown paints a viewport-spanning dismiss backdrop over everything, including
-    // the conversation list — and the config menu deliberately stays open after picking a model,
-    // so on a phone the very next tap was spent dismissing instead of selecting. Closing on
-    // pointerdown removes the backdrop before the browser synthesizes the tap's click, so one
-    // tap both dismisses the menu and selects the topic under the finger. Touchscreen.Tap, not
-    // Mouse.Click: only the touch sequence hit-tests the click after the re-render.
+    // An open menu used to paint a dismiss backdrop across the whole sheet, and the model menu
+    // stays open on purpose after a pick — so on a phone the next tap was always spent closing
+    // it and the conversation under the finger never opened. That is the two-tap selection.
+    // Dismissal now happens on a document-level press that neither preventDefaults nor stops
+    // propagation, so the one press both closes the menu and lands on the row.
+    //
+    // Real mobile emulation, and the agent must expose patchable models or the menu this is
+    // about does not render at all.
     [SkippableFact]
-    public async Task MobileViewport_ATapOnATopicWhileTheAgentMenuIsOpen_SelectsItInThatSameTap()
+    public async Task MobileViewport_ATapOnATopicWhileTheModelMenuIsOpen_SelectsItInThatSameTap()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync(hasTouch: true);
-        await page.SetViewportSizeAsync(390, 844);
+        var page = await fixture.CreatePageAsync(isMobile: true);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
@@ -112,20 +113,43 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
         await CreateTopicAsync(page, "Menu tap decoy topic message");
 
         await TapHearthHandleAsync(page);
+        await TapHearthHandleAsync(page);
+        await Assertions.Expect(page.Locator(".hearth-search-input")).ToBeVisibleAsync();
+        await page.WaitForTimeoutAsync(800);
 
-        await page.Locator(".hearth-peek .agent-chip").ClickAsync();
-        var menu = page.Locator(".hearth-peek .agent-combo-menu");
+        var trigger = page.Locator(".hearth .agent-config-trigger:visible").First;
+        await trigger.ClickAsync(new LocatorClickOptions { Timeout = 10_000 });
+        var menu = page.Locator(".agent-config-menu:visible");
         await Assertions.Expect(menu).ToBeVisibleAsync();
 
-        var row = page.Locator(".topic-item", new PageLocatorOptions { HasText = "Menu tap target" }).First;
-        var box = (await row.BoundingBoxAsync()).ShouldNotBeNull();
+        // At the full detent the menu opens downwards, over the list — a row beneath it is
+        // genuinely the menu's to receive. Aim at a row that is actually exposed, which is what
+        // a person tapping a conversation they can see is doing.
+        var aim = await page.EvaluateAsync<System.Text.Json.JsonElement>(
+            """
+            () => {
+                for (const row of document.querySelectorAll('.topic-item')) {
+                    const r = row.getBoundingClientRect();
+                    const x = r.x + r.width / 2, y = r.y + r.height / 2;
+                    const hit = document.elementFromPoint(x, y);
+                    if (hit && row.contains(hit)) {
+                        return {x, y, name: row.querySelector('.topic-name').textContent};
+                    }
+                }
+                return {x: -1, y: -1, name: ''};
+            }
+            """);
+
+        var aimedAt = aim.GetProperty("name").GetString();
+        aimedAt.ShouldNotBeNullOrEmpty();
+
         await page.Touchscreen.TapAsync(
-            (float)(box.X + box.Width / 2), (float)(box.Y + box.Height / 2));
+            (float)aim.GetProperty("x").GetDouble(), (float)aim.GetProperty("y").GetDouble());
 
         await Assertions.Expect(menu).Not.ToBeVisibleAsync();
-        await Assertions.Expect(row).ToHaveClassAsync(
-            new System.Text.RegularExpressions.Regex(@"\bselected\b"),
-            new LocatorAssertionsToHaveClassOptions { Timeout = 10_000 });
+        await Assertions.Expect(
+                page.Locator(".topic-item.selected .topic-name", new PageLocatorOptions { HasText = aimedAt }))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 10_000 });
     }
 
     [SkippableFact]
@@ -292,6 +316,77 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
             """);
 
         switched.ShouldBeTrue("a 12px-drift tap must still select the topic, not become a sheet gesture");
+    }
+
+    // The drawer's whole purpose: the conversation under the finger is the one that opens — and
+    // that has to hold during the 280ms the sheet spends settling into a detent, which is exactly
+    // when a thumb arrives after flicking it open. While the transform moves, the press and the
+    // release land on different rows, so the browser resolves the click to their common ancestor
+    // (.hearth-rows) and the row's own handler never runs: the tap is silently spent, and only a
+    // second one, after the sheet has stopped, selects anything.
+    //
+    // Asserting against what elementFromPoint saw at touchstart rather than a rect measured
+    // beforehand — a measurement taken before the tap is already stale by the time the finger
+    // lands, which would test the harness's timing rather than the app's behaviour.
+    [SkippableFact]
+    public async Task MobileViewport_ATapWhileTheSheetIsStillSettling_OpensTheRowUnderTheFinger()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync(isMobile: true);
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+
+        await CreateTopicAsync(page, "Settle tap alpha topic message");
+        await CreateTopicAsync(page, "Settle tap bravo topic message");
+        await CreateTopicAsync(page, "Settle tap delta topic message");
+
+        // Stretch the settle so the finger provably arrives while the sheet is still travelling;
+        // at its real 280ms the tap races the harness's own round trips and proves nothing.
+        await page.AddStyleTagAsync(new PageAddStyleTagOptions
+        {
+            Content = ".hearth { transition-duration: 3s !important; }"
+        });
+
+        // Peek → Half → Full. The second tap starts the travel the finger will arrive during.
+        await TapHearthHandleAsync(page);
+        await TapHearthHandleAsync(page);
+
+        await page.EvaluateAsync(
+            """
+            () => {
+                window.__under = null;
+                window.__moving = null;
+                document.addEventListener('touchstart', e => {
+                    const t = e.touches[0];
+                    const hit = document.elementFromPoint(t.clientX, t.clientY);
+                    const row = hit ? hit.closest('.topic-item') : null;
+                    window.__under = row ? row.querySelector('.topic-name').textContent : null;
+                    window.__moving = getComputedStyle(document.querySelector('.hearth')).transform;
+                }, { capture: true, once: true });
+            }
+            """);
+
+        await page.WaitForTimeoutAsync(400);
+        await page.Touchscreen.TapAsync(195, 650);
+
+        // Give the click, and the render it causes, room to land before reading the outcome.
+        await page.WaitForTimeoutAsync(1_500);
+
+        var outcome = await page.EvaluateAsync<string>(
+            """
+            () => {
+                const selected = document.querySelector('.topic-item.selected .topic-name');
+                return (window.__under ?? '<no row under the finger>')
+                    + ' => ' + (selected ? selected.textContent : '<nothing selected>')
+                    + ' [sheet at touchstart: ' + window.__moving + ']';
+            }
+            """);
+
+        var under = outcome.Split(" => ")[0];
+        var trailer = outcome[(outcome.IndexOf(" [sheet at touchstart:", StringComparison.Ordinal))..];
+        under.ShouldStartWith("Settle tap");
+        outcome.ShouldBe($"{under} => {under}{trailer}");
     }
 
     private static async Task CreateTopicAsync(IPage page, string message)

@@ -174,22 +174,15 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             new LocatorAssertionsToBeHiddenOptions { Timeout = (float)budget.TotalMilliseconds });
     }
 
-    // Two overlays can intercept these clicks and make the flow flaky:
-    //   * .approval-modal-overlay (z-index 1000) — pushed by StreamResumeService over SignalR
-    //     at any moment; it sits above the dropdown items, so the item click is intercepted
-    //     until it is dismissed.
-    //   * .dropdown-backdrop (full-viewport, painted above the avatar button) — it exists only
-    //     while the dropdown is open and intercepts the avatar-button click. Re-clicking the
-    //     avatar button while the dropdown is already open therefore never lands.
-    //
-    // Each attempt dismisses any approval overlay, opens the dropdown ONLY when it is closed
-    // (no backdrop present), then clicks the item. On interception it resets to a known-closed
-    // state — dismiss overlay, then click the backdrop to close the dropdown — so the next
-    // attempt re-opens cleanly.
+    // .approval-modal-overlay (z-index 1000) is pushed by StreamResumeService over SignalR at
+    // any moment and sits above the dropdown items, so the item click is intercepted until it
+    // is dismissed. Each attempt dismisses it, opens the dropdown only when the menu is not
+    // already showing, then clicks the item; on interception it presses outside to get back to
+    // a known-closed state so the next attempt re-opens cleanly.
     private static async Task OpenUserDropdownAndSelectAsync(IPage page, int userIndex)
     {
         var avatarButton = page.Locator(".avatar-button");
-        var backdrop = page.Locator(".dropdown-backdrop");
+        var menu = page.Locator(".user-dropdown-menu");
         var dropdownItem = page.Locator(".user-dropdown-item").Nth(userIndex);
 
         for (var attempt = 0; attempt < 3; attempt++)
@@ -198,7 +191,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             {
                 await DismissApprovalOverlayAsync(page);
 
-                if (!await backdrop.IsVisibleAsync())
+                if (!await menu.IsVisibleAsync())
                 {
                     await avatarButton.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
                 }
@@ -210,20 +203,11 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             catch (TimeoutException) when (attempt < 2)
             {
                 await DismissApprovalOverlayAsync(page);
-                if (await backdrop.IsVisibleAsync())
+                if (await menu.IsVisibleAsync())
                 {
-                    // Close by coordinate, not by locator: the backdrop's own centre sits under
-                    // the open menu, so a locator click on it is intercepted by a menu item and
-                    // its timeout would escape this recovery. The avatar button's spot is always
-                    // covered by the backdrop while the menu is open, so a raw click there lands
-                    // on the backdrop and closes the dropdown.
-                    var avatarBox = await avatarButton.BoundingBoxAsync();
-                    if (avatarBox is not null)
-                    {
-                        await page.Mouse.ClickAsync(
-                            (float)(avatarBox.X + avatarBox.Width / 2),
-                            (float)(avatarBox.Y + avatarBox.Height / 2));
-                    }
+                    // A press anywhere outside the menu closes it, and nothing swallows that
+                    // press any more, so aim somewhere harmless.
+                    await page.Mouse.ClickAsync(5, 400);
                 }
             }
         }

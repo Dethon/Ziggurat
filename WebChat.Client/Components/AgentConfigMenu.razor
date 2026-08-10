@@ -1,8 +1,10 @@
 @using WebChat.Client.State.AgentSettings
+@using Microsoft.JSInterop
 @inherits StoreSubscriberComponent
 @inject TopicsStore TopicsStore
 @inject AgentSettingsStore SettingsStore
 @inject IDispatcher Dispatcher
+@inject IJSRuntime Js
 
 @if (SelectedAgent is { PatchableModels.Count: > 0 } agent)
 {
@@ -10,7 +12,7 @@
        labels itself in exactly the case where a persisted override would otherwise be invisible. *@
     var patch = OverrideFor(agent);
 
-    <div class="agent-config @(_open ? "open" : "")">
+    <div class="agent-config @(_open ? "open" : "")" @ref="_root">
         <button class="agent-config-trigger @(patch is null ? "" : "overridden")"
                 @onclick="Toggle" @onclick:stopPropagation="true"
                 aria-haspopup="dialog" aria-expanded="@_open"
@@ -24,10 +26,6 @@
 
         @if (_open)
         {
-            @* Close on pointerdown, not click — see AgentSelector's backdrop. This menu stays
-               open after a model pick by design, so the dismissing tap being swallowed cost a
-               tap on every conversation selection that followed. *@
-            <div class="dropdown-backdrop" @onpointerdown="Close"></div>
             <div class="agent-config-menu" role="dialog" aria-label="Agent model and reasoning effort">
                 <label class="agent-config-row">
                     <span class="agent-config-label">Model</span>
@@ -59,6 +57,9 @@
     private string? _selectedAgentId;
     private AgentSettingsState _settings = AgentSettingsState.Initial;
     private bool _open;
+    private ElementReference _root;
+    private DotNetObjectReference<AgentConfigMenu>? _selfRef;
+    private bool _watching;
 
     private AgentCatalogEntry? SelectedAgent =>
         _agents.FirstOrDefault(a => a.Id == _selectedAgentId);
@@ -72,7 +73,45 @@
 
     private void Toggle() => _open = !_open;
 
-    private void Close() => _open = false;
+    // This menu deliberately stays open after a pick, so the press that finally dismisses it is
+    // the one a person makes on their way somewhere else — it has to reach that somewhere.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_open == _watching)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_open)
+            {
+                _selfRef ??= DotNetObjectReference.Create(this);
+                await Js.InvokeVoidAsync("outsidePress.watch", _root, _selfRef);
+            }
+            else
+            {
+                await Js.InvokeVoidAsync("outsidePress.unwatch", _root);
+            }
+
+            _watching = _open;
+        }
+        catch (JSException) { /* the helper attaches on the next render */ }
+    }
+
+    [JSInvokable]
+    public void CloseFromOutsidePress()
+    {
+        _open = false;
+        _watching = false;
+        StateHasChanged();
+    }
+
+    public override void Dispose()
+    {
+        _selfRef?.Dispose();
+        base.Dispose();
+    }
 
     private AgentConfigPatch? OverrideFor(AgentCatalogEntry agent) =>
         AgentSettingsSelectors.GetConfigPatch(_settings, _agents, agent.Id);
