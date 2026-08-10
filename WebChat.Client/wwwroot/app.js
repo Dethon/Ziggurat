@@ -139,12 +139,16 @@ window.chatInput = {
         });
 
         // Paste is bound on the document: a screenshot is pasted wherever the caret happens to
-        // be, and the composer's textarea is not always focused when it lands.
-        document.addEventListener('paste', function (e) {
+        // be, and the composer's textarea is not always focused when it lands. One document
+        // listener at a time — each rebind replaces the last, whose composer is gone, so a stack
+        // of them would hand every paste to detached inputs too.
+        if (this._onPaste) document.removeEventListener('paste', this._onPaste);
+        this._onPaste = function (e) {
             if (!e.clipboardData) return;
             const files = Array.from(e.clipboardData.files || []);
             if (files.length > 0 && hand(files)) e.preventDefault();
-        });
+        };
+        document.addEventListener('paste', this._onPaste);
     }
 };
 
