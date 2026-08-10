@@ -58,11 +58,16 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         BitConverter.ToInt32(wav, 40).ShouldBeGreaterThan(0);
     }
 
-    // A phone is not a desktop here. Asking for echo cancellation opens the microphone on the
-    // platform's voice-call path, whose noise suppression and automatic gain are tuned for a human
-    // listening down a phone line rather than for a transcriber, and an audio graph that reaches
-    // the speakers is what puts an Android device on that path in the first place. Nothing in a
-    // dictation is ever played, so nothing here should ask for either.
+    // A phone is not a desktop here, in two directions at once.
+    //
+    // Asking for echo cancellation opens the microphone on the platform's voice-call path, whose
+    // noise suppression and automatic gain are tuned for a human listening down a phone line rather
+    // than for a transcriber. Nothing in a dictation is ever played, so nothing should ask for it.
+    //
+    // And the graph must still arrive at the context's destination. Chromium renders one that
+    // reaches no output; Android does not, and every node in it — the worklet and the level meter
+    // both — then goes unpulled and hears silence. Nothing below this can catch that on a desktop,
+    // which is exactly why the shape of the graph is asserted rather than only its results.
     [SkippableFact]
     public async Task TheMicrophoneIsOpenedForARecorderRatherThanForAPhoneCall()
     {
@@ -71,6 +76,21 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         fixture.Transcript = "hola";
 
         var page = await OpenAsync();
+        // There is no way to ask a node what it is connected to, so the connections are noted as
+        // they are made.
+        await page.EvaluateAsync(
+            """
+            () => {
+                window.__reachedTheOutput = false;
+                const connect = AudioNode.prototype.connect;
+                AudioNode.prototype.connect = function (target, ...rest) {
+                    window.__reachedTheOutput =
+                        window.__reachedTheOutput || target instanceof AudioDestinationNode;
+                    return connect.call(this, target, ...rest);
+                };
+            }
+            """);
+
         var cdp = await page.Context.NewCDPSessionAsync(page);
         var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
 
@@ -90,7 +110,7 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
                     echoCancellation: settings.echoCancellation,
                     noiseSuppression: settings.noiseSuppression,
                     autoGainControl: settings.autoGainControl,
-                    encoderOutputs: run.encoder ? run.encoder.numberOfOutputs : null,
+                    reachedTheOutput: window.__reachedTheOutput,
                     contextRate: run.ctx.sampleRate,
                     deviceRate: deviceRate
                 });
@@ -104,9 +124,8 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         opened.GetProperty("noiseSuppression").GetBoolean().ShouldBeFalse();
         opened.GetProperty("autoGainControl").GetBoolean().ShouldBeFalse();
 
-        // The worklet is the end of the chain. A node with no outputs is still pulled, so nothing
-        // has to be connected onward to the speakers to make the recording run.
-        opened.GetProperty("encoderOutputs").GetInt32().ShouldBe(0);
+        // A graph that ends nowhere is a graph an Android device never runs.
+        opened.GetProperty("reachedTheOutput").GetBoolean().ShouldBeTrue();
 
         // The graph runs at whatever rate the device runs at. Asking a phone for a 16 kHz graph
         // puts a resampler we cannot see in the capture path; the one that produces the 16 kHz the

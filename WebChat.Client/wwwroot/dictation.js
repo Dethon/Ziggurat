@@ -268,11 +268,7 @@ window.dictation = {
         const source = ctx.createMediaStreamSource(run.stream);
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 256;
-        // No outputs: a worklet with none is still pulled, so nothing has to be connected onward to
-        // make the recording run. Reaching the speakers is what puts an Android device on its
-        // voice-call route, where the microphone it then opens is not the one that was asked for —
-        // and there was never anything here to hear.
-        const encoder = new AudioWorkletNode(ctx, 'dictation-encoder', { numberOfOutputs: 0 });
+        const encoder = new AudioWorkletNode(ctx, 'dictation-encoder');
         encoder.port.onmessage = e => {
             // The encoder answers a flush with a word rather than samples.
             if (typeof e.data === 'string') {
@@ -282,10 +278,18 @@ window.dictation = {
             run.chunks.push(e.data);
             run.samples += e.data.length;
         };
-        // The level meter hangs off the microphone rather than sitting in the recording path, so
-        // what is drawn on screen cannot change what is encoded.
+        // The chain has to arrive somewhere the context renders, and the only such place is the
+        // context's own destination: Android will not run a graph that reaches no output at all,
+        // and the whole recording — worklet and level meter alike — is then never pulled and hears
+        // silence. So the chain ends at a gain of zero rather than at the microphone being played
+        // back into the room. Nothing here may be left as a leaf, however tempting: a desktop
+        // renders one anyway, which is exactly why the mistake survives every test we can run.
+        const silence = ctx.createGain();
+        silence.gain.value = 0;
         source.connect(analyser);
-        source.connect(encoder);
+        analyser.connect(encoder);
+        encoder.connect(silence);
+        silence.connect(ctx.destination);
         run.analyser = analyser;
         run.encoder = encoder;
     },
