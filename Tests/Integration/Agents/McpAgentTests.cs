@@ -25,7 +25,7 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
 
-        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest");
+        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest:nitro");
     }
 
     private McpAgent CreateAgent(OpenRouterChatClient llmClient)

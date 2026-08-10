@@ -112,7 +112,7 @@ public class WebChatE2EFixture : E2EFixtureBase
                 {
                   "id": "test-agent",
                   "name": "Test Agent",
-                  "model": "~deepseek/deepseek-v4-flash-latest",
+                  "model": "~deepseek/deepseek-v4-flash-latest:nitro",
                   "mcpServerEndpoints": [ "http://mcp-vault:8080/mcp" ],
                   "whitelistPatterns": ["__none__"],
                   // The model sometimes answers a plain greeting with a tool call, which raises
