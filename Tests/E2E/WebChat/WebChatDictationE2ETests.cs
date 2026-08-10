@@ -482,6 +482,34 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await trash.ClickAsync();
     }
 
+    // A microphone is a symmetrical object, and an eye reads a lopsided one as a mistake before it
+    // reads it as a microphone. The bounding box cannot see this — the flared side stays inside the
+    // arc below it — so the outline itself is sampled and folded about the middle.
+    [SkippableFact]
+    public async Task TheMicrophoneIcon_IsSymmetricalAboutItsOwnMiddle()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await OpenAsync();
+        var strayed = await page.EvaluateAsync<double>(
+            """
+            () => {
+                const path = document.querySelector('[data-testid=dictation-mic] path');
+                const length = path.getTotalLength();
+                const samples = Array.from({ length: 400 }, (_, i) => path.getPointAtLength(i * length / 400));
+                // The viewBox is 0 0 24 24, so the axis of a centred drawing is x = 12.
+                const mirrored = samples.map(p => ({ x: 24 - p.x, y: p.y }));
+                const distance = point => Math.min(...samples.map(
+                    s => Math.hypot(s.x - point.x, s.y - point.y)));
+                return Math.max(...mirrored.map(distance));
+            }
+            """);
+
+        // A sample every ~0.15 units of outline, so anything above a fifth of a unit is the drawing
+        // being asymmetrical rather than the sampling being coarse.
+        strayed.ShouldBeLessThan(0.2);
+    }
+
     // A drawn microphone rather than an emoji: the platform's font decides what an emoji looks
     // like, and on some of them it is neither the same shape nor the same colour as the icons
     // beside it.

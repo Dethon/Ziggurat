@@ -22,6 +22,9 @@ MODEL_CHECKPOINT="${STT_MODEL_CHECKPOINT:-}"
 # a mismatch just means the wrong model is warmed and the right one loads on first recall,
 # which is the several-second cold start this pre-pull exists to remove.
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-Qwen3-Embedding-0.6B-GGUF}"
+# Same again for TTS. Keep in sync with the hub's Tts__OpenAi__Model; a mismatch just means
+# the wrong voice is warmed and the right one downloads on the first reply.
+TTS_MODEL="${TTS_MODEL:-kokoro-v1}"
 
 # ${VAR-default}: unset inherits the tuned default, set-but-empty disables that flag.
 # whisper-server's own beam default is -1 (greedy); 5 matches the old wyoming-whisper, and
@@ -124,21 +127,25 @@ case "$MODEL" in
     ;;
 esac
 
-echo "lemonade: whispercpp.backend=$WHISPER_BACKEND model=$MODEL embedding=$EMBEDDING_MODEL args=$WHISPER_ARGS"
-# Echoed before the STT_CONFIG_ONLY seam so the payload is assertable without a server or registry.
+echo "lemonade: whispercpp.backend=$WHISPER_BACKEND model=$MODEL embedding=$EMBEDDING_MODEL tts=$TTS_MODEL args=$WHISPER_ARGS"
+# Echoed before the STT_CONFIG_ONLY seam so the payloads are assertable without a server or
+# registry. Every model this container serves is pinned, not merely pre-pulled — see the warmup
+# block below for why.
 echo "lemonade: stt pull payload=$PULL_PAYLOAD"
+for PIN_MODEL in "$MODEL" "$EMBEDDING_MODEL" "$TTS_MODEL"; do
+  echo "lemonade: pin payload={\"model_name\": \"$PIN_MODEL\", \"pinned\": true}"
+done
 
 # Test seam: config-mapping can be verified without starting the server (no GPU, no model pull).
 if [ "${STT_CONFIG_ONLY:-0}" = "1" ]; then
   exit 0
 fi
 
-# Pre-pull the tier's whisper model and the recall embedding model once the server is up, so
-# neither the first utterance pays a download nor the first turn pays a model load; Kokoro
-# (TTS) downloads on first use. The embedding model is loaded pinned: Lemonade's eviction
-# score favours dropping fast-loading models, which is exactly what a small embedding model
-# is. Its loaded-model limit is applied per model type, so this displaces neither whisper nor
-# Kokoro. Best-effort by design.
+# Pre-pull every model this container serves once the server is up, then load each of them
+# pinned: Lemonade's eviction score favours dropping fast-loading models, and an unpinned
+# model that merely looks warmed can be evicted — the next utterance, recall or reply then
+# pays the several-second load this whole block exists to remove. The loaded-model limit is
+# applied per model type, so the three pins displace nothing. Best-effort by design.
 (
   i=0
   while [ "$i" -lt 60 ]; do
@@ -148,17 +155,20 @@ fi
         -H "Content-Type: application/json" \
         -d "$PULL_PAYLOAD" >/dev/null 2>&1 \
         || echo "lemonade: pulling $MODEL failed; it will download on the first utterance" >&2
-      curl -fsS -X POST "http://127.0.0.1:13305/api/v1/pull" \
-        -H "Content-Type: application/json" \
-        -d "{\"model_name\": \"$EMBEDDING_MODEL\"}" >/dev/null 2>&1 \
-        || echo "lemonade: pulling $EMBEDDING_MODEL failed; recall will load it on first use" >&2
-      # Says so when the pin does not take, rather than leaving a model that looks pinned
-      # and is not: an unpinned embedding model can be evicted, and the next turn then pays
-      # the several-second load this whole block exists to remove.
-      curl -fsS -X POST "http://127.0.0.1:13305/api/v1/load" \
-        -H "Content-Type: application/json" \
-        -d "{\"model_name\": \"$EMBEDDING_MODEL\", \"pinned\": true}" >/dev/null 2>&1 \
-        || echo "lemonade: pinning $EMBEDDING_MODEL failed; it may be evicted" >&2
+      for PIN_MODEL in "$EMBEDDING_MODEL" "$TTS_MODEL"; do
+        curl -fsS -X POST "http://127.0.0.1:13305/api/v1/pull" \
+          -H "Content-Type: application/json" \
+          -d "{\"model_name\": \"$PIN_MODEL\"}" >/dev/null 2>&1 \
+          || echo "lemonade: pulling $PIN_MODEL failed; it will download on first use" >&2
+      done
+      # Says so when a pin does not take, rather than leaving a model that looks pinned and
+      # is not: an unpinned model can be evicted, and the next call then pays the load again.
+      for PIN_MODEL in "$MODEL" "$EMBEDDING_MODEL" "$TTS_MODEL"; do
+        curl -fsS -X POST "http://127.0.0.1:13305/api/v1/load" \
+          -H "Content-Type: application/json" \
+          -d "{\"model_name\": \"$PIN_MODEL\", \"pinned\": true}" >/dev/null 2>&1 \
+          || echo "lemonade: pinning $PIN_MODEL failed; it may be evicted" >&2
+      done
       exit 0
     fi
     i=$((i + 1))

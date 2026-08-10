@@ -278,6 +278,51 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
         result.StdErr.ShouldContain("STT_MODEL_CHECKPOINT");
     }
 
+    // Everything this container serves is pinned, not merely pre-pulled: Lemonade's eviction
+    // score favours dropping fast-loading models, and an unpinned model that merely looks warmed
+    // can be evicted — the next utterance, recall or reply then pays the several-second load the
+    // warmup exists to remove. The pin payloads are echoed before the STT_CONFIG_ONLY seam like
+    // the pull payload, so the set is assertable without a server or registry.
+    [SkippableFact]
+    public void Entrypoint_PinsEveryModelItServes()
+    {
+        SeedVadModel();
+
+        var pins = PinPayloads(("STT_BACKEND", "cpu"));
+
+        pins.Keys.ShouldBe(
+            ["Whisper-Large-v3-Turbo", "Qwen3-Embedding-0.6B-GGUF", "kokoro-v1"], ignoreOrder: true);
+        pins.Values.ShouldAllBe(pinned => pinned);
+    }
+
+    [SkippableFact]
+    public void Entrypoint_ModelOverrides_PinTheOverriddenNames()
+    {
+        SeedVadModel();
+
+        var pins = PinPayloads(
+            ("STT_BACKEND", "cpu"),
+            ("STT_MODEL", "Whisper-Medium"),
+            ("EMBEDDING_MODEL", "some-embedding"),
+            ("TTS_MODEL", "some-voice"));
+
+        pins.Keys.ShouldBe(["Whisper-Medium", "some-embedding", "some-voice"], ignoreOrder: true);
+    }
+
+    private Dictionary<string, bool> PinPayloads(params (string Key, string Value)[] env)
+    {
+        var result = RunEntrypointRaw(env);
+        result.Exit.ShouldBe(0, $"entrypoint failed: {result.StdErr}");
+
+        return result.StdOut
+            .Split('\n')
+            .Where(l => l.StartsWith("lemonade: pin payload=", StringComparison.Ordinal))
+            .Select(l => JsonNode.Parse(l["lemonade: pin payload=".Length..])!.AsObject())
+            .ToDictionary(
+                p => p["model_name"]!.GetValue<string>(),
+                p => p["pinned"]!.GetValue<bool>());
+    }
+
     [SkippableFact]
     public void Entrypoint_GpuBackend_MapsToVulkan()
     {
