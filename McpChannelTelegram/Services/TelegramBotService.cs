@@ -148,11 +148,11 @@ public sealed class TelegramBotService : BackgroundService
             return;
         }
 
-        var attachments = AttachmentIntake.Read(agentId, messages);
+        var intake = AttachmentIntake.Read(agentId, messages);
 
         // A message with neither words nor files is not a turn: a service message in a forum
         // thread qualifies under the addressing rule and must still cost nothing.
-        if (content.Length == 0 && attachments.Count == 0)
+        if (content.Length == 0 && intake.Attachments.Count == 0 && intake.Refusals.Count == 0)
         {
             return;
         }
@@ -178,6 +178,24 @@ public sealed class TelegramBotService : BackgroundService
 
         botRegistry.RegisterChatAgent(chatId, agentId);
 
+        // One reply for the whole message, quoting the item that failed and naming its file, the
+        // way the unauthorised-user reply already works. Every ground here is a property of one
+        // file, so the offending one is dropped and the turn below runs on the survivors.
+        if (intake.Refusals.Count > 0)
+        {
+            await botClient.SendMessage(
+                chatId,
+                string.Join("\n", intake.Refusals.Select(refusal => refusal.Reason)),
+                replyParameters: intake.Refusals[0].MessageId,
+                cancellationToken: cancellationToken);
+        }
+
+        // Nothing survived and there was nothing else to say, so the reply is the whole response.
+        if (content.Length == 0 && intake.Attachments.Count == 0)
+        {
+            return;
+        }
+
         // Unlike ServiceBus (broker-level abandon/redeliver) or Schedule/Library (a durable record
         // that simply stays due), Telegram has no channel-level way to signal "try again later" back
         // to the sender — so nothing here gates on liveness. The buffer-always policy targets the
@@ -193,7 +211,7 @@ public sealed class TelegramBotService : BackgroundService
                 Sender = sender,
                 Content = content,
                 AgentId = agentId,
-                Attachments = attachments.Count > 0 ? attachments : null,
+                Attachments = intake.Attachments.Count > 0 ? intake.Attachments : null,
                 Timestamp = DateTimeOffset.UtcNow
             },
             cancellationToken);
