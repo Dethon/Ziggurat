@@ -35,6 +35,15 @@ public class WebChatE2EFixture : E2EFixtureBase
 
     public int TranscriptionStatus { get; set; } = 200;
 
+    // The bytes the browser actually posted, so a test can pin the format whisper is fed rather
+    // than trust that the encoder did what it says.
+    public byte[]? LastAudio { get; private set; }
+
+    // Short enough that a test can hold the microphone past it without a two-minute wait. The
+    // browser learns it from the limits call, so this is also what proves the client carries no
+    // cap of its own.
+    public TimeSpan RecordingCap { get; } = TimeSpan.FromSeconds(4);
+
     // Returns the next user dropdown index (0-9) so each test uses a unique user identity,
     // avoiding server-side state pollution (stream resume, pending approvals) between tests.
     public int NextUserIndex() => _userIndex++ % 10;
@@ -108,6 +117,7 @@ public class WebChatE2EFixture : E2EFixtureBase
             .WithExtraHost("host.docker.internal", "host-gateway")
             .WithEnvironment(
                 "DICTATION__TRANSCRIPTION__BASEURL", $"http://host.docker.internal:{whisperPort}/v1")
+            .WithEnvironment("DICTATION__MAXLENGTH", RecordingCap.ToString())
             .WithEnvironment("AGENTS__0__ID", "test-agent")
             .WithEnvironment("AGENTS__0__NAME", "Test Agent")
             .WithEnvironment("AGENTS__1__ID", "vision-agent")
@@ -289,8 +299,15 @@ public class WebChatE2EFixture : E2EFixtureBase
 
         _whisper.MapPost("/v1/audio/transcriptions", async context =>
         {
-            // Read the body so the upload is a real one from the browser's point of view.
-            await context.Request.ReadFormAsync();
+            // Kept, so a test can assert on the format the browser really encoded.
+            var form = await context.Request.ReadFormAsync();
+            if (form.Files.FirstOrDefault() is { } posted)
+            {
+                using var buffer = new MemoryStream();
+                await using var content = posted.OpenReadStream();
+                await content.CopyToAsync(buffer);
+                LastAudio = buffer.ToArray();
+            }
             if (TranscriptionStatus != 200)
             {
                 context.Response.StatusCode = TranscriptionStatus;

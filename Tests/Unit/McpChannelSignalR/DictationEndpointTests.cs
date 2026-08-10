@@ -6,6 +6,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
+using Infrastructure.Clients.Transcription;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Dictation;
 using McpChannelSignalR.Settings;
@@ -75,7 +76,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         _transcriber.Result = new() { Text = "  pon el temporizador  " };
         var ticket = _tickets.MintDictation(Space);
 
-        var response = await PostAsync(ticket.Token, Space, new byte[1024]);
+        var response = await PostAsync(ticket.Token, Space, Wav(1024));
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var transcript = await response.Content.ReadFromJsonAsync<DictationTranscript>();
@@ -90,7 +91,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         _transcriber.Result = new() { Text = "hola" };
         var ticket = _tickets.MintDictation(Space);
 
-        await PostAsync(ticket.Token, Space, new byte[1024]);
+        await PostAsync(ticket.Token, Space, Wav(1024));
 
         Directory.Exists(_root).ShouldBeFalse();
         _tickets.MintUpload("topic-1", "7:42", Space).Token.ShouldNotBeNullOrWhiteSpace();
@@ -99,7 +100,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
     [Fact]
     public async Task ARecordingWithNoTicket_IsRefused()
     {
-        var response = await PostAsync(ticket: null, Space, new byte[64]);
+        var response = await PostAsync(ticket: null, Space, Wav(64));
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         _transcriber.Requests.ShouldBeEmpty();
@@ -108,7 +109,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
     [Fact]
     public async Task ARecordingWithAnUnknownTicket_IsRefused()
     {
-        var response = await PostAsync("not-a-ticket", Space, new byte[64]);
+        var response = await PostAsync("not-a-ticket", Space, Wav(64));
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
@@ -119,7 +120,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         var ticket = _tickets.MintDictation(Space);
         _time.Advance(TimeSpan.FromSeconds(_attachmentSettings.TicketTtlSeconds + 1));
 
-        var response = await PostAsync(ticket.Token, Space, new byte[64]);
+        var response = await PostAsync(ticket.Token, Space, Wav(64));
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
@@ -129,7 +130,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
     {
         var ticket = _tickets.MintDictation("private");
 
-        var response = await PostAsync(ticket.Token, Space, new byte[64]);
+        var response = await PostAsync(ticket.Token, Space, Wav(64));
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
@@ -141,9 +142,21 @@ public sealed class DictationEndpointTests : IAsyncLifetime
     {
         var ticket = _tickets.MintDictation(Space);
 
-        var response = await PostAsync(ticket.Token, Space, new byte[_settings.MaxBytes + 1]);
+        var response = await PostAsync(ticket.Token, Space, Wav((int)_settings.MaxBytes + 1));
 
         response.StatusCode.ShouldBe(HttpStatusCode.RequestEntityTooLarge);
+        _transcriber.Requests.ShouldBeEmpty();
+    }
+
+    // The part's own content type is the browser's word for it, and a claim is not a container.
+    [Fact]
+    public async Task ARecordingWhoseBytesAreNotAudioAtAll_IsRefusedWhateverThePartClaims()
+    {
+        var ticket = _tickets.MintDictation(Space);
+
+        var response = await PostAsync(ticket.Token, Space, [1, 2, 3, 4, 5, 6, 7, 8]);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.UnsupportedMediaType);
         _transcriber.Requests.ShouldBeEmpty();
     }
 
@@ -172,7 +185,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         _transcriber.Fails = new TimeoutException("Lemonade did not answer");
         var ticket = _tickets.MintDictation(Space);
 
-        var response = await PostAsync(ticket.Token, Space, new byte[1024]);
+        var response = await PostAsync(ticket.Token, Space, Wav(1024));
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadGateway);
     }
@@ -182,7 +195,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
     {
         _transcriber.Result = new() { Text = "hola" };
         var ticket = _tickets.MintDictation(Space);
-        var audio = Enumerable.Range(0, 64).Select(i => (byte)i).ToArray();
+        var audio = Wav(64);
 
         await PostAsync(ticket.Token, Space, audio);
 
@@ -199,7 +212,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         _transcriber.Result = new() { Text = "hola", AvgLogProb = -0.2 };
         var ticket = _tickets.MintDictation(Space);
 
-        await PostAsync(ticket.Token, Space, new byte[1024]);
+        await PostAsync(ticket.Token, Space, Wav(1024));
 
         var voice = _metrics.Published.OfType<VoiceEvent>().ToList();
         voice.ShouldContain(e => e.Metric == VoiceMetric.SttLatencyMs && e.Channel == "web");
@@ -212,11 +225,16 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         _transcriber.Fails = new TimeoutException("Lemonade did not answer");
         var ticket = _tickets.MintDictation(Space);
 
-        await PostAsync(ticket.Token, Space, new byte[1024]);
+        await PostAsync(ticket.Token, Space, Wav(1024));
 
         _metrics.Published.OfType<VoiceEvent>()
             .ShouldContain(e => e.Metric == VoiceMetric.SttError && e.Channel == "web");
     }
+
+    // What the browser actually posts: 16 kHz mono s16le WAV. The endpoint decides the container
+    // from these bytes, so a test that posted zeroes would be posting nothing recognisable.
+    private static byte[] Wav(int payloadBytes) =>
+        WavAudio.FromPcm(new byte[payloadBytes], 16_000, 1, 2);
 
     private async Task<HttpResponseMessage> PostAsync(string? ticket, string space, byte[] audio)
     {

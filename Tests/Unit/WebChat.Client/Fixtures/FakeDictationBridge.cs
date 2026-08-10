@@ -23,6 +23,12 @@ public sealed class FakeDictationBridge : IDictationBridge
         return Task.CompletedTask;
     }
 
+    public Task ConfigureAsync(DictationLimits limits)
+    {
+        Limits = limits;
+        return Task.CompletedTask;
+    }
+
     public Task StopAsync()
     {
         Stops++;

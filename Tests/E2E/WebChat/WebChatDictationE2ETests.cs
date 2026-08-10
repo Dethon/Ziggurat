@@ -43,6 +43,126 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await composer.PressAsync("Enter");
         await Assertions.Expect(page.Locator(".chat-message.user").First)
             .ToContainTextAsync("hola desde el micrófono", new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
+
+        // What whisper is actually fed. MediaRecorder's Opus is what a browser reaches for by
+        // default and what lemonade answers 400 to, so the format is the feature, not a detail.
+        var wav = fixture.LastAudio.ShouldNotBeNull();
+        System.Text.Encoding.ASCII.GetString(wav[..4]).ShouldBe("RIFF");
+        System.Text.Encoding.ASCII.GetString(wav[8..12]).ShouldBe("WAVE");
+        BitConverter.ToInt16(wav, 22).ShouldBe((short)1);      // mono
+        BitConverter.ToInt32(wav, 24).ShouldBe(16_000);
+        BitConverter.ToInt16(wav, 34).ShouldBe((short)16);     // s16le
+        // A recording of nothing has a header and no samples, which is what a graph that never
+        // pulled the worklet produces.
+        BitConverter.ToInt32(wav, 40).ShouldBeGreaterThan(0);
+    }
+
+    // Nobody should have to hold a key down, so a keyboard press starts a latched dictation
+    // outright — and Escape is how it is abandoned without reaching for the trash button.
+    [SkippableFact]
+    public async Task PressingEnterOnTheMicrophone_LatchesAndEscapeThrowsItAway()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        fixture.TranscriptionStatus = 200;
+        fixture.Transcript = "esto se descarta";
+
+        var page = await OpenAsync();
+        var mic = page.Locator("[data-testid=dictation-mic]");
+        await mic.FocusAsync();
+        await mic.PressAsync("Enter");
+
+        // Latched from the start: the stop button is there without anything having been released.
+        await Assertions.Expect(page.Locator("[data-testid=dictation-stop]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+
+        await page.Keyboard.PressAsync("Escape");
+
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 15_000 });
+        await Task.Delay(1_500);
+        await Assertions.Expect(page.Locator("textarea.chat-input")).ToHaveValueAsync("");
+    }
+
+    // A mis-tap must cost nothing: no recording, no request, and a short hint saying what to do
+    // instead — not a refusal, because nothing went wrong.
+    [SkippableFact]
+    public async Task TappingTheMicrophone_RecordsNothingAndSaysToHoldIt()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        fixture.TranscriptionStatus = 200;
+        fixture.Transcript = "no debería existir";
+
+        var page = await OpenAsync();
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Task.Delay(80);
+        await TouchAsync(cdp, "touchEnd");
+
+        await Assertions.Expect(page.Locator(".composer-hint"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        await Task.Delay(1_500);
+        await Assertions.Expect(page.Locator("textarea.chat-input")).ToHaveValueAsync("");
+        await Assertions.Expect(page.Locator(".composer-refusal")).ToBeHiddenAsync();
+    }
+
+    // A finger that drifts a little is still a finger holding the button down: only distance past
+    // a threshold means anything, and this is well inside every one of them.
+    [SkippableFact]
+    public async Task APressThatDrifts_IsStillAHoldAndStillProducesWords()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        fixture.TranscriptionStatus = 200;
+        fixture.Transcript = "un dedo que se mueve un poco";
+
+        var page = await OpenAsync();
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        foreach (var step in Enumerable.Range(1, 4))
+        {
+            await TouchAsync(cdp, "touchMove", Point(mic.X - step * 5, mic.Y - step * 3));
+            await Task.Delay(60);
+        }
+        await Task.Delay(HoldMs);
+        await TouchAsync(cdp, "touchEnd");
+
+        await Assertions.Expect(page.Locator("textarea.chat-input"))
+            .ToHaveValueAsync(
+                "un dedo que se mueve un poco", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+    }
+
+    // A pocketed phone must not record indefinitely. The cap is the server's number, learned
+    // through the same limits call the attachment rules arrive on — the client carries none.
+    [SkippableFact]
+    public async Task ADictationThatRunsPastTheCap_StopsItselfAndTranscribesWhatItHas()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        fixture.TranscriptionStatus = 200;
+        fixture.Transcript = "se paró solo";
+
+        var page = await OpenAsync();
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+
+        // Never released: the words arrive because the recording ended itself.
+        await Assertions.Expect(page.Locator("textarea.chat-input"))
+            .ToHaveValueAsync(
+                "se paró solo",
+                new LocatorAssertionsToHaveValueOptions
+                {
+                    Timeout = (float)fixture.RecordingCap.TotalMilliseconds + 30_000
+                });
+
+        await TouchAsync(cdp, "touchEnd");
     }
 
     [SkippableFact]

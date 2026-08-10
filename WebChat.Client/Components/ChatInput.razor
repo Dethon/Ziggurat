@@ -305,7 +305,7 @@
             @ref="_micRef"
             data-testid="dictation-mic"
             title="Hold to dictate"
-            disabled="@(_disabled || _dictation.Unavailable)">
+            disabled="@(_disabled || _dictation.Unavailable || _dictation.Status == DictationStatus.Transcribing)">
         🎤
     </button>
 </div>

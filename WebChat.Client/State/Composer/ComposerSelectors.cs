@@ -56,13 +56,16 @@ public static class ComposerSelectors
     // One control on the right, always the one the person is about to use. Cancel while the reply
     // runs, as it always has been; the microphone only where Send would have nothing to send, so
     // no composer width is lost to a third button and the control under the thumb is never dead.
-    // A dictation in flight keeps the microphone in place whatever else is true: the strip is what
-    // is on screen, and the control must not change under the finger holding it.
+    // Cancel keeps the precedence it always had: while the reply runs, Send could only ever be
+    // dead, and that is true whatever the microphone is doing. Below it, an open microphone holds
+    // the spot even against text — the strip is what is on screen, and the control must not change
+    // under the finger holding it.
     public static SendControl SendControl(
         bool isStreaming, string? text, int readyAttachments, DictationStatus dictation) => true switch
         {
-            _ when dictation is not DictationStatus.Idle => Composer.SendControl.Microphone,
             _ when isStreaming => Composer.SendControl.Cancel,
+            _ when dictation is DictationStatus.Recording or DictationStatus.Latched =>
+                Composer.SendControl.Microphone,
             _ when !string.IsNullOrWhiteSpace(text) || readyAttachments > 0 => Composer.SendControl.Send,
             _ => Composer.SendControl.Microphone
         };

@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using Domain.Contracts;
-using Domain.DTOs.Metrics;
-using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Infrastructure.Clients.Transcription;
 using McpChannelTelegram.Settings;
@@ -60,21 +58,8 @@ public sealed class VoiceNoteDictation(
             clock.Stop();
 
             var worthATurn = IsWorthATurn(result);
-            metrics.Publish(new VoiceEvent
-            {
-                Metric = VoiceMetric.SttLatencyMs,
-                Channel = Channel,
-                DurationMs = clock.ElapsedMilliseconds
-            });
-            metrics.Publish(new VoiceEvent
-            {
-                Metric = VoiceMetric.UtteranceTranscribed,
-                Channel = Channel,
-                Outcome = worthATurn ? "dispatched" : "rejected",
-                AvgLogProb = result.AvgLogProb,
-                NoSpeechProb = result.NoSpeechProb,
-                DurationMs = clock.ElapsedMilliseconds
-            });
+            metrics.RecordTranscribed(
+                Channel, worthATurn ? "dispatched" : "rejected", result, clock.ElapsedMilliseconds);
 
             return worthATurn
                 ? new Dictation(result.Text.Trim(), null)
@@ -87,12 +72,7 @@ public sealed class VoiceNoteDictation(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Could not transcribe a Telegram voice note: {Message}", ex.Message);
-            metrics.Publish(new VoiceEvent
-            {
-                Metric = VoiceMetric.SttError,
-                Channel = Channel,
-                Error = ex.Message
-            });
+            metrics.RecordFailure(Channel, ex);
             return new Dictation(null, CouldNotUnderstand);
         }
     }

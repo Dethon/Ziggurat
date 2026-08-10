@@ -13,6 +13,10 @@ public interface IDictationBridge
     Task RegisterAsync(
         ElementReference microphone, DotNetObjectReference<DictationEffect> callbacks, DictationLimits limits);
 
+    // The cap and the floor arrive with the attachment rules, which need a live connection — so
+    // they can land after the microphone was registered, and the browser has to be told.
+    Task ConfigureAsync(DictationLimits limits);
+
     // Ends the recording and asks for the words: the latched stop button, and nothing else.
     Task StopAsync();
 

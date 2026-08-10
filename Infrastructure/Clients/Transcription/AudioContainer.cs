@@ -1,9 +1,10 @@
-namespace McpChannelTelegram.Services;
+namespace Infrastructure.Clients.Transcription;
 
-// Which container a recording is actually in, decided by its leading bytes. The Bot API documents a
-// voice note's mime type as optional and sender-supplied, so believing it would post Opus at
-// whisper — which answers 400 to every one of them — on nothing but a sender's word.
-internal sealed record AudioContainer(string MediaType, bool NeedsDecoding)
+// Which container a recording is actually in, decided by its leading bytes and by nothing anyone
+// claimed. Telegram documents a voice note's mime type as optional and sender-supplied, and a
+// browser's multipart part type is whatever that browser felt like writing — believing either would
+// post Opus at whisper, which answers 400 to every one of them, on nothing but a sender's word.
+public sealed record AudioContainer(string MediaType, bool NeedsDecoding)
 {
     // Opus is the one whisper-server as Lemonade runs it cannot read: it decodes through miniaudio
     // plus stb_vorbis, and the image has no ffmpeg. Everything else here it decodes itself, so

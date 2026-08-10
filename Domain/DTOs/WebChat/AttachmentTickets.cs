@@ -33,5 +33,11 @@ public record AttachmentLimits(
     long MaxBytesPerFile,
     int MaxFilesPerMessage,
     IReadOnlyList<string> AllowedMediaTypes,
-    int MaxDictationMs = 120_000,
-    int MinDictationMs = 400);
+    int MaxDictationMs = AttachmentLimits.DefaultMaxDictationMs,
+    int MinDictationMs = AttachmentLimits.DefaultMinDictationMs)
+{
+    // What a client obeys when the server has not answered yet. Named rather than repeated, so the
+    // wire default and the client's own fallback cannot drift apart.
+    public const int DefaultMaxDictationMs = 120_000;
+    public const int DefaultMinDictationMs = 400;
+}

@@ -1,11 +1,12 @@
-using McpChannelTelegram.Services;
+using Infrastructure.Clients.Transcription;
 using Shouldly;
 
-namespace Tests.Unit.McpChannelTelegram;
+namespace Tests.Unit.Infrastructure.Clients.Transcription;
 
-// The Bot API documents a voice note's mime type as optional and sender-supplied, so the container
-// is decided by the leading bytes and nothing else. Real files from a real encoder, because a
-// hand-written header proves only that the sniffing matches the hand-written header.
+// A sender's word about a container is worth nothing — Telegram documents the mime type as
+// optional, and a browser writes whatever it likes on a multipart part — so the leading bytes
+// decide. Real files from a real encoder, because a hand-written header proves only that the
+// sniffing matches the hand-written header.
 public class AudioContainerTests
 {
     private static byte[] Fixture(string name) =>

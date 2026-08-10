@@ -14,6 +14,9 @@ public sealed class JsDictationBridge(IJSRuntime js) : IDictationBridge
         ElementReference microphone, DotNetObjectReference<DictationEffect> callbacks, DictationLimits limits) =>
         js.InvokeVoidAsync("dictation.register", microphone, callbacks, limits).AsTask();
 
+    public Task ConfigureAsync(DictationLimits limits) =>
+        js.InvokeVoidAsync("dictation.configure", limits).AsTask();
+
     public Task StopAsync() => js.InvokeVoidAsync("dictation.stop").AsTask();
 
     public Task DiscardAsync() => js.InvokeVoidAsync("dictation.discard").AsTask();

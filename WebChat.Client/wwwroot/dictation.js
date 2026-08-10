@@ -20,6 +20,13 @@ window.dictation = {
     _run: null,
     _lastPointerAt: 0,
 
+    // The cap and the floor are the server's, and they can arrive after the microphone is
+    // registered — the limits call needs a live connection and the first render does not wait for
+    // one. Whatever answers last wins, so the browser never keeps a stale cap of its own.
+    configure: function (limits) {
+        if (limits) this._limits = limits;
+    },
+
     register: function (mic, ref, limits) {
         if (this._mic === mic && this._ref) {
             this._limits = limits || this._limits;
@@ -84,8 +91,6 @@ window.dictation = {
             if (Math.abs(dx) < COMMIT && Math.abs(dy) < COMMIT) return;
             run.axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x';
         }
-        run.travel = Math.max(run.travel, Math.abs(dx), Math.abs(dy));
-
         const DISCARD = 96;
         const LATCH = 56;
         if (run.axis === 'x') {
@@ -166,7 +171,6 @@ window.dictation = {
             latched: latched,
             press: press,
             axis: null,
-            travel: 0,
             startedAt: performance.now(),
             chunks: [],
             samples: 0,
@@ -179,7 +183,19 @@ window.dictation = {
         // Minted while the microphone opens rather than after it: the two round trips overlap, and
         // a dictation short enough to be a mis-tap costs the request nothing because it is thrown
         // away before it is used.
-        run.ticket = this._ref ? this._ref.invokeMethodAsync('MintTicketAsync').catch(() => null) : null;
+        run.ticket = this._ref
+            ? this._ref.invokeMethodAsync('MintTicketAsync')
+                .then(ticket => {
+                    // The ticket carries the rules, from the same live call: a first dictation
+                    // started before the connection was up would otherwise obey a compiled-in cap.
+                    if (ticket) {
+                        this.configure({ maxMs: ticket.maxMs, minMs: ticket.minMs });
+                        this._armCap(run);
+                    }
+                    return ticket;
+                })
+                .catch(() => null)
+            : null;
 
         this._open(run).then(() => {
             if (this._run !== run || run.ending) return;
@@ -187,7 +203,9 @@ window.dictation = {
             this._startClock(run);
         }).catch(err => {
             if (this._run === run) this._run = null;
-            this._refuse(err);
+            // A discard while the microphone was still opening is not a failure to open it: the
+            // press was already answered, by a mis-tap hint or by nothing at all.
+            if (!run.ending) this._refuse(err);
         });
     },
 
@@ -360,9 +378,7 @@ window.dictation = {
     // ---- what is on screen while it runs ----
 
     _startClock: function (run) {
-        // A pocketed phone must not record indefinitely: the cap stops the dictation and
-        // transcribes what it has rather than throwing it away.
-        run.cap = setTimeout(() => this._finish(), this._limits.maxMs);
+        this._armCap(run);
         const paint = () => {
             if (this._run !== run || run.ending) return;
             const elapsed = performance.now() - run.startedAt;
@@ -375,6 +391,17 @@ window.dictation = {
             run.frame = requestAnimationFrame(paint);
         };
         run.frame = requestAnimationFrame(paint);
+    },
+
+    // A pocketed phone must not record indefinitely: the cap stops the dictation and transcribes
+    // what it has rather than throwing it away. Armed twice — once when the microphone opens, and
+    // again when the ticket brings the server's own number — so it fires against the elapsed time
+    // rather than restarting the clock.
+    _armCap: function (run) {
+        if (this._run !== run || run.ending) return;
+        if (run.cap) clearTimeout(run.cap);
+        const left = Math.max(0, this._limits.maxMs - (performance.now() - run.startedAt));
+        run.cap = setTimeout(() => this._finish(), left);
     },
 
     _stopClock: function (run) {
@@ -400,7 +427,7 @@ window.dictation = {
         const total = Math.floor(ms / 1000);
         const minutes = Math.floor(total / 60);
         const seconds = total % 60;
-        return minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+        return (minutes < 10 ? '0' : '') + minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
     },
 
     _setStripVar: function (name, value) {

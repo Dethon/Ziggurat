@@ -10,29 +10,21 @@ namespace McpChannelVoice.Services.Stt;
 // 16 kHz), and is posted by LemonadeTranscriptionClient like every other dictation. What stays here
 // is what only the hub has: the chunk stream itself and the whisper biasing prompt, which is
 // composed per satellite from the room, the locality and the prior segment's text.
-public sealed class OpenAiSpeechToText : ISpeechToText
+public sealed class OpenAiSpeechToText(
+    IHttpClientFactory httpFactory,
+    OpenAiSttConfig config,
+    ILogger<OpenAiSpeechToText> logger) : ISpeechToText
 {
-    private readonly OpenAiSttConfig _config;
-    private readonly IAudioTranscriber _transcriber;
-
-    public OpenAiSpeechToText(
-        IHttpClientFactory httpFactory,
-        OpenAiSttConfig config,
-        ILogger<OpenAiSpeechToText> logger)
-    {
-        ArgumentNullException.ThrowIfNull(config);
-        _config = config;
-        _transcriber = new LemonadeTranscriptionClient(
-            httpFactory,
-            new TranscriptionClientConfig
-            {
-                BaseUrl = config.BaseUrl,
-                Model = config.Model,
-                Language = config.Language,
-                RequestTimeout = config.RequestTimeout
-            },
-            logger);
-    }
+    private readonly IAudioTranscriber _transcriber = new LemonadeTranscriptionClient(
+        httpFactory,
+        new TranscriptionClientConfig
+        {
+            BaseUrl = config.BaseUrl,
+            Model = config.Model,
+            Language = config.Language,
+            RequestTimeout = config.RequestTimeout
+        },
+        logger);
 
     public async Task<TranscriptionResult> TranscribeAsync(
         IAsyncEnumerable<AudioChunk> audio,
@@ -61,8 +53,8 @@ public sealed class OpenAiSpeechToText : ISpeechToText
                 FileName = "utterance.wav",
                 Language = options.Language,
                 Prompt = WhisperPromptBuilder.Build(
-                    options.PromptTemplate ?? _config.Prompt, options.Room, options.Locality,
-                    options.PriorText, _config.MaxPromptChars)
+                    options.PromptTemplate ?? config.Prompt, options.Room, options.Locality,
+                    options.PriorText, config.MaxPromptChars)
             },
             ct);
     }

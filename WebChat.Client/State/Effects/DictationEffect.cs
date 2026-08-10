@@ -1,3 +1,4 @@
+using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using WebChat.Client.Contracts;
@@ -31,6 +32,7 @@ public sealed class DictationEffect : IDisposable
     private readonly IDisposable _stopRegistration;
     private readonly IDisposable _discardRegistration;
     private readonly IDisposable _topicRegistration;
+    private readonly IDisposable _limitsRegistration;
 
     private DotNetObjectReference<DictationEffect>? _self;
 
@@ -61,6 +63,14 @@ public sealed class DictationEffect : IDisposable
         // Words meant for one conversation must never surface in another, so leaving the topic
         // stops the microphone rather than letting the recording outlive the screen it started on.
         _topicRegistration = dispatcher.RegisterHandler<SelectTopic>(_ => DiscardIfRecording());
+
+        // The limits need a live connection, so they can land after the first render registered
+        // the microphone with the defaults. Changing the cap must never need a client deploy, and
+        // that promise is only kept if the browser hears about it whenever it arrives.
+        _limitsRegistration = dispatcher.RegisterHandler<AttachmentLimitsLoaded>(action =>
+            _bridge.ConfigureAsync(
+                    new DictationLimits(action.Limits.MaxDictationMs, action.Limits.MinDictationMs))
+                .LogFaults(_logger, nameof(AttachmentLimitsLoaded)));
     }
 
     public async Task RegisterAsync(ElementReference microphone)
@@ -81,11 +91,14 @@ public sealed class DictationEffect : IDisposable
             return null;
         }
 
-        var url = await _endpoints.ResolveAsync(Domain.DTOs.WebChat.DictationEndpointPaths.Transcriptions);
+        var url = await _endpoints.ResolveAsync(DictationEndpointPaths.Transcriptions);
         var space = Uri.EscapeDataString(_spaceStore.State.CurrentSlug);
+        var limits = await EnsureLimitsAsync();
         return new DictationUpload(
-            $"{url}?{Domain.DTOs.WebChat.DictationEndpointPaths.SpaceQueryParameter}={space}",
-            ticket.Value.Token);
+            $"{url}?{DictationEndpointPaths.SpaceQueryParameter}={space}",
+            ticket.Value.Token,
+            limits.MaxMs,
+            limits.MinMs);
     }
 
     [JSInvokable]
@@ -117,6 +130,7 @@ public sealed class DictationEffect : IDisposable
         _stopRegistration.Dispose();
         _discardRegistration.Dispose();
         _topicRegistration.Dispose();
+        _limitsRegistration.Dispose();
         _bridge.DisposeAsync().LogFaults(_logger, nameof(Dispose));
         _self?.Dispose();
     }
@@ -145,7 +159,8 @@ public sealed class DictationEffect : IDisposable
         }
 
         return limits is null
-            ? new DictationLimits(120_000, 400)
+            ? new DictationLimits(
+                AttachmentLimits.DefaultMaxDictationMs, AttachmentLimits.DefaultMinDictationMs)
             : new DictationLimits(limits.MaxDictationMs, limits.MinDictationMs);
     }
 }
