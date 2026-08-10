@@ -198,8 +198,19 @@ public sealed class TelegramBotService : BackgroundService
         // the caption, a newline, then the transcript.
         if (voice is not null)
         {
-            var transcript = await _dictation.ReadAsync(botClient, voice, cancellationToken);
-            content = string.Join("\n", new[] { content, transcript }.Where(part => part.Length > 0));
+            var dictation = await _dictation.ReadAsync(botClient, voice, cancellationToken);
+            if (dictation.Refusal is { } refusal)
+            {
+                // No turn, even with a caption: an answer to half of what someone said is worse
+                // than saying the other half could not be made out.
+                await botClient.SendMessage(
+                    first.Chat.Id, refusal, replyParameters: first.MessageId,
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            content = string.Join(
+                "\n", new List<string> { content, dictation.Transcript! }.Where(part => part.Length > 0));
         }
 
         // Unlike ServiceBus (broker-level abandon/redeliver) or Schedule/Library (a durable record

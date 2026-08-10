@@ -173,8 +173,10 @@ internal sealed class TelegramPollingHarness : IDisposable
 
     // A real Ogg/Opus file (libopus, 48 kHz mono, VoIP), which is what Telegram sends. The decode
     // is real in these tests; only the transcriber is faked.
-    public static byte[] OggOpusFixture { get; } = File.ReadAllBytes(
-        Path.Combine(AppContext.BaseDirectory, "Unit/McpChannelTelegram/Fixtures/voice-note.ogg"));
+    public static byte[] OggOpusFixture { get; } = Fixture("voice-note.ogg");
+
+    public static byte[] Fixture(string name) =>
+        File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Unit/McpChannelTelegram/Fixtures", name));
 
     public void GivenTelegramHolds(string fileId, byte[] bytes, string path)
     {

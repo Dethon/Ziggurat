@@ -16,11 +16,11 @@ anything else is refused.
 
 **Status:** ready-for-agent
 
-- [ ] A captioned voice note produces one turn whose content is the caption, a newline, then the transcript
-- [ ] A voice note longer than the configured cap is refused with a short reply, and its file is never downloaded
-- [ ] An empty transcript, or one below the configured confidence floors, produces the could-not-understand reply and no turn
-- [ ] A transcriber failure produces the same reply and no turn
-- [ ] The container is chosen by the leading bytes; a reported MIME type that disagrees with them is ignored
-- [ ] WAV, MP3, FLAC and Ogg/Vorbis voice notes are forwarded to whisper without local decoding; an unrecognised container gets the reply
-- [ ] The cap and the floors are settings, in appsettings only
-- [ ] All of it asserted through the polling harness on what the person sees — the notification, or the message the bot sent back
+- [x] A captioned voice note produces one turn whose content is the caption, a newline, then the transcript
+- [x] A voice note longer than the configured cap is refused with a short reply, and its file is never downloaded
+- [x] An empty transcript, or one below the configured confidence floors, produces the could-not-understand reply and no turn
+- [x] A transcriber failure produces the same reply and no turn
+- [x] The container is chosen by the leading bytes; a reported MIME type that disagrees with them is ignored
+- [x] WAV, MP3, FLAC and Ogg/Vorbis voice notes are forwarded to whisper without local decoding; an unrecognised container gets the reply
+- [x] The cap and the floors are settings, in appsettings only
+- [x] All of it asserted through the polling harness on what the person sees — the notification, or the message the bot sent back
