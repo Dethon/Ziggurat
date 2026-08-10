@@ -68,46 +68,22 @@ else
 
     private bool _open;
     private ElementReference _root;
-    private DotNetObjectReference<AgentSelector>? _selfRef;
-    private bool _watching;
+    private OutsidePressWatcher? _watcher;
+
+    private OutsidePressWatcher Watcher => _watcher ??= new OutsidePressWatcher(Js, () =>
+    {
+        _open = false;
+        StateHasChanged();
+    });
 
     private string SelectedAgentName => Agents.FirstOrDefault(a => a.Id == SelectedAgentId)?.Name ?? "Select agent";
 
     private void Toggle() => _open = !_open;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (Mode != SwitcherMode.Combo || _open == _watching)
-        {
-            return;
-        }
+    protected override Task OnAfterRenderAsync(bool firstRender) =>
+        Mode == SwitcherMode.Combo ? Watcher.SyncAsync(_open, _root) : Task.CompletedTask;
 
-        try
-        {
-            if (_open)
-            {
-                _selfRef ??= DotNetObjectReference.Create(this);
-                await Js.InvokeVoidAsync("outsidePress.watch", _root, _selfRef);
-            }
-            else
-            {
-                await Js.InvokeVoidAsync("outsidePress.unwatch", _root);
-            }
-
-            _watching = _open;
-        }
-        catch (JSException) { /* the helper attaches on the next render */ }
-    }
-
-    [JSInvokable]
-    public void CloseFromOutsidePress()
-    {
-        _open = false;
-        _watching = false;
-        StateHasChanged();
-    }
-
-    public void Dispose() => _selfRef?.Dispose();
+    public void Dispose() => _watcher?.Dispose();
 
     private async Task Select(string agentId)
     {
