@@ -63,7 +63,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
 
         var headerName = page.Locator(".header-conversation-name");
         await Assertions.Expect(headerName).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 10_000 });
-        await headerName.ClickAsync();
+        await WebChatE2ETests.ClickThroughApprovalsAsync(page, headerName);
 
         var editor = page.Locator(".header-conversation-edit");
         await Assertions.Expect(editor).ToBeFocusedAsync(new LocatorAssertionsToBeFocusedOptions { Timeout = 5_000 });
@@ -98,7 +98,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
 
         var headerName = page.Locator(".header-conversation-name");
         await Assertions.Expect(headerName).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 10_000 });
-        await headerName.ClickAsync();
+        await WebChatE2ETests.ClickThroughApprovalsAsync(page, headerName);
 
         var editor = page.Locator(".header-conversation-edit");
         await Assertions.Expect(editor).ToBeFocusedAsync(new LocatorAssertionsToBeFocusedOptions { Timeout = 5_000 });
