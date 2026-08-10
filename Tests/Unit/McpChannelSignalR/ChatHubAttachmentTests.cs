@@ -121,6 +121,17 @@ public sealed class ChatHubAttachmentTests : IDisposable
         download.ExpiresAt.ShouldBe(_time.GetUtcNow().AddSeconds(_settings.TicketTtlSeconds));
     }
 
+    // The registration gate its sibling CreateUploadTicket already enforces: a download URL is a
+    // read over the upload store, so an anonymous connection gets neither direction.
+    [Fact]
+    public async Task CreateAttachmentDownload_BeforeRegistering_IsRefused()
+    {
+        var reference = await StoreAsync("default");
+        _hub.Context.Items.Remove("UserId");
+
+        Should.Throw<HubException>(() => _hub.CreateAttachmentDownload(reference.Id));
+    }
+
     [Fact]
     public async Task CreateAttachmentDownload_FromAnotherSpace_IsRefused()
     {

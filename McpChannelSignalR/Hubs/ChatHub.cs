@@ -8,7 +8,6 @@ using Domain.Extensions;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Services;
-using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.SignalR;
 
 namespace McpChannelSignalR.Hubs;
@@ -122,6 +121,11 @@ public sealed class ChatHub(
     // every space, so a long-lived URL would be readable by anyone holding it.
     public AttachmentDownload? CreateAttachmentDownload(string attachmentId)
     {
+        if (!IsRegistered)
+        {
+            throw new HubException("User not registered. Call RegisterUser first.");
+        }
+
         return attachmentService.MintDownload(attachmentId, CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
     }
 
