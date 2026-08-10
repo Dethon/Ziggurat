@@ -120,7 +120,7 @@ public class OpenAiSpeechToTextTests
 
         handler.LastUri!.ToString().ShouldBe("http://lemonade:13305/v1/audio/transcriptions");
         handler.FileName.ShouldBe("utterance.wav");
-        handler.Fields["model"].ShouldBe("Whisper-Medium");   // config default
+        handler.Fields["model"].ShouldBe("Whisper-Large-v3-Turbo");   // config default
         handler.Fields["response_format"].ShouldBe("verbose_json");
         handler.Fields["language"].ShouldBe("es");
 

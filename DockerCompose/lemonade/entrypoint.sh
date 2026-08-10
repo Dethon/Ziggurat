@@ -4,7 +4,7 @@
 # llamacpp), sets the decode-quality flags via whispercpp.args (appended verbatim to the
 # spawned whisper-server command line) — the Wyoming-era VAD/prompt/beam trio plus the
 # short-phrase knobs (non-speech-token suppression, best-of, VAD padding and minimum speech
-# duration) — and pre-pulls the model. Both
+# duration) — and pre-pulls the model, registering it first when it is a `user.` one. Both
 # tiers run the same model, so the hub needs no corresponding setting; everything here is
 # container-side only. The NPU/flm tier ignores whispercpp.* entirely.
 set -eu
@@ -12,7 +12,12 @@ set -eu
 BACKEND="${STT_BACKEND:-gpu}"
 # Pre-pull target only. Keep in sync with the hub's Stt__OpenAi__Model if you override it;
 # a mismatch just means the wrong model is warmed and the right one downloads lazily.
-MODEL="${STT_MODEL:-Whisper-Medium}"
+MODEL="${STT_MODEL:-Whisper-Large-v3-Turbo}"
+# Only for a `user.` model, which is in no registry until we put it there: an org/repo:file.bin
+# reference to its ggml weights. Lemonade resolves checkpoints against HuggingFace/ModelScope
+# only — a local path is not a thing it accepts — so a self-converted model must be published
+# before it can be named here.
+MODEL_CHECKPOINT="${STT_MODEL_CHECKPOINT:-}"
 # Pre-pull target only, same as MODEL. Keep in sync with the agent's Memory:Embedding:Model;
 # a mismatch just means the wrong model is warmed and the right one loads on first recall,
 # which is the several-second cold start this pre-pull exists to remove.
@@ -102,7 +107,26 @@ cat > "$CONFIG_DIR/config.json" <<EOF
 }
 EOF
 
+# /api/v1/pull doubles as the registration endpoint: a `user.` model must arrive with its recipe
+# and checkpoints or Lemonade answers a 400 demanding the very `user.` namespace it was given
+# (the same misleading error the FLM tier hits — see docker-compose.override.npu.yml). A built-in
+# model is named alone; sending registration fields for one would claim a name we do not own.
+case "$MODEL" in
+  user.*)
+    if [ -z "$MODEL_CHECKPOINT" ]; then
+      echo "STT_MODEL '$MODEL' is a user model, so STT_MODEL_CHECKPOINT must name its ggml checkpoint (org/repo:file.bin)" >&2
+      exit 1
+    fi
+    PULL_PAYLOAD="{\"model_name\": \"$MODEL\", \"recipe\": \"whispercpp\", \"checkpoints\": {\"main\": \"$MODEL_CHECKPOINT\"}, \"labels\": [\"transcription\"]}"
+    ;;
+  *)
+    PULL_PAYLOAD="{\"model_name\": \"$MODEL\"}"
+    ;;
+esac
+
 echo "lemonade: whispercpp.backend=$WHISPER_BACKEND model=$MODEL embedding=$EMBEDDING_MODEL args=$WHISPER_ARGS"
+# Echoed before the STT_CONFIG_ONLY seam so the payload is assertable without a server or registry.
+echo "lemonade: stt pull payload=$PULL_PAYLOAD"
 
 # Test seam: config-mapping can be verified without starting the server (no GPU, no model pull).
 if [ "${STT_CONFIG_ONLY:-0}" = "1" ]; then
@@ -122,7 +146,8 @@ fi
     if curl -fsS "http://127.0.0.1:13305/api/v1/health" >/dev/null 2>&1; then
       curl -fsS -X POST "http://127.0.0.1:13305/api/v1/pull" \
         -H "Content-Type: application/json" \
-        -d "{\"model_name\": \"$MODEL\"}" >/dev/null 2>&1 || true
+        -d "$PULL_PAYLOAD" >/dev/null 2>&1 \
+        || echo "lemonade: pulling $MODEL failed; it will download on the first utterance" >&2
       curl -fsS -X POST "http://127.0.0.1:13305/api/v1/pull" \
         -H "Content-Type: application/json" \
         -d "{\"model_name\": \"$EMBEDDING_MODEL\"}" >/dev/null 2>&1 \

@@ -15,7 +15,7 @@ namespace Tests.Integration.McpChannelVoice;
 // suite stubs these, so only this test proves the deployed server actually emits them.
 // LemonadeFixture spins the container (CPU tier) over the provisioned model cache; when Docker,
 // the image, or that cache is unavailable it records a SkipReason and the test skips (never
-// hard-fails) — the External-category convention. First decode loads Whisper-Medium on CPU, hence
+// hard-fails) — the External-category convention. First decode loads the whisper model on CPU, hence
 // the generous timeout.
 [Trait("Category", "External")]
 [Collection(LemonadeCollection.Name)]

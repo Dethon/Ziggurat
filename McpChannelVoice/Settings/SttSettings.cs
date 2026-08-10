@@ -12,9 +12,9 @@ public record OpenAiSttConfig
 
     // Lemonade catalog name. The cpu and gpu tiers run the same whisper.cpp engine on the same
     // model (only the device flips), so STT_BACKEND never changes this — it is a container-side
-    // concern. Override only to trade accuracy for speed (Whisper-Small) or the reverse
-    // (Whisper-Large-v3 / Whisper-Large-v3-Turbo).
-    public string Model { get; init; } = "Whisper-Medium";
+    // concern. Override only to trade accuracy for speed (Whisper-Medium / Whisper-Small) or the
+    // reverse (Whisper-Large-v3), or to name a `user.` model the lemonade entrypoint registered.
+    public string Model { get; init; } = "Whisper-Large-v3-Turbo";
     public string? Language { get; init; }
 
     // Initial prompt posted with every transcription: it biases spelling and vocabulary, and on a

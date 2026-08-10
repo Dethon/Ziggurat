@@ -1,6 +1,6 @@
 # Lemonade Server: OpenAI-compatible STT (whisper.cpp on cpu or vulkan) + TTS (Kokoro).
 # Replaces wyoming-whisper + wyoming-piper. The entrypoint maps STT_BACKEND (cpu|gpu) to
-# the whisper.cpp device; both tiers run the same Whisper-Medium model.
+# the whisper.cpp device; both tiers run the same model (Whisper-Large-v3-Turbo by default).
 # Pin: v11.0.0 (2026-07-15, current latest); bump deliberately, not via :latest.
 FROM ghcr.io/lemonade-sdk/lemonade-server:v11.0.0
 
