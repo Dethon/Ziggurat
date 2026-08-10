@@ -2,10 +2,12 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Transcription;
+using Infrastructure.Metrics;
 using Mcp.Hosting;
 using McpChannelTelegram.McpTools;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
+using StackExchange.Redis;
 
 namespace McpChannelTelegram.Modules;
 
@@ -18,6 +20,9 @@ public static class ConfigModule
         services.AddHttpClient(LemonadeTranscriptionClient.ClientName);
 
         services
+            .AddSingleton<IConnectionMultiplexer>(
+                _ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
+            .AddMetricsPublishing("mcp-channel-telegram")
             .AddSingleton(new BotRegistry(settings.Bots))
             .AddSingleton(settings.Dictation)
             .AddSingleton<IAudioTranscriber>(sp => new LemonadeTranscriptionClient(

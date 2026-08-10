@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using Domain.Contracts;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Attachments;
@@ -12,6 +15,11 @@ namespace McpChannelSignalR.Dictation;
 // gone the moment the transcript exists.
 public static class DictationEndpoints
 {
+    // WebChat is deliberately not gated on the confidence floors — the person reads the words
+    // before sending them — so the outcome here says the transcript reached a composer, not that
+    // anything judged it.
+    private const string Channel = "web";
+
     public static void Map(IEndpointRouteBuilder app)
     {
         app.MapPost(DictationEndpointPaths.Transcriptions, TranscribeAsync).DisableAntiforgery();
@@ -23,6 +31,7 @@ public static class DictationEndpoints
         AttachmentTickets tickets,
         DictationSettings settings,
         IAudioTranscriber transcriber,
+        IMetricsPublisher metrics,
         ILoggerFactory loggers,
         CancellationToken ct)
     {
@@ -58,6 +67,7 @@ public static class DictationEndpoints
         }
 
         var logger = loggers.CreateLogger(typeof(DictationEndpoints));
+        var clock = Stopwatch.StartNew();
         try
         {
             var result = await transcriber.TranscribeAsync(
@@ -68,6 +78,27 @@ public static class DictationEndpoints
                     Language = settings.Transcription.Language
                 },
                 ct);
+
+            clock.Stop();
+            // The satellites' own speech-to-text members, recorded from this call site too: the
+            // dashboard needs no new metric family, only the channel dimension to tell the three
+            // apart. Publishing is fire-and-forget by contract, so a dictation never waits on it
+            // and never fails because of it.
+            metrics.Publish(new VoiceEvent
+            {
+                Metric = VoiceMetric.SttLatencyMs,
+                Channel = Channel,
+                DurationMs = clock.ElapsedMilliseconds
+            });
+            metrics.Publish(new VoiceEvent
+            {
+                Metric = VoiceMetric.UtteranceTranscribed,
+                Channel = Channel,
+                Outcome = "composed",
+                AvgLogProb = result.AvgLogProb,
+                NoSpeechProb = result.NoSpeechProb,
+                DurationMs = clock.ElapsedMilliseconds
+            });
 
             return Results.Ok(new DictationTranscript(result.Text.Trim()));
         }
@@ -81,6 +112,12 @@ public static class DictationEndpoints
             // browser turns any non-2xx into its one-line composer refusal, and the way on is to
             // record again.
             logger.LogWarning(ex, "Could not transcribe a dictation: {Message}", ex.Message);
+            metrics.Publish(new VoiceEvent
+            {
+                Metric = VoiceMetric.SttError,
+                Channel = Channel,
+                Error = ex.Message
+            });
             return Results.Text(
                 "I could not turn that recording into words.", statusCode: StatusCodes.Status502BadGateway);
         }

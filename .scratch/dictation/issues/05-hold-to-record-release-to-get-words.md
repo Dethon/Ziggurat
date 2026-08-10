@@ -21,11 +21,11 @@ ends when a held press produces text.
 
 **Status:** ready-for-agent
 
-- [ ] The right-hand control is a microphone while the composer holds no text and no ready attachment, and send otherwise; the streaming-cancel state is unchanged
-- [ ] Holding it asks for microphone permission the first time and starts recording
-- [ ] A recording strip replaces the textarea row while the microphone is open, with an indicator and an mm:ss timer
-- [ ] Releasing ends the dictation, and the transcript is appended to any existing composer text, separated by a space
-- [ ] The audio leaves the browser as 16 kHz mono s16le WAV, posted with a dictation ticket, and never passes through the WASM heap
-- [ ] The encoder lives in its own module file, since a worklet cannot be inlined in the existing script
-- [ ] Composer rules are unit-tested through the store and its effects, as the attachment composer tests are
-- [ ] One end-to-end test in the WebChat collection drives a real dictation with Chromium's fake media device and CDP touch, against an in-process listener the fixture points the channel container at
+- [x] The right-hand control is a microphone while the composer holds no text and no ready attachment, and send otherwise; the streaming-cancel state is unchanged
+- [x] Holding it asks for microphone permission the first time and starts recording
+- [x] A recording strip replaces the textarea row while the microphone is open, with an indicator and an mm:ss timer
+- [x] Releasing ends the dictation, and the transcript is appended to any existing composer text, separated by a space
+- [x] The audio leaves the browser as 16 kHz mono s16le WAV, posted with a dictation ticket, and never passes through the WASM heap
+- [x] The encoder lives in its own module file, since a worklet cannot be inlined in the existing script
+- [x] Composer rules are unit-tested through the store and its effects, as the attachment composer tests are
+- [x] One end-to-end test in the WebChat collection drives a real dictation with Chromium's fake media device and CDP touch, against an in-process listener the fixture points the channel container at

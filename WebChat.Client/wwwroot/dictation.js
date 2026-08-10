@@ -18,6 +18,7 @@ window.dictation = {
 
     // The live recording, or null between dictations.
     _run: null,
+    _lastPointerAt: 0,
 
     register: function (mic, ref, limits) {
         if (this._mic === mic && this._ref) {
@@ -61,6 +62,7 @@ window.dictation = {
 
     _onDown: function (e) {
         const d = window.dictation;
+        d._lastPointerAt = performance.now();
         if (d._unavailable || d._run) return;
         if (e.button !== undefined && e.button !== 0) return;
         d._mic.setPointerCapture && d._mic.setPointerCapture(e.pointerId);
@@ -135,7 +137,11 @@ window.dictation = {
 
     _onClick: function (e) {
         const d = window.dictation;
-        if (e.detail !== 0) return;              // a pointer tap; _onUp already judged it
+        // Only a keyboard activation, which arrives with no pointer behind it. A touch's
+        // compatibility click can carry a detail of 0 on some builds, so the clock decides too:
+        // a click moments after a real press is that press's own, and _onUp already judged it.
+        if (e.detail !== 0) return;
+        if (performance.now() - d._lastPointerAt < 700) return;
         if (d._unavailable || d._run) return;
         d._start(true, null);
     },
@@ -204,6 +210,11 @@ window.dictation = {
         // worklet has nothing to convert.
         const ctx = new AudioContext({ sampleRate: 16000 });
         run.ctx = ctx;
+        // A context created outside a gesture starts suspended, and a suspended graph never pulls
+        // the worklet — the recording would be silence of exactly the right length.
+        if (ctx.state === 'suspended') {
+            await ctx.resume();
+        }
         await ctx.audioWorklet.addModule('dictation-encoder.js');
         if (run.ending || this._run !== run) {
             this._stopTracks(run);

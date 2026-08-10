@@ -14,8 +14,8 @@ browser can reach.
 
 **Status:** ready-for-agent
 
-- [ ] A dictation from either channel records transcription latency and a transcribed-utterance event
-- [ ] A failed transcription records the error member
-- [ ] Existing metric member values are unchanged; no new family is introduced
-- [ ] Breaking down by channel separates satellite, chat and Telegram
-- [ ] Publishing stays fire-and-forget: a metrics failure never affects a dictation
+- [x] A dictation from either channel records transcription latency and a transcribed-utterance event
+- [x] A failed transcription records the error member
+- [x] Existing metric member values are unchanged; no new family is introduced
+- [x] Breaking down by channel separates satellite, chat and Telegram
+- [x] Publishing stays fire-and-forget: a metrics failure never affects a dictation

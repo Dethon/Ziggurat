@@ -49,7 +49,8 @@ internal sealed class TelegramPollingHarness : IDisposable
             Emitter,
             CallbackRouter,
             Catalog,
-            new VoiceNoteDictation(Transcriber, Dictation, new Mock<ILogger<VoiceNoteDictation>>().Object),
+            new VoiceNoteDictation(
+                Transcriber, Dictation, Metrics, new Mock<ILogger<VoiceNoteDictation>>().Object),
             Time,
             new Mock<ILogger<TelegramBotService>>().Object);
 
@@ -66,6 +67,7 @@ internal sealed class TelegramPollingHarness : IDisposable
 
     public Mock<ITelegramBotClient> BotClient { get; } = new();
     public FakeTranscriber Transcriber { get; } = new();
+    public RecordingMetricsPublisher Metrics { get; } = new();
     public DictationSettings Dictation { get; } = new();
     public FakeTimeProvider Time { get; } = new();
     public ApprovalCallbackRouter CallbackRouter { get; } = new();

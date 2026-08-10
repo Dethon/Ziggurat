@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Infrastructure.Clients.Push;
 using Infrastructure.Clients.Transcription;
 using Infrastructure.Conversations;
+using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
@@ -42,6 +43,7 @@ public static class ConfigModule
             .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()
             .AddSingleton<IPushSubscriptionStore, RedisPushSubscriptionStore>()
             .AddSingleton(settings.Attachments)
+            .AddMetricsPublishing("mcp-channel-signalr")
             .AddSingleton(settings.Dictation)
             .AddSingleton<IAudioTranscriber>(sp => new LemonadeTranscriptionClient(
                 sp.GetRequiredService<IHttpClientFactory>(),

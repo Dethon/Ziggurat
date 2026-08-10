@@ -1,7 +1,15 @@
+using System.Text.Json;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Tests.E2E.Fixtures;
 
@@ -17,6 +25,15 @@ public class WebChatE2EFixture : E2EFixtureBase
 
     public string WebChatUrl { get; private set; } = "";
     private int _userIndex;
+
+    private WebApplication? _whisper;
+
+    // What the stubbed whisper answers, per test. No model and no GPU are involved: the browser,
+    // the channel server, the ticket and the upload are all real, and only the transcription is
+    // decided here.
+    public string Transcript { get; set; } = "hola desde el micrófono";
+
+    public int TranscriptionStatus { get; set; } = 200;
 
     // Returns the next user dropdown index (0-9) so each test uses a unique user identity,
     // avoiding server-side state pollution (stream resume, pending approvals) between tests.
@@ -79,11 +96,18 @@ public class WebChatE2EFixture : E2EFixtureBase
             .Build();
         await _mcpVault.StartAsync(ct);
 
+        var whisperPort = await StartWhisperStubAsync();
+
         _mcpChannelSignalR = new ContainerBuilder(signalRImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-channel-signalr")
             .WithPortBinding(8080, true)
             .WithEnvironment("REDISCONNECTIONSTRING", "redis:6379")
+            // Dictation reaches whisper through the shared transcription client, so pointing its
+            // base URL at the test's own listener is the whole of the substitution.
+            .WithExtraHost("host.docker.internal", "host-gateway")
+            .WithEnvironment(
+                "DICTATION__TRANSCRIPTION__BASEURL", $"http://host.docker.internal:{whisperPort}/v1")
             .WithEnvironment("AGENTS__0__ID", "test-agent")
             .WithEnvironment("AGENTS__0__NAME", "Test Agent")
             .WithEnvironment("AGENTS__1__ID", "vision-agent")
@@ -200,6 +224,11 @@ public class WebChatE2EFixture : E2EFixtureBase
             "    handle /api/attachments* {\n" +
             "        reverse_proxy mcp-channel-signalr:8080\n" +
             "    }\n" +
+            // Without this route a dictation POST lands on the static webui and comes back 405,
+            // mirroring DockerCompose/caddy/Caddyfile.
+            "    handle /api/dictation* {\n" +
+            "        reverse_proxy mcp-channel-signalr:8080\n" +
+            "    }\n" +
             "    handle /api/agents* {\n" +
             "        reverse_proxy agent:8080\n" +
             "    }\n" +
@@ -249,6 +278,36 @@ public class WebChatE2EFixture : E2EFixtureBase
         WebChatUrl = $"{baseUrl}/";
     }
 
+    // whisper-server's own route, answered in process. The channel container reaches it through
+    // the host gateway, so nothing about the browser's path to the transcript is faked.
+    private async Task<int> StartWhisperStubAsync()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(kestrel => kestrel.ListenAnyIP(0));
+        builder.Logging.ClearProviders();
+        _whisper = builder.Build();
+
+        _whisper.MapPost("/v1/audio/transcriptions", async context =>
+        {
+            // Read the body so the upload is a real one from the browser's point of view.
+            await context.Request.ReadFormAsync();
+            if (TranscriptionStatus != 200)
+            {
+                context.Response.StatusCode = TranscriptionStatus;
+                await context.Response.WriteAsync("the transcriber is having a bad day");
+                return;
+            }
+
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync(
+                JsonSerializer.Serialize(new { text = Transcript, language = "es" }));
+        });
+
+        await _whisper.StartAsync();
+        var address = _whisper.Urls.First();
+        return new Uri(address).Port;
+    }
+
     private static string? GetOpenRouterApiKey()
     {
         var envKey = Environment.GetEnvironmentVariable("OPENROUTER__APIKEY");
@@ -272,6 +331,11 @@ public class WebChatE2EFixture : E2EFixtureBase
 
     protected override async Task StopContainersAsync()
     {
+        if (_whisper is not null)
+        {
+            await _whisper.DisposeAsync();
+        }
+
         if (_caddy is not null)
         {
             await _caddy.DisposeAsync();

@@ -5,6 +5,10 @@ namespace Domain.DTOs.Metrics;
 public record VoiceEvent : MetricEvent
 {
     public required VoiceMetric Metric { get; init; }
+    // Which channel the speech came through: the satellites, the browser or Telegram. Dictation
+    // records the same members from the two chat channels, so this is what separates the three on
+    // a dashboard that needs no new metric family to show them.
+    public string? Channel { get; init; }
     public string? SatelliteId { get; init; }
     public string? Room { get; init; }
     public string? Identity { get; init; }

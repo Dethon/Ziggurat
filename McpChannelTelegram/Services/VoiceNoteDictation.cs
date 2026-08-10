@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using Domain.Contracts;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Infrastructure.Clients.Transcription;
 using McpChannelTelegram.Settings;
@@ -21,8 +24,14 @@ public sealed record Dictation(string? Transcript, string? Refusal);
 public sealed class VoiceNoteDictation(
     IAudioTranscriber transcriber,
     DictationSettings settings,
+    IMetricsPublisher metrics,
     ILogger<VoiceNoteDictation> logger)
 {
+    // The satellites' own speech-to-text members, recorded from this call site too: the dashboard
+    // needs no new metric family to show transcription for the channels people type into, only the
+    // channel dimension to tell the three apart.
+    private const string Channel = "telegram";
+
     // Said rather than nothing: being misheard and being ignored are indistinguishable from the
     // other end, and only one of them is worth recording again for.
     private const string CouldNotUnderstand = "I could not make out that voice note.";
@@ -45,10 +54,29 @@ public sealed class VoiceNoteDictation(
                 return new Dictation(null, CouldNotUnderstand);
             }
 
+            var clock = Stopwatch.StartNew();
             var result = await transcriber.TranscribeAsync(
                 Prepare(audio, container) with { Language = settings.Transcription.Language }, ct);
+            clock.Stop();
 
-            return IsWorthATurn(result)
+            var worthATurn = IsWorthATurn(result);
+            metrics.Publish(new VoiceEvent
+            {
+                Metric = VoiceMetric.SttLatencyMs,
+                Channel = Channel,
+                DurationMs = clock.ElapsedMilliseconds
+            });
+            metrics.Publish(new VoiceEvent
+            {
+                Metric = VoiceMetric.UtteranceTranscribed,
+                Channel = Channel,
+                Outcome = worthATurn ? "dispatched" : "rejected",
+                AvgLogProb = result.AvgLogProb,
+                NoSpeechProb = result.NoSpeechProb,
+                DurationMs = clock.ElapsedMilliseconds
+            });
+
+            return worthATurn
                 ? new Dictation(result.Text.Trim(), null)
                 : new Dictation(null, CouldNotUnderstand);
         }
@@ -59,6 +87,12 @@ public sealed class VoiceNoteDictation(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Could not transcribe a Telegram voice note: {Message}", ex.Message);
+            metrics.Publish(new VoiceEvent
+            {
+                Metric = VoiceMetric.SttError,
+                Channel = Channel,
+                Error = ex.Message
+            });
             return new Dictation(null, CouldNotUnderstand);
         }
     }

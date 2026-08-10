@@ -19,11 +19,11 @@ made — recording through a network gap is fine, and the failure is the ordinar
 
 **Status:** ready-for-agent
 
-- [ ] A denied permission shows a one-line refusal and disables the control for the session
-- [ ] A browser without the required APIs shows the same refusal rather than a dead control
-- [ ] A failed transcription shows the refusal, and no partial text lands in the composer
-- [ ] Send is unavailable while a transcription is in flight and returns when the text arrives
-- [ ] Switching topic mid-dictation stops the microphone and discards; nothing arrives in the new topic
-- [ ] Hiding the tab stops the microphone and discards
-- [ ] Losing the connection mid-recording does not stop the recording; only the request fails, as an ordinary refusal
-- [ ] Rules covered through the store and effects, with the refusal path also asserted end-to-end against a listener answering an error
+- [x] A denied permission shows a one-line refusal and disables the control for the session
+- [x] A browser without the required APIs shows the same refusal rather than a dead control
+- [x] A failed transcription shows the refusal, and no partial text lands in the composer
+- [x] Send is unavailable while a transcription is in flight and returns when the text arrives
+- [x] Switching topic mid-dictation stops the microphone and discards; nothing arrives in the new topic
+- [x] Hiding the tab stops the microphone and discards
+- [x] Losing the connection mid-recording does not stop the recording; only the request fails, as an ordinary refusal
+- [x] Rules covered through the store and effects, with the refusal path also asserted end-to-end against a listener answering an error

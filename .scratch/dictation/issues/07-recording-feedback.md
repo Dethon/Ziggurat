@@ -15,9 +15,9 @@ The cap and the floor come from the server's limits, not from constants in the c
 
 **Status:** ready-for-agent
 
-- [ ] The strip shows a level meter that responds to input, driven by an analyser node alongside the encoder
-- [ ] The slide-to-discard hint moves and fades in proportion to how far the pointer has travelled
-- [ ] A press shorter than the mis-tap floor records nothing, sends no request, and shows a hold-to-record hint
-- [ ] A dictation reaching the cap stops itself and transcribes what it has
-- [ ] Both numbers come from the server's limits, so changing them needs no client deploy
-- [ ] The strip stays legible at a phone viewport and does not change the composer's height
+- [x] The strip shows a level meter that responds to input, driven by an analyser node alongside the encoder
+- [x] The slide-to-discard hint moves and fades in proportion to how far the pointer has travelled
+- [x] A press shorter than the mis-tap floor records nothing, sends no request, and shows a hold-to-record hint
+- [x] A dictation reaching the cap stops itself and transcribes what it has
+- [x] Both numbers come from the server's limits, so changing them needs no client deploy
+- [x] The strip stays legible at a phone viewport and does not change the composer's height

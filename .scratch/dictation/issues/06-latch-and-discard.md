@@ -22,10 +22,10 @@ a drifting press still counts as a hold.
 
 **Status:** ready-for-agent
 
-- [ ] Sliding toward the textarea past the threshold discards: no transcript request is made and the composer is untouched
-- [ ] Sliding up past the threshold latches; releasing the pointer afterwards does not end the dictation
-- [ ] A latched dictation offers a trash button that discards immediately and a stop button that ends it and fills the composer
-- [ ] The stop button never sends the message
-- [ ] A click, Enter or Space on the focused microphone starts a latched dictation; Escape discards it
-- [ ] A press that drifts within the tap slop still counts as a hold, not a mis-tap
-- [ ] End-to-end coverage over CDP touch for slide-to-discard and for latch-then-stop
+- [x] Sliding toward the textarea past the threshold discards: no transcript request is made and the composer is untouched
+- [x] Sliding up past the threshold latches; releasing the pointer afterwards does not end the dictation
+- [x] A latched dictation offers a trash button that discards immediately and a stop button that ends it and fills the composer
+- [x] The stop button never sends the message
+- [x] A click, Enter or Space on the focused microphone starts a latched dictation; Escape discards it
+- [x] A press that drifts within the tap slop still counts as a hold, not a mis-tap
+- [x] End-to-end coverage over CDP touch for slide-to-discard and for latch-then-stop

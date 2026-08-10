@@ -16,7 +16,16 @@ public abstract class E2EFixtureBase : IAsyncLifetime
         _playwright = await Playwright.CreateAsync();
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
-            Headless = headless
+            Headless = headless,
+            // A dictation needs a microphone. The fake device answers getUserMedia with a
+            // generated tone and the fake UI grants the permission prompt, so a recording is real
+            // input through the real pipeline with no hardware and nobody to click "allow".
+            Args =
+            [
+                "--use-fake-device-for-media-stream",
+                "--use-fake-ui-for-media-stream",
+                "--autoplay-policy=no-user-gesture-required"
+            ]
         });
 
         // The fixtures initialise concurrently and share per-tag image locks, so one of them
@@ -54,6 +63,9 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             DeviceScaleFactor = isMobile ? 3 : null,
             ViewportSize = isMobile ? new ViewportSize { Width = 390, Height = 844 } : null
         });
+        // The fake UI already answers the prompt; granting as well covers the permissions API,
+        // which the page may consult before ever calling getUserMedia.
+        await context.GrantPermissionsAsync(["microphone"]);
         await StartTraceAsync(context);
 
         // The app references third-party CDNs (Google Fonts, avatar service) as render-blocking

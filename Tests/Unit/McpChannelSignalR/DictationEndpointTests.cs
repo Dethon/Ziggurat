@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Domain.Contracts;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Attachments;
@@ -26,6 +28,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"attachments-{Guid.NewGuid():N}");
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 8, 9, 12, 0, 0, TimeSpan.Zero));
     private readonly FakeTranscriber _transcriber = new();
+    private readonly RecordingMetricsPublisher _metrics = new();
 
     private AttachmentSettings _attachmentSettings = null!;
     private DictationSettings _settings = null!;
@@ -47,6 +50,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
             .AddSingleton(_settings)
             .AddSingleton(_tickets)
             .AddSingleton<IAudioTranscriber>(_transcriber)
+            .AddSingleton<IMetricsPublisher>(_metrics)
             .AddLogging();
 
         _app = builder.Build();
@@ -185,6 +189,33 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         var request = _transcriber.Requests.ShouldHaveSingleItem();
         request.MediaType.ShouldBe("audio/wav");
         request.Audio.ToArray().ShouldBe(audio);
+    }
+
+    // The satellites' own speech-to-text members, from this call site too: an operator watching
+    // whisper get slow after a model change sees the chat channel on the same dashboard.
+    [Fact]
+    public async Task ADictation_RecordsItsLatencyAndATranscribedUtteranceAgainstTheChatChannel()
+    {
+        _transcriber.Result = new() { Text = "hola", AvgLogProb = -0.2 };
+        var ticket = _tickets.MintDictation(Space);
+
+        await PostAsync(ticket.Token, Space, new byte[1024]);
+
+        var voice = _metrics.Published.OfType<VoiceEvent>().ToList();
+        voice.ShouldContain(e => e.Metric == VoiceMetric.SttLatencyMs && e.Channel == "web");
+        voice.ShouldContain(e => e.Metric == VoiceMetric.UtteranceTranscribed && e.Channel == "web");
+    }
+
+    [Fact]
+    public async Task AFailedTranscription_RecordsTheErrorMember()
+    {
+        _transcriber.Fails = new TimeoutException("Lemonade did not answer");
+        var ticket = _tickets.MintDictation(Space);
+
+        await PostAsync(ticket.Token, Space, new byte[1024]);
+
+        _metrics.Published.OfType<VoiceEvent>()
+            .ShouldContain(e => e.Metric == VoiceMetric.SttError && e.Channel == "web");
     }
 
     private async Task<HttpResponseMessage> PostAsync(string? ticket, string space, byte[] audio)

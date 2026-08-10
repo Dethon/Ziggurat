@@ -6,6 +6,10 @@ public record ChannelSettings
 {
     public required AgentBotConfig[] Bots { get; init; }
     public required string[] AllowedUsernames { get; init; }
+
+    // Metrics only: this channel keeps no state of its own (a Telegram file id is the store), so
+    // Redis is here for the same reason the voice hub has it — the metric sink.
+    public string RedisConnectionString { get; init; } = "redis:6379";
     public DictationSettings Dictation { get; init; } = new();
 }
 
