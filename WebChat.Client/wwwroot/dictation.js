@@ -518,7 +518,9 @@ window.dictation = {
             if (this._logging && elapsed - run.notedAt >= 250) {
                 run.notedAt = elapsed;
                 const track = run.stream && run.stream.getAudioTracks()[0];
-                this._note(run, 'lvl=' + this._level(run).toFixed(2)
+                const rms = this._rms(run);
+                this._note(run, 'lvl=' + this._meter(rms).toFixed(2)
+                    + ' rms=' + (rms > 0 ? (20 * Math.log10(rms)).toFixed(1) : '-inf') + 'dB'
                     + ' n=' + run.samples
                     + ' ctx=' + (run.ctx ? run.ctx.state : 'closed')
                     + ' trk=' + (track ? track.readyState + (track.muted ? '/MUTED' : '') : 'gone'));
@@ -556,16 +558,27 @@ window.dictation = {
 
     // Root-mean-square of the live window, so a muted or misrouted input device is visible while
     // someone is still speaking rather than after the transcript comes back empty.
-    _level: function (run) {
+    //
+    // Read at full precision rather than through getByteTimeDomainData, whose eight bits cannot
+    // represent anything below about -42 dBFS at all.
+    _rms: function (run) {
         if (!run.analyser) return 0;
-        const samples = new Uint8Array(run.analyser.frequencyBinCount);
-        run.analyser.getByteTimeDomainData(samples);
-        let sum = 0;
-        for (let i = 0; i < samples.length; i++) {
-            const v = (samples[i] - 128) / 128;
-            sum += v * v;
-        }
-        return Math.min(1, Math.sqrt(sum / samples.length) * 4);
+        const samples = new Float32Array(run.analyser.fftSize);
+        run.analyser.getFloatTimeDomainData(samples);
+        return Math.sqrt(samples.reduce((sum, s) => sum + s * s, 0) / samples.length);
+    },
+
+    _level: function (run) {
+        return this._meter(this._rms(run));
+    },
+
+    // The needle reads in decibels over a 60 dB range, not in amplitude. A working but quiet
+    // microphone sits at a hundredth of full scale, and on a linear meter that is a needle that
+    // never leaves the peg — indistinguishable from one that is hearing nothing, which is the one
+    // distinction the meter exists to draw.
+    _meter: function (rms) {
+        if (!(rms > 0)) return 0;
+        return Math.min(1, Math.max(0, (20 * Math.log10(rms) + 60) / 60));
     },
 
     _clock: function (ms) {

@@ -216,6 +216,34 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         decibels.ShouldBeLessThan(-20, $"12 kHz folded back to 4 kHz at {decibels:F1} dB");
     }
 
+    // The meter exists to tell a microphone that is hearing something from one that is not, and a
+    // phone held in the hand delivers speech around a hundredth of full scale. On a linear needle
+    // that is zero to the eye, so the two cases it exists to separate looked the same — which is
+    // how a real recording was read off a phone as nothing being captured at all.
+    [SkippableFact]
+    public async Task TheLevelMeter_ReadsAQuietMicrophoneAsQuietRatherThanAsNothing()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await OpenAsync();
+        var needle = await page.EvaluateAsync<double[]>(
+            """
+            () => [0, 0.001, 0.005, 0.03, 0.2, 1].map(rms => window.dictation._meter(rms))
+            """);
+
+        // Silence is the only reading that is nothing at all.
+        needle[0].ShouldBe(0);
+        // -60 dBFS is the floor: below a whisper in a quiet room.
+        needle[1].ShouldBe(0, tolerance: 0.01);
+        // -46 dBFS, which is what the phone actually returned and was read as a dead microphone.
+        needle[2].ShouldBeGreaterThan(0.15);
+        // -30 dBFS, quiet speech, must be unmistakably alive.
+        needle[3].ShouldBeGreaterThan(0.4);
+        needle[5].ShouldBe(1);
+        // And it only ever rises.
+        needle.Zip(needle.Skip(1)).ShouldAllBe(pair => pair.Second >= pair.First);
+    }
+
     // The instrument for the device the tests cannot drive. A phone that records silence has no
     // console anybody can read, so one dictation is asked to report on itself into the composer
     // instead. This pins that the report is actually produced and carries the facts worth having —
