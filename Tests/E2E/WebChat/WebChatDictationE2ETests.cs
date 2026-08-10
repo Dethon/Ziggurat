@@ -135,6 +135,43 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         fixture.TranscriptionStatus = 200;
     }
 
+    // The strip takes the textarea's place rather than sitting above it, so the composer must not
+    // grow when the microphone opens — everything above it would jump at the worst moment.
+    [SkippableFact]
+    public async Task OnAPhoneViewport_TheRecordingStripLeavesTheComposersHeightAlone()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        fixture.TranscriptionStatus = 200;
+        fixture.Transcript = "hola";
+
+        var page = await fixture.CreatePageAsync(hasTouch: true);
+        await page.SetViewportSizeAsync(390, 844);
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await Assertions.Expect(page.Locator("[data-testid=dictation-mic]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+
+        var composer = page.Locator(".input-container");
+        var before = await composer.BoundingBoxAsync();
+
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+
+        var during = await composer.BoundingBoxAsync();
+        // The clock has to be readable while it is on screen, so it is asserted visible rather
+        // than merely present.
+        await Assertions.Expect(page.Locator("[data-testid=dictation-timer]")).ToBeVisibleAsync();
+
+        await TouchAsync(cdp, "touchEnd");
+
+        before.ShouldNotBeNull();
+        during.ShouldNotBeNull();
+        during.Height.ShouldBe(before.Height, tolerance: 1);
+    }
+
     private async Task<IPage> OpenAsync()
     {
         var page = await fixture.CreatePageAsync(hasTouch: true);

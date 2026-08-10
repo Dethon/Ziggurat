@@ -80,7 +80,7 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
     // The attach control is a label wearing the button class, so it only looks like the rest of
     // the composer for as long as it takes the same size as them. The phone breakpoint shrinks
     // every button, and a control that opts out of that shrink stands taller than the field and
-    // the send button beside it.
+    // the control beside it — which is the microphone until something is typed, and Send after.
     [SkippableFact]
     public async Task OnAPhoneViewport_TheAttachButtonIsAsTallAsTheSendButton()
     {
@@ -92,12 +92,20 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        var attachBox = await page.Locator("label.attach-button").BoundingBoxAsync();
+        var attach = page.Locator("label.attach-button");
+        var micBox = await page.Locator("[data-testid=dictation-mic]").BoundingBoxAsync();
+        var attachBox = await attach.BoundingBoxAsync();
+
+        attachBox.ShouldNotBeNull();
+        micBox.ShouldNotBeNull();
+        attachBox.Height.ShouldBe(micBox.Height, tolerance: 1);
+
+        // And the send button, which takes the microphone's place the moment there is text.
+        await page.Locator("textarea.chat-input").FillAsync("something to send");
         var sendBox = await page.Locator("button.btn-primary", new PageLocatorOptions { HasText = "Send" })
             .BoundingBoxAsync();
 
-        attachBox.ShouldNotBeNull();
         sendBox.ShouldNotBeNull();
-        attachBox.Height.ShouldBe(sendBox.Height, tolerance: 1);
+        (await attach.BoundingBoxAsync())!.Height.ShouldBe(sendBox.Height, tolerance: 1);
     }
 }

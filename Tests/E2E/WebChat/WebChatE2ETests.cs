@@ -542,6 +542,10 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             // the user can act on.
             var sendButton = page.Locator("button.btn-primary", new PageLocatorOptions { HasText = "Send" });
             await Assertions.Expect(sendButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
+            // The composer is empty once the message has gone, so the control that comes back when
+            // the stream ends is the microphone rather than Send — one control in that spot, always
+            // the one the person is about to use.
+            var microphone = page.Locator("[data-testid=dictation-mic]");
 
             // .approval-modal-overlay covers the whole viewport, so a prompt on screen swallows
             // this click for as long as it is up. It can belong to this turn (the agent asked for
@@ -564,7 +568,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             }
 
             await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
-            await Assertions.Expect(sendButton).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 10_000 });
+            await Assertions.Expect(microphone).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 10_000 });
         }
         finally
         {
