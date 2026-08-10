@@ -17,6 +17,8 @@ public static class AttachmentKinds
     public static IReadOnlyList<AttachmentKind> All { get; } =
         [AttachmentKind.Image, AttachmentKind.Document];
 
+    public static bool IsImage(string? mediaType) => ForMediaType(mediaType) == AttachmentKind.Image;
+
     public static AttachmentKind? ForMediaType(string? mediaType) => mediaType switch
     {
         null => null,

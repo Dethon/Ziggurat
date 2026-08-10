@@ -1,4 +1,3 @@
-using Domain.DTOs.Channel;
 using JetBrains.Annotations;
 
 namespace Domain.DTOs.WebChat;
@@ -40,8 +39,6 @@ public static class AttachmentRefusals
             : new AttachmentRefusal(AttachmentRefusalKind.UnsupportedKind, UnsupportedKind(fileName));
     }
 
-    public static bool IsImage(string? mediaType) =>
-        AttachmentKinds.ForMediaType(mediaType) == AttachmentKind.Image;
 }
 
 [PublicAPI]
