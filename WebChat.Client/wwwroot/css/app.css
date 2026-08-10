@@ -1397,10 +1397,11 @@ h1, h2, h3 {
     line-height: 1;
 }
 
+/* No min-height here: it would outrank the height .btn drops to at the phone breakpoint and
+   leave this control standing taller than the field and the send button beside it. */
 .attach-button {
     position: relative;
     overflow: hidden;
-    min-height: 48px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
