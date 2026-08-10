@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.E2E.Fixtures;
@@ -208,6 +209,54 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         speech.ShouldBeGreaterThan(0.01, "the 1 kHz tone did not survive the recording");
         var decibels = 20 * Math.Log10(alias / speech);
         decibels.ShouldBeLessThan(-20, $"12 kHz folded back to 4 kHz at {decibels:F1} dB");
+    }
+
+    // The instrument for the device the tests cannot drive. A phone that records silence has no
+    // console anybody can read, so one dictation is asked to report on itself into the composer
+    // instead. This pins that the report is actually produced and carries the facts worth having —
+    // an instrument nobody has checked is worse than none, because a blank screen then means two
+    // different things.
+    [SkippableFact]
+    public async Task WithTheLogFlag_ADictationReportsOnItselfIntoTheComposer()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        fixture.TranscriptionStatus = 200;
+        fixture.Transcript = "no debería aparecer";
+
+        var page = await fixture.CreatePageAsync(hasTouch: true);
+        await page.GotoAsync(
+            fixture.WebChatUrl + "?dictationlog=1",
+            new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await Assertions.Expect(page.Locator("[data-testid=dictation-mic]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        await Task.Delay(1_200);
+        await TouchAsync(cdp, "touchEnd");
+
+        var composer = page.Locator("textarea.chat-input");
+        // A textarea's value, not its text content: the report is typed into it, not written
+        // between its tags.
+        await Assertions.Expect(composer)
+            .ToHaveValueAsync(new Regex("lvl="), new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+
+        var report = await composer.InputValueAsync();
+        // The graph, the microphone and the meter over time — which between them say whether a
+        // recording of silence was never captured, captured and muted, or captured and dropped.
+        report.ShouldContain("ctx ");
+        report.ShouldContain("mic ");
+        report.ShouldContain("trk=live");
+        report.ShouldContain("end: ");
+        // The report replaces the transcript rather than arriving alongside it.
+        report.ShouldNotContain("no debería aparecer");
+        // Several samples, not one: a level that fell to nothing partway is the thing being looked
+        // for, and a single reading cannot show it.
+        report.Split('\n').Count(line => line.Contains("lvl=")).ShouldBeGreaterThan(2);
     }
 
     // Nobody should have to hold a key down, so a keyboard press starts a latched dictation
