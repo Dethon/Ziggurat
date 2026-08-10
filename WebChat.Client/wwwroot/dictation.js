@@ -13,7 +13,10 @@
 window.dictation = {
     _ref: null,
     _mic: null,
-    _limits: { maxMs: 120000, minMs: 400 },
+    // The cap and the floor are always .NET's: register hands them over before any listener
+    // exists (falling back to AttachmentLimits' named defaults there), so no number is compiled
+    // into this file to drift from the one the server holds.
+    _limits: null,
     _unavailable: false,
 
     // The live recording, or null between dictations.
@@ -98,8 +101,10 @@ window.dictation = {
             // The hint travels and fades with the finger, so the distance left to go is visible.
             d._setStripVar('--dictation-travel', Math.min(1, Math.max(0, -dx / DISCARD)));
             if (-dx >= DISCARD) d._discard();
-        } else if (dy <= -LATCH) {
-            d._latch();
+        } else {
+            // The hint above the microphone rises with the finger for the same reason.
+            d._setVar('.dictation-lift', '--dictation-lift', Math.min(1, Math.max(0, -dy / LATCH)));
+            if (dy <= -LATCH) d._latch();
         }
         e.preventDefault();
     },
@@ -194,7 +199,13 @@ window.dictation = {
                     }
                     return ticket;
                 })
-                .catch(() => null)
+                // A server that answers with a refusal is not a server that could not be
+                // reached, and the two are diagnosed in different places — so its own words
+                // are kept rather than flattened into "I could not reach the server".
+                .catch(err => {
+                    run.ticketRefusal = err && err.message ? err.message : null;
+                    return null;
+                })
             : null;
 
         this._open(run).then(() => {
@@ -297,7 +308,9 @@ window.dictation = {
         try {
             const ticket = await run.ticket;
             if (!ticket) {
-                this._invoke('Failed', 'I could not reach the server to turn that into words.');
+                this._invoke('Failed', run.ticketRefusal
+                    ? 'The server would not take that recording: ' + run.ticketRefusal
+                    : 'I could not reach the server to turn that into words.');
                 return;
             }
 
@@ -431,8 +444,12 @@ window.dictation = {
     },
 
     _setStripVar: function (name, value) {
-        const strip = document.querySelector('.dictation-strip');
-        if (strip) strip.style.setProperty(name, value);
+        this._setVar('.dictation-strip', name, value);
+    },
+
+    _setVar: function (selector, name, value) {
+        const element = document.querySelector(selector);
+        if (element) element.style.setProperty(name, value);
     },
 
     // ---- refusals ----

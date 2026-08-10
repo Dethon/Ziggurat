@@ -85,20 +85,31 @@ public sealed class DictationEffect : IDisposable
     [JSInvokable]
     public async Task<DictationUpload?> MintTicketAsync()
     {
-        var ticket = await _dictationService.CreateTicketAsync();
-        if (ticket is not { IsLive: true, Value: not null })
+        try
         {
-            return null;
-        }
+            var ticket = await _dictationService.CreateTicketAsync();
+            if (ticket is not { IsLive: true, Value: not null })
+            {
+                return null;
+            }
 
-        var url = await _endpoints.ResolveAsync(DictationEndpointPaths.Transcriptions);
-        var space = Uri.EscapeDataString(_spaceStore.State.CurrentSlug);
-        var limits = await EnsureLimitsAsync();
-        return new DictationUpload(
-            $"{url}?{DictationEndpointPaths.SpaceQueryParameter}={space}",
-            ticket.Value.Token,
-            limits.MaxMs,
-            limits.MinMs);
+            var url = await _endpoints.ResolveAsync(DictationEndpointPaths.Transcriptions);
+            var space = Uri.EscapeDataString(_spaceStore.State.CurrentSlug);
+            var limits = await EnsureLimitsAsync();
+            return new DictationUpload(
+                $"{url}?{DictationEndpointPaths.SpaceQueryParameter}={space}",
+                ticket.Value.Token,
+                limits.MaxMs,
+                limits.MinMs);
+        }
+        catch (Exception exception)
+        {
+            // Rethrown rather than turned into a null: the browser puts the reason in front of
+            // whoever is holding the phone, and this leaves the stack behind in the console for
+            // whoever is reading it afterwards.
+            _logger.LogWarning(exception, "Minting a dictation ticket failed");
+            throw;
+        }
     }
 
     [JSInvokable]
