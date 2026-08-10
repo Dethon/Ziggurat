@@ -25,14 +25,27 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         var userMessage = page.Locator(".message-content", new PageLocatorOptions { HasText = "Hello, this is an E2E test message" });
         await userMessage.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
 
-        // Wait for agent response — the assistant message element may appear early (with empty content
-        // during "thinking"), so use Expect to poll until it has non-empty text content. 90s, not
-        // 30s: the agent runs with --reasoning and shares its provider slots with every other
-        // conversation the suite has already created, so the first text token can lag well past
-        // half a minute while the model is provably alive and thinking.
+        // Wait for agent response — the assistant message element may appear early (with empty
+        // content during "thinking"), so poll until it has non-empty text. The model sometimes
+        // answers even a greeting with a tool call, and that raises an approval prompt which
+        // holds the reply hostage until it is answered — reject whatever appears between waits,
+        // or no amount of timeout produces text.
         var assistantMessage = page.Locator(".chat-message.assistant .message-content");
-        await Assertions.Expect(assistantMessage.First)
-            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 90_000 });
+        var deadline = DateTime.UtcNow.AddSeconds(90);
+        while (true)
+        {
+            await DismissApprovalOverlayAsync(page);
+            try
+            {
+                await Assertions.Expect(assistantMessage.First)
+                    .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 10_000 });
+                break;
+            }
+            catch (PlaywrightException) when (DateTime.UtcNow < deadline)
+            {
+                // An approval may have arrived mid-wait; loop to reject it and keep waiting.
+            }
+        }
     }
 
     internal static async Task SelectUserAndAgentAsync(IPage page, int userIndex = 0)
@@ -338,27 +351,10 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        // Dismiss any approval-modal-overlay left by the StreamResumeService
-        var overlay = page.Locator(".approval-modal-overlay");
-        if (await overlay.IsVisibleAsync())
-        {
-            var rejectBtn = page.Locator(".btn-reject");
-            if (await rejectBtn.IsVisibleAsync())
-            {
-                await rejectBtn.ClickAsync();
-            }
-
-            await Assertions.Expect(overlay).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
-        }
-
-        await page.Locator(".avatar-button").ClickAsync();
-
-        var dropdown = page.Locator(".user-dropdown-menu");
-        await dropdown.WaitForAsync(new LocatorWaitForOptions { Timeout = 5_000 });
-
-        // Select a unique user to avoid server-side state pollution from other tests
-        var userIndex = fixture.NextUserIndex();
-        await page.Locator(".user-dropdown-item").Nth(userIndex).ClickAsync();
+        // The guarded helper, not a bare click: the approval overlay can be replayed onto this
+        // page at any moment by StreamResumeService and would intercept the item click for as
+        // long as it sits there.
+        await OpenUserDropdownAndSelectAsync(page, fixture.NextUserIndex());
 
         var avatarImage = page.Locator("img.avatar-image");
         await avatarImage.WaitForAsync(new LocatorWaitForOptions { Timeout = 5_000 });
@@ -492,6 +488,11 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
             await cancelButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 40_000 });
 
+            // Cancel replaces Send while the reply runs: one button in that spot, always the one
+            // the user can act on.
+            var sendButton = page.Locator("button.btn-primary", new PageLocatorOptions { HasText = "Send" });
+            await Assertions.Expect(sendButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
+
             // .approval-modal-overlay covers the whole viewport, so a prompt on screen swallows
             // this click for as long as it is up. It can belong to this turn (the agent asked for
             // a tool despite the prompt) or to another topic whose approval leaked and is being
@@ -513,6 +514,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             }
 
             await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
+            await Assertions.Expect(sendButton).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 10_000 });
         }
         finally
         {

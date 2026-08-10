@@ -216,15 +216,20 @@
                   rows="1"></textarea>
     </div>
 
+    @* One button in this spot, always the one the user can act on: while the reply runs, Send
+       could only ever be dead, so Cancel takes its place. *@
     @if (_isStreaming)
     {
         <button class="btn btn-secondary" @onclick="HandleCancel">
             Cancel
         </button>
     }
-    <button class="btn btn-primary"
-            @onclick="HandleSubmit"
-            disabled="@(!CanSend)">
-        Send
-    </button>
+    else
+    {
+        <button class="btn btn-primary"
+                @onclick="HandleSubmit"
+                disabled="@(!CanSend)">
+            Send
+        </button>
+    }
 </div>

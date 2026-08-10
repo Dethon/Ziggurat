@@ -26,7 +26,21 @@ public class RedisFixture : IAsyncLifetime
                 .UntilCommandIsCompleted("redis-cli", "ping"))
             .Build();
 
-        await _container.StartAsync();
+        // The shared resource reaper starts lazily on the first container of the run, and its
+        // own startup can time out while the Docker daemon is busy bringing up an E2E stack.
+        // That failure poisons every test on this fixture, so ride it out with a second try.
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await _container.StartAsync();
+                break;
+            }
+            catch (InvalidOperationException) when (attempt < 2)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+            }
+        }
 
         var host = _container.Hostname;
         var port = _container.GetMappedPublicPort(RedisPort);

@@ -114,7 +114,11 @@ public class WebChatE2EFixture : E2EFixtureBase
                   "name": "Test Agent",
                   "model": "~deepseek/deepseek-v4-flash-latest",
                   "mcpServerEndpoints": [ "http://mcp-vault:8080/mcp" ],
-                  "whitelistPatterns": ["__none__"]
+                  "whitelistPatterns": ["__none__"],
+                  // The model sometimes answers a plain greeting with a tool call, which raises
+                  // an approval prompt no test asked for and leaks it onto every later page.
+                  // The approval tests demand a tool call explicitly, so they still get one.
+                  "customInstructions": "Use tools only when the message explicitly asks for an action that needs one; otherwise reply with plain text."
                 },
                 {
                   // The attachment E2E needs a model that accepts image input: capability is
