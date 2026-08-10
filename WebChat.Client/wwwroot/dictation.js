@@ -362,6 +362,16 @@ window.dictation = {
         try {
             await this._drain(run);
             this._closeContext(run);
+            // An empty recording is not a transcript that could not be made out, and sending it
+            // asks whisper to account for audio nothing ever heard — which comes back as the
+            // person's own words being blamed. Opening the microphone takes as long as the device
+            // takes, and a deliberate hold can be over before the graph exists at all.
+            if (run.samples === 0) {
+                this._invoke('Failed', run.encoder
+                    ? 'The microphone recorded no sound at all.'
+                    : 'The microphone had not finished opening, so nothing was recorded.');
+                return;
+            }
             const ticket = await run.ticket;
             if (!ticket) {
                 this._invoke('Failed', run.ticketRefusal

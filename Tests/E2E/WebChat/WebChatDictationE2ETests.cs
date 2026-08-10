@@ -474,6 +474,51 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
                 "enganchado antes de tiempo", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
     }
 
+    // The other half of a microphone that opens slowly. A finger can also come back UP inside that
+    // wait — a deliberate hold, past the mis-tap floor, released before the graph ever existed. The
+    // recording that ends is empty, and sending it asks whisper to account for audio that was never
+    // captured: the person is told their words could not be made out, about words nothing ever
+    // heard. Nothing goes up, and what is said names the microphone.
+    [SkippableFact]
+    public async Task ReleasingBeforeTheMicrophoneOpens_SaysSoRatherThanSendingAnEmptyRecording()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        fixture.TranscriptionStatus = 200;
+        // Distinctive: if this reaches the composer, an empty recording was uploaded and answered.
+        fixture.Transcript = "esto probaría que se subió algo";
+
+        var page = await OpenAsync();
+        // Longer than the hold below, so the release lands with certainty inside the wait rather
+        // than at the mercy of how quickly the machine opens a fake device.
+        await page.EvaluateAsync(
+            """
+            () => {
+                const open = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+                navigator.mediaDevices.getUserMedia = constraints =>
+                    new Promise(resolve => setTimeout(() => resolve(open(constraints)), 2500));
+            }
+            """);
+
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+
+        // Comfortably past the 400 ms mis-tap floor: this is a hold, not a tap, so the answer must
+        // not be the hint that tells someone to hold it.
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Task.Delay(HoldMs);
+        await TouchAsync(cdp, "touchEnd");
+
+        var refusal = page.Locator(".composer-refusal");
+        await Assertions.Expect(refusal)
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        (await refusal.InnerTextAsync()).ShouldContain("microphone");
+
+        // Long past the moment the microphone finishes opening, so a late arrival cannot rescue it.
+        await Task.Delay(2_500);
+        await Assertions.Expect(page.Locator("textarea.chat-input")).ToHaveValueAsync("");
+        await Assertions.Expect(page.Locator(".composer-hint")).ToBeHiddenAsync();
+    }
+
     [SkippableFact]
     public async Task WhenTheTranscriberFails_TheComposerSaysSoRatherThanNothingHappening()
     {
