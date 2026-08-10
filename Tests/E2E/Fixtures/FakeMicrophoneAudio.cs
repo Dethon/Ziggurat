@@ -27,9 +27,9 @@ public static class FakeMicrophoneAudio
     // and no click enters the recording to muddy the measurement.
     private const int Seconds = 2;
 
-    private static readonly Lazy<string> Written = new(Write);
+    private static readonly Lazy<string> _written = new(Write);
 
-    public static string WriteToTempFile() => Written.Value;
+    public static string WriteToTempFile() => _written.Value;
 
     private static string Write()
     {
