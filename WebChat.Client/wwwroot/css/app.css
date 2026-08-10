@@ -1058,6 +1058,36 @@ h1, h2, h3 {
     border: 1px solid var(--code-border);
 }
 
+/* Every horizontally scrollable markdown element gets the themed scrollbar,
+   otherwise the browser paints its native one over the message bubble. */
+.message-content pre,
+.message-content table {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.message-content pre::-webkit-scrollbar,
+.message-content table::-webkit-scrollbar {
+    height: 6px;
+}
+
+.message-content pre::-webkit-scrollbar-track,
+.message-content table::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: 3px;
+}
+
+.message-content pre::-webkit-scrollbar-thumb,
+.message-content table::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+}
+
+.message-content pre::-webkit-scrollbar-thumb:hover,
+.message-content table::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+
 .message-content pre code {
     padding: 0;
     background: none;
@@ -1072,26 +1102,6 @@ h1, h2, h3 {
     border-collapse: collapse;
     margin: 0.75rem 0;
     font-size: 0.875rem;
-    scrollbar-width: thin;
-    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-}
-
-.message-content table::-webkit-scrollbar {
-    height: 6px;
-}
-
-.message-content table::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
-    border-radius: 3px;
-}
-
-.message-content table::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    border-radius: 3px;
-}
-
-.message-content table::-webkit-scrollbar-thumb:hover {
-    background: var(--scrollbar-thumb-hover);
 }
 
 .message-content th,
