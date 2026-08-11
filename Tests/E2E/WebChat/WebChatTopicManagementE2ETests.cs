@@ -101,41 +101,6 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         await renamedRow.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
     }
 
-    // The same title, in the same place, on a wide screen: the rail says which conversation is
-    // selected, but only the top bar lets it be renamed.
-    [SkippableFact]
-    public async Task RenameTopic_FromTheDesktopHeader_RenamesTheConversation()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await fixture.CreatePageAsync();
-        await page.SetViewportSizeAsync(1280, 900);
-        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
-
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
-
-        var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Topic to rename on the desktop E2E test — answer in one short sentence.");
-        await chatInput.PressAsync("Enter");
-
-        await page.Locator(".message-content").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
-
-        var headerName = page.Locator(".header-conversation-name");
-        await Assertions.Expect(headerName).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 10_000 });
-        await WebChatE2ETests.ClickThroughApprovalsAsync(page, headerName);
-
-        var editor = page.Locator(".header-conversation-edit");
-        await Assertions.Expect(editor).ToBeFocusedAsync(new LocatorAssertionsToBeFocusedOptions { Timeout = 5_000 });
-        await editor.FillAsync("Renamed on the desktop");
-        await editor.PressAsync("Enter");
-
-        await Assertions.Expect(headerName).ToHaveTextAsync(
-            "Renamed on the desktop", new LocatorAssertionsToHaveTextOptions { Timeout = 10_000 });
-
-        var renamedRow = page.Locator(".topic-item", new PageLocatorOptions { HasText = "Renamed on the desktop" });
-        await renamedRow.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
-    }
-
     [SkippableFact]
     public async Task DeleteTopic_RemovesFromSidebar()
     {

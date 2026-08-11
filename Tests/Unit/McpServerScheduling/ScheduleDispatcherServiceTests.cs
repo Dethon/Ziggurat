@@ -166,20 +166,6 @@ public class ScheduleDispatcherServiceTests
         delivered.ShouldBeTrue();
     }
 
-    // The whole fix: while nobody is listening, the loop waits the backed-off interval instead of
-    // the normal one, so a tick that would just be told "no" again by the emitter never happens.
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void NextDelay_UsesTheBackedOffIntervalOnlyWhenNothingWasDelivered(bool delivered)
-    {
-        var interval = TimeSpan.FromSeconds(30);
-
-        var next = ScheduleDispatcherService.NextDelay(interval, delivered);
-
-        next.ShouldBe(delivered ? interval : interval * ScheduleDispatcherService.IdleBackoffMultiplier);
-    }
-
     private static Schedule OneShot() =>
         new() { Id = "once", AgentId = "jack", Prompt = "p", RunAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow };
 

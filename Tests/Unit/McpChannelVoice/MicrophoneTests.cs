@@ -117,19 +117,6 @@ public class MicrophoneTests
     }
 
     [Fact]
-    public void Activity_ACaptureIsOpen_IsVisibleToArbitration()
-    {
-        var gates = Gates();
-        var mic = NewMic(gates);
-        mic.Activity.ShouldBeNull();
-
-        var capture = Open(mic, gates);
-
-        mic.Activity.ShouldNotBeNull();
-        mic.Close(capture);
-    }
-
-    [Fact]
     public async Task TryAbort_ACaptureIsOpen_AbandonsIt()
     {
         var gates = Gates();

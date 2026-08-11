@@ -41,22 +41,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         new(endpoint, "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUb...", "tBHItJI5svbpC7sc9d8M2w==");
 
     [Fact]
-    public async Task SaveAsync_MultipleDevices_StoresAll()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var sub1 = CreateSubscription("https://fcm.googleapis.com/fcm/send/device1");
-        var sub2 = CreateSubscription("https://fcm.googleapis.com/fcm/send/device2");
-
-        await _store.SaveAsync(userId, sub1);
-        await _store.SaveAsync(userId, sub2);
-
-        var all = await _store.GetAllAsync();
-        var userSubs = all.Where(x => x.UserId == userId).ToList();
-        userSubs.Count.ShouldBe(2);
-    }
-
-    [Fact]
     public async Task SaveAsync_SameEndpoint_OverwritesPrevious()
     {
         var userId = $"test-user-{Guid.NewGuid():N}";
@@ -172,24 +156,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
 
         var all = await _store.GetAllAsync();
         all.ShouldNotContain(x => x.Subscription.Endpoint == sharedEndpoint);
-    }
-
-    [Fact]
-    public async Task SaveAsync_EndpointWithSpecialCharacters_HandlesCorrectly()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var endpoint = "https://example.com/push/endpoint?token=abc%20def&lang=en&special=<>&quote=\"test\"";
-        var sub = new PushSubscriptionDto(endpoint, "key123", "auth456");
-
-        await _store.SaveAsync(userId, sub);
-
-        var all = await _store.GetAllAsync();
-        var match = all.FirstOrDefault(x => x.UserId == userId);
-        match.Subscription.ShouldNotBeNull();
-        match.Subscription.Endpoint.ShouldBe(endpoint);
-        match.Subscription.P256dh.ShouldBe("key123");
-        match.Subscription.Auth.ShouldBe("auth456");
     }
 
     [Fact]

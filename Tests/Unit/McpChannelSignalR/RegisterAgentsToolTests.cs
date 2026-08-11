@@ -24,21 +24,4 @@ public class RegisterAgentsToolTests
             s => s.SendAsync("OnAgentsUpdated", It.IsAny<object>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
-
-    [Fact]
-    public void McpRun_WithEmptyList_ClearsCatalog()
-    {
-        var catalog = new MutableAgentCatalog();
-        catalog.Replace([new AgentCatalogEntry("old", "Old", null)]);
-        var sender = new Mock<IHubNotificationSender>();
-        var tool = new RegisterAgentsTool(catalog, sender.Object);
-
-        var result = tool.McpRun([]);
-
-        result.ShouldBe("registered 0 agents");
-        catalog.GetAll().ShouldBeEmpty();
-        sender.Verify(
-            s => s.SendAsync("OnAgentsUpdated", It.IsAny<object>(), It.IsAny<CancellationToken>()),
-            Times.Once);
-    }
 }

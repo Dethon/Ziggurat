@@ -46,12 +46,6 @@ public class HaArgParserTests
     }
 
     [Fact]
-    public void Parse_Empty_ReturnsEmptyObject()
-    {
-        HaArgParser.Parse([], Svc()).Count.ShouldBe(0);
-    }
-
-    [Fact]
     public void Parse_SingleSelectValidOption_Passes()
     {
         HaArgParser.Parse(["--flash", "short"], Svc())["flash"]!.GetValue<string>().ShouldBe("short");

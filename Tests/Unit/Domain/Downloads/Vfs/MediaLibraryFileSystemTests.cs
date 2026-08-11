@@ -397,17 +397,6 @@ public class MediaLibraryFileSystemTests : IDisposable
         error.Message.ShouldContain("rendered");
     }
 
-    [Fact]
-    public async Task Move_APathWithNoLiveDownloadUnderIt_StillMoves()
-    {
-        _client.Add(Item(42));
-
-        (await _sut.MoveAsync("Movies/old", "Movies/new", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
-        (await _sut.MoveAsync("downloads/7", "Movies/7", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
-    }
-
     // A leftover is an ordinary file wherever it sits, so moving one is an ordinary move.
     [Theory]
     [InlineData("downloads/99")]

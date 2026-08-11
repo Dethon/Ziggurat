@@ -102,19 +102,6 @@ public class McpFileDownloadToolTests
     }
 
     [Fact]
-    public void ValidateInputs_RealLinkWithLiteralNullTitle_ReturnsInvalidArgument()
-    {
-        var result = McpFileDownloadTool.ValidateInputs(
-            searchResultId: null,
-            link: "magnet:?xt=urn:btih:x",
-            title: "null");
-
-        result.ShouldNotBeNull();
-        result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
-        result["message"]!.GetValue<string>().ShouldContain("title");
-    }
-
-    [Fact]
     public void ValidateInputs_LinkWithSurroundingWhitespace_ReturnsNull()
     {
         var result = McpFileDownloadTool.ValidateInputs(

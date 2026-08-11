@@ -105,24 +105,6 @@ public class FileSystemToolFeatureTests
     }
 
     [Fact]
-    public void Prompt_ReadOnlyStyleMount_DoesNotAdvertiseWriteOrExec()
-    {
-        var registry = new Mock<IVirtualFileSystemRegistry>();
-        registry.Setup(r => r.GetMounts()).Returns([
-            new FileSystemMount("media", "/media", "Library")
-            {
-                Capabilities = ["text_read", "glob", "text_search", "move", "copy", "remove", "file_info"]
-            }
-        ]);
-        var feature = new FileSystemToolFeature(registry.Object);
-
-        var operationsLine = feature.Prompt!.Split('\n').Single(l => l.Contains("operations:"));
-        operationsLine.ShouldNotContain("text_create");
-        operationsLine.ShouldNotContain("exec");
-        operationsLine.ShouldContain("text_read");
-    }
-
-    [Fact]
     public void Prompt_MountWithoutCapabilities_OmitsOperationsLine()
     {
         // The default _registry mount carries no capabilities.

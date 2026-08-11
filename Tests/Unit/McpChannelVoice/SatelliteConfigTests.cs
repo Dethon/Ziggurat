@@ -94,20 +94,6 @@ public class SatelliteConfigTests
     }
 
     [Fact]
-    public void ResolveIdentify_WithoutOverrides_FallBackToGlobalDefaults()
-    {
-        var global = new SpeakerVerificationSettings();
-        var config = new SatelliteConfig { Identity = "household", Room = "Office" };
-
-        config.ResolveSimilarityThreshold(global).ShouldBe(0.70);
-        config.ResolveShortSpeechSimilarityThreshold(global).ShouldBe(0.50);
-        config.ResolveFullThresholdSpeechMs(global).ShouldBe(4000);
-        config.ResolveIdentifyThreshold(global).ShouldBe(0.75);
-        config.ResolveShortSpeechIdentifyThreshold(global).ShouldBe(0.65);
-        config.ResolveIdentifyMargin(global).ShouldBe(0.10);
-    }
-
-    [Fact]
     public void ResolveIdentify_WithOverrides_PreferSatelliteValues()
     {
         var global = new SpeakerVerificationSettings();

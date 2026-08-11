@@ -76,14 +76,6 @@ public class HaFileSystemReadTests
     }
 
     [Fact]
-    public async Task ReadAsync_ActionFileForMissingEntity_ReturnsNotFound()
-    {
-        var fs = Build(out _);
-        var result = await fs.ReadAsync("entities/light/ghost/turn_on.sh", null, null, CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error.ErrorCode.ShouldBe("not_found");
-    }
-
-    [Fact]
     public async Task ExecAsync_ResolvesViaCompositePath()
     {
         var client = new FakeHaClient

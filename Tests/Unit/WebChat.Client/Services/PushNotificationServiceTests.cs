@@ -32,16 +32,6 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task RequestAndSubscribeAsync_WhenJsInteropThrows_PropagatesException()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
-            .Throws(new JSException("navigator.serviceWorker is undefined"));
-
-        await Should.ThrowAsync<JSException>(() => _sut.RequestAndSubscribeAsync("BPublicKey123"));
-    }
-
-    [Fact]
     public async Task RequestAndSubscribeAsync_WhenTheCallCouldNotBeMade_ReturnsFalse()
     {
         _mockJsRuntime

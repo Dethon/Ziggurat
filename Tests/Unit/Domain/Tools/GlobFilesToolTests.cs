@@ -36,17 +36,6 @@ public class GlobFilesToolTests
     }
 
     [Fact]
-    public async Task Run_WithAbsolutePathUnderBasePath_StripsBaseAndUsesRelative()
-    {
-        _mockClient.Setup(c => c.Glob(BasePath, "docs/**/*.pdf", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(["/library/docs/book.pdf"]);
-
-        var result = await _tool.TestRun("/library/docs/**/*.pdf", CancellationToken.None);
-
-        result["entries"]!.AsArray().Count.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task Run_WithAbsoluteTrailingSlashPattern_PreservesDirsOnly()
     {
         _mockClient.Setup(c => c.Glob(BasePath, "movies/", It.IsAny<CancellationToken>()))

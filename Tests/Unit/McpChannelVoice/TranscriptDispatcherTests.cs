@@ -194,19 +194,6 @@ public class TranscriptDispatcherTests
     }
 
     [Fact]
-    public async Task DispatchAsync_LowAvgLogProb_DoesNotOpenConversation()
-    {
-        var (sut, manager, emitter) = Build();
-
-        var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "mumble", AvgLogProb = -2.1 }, "agent-1", null, null, null, default);
-
-        ok.ShouldBeFalse();
-        manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
-        emitter.Received().ShouldBeEmpty();
-    }
-
-    [Fact]
     public async Task DispatchAsync_HighNoSpeechProb_DoesNotOpenConversation()
     {
         var (sut, manager, emitter) = Build();

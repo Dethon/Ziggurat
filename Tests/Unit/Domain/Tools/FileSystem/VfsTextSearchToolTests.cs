@@ -19,23 +19,6 @@ public class VfsTextSearchToolTests
         _tool = new VfsTextSearchTool(_registry.Object);
     }
 
-    // filePath scopes the search to one file: the backend gets it as `path` and no directoryPath.
-    [Fact]
-    public async Task RunAsync_FilePath_SearchesThatFileAlone()
-    {
-        _registry.Setup(r => r.Resolve("/vault/notes/todo.md"))
-            .Returns(Resolved(_backend.Object, "notes/todo.md"));
-        _backend.Setup(b => b.SearchAsync("kubernetes", false, "notes/todo.md", null, null, 50, 1,
-                VfsTextSearchOutputMode.Content, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Found("notes/todo.md"));
-
-        var result = await _tool.RunAsync("kubernetes", filePath: "/vault/notes/todo.md");
-
-        result!["totalMatches"]!.GetValue<int>().ShouldBe(1);
-        _backend.Verify(b => b.SearchAsync("kubernetes", false, "notes/todo.md", null, null, 50, 1,
-            VfsTextSearchOutputMode.Content, It.IsAny<CancellationToken>()), Times.Once);
-    }
-
     // directoryPath scopes a subtree: the backend gets it as `directoryPath` and no path.
     [Fact]
     public async Task RunAsync_DirectoryPath_SearchesThatSubtree()

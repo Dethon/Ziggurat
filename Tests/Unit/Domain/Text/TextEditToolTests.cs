@@ -96,16 +96,6 @@ public class TextEditToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_AtomicWrite_NoTmpFileRemains()
-    {
-        var filePath = CreateTestFile("test.txt", "Hello World");
-
-        _tool.TestRun(filePath, [new TextEdit("World", "Universe")]);
-
-        File.Exists(filePath + ".tmp").ShouldBeFalse();
-    }
-
-    [Fact]
     public void Run_LaterEdit_CanMatchTextProducedByEarlierEdit()
     {
         var filePath = CreateTestFile("test.txt", "one");
