@@ -23,6 +23,16 @@ window.dictation = {
     _run: null,
     _lastPointerAt: 0,
 
+    // The last few dictations, in the browser's own words. A phone that stops recording is the one
+    // place none of this can be watched from: there is no console to open and no cable attached, and
+    // reasoning about it from a desktop suite that passes has already produced three wrong fixes.
+    // Kept always, because the run that matters is over by the time anyone thinks to ask for it.
+    _trace: [],
+    // Read here rather than at registration, because by then the app has routed: picking a space
+    // and opening a topic are navigations, and each one leaves the address the app was opened with
+    // behind. This runs while the page is still the one that was asked for.
+    _tracing: new URLSearchParams(location.search).has('dictation-trace'),
+
     // The cap and the floor are the server's, and they can arrive after the microphone is
     // registered — the limits call needs a live connection and the first render does not wait for
     // one. Whatever answers last wins, so the browser never keeps a stale cap of its own.
@@ -38,6 +48,7 @@ window.dictation = {
         this._mic = mic;
         this._ref = ref;
         this._limits = limits || this._limits;
+        this._note('registered', this._tracing ? 'tracing' : '');
 
         mic.addEventListener('pointerdown', this._onDown);
         mic.addEventListener('keydown', this._onKeyDown);
@@ -189,6 +200,7 @@ window.dictation = {
             meterAt: 0
         };
         this._run = run;
+        this._note('press', latched ? 'latched' : 'held');
         // Minted while the microphone opens rather than after it: the two round trips overlap, and
         // a dictation short enough to be a mis-tap costs the request nothing because it is thrown
         // away before it is used.
@@ -243,6 +255,10 @@ window.dictation = {
             throw error;
         }
 
+        // Each step of the open is marked as it is passed, so a run that never comes back says where
+        // it stopped. Which of these is the last line is the whole diagnosis: the microphone itself,
+        // the graph the browser builds around it, or the worklet fetched over the network.
+        this._note('opening');
         run.stream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 channelCount: 1,
@@ -261,6 +277,7 @@ window.dictation = {
                 autoGainControl: true
             }
         });
+        this._note('microphone', run.stream.getAudioTracks().map(t => t.label || 'unnamed').join(', '));
         if (run.ending || this._run !== run) {
             this._teardown(run);
             return;
@@ -277,7 +294,9 @@ window.dictation = {
         if (ctx.state === 'suspended') {
             await ctx.resume();
         }
+        this._note('context', ctx.state + ' at ' + Math.round(ctx.sampleRate) + ' Hz');
         await ctx.audioWorklet.addModule('dictation-encoder.js');
+        this._note('worklet');
         if (run.ending || this._run !== run) {
             this._teardown(run);
             return;
@@ -310,6 +329,7 @@ window.dictation = {
         silence.connect(ctx.destination);
         run.analyser = analyser;
         run.encoder = encoder;
+        this._note('graph');
     },
 
     _latch: function () {
@@ -375,6 +395,10 @@ window.dictation = {
             // asks whisper to account for audio nothing ever heard — which comes back as the
             // person's own words being blamed. Opening the microphone takes as long as the device
             // takes, and a deliberate hold can be over before the graph exists at all.
+            // How much sound the run actually collected, which is the difference between a
+            // microphone that was never opened, one that was opened and heard nothing, and one that
+            // worked — three failures that look identical from the outside.
+            this._note('recorded', run.samples + ' samples in ' + run.chunks.length + ' batches');
             if (run.samples === 0) {
                 this._invoke('Failed', run.encoder
                     ? 'The microphone recorded no sound at all.'
@@ -611,8 +635,54 @@ window.dictation = {
         return parts.length ? ' (' + parts.join(': ') + ')' : '';
     },
 
+    // ---- the trace ----
+
+    // Bounded, because it is kept for every dictation of a session that may last days on a phone
+    // that is never reloaded. Two dozen lines is several whole runs, which is as far back as any of
+    // this is worth reading.
+    _note: function (event, detail) {
+        this._trace.push({
+            at: Math.round(performance.now()),
+            event: event,
+            detail: detail || ''
+        });
+        if (this._trace.length > 40) this._trace.splice(0, this._trace.length - 40);
+        this._show();
+    },
+
+    // Readable from the console where there is one, and off the page where there is not.
+    diagnostics: function () {
+        return this._trace
+            .map(note => note.at + 'ms ' + note.event + (note.detail ? ': ' + note.detail : ''))
+            .join('\n');
+    },
+
+    // Written straight to the DOM, like the clock and the level meter and for the same reason: this
+    // belongs to the browser. Going through .NET would put the trace in the composer, where the
+    // component's own lifetime decides how long it survives — and a diagnostic that a re-render can
+    // silently drop is worse than none, because its absence would be read as nothing having gone
+    // wrong. The panel is this file's own, so it lasts exactly as long as the page does.
+    _show: function () {
+        if (!this._tracing) return;
+        let panel = document.querySelector('.dictation-trace');
+        if (!panel) {
+            panel = document.createElement('pre');
+            panel.className = 'dictation-trace';
+            panel.setAttribute('data-testid', 'dictation-trace');
+            // Selectable and scrollable, over everything, and out of the way of the composer it is
+            // reporting on. A phone reads this by pressing and holding it, so it must be text.
+            panel.style.cssText =
+                'position:fixed;left:0;top:0;right:0;max-height:45vh;overflow:auto;z-index:9999;' +
+                'margin:0;padding:8px;white-space:pre-wrap;word-break:break-word;' +
+                'font:12px/1.35 monospace;background:rgba(0,0,0,.85);color:#0f0;user-select:text';
+            document.body.appendChild(panel);
+        }
+        panel.textContent = this.diagnostics();
+    },
+
     _invoke: function (method, argument) {
         if (!this._ref) return;
+        if (method === 'Failed' || method === 'Unavailable') this._note('refused', argument);
         const call = argument === undefined
             ? this._ref.invokeMethodAsync(method)
             : this._ref.invokeMethodAsync(method, argument);

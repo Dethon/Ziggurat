@@ -370,6 +370,7 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
             }
             """);
 
+        await Task.Delay(5_000);
         var centre = await CentreOfAsync(page, "[data-testid=dictation-mic]");
         await TouchAsync(cdp, "touchStart", Point(centre.X, centre.Y));
         await Task.Delay(HoldMs);
@@ -410,6 +411,78 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
             .ToContainTextAsync("permission was refused",
                 new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
         await Assertions.Expect(mic).ToBeDisabledAsync();
+    }
+
+    // A dictation that fails only on someone's own phone cannot be reasoned about from a desktop
+    // suite that passes — that has been tried, and the fixes it produced were wrong. What is missing
+    // is not another hypothesis but the phone's own account of the run, somewhere a phone can
+    // actually show it: no console, no cable, no developer tools.
+    //
+    // Asked for by query, a refusal therefore leaves the whole run in the composer, where it can be
+    // read, copied, and sent to the agent as an ordinary message. It arrives by the same door a
+    // transcript does because that door already works — nothing new crosses the boundary, and
+    // nothing at all happens on a page that did not ask, which every other refusal case here pins.
+    [SkippableFact]
+    public async Task WhenTheTraceIsAskedFor_ARefusalLeavesTheRunWhereAPhoneCanReadIt()
+    {
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await OpenAsync(query: "?dictation-trace=1");
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+
+        // The device refusing to start the input it has: the shape of every report that ends with
+        // the phone being restarted, and until now four different faults answered as one sentence.
+        await page.EvaluateAsync(
+            """
+            () => {
+                navigator.mediaDevices.getUserMedia = () => {
+                    const error = new Error('Could not start audio source');
+                    error.name = 'NotReadableError';
+                    return Promise.reject(error);
+                };
+            }
+            """);
+
+        await Task.Delay(5_000);
+        var centre = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        await TouchAsync(cdp, "touchStart", Point(centre.X, centre.Y));
+        await Task.Delay(HoldMs);
+        await TouchAsync(cdp, "touchEnd");
+
+        await Assertions.Expect(page.Locator(".composer-refusal"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+
+        // What went wrong, and how far the run got before it did — the two questions every one of
+        // those reports has been unable to answer.
+        var trace = page.Locator("[data-testid=dictation-trace]");
+        await Assertions.Expect(trace)
+            .ToContainTextAsync("NotReadableError", new LocatorAssertionsToContainTextOptions { Timeout = 15_000 });
+        var written = await trace.InnerTextAsync();
+        // Where the run got to before it stopped: the press it began with, and the open it never
+        // came back from. Which line is the last one is the diagnosis.
+        written.ShouldContain("press");
+        written.ShouldContain("opening");
+        written.ShouldNotContain("microphone:");
+
+        // And nobody who did not ask for it ever sees it. The panel is fixed over the top of the
+        // page, so a flag that leaked would put a black box across everyone's chat — pinned here
+        // rather than left to whichever other case happened to notice.
+        var ordinary = await OpenAsync();
+        await ordinary.EvaluateAsync(
+            """
+            () => {
+                navigator.mediaDevices.getUserMedia = () => Promise.reject(new Error('nope'));
+            }
+            """);
+        var elsewhere = await ordinary.Context.NewCDPSessionAsync(ordinary);
+        var button = await CentreOfAsync(ordinary, "[data-testid=dictation-mic]");
+        await TouchAsync(elsewhere, "touchStart", Point(button.X, button.Y));
+        await Task.Delay(HoldMs);
+        await TouchAsync(elsewhere, "touchEnd");
+
+        await Assertions.Expect(ordinary.Locator(".composer-refusal"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        await Assertions.Expect(ordinary.Locator("[data-testid=dictation-trace]")).ToHaveCountAsync(0);
     }
 
     // The strip takes the textarea's place rather than sitting above it, so the composer must not
