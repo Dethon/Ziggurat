@@ -370,7 +370,6 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
             }
             """);
 
-        await Task.Delay(5_000);
         var centre = await CentreOfAsync(page, "[data-testid=dictation-mic]");
         await TouchAsync(cdp, "touchStart", Point(centre.X, centre.Y));
         await Task.Delay(HoldMs);
@@ -418,10 +417,12 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
     // is not another hypothesis but the phone's own account of the run, somewhere a phone can
     // actually show it: no console, no cable, no developer tools.
     //
-    // Asked for by query, a refusal therefore leaves the whole run in the composer, where it can be
-    // read, copied, and sent to the agent as an ordinary message. It arrives by the same door a
-    // transcript does because that door already works — nothing new crosses the boundary, and
-    // nothing at all happens on a page that did not ask, which every other refusal case here pins.
+    // Asked for by query, the run's own account is therefore drawn onto the page by the browser
+    // itself, in a panel this file owns and nothing else can take away. Going through .NET was
+    // tried first and put the trace in the composer, where the component's own lifetime decides how
+    // long it survives — and a diagnostic a re-render can silently drop is worse than none, because
+    // its absence reads as nothing having gone wrong. Nothing at all happens on a page that did not
+    // ask, which the second half of this case pins.
     [SkippableFact]
     public async Task WhenTheTraceIsAskedFor_ARefusalLeavesTheRunWhereAPhoneCanReadIt()
     {
@@ -443,7 +444,6 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
             }
             """);
 
-        await Task.Delay(5_000);
         var centre = await CentreOfAsync(page, "[data-testid=dictation-mic]");
         await TouchAsync(cdp, "touchStart", Point(centre.X, centre.Y));
         await Task.Delay(HoldMs);

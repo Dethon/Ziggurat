@@ -46,6 +46,15 @@ public abstract class DictationE2EBase
         // every case here, so it is waited for rather than assumed.
         await Assertions.Expect(page.Locator("[data-testid=dictation-mic]"))
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+
+        // Visible is not yet listening. The browser gets the microphone element from .NET's first
+        // render, one interop call after the button is on screen, and a press that lands in between
+        // reaches no handler at all — the case simply does nothing and fails on whatever it asserted
+        // next. Registration sets _mic, so that is the thing to wait for.
+        await page.WaitForFunctionAsync(
+            "() => window.dictation && window.dictation._mic",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 30_000 });
         return page;
     }
 

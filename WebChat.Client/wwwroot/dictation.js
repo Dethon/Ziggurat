@@ -648,7 +648,7 @@ window.dictation = {
     // ---- the trace ----
 
     // Bounded, because it is kept for every dictation of a session that may last days on a phone
-    // that is never reloaded. Two dozen lines is several whole runs, which is as far back as any of
+    // that is never reloaded. Forty lines is several whole runs, which is as far back as any of
     // this is worth reading.
     _note: function (event, detail) {
         this._trace.push({
