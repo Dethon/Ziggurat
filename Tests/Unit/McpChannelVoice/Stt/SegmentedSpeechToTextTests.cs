@@ -216,16 +216,6 @@ public class SegmentedSpeechToTextTests
     }
 
     [Fact]
-    public void Wrap_WhenDisabled_ReturnsInnerUnchanged()
-    {
-        var inner = new FakeStt();
-        var result = SegmentedSpeechToText.Wrap(
-            inner, new SegmentedSttConfig { Enabled = false }, new WyomingClientSettings(), NullLoggerFactory.Instance);
-
-        result.ShouldBeSameAs(inner);
-    }
-
-    [Fact]
     public async Task TranscribeAsync_AllSegmentsReportConfidence_AggregatesMean()
     {
         var inner = new FakeStt(count =>

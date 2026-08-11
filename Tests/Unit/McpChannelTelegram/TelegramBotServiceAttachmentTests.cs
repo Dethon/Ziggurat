@@ -9,6 +9,9 @@ public class TelegramBotServiceAttachmentTests : IDisposable
 {
     private readonly TelegramPollingHarness _harness = new();
 
+    // Inverted when Telegram gained attachments: a photo used to be dropped by the poll loop
+    // before anything else looked at it. It now qualifies under the same addressing rule text
+    // does, with the caption standing in for the text.
     [Fact]
     public async Task PhotoWithAQualifyingCaption_EmitsTheCaptionAndOneReference()
     {

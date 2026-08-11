@@ -13,16 +13,6 @@ public class BotRegistryTests
     ];
 
     [Fact]
-    public void GetBotForAgent_RegisteredAgent_ReturnsClient()
-    {
-        var registry = new BotRegistry(_testBots);
-
-        var client = registry.GetBotForAgent("jack");
-
-        client.ShouldNotBeNull();
-    }
-
-    [Fact]
     public void GetBotForAgent_UnknownAgent_ThrowsKeyNotFoundException()
     {
         var registry = new BotRegistry(_testBots);

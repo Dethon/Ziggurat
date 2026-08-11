@@ -8,23 +8,6 @@ public class TelegramBotServiceTests : IDisposable
 {
     private readonly TelegramPollingHarness _harness = new();
 
-    // Inverted when Telegram gained attachments: a photo used to be dropped by the poll loop
-    // before anything else looked at it. It now qualifies under the same addressing rule text
-    // does, with the caption standing in for the text.
-    [Fact]
-    public async Task ExecuteAsync_PhotoWithAQualifyingCaption_IsTakenAsATurn()
-    {
-        var message = TelegramPollingHarness.MediaMessage(caption: "/ask what is this");
-        message.Photo = TelegramPollingHarness.Photo();
-
-        await _harness.ReceiveAsync();
-        _harness.Enqueue(new Update { Id = 1, Message = message });
-        await _harness.RunAsync();
-
-        (await _harness.ReceiveAsync()).Count.ShouldBe(1);
-        _harness.Sent.ShouldBeEmpty();
-    }
-
     [Fact]
     public async Task ExecuteAsync_UnauthorizedUser_SendsRejection()
     {

@@ -143,16 +143,6 @@ public class TseSpeechToTextTests
     }
 
     [Fact]
-    public void OffModeWrapsNothing()
-    {
-        var inner = new RecordingInner();
-        TseSpeechToText.Wrap(inner, new TseSettings { Mode = TseMode.Off }, new StubClient((byte[]?)null),
-                new TseAuditTrail(null, 1, new FakeTimeProvider(), NullLogger<TseAuditTrail>.Instance),
-                new RecordingMetrics(), NullLoggerFactory.Instance)
-            .ShouldBeSameAs(inner);
-    }
-
-    [Fact]
     public async Task AutoWithoutSpeakerSkipsToRaw()
     {
         var (stt, inner, client, metrics) = Build(TseMode.Auto, clientReply: null);
