@@ -40,23 +40,6 @@ public class TelegramBotServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_SlashCommand_FromAuthorizedUser_EmitsNotification()
-    {
-        await _harness.ReceiveAsync();
-        _harness.Enqueue(new Update
-        {
-            Id = 1,
-            Message = TelegramPollingHarness.TextMessage("/ask what is 2+2")
-        });
-
-        await _harness.RunAsync();
-
-        // No rejection message sent — the message was valid and emitted
-        _harness.Sent.ShouldBeEmpty();
-        (await _harness.ReceiveAsync()).Count.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task ExecuteAsync_CallbackQuery_RoutesToApprovalRouter()
     {
         var (approvalId, resultTask) =

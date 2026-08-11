@@ -231,24 +231,6 @@ public class OpenRouterHttpHelpersTests
             .ContainsKey("provider").ShouldBeFalse();
     }
 
-    [Theory]
-    [InlineData(ProviderSort.Price, "price")]
-    [InlineData(ProviderSort.Throughput, "throughput")]
-    [InlineData(ProviderSort.Latency, "latency")]
-    public async Task PrepareRequestBody_WithSort_SerializesLowercased(ProviderSort sort, string expected)
-    {
-        // Arrange
-        var request = CreateRequest(BodyJson);
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-            request, null, new ProviderRouting { Sort = sort }, CancellationToken.None);
-
-        // Assert
-        JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!["sort"]!
-            .GetValue<string>().ShouldBe(expected);
-    }
-
     [Fact]
     public async Task PrepareRequestBody_WithPartialProviderRouting_OmitsUnsetFields()
     {

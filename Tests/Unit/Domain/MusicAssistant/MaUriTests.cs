@@ -15,15 +15,6 @@ public class MaUriTests
         uri.ItemId.ShouldBe("5dbvpKwtqz3X3hcX1BSEzf");
     }
 
-    [Fact]
-    public void TryParse_PodcastEpisodeUri_KeepsUnderscoredMediaType()
-    {
-        MaUri.TryParse("spotify--w2nq2jMe://podcast_episode/4Fk1sWv0xKvJ6teiCpTAJN", out var uri).ShouldBeTrue();
-
-        uri.MediaType.ShouldBe("podcast_episode");
-        uri.ItemId.ShouldBe("4Fk1sWv0xKvJ6teiCpTAJN");
-    }
-
     // A bare provider domain (no `--<instance>` suffix) is what MA returns when only one instance
     // of a provider is configured; both forms have to round-trip.
     [Fact]

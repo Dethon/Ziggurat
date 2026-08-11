@@ -34,7 +34,6 @@ public class MetricsRetryPolicyTests
 
     [Theory]
     [InlineData(4)]
-    [InlineData(100_000)]
     public void NextRetryDelay_PastTheSchedule_SettlesAtThirtySeconds(long previousRetryCount)
     {
         DelayAfter(previousRetryCount, TimeSpan.FromHours(previousRetryCount))

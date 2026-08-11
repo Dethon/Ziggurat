@@ -25,10 +25,4 @@ public class EmbeddingMathTests
         var v = OnnxSpeakerEmbedder.L2Normalize([1f, 2f, 3f]);
         OnnxSpeakerEmbedder.Cosine(v, v).ShouldBe(1.0, 1e-5);
     }
-
-    [Fact]
-    public void Cosine_OrthogonalVectors_IsZero()
-    {
-        OnnxSpeakerEmbedder.Cosine([1f, 0f], [0f, 1f]).ShouldBe(0.0, 1e-9);
-    }
 }

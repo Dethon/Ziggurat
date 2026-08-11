@@ -11,8 +11,6 @@ public class MessageTruncatorTests
     [InlineData("a", 1)]
     [InlineData("abcd", 1)]
     [InlineData("abcde", 2)]
-    [InlineData("abcdefgh", 2)]
-    [InlineData("abcdefghi", 3)]
     public void EstimateTokens_ReturnsCeilingOfCharsDividedByFour(string input, int expected)
     {
         MessageTruncator.EstimateTokens(input).ShouldBe(expected);

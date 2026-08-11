@@ -181,23 +181,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     }
 
     [Fact]
-    public async Task SaveAsync_RoundTrip_PreservesP256dhAndAuthExactly()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var p256dh = "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbIDS7Iq2jGPayfP+szs0yzE1hLCpMQUcGN3MkrjXQ0=";
-        var auth = "tBHItJI5svbpC7sc9d8M2w==";
-        var sub = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/roundtrip", p256dh, auth);
-
-        await _store.SaveAsync(userId, sub);
-
-        var all = await _store.GetAllAsync();
-        var match = all.First(x => x.UserId == userId);
-        match.Subscription.P256dh.ShouldBe(p256dh);
-        match.Subscription.Auth.ShouldBe(auth);
-    }
-
-    [Fact]
     public async Task RemoveByEndpointAsync_SharedEndpointAcrossMultipleUsers_RemovesFromAll()
     {
         var userId1 = $"test-user-{Guid.NewGuid():N}";

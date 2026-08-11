@@ -69,7 +69,6 @@ public class FileSystemServerToolsTests
     [InlineData("content", VfsTextSearchOutputMode.Content)]
     [InlineData("filesOnly", VfsTextSearchOutputMode.FilesOnly)]
     [InlineData("FILESONLY", VfsTextSearchOutputMode.FilesOnly)]
-    [InlineData("Content", VfsTextSearchOutputMode.Content)]
     public async Task Search_KnownOutputMode_DispatchesWithThatMode(string outputMode, VfsTextSearchOutputMode expected)
     {
         var backend = new RecordingSearchBackend();

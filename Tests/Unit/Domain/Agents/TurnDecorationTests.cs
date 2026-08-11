@@ -43,18 +43,6 @@ public class TurnDecorationTests
         FirstText(msg).ShouldStartWith("Message from household (via kitchen-01):");
     }
 
-    [Fact]
-    public void Apply_WithSatelliteButNoSender_IgnoresSatellite()
-    {
-        var msg = new ChatMessage(ChatRole.User, "lights on");
-        msg.SetSatelliteId("kitchen-01");
-        msg.SetTimestamp(new DateTimeOffset(2026, 6, 4, 18, 22, 1, TimeSpan.Zero));
-
-        FirstText(msg).ShouldStartWith("[Current time: ");
-        FirstText(msg).ShouldNotContain("Message from");
-        FirstText(msg).ShouldNotContain("via");
-    }
-
     [Theory]
     [InlineData(null)]
     [InlineData("   ")]

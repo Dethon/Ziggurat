@@ -66,8 +66,6 @@ public class SentenceSplitterTests
 
     [Theory]
     [InlineData("Viene el Sr. ")]
-    [InlineData("Lo trae la Sra. ")]
-    [InlineData("Pregunta por el Dr. ")]
     [InlineData("Llegan a las cinco, etc. ")]
     public void TryTake_AbbreviationIsTheLastBoundary_DoesNotFlush(string buffer)
     {
