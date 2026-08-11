@@ -20,8 +20,12 @@ namespace Tests.E2E.WebChat;
 // the stub, not the browser: one shared transcript meant one collection, since every case sets the
 // words it expects back. The recording now goes up named for the space it was spoken in and the
 // stub answers per space, so a collection can dictate beside another without crossing answers.
-public abstract class DictationE2EBase(WebChatE2EFixture fixture)
+public abstract class DictationE2EBase
 {
+    protected DictationE2EBase(WebChatE2EFixture fixture) => Fixture = fixture;
+
+    protected WebChatE2EFixture Fixture { get; }
+
     // Comfortably past the 400 ms mis-tap floor and nowhere near the two-minute cap.
     protected const int HoldMs = 900;
 
@@ -30,13 +34,13 @@ public abstract class DictationE2EBase(WebChatE2EFixture fixture)
 
     protected async Task<IPage> OpenAsync(int? width = null, int? height = null)
     {
-        var page = await fixture.CreatePageAsync(hasTouch: true);
+        var page = await Fixture.CreatePageAsync(hasTouch: true);
         if (width is not null && height is not null)
         {
             await page.SetViewportSizeAsync(width.Value, height.Value);
         }
-        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.GotoWebChatAsync(page, Fixture.WebChatUrl);
+        await WebChatE2ETests.SelectUserAndAgentAsync(page, Fixture.NextUserIndex());
 
         // With nothing typed the right-hand control is the microphone; that is the premise of
         // every case here, so it is waited for rather than assumed.

@@ -9,16 +9,17 @@ namespace Tests.E2E.WebChat;
 // ahead of a graph that has not opened yet.
 [Collection(WebChatE2ECollections.Dictation)]
 [Trait("Category", "E2E")]
-public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture) : DictationE2EBase(fixture)
+public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
+    : DictationE2EBase(fixture)
 {
     // The whole of a good dictation: a held microphone, a finger that drifts a little while it is
     // held, words in the composer, and a recording whose bytes are what whisper can actually read.
     [SkippableFact]
     public async Task HoldingTheMicrophoneAndLettingGo_PutsTheWordsInTheComposerToSend()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "hola desde el micrófono";
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "hola desde el micrófono";
 
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
@@ -57,7 +58,7 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture) : Dictat
 
         // What whisper is actually fed. MediaRecorder's Opus is what a browser reaches for by
         // default and what lemonade answers 400 to, so the format is the feature, not a detail.
-        var wav = fixture.LastAudio.ShouldNotBeNull();
+        var wav = Fixture.LastAudio.ShouldNotBeNull();
         System.Text.Encoding.ASCII.GetString(wav[..4]).ShouldBe("RIFF");
         System.Text.Encoding.ASCII.GetString(wav[8..12]).ShouldBe("WAVE");
         BitConverter.ToInt16(wav, 22).ShouldBe((short)1);      // mono
@@ -98,9 +99,9 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture) : Dictat
     [SkippableFact]
     public async Task TappingTheMicrophone_RecordsNothingAndSaysToHoldIt()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "no debería existir";
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "no debería existir";
 
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
@@ -122,9 +123,9 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture) : Dictat
     [SkippableFact]
     public async Task ADictationThatRunsPastTheCap_StopsItselfAndTranscribesWhatItHas()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "se paró solo";
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "se paró solo";
 
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
@@ -140,7 +141,7 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture) : Dictat
                 "se paró solo",
                 new LocatorAssertionsToHaveValueOptions
                 {
-                    Timeout = (float)fixture.RecordingCap.TotalMilliseconds + 30_000
+                    Timeout = (float)Fixture.RecordingCap.TotalMilliseconds + 30_000
                 });
 
         await TouchAsync(cdp, "touchEnd");
@@ -155,9 +156,9 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture) : Dictat
     [SkippableFact]
     public async Task LatchingWhileTheMicrophoneIsStillOpening_LeavesTheDictationLatched()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "enganchado antes de tiempo";
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "enganchado antes de tiempo";
 
         var page = await OpenAsync();
         // A phone's microphone does not open in a frame. This is the same wait, made long enough
@@ -210,10 +211,10 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture) : Dictat
     [SkippableFact]
     public async Task ReleasingBeforeTheMicrophoneOpens_SaysSoRatherThanSendingAnEmptyRecording()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
         // Distinctive: if this reaches the composer, an empty recording was uploaded and answered.
-        fixture.Transcript = "esto probaría que se subió algo";
+        Fixture.Transcript = "esto probaría que se subió algo";
 
         var page = await OpenAsync();
         // Longer than the hold below, so the release lands with certainty inside the wait rather

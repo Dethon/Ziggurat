@@ -29,9 +29,9 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
     [SkippableFact]
     public async Task TheMicrophoneIsOpenedForARecorderRatherThanForAPhoneCall()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "hola";
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "hola";
 
         var page = await OpenAsync();
         // There is no way to ask a node what it is connected to, so the connections are noted as
@@ -124,7 +124,7 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
     [SkippableFact]
     public async Task AtRest_TheMeterReadsAQuietMicrophoneAsQuietAndTheControlIsADrawnMicrophone()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await OpenAsync();
 
@@ -175,9 +175,9 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
     [SkippableFact]
     public async Task PressingEnterOnTheMicrophone_LatchesAndEscapeThrowsItAway()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "esto se descarta";
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "esto se descarta";
 
         var page = await OpenAsync();
         var mic = page.Locator("[data-testid=dictation-mic]");
@@ -206,9 +206,9 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
     [SkippableFact]
     public async Task SlidingAwayFromTheMicrophone_ThrowsTheRecordingAwayWithNothingInTheComposer()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "esto no debería aparecer";
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "esto no debería aparecer";
 
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
@@ -241,9 +241,9 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
     [SkippableFact]
     public async Task SlidingUpToLatchAndThenPressingStop_PutsTheWordsInTheComposer()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "un dictado enganchado";
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "un dictado enganchado";
 
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
@@ -291,7 +291,7 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
     [SkippableFact]
     public async Task WhenADictationCannotBeCompleted_TheComposerSaysWhyRatherThanNothingHappening()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
@@ -319,7 +319,7 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
         // asserted is the sentence the browser falls back to — named, so a refusal left over from
         // the ticket above cannot be read as this one.
         await page.EvaluateAsync("() => { window.dictation._ref.invokeMethodAsync = window.__mint; }");
-        fixture.TranscriptionStatus = 500;
+        Fixture.TranscriptionStatus = 500;
 
         await DictateAsync(cdp, page, HoldMs);
         await Assertions.Expect(refusal)
@@ -327,7 +327,7 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
                 new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
         await Assertions.Expect(page.Locator("textarea.chat-input")).ToHaveValueAsync("");
 
-        fixture.TranscriptionStatus = 200;
+        Fixture.TranscriptionStatus = 200;
     }
 
     // The strip takes the textarea's place rather than sitting above it, so the composer must not
@@ -339,9 +339,9 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
     [SkippableFact]
     public async Task OnAPhoneViewport_TheStripKeepsTheComposersShapeAndBothWaysOutStayInIt()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "hola";
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "hola";
 
         var page = await OpenAsync(width: 390, height: 844);
 
@@ -400,9 +400,9 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
     [SkippableFact]
     public async Task OnADesktopViewport_TheStripStandsAsTallAsTheMicrophoneBesideIt()
     {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        fixture.TranscriptionStatus = 200;
-        fixture.Transcript = "hola";
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "hola";
 
         var page = await OpenAsync(width: 1280, height: 900);
 
