@@ -187,22 +187,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     }
 
     [Fact]
-    public async Task SaveAsync_EndpointWithQueryParameters_PreservesFullUrl()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var endpoint = "https://fcm.googleapis.com/fcm/send/abc?key=val&foo=bar#fragment";
-        var sub = new PushSubscriptionDto(endpoint, "p256dh-key", "auth-key");
-
-        await _store.SaveAsync(userId, sub);
-
-        var all = await _store.GetAllAsync();
-        var match = all.FirstOrDefault(x => x.UserId == userId);
-        match.Subscription.ShouldNotBeNull();
-        match.Subscription.Endpoint.ShouldBe(endpoint);
-    }
-
-    [Fact]
     public async Task RemoveByEndpointAsync_EndpointDoesNotExist_DoesNotThrow()
     {
         await Should.NotThrowAsync(

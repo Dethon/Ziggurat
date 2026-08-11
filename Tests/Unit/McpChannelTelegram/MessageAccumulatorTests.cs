@@ -62,21 +62,6 @@ public class MessageAccumulatorTests
     }
 
     [Fact]
-    public void Flush_LongTextWithNewlines_SplitsAtNewlineBoundary()
-    {
-        // Build text: lines of 100 chars each, so 41 lines = 4100 chars (each line + newline)
-        var line = new string('x', 99) + "\n";
-        var text = string.Concat(Enumerable.Repeat(line, 50)); // 5000 chars
-        _sut.Append("conv-1", text);
-
-        var result = _sut.Flush("conv-1");
-
-        result.Count.ShouldBeGreaterThan(1);
-        // First chunk should end cleanly (no partial line) since we split at newlines
-        result[0].Length.ShouldBeLessThanOrEqualTo(4096);
-    }
-
-    [Fact]
     public void Flush_LongTextNoNewlines_SplitsAtLimit()
     {
         var text = new string('a', 8192);

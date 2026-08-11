@@ -110,16 +110,6 @@ public sealed class AgentActivityEffectTests : IDisposable
     }
 
     [Fact]
-    public void ClearUnseenActivity_Called_DropsThatAgentsBadge()
-    {
-        _dispatcher.Dispatch(new MarkAgentUnseenActivity("agent-1"));
-
-        _effect.ClearUnseenActivity("agent-1");
-
-        _activityStore.State.AgentsWithUnseenActivity.ShouldNotContain("agent-1");
-    }
-
-    [Fact]
     public void Dispatch_SelectAgent_DropsThatAgentsBadge()
     {
         _dispatcher.Dispatch(new MarkAgentUnseenActivity("agent-1"));

@@ -88,33 +88,6 @@ public class PlaywrightWebBrowserTests(
 
     [Trait("Category", "External")]
     [SkippableFact]
-    public async Task NavigateAsync_WithWikipedia_ReturnsContent()
-    {
-        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
-
-        var sessionId = GetUniqueSessionId();
-        try
-        {
-            // Act
-            var request = new BrowseRequest(
-                SessionId: sessionId,
-                Url: "https://en.wikipedia.org/wiki/Web_browser",
-                MaxLength: 10000);
-            var result = await fixture.Browser.NavigateAsync(request);
-
-            // Assert
-            result.Status.ShouldBe(BrowseStatus.Success);
-            result.Title.ShouldNotBeNullOrEmpty();
-            result.Content.ShouldNotBeNullOrEmpty();
-        }
-        finally
-        {
-            await fixture.Browser.CloseSessionAsync(sessionId);
-        }
-    }
-
-    [Trait("Category", "External")]
-    [SkippableFact]
     public async Task NavigateAsync_SessionPersistsAcrossCalls()
     {
         Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");

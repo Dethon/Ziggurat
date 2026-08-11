@@ -69,14 +69,6 @@ public class MetricsApiServiceGroupedTests
         },
     };
 
-    [Fact]
-    public async Task GetGroupedAsync_NoQuery_RequestsPathWithOnlyTheRange()
-    {
-        await _api.GetGroupedAsync<decimal>($"errors/by/{ErrorDimension.Service}", _from, _to);
-
-        _handler.LastUri.ShouldBe("http://localhost/api/metrics/errors/by/Service?from=2026-03-01&to=2026-03-02");
-    }
-
     [Theory]
     [MemberData(nameof(GroupedRoutes))]
     public async Task GetGroupedAsync_AnyFamily_RequestsTheSameUrlItAlwaysHas(

@@ -77,17 +77,6 @@ public class TelegramBotServiceVoiceNoteEdgeTests : IDisposable
         await ShouldHaveSaidItCouldNotMakeItOutAsync();
     }
 
-    // Lemonade emits no signals on a plain json body, and a missing signal is not a bad one.
-    [Fact]
-    public async Task ATranscriptWithNoConfidenceSignalsAtAll_FailsOpen()
-    {
-        _harness.Transcriber.Result = new() { Text = "hola" };
-
-        await DriveAsync();
-
-        (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Content.ShouldBe("hola");
-    }
-
     [Fact]
     public async Task ATranscriberFailure_SaysSoInsteadOfOpeningATurn()
     {

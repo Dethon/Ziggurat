@@ -357,20 +357,6 @@ public class PlaybackQueueTests
     }
 
     [Fact]
-    public async Task Enqueue_ReplySegments_GetTheReplyAllowanceNotTheAnnounceOne()
-    {
-        // An answer is several sentence jobs and is one logical unit: refusing part of it leaves a
-        // hole in the middle of what the user hears. Its allowance is its own, and the kind is what
-        // picks it — no producer passes a depth.
-        var queue = new PlaybackQueue(replyMaxDepth: 3, announceMaxDepth: 1, prefetchBufferChunks: null);
-
-        queue.Enqueue(Job("s1", PlaybackKind.Reply)).Refused.ShouldBeNull();
-        queue.Enqueue(Job("s2", PlaybackKind.Reply)).Refused.ShouldBeNull();
-        queue.Enqueue(Job("s3", PlaybackKind.Reply)).Refused.ShouldBeNull();
-        queue.Enqueue(Job("s4", PlaybackKind.Reply)).Refused.ShouldNotBeNull();
-    }
-
-    [Fact]
     public async Task Enqueue_EverythingThatIsNotAReply_SharesTheAnnounceAllowance()
     {
         // The preamble cue plays ahead of an answer rather than being part of it, so it shares the

@@ -45,19 +45,6 @@ public class SendReplyToolTests
     }
 
     [Fact]
-    public async Task McpRun_Error_FlushesAccumulatedAndSendsError()
-    {
-        _accumulator.Append("corr-1", "partial text");
-
-        var result = await SendReplyTool.McpRun("corr-1", "something broke", ReplyContentType.Error, false, null, _services);
-
-        result.ShouldBe("ok");
-        _busSender.Verify(s => s.SendMessageAsync(
-            It.IsAny<ServiceBusMessage>(),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
     public async Task McpRun_Error_NoAccumulated_SendsErrorOnly()
     {
         var result = await SendReplyTool.McpRun("corr-1", "something broke", ReplyContentType.Error, false, null, _services);

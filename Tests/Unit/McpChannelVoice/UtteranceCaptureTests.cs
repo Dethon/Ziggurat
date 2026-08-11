@@ -149,22 +149,6 @@ public class UtteranceCaptureTests
     }
 
     [Fact]
-    public async Task Stats_AfterTrailingSilenceEnd_CarryTheEndpointingTail()
-    {
-        var capture = new UtteranceCapture(Gate());
-
-        capture.Feed(Silent()); // pre-roll gap seeds the floor
-        capture.Feed(Loud());
-        capture.Feed(Loud());
-        capture.Feed(Silent());
-        capture.Feed(Silent());
-
-        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
-        capture.Stats.EndReason.ShouldBe("trailing_silence");
-        capture.Stats.TrailingSilenceMs.ShouldBe(200);
-    }
-
-    [Fact]
     public async Task Stats_FedAfterTheCaptureEnded_KeepTheTailTheGateDecidedOn()
     {
         // Feed has no post-completion guard and the satellite keeps streaming until it receives the

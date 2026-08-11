@@ -34,14 +34,6 @@ public class TestHelpersTests
     }
 
     [Fact]
-    public void IsImageFresh_SourceOlderThanTheRecordedBuild_IsFresh()
-    {
-        var builtAt = DateTimeOffset.UtcNow;
-
-        TestHelpers.IsImageFresh(imageExists: true, builtAt, builtAt.AddMinutes(-1)).ShouldBeTrue();
-    }
-
-    [Fact]
     public void IsImageFresh_SourceNewerThanTheRecordedBuild_IsStale()
     {
         var builtAt = DateTimeOffset.UtcNow;

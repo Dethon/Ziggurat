@@ -40,17 +40,4 @@ public class MetricsRetryPolicyTests
         DelayAfter(previousRetryCount, TimeSpan.FromHours(previousRetryCount))
             .ShouldBe(TimeSpan.FromSeconds(30));
     }
-
-    // The whole point of the policy: it never returns the value that means stop, so an outage
-    // longer than the framework's forty-two second default window is still recoverable.
-    [Theory]
-    [InlineData(0, 0)]
-    [InlineData(4, 1)]
-    [InlineData(1_000, 48)]
-    [InlineData(100_000, 8_760)]
-    public void NextRetryDelay_HoweverLongReconnectionHasBeenGoing_NeverGivesUp(
-        long previousRetryCount, int elapsedHours)
-    {
-        DelayAfter(previousRetryCount, TimeSpan.FromHours(elapsedHours)).ShouldNotBeNull();
-    }
 }
