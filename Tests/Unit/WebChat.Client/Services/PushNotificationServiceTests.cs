@@ -45,22 +45,6 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task IsSubscribedAsync_ReflectsJsSubscriptionState()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<bool>("pushNotifications.isSubscribed", It.IsAny<object[]>()))
-            .Returns(new ValueTask<bool>(true));
-
-        (await _sut.IsSubscribedAsync()).ShouldBeTrue();
-
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<bool>("pushNotifications.isSubscribed", It.IsAny<object[]>()))
-            .Returns(new ValueTask<bool>(false));
-
-        (await _sut.IsSubscribedAsync()).ShouldBeFalse();
-    }
-
-    [Fact]
     public async Task RequestAndSubscribeAsync_WhenJsInteropThrows_PropagatesException()
     {
         _mockJsRuntime

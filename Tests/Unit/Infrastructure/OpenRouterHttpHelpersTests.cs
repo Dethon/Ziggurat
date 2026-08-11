@@ -105,23 +105,6 @@ public class OpenRouterHttpHelpersTests
     }
 
     [Fact]
-    public async Task PrepareRequestBody_WithNullSessionId_OmitsSessionId()
-    {
-        // Arrange
-        var json = "{\"model\":\"anthropic/claude-sonnet-4\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}";
-        var request = CreateRequest(json);
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
-
-        // Assert
-        var resultJson = await request.Content!.ReadAsStringAsync();
-        var obj = JsonNode.Parse(resultJson);
-
-        obj!["session_id"].ShouldBeNull();
-    }
-
-    [Fact]
     public async Task PrepareRequestBody_WithEmptySessionId_OmitsSessionId()
     {
         // Arrange

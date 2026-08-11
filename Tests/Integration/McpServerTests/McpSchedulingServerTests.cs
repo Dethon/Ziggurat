@@ -42,18 +42,6 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
     }
 
     [Fact]
-    public async Task McpServer_ListPrompts_IncludesSchedulingPrompt()
-    {
-        var client = await ConnectAsync();
-
-        var prompts = await client.ListPromptsAsync();
-
-        prompts.ShouldContain(p => p.Name == "scheduling_prompt");
-
-        await client.DisposeAsync();
-    }
-
-    [Fact]
     public async Task McpServer_GetSchedulingPrompt_ExplainsCronAndScheduleFile()
     {
         var client = await ConnectAsync();

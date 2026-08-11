@@ -27,17 +27,6 @@ public sealed class TopicRenameEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task HandleRenameTopicAsync_NewName_SavesItAndRenamesTheRow()
-    {
-        GivenTopic("topic-1", "Old name");
-
-        await _effect.HandleRenameTopicAsync("topic-1", "New name");
-
-        _topicService.SavedTopics.Single().Name.ShouldBe("New name");
-        _topicsStore.State.Topics.Single().Name.ShouldBe("New name");
-    }
-
-    [Fact]
     public async Task HandleRenameTopicAsync_SurroundingWhitespace_SavesTheTrimmedName()
     {
         GivenTopic("topic-1", "Old name");

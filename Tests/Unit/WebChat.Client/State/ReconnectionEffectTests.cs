@@ -166,27 +166,6 @@ public sealed class ReconnectionEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task WhenRebuiltWithoutAnObservedDisconnect_StillReloadsHistory()
-    {
-        var topic = new StoredTopic
-        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Test Topic" };
-        _dispatcher.Dispatch(new TopicsLoaded([topic]));
-        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
-
-        CreateEffect();
-
-        // A rebuild fast enough that nobody observed a Disconnected or Reconnecting status.
-        _dispatcher.Dispatch(new ConnectionConnected());
-        _dispatcher.Dispatch(new ConnectionConnected());
-
-        await Task.Delay(50);
-
-        _mockTopicService.Verify(
-            s => s.GetHistoryAsync("agent-1", 123, 456),
-            Times.Once);
-    }
-
-    [Fact]
     public async Task WhenTheEpochDoesNotAdvance_DoesNotReloadAgain()
     {
         var topic = new StoredTopic

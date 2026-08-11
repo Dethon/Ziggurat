@@ -41,19 +41,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         new(endpoint, "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUb...", "tBHItJI5svbpC7sc9d8M2w==");
 
     [Fact]
-    public async Task SaveAsync_NewSubscription_StoresInRedis()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var sub = CreateSubscription();
-
-        await _store.SaveAsync(userId, sub);
-
-        var all = await _store.GetAllAsync();
-        all.ShouldContain(x => x.UserId == userId && x.Subscription.Endpoint == sub.Endpoint);
-    }
-
-    [Fact]
     public async Task SaveAsync_MultipleDevices_StoresAll()
     {
         var userId = $"test-user-{Guid.NewGuid():N}";

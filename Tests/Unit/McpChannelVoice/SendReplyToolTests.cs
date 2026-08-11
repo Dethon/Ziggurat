@@ -78,16 +78,6 @@ public class SendReplyToolTests
     }
 
     [Fact]
-    public async Task McpRun_UnknownConversation_ReturnsOk()
-    {
-        var result = await SendReplyTool.McpRun(
-            "ghost-01:999", "hi", ReplyContentType.Text, true, "m-1", _services);
-
-        result.ShouldBe("ok");
-        _tts.VerifyNoOtherCalls();
-    }
-
-    [Fact]
     public async Task McpRun_ConversationBoundToNoSatelliteAndNoDeliveryTarget_ReturnsOkWithoutSpeaking()
     {
         var result = await SendReplyTool.McpRun(

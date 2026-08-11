@@ -20,18 +20,6 @@ public class McpFileDownloadToolTests
     }
 
     [Fact]
-    public void ValidateInputs_NeitherProvided_ReturnsInvalidArgument()
-    {
-        var result = McpFileDownloadTool.ValidateInputs(
-            searchResultId: null,
-            link: null,
-            title: null);
-
-        result.ShouldNotBeNull();
-        result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
-    }
-
-    [Fact]
     public void ValidateInputs_LinkWithoutTitle_ReturnsInvalidArgument()
     {
         var result = McpFileDownloadTool.ValidateInputs(

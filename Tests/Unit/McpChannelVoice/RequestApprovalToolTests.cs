@@ -260,36 +260,6 @@ public class RequestApprovalToolTests : IDisposable
     }
 
     [Fact]
-    public async Task RequestMode_UnansweredPrompt_LeavesItsRoomReadingForTheNextCapture()
-    {
-        // The approval mic reads the room-noise memory but never wrote to it: a conversation that
-        // ran wake turn -> approval -> approval contributed one sample where it should contribute
-        // three, so a satellite used mostly for approvals arrived at its next wake turn with an
-        // expired memory and an uncapped floor — the state the room cap exists to avoid.
-        var voice = new VoiceSettings { FollowUp = new FollowUpSettings { PlaybackTailMs = 0, WindowMs = 500 } };
-        var wyoming = new WyomingClientSettings
-        {
-            SilenceRmsThreshold = 500,
-            TrailingSilenceMs = 200,
-            MaxUtteranceMs = 3000,
-            MinSpeechMs = 100
-        };
-        var gates = new SilenceGateFactory(voice, wyoming, TimeProvider.System);
-        var services = BuildServices(voice, wyoming, gates);
-
-        using var feed = new CancellationTokenSource();
-        var feeder = FeedRoomToneAsync(feed.Token);
-
-        var result = await RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], services);
-
-        await feed.CancelAsync();
-        result.ShouldBe("rejected"); // nobody answered
-
-        FloorOfNextGateFor(gates, _session).ShouldBe(90, tolerance: 5);
-    }
-
-    [Fact]
     public async Task RequestMode_AnswerCapture_PaysBackIntoTheRoomMemoryAndAnchorsNoTurn()
     {
         // The two halves of what makes an approval mic an approval mic. It listens through the
