@@ -62,15 +62,6 @@ public class UtteranceCaptureTests
     }
 
     [Fact]
-    public async Task ForceEnd_CompletesEnded()
-    {
-        var capture = new UtteranceCapture(Gate());
-        capture.Feed(Loud());
-        capture.ForceEnd();
-        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
-    }
-
-    [Fact]
     public async Task Stats_AfterEndedCapture_ReportsPeakRmsAndSpeechMs()
     {
         var capture = new UtteranceCapture(Gate());

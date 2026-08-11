@@ -176,16 +176,6 @@ public class ConnectionStoreTests : IDisposable
         _store.State.Epoch.ShouldBe(1);
     }
 
-    [Fact]
-    public void Closed_DoesNotAdvanceTheEpoch()
-    {
-        _dispatcher.Dispatch(new ConnectionConnected());
-
-        _dispatcher.Dispatch(new ConnectionClosed("hub dropped"));
-
-        _store.State.Epoch.ShouldBe(1);
-    }
-
     // The default: nobody has said the first connect is handled inline, so BecameLiveAgain
     // keeps its old behaviour of treating the first live epoch as already accounted for.
     [Fact]

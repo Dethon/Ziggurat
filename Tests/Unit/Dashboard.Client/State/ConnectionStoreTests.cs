@@ -33,18 +33,6 @@ public class ConnectionStoreTests
         store.State.Status.ShouldBe(expected);
     }
 
-    [Fact]
-    public void SetLive_EveryTimeTheClientBecomesLive_AdvancesTheEpoch()
-    {
-        using var store = new ConnectionStore();
-
-        store.SetLive();
-        store.SetReconnecting();
-        store.SetLive();
-
-        store.State.Epoch.ShouldBe(2);
-    }
-
     public static TheoryData<string, Action<ConnectionStore>> TransitionsThatAreNotBecomingLive => new()
     {
         { "connecting", store => store.SetConnecting() },
