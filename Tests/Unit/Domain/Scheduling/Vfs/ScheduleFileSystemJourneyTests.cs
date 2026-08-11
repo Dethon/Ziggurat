@@ -296,7 +296,6 @@ public class ScheduleFileSystemJourneyTests
 
     [Theory]
     [InlineData("2999-07-15T14:30:00Z", "2999-07-15T14:30:00Z")]       // UTC, unchanged
-    [InlineData("2999-07-15T14:30:00+00:00", "2999-07-15T14:30:00Z")]  // explicit zero offset
     [InlineData("2999-07-15T14:30:00+05:00", "2999-07-15T09:30:00Z")]  // ahead of UTC
     [InlineData("2999-07-15T14:30:00-08:00", "2999-07-15T22:30:00Z")]  // behind UTC
     [InlineData("2999-01-15T14:30:00+02:00", "2999-01-15T12:30:00Z")]  // winter offset

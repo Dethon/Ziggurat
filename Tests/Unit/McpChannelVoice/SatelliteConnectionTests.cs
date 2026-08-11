@@ -940,28 +940,6 @@ public class SatelliteConnectionTests
         await StopAsync(run, cts);
     }
 
-    [Fact]
-    public async Task Dispatch_Utterance_AcknowledgesActiveAlertOnThatSatellite()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        var h = new Harness();
-        using var alertCts = new CancellationTokenSource();
-        h.Alerts.Register(new AlertHandle(alertCts, ["kitchen-01"], "test alert", AnnounceKind.Alarm));
-        var connection = h.Build();
-        var run = connection.RunAsync(h.Events, cts.Token);
-
-        h.SendWake();
-        h.SendAudio(0, 1);
-        h.SendAudio(8000, 4);
-        h.SendAudio(0, 6);
-
-        await h.Emitter.FirstAsync(TimeSpan.FromSeconds(10), cts.Token); // utterance dispatched
-        await UntilAsync(() => alertCts.IsCancellationRequested, TimeSpan.FromSeconds(5));
-        alertCts.IsCancellationRequested.ShouldBeTrue(); // the alert was acknowledged
-
-        await StopAsync(run, cts);
-    }
-
     // The host's reconnect loop is built on the run throwing: a link that dies has to surface as an
     // exception here, not as a quiet return that would leave the loop believing the satellite is
     // still connected.

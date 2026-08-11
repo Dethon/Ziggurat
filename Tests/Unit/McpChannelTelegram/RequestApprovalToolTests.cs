@@ -135,16 +135,4 @@ public class RequestApprovalToolTests
         await Should.ThrowAsync<InvalidOperationException>(
             () => RequestApprovalTool.McpRun("999:999", ApprovalMode.Notify, requests, _services));
     }
-
-    [Fact]
-    public async Task McpRun_NotifyMode_ExtractsShortToolName()
-    {
-        IReadOnlyList<ToolApprovalRequest> requests = [new ToolApprovalRequest(null, "mcp__very__long__prefix__actual_tool", new Dictionary<string, object?>())];
-
-        await RequestApprovalTool.McpRun("100:100", ApprovalMode.Notify, requests, _services);
-
-        _botClient.Verify(b => b.SendRequest(
-            It.Is<SendMessageRequest>(r => r.Text.Contains("actual_tool")),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
 }

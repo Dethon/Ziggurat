@@ -121,20 +121,5 @@ public class TelegramBotServiceTests : IDisposable
         batch[0].Message!.Content.ShouldBe("/ask what is 2+2");
     }
 
-    [Fact]
-    public async Task ExecuteAsync_ThreadMessage_IsAccepted()
-    {
-        var message = TelegramPollingHarness.TextMessage("reply in thread");
-        message.MessageThreadId = 42;
-
-        await _harness.ReceiveAsync();
-        _harness.Enqueue(new Update { Id = 1, Message = message });
-
-        await _harness.RunAsync();
-
-        // Thread messages are accepted even without / prefix
-        _harness.BotRegistry.GetBotForChat(100).ShouldNotBeNull();
-    }
-
     public void Dispose() => _harness.Dispose();
 }

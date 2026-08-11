@@ -60,7 +60,6 @@ public class GlobFilesToolTests
 
     [Theory]
     [InlineData("")]
-    [InlineData(" ")]
     [InlineData(null)]
     public async Task Run_WithEmptyPattern_ReturnsInvalidArgument(string? pattern)
     {

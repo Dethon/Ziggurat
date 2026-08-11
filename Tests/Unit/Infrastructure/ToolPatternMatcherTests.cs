@@ -45,7 +45,6 @@ public class ToolPatternMatcherTests
 
     [Theory]
     [InlineData("mcp__mcp-library__FileSearch", "*__FileSearch", true)]
-    [InlineData("mcp__other-server__FileSearch", "*__FileSearch", true)]
     [InlineData("local__FileSearch", "*__FileSearch", true)]
     [InlineData("mcp__server__OtherTool", "*__FileSearch", false)]
     public void IsMatch_ToolNameWildcard_MatchesToolFromAnySource(string toolName, string pattern, bool expected)

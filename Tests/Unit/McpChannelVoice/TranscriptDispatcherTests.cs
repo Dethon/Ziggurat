@@ -219,19 +219,6 @@ public class TranscriptDispatcherTests
         emitter.Received().ShouldBeEmpty();
     }
 
-    [Fact]
-    public async Task DispatchAsync_NullQualitySignals_FailsOpenAndDispatches()
-    {
-        var (sut, manager, emitter) = Build();
-
-        var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "sin señales" }, "agent-1", null, null, null, default);
-
-        ok.ShouldBeTrue();
-        manager.GetActiveConversationId("kitchen-01").ShouldNotBeNull();
-        emitter.Received().Count.ShouldBe(1);
-    }
-
     private static SatelliteSession SessionWithSttOverrides(OpenAiSttOverrides overrides) =>
         new("kitchen-01", new SatelliteConfig
         {

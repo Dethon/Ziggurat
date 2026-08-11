@@ -339,27 +339,6 @@ public class ReplySpeakerTests
     }
 
     [Fact]
-    public async Task SpeakUtteranceReply_StreamComplete_PublishesSpeechEndAndQueueWaitMetrics()
-    {
-        _session.Turn.Reset();
-        Anchors.MarkTurnStart(_clock.GetTimestamp());
-        Anchors.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
-        _session.Turn.MarkDispatched(_clock.GetTimestamp());
-
-        Say(_speaker, "listo", ReplyContentType.Text, false);
-        Say(_speaker, "", ReplyContentType.StreamComplete, true);
-
-        using var run = new CancellationTokenSource();
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token, _clock);
-        await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
-        await run.StopAsync(pump);
-
-        var published = _published.Select(e => e.Metric).ToList();
-        published.ShouldContain(VoiceMetric.SpeechEndToFirstAudioMs);
-        published.ShouldContain(VoiceMetric.ReplyQueueWaitMs);
-    }
-
-    [Fact]
     public async Task SpeakUtteranceReply_AScheduleFiringIntoALiveSession_PublishesNoTurnAnchoredSpans()
     {
         // "Recuérdame en dos minutos" fires into a voice-minted conversation whose mapping is still

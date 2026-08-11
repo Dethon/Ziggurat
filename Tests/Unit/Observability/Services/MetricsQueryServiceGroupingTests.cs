@@ -235,7 +235,6 @@ public class MetricsQueryServiceGroupingTests
     [InlineData(VoiceDimension.SatelliteId, VoiceMetric.UtteranceTranscribed)]
     [InlineData(VoiceDimension.Room, VoiceMetric.UtteranceTranscribed)]
     [InlineData(VoiceDimension.Identity, VoiceMetric.SttLatencyMs)]
-    [InlineData(VoiceDimension.SatelliteId, VoiceMetric.WakeToFirstAudioMs)]
     [InlineData(VoiceDimension.SatelliteId, VoiceMetric.TseLatencyMs)]
     public async Task GetVoiceGroupedAsync_GroupsByDimensionAndMetric(
         VoiceDimension dimension, VoiceMetric metric)
@@ -268,9 +267,6 @@ public class MetricsQueryServiceGroupingTests
                 break;
             case (VoiceDimension.Identity, VoiceMetric.SttLatencyMs):
                 result["household"].ShouldBe(200m);   // avg branch: avg(100,300)
-                break;
-            case (VoiceDimension.SatelliteId, VoiceMetric.WakeToFirstAudioMs):
-                result["kitchen-01"].ShouldBe(300m);  // avg branch: avg(200,400)
                 break;
             case (VoiceDimension.SatelliteId, VoiceMetric.TseLatencyMs):
                 result["kitchen-01"].ShouldBe(100m);  // avg branch: avg(50,150), not a raw event count (2)

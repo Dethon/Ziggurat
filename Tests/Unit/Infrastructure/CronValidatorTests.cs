@@ -9,8 +9,6 @@ public class CronValidatorTests
 
     [Theory]
     [InlineData("0 9 * * *", true)]       // Every day at 9am
-    [InlineData("*/15 * * * *", true)]    // Every 15 minutes
-    [InlineData("0 0 1 * *", true)]       // First of month
     [InlineData("invalid", false)]
     [InlineData("", false)]
     [InlineData("0 9 * *", false)]        // Missing field

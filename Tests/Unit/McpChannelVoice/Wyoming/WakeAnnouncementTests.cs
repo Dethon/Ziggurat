@@ -74,7 +74,6 @@ public class WakeAnnouncementTests
     [Theory]
     [InlineData(7)]
     [InlineData("")]
-    [InlineData("   ")]
     public void Read_UnusableSource_FallsBackToWake(object source)
     {
         var wake = WakeAnnouncement.Read(

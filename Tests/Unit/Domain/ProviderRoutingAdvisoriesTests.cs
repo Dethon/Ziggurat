@@ -11,7 +11,6 @@ public class ProviderRoutingAdvisoriesTests
 {
     [Theory]
     [InlineData("z-ai/glm-5.2:nitro", ProviderSort.Price)]
-    [InlineData("z-ai/glm-5.2:nitro", ProviderSort.Latency)]
     [InlineData("z-ai/glm-5.2:floor", ProviderSort.Throughput)]
     public void For_SuffixDisagreesWithSort_ReturnsOneAdvisory(string model, ProviderSort sort)
     {

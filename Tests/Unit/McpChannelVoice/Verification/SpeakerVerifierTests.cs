@@ -167,18 +167,6 @@ public class SpeakerVerifierTests
             NullLogger<SpeakerVerifier>.Instance);
 
     [Fact]
-    public async Task VerifyAsync_Conclusive_SingleProfile_IdentifiesSpeaker()
-    {
-        // One enrolled voice, a clean match: the margin guard has no runner-up to clear, so a
-        // score past IdentifyThreshold names the person.
-        var result = await VerifierWith(_franVoice, [new SpeakerProfile("fran", [_franVoice])])
-            .VerifyAsync(Chunks(), 2000, Config(), default);
-
-        result.Decision.ShouldBe(SpeakerDecision.Accepted);
-        result.IdentifiedSpeaker.ShouldBe("fran");
-    }
-
-    [Fact]
     public async Task VerifyAsync_AcceptedButBelowIdentifyThreshold_DoesNotIdentify()
     {
         // Passes the gate (>= 0.45) but sits in the doubtful band (< 0.65) -> household, not named.

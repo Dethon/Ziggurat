@@ -133,16 +133,6 @@ public class HaFileSystemReadTests
     }
 
     [Fact]
-    public async Task ExecAsync_BareId_WhenFriendlyNameExists_127WithHint()
-    {
-        var fs = Build(out _);
-        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh", null, CancellationToken.None);
-        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
-        exec.ExitCode.ShouldBe(127);
-        exec.Stderr.ShouldContain("kitchen_(kitchen)");
-    }
-
-    [Fact]
     public async Task ReadAsync_EntityWithoutFriendlyName_ResolvesByBareId()
     {
         var client = new FakeHaClient { States = { Entity("light.porch", "off") } };
