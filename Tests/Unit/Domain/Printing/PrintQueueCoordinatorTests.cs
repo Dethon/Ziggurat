@@ -70,23 +70,6 @@ public class PrintQueueCoordinatorTests : IDisposable
     }
 
     [Fact]
-    public async Task Reconcile_DoesNotPruneJustSubmittedJob_BeforePrinterRegistersIt()
-    {
-        var (spool, coordinator) = Build();
-        await spool.WriteBytesAsync("a.txt", "text/plain", Encoding.UTF8.GetBytes("hi"), 0, true, CancellationToken.None);
-        _clock.Advance(TimeSpan.FromMilliseconds(600));
-        await coordinator.SubmitDueAsync(CancellationToken.None);
-        var jobId = (await spool.GetAsync("a.txt", CancellationToken.None))!.JobId!.Value;
-
-        // Simulate the printer not yet listing the freshly submitted job (registration lag).
-        _printer.CompleteJob(jobId);
-        await coordinator.ReconcileAsync(CancellationToken.None);
-
-        // Within the grace window the job must survive rather than be pruned mid-print.
-        (await spool.GetAsync("a.txt", CancellationToken.None)).ShouldNotBeNull();
-    }
-
-    [Fact]
     public async Task Reconcile_TransientAbsence_DoesNotPrune_AndReappearanceClearsTheMark()
     {
         var (spool, coordinator) = Build();

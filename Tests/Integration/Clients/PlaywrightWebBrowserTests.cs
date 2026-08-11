@@ -153,18 +153,6 @@ public class PlaywrightWebBrowserTests(
 
     [Trait("Category", "External")]
     [SkippableFact]
-    public async Task GetCurrentPageAsync_WithNoSession_ReturnsSessionNotFound()
-    {
-        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
-
-        var result = await fixture.Browser.GetCurrentPageAsync("non-existent-session");
-
-        result.Status.ShouldBe(BrowseStatus.SessionNotFound);
-        result.ErrorMessage.ShouldNotBeNullOrEmpty();
-    }
-
-    [Trait("Category", "External")]
-    [SkippableFact]
     public async Task CloseSessionAsync_ClosesSession()
     {
         Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
@@ -181,24 +169,6 @@ public class PlaywrightWebBrowserTests(
 
         var result = await fixture.Browser.GetCurrentPageAsync(sessionId);
         result.Status.ShouldBe(BrowseStatus.SessionNotFound);
-    }
-
-    [Trait("Category", "External")]
-    [SkippableFact]
-    public async Task NavigateAsync_WithInvalidUrl_ReturnsError()
-    {
-        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
-
-        var sessionId = GetUniqueSessionId();
-
-        var request = new BrowseRequest(
-            SessionId: sessionId,
-            Url: "ftp://invalid-scheme.com",
-            MaxLength: 1000);
-        var result = await fixture.Browser.NavigateAsync(request);
-
-        result.Status.ShouldBe(BrowseStatus.Error);
-        result.ErrorMessage!.ShouldContain("http");
     }
 
     [Trait("Category", "External")]

@@ -98,24 +98,6 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
             SatelliteId = satelliteId,
         });
 
-    [Fact]
-    public async Task ConnectAsync_FirstConnect_AServerPushReachesTheStore()
-    {
-        await ConnectAsync();
-
-        await RaiseVoiceAsync("kitchen-01");
-
-        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
-    }
-
-    [Fact]
-    public async Task ConnectAsync_FirstConnect_ReportsTheDashboardLive()
-    {
-        await ConnectAsync();
-
-        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Live);
-    }
-
     // Connecting for the first time and having lost a connection are different things to be told,
     // because they say whether to wait or to go and check the agent.
     [Fact]

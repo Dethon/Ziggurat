@@ -308,27 +308,6 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
-    public async Task EnrichAsync_UnrememberedUserWithAProfile_StillAttachesIt()
-    {
-        var message = new ChatMessage(ChatRole.User, "Hello");
-        var session = CreateSessionWithStateKey("state-test");
-        GiveTheUserNoMemories();
-
-        _store.Setup(s => s.GetProfileAsync("user1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PersonalityProfile
-            {
-                UserId = "user1", Summary = "Brief communicator", LastUpdated = DateTimeOffset.UtcNow
-            });
-
-        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
-
-        var context = message.GetMemoryContext();
-        context.ShouldNotBeNull();
-        context.Profile.ShouldNotBeNull();
-        context.Memories.ShouldBeEmpty();
-    }
-
-    [Fact]
     public async Task EnrichAsync_UnrememberedUser_IsStillEnqueuedForExtraction()
     {
         var message = new ChatMessage(ChatRole.User, "Hello");

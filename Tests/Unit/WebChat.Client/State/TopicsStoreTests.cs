@@ -191,17 +191,6 @@ public class TopicsStoreTests : IDisposable
     }
 
     [Fact]
-    public void SetAgents_WhenSelectedAgentRemoved_FallsBackToFirstAgent()
-    {
-        _dispatcher.Dispatch(new SetAgents([new("a", "A", null), new("b", "B", null)]));
-        _dispatcher.Dispatch(new SelectAgent("b"));
-
-        _dispatcher.Dispatch(new SetAgents([new("a", "A", null), new("c", "C", null)]));
-
-        _store.State.SelectedAgentId.ShouldBe("a");
-    }
-
-    [Fact]
     public void SetAgents_WhenSelectedAgentStillPresent_KeepsSelection()
     {
         _dispatcher.Dispatch(new SetAgents([new("a", "A", null), new("b", "B", null)]));

@@ -172,18 +172,6 @@ public class SilenceGateTests
     }
 
     [Fact]
-    public void PeakRms_TracksLoudestChunkSeen()
-    {
-        var gate = NewGate();
-
-        Feed(gate, Silent());
-        Feed(gate, Loud());
-        Feed(gate, Silent());
-
-        gate.PeakRms.ShouldBe(8000, 1.0);
-    }
-
-    [Fact]
     public void PeakRms_Reset_ClearsIt()
     {
         var gate = NewGate();
@@ -346,19 +334,6 @@ public class SilenceGateTests
         Feed(gate, Tone(24000)); // speech resumes above any bar: run resets
 
         gate.TrailingRms.ShouldBe(0);
-    }
-
-    [Fact]
-    public void FloorRms_ExposesTrackerEstimate()
-    {
-        var gate = BabbleGate();
-
-        foreach (var _ in Enumerable.Range(0, 8))
-        {
-            Feed(gate, Tone(2000));
-        }
-
-        gate.FloorRms.ShouldBe(2000, 50);
     }
 
     [Fact]

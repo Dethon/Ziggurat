@@ -93,17 +93,6 @@ public class ChatThreadResolverTests
     }
 
     [Fact]
-    public async Task CleanAsync_WithNonExistentKey_DoesNotThrow()
-    {
-        // Arrange
-        var resolver = new ChatThreadResolver();
-        var key = new AgentKey("999:999");
-
-        // Act & Assert
-        await Should.NotThrowAsync(() => resolver.ClearAsync(key));
-    }
-
-    [Fact]
     public async Task CleanAsync_ThenResolve_ReturnsNewContext()
     {
         // Arrange

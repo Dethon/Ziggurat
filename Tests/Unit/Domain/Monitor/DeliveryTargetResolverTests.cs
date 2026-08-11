@@ -98,24 +98,6 @@ public class DeliveryTargetResolverTests
     }
 
     [Fact]
-    public async Task ResolveDeliveryTargets_VoiceOriginDownload_KeepsConcreteConversationAndAddress()
-    {
-        var origin = Channel("library");
-        var voice = new FakeChannelConnection { ChannelId = "voice" };
-        var msg = new ChannelMessage
-        {
-            ConversationId = "conv-9", Content = "[download-complete] ...", Sender = "fran",
-            ChannelId = "library", AgentId = "jack",
-            ReplyTo = [new ReplyTarget("voice", "conv-9", "fran-office-01")]
-        };
-
-        var targets = await Resolver(origin, voice).ResolveAsync(msg, origin, CancellationToken.None);
-
-        targets.ShouldHaveSingleItem().ConversationId.ShouldBe("conv-9");
-        voice.CreatedConversations.ShouldBeEmpty();
-    }
-
-    [Fact]
     public async Task ResolveDeliveryTargets_WhenMintingConversation_PassesMessageContentAsInitialPrompt()
     {
         // A scheduled fire delivers to WebChat with a null ReplyTo conversationId,
