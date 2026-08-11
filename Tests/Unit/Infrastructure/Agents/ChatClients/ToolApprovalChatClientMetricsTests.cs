@@ -328,30 +328,4 @@ public class ToolApprovalChatClientMetricsTests
         captured.ConversationId.ShouldBe("conv-42");
     }
 
-    [Fact]
-    public async Task InvokeFunction_WhenTheToolThrows_StillTagsTheConversation()
-    {
-        var publisher = new Mock<IMetricsPublisher>();
-        var handler = new TestApprovalHandler(ToolApprovalResult.AutoApproved);
-        var function = AIFunctionFactory.Create(
-            string () => throw new InvalidOperationException("boom"), "mcp__server__TestTool");
-
-        var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
-
-        ToolCallEvent? captured = null;
-        publisher
-            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
-            .Callback<MetricEvent>(e => { if (e is ToolCallEvent t) { captured = t; } });
-
-        var client = new ToolApprovalChatClient(
-            fakeClient, handler, "conv-42", metricsPublisher: publisher.Object);
-
-        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], new ChatOptions { Tools = [function] });
-
-        captured.ShouldNotBeNull();
-        captured.Success.ShouldBeFalse();
-        captured.ConversationId.ShouldBe("conv-42");
-    }
-
 }

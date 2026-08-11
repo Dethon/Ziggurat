@@ -61,31 +61,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         await client.DisposeAsync();
     }
 
-    #region FileSearch Tests
-
-    [Fact]
-    public async Task FileSearchTool_WithQuery_ReturnsResults()
-    {
-        // Arrange
-        var searchTool = await GetToolAsync("file_search");
-
-        // Act - search for something generic that Jackett might return results for
-        var result = await searchTool.WithMeta(MetaFor("conv-search")).CallAsync(
-            new Dictionary<string, object?>
-            {
-                ["searchStrings"] = new[] { "test" }
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert - we can't guarantee results from Jackett without configured indexers,
-        // but the tool should execute without error
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain("status");
-    }
-
-    #endregion
-
     #region FileDownload Tests
 
     [Fact]

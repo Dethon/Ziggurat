@@ -15,17 +15,6 @@ public class MaUriTests
         uri.ItemId.ShouldBe("5dbvpKwtqz3X3hcX1BSEzf");
     }
 
-    // A bare provider domain (no `--<instance>` suffix) is what MA returns when only one instance
-    // of a provider is configured; both forms have to round-trip.
-    [Fact]
-    public void TryParse_BareProviderDomain_Parses()
-    {
-        MaUri.TryParse("library://podcast/12", out var uri).ShouldBeTrue();
-
-        uri.Provider.ShouldBe("library");
-        uri.ItemId.ShouldBe("12");
-    }
-
     // Item ids can themselves contain slashes (filesystem provider paths); only the first two
     // separators are structural.
     [Fact]

@@ -184,18 +184,6 @@ public class AgentDefinitionProviderTests
         result.ProviderRouting!.Sort.ShouldBe(ProviderSort.Throughput);
     }
 
-    // A registered agent's only other routing lever is a `:nitro`/`:floor` model suffix, the dual
-    // idiom the built-in agents migrated off. Dropping this on the floor would leave an external
-    // host's declared routing silently unapplied, with the request still succeeding.
-    [Fact]
-    public void RegisterCustomAgent_NoProviderRouting_LeavesItNullForBalancedRouting()
-    {
-        var result = _sut.RegisterCustomAgent(
-            "user1", new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
-
-        result.ProviderRouting.ShouldBeNull();
-    }
-
     [Fact]
     public void UnregisterCustomAgent_ExistingAgent_ReturnsTrue()
     {

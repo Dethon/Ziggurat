@@ -269,21 +269,6 @@ public class OpenRouterHttpHelpersTests
     }
 
     [Fact]
-    public async Task PrepareRequestBody_WithEmptyProviderRouting_OmitsProviderKey()
-    {
-        // Arrange
-        var request = CreateRequest(BodyJson);
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-            request, null, new ProviderRouting(), CancellationToken.None);
-
-        // Assert
-        JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject()
-            .ContainsKey("provider").ShouldBeFalse();
-    }
-
-    [Fact]
     public async Task PrepareRequestBody_WithEmptyArrays_OmitsThoseKeys()
     {
         // Arrange

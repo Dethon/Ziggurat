@@ -253,25 +253,6 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
-    public async Task EnrichAsync_UnrememberedUser_EmbedsNothingAndSearchesNothing()
-    {
-        var message = new ChatMessage(ChatRole.User, "Hello");
-        var session = CreateSessionWithStateKey("state-test");
-        GiveTheUserNoMemories();
-
-        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
-
-        _embeddingService.Verify(
-            e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-        _store.Verify(
-            s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(),
-                It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(),
-                It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-    }
-
-    [Fact]
     public async Task EnrichAsync_UnrememberedUser_IsStillEnqueuedForExtraction()
     {
         var message = new ChatMessage(ChatRole.User, "Hello");

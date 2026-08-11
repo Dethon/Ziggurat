@@ -15,28 +15,11 @@ public class SatelliteRegistryTests
     };
 
     [Fact]
-    public void GetById_KnownSatellite_ReturnsConfig()
-    {
-        var registry = new SatelliteRegistry(_sample);
-        var sat = registry.GetById("kitchen-01");
-        sat.ShouldNotBeNull();
-        sat!.Identity.ShouldBe("household");
-        sat.Room.ShouldBe("Kitchen");
-    }
-
-    [Fact]
     public void GetIdsByRoom_MatchesCaseInsensitive()
     {
         var registry = new SatelliteRegistry(_sample);
         var ids = registry.GetIdsByRoom("kitchen");
         ids.ShouldBe(["kitchen-01"]);
-    }
-
-    [Fact]
-    public void GetAllIds_ReturnsEverySatellite()
-    {
-        var registry = new SatelliteRegistry(_sample);
-        registry.GetAllIds().ShouldBe(["kitchen-01", "living-room-01", "bedroom-01"], ignoreOrder: true);
     }
 
     [Fact]

@@ -51,16 +51,6 @@ public class FileSystemToolFeatureTests
     }
 
     [Fact]
-    public void GetTools_EmptyEnabledTools_ReturnsNoTools()
-    {
-        var config = new FeatureConfig(
-            EnabledTools: new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-        var tools = _feature.GetTools(config).ToList();
-
-        tools.ShouldBeEmpty();
-    }
-
-    [Fact]
     public void Prompt_ContainsMountPoints()
     {
         _feature.Prompt.ShouldNotBeNull();

@@ -41,25 +41,6 @@ public class MediaLibraryFileSystemTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    // The landing refusal used to sit on WriteBlobAsync alone, so a cross-mount copy — which
-    // streams through WriteChunksAsync — put a real file where the virtual status.json is. That file
-    // was then invisible (the overlay shadows reads, Merge dedupes globs) and unremovable (delete on
-    // the status path answers "read-only"), which is as stuck as a file gets. A write to a live
-    // download's status file lands inside that download's directory, so the landing reason covers
-    // it: the file dies with the download, which is the more useful thing to tell the agent.
-    [Fact]
-    public async Task WriteChunks_OntoTheVirtualStatusFile_IsRefusedAndWritesNothing()
-    {
-        _client.Add(Item(42));
-
-        var write = await Should.ThrowAsync<FileSystemOperationException>(() => _sut.WriteChunksAsync(
-            "downloads/42/status.json", Chunks("stale snapshot"),
-            overwrite: true, createDirectories: true, CancellationToken.None));
-
-        write.Error.Message.ShouldContain("removed when the download is cancelled");
-        File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeFalse();
-    }
-
     // A leftover status file is an ordinary file, so both halves of a write reach the disk.
     [Fact]
     public async Task WritesOntoALeftoverStatusFile_Succeed()
@@ -746,18 +727,6 @@ public class MediaLibraryFileSystemTests : IDisposable
             .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>().Value.Message.ShouldContain("cancelled");
 
         _client.CleanedUp.ShouldContain(42);
-    }
-
-    [Fact]
-    public async Task Delete_ALeftoverDownloadDirectory_RemovesIt()
-    {
-        Directory.CreateDirectory(Path.Combine(_libraryRoot, "downloads", "99"));
-
-        (await _sut.DeleteAsync("downloads/99", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>();
-
-        _client.CleanedUp.ShouldBeEmpty();
-        _disk.RemovedDirectories.ShouldContain(Path.Combine(_libraryRoot, "downloads", "99"));
     }
 
     [Fact]

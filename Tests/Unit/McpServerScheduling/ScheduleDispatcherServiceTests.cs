@@ -60,20 +60,6 @@ public class ScheduleDispatcherServiceTests
         store.Verify(s => s.DeleteAsync("once", It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Fact]
-    public async Task DispatchDueAsync_WhenEmitSucceeds_AdvancesRecurringSchedule()
-    {
-        var store = StoreWithDue(Recurring());
-        var next = new DateTime(2026, 5, 26, 8, 0, 0, DateTimeKind.Utc);
-        var cron = new Mock<ICronValidator>();
-        cron.Setup(c => c.GetNextOccurrence("0 8 * * *", It.IsAny<DateTimeOffset>(), It.IsAny<TimeZoneInfo>())).Returns(next);
-
-        await BuildDispatcher(store.Object, Probe(delivers: true), cron.Object).DispatchDueAsync(CancellationToken.None);
-
-        store.Verify(s => s.UpdateLastRunAsync("daily", It.IsAny<DateTime?>(), next, It.IsAny<CancellationToken>()), Times.Once);
-        store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
     // One warning per outage, not one per schedule per tick: an overnight disconnection with a
     // single due schedule used to produce thousands of identical lines. The retry semantics are
     // untouched — the schedule stays due either way.

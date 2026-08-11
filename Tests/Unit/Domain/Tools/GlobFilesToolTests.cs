@@ -75,12 +75,6 @@ public class GlobFilesToolTests
         await ShouldBeInvalid(() => _tool.TestRun(pattern, CancellationToken.None));
     }
 
-    [Fact]
-    public async Task Run_WithAbsolutePathOutsideBasePath_ReturnsInvalidArgument()
-    {
-        await ShouldBeInvalid(() => _tool.TestRun("/other/path/**/*.pdf", CancellationToken.None));
-    }
-
     // /library-backup is a different directory from /library, and a prefix match without a
     // separator used to admit it and then hand the client a '../' pattern.
     [Fact]

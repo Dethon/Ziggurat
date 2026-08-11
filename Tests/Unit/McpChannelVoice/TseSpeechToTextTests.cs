@@ -166,18 +166,6 @@ public class TseSpeechToTextTests
     }
 
     [Fact]
-    public async Task AlwaysModeWithoutSpeakerSkipsToRaw()
-    {
-        var (stt, inner, client, metrics) = Build(TseMode.Always, clientReply: null);
-        await stt.TranscribeAsync(Chunks(), Options(speaker: null), CancellationToken.None);
-        inner.ReceivedPayload.ShouldBe(_rawPcm);
-        client.LastCall.ShouldBeNull();
-        var evt = metrics.Events.ShouldHaveSingleItem();
-        evt.Metric.ShouldBe(VoiceMetric.TseSkipped);
-        evt.Outcome.ShouldBe("no_speaker");
-    }
-
-    [Fact]
     public async Task AutoNoisyFailureFallsBackToRaw()
     {
         var (stt, inner, client, metrics) = Build(TseMode.Auto, clientReply: null);

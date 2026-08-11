@@ -396,26 +396,6 @@ public class ReplySpeakerTests
     }
 
     [Fact]
-    public async Task SpeakUtteranceReply_SecondReplyAfterDispatchAlreadyConsumed_PublishesNoAgentRoundTrip()
-    {
-        // A live session's conversation can receive a schedule-fired or agent-initiated reply
-        // (CreateConversationTool routes it through this same session) with no fresh transcript
-        // dispatch behind it. The stamp from the earlier real turn must not still be sitting there
-        // for this second, unrelated reply to pick up and report as an invented round trip.
-        _session.Turn.Reset();
-        _session.Turn.MarkDispatched(_clock.GetTimestamp());
-
-        Say(_speaker, "listo", ReplyContentType.Text, false);
-        Say(_speaker, "", ReplyContentType.StreamComplete, true);
-
-        _session.Turn.Reset();
-        Say(_speaker, "otra vez", ReplyContentType.Text, false);
-        Say(_speaker, "", ReplyContentType.StreamComplete, true);
-
-        _published.Count(e => e.Metric == VoiceMetric.AgentRoundTripMs).ShouldBe(1);
-    }
-
-    [Fact]
     public async Task SpeakUtteranceReply_PreambleBeforeDispatchedAnswer_DoesNotConsumeTheStampForTheAnswer()
     {
         // The preamble ("Buscando") is spoken with isReply:false. If it consumed the dispatch

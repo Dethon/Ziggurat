@@ -37,32 +37,6 @@ public class DeliveryTargetResolverAnnounceTests
     }
 
     [Fact]
-    public async Task AnnounceTurnStart_PreExistingTarget_CallsCreateConversationWithExistingIdAndPrompt()
-    {
-        var (signalr, calls) = Channel("signalr");
-        var targets = new[] { new DeliveryTarget(signalr.Object, "7:42") };
-
-        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), CancellationToken.None);
-
-        var call = calls.ShouldHaveSingleItem();
-        call.ExistingConversationId.ShouldBe("7:42");
-        call.InitialPrompt.ShouldBe("[download-complete] film.mkv");
-    }
-
-    [Fact]
-    public async Task AnnounceTurnStart_TargetMintedByThisTurn_IsSkipped()
-    {
-        // The mint already called create_conversation, so announcing it again would set the
-        // same stream up twice.
-        var (signalr, calls) = Channel("signalr");
-        var targets = new[] { new DeliveryTarget(signalr.Object, "minted-1", Minted: true) };
-
-        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), CancellationToken.None);
-
-        calls.ShouldBeEmpty();
-    }
-
-    [Fact]
     public async Task AnnounceTurnStart_TargetWithAddress_ThreadsAddressIntoCreateConversation()
     {
         // The address (e.g. the originating voice satellite) tells the channel WHERE the

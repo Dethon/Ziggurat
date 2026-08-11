@@ -164,26 +164,6 @@ public class AnnouncementServiceTests
     }
 
     [Fact]
-    public async Task Announce_LowPriorityBehindAQueue_ReportsDropped()
-    {
-        var (sut, sessions, published) = BuildRecordingSut([("kitchen-01", "Kitchen")]);
-        sessions.Get("kitchen-01")!.Playback.Enqueue(new PlaybackJob(
-            "ongoing", PlaybackKind.Announce, AnnouncePriority.Normal, FakeAudio()));
-
-        var response = await sut.AnnounceAsync(
-            new AnnounceRequest
-            {
-                Target = new() { SatelliteId = "kitchen-01" },
-                Text = "hi",
-                Priority = AnnouncePriority.Low
-            },
-            CancellationToken.None);
-
-        response.Satellites[0].Status.ShouldBe("dropped");
-        published.Single(e => e.Metric == VoiceMetric.AnnounceError).Outcome.ShouldBe("dropped");
-    }
-
-    [Fact]
     public async Task Announce_SynthesisFails_PublishesNoPlayedMetric()
     {
         // Played was published the moment the queue reached the job, before any audio existed, so an

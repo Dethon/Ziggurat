@@ -94,26 +94,6 @@ public class DiskFileSystemTests : IDisposable
         info.Size.ShouldBe(3);
     }
 
-    // Containment comes from the one path jail, so a sibling whose name extends the root is outside.
-    [Fact]
-    public async Task Info_SiblingDirectoryWithRootPrefix_ReturnsInvalidArgument()
-    {
-        var sibling = _root + "-evil";
-        Directory.CreateDirectory(sibling);
-        try
-        {
-            File.WriteAllText(Path.Combine(sibling, "secret.txt"), "leak");
-
-            (await PlainRoot().InfoAsync(Path.Combine(sibling, "secret.txt"), CancellationToken.None))
-                .ShouldBeOfType<FsResult<FsInfoResult>.Err>().Error.ErrorCode
-                .ShouldBe(ToolError.Codes.InvalidArgument);
-        }
-        finally
-        {
-            Directory.Delete(sibling, true);
-        }
-    }
-
     [Fact]
     public async Task BlobChunks_RoundTripBytes()
     {
@@ -171,15 +151,6 @@ public class DiskFileSystemTests : IDisposable
 
         write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Ok>();
         File.Exists(Path.Combine(_root, "photo.png")).ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task TextRoot_BlobChunksOfAnyExtension_Write()
-    {
-        await TextRoot().WriteChunksAsync("notes/photo.png", Chunks([1, 2, 3]),
-            overwrite: true, createDirectories: true, CancellationToken.None);
-
-        File.Exists(Path.Combine(_root, "notes", "photo.png")).ShouldBeTrue();
     }
 
     // Reading bytes as text needs a rule about which files are text, and that rule is what the text

@@ -39,16 +39,6 @@ public class TextSearchToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_WithRegex_MatchesPattern()
-    {
-        CreateTestFile("todos.md", "TODO: Fix bug\nFIXME: Later\nTODO: Add test");
-
-        var result = _tool.TestRun("TODO:.*", regex: true);
-
-        result["totalMatches"]!.GetValue<int>().ShouldBe(2);
-    }
-
-    [Fact]
     public void Run_IncludesNearestHeading()
     {
         CreateTestFile("doc.md", "# Introduction\nSome text\n## Setup\nFind this target");

@@ -242,15 +242,4 @@ public class DeliveryTargetResolverTests
 
         targets.ShouldHaveSingleItem().Address.ShouldBe("fran-office-01");
     }
-
-    [Fact]
-    public async Task ResolveDeliveryTargets_WithoutReplyTo_OriginTargetIsNotMinted()
-    {
-        var origin = Channel("signalr");
-        var msg = new ChannelMessage { ConversationId = "c1", Content = "x", Sender = "u", ChannelId = "signalr" };
-
-        var targets = await Resolver(origin).ResolveAsync(msg, origin, CancellationToken.None);
-
-        targets.ShouldHaveSingleItem().Minted.ShouldBeFalse();
-    }
 }

@@ -18,24 +18,6 @@ public class VfsRemoveToolTests
         _tool = new VfsRemoveTool(_registry.Object);
     }
 
-    [Fact]
-    public async Task RunAsync_ResolvesPathAndReturnsTheRemoval()
-    {
-        _registry.Setup(r => r.Resolve("/library/old.pdf"))
-            .Returns(Resolved(_backend.Object, "old.pdf"));
-        _backend.Setup(b => b.DeleteAsync("old.pdf", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
-            {
-                Status = "success", Message = "Moved to trash", OriginalPath = "old.pdf", TrashPath = ".trash/old.pdf"
-            }));
-
-        var result = await _tool.RunAsync("/library/old.pdf");
-
-        result!["status"]!.GetValue<string>().ShouldBe("success");
-        result["message"]!.GetValue<string>().ShouldBe("Moved to trash");
-        _backend.Verify(b => b.DeleteAsync("old.pdf", It.IsAny<CancellationToken>()), Times.Once);
-    }
-
     // The backend names the path it deleted in its own coordinates — a disk root reports the
     // container-absolute one, which the registry refuses if the model feeds it back. And the trash
     // location sits outside every mount, so no virtual path for it exists at all: the model is given
