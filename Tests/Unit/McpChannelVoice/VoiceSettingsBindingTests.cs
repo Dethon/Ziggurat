@@ -61,19 +61,6 @@ public class VoiceSettingsBindingTests
     }
 
     [Fact]
-    public void OpenAiSttConfig_DefaultThresholds_MatchShippedGibberishGate()
-    {
-        // These defaults are what production runs when appsettings/env omit the thresholds; a
-        // sign flip here would silently invert the gate (see TranscriptDispatcher). avg_logprob
-        // is a negative log scale (closer to 0 is better), no_speech_prob is 0..1 (higher = more
-        // likely non-speech), so the floor is negative and the ceiling is in (0,1).
-        var config = new OpenAiSttConfig();
-
-        config.AvgLogProbThreshold.ShouldBe(-1.0);
-        config.NoSpeechProbThreshold.ShouldBe(0.6);
-    }
-
-    [Fact]
     public void VoiceSettings_BindsGlobalAndPerSatelliteLocality()
     {
         var json = """

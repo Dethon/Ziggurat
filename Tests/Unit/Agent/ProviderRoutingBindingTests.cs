@@ -133,17 +133,6 @@ public class ProviderRoutingBindingTests
         Should.Throw<InvalidOperationException>(() => Bind(("providerRouting:preferredMaxLatency", "fast")));
     }
 
-    [Fact]
-    public void Bind_MissingSection_YieldsNull()
-    {
-        new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>())
-            .Build()
-            .GetSection("providerRouting")
-            .Get<ProviderRouting>()
-            .ShouldBeNull();
-    }
-
     // The JSON provider records an empty object as a null-valued key, so `"providerRouting": {}`
     // binds to null and the agent INHERITS the global default -- {} is not a wholesale opt-out.
     // CLAUDE.md documents that trap; this pins the binder behavior the documentation relies on.

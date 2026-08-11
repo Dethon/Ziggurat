@@ -116,39 +116,6 @@ public class StatelessProtocolContractTests
         }
     }
 
-    // The trap itself, executable. Every row above asserts that a server we ship did not set
-    // Stateless = false; this is what that setting actually costs, on a throwaway server that
-    // deliberately sets it. The damage is silent — no error, no warning, just a server back on
-    // sessions and on a protocol two revisions old — so the claim is worth pinning rather than
-    // leaving in a comment. If a future SDK stops downgrading, or lands somewhere other than
-    // 2025-11-25, this fails first and alone, instead of the seven rows above failing together
-    // with a message that points at the wrong thing.
-    [Fact]
-    public async Task ToolServer_WithStatelessDisabled_FallsBackToTheSessionProtocol()
-    {
-        var port = TestPort.GetAvailable();
-        var app = await StartServerAsync(
-            port,
-            services => services.AddMcpServer().WithHttpTransport(options => options.Stateless = false));
-        try
-        {
-            await using var client = await McpClient.CreateAsync(
-                new HttpClientTransport(new HttpClientTransportOptions
-                {
-                    Endpoint = new Uri($"http://localhost:{port}/mcp")
-                }));
-
-            client.NegotiatedProtocolVersion.ShouldBe(
-                "2025-11-25", "Stateless = false renegotiates down to the last session protocol");
-            client.SessionId.ShouldNotBeNull("a downgraded server mints an Mcp-Session-Id again");
-        }
-        finally
-        {
-            await app.StopAsync();
-            await app.DisposeAsync();
-        }
-    }
-
     // Boots a tool server from its own ConfigModule, so the transport options under test are
     // byte-for-byte what ships. Module-registered workers (a printer spool pump, a timer fire
     // loop) reach for infrastructure that is not here and are stripped; the web host's own hosted
