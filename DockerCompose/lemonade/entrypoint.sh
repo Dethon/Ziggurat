@@ -26,14 +26,14 @@ EMBEDDING_MODEL="${EMBEDDING_MODEL:-Qwen3-Embedding-0.6B-GGUF}"
 # the wrong voice is warmed and the right one downloads on the first reply.
 TTS_MODEL="${TTS_MODEL:-kokoro-v1}"
 # llama.cpp's context, which here is the embedding model's alone — llamacpp serves nothing else in
-# this container. Lemonade's own default is -1, "the loaded model's maximum", and Qwen3-Embedding's
-# maximum is 32768; llama.cpp allocates the KV cache for the whole context up front, so that default
-# cost 4.6 GiB for a model whose weights are under a gigabyte, filled the iGPU's 4 GiB carveout and
-# pushed the overflow into GTT with whisper already resident. Every embedding this stack asks for is
-# one memory statement, a forget query or a three-user-turn recall window; 4096 holds those with
-# room to spare. Longer input is silently truncated, so raise this if what gets embedded grows.
-# -1 restores Lemonade's behaviour.
-EMBEDDING_CTX_SIZE="${EMBEDDING_CTX_SIZE:-4096}"
+# this container. Lemonade auto-tunes the context to the loaded model's maximum, 32768 for
+# Qwen3-Embedding, and llama.cpp allocates the KV cache for the whole of it up front: measured on
+# prod, 4.6 GiB for a model whose weights are under a gigabyte, which filled the iGPU's 4 GiB
+# carveout and pushed the overflow into GTT with whisper already resident. Every embedding this
+# stack asks for is one memory statement, a forget query or a three-user-turn recall window; 4096
+# holds those with room to spare. Longer input is silently truncated, so raise this if what gets
+# embedded grows. Set empty to pass no --ctx-size at all and leave auto-tune to it.
+EMBEDDING_CTX_SIZE="${EMBEDDING_CTX_SIZE-4096}"
 
 # ${VAR-default}: unset inherits the tuned default, set-but-empty disables that flag.
 # whisper-server's own beam default is -1 (greedy); 5 matches the old wyoming-whisper, and
@@ -111,14 +111,21 @@ if [ -n "$VAD_THRESHOLD" ]; then
 fi
 WHISPER_ARGS="${WHISPER_ARGS# }"
 
-# whispercpp is the only recipe we configure, so a plain overwrite is fine — lemond merges its own
-# defaults back over whatever keys are missing on every boot, which is also why ctx_size has to be
-# written here rather than edited into the config volume by hand: an edit would not survive a
-# restart. ctx_size is a global key, not a llamacpp one, and applies to the embedding server alone
-# because llamacpp is the only recipe it reaches (whispercpp and kokoro have their own).
+LLAMA_ARGS=""
+if [ -n "$EMBEDDING_CTX_SIZE" ]; then
+  LLAMA_ARGS="--ctx-size $EMBEDDING_CTX_SIZE"
+fi
+
+# A plain overwrite is fine — lemond merges its own defaults back over every key we leave out, on
+# every boot, which is also why none of this can be edited into the config volume by hand: the edit
+# would not survive a restart. The context deliberately goes through llamacpp.args rather than the
+# global ctx_size key that appears to be for exactly this. That key is auto-tuned, and the boot log
+# says so: "Migrating config: ctx_size 4096 -> -1 (auto-tune enabled)", then "Auto-tune ctx_size
+# resolved to 32768". A recipe's args survive the migration untouched, and lemond appends them after
+# its own flags, so the second --ctx-size is the one llama.cpp keeps.
 cat > "$CONFIG_DIR/config.json" <<EOF
 {
-  "ctx_size": $EMBEDDING_CTX_SIZE,
+  "llamacpp": { "args": "$LLAMA_ARGS" },
   "whispercpp": { "backend": "$WHISPER_BACKEND", "args": "$WHISPER_ARGS" }
 }
 EOF
