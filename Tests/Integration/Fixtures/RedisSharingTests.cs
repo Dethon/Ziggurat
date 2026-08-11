@@ -1,6 +1,7 @@
 using Infrastructure.Memory;
 using NRedisStack.RedisStackCommands;
 using Shouldly;
+using StackExchange.Redis;
 
 namespace Tests.Integration.Fixtures;
 
@@ -40,24 +41,19 @@ public class RedisSharingTests
     [Fact]
     public async Task ADisposedFixture_LeavesItsDatabaseEmptyForWhoeverGetsItNext()
     {
+        // Read back through a connection of our own rather than through the next lease: the
+        // database goes back into the pool on dispose, and under a full run some other class
+        // is free to take it before this test asks for one.
         var fixture = new RedisFixture();
         await fixture.InitializeAsync();
-        var database = fixture.Connection.GetDatabase().Database;
-        await fixture.Connection.GetDatabase().StringSetAsync("leftover", "value");
+        var connectionString = fixture.ConnectionString;
+        var key = $"leftover-{Guid.NewGuid():N}";
+
+        await fixture.Connection.GetDatabase().StringSetAsync(key, "value");
         await fixture.DisposeAsync();
 
-        var next = new RedisFixture();
-        await next.InitializeAsync();
-
-        try
-        {
-            next.Connection.GetDatabase().Database.ShouldBe(database);
-            (await next.Connection.GetDatabase().StringGetAsync("leftover")).HasValue.ShouldBeFalse();
-        }
-        finally
-        {
-            await next.DisposeAsync();
-        }
+        await using var probe = await ConnectionMultiplexer.ConnectAsync($"{connectionString},abortConnect=false");
+        (await probe.GetDatabase().StringGetAsync(key)).HasValue.ShouldBeFalse();
     }
 
     [Fact]
