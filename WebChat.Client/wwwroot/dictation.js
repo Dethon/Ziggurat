@@ -485,6 +485,11 @@ window.dictation = {
     },
 
     _teardown: function (run) {
+        // The clock first, and the cap with it. A dictation whose graph never came up has usually
+        // armed one already — the ticket that carries the number is minted alongside the microphone
+        // rather than after it — and an alarm set for a recording that no longer exists still goes
+        // off. It ends "the recording", meaning whichever one is live by then.
+        this._stopClock(run);
         this._stopTracks(run);
         this._closeContext(run);
         // The hints belong to whichever dictation is on screen now, not to the one being torn down.
@@ -538,7 +543,12 @@ window.dictation = {
         if (this._run !== run || run.ending) return;
         if (run.cap) clearTimeout(run.cap);
         const left = Math.max(0, this._limits.maxMs - (performance.now() - run.startedAt));
-        run.cap = setTimeout(() => this._finish(), left);
+        // The cap belongs to the run that armed it and to no other. _finish ends whatever is live,
+        // so a timer that outlived its own dictation would cut the next one short — and stopping
+        // the clock on every exit is the other half of the same promise, not a substitute for this.
+        run.cap = setTimeout(() => {
+            if (this._run === run) this._finish();
+        }, left);
     },
 
     _stopClock: function (run) {

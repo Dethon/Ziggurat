@@ -309,4 +309,85 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         contexts.ShouldNotBeEmpty("no context was built, so the leak is not what was tested");
         contexts.ShouldAllBe(state => state == "closed");
     }
+
+    // The recording cap is armed from the ticket, which is minted in parallel with the microphone
+    // opening — so a dictation whose graph never comes up has usually already armed one. The timer
+    // ends "the recording", meaning whichever one is live when it fires, and the failure path never
+    // stopped the clock: the run it belonged to is gone, but its two-minute alarm is still set, and
+    // the next dictation is the one it goes off on.
+    //
+    // A phone is where this bites. The open that fails there fails slowly — a wedged audio service
+    // takes its time before rejecting — so the ticket always wins the race and the cap is always
+    // armed; and until a device error stopped turning the microphone off for good, there was no
+    // second dictation for the orphan to cut short.
+    [SkippableFact]
+    public async Task AFailedOpen_DoesNotLeaveAnAlarmSetOnTheNextDictation()
+    {
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "sobreviví a la alarma ajena";
+
+        var page = await OpenAsync();
+
+        // Slowly, and once. Slowly so the ticket certainly wins and the cap is certainly armed —
+        // an open that fails instantly nulls the run before the ticket lands and arms nothing, which
+        // is the case that would pass whatever the code did.
+        await page.EvaluateAsync(
+            """
+            () => {
+                const open = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+                let failed = false;
+                navigator.mediaDevices.getUserMedia = constraints => {
+                    if (failed) return open(constraints);
+                    failed = true;
+                    return new Promise((_, reject) => setTimeout(() => {
+                        const error = new Error('Could not start audio source');
+                        error.name = 'NotReadableError';
+                        reject(error);
+                    }, 1_200));
+                };
+            }
+            """);
+
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var centre = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+
+        // The press that fails. Its cap is armed against its own start, so it comes due four
+        // seconds from here whatever happens next.
+        // Held past the moment the open gives up, so the failure is what ends this dictation. Let
+        // go any earlier and it ends as an empty recording instead, which is a different case with
+        // a different answer and no cap left behind.
+        var armedAt = DateTime.UtcNow;
+        await TouchAsync(cdp, "touchStart", Point(centre.X, centre.Y));
+        await Task.Delay(1_800);
+        await TouchAsync(cdp, "touchEnd");
+        await Assertions.Expect(page.Locator(".composer-refusal"))
+            .ToContainTextAsync("NotReadableError",
+                new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
+
+        // The dictation that follows, latched so it outlives the finger and can only end by being
+        // stopped — or by somebody else's alarm.
+        await page.Locator("[data-testid=dictation-mic]").PressAsync("Enter");
+        await Assertions.Expect(page.Locator("[data-testid=dictation-stop]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+
+        // It has to be recording before the abandoned cap comes due, or the orphan fired into an
+        // empty room and this case proved nothing.
+        (DateTime.UtcNow - armedAt).ShouldBeLessThan(
+            TimeSpan.FromSeconds(3.4),
+            "the second dictation started after the abandoned cap was already due");
+
+        // Past the moment the abandoned cap comes due, with room for the timer to be late, and well
+        // short of this dictation's own four seconds.
+        var wait = TimeSpan.FromSeconds(4.9) - (DateTime.UtcNow - armedAt);
+        if (wait > TimeSpan.Zero)
+        {
+            await Task.Delay(wait);
+        }
+
+        await Assertions.Expect(page.Locator("[data-testid=dictation-stop]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 1_000 });
+        (await page.EvaluateAsync<bool>("() => window.dictation.isRecording()"))
+            .ShouldBeTrue("the abandoned run's cap ended this dictation instead of its own");
+    }
 }
