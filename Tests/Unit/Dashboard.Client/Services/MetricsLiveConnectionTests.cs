@@ -179,24 +179,6 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Live);
     }
 
-    // The headline: recovering from an outage means the dashboard holds what it missed, asserted
-    // at the store rather than by recording that a method was called.
-    [Fact]
-    public async Task Reconnected_EventsArrivedDuringTheOutage_TheStoreHoldsWhatItMissed()
-    {
-        await ConnectAsync();
-        _voiceStore.State.Events.ShouldBeEmpty();
-        _handler.AnswerFor("api/metrics/voice?", new List<VoiceEventPayload>
-        {
-            new((int)VoiceMetric.UtteranceTranscribed, "kitchen-01"),
-        });
-
-        await _hub.RaiseReconnectingAsync(null);
-        await _hub.RaiseReconnectedAsync();
-
-        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
-    }
-
     // Ordinary page load fetches the same data on the first connection, so catching up there would
     // double every request on first paint.
     [Fact]

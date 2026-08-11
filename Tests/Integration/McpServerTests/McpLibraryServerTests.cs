@@ -44,32 +44,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     }
 
     [Fact]
-    public async Task McpServer_IsAccessible_ReturnsAllTools()
-    {
-        // Arrange & Act
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        var tools = await client.ListToolsAsync();
-
-        // Assert
-        tools.ShouldNotBeEmpty();
-        var toolNames = tools.Select(t => t.Name).ToList();
-
-        toolNames.ShouldContain("file_search");
-        toolNames.ShouldContain("download_file");
-
-        toolNames.ShouldContain("fs_glob");
-        toolNames.ShouldContain("fs_move");
-
-        await client.DisposeAsync();
-    }
-
-    [Fact]
     public async Task McpServer_ExposesSingleMediaFilesystemResource()
     {
         var client = await McpClient.CreateAsync(

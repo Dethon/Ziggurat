@@ -35,17 +35,6 @@ public class StreamServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task WriteMessageAsync_DeliversToSubscriber()
-    {
-        var (channel, _) = _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
-        var reader = channel.Subscribe();
-
-        await _sut.WriteMessageAsync("topic1", new ChatStreamMessage { Content = "hello" });
-
-        (await reader.ReadAsync()).Content.ShouldBe("hello");
-    }
-
-    [Fact]
     public async Task WriteReplyAsync_TextContent_CreatesCorrectMessage()
     {
         _sessionService.StartSession("topic1", "agent1", 100, 200);

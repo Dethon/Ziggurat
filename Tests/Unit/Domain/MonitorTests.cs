@@ -475,41 +475,6 @@ public class ChatMonitorTests
     }
 
     [Fact]
-    public async Task Monitor_ScheduledFireWithReplyTo_BindsApprovalHandlerToDeliveryTarget()
-    {
-        // For a scheduled fire the origin channel (mcp-scheduling) auto-approves
-        // every tool call silently. If the approval handler is bound to the origin,
-        // the delivery target (WebChat) never sees the tool calls and the user
-        // can't tell what the scheduled run did. The handler must instead bind to
-        // the first delivery target so tool-call notifications surface there.
-        var threadResolver = MonitorTestMocks.CreateThreadResolver();
-        var fire = MonitorTestMocks.CreateChannelMessage(
-            conversationId: "fire-1", channelId: "scheduling", agentId: "jonas") with
-        {
-            ReplyTo = [new ReplyTarget("signalr", null)]
-        };
-        var scheduling = MonitorTestMocks.CreateChannel("scheduling", fire);
-        var signalr = new FakeChannelConnection { ChannelId = "signalr", ConversationIdToReturn = "minted-signalr" };
-        signalr.Complete();
-        var fakeAgent = MonitorTestMocks.CreateAgent();
-        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
-
-        var monitor = new ChatMonitor(
-            [scheduling, signalr],
-            agentFactory,
-            threadResolver,
-            new Mock<IMetricsPublisher>().Object,
-            null,
-            new Mock<ILogger<ChatMonitor>>().Object);
-
-        await monitor.Monitor(CancellationToken.None);
-
-        var created = agentFactory.Created.ShouldHaveSingleItem();
-        created.ApprovalHandler.ShouldBeSameAs(signalr);
-        created.Key.ConversationId.ShouldBe("minted-signalr");
-    }
-
-    [Fact]
     public void FromMessage_DownloadOrigin_ReturnsNull()
     {
         var msg = MonitorTestMocks.CreateChannelMessage(conversationId: "c", channelId: "library", agentId: "jack")

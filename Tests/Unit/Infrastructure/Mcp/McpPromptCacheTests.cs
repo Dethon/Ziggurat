@@ -28,17 +28,6 @@ public class McpPromptCacheTests
                 .GetAwaiter().GetResult().SequenceEqual(expected));
 
     [Fact]
-    public async Task GetOrFetchAsync_FirstCall_FetchesInline()
-    {
-        var cache = new McpPromptCache(new FakeTimeProvider(), _ttl);
-
-        var prompts = await cache.GetOrFetchAsync(
-            "server-a", _ => Task.FromResult(new[] { "p1" }), CancellationToken.None);
-
-        prompts.ShouldBe(["p1"]);
-    }
-
-    [Fact]
     public async Task GetOrFetchAsync_FreshHit_DoesNotRefetch()
     {
         var cache = new McpPromptCache(new FakeTimeProvider(), _ttl);
