@@ -81,7 +81,7 @@ public class LemonadeFixture : IAsyncLifetime
             // regenerates config.json into the recipe cache on every boot (as it does under compose),
             // and HF hub may touch lock files while loading a cached model. The models themselves are
             // never re-downloaded -- LocateProvisionedVolumes already proved they are present.
-            _container = new ContainerBuilder(LemonadeImageFixture.Image)
+            _container = TestContainers.Container(LemonadeImageFixture.Image)
                 .WithPortBinding(LemonadePort, true)
                 .WithEnvironment("STT_BACKEND", "cpu")
                 .WithEnvironment("STT_MODEL", SttModel)

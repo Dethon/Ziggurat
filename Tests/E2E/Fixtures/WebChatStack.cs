@@ -226,7 +226,7 @@ internal sealed class WebChatStack
             return;
         }
 
-        _network = new NetworkBuilder()
+        _network = TestContainers.Network()
             .WithName($"e2e-webchat-{Guid.NewGuid():N}")
             .Build();
         await _network.CreateAsync(ct);
@@ -242,7 +242,7 @@ internal sealed class WebChatStack
         // It was the longest of the three roots and so the first thing the whole E2E chain waited
         // on — swapping it took the stack's boot from 27.7s to 14.0s and the E2E suite from 76s to
         // 61s. Restore the stack image the moment this stack grows a memory feature.
-        _redis = new ContainerBuilder("redis:7-alpine")
+        _redis = TestContainers.Container("redis:7-alpine")
             .WithName($"redis-{Guid.NewGuid():N}")
             .WithNetwork(_network)
             .WithNetworkAliases("redis")
@@ -250,7 +250,7 @@ internal sealed class WebChatStack
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(6379))
             .Build();
 
-        _mcpVault = new ContainerBuilder(mcpVaultImageName)
+        _mcpVault = TestContainers.Container(mcpVaultImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-vault")
             .WithEnvironment("VAULTPATH", "/vault")
@@ -265,7 +265,7 @@ internal sealed class WebChatStack
         await Task.WhenAll(_redis.StartAsync(ct), _mcpVault.StartAsync(ct), whisperPortTask);
         var whisperPort = await whisperPortTask;
 
-        _mcpChannelSignalR = new ContainerBuilder(signalRImageName)
+        _mcpChannelSignalR = TestContainers.Container(signalRImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-channel-signalr")
             .WithPortBinding(8080, true)
@@ -338,7 +338,7 @@ internal sealed class WebChatStack
             }
             """);
 
-        _agent = new ContainerBuilder(agentImageName)
+        _agent = TestContainers.Container(agentImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("agent")
             .WithCommand("--chat", "Web", "--reasoning")
@@ -350,7 +350,7 @@ internal sealed class WebChatStack
                 .UntilMessageIsLogged("Application started"))
             .Build();
 
-        var webui = new ContainerBuilder(webuiImageName)
+        var webui = TestContainers.Container(webuiImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("webui")
             .WithPortBinding(8080, true);
@@ -405,7 +405,7 @@ internal sealed class WebChatStack
 
         var caddyfileBytes = Encoding.UTF8.GetBytes(testCaddyfile);
 
-        _caddy = new ContainerBuilder("caddy:2-alpine")
+        _caddy = TestContainers.Container("caddy:2-alpine")
             .WithNetwork(_network)
             .WithNetworkAliases("caddy")
             .WithPortBinding(80, true)

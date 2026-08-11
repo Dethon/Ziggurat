@@ -84,7 +84,7 @@ public class TseExtractorFixture : IAsyncLifetime
     {
         if (await ImageExistsAsync())
         {
-            return new ContainerBuilder(Image);
+            return TestContainers.Container(Image);
         }
 
         var dockerfileDir = Path.Combine(
@@ -100,7 +100,7 @@ public class TseExtractorFixture : IAsyncLifetime
         // The tse image installs torch + the wesep tree and compiles hdbscan -- minutes, not seconds.
         using var buildCts = new CancellationTokenSource(TimeSpan.FromMinutes(20));
         await image.CreateAsync(buildCts.Token);
-        return new ContainerBuilder(image);
+        return TestContainers.Container(image);
     }
 
     private static async Task<bool> ImageExistsAsync()

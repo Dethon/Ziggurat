@@ -115,7 +115,7 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
                 // would inject a fresh org.testcontainers.session-id label, producing
                 // a new image id every run and orphaning the prior 7GB image as a
                 // dangling layer even though the build is a full cache hit.
-                containerBuilder = new ContainerBuilder(CamoufoxImageName);
+                containerBuilder = TestContainers.Container(CamoufoxImageName);
             }
             else
             {
@@ -133,7 +133,7 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
                 using var buildCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
                 await image.CreateAsync(buildCts.Token);
 
-                containerBuilder = new ContainerBuilder(image);
+                containerBuilder = TestContainers.Container(image);
             }
 
             _container = containerBuilder

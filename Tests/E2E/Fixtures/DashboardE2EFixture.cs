@@ -24,12 +24,12 @@ public class DashboardE2EFixture : E2EFixtureBase
 
     protected override async Task StartContainersAsync(CancellationToken ct)
     {
-        _network = new NetworkBuilder()
+        _network = TestContainers.Network()
             .WithName($"e2e-dashboard-{Guid.NewGuid():N}")
             .Build();
         await _network.CreateAsync(ct);
 
-        _redis = new ContainerBuilder("redis/redis-stack-server:latest")
+        _redis = TestContainers.Container("redis/redis-stack-server:latest")
             .WithName($"redis-{Guid.NewGuid():N}")
             .WithNetwork(_network)
             .WithNetworkAliases("redis")
@@ -40,7 +40,7 @@ public class DashboardE2EFixture : E2EFixtureBase
 
         var observabilityImageName = E2EImages.Observability.ImageName;
 
-        _observability = new ContainerBuilder(observabilityImageName)
+        _observability = TestContainers.Container(observabilityImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("observability")
             .WithPortBinding(8080, true)

@@ -22,7 +22,7 @@ public class McpSchedulingServerFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         // The port, not the log line — see RedisFixture for why the log wait can hang.
-        _redis = new ContainerBuilder("redis/redis-stack:latest")
+        _redis = TestContainers.Container("redis/redis-stack:latest")
             .WithPortBinding(6379, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(6379))
             .Build();

@@ -21,7 +21,7 @@ public class HomeAssistantFixture : IAsyncLifetime
         _configDir = Path.Combine(Path.GetTempPath(), $"ha-test-{Guid.NewGuid():N}");
         Token = HomeAssistantSeed.WriteConfig(_configDir);
 
-        _container = new ContainerBuilder(HomeAssistantSeed.ContainerImage)
+        _container = TestContainers.Container(HomeAssistantSeed.ContainerImage)
             .WithPortBinding(HomeAssistantSeed.Port, true)
             .WithBindMount(_configDir, "/config")
             .WithEnvironment("TZ", "UTC")

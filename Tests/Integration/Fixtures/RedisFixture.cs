@@ -19,7 +19,7 @@ public class RedisFixture : IAsyncLifetime
         // and hang forever, and the external port is answered by Docker's proxy before
         // Redis inside is serving, which made the ConnectAsync below flaky. The port wait
         // still guards the mapped-port lookup; the ping proves Redis is up.
-        _container = new ContainerBuilder("redis/redis-stack:latest")
+        _container = TestContainers.Container("redis/redis-stack:latest")
             .WithPortBinding(RedisPort, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilExternalTcpPortIsAvailable(RedisPort)
