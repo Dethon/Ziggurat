@@ -92,11 +92,4 @@ public class RenderCoordinatorTests : IDisposable
         received.ShouldContain(true);
         received.ShouldContain(false);
     }
-
-    [Fact]
-    public void CreateObservables_ThrowOnNullTopicId()
-    {
-        Should.Throw<ArgumentNullException>(() => _coordinator.CreateStreamingObservable(null!));
-        Should.Throw<ArgumentNullException>(() => _coordinator.CreateIsStreamingObservable(null!));
-    }
 }

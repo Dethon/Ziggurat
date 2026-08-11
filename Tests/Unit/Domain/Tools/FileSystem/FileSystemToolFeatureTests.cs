@@ -29,25 +29,6 @@ public class FileSystemToolFeatureTests
         _feature.FeatureName.ShouldBe("filesystem");
     }
 
-    [Fact]
-    public void GetTools_NullEnabledTools_ReturnsAllTools()
-    {
-        var config = new FeatureConfig();
-        var tools = _feature.GetTools(config).ToList();
-
-        tools.Count.ShouldBe(10);
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_read");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_create");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_edit");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__glob");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_search");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__move");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__copy");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__remove");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__exec");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__file_info");
-    }
-
     // GetTools is a hand-written list sitting beside the one operation table, and nothing bound the
     // two together: an eleventh operation could join FileSystemOperations.All, be enabled by config
     // and produce no tool — half-existing, which is the thing that list exists to prevent.

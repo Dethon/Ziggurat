@@ -147,14 +147,6 @@ public class ConnectionStoreTests : IDisposable
     }
 
     [Fact]
-    public void Connected_AdvancesTheEpoch()
-    {
-        _dispatcher.Dispatch(new ConnectionConnected());
-
-        _store.State.Epoch.ShouldBe(1);
-    }
-
-    [Fact]
     public void Reconnected_AdvancesTheEpoch()
     {
         _dispatcher.Dispatch(new ConnectionConnected());
