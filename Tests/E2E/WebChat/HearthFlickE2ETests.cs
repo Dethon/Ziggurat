@@ -334,36 +334,56 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
     // "Reached full and settled": the detent class landed and the composited transform stopped
     // changing. Capped, because the whole point is to tap while the fling Chromium derived from
     // the flick may still be alive — an unbounded wait would tap after it and hide the bug.
+    //
+    // Two equal reads are not a settle, and taking them for one is how this returns a sheet that is
+    // still travelling. The sampler is 40 ms apart and the machine running the suite stalls the main
+    // thread for longer than that, so a transition mid-flight reads identical twice; the aim is then
+    // taken against a sheet that slides on underneath it, and the row above the aimed one is the one
+    // the tap lands on. That failure is indistinguishable from the bug this file exists to catch,
+    // which is the worst kind of flake to own.
+    //
+    // So the browser is asked rather than inferred from: a CSS transition is an animation on the
+    // element for as long as it runs, however little of it a stalled sampler managed to see. The
+    // repeat count stays on top of that, because a transition that has been committed but has not
+    // begun is not yet an animation either.
     private static async Task<Settle> WaitForSheetSettledAsync(IPage page)
     {
         var started = DateTime.UtcNow;
         var previous = "";
+        var unchanged = 0;
         while ((DateTime.UtcNow - started).TotalMilliseconds < 900)
         {
-            var state = await page.EvaluateAsync<string[]>(
-                """
-                () => {
-                    const el = document.querySelector('.hearth');
-                    return [el.className, getComputedStyle(el).transform];
-                }
-                """);
-            if (state[0].Contains("detent-full") && state[1] == previous)
+            var state = await ReadSheetAsync(page);
+            unchanged = state.Still && state.Transform == previous ? unchanged + 1 : 0;
+            if (state.ClassName.Contains("detent-full") && unchanged >= 2)
             {
-                return new Settle(state[0], state[1], (DateTime.UtcNow - started).TotalMilliseconds, true);
+                return new Settle(
+                    state.ClassName, state.Transform, (DateTime.UtcNow - started).TotalMilliseconds, true);
             }
 
-            previous = state[1];
+            previous = state.Transform;
             await page.WaitForTimeoutAsync(40);
         }
 
-        var final = await page.EvaluateAsync<string[]>(
+        var final = await ReadSheetAsync(page);
+        return new Settle(
+            final.ClassName, final.Transform, (DateTime.UtcNow - started).TotalMilliseconds, false);
+    }
+
+    private sealed record SheetRead(string ClassName, string Transform, bool Still);
+
+    private static async Task<SheetRead> ReadSheetAsync(IPage page)
+    {
+        var state = await page.EvaluateAsync<string[]>(
             """
             () => {
                 const el = document.querySelector('.hearth');
-                return [el.className, getComputedStyle(el).transform];
+                // getAnimations covers a CSS transition for its whole life, including the frame
+                // before it starts painting, which is exactly the window a sampler cannot see.
+                return [el.className, getComputedStyle(el).transform, String(el.getAnimations().length)];
             }
             """);
-        return new Settle(final[0], final[1], (DateTime.UtcNow - started).TotalMilliseconds, false);
+        return new SheetRead(state[0], state[1], state[2] == "0");
     }
 
     // Returns an empty Name rather than throwing when nothing is reachable: the dump it carries is
