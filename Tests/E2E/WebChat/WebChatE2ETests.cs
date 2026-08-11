@@ -190,7 +190,20 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
             // The buttons stay disabled while an answer is in flight, so the click waits for
             // the modal on screen to be answerable — this one's, or the next one's.
-            await rejectBtn.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+            try
+            {
+                await rejectBtn.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+            }
+            catch (Exception ex) when (ex is TimeoutException or PlaywrightException)
+            {
+                // The modal this click aimed at was replaced by the next request's, or answered
+                // from under it: the button goes unstable and then detaches, and Playwright's own
+                // retries run out against a target that is no longer the one on screen. That is a
+                // change of state and not a failure to dismiss, so re-read what is showing now and
+                // answer that instead — the deadline is what bounds this, not one click's patience.
+                continue;
+            }
+
             await WaitUntilApprovalAnsweredAsync(page, showing, TimeSpan.FromSeconds(10));
         }
     }

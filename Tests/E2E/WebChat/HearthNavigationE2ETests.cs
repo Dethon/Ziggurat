@@ -396,7 +396,22 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
             }
             """);
 
-        await page.WaitForTimeoutAsync(400);
+        // The travel above is stretched to three seconds, so what this has to wait for is not a
+        // duration but a position: the finger must come down on a row, with the sheet still moving
+        // under it. A fixed wait assumed the travel had already begun when it was called, and on a
+        // loaded machine the second handle tap rendered late — 400ms in, the sheet was still short
+        // of the tap point and the finger landed on nothing, failing with no row under it. Waiting
+        // for the row to arrive at the point leaves seconds of travel still to run, so the tap is
+        // no less mid-settle than it was, and the harness's own timing is out of the assertion.
+        await page.WaitForFunctionAsync(
+            """
+            () => {
+                const hit = document.elementFromPoint(195, 650);
+                return !!(hit && hit.closest('.topic-item'));
+            }
+            """,
+            null,
+            new PageWaitForFunctionOptions { Timeout = 10_000, PollingInterval = 16 });
         await page.Touchscreen.TapAsync(195, 650);
 
         // Give the click, and the render it causes, room to land before reading the outcome.

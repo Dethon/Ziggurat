@@ -120,15 +120,26 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
 
         // The same dismiss-and-retry guard as the other helpers: a pending approval leaked by a
         // sibling test can raise the full-viewport overlay at any moment and intercept these
-        // clicks. The confirm button only exists while its row is in confirm mode, so both
-        // clicks retry together.
+        // clicks.
+        //
+        // A row renders the delete button or the confirm pair and never both, so an attempt has to
+        // ask which state the row is in rather than assume it is back where the last attempt
+        // started. Retrying both clicks together looks equivalent and is not: the first click has
+        // already put the row in confirm mode, so every later attempt waited out its timeout on a
+        // button that cannot come back, and one intercepted confirm click failed the test three
+        // attempts later for the wrong reason.
+        var confirmDelete = ourTopic.Locator(".confirm-delete-btn");
         for (var attempt = 0; ; attempt++)
         {
             await WebChatE2ETests.DismissApprovalOverlayAsync(page);
             try
             {
-                await ourTopic.Locator(".delete-btn").ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
-                await page.Locator(".confirm-delete-btn").ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                if (await confirmDelete.CountAsync() == 0)
+                {
+                    await ourTopic.Locator(".delete-btn").ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                }
+
+                await confirmDelete.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
                 break;
             }
             catch (TimeoutException) when (attempt < 2)
