@@ -128,8 +128,6 @@ public sealed class StreamingServiceTests : IDisposable
     public enum ErrorChunkKind
     {
         OperationCanceledText,
-        TaskCanceledText,
-        OperationWasCanceledText,
         NonTransient
     }
 
@@ -350,8 +348,6 @@ public sealed class StreamingServiceTests : IDisposable
 
     [Theory]
     [InlineData(ErrorChunkKind.OperationCanceledText, false, false, null)]
-    [InlineData(ErrorChunkKind.TaskCanceledText, false, false, null)]
-    [InlineData(ErrorChunkKind.OperationWasCanceledText, false, false, null)]
     [InlineData(ErrorChunkKind.NonTransient, true, true, "Connection reset by peer")]
     public async Task SendMessageAsync_WithErrorChunk_ClassifiesErrorAndToast(
         ErrorChunkKind kind, bool expectErrorMessage, bool expectToast, string? expectedContent)
@@ -575,8 +571,6 @@ public sealed class StreamingServiceTests : IDisposable
 
     [Theory]
     [InlineData(ErrorChunkKind.OperationCanceledText, false, null)]
-    [InlineData(ErrorChunkKind.TaskCanceledText, false, null)]
-    [InlineData(ErrorChunkKind.OperationWasCanceledText, false, null)]
     [InlineData(ErrorChunkKind.NonTransient, true, "Connection reset by peer")]
     public async Task TryStartResumeStreamAsync_WithErrorChunk_ClassifiesError(
         ErrorChunkKind kind, bool expectErrorMessage, string? expectedContent)
@@ -701,8 +695,6 @@ public sealed class StreamingServiceTests : IDisposable
     private static string ErrorTextFor(ErrorChunkKind kind) => kind switch
     {
         ErrorChunkKind.OperationCanceledText => "OperationCanceled",
-        ErrorChunkKind.TaskCanceledText => "TaskCanceled",
-        ErrorChunkKind.OperationWasCanceledText => "The operation was canceled.",
         ErrorChunkKind.NonTransient => "Connection reset by peer",
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };

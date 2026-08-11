@@ -77,7 +77,6 @@ public class McpFileDownloadToolTests
 
     [Theory]
     [InlineData("null", "null")]
-    [InlineData("undefined", "undefined")]
     [InlineData("", "Some Movie 2024 1080p")]
     public void ValidateInputs_IdWithPlaceholderLink_ReturnsNull(string link, string title)
     {

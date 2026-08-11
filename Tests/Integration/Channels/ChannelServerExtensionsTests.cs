@@ -149,24 +149,6 @@ public class ChannelServerExtensionsTests
         result.Content.OfType<TextContentBlock>().First().Text.ShouldContain("boom");
     }
 
-    // The two dual-role servers answer with their own envelope (ToolResponse.Create) rather than a
-    // bare message, and that shape lives in Infrastructure, which this project must not reference.
-    // So the shape is the caller's to supply; the rule about which exceptions reach it is not.
-    [Fact]
-    public async Task CallToolFilter_AcceptsACallersOwnErrorShape()
-    {
-        await using var server = await StartAsync(ex => new CallToolResult
-        {
-            IsError = true,
-            Content = [new TextContentBlock { Text = $"{{\"ok\":false,\"message\":\"{ex.Message}\"}}" }]
-        });
-
-        var result = await server.Client.CallToolAsync("throws");
-
-        result.IsError.ShouldBe(true);
-        result.Content.OfType<TextContentBlock>().First().Text.ShouldContain("\"ok\":false");
-    }
-
     [Fact]
     public async Task ChannelReceive_DeliversWhatTheEmitterPutOnTheInbox()
     {

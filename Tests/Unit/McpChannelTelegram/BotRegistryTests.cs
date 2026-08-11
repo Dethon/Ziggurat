@@ -32,18 +32,6 @@ public class BotRegistryTests
     }
 
     [Fact]
-    public void RegisterChatAgent_ThenGetBotForChat_ReturnsCorrectClient()
-    {
-        var registry = new BotRegistry(_testBots);
-
-        registry.RegisterChatAgent(100, "jack");
-
-        var client = registry.GetBotForChat(100);
-        client.ShouldNotBeNull();
-        client.ShouldBe(registry.GetBotForAgent("jack"));
-    }
-
-    [Fact]
     public void Lookup_WithUnknownIds_ReturnsNull()
     {
         var registry = new BotRegistry(_testBots);

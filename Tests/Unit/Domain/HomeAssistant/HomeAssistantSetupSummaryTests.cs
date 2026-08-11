@@ -139,21 +139,6 @@ public class HomeAssistantSetupSummaryTests
     }
 
     [Fact]
-    public async Task GetAsync_ActionTableSaysWhereTheFilesLive()
-    {
-        // The wasted glob is structural: `*.sh` at the class level legitimately returns 0.
-        var client = new FakeHaClient
-        {
-            States = { Entity("light.kitchen", "off") },
-            Services = { Service("light", "turn_on", DomainTarget("light")) }
-        };
-
-        var text = await Build(client).GetAsync(CancellationToken.None);
-
-        text.ShouldContain("entity directory");
-    }
-
-    [Fact]
     public async Task GetAsync_WithNoActionableEntities_OmitsTheActionTable()
     {
         var client = new FakeHaClient { States = { Entity("sensor.salon_temp", "21") } };

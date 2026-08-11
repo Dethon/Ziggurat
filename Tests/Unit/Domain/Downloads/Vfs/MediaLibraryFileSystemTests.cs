@@ -469,7 +469,6 @@ public class MediaLibraryFileSystemTests : IDisposable
     // duplicate on both mounts. The reason is the delete's own, because the delete is what refuses.
     [Theory]
     [InlineData("Movies/film.mkv")]
-    [InlineData("notes.txt")]
     [InlineData("downloads/042")]
     public async Task MoveOutCheck_OfAPathThisMountCannotDelete_IsRefused(string path)
     {

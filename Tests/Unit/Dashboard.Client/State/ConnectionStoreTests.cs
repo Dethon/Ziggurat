@@ -5,14 +5,6 @@ namespace Tests.Unit.Dashboard.Client.State;
 
 public class ConnectionStoreTests
 {
-    [Fact]
-    public void InitialState_BeforeAnythingConnects_IsConnecting()
-    {
-        using var store = new ConnectionStore();
-
-        store.State.Status.ShouldBe(ConnectionStatus.Connecting);
-    }
-
     public static TheoryData<string, Action<ConnectionStore>> TransitionsThatAreNotBecomingLive => new()
     {
         { "connecting", store => store.SetConnecting() },

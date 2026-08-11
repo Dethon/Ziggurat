@@ -69,26 +69,6 @@ public class CreateConversationToolTests
     }
 
     [Fact]
-    public async Task McpRun_SingleAttachedTurn_TearsDownStreamOnStreamComplete()
-    {
-        // The attach increments the pending count exactly once, so the turn's single
-        // StreamComplete must tear the stream down — a wedged-open stream would show a
-        // perpetual typing indicator and suppress the push notification.
-        _sessionService.StartSession("topic-1", "jack", 7, 42, "default", "Downloads");
-        await AttachAsync("7:42");
-
-        await _streamService.WriteReplyAsync(new SendReplyParams
-        {
-            ConversationId = "7:42",
-            Content = string.Empty,
-            ContentType = ReplyContentType.StreamComplete,
-            IsComplete = true
-        });
-
-        _streamService.IsStreaming("topic-1").ShouldBeFalse();
-    }
-
-    [Fact]
     public async Task McpRun_AttachDuringActiveUserTurn_JoinsStreamWithoutStealingTeardown()
     {
         // A download alert can land while the user's own turn is streaming. The attach

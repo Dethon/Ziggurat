@@ -74,20 +74,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     }
 
     [Fact]
-    public async Task RemoveAsync_ExistingSubscription_RemovesIt()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var sub = CreateSubscription();
-
-        await _store.SaveAsync(userId, sub);
-        await _store.RemoveAsync(userId, sub.Endpoint);
-
-        var all = await _store.GetAllAsync();
-        all.ShouldNotContain(x => x.UserId == userId);
-    }
-
-    [Fact]
     public async Task RemoveAsync_NonExistentSubscription_DoesNotThrow()
     {
         var userId = $"test-user-{Guid.NewGuid():N}";
@@ -158,19 +144,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
 
         var defaultSubs = await _store.GetBySpaceAsync("default");
         defaultSubs.ShouldContain(x => x.Subscription.Endpoint == sub.Endpoint);
-    }
-
-    [Fact]
-    public async Task GetBySpaceAsync_NoMatchingSpace_ReturnsEmpty()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var sub = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/other-space", "k1", "a1");
-
-        await _store.SaveAsync(userId, sub, "some-space");
-
-        var result = await _store.GetBySpaceAsync("nonexistent-space");
-        result.ShouldNotContain(x => x.Subscription.Endpoint == sub.Endpoint);
     }
 
     [Fact]

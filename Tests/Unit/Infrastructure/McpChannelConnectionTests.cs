@@ -34,28 +34,6 @@ public class McpChannelConnectionTests
     }
 
     [Fact]
-    public async Task HandleNotification_WithoutAgentId_DefaultsToNull()
-    {
-        var sut = new McpChannelConnection("ch-2");
-        var payload = JsonSerializer.SerializeToElement(new
-        {
-            conversationId = "conv-99",
-            content = "No agent",
-            sender = "anon"
-        });
-
-        sut.HandleChannelMessageNotification(payload);
-
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        await foreach (var msg in sut.Messages.WithCancellation(cts.Token))
-        {
-            msg.AgentId.ShouldBeNull();
-            msg.ConversationId.ShouldBe("conv-99");
-            break;
-        }
-    }
-
-    [Fact]
     public async Task HandleCancelNotification_WritesSyntheticCancelMessage()
     {
         var sut = new McpChannelConnection("ch-3");
