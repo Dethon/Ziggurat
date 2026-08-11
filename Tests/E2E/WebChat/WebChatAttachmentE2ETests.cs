@@ -6,7 +6,7 @@ namespace Tests.E2E.WebChat;
 
 // The feature's one end-to-end test: attach an image, send it, see it in the transcript, reload,
 // see it still there. The transcript is a record and not a session.
-[Collection(WebChatE2ECollections.Chat)]
+[Collection(WebChatE2ECollections.Attachments)]
 [Trait("Category", "E2E")]
 public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
 {

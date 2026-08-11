@@ -88,6 +88,11 @@ public static class DictationEndpoints
                 {
                     Audio = bytes,
                     MediaType = container.MediaType,
+                    // Named for the space it was spoken in. The transcriber is shared with the
+                    // satellites and Telegram, and the filename is the only part of the request
+                    // that says where the audio came from — without it every caller's recording
+                    // arrives as the same audio.wav.
+                    FileName = $"dictation-{space}.wav",
                     Language = settings.Transcription.Language
                 },
                 ct);

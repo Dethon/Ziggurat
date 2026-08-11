@@ -4,8 +4,20 @@ namespace Tests.E2E.Fixtures;
 
 public abstract class E2EFixtureBase : IAsyncLifetime
 {
-    private IPlaywright? _playwright;
+    // One Chromium for the whole run, handed out by reference count, and a fixture keeps only the
+    // contexts it made. A browser per fixture was what capped how far the E2E suite could be split:
+    // six collections meant six browsers and Chromium started dying under the memory, which is a
+    // whole collection's worth of tests failing together on a closed target. Contexts are already
+    // the isolation boundary — a test gets a fresh one either way — so the second browser was only
+    // ever paying for itself in memory.
+    private static readonly SemaphoreSlim _browserGate = new(1, 1);
+    private static IPlaywright? _sharedPlaywright;
+    private static IBrowser? _sharedBrowser;
+    private static int _browserRefs;
+
     private IBrowser? _browser;
+    private readonly List<IBrowserContext> _mine = [];
+
     protected virtual TimeSpan ContainerStartupTimeout => TimeSpan.FromMinutes(5);
     protected virtual TimeSpan ImageBuildTimeout => TimeSpan.FromMinutes(20);
 
@@ -32,10 +44,25 @@ public abstract class E2EFixtureBase : IAsyncLifetime
 
     private async Task LaunchBrowserAsync()
     {
+        await _browserGate.WaitAsync();
+        try
+        {
+            _sharedBrowser ??= await StartSharedBrowserAsync();
+            _browserRefs++;
+            _browser = _sharedBrowser;
+        }
+        finally
+        {
+            _browserGate.Release();
+        }
+    }
+
+    private static async Task<IBrowser> StartSharedBrowserAsync()
+    {
         var headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false";
 
-        _playwright = await Playwright.CreateAsync();
-        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        _sharedPlaywright = await Playwright.CreateAsync();
+        return await _sharedPlaywright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
             Headless = headless,
             // A dictation needs a microphone. The fake device answers getUserMedia and the fake UI
@@ -64,10 +91,13 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             throw new InvalidOperationException("Browser not initialized. Call InitializeAsync first.");
         }
 
-        foreach (var ctx in _browser.Contexts.ToList())
+        // This fixture's own contexts only. The browser is shared now, so closing everything on it
+        // would shut a page a collection running beside this one is still driving.
+        foreach (var ctx in _mine.ToList())
         {
             await SaveTraceAsync(ctx);
             await ctx.CloseAsync();
+            _mine.Remove(ctx);
         }
 
         var context = await _browser.NewContextAsync(new BrowserNewContextOptions
@@ -78,6 +108,7 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             DeviceScaleFactor = isMobile ? 3 : null,
             ViewportSize = isMobile ? new ViewportSize { Width = 390, Height = 844 } : null
         });
+        _mine.Add(context);
         // The fake UI already answers the prompt; granting as well covers the permissions API,
         // which the page may consult before ever calling getUserMedia.
         await context.GrantPermissionsAsync(["microphone"]);
@@ -151,21 +182,37 @@ public abstract class E2EFixtureBase : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (_browser is not null)
+        foreach (var ctx in _mine.ToList())
         {
-            foreach (var ctx in _browser.Contexts.ToList())
-            {
-                await SaveTraceAsync(ctx);
-            }
+            await SaveTraceAsync(ctx);
+            await ctx.CloseAsync();
         }
 
+        _mine.Clear();
         await StopContainersAsync();
 
-        if (_browser is not null)
+        // The last fixture out turns the browser off. Anything else would close it under a
+        // collection still driving pages of its own.
+        await _browserGate.WaitAsync();
+        try
         {
-            await _browser.DisposeAsync();
-        }
+            if (_browser is null || --_browserRefs > 0)
+            {
+                return;
+            }
 
-        _playwright?.Dispose();
+            if (_sharedBrowser is not null)
+            {
+                await _sharedBrowser.DisposeAsync();
+                _sharedBrowser = null;
+            }
+
+            _sharedPlaywright?.Dispose();
+            _sharedPlaywright = null;
+        }
+        finally
+        {
+            _browserGate.Release();
+        }
     }
 }

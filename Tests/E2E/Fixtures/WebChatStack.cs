@@ -47,7 +47,7 @@ internal sealed class WebChatStack
     // being tapped instead of the row that suite had just made. Per-collection users do not fix
     // that and did not; a space is the boundary the application itself draws, so each collection
     // takes one. They must be configured on the webui or the client bounces back to the default.
-    private static readonly string[] _spaces = ["alpha", "bravo", "charlie", "delta"];
+    private static readonly string[] _spaces = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"];
 
     // A user identity is cheap — two environment variables — so no test needs to inherit one, and
     // a block is sized past the number of tests in its collection so none is handed out twice. A
@@ -56,22 +56,66 @@ internal sealed class WebChatStack
     // full-viewport modal and clicked a button that detached from under it. Raise these when a
     // collection grows past its block rather than letting the counter wrap.
     public const int UsersPerCollection = 24;
-    public const int CollectionSlices = 4;
+    public const int CollectionSlices = 8;
     public const int UserCount = UsersPerCollection * CollectionSlices;
 
     public string WebChatUrl { get; private set; } = "";
 
     // What the stubbed whisper answers, per test. No model and no GPU are involved: the browser,
     // the channel server, the ticket and the upload are all real, and only the transcription is
-    // decided here. Only the dictation collection touches these, which is why that collection is
-    // the one that owns them — no other collection running beside it reads or writes them.
-    public string Transcript { get; set; } = "hola desde el micrófono";
+    // decided here.
+    //
+    // Kept per space, because that is what lets more than one dictation collection run at once. One
+    // shared answer meant one collection: thirteen tests each setting their own words and asserting
+    // those exact words arrive, so two in flight would overwrite and read each other's. The
+    // recording now arrives named for the space it was spoken in, and each collection has a space
+    // of its own, so the stub can answer them separately.
+    private readonly Dictionary<string, string> _transcripts = [];
+    private readonly Dictionary<string, int> _statuses = [];
+    private readonly Dictionary<string, byte[]> _lastAudio = [];
+    private readonly Lock _stub = new();
 
-    public int TranscriptionStatus { get; set; } = 200;
+    private const string DefaultTranscript = "hola desde el micrófono";
 
-    // The bytes the browser actually posted, so a test can pin the format whisper is fed rather
-    // than trust that the encoder did what it says.
-    public byte[]? LastAudio { get; private set; }
+    public string TranscriptFor(string space)
+    {
+        lock (_stub)
+        {
+            return _transcripts.TryGetValue(space, out var t) ? t : DefaultTranscript;
+        }
+    }
+
+    public void SetTranscript(string space, string transcript)
+    {
+        lock (_stub)
+        {
+            _transcripts[space] = transcript;
+        }
+    }
+
+    public int StatusFor(string space)
+    {
+        lock (_stub)
+        {
+            return _statuses.TryGetValue(space, out var s) ? s : 200;
+        }
+    }
+
+    public void SetTranscriptionStatus(string space, int status)
+    {
+        lock (_stub)
+        {
+            _statuses[space] = status;
+        }
+    }
+
+    public byte[]? LastAudioFor(string space)
+    {
+        lock (_stub)
+        {
+            return _lastAudio.TryGetValue(space, out var a) ? a : null;
+        }
+    }
 
     // Short enough that a test can hold the microphone past it without a two-minute wait. The
     // browser learns it from the limits call, so this is also what proves the client carries no
@@ -413,23 +457,33 @@ internal sealed class WebChatStack
         {
             // Kept, so a test can assert on the format the browser really encoded.
             var form = await context.Request.ReadFormAsync();
+            var space = "";
             if (form.Files.FirstOrDefault() is { } posted)
             {
+                // dictation-<space>.wav, which the channel server names it. Answering by space is
+                // what lets collections dictate at the same time without crossing answers.
+                space = Path.GetFileNameWithoutExtension(posted.FileName ?? "")
+                    .Replace("dictation-", "", StringComparison.Ordinal);
                 using var buffer = new MemoryStream();
                 await using var content = posted.OpenReadStream();
                 await content.CopyToAsync(buffer);
-                LastAudio = buffer.ToArray();
+                lock (_stub)
+                {
+                    _lastAudio[space] = buffer.ToArray();
+                }
             }
-            if (TranscriptionStatus != 200)
+
+            var status = StatusFor(space);
+            if (status != 200)
             {
-                context.Response.StatusCode = TranscriptionStatus;
+                context.Response.StatusCode = status;
                 await context.Response.WriteAsync("the transcriber is having a bad day");
                 return;
             }
 
             context.Response.ContentType = "application/json";
             await context.Response.WriteAsync(
-                JsonSerializer.Serialize(new { text = Transcript, language = "es" }));
+                JsonSerializer.Serialize(new { text = TranscriptFor(space), language = "es" }));
         });
 
         await _whisper.StartAsync();

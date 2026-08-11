@@ -204,6 +204,22 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         request.Audio.ToArray().ShouldBe(audio);
     }
 
+    // The recording goes up named for the space it was spoken in. The transcriber is shared — the
+    // satellites and Telegram reach the same one — and a filename is the only part of the request
+    // that says anything about where the audio came from, so an operator reading whisper's own logs
+    // can tell one caller's audio from another's instead of seeing a run of identical audio.wav.
+    [Fact]
+    public async Task TheAudioIsNamedForTheSpaceItWasSpokenIn()
+    {
+        _transcriber.Result = new() { Text = "hola" };
+        var ticket = _tickets.MintDictation(Space);
+
+        await PostAsync(ticket.Token, Space, Wav(64));
+
+        var request = _transcriber.Requests.ShouldHaveSingleItem();
+        request.FileName.ShouldBe($"dictation-{Space}.wav");
+    }
+
     // The satellites' own speech-to-text members, from this call site too: an operator watching
     // whisper get slow after a model change sees the chat channel on the same dashboard.
     [Fact]
