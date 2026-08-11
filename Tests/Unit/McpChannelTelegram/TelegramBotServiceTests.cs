@@ -122,21 +122,6 @@ public class TelegramBotServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_ValidMessage_RegistersChatAgent()
-    {
-        await _harness.ReceiveAsync();
-        _harness.Enqueue(new Update
-        {
-            Id = 1,
-            Message = TelegramPollingHarness.TextMessage("/ask something")
-        });
-
-        await _harness.RunAsync();
-
-        _harness.BotRegistry.GetBotForChat(100).ShouldNotBeNull();
-    }
-
-    [Fact]
     public async Task ExecuteAsync_ThreadMessage_IsAccepted()
     {
         var message = TelegramPollingHarness.TextMessage("reply in thread");

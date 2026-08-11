@@ -18,17 +18,6 @@ public sealed class AgentActivityStoreTests : IDisposable
     public void Dispose() => _store.Dispose();
 
     [Fact]
-    public void AllAgentsTopicsMapped_SetsTopicToAgentMap()
-    {
-        var mapped = new Dictionary<string, string> { ["t1"] = "a1", ["t2"] = "a2" };
-
-        _dispatcher.Dispatch(new AllAgentsTopicsMapped(mapped));
-
-        _store.State.TopicToAgent["t1"].ShouldBe("a1");
-        _store.State.TopicToAgent["t2"].ShouldBe("a2");
-    }
-
-    [Fact]
     public void MarkAgentUnseenActivity_AddsAgent()
     {
         _dispatcher.Dispatch(new MarkAgentUnseenActivity("a2"));

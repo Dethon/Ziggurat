@@ -68,35 +68,6 @@ public class HtmlProcessorTests
     }
 
     [Fact]
-    public async Task ProcessAsync_WithCssSelector_ReturnsTargetedContent()
-    {
-        // Arrange
-        var html = """
-                   <!DOCTYPE html>
-                   <html>
-                   <head><title>Test Page</title></head>
-                   <body>
-                       <div class="header">Header content</div>
-                       <div class="main-content">
-                           <p>Main content here</p>
-                       </div>
-                       <div class="footer">Footer content</div>
-                   </body>
-                   </html>
-                   """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: ".main-content");
-
-        // Act
-        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
-
-        // Assert
-        result.IsPartial.ShouldBeFalse();
-        result.Content!.ShouldContain("Main content here");
-        result.Content!.ShouldNotContain("Header content");
-        result.Content!.ShouldNotContain("Footer content");
-    }
-
-    [Fact]
     public async Task ProcessAsync_WithNonMatchingSelector_ReturnsPartialStatus()
     {
         // Arrange

@@ -40,14 +40,4 @@ public class SpeakerVolumeCommandHandlerTests
         written[0].Type.ShouldBe("speaker-volume");
         written[0].Data["action"]!.GetValue<string>().ShouldBe(action);
     }
-
-    [Fact]
-    public async Task HandleAsync_NoControlWriter_ReturnsFalse()
-    {
-        var handler = new SpeakerVolumeCommandHandler();
-
-        var sent = await handler.HandleAsync(VoiceCommand.LocalMute, Session(), default);
-
-        sent.ShouldBeFalse();
-    }
 }

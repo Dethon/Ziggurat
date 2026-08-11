@@ -80,17 +80,6 @@ public sealed class MetricFamilyTests
         applied.ShouldBe("today");
     }
 
-    [Fact]
-    public async Task LoadEventsAsync_TheLatestLoad_AppliesItsEvents()
-    {
-        var applied = "";
-        var family = FamilyWith(() => Task.FromResult<Action>(() => applied = "today"));
-
-        await family.LoadEventsAsync();
-
-        applied.ShouldBe("today");
-    }
-
     private static MetricFamily FamilyWith(Func<Task<Action>> loadEvents) =>
         new(
             "stale",

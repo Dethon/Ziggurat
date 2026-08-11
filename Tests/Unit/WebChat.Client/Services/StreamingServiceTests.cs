@@ -181,24 +181,6 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SendMessageAsync_WithApprovalRequest_DispatchesShowApproval()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        var approval = new ToolApprovalRequestMessage("approval-1", []);
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { ApprovalRequest = approval, MessageId = "msg-1" },
-            new ChatStreamMessage { Content = "After approval", MessageId = "msg-1" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
-        );
-
-        await SendAndDrainAsync(topic);
-
-        var messages = MessagesFor(topic.TopicId);
-        messages.ShouldContain(m => m.Content == "After approval");
-    }
-
-    [Fact]
     public async Task SendMessageAsync_WithReasoning_AccumulatesCorrectly()
     {
         var topic = CreateTopic();

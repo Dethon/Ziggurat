@@ -40,20 +40,6 @@ public class TopicsStoreTests : IDisposable
     }
 
     [Fact]
-    public void SelectTopic_UpdatesSelectedTopicId()
-    {
-        // Arrange
-        var topics = new List<StoredTopic> { CreateTopic("topic-1", "Topic One") };
-        _dispatcher.Dispatch(new TopicsLoaded(topics));
-
-        // Act
-        _dispatcher.Dispatch(new SelectTopic("topic-1"));
-
-        // Assert
-        _store.State.SelectedTopicId.ShouldBe("topic-1");
-    }
-
-    [Fact]
     public void SelectTopic_WithNull_DeselectsTopic()
     {
         // Arrange

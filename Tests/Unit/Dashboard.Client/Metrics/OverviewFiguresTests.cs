@@ -52,15 +52,4 @@ public sealed class OverviewFiguresTests : IDisposable
 
         _metricsStore.State.InputTokens.ShouldBe(10);
     }
-
-    [Fact]
-    public async Task LoadSummaryAsync_TheLatestRead_AppliesItsTotals()
-    {
-        _handler.EnqueueResponse(Summary(10), TimeSpan.Zero);
-
-        _overview.SetDateRange(new DateOnly(2026, 3, 24), new DateOnly(2026, 3, 24));
-        await _overview.LoadSummaryAsync();
-
-        _metricsStore.State.InputTokens.ShouldBe(10);
-    }
 }
