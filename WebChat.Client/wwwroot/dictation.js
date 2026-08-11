@@ -184,7 +184,9 @@ window.dictation = {
             stream: null,
             ctx: null,
             encoder: null,
-            drained: null
+            drained: null,
+            meter: 0,
+            meterAt: 0
         };
         this._run = run;
         // Minted while the microphone opens rather than after it: the two round trips overlap, and
@@ -522,8 +524,22 @@ window.dictation = {
         return Math.sqrt(samples.reduce((sum, s) => sum + s * s, 0) / samples.length);
     },
 
+    // Speech is not a steady tone: syllables and the gaps between them swing the raw needle across
+    // its whole range several times a second, which reads as flicker rather than as a voice. The
+    // bar follows the reading through a one-pole filter instead, and rises about four times faster
+    // than it falls, so a word still lands promptly while the silence after it decays away.
+    //
+    // Timed off the frame's own interval rather than a per-frame fraction, so the meter settles at
+    // the same rate on a 120 Hz phone as on a 60 Hz laptop, and a frame dropped while the browser
+    // is busy does not leave the bar behind.
     _level: function (run) {
-        return this._meter(this._rms(run));
+        const now = performance.now();
+        const target = this._meter(this._rms(run));
+        const dt = run.meterAt ? Math.min(now - run.meterAt, 250) : 0;
+        run.meterAt = now;
+        const tau = target > run.meter ? 110 : 420;
+        run.meter += (target - run.meter) * (1 - Math.exp(-dt / tau));
+        return run.meter;
     },
 
     // The needle reads in decibels over a 60 dB range, not in amplitude. A working but quiet
