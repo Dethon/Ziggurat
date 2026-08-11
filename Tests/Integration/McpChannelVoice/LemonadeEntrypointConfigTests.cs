@@ -323,6 +323,46 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
                 p => p["pinned"]!.GetValue<bool>());
     }
 
+    // Lemonade's own ctx_size default is -1, which resolves to whatever the loaded model's maximum
+    // is — 32768 for Qwen3-Embedding-0.6B. llama.cpp allocates the KV cache for that whole context
+    // up front, so a model whose weights are under a gigabyte held 1.9 GiB of the iGPU's 4 GiB
+    // carveout and spilled another 2.7 GiB into GTT on prod, leaving whisper sharing a carveout
+    // that was 97% full. Every embedding this stack asks for is a memory statement, a forget query
+    // or a three-turn recall window, so the context is pinned to a size those fit in with room to
+    // spare rather than left at the model's ceiling.
+    [SkippableFact]
+    public void Entrypoint_Defaults_PinTheEmbeddingContextSize()
+    {
+        SeedVadModel();
+
+        var config = RunEntrypoint(("STT_BACKEND", "cpu"));
+
+        config["ctx_size"]!.GetValue<int>().ShouldBe(4096);
+    }
+
+    [SkippableFact]
+    public void Entrypoint_CtxSizeOverride_PropagatesToConfig()
+    {
+        SeedVadModel();
+
+        var config = RunEntrypoint(("STT_BACKEND", "cpu"), ("EMBEDDING_CTX_SIZE", "8192"));
+
+        config["ctx_size"]!.GetValue<int>().ShouldBe(8192);
+    }
+
+    // -1 is Lemonade's own "use the model's maximum", so an operator who wants the old behaviour
+    // back has a way to say so that does not mean editing a config the entrypoint rewrites on
+    // every boot.
+    [SkippableFact]
+    public void Entrypoint_CtxSizeAuto_RestoresTheModelMaximum()
+    {
+        SeedVadModel();
+
+        var config = RunEntrypoint(("STT_BACKEND", "cpu"), ("EMBEDDING_CTX_SIZE", "-1"));
+
+        config["ctx_size"]!.GetValue<int>().ShouldBe(-1);
+    }
+
     [SkippableFact]
     public void Entrypoint_GpuBackend_MapsToVulkan()
     {

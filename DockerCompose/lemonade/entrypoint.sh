@@ -25,6 +25,15 @@ EMBEDDING_MODEL="${EMBEDDING_MODEL:-Qwen3-Embedding-0.6B-GGUF}"
 # Same again for TTS. Keep in sync with the hub's Tts__OpenAi__Model; a mismatch just means
 # the wrong voice is warmed and the right one downloads on the first reply.
 TTS_MODEL="${TTS_MODEL:-kokoro-v1}"
+# llama.cpp's context, which here is the embedding model's alone — llamacpp serves nothing else in
+# this container. Lemonade's own default is -1, "the loaded model's maximum", and Qwen3-Embedding's
+# maximum is 32768; llama.cpp allocates the KV cache for the whole context up front, so that default
+# cost 4.6 GiB for a model whose weights are under a gigabyte, filled the iGPU's 4 GiB carveout and
+# pushed the overflow into GTT with whisper already resident. Every embedding this stack asks for is
+# one memory statement, a forget query or a three-user-turn recall window; 4096 holds those with
+# room to spare. Longer input is silently truncated, so raise this if what gets embedded grows.
+# -1 restores Lemonade's behaviour.
+EMBEDDING_CTX_SIZE="${EMBEDDING_CTX_SIZE:-4096}"
 
 # ${VAR-default}: unset inherits the tuned default, set-but-empty disables that flag.
 # whisper-server's own beam default is -1 (greedy); 5 matches the old wyoming-whisper, and
@@ -102,10 +111,14 @@ if [ -n "$VAD_THRESHOLD" ]; then
 fi
 WHISPER_ARGS="${WHISPER_ARGS# }"
 
-# Dedicated STT/TTS container: whispercpp is the only recipe we configure, so a plain
-# overwrite is fine (no llamacpp settings to preserve).
+# whispercpp is the only recipe we configure, so a plain overwrite is fine — lemond merges its own
+# defaults back over whatever keys are missing on every boot, which is also why ctx_size has to be
+# written here rather than edited into the config volume by hand: an edit would not survive a
+# restart. ctx_size is a global key, not a llamacpp one, and applies to the embedding server alone
+# because llamacpp is the only recipe it reaches (whispercpp and kokoro have their own).
 cat > "$CONFIG_DIR/config.json" <<EOF
 {
+  "ctx_size": $EMBEDDING_CTX_SIZE,
   "whispercpp": { "backend": "$WHISPER_BACKEND", "args": "$WHISPER_ARGS" }
 }
 EOF
@@ -127,7 +140,7 @@ case "$MODEL" in
     ;;
 esac
 
-echo "lemonade: whispercpp.backend=$WHISPER_BACKEND model=$MODEL embedding=$EMBEDDING_MODEL tts=$TTS_MODEL args=$WHISPER_ARGS"
+echo "lemonade: whispercpp.backend=$WHISPER_BACKEND model=$MODEL embedding=$EMBEDDING_MODEL ctx_size=$EMBEDDING_CTX_SIZE tts=$TTS_MODEL args=$WHISPER_ARGS"
 # Echoed before the STT_CONFIG_ONLY seam so the payloads are assertable without a server or
 # registry. Every model this container serves is pinned, not merely pre-pulled — see the warmup
 # block below for why.
