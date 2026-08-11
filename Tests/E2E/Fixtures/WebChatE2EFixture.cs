@@ -56,9 +56,17 @@ public class WebChatE2EFixture : E2EFixtureBase
 // The WebChat E2E classes are split across collections so they run at once against the one stack
 // rather than as a single serial chain, which was the run's critical path.
 //
-// The split is by shared state rather than by size: the dictation suite is alone because it is the
-// only one that writes the whisper stub's transcript, and the two gesture suites sit together
-// because they drive the same mobile drawer.
+// The split is by shared state first: the dictation suite is alone because it is the only one that
+// writes the whisper stub's transcript, and the chat suites sit together because they are the ones
+// whose sidebar rows each other's topics would appear in.
+//
+// Beyond that it is by length, because a collection is what xUnit serializes and the run is as long
+// as its longest chain. The two gesture suites used to share one, which ran them back to back for
+// seventy seconds while nothing else was left to overlap them with — they drive the same mobile
+// drawer but never the same sidebar, so a collection each costs only the browser it opens. Chat
+// keeps its three classes: at forty-odd seconds that chain still finishes inside dictation's, and
+// splitting it further buys nothing while opening two more browsers, which is what the machine
+// actually runs out of.
 [CollectionDefinition(WebChatE2ECollections.Chat)]
 public class WebChatE2EChatCollection : ICollectionFixture<WebChatE2EFixture>;
 
@@ -68,9 +76,13 @@ public class WebChatE2EDictationCollection : ICollectionFixture<WebChatE2EFixtur
 [CollectionDefinition(WebChatE2ECollections.Hearth)]
 public class WebChatE2EHearthCollection : ICollectionFixture<WebChatE2EFixture>;
 
+[CollectionDefinition(WebChatE2ECollections.Flick)]
+public class WebChatE2EFlickCollection : ICollectionFixture<WebChatE2EFixture>;
+
 public static class WebChatE2ECollections
 {
     public const string Chat = "WebChatE2E.Chat";
     public const string Dictation = "WebChatE2E.Dictation";
     public const string Hearth = "WebChatE2E.Hearth";
+    public const string Flick = "WebChatE2E.Flick";
 }

@@ -19,7 +19,7 @@ namespace Tests.E2E.WebChat;
 // `new PointerEvent(...)` inside the page — untrusted events that call the app's handlers but
 // never enter the input pipeline, so they can neither produce a fling nor a compatibility click.
 // That is why four fixes went green while the phone kept failing.
-[Collection(WebChatE2ECollections.Hearth)]
+[Collection(WebChatE2ECollections.Flick)]
 [Trait("Category", "E2E")]
 public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHelper output)
 {

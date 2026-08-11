@@ -47,7 +47,7 @@ internal sealed class WebChatStack
     // being tapped instead of the row that suite had just made. Per-collection users do not fix
     // that and did not; a space is the boundary the application itself draws, so each collection
     // takes one. They must be configured on the webui or the client bounces back to the default.
-    private static readonly string[] _spaces = ["alpha", "bravo", "charlie"];
+    private static readonly string[] _spaces = ["alpha", "bravo", "charlie", "delta"];
 
     // A user identity is cheap — two environment variables — so no test needs to inherit one, and
     // a block is sized past the number of tests in its collection so none is handed out twice. A
@@ -56,7 +56,7 @@ internal sealed class WebChatStack
     // full-viewport modal and clicked a button that detached from under it. Raise these when a
     // collection grows past its block rather than letting the counter wrap.
     public const int UsersPerCollection = 24;
-    public const int CollectionSlices = 3;
+    public const int CollectionSlices = 4;
     public const int UserCount = UsersPerCollection * CollectionSlices;
 
     public string WebChatUrl { get; private set; } = "";

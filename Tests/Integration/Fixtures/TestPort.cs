@@ -5,45 +5,90 @@ namespace Tests.Integration.Fixtures;
 
 public static class TestPort
 {
-    // Every number this has ever handed out. The OS picks the port by binding zero, and the bind is
-    // released again so the caller can take it themselves — which leaves the number free for the
-    // next asker until the caller gets round to it. Serially that gap never closed on anybody; with
-    // collections running in parallel two servers were handed the same port and the second died on
-    // startup with "address already in use", failing a test that had nothing to do with either.
-    //
-    // Remembering them is what makes a repeat impossible within this process. A port taken by
-    // something outside it is not ours to prevent, which is why the probe stays a real bind rather
-    // than a counter.
+    // Every number this has ever handed out. The probe is a real bind, so it can only say the port
+    // was free at the moment it asked — remembering the answer is what makes a repeat impossible
+    // within this process, whatever the caller does with it afterwards.
     private static readonly HashSet<int> _issued = [];
     private static readonly Lock _gate = new();
 
+    // Where the kernel's own ephemeral range begins. Binding port zero draws from it, and so does
+    // every outbound socket and every container publishing a random host port — which is what made
+    // the old probe unsafe: it handed back a number the kernel was still free to give to somebody
+    // else before the caller bound it. Ports are taken from below this instead, where nothing is
+    // assigned unless it is asked for by number.
+    public static readonly int EphemeralRangeStart = ReadEphemeralRangeStart();
+
+    // A thousand is far more than a run holds and leaves the band clear of the well-known ports and
+    // of the services this suite itself starts on fixed numbers.
+    private static readonly int _bandStart = Math.Max(1024, EphemeralRangeStart - 1000);
+
+    private static int _next = _bandStart;
+
     public static int GetAvailable()
     {
-        // The ephemeral range is tens of thousands of ports wide and a run holds a few dozen, so
-        // this settles on the first attempt unless the machine is nearly out of ports — in which
-        // case saying so beats handing back a duplicate and failing somewhere else.
-        for (var attempt = 0; attempt < 100; attempt++)
+        // Walking the band rather than re-probing one number: a port this run already holds is
+        // never offered again, so the walk only pays for ports something else on the machine has.
+        while (true)
         {
-            var port = Probe();
+            int candidate;
             lock (_gate)
             {
-                if (_issued.Add(port))
+                candidate = _next++;
+                if (candidate >= EphemeralRangeStart)
                 {
-                    return port;
+                    throw new InvalidOperationException(
+                        $"No unused loopback port left below {EphemeralRangeStart}; "
+                        + "the reserved band looks exhausted.");
+                }
+
+                if (!_issued.Add(candidate))
+                {
+                    continue;
                 }
             }
-        }
 
-        throw new InvalidOperationException(
-            "No unused loopback port after 100 attempts; the ephemeral range looks exhausted.");
+            if (IsFree(candidate))
+            {
+                return candidate;
+            }
+        }
     }
 
-    private static int Probe()
+    private static bool IsFree(int port)
     {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
+        try
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, port);
+            listener.Start();
+            listener.Stop();
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+    }
+
+    // Linux states the range in a two-number file; anywhere else, the IANA-registered start of the
+    // dynamic range is the safe assumption. Either way this only has to be a lower bound on what
+    // the kernel allocates, because the band sits underneath it.
+    private static int ReadEphemeralRangeStart()
+    {
+        const int fallback = 32768;
+        try
+        {
+            const string path = "/proc/sys/net/ipv4/ip_local_port_range";
+            if (!File.Exists(path))
+            {
+                return fallback;
+            }
+
+            var low = File.ReadAllText(path).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            return low.Length > 0 && int.TryParse(low[0], out var parsed) ? parsed : fallback;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return fallback;
+        }
     }
 }

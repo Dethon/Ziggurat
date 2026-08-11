@@ -127,12 +127,24 @@ public class WakeArbiterTests
         condition().ShouldBeTrue(because);
     }
 
-    private static async Task SettleAsync(FakeTimeProvider time, int windowMs)
+    // Let DecideAfterWindowAsync reach its Task.Delay, fire it, then let the decision run.
+    //
+    // The tail is a fixed sleep only when the caller has nothing to name: what follows the advance
+    // is the decision pausing its losers on its own task, and fifty milliseconds is a guess at how
+    // long that takes. It held while the suite ran on twelve threads and stopped holding on
+    // twenty-four, where a run failed on a pause that had simply not been written yet. A caller
+    // that can state what it is waiting for passes it and waits for the thing itself.
+    private static async Task SettleAsync(FakeTimeProvider time, int windowMs, Func<bool>? until = null)
     {
-        // let DecideAfterWindowAsync reach its Task.Delay, then fire it, then let it run
         await Task.Delay(50);
         time.Advance(TimeSpan.FromMilliseconds(windowMs + 1));
-        await Task.Delay(50);
+        if (until is null)
+        {
+            await Task.Delay(50);
+            return;
+        }
+
+        await WaitUntilAsync(until, "the decision did not settle within its deadline");
     }
 
     [Fact]
@@ -501,7 +513,7 @@ public class WakeArbiterTests
         arbiter.Claim("dead", 300, null, "wake"); // suppressed first, and its wire write throws
         arbiter.Claim("alive", 200, null, "wake");
         arbiter.Claim("winner", 900, null, "wake");
-        await SettleAsync(time, 500);
+        await SettleAsync(time, 500, () => alive.Paused == 1 && alive.Capture!.Completed.IsCompleted);
 
         alive.Paused.ShouldBe(1);
         dead.Paused.ShouldBe(0);

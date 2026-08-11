@@ -403,11 +403,21 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
         // of the tap point and the finger landed on nothing, failing with no row under it. Waiting
         // for the row to arrive at the point leaves seconds of travel still to run, so the tap is
         // no less mid-settle than it was, and the harness's own timing is out of the assertion.
+        //
+        // The row has to be *comfortably* over the point rather than merely touching it. Waiting for
+        // first contact returned the instant a row's leading edge crossed y, and the sheet then kept
+        // moving during the round trip that follows — on a loaded machine that was enough for the
+        // row to slide back off before the finger arrived, and the tap again landed on nothing. A
+        // margin means the wait ends with the row spanning the point, so the same drift leaves it
+        // still covered; the sheet is no less in motion for it.
         await page.WaitForFunctionAsync(
             """
             () => {
                 const hit = document.elementFromPoint(195, 650);
-                return !!(hit && hit.closest('.topic-item'));
+                const row = hit ? hit.closest('.topic-item') : null;
+                if (!row) return false;
+                const box = row.getBoundingClientRect();
+                return 650 - box.top >= 20 && box.bottom - 650 >= 20;
             }
             """,
             null,
