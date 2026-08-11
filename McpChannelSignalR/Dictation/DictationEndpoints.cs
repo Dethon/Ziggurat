@@ -38,7 +38,14 @@ public static class DictationEndpoints
         var token = context.Request.Headers[DictationEndpointPaths.TicketHeader].FirstOrDefault();
         if (!tickets.ResolvesDictation(token, space))
         {
-            return Results.Unauthorized();
+            // In words, like every other refusal here: the browser shows whatever the server said,
+            // and a bare 401 arrived as the sentence meant for a transcriber that could not be
+            // reached. A permission that has run out is the ordinary way this happens — the
+            // recording was held a long time, or the connection went away and came back — and the
+            // way on is to record again, not to go looking at the network.
+            return Results.Text(
+                "That recording's permission was not accepted, so record that again.",
+                statusCode: StatusCodes.Status401Unauthorized);
         }
 
         if (!context.Request.HasFormContentType)

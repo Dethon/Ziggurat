@@ -97,12 +97,17 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         _tickets.MintUpload("topic-1", "7:42", Space).Token.ShouldNotBeNullOrWhiteSpace();
     }
 
+    // Every other refusal here answers in words, and the browser puts whatever the server said in
+    // front of whoever is holding the phone. This one used to answer with nothing, so it arrived as
+    // the sentence meant for a transcriber that could not be reached — sending someone to look at
+    // the network for a permission that had simply run out.
     [Fact]
-    public async Task ARecordingWithNoTicket_IsRefused()
+    public async Task ARecordingWithNoTicket_IsRefusedInWords()
     {
         var response = await PostAsync(ticket: null, Space, Wav(64));
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await response.Content.ReadAsStringAsync()).ShouldContain("record that again");
         _transcriber.Requests.ShouldBeEmpty();
     }
 
