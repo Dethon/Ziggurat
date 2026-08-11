@@ -107,7 +107,21 @@ internal sealed class TelegramPollingHarness : IDisposable
     {
         _cts.CancelAfter(TimeSpan.FromSeconds(1));
         await Service.StartAsync(_cts.Token);
-        await Task.Delay(200, CancellationToken.None);
+
+        // The pump awaits every update in a batch before it asks for the next one, and the mock
+        // cancels the token when it is asked for a batch the test never queued — so cancellation is
+        // precisely the moment everything enqueued has been processed. Sleeping a fixed 200ms
+        // instead was a guess about how long that takes: true on an idle machine, and on a loaded
+        // one the update had not reached the inbox yet and the assertion read it as empty. The
+        // CancelAfter above still bounds a test whose pump never gets that far.
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, _cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
         await Service.StopAsync(CancellationToken.None);
     }
 

@@ -138,6 +138,15 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
 
             _container = containerBuilder
                 .WithPortBinding(9377, true)
+                // Docker's default /dev/shm is 64MB, which is where a browser puts its shared
+                // graphics and IPC buffers — the documented cause of a browser dying under load in
+                // a container, and this suite drives parallel sessions through one. A whole
+                // collection rides on this container: when the server went down mid-run, nineteen
+                // tests failed together on a closed WebSocket, none of them for a reason of their
+                // own. The compose service survives the same crash because it is set to restart;
+                // nothing restarts this one.
+                .WithCreateParameterModifier(p =>
+                    (p.HostConfig ??= new()).ShmSize = 1024L * 1024 * 1024)
                 .WithWaitStrategy(Wait.ForUnixContainer()
                     .UntilHttpRequestIsSucceeded(r => r.ForPort(9377).ForPath("/json")))
                 .Build();
