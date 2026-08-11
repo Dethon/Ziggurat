@@ -343,7 +343,7 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
 
         var config = RunEntrypoint(("STT_BACKEND", "cpu"));
 
-        LlamaArgs(config).ShouldContain("--ctx-size 4096");
+        LlamaArgs(config).ShouldContain("--ctx-size 8192");
     }
 
     [SkippableFact]

@@ -30,10 +30,12 @@ TTS_MODEL="${TTS_MODEL:-kokoro-v1}"
 # Qwen3-Embedding, and llama.cpp allocates the KV cache for the whole of it up front: measured on
 # prod, 4.6 GiB for a model whose weights are under a gigabyte, which filled the iGPU's 4 GiB
 # carveout and pushed the overflow into GTT with whisper already resident. Every embedding this
-# stack asks for is one memory statement, a forget query or a three-user-turn recall window; 4096
-# holds those with room to spare. Longer input is silently truncated, so raise this if what gets
-# embedded grows. Set empty to pass no --ctx-size at all and leave auto-tune to it.
-EMBEDDING_CTX_SIZE="${EMBEDDING_CTX_SIZE-4096}"
+# stack asks for is one memory statement, a forget query or a three-user-turn recall window, but
+# that window is bounded by what a person types rather than by anything here: 4096 was measured
+# overflowing on a real recall, so this is 8192. Raise it again if the overflow comes back — the KV
+# cache scales with it, and even 8192 costs about a quarter of what auto-tune was allocating.
+# Set empty to pass no --ctx-size at all and leave auto-tune to it.
+EMBEDDING_CTX_SIZE="${EMBEDDING_CTX_SIZE-8192}"
 
 # ${VAR-default}: unset inherits the tuned default, set-but-empty disables that flag.
 # whisper-server's own beam default is -1 (greedy); 5 matches the old wyoming-whisper, and
