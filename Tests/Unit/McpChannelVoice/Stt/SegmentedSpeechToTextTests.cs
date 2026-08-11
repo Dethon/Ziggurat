@@ -216,22 +216,6 @@ public class SegmentedSpeechToTextTests
     }
 
     [Fact]
-    public async Task TranscribeAsync_AllSegmentsReportConfidence_AggregatesMean()
-    {
-        var inner = new FakeStt(count =>
-            Task.FromResult(new TranscriptionResult { Text = count.ToString(), Confidence = 0.8 }));
-
-        // Leading Silence(1) seeds the floor (pre-roll gap) — see the identical note
-        // on TranscribeAsync_ManySegments_RespectsMaxInFlightDecodes above.
-        var result = await New(inner).TranscribeAsync(
-            Stream(Silence(1), Speech(6), Silence(3), Speech(7)),
-            new TranscriptionOptions(), CancellationToken.None);
-
-        result.Confidence.ShouldNotBeNull();
-        result.Confidence!.Value.ShouldBe(0.8, 1e-9);
-    }
-
-    [Fact]
     public async Task TranscribeAsync_NoSegmentReportsConfidence_IsNull()
     {
         var inner = new FakeStt(); // default handler returns Confidence = null

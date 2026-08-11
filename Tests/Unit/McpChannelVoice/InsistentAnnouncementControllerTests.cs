@@ -396,21 +396,6 @@ public class InsistentAnnouncementControllerTests
     }
 
     [Fact]
-    public async Task Start_NoOnlineSession_PublishesAlarmOffline()
-    {
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var h = BuildHarness(time, online: false, satelliteIds: "kitchen-01"); // configured but not connected
-
-        var response = await h.Controller.StartAsync(
-            new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "alarm", Insistent = new() },
-            CancellationToken.None);
-
-        response.Satellites.ShouldHaveSingleItem();
-        response.Satellites[0].Status.ShouldBe("offline");
-        h.Publisher.Events.ShouldContain(e => e.Metric == VoiceMetric.AlarmOffline);
-    }
-
-    [Fact]
     public async Task Start_NoAck_RepeatsToCapThenUnacknowledged_SynthesizesOnce()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);

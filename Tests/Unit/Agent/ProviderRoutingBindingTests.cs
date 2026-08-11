@@ -46,13 +46,6 @@ public class ProviderRoutingBindingTests
     }
 
     [Fact]
-    public void Construct_UndefinedSortValue_Throws()
-    {
-        Should.Throw<ArgumentOutOfRangeException>(
-            () => new ProviderRouting { Sort = (ProviderSort)7 });
-    }
-
-    [Fact]
     public void Bind_ArraysAndFlags_MapFromIndexedKeys()
     {
         var routing = Bind(

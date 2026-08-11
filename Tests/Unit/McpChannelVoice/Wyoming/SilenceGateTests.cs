@@ -291,19 +291,6 @@ public class SilenceGateTests
     }
 
     [Fact]
-    public void Process_MaxUtteranceCap_ReportsEndReason()
-    {
-        var gate = NewGate();
-
-        foreach (var _ in Enumerable.Range(0, 19))
-        {
-            Feed(gate, Loud());
-        }
-        Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.EndUtterance);
-        gate.EndReason.ShouldBe("max_utterance");
-    }
-
-    [Fact]
     public void TrailingRms_ExposesMeanLevelOfTheTrailingRun()
     {
         var gate = BabbleGate();

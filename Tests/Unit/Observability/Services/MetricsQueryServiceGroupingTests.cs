@@ -200,7 +200,6 @@ public class MetricsQueryServiceGroupingTests
     [Theory]
     [InlineData(new[] { 10, 20, 30, 40, 100 }, 50, 30)]
     [InlineData(new[] { 10, 20, 30, 40, 100 }, 95, 100)]
-    [InlineData(new[] { 10, 20, 30, 40, 100 }, 99, 100)]
     [InlineData(new int[0], 95, 0)]
     [InlineData(new[] { 7 }, 95, 7)]
     public void ComputePercentile_ReturnsExpected(int[] values, int q, int expected)

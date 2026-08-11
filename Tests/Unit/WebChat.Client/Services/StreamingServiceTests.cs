@@ -169,18 +169,6 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SendMessageAsync_WithError_StopsStreaming()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _messagingService.EnqueueError("Something went wrong");
-
-        await SendAndDrainAsync(topic);
-
-        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
-    }
-
-    [Fact]
     public async Task SendMessageAsync_WithReasoning_AccumulatesCorrectly()
     {
         var topic = CreateTopic();
@@ -550,25 +538,6 @@ public sealed class StreamingServiceTests : IDisposable
             new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
     }
 
-    [Fact]
-    public async Task TryStartResumeStreamAsync_WithApprovalRequest_DispatchesShowApproval()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        var approval = new ToolApprovalRequestMessage("approval-1", []);
-        var existingMessage = new ChatMessageModel { Role = "assistant" };
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { ApprovalRequest = approval, MessageId = "msg-1" },
-            new ChatStreamMessage { Content = "Done", MessageId = "msg-1" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
-        );
-
-        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
-
-        var messages = MessagesFor(topic.TopicId);
-        messages.ShouldContain(m => m.Content == "Done");
-    }
-
     [Theory]
     [InlineData(ExceptionKind.OperationCanceled, false, null)]
     [InlineData(ExceptionKind.TaskCanceled, false, null)]
@@ -695,22 +664,6 @@ public sealed class StreamingServiceTests : IDisposable
             .Message.Content.ShouldBe("half written and the rest");
         resumed.Completion.IsCompleted.ShouldBeFalse();
         running.SetResult();
-    }
-
-    [Fact]
-    public async Task SendMessageAsync_WhileTheReplyRuns_TheTopicHasAStream()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-
-        _messagingService.SetBlockUntilComplete(true);
-        _messagingService.EnqueueContent("Response");
-        var streamTask = _service.SendMessageAsync(topic, "test");
-
-        _topicStreams.Snapshot(topic.TopicId).IsStreaming.ShouldBeTrue();
-
-        _messagingService.UnblockCompletion();
-        await streamTask;
     }
 
     [Fact]

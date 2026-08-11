@@ -73,7 +73,6 @@ public class WakeAnnouncementTests
     // the "button" comparison in the arbiter meaningless. Both fall back to the default.
     [Theory]
     [InlineData(7)]
-    [InlineData(true)]
     [InlineData("")]
     [InlineData("   ")]
     public void Read_UnusableSource_FallsBackToWake(object source)

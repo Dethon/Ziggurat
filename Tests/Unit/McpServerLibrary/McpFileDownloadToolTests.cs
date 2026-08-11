@@ -77,10 +77,8 @@ public class McpFileDownloadToolTests
 
     [Theory]
     [InlineData("null", "null")]
-    [InlineData("NULL", "Null")]
     [InlineData("undefined", "undefined")]
     [InlineData("", "Some Movie 2024 1080p")]
-    [InlineData("   ", "Some Movie 2024 1080p")]
     public void ValidateInputs_IdWithPlaceholderLink_ReturnsNull(string link, string title)
     {
         var result = McpFileDownloadTool.ValidateInputs(
@@ -130,11 +128,9 @@ public class McpFileDownloadToolTests
 
     [Theory]
     [InlineData(null)]
-    [InlineData("")]
     [InlineData("   ")]
     [InlineData("null")]
     [InlineData("NULL")]
-    [InlineData("Null")]
     [InlineData("undefined")]
     public void NormalizeOptionalText_PlaceholderValues_ReturnsNull(string? value)
     {

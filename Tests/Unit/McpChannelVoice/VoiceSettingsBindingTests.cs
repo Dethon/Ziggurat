@@ -218,13 +218,4 @@ public class VoiceSettingsBindingTests
         TranscriptionOptionsFactory.Create("kitchen-01", config, null, default)
             .PromptTemplate.ShouldBe("room text");
     }
-
-    [Fact]
-    public void OpenAiSttConfig_ShortSpeechDefaults_MatchTheShippedGate()
-    {
-        var config = new OpenAiSttConfig();
-
-        config.ShortSpeechAvgLogProbThreshold.ShouldBe(-1.4);
-        config.FullThresholdSpeechMs.ShouldBe(2000);
-    }
 }

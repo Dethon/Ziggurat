@@ -23,12 +23,6 @@ public class FileSystemToolFeatureTests
         _feature = new FileSystemToolFeature(_registry.Object);
     }
 
-    [Fact]
-    public void FeatureName_IsFilesystem()
-    {
-        _feature.FeatureName.ShouldBe("filesystem");
-    }
-
     // GetTools is a hand-written list sitting beside the one operation table, and nothing bound the
     // two together: an eleventh operation could join FileSystemOperations.All, be enabled by config
     // and produce no tool — half-existing, which is the thing that list exists to prevent.

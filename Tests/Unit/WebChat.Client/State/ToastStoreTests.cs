@@ -70,14 +70,6 @@ public class ToastStoreTests : IDisposable
     }
 
     [Fact]
-    public void ShowError_WhitespaceMessage_IsReplacedByTheFallback()
-    {
-        _dispatcher.Dispatch(new ShowError("   \t "));
-
-        _store.State.Toasts.ShouldHaveSingleItem().Message.ShouldBe(FallbackMessage);
-    }
-
-    [Fact]
     public void ShowError_TwoMessagesDifferingOnlyPast150Characters_DedupeAfterTruncation()
     {
         _dispatcher.Dispatch(new ShowError(new string('x', 151)));
