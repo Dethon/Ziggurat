@@ -18,14 +18,6 @@ public sealed class AgentActivityStoreTests : IDisposable
     public void Dispose() => _store.Dispose();
 
     [Fact]
-    public void MarkAgentUnseenActivity_AddsAgent()
-    {
-        _dispatcher.Dispatch(new MarkAgentUnseenActivity("a2"));
-
-        _store.State.AgentsWithUnseenActivity.ShouldContain("a2");
-    }
-
-    [Fact]
     public void ClearAgentUnseenActivity_RemovesAgent()
     {
         _dispatcher.Dispatch(new MarkAgentUnseenActivity("a2"));

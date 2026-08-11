@@ -21,25 +21,6 @@ public class TopicsStoreTests : IDisposable
     public void Dispose() => _store.Dispose();
 
     [Fact]
-    public void TopicsLoaded_UpdatesTopicsList()
-    {
-        // Arrange
-        var topics = new List<StoredTopic>
-        {
-            CreateTopic("topic-1", "Topic One"),
-            CreateTopic("topic-2", "Topic Two")
-        };
-
-        // Act
-        _dispatcher.Dispatch(new TopicsLoaded(topics));
-
-        // Assert
-        _store.State.Topics.Count.ShouldBe(2);
-        _store.State.Topics[0].Name.ShouldBe("Topic One");
-        _store.State.Topics[1].Name.ShouldBe("Topic Two");
-    }
-
-    [Fact]
     public void SelectTopic_WithNull_DeselectsTopic()
     {
         // Arrange

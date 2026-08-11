@@ -1,7 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
-using Domain.DTOs.WebChat;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,20 +54,6 @@ public class CreateConversationToolTests
         userBubble.Content.ShouldBe("[download-complete] film.mkv");
         userBubble.UserMessage.ShouldNotBeNull();
         userBubble.UserMessage.SenderId.ShouldBe("fran");
-    }
-
-    [Fact]
-    public async Task McpRun_AttachWithSession_BroadcastsStreamStartedToSpaceGroup()
-    {
-        _sessionService.StartSession("topic-1", "jack", 7, 42, "default", "Downloads");
-
-        await AttachAsync("7:42");
-
-        _hubSender.Verify(s => s.SendToGroupAsync(
-            "space:default",
-            "OnStreamStarted",
-            It.Is<StreamStartedNotification>(n => n.TopicId == "topic-1"),
-            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

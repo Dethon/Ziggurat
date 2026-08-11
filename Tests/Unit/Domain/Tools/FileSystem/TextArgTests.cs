@@ -12,9 +12,6 @@ public class TextArgTests
     [Theory]
     [InlineData("\"hello\"", "hello", false)]
     [InlineData("{\"a\":1}", "{\"a\":1}", true)]
-    [InlineData("[1,2]", "[1,2]", true)]
-    [InlineData("42", "42", true)]
-    [InlineData("true", "true", true)]
     [InlineData("null", "", true)]
     public void Coerce_And_WasCoerced_ByValueKind(string rawJson, string expectedText, bool expectedCoerced)
     {

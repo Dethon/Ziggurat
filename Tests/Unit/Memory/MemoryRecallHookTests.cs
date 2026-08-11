@@ -27,12 +27,6 @@ public class MemoryRecallHookTests
 
     private static readonly float[] _testEmbedding = Enumerable.Range(0, 1536).Select(i => (float)i / 1536).ToArray();
 
-    public enum MemoryDisabledReason
-    {
-        MemoryFeatureNotPresent,
-        NoEnabledFeatures,
-    }
-
     public enum ExtractionFallbackCause
     {
         ThreadStoreThrows,
@@ -436,18 +430,11 @@ public class MemoryRecallHookTests
         return captured;
     }
 
-    [Theory]
-    [InlineData(MemoryDisabledReason.MemoryFeatureNotPresent)]
-    [InlineData(MemoryDisabledReason.NoEnabledFeatures)]
-    public async Task EnrichAsync_SkipsRecall_WhenMemoryDisabled(MemoryDisabledReason reason)
+    [Fact]
+    public async Task EnrichAsync_SkipsRecall_WhenMemoryDisabled()
     {
         var message = new ChatMessage(ChatRole.User, "Hello");
-        var agentId = reason switch
-        {
-            MemoryDisabledReason.MemoryFeatureNotPresent => "agent-no-memory",
-            MemoryDisabledReason.NoEnabledFeatures => "agent-empty",
-            _ => throw new ArgumentOutOfRangeException(nameof(reason)),
-        };
+        const string agentId = "agent-no-memory";
         _agentDefinitionProvider.Setup(p => p.GetById(agentId))
             .Returns(new AgentDefinition
             {

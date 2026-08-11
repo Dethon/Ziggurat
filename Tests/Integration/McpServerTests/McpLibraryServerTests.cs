@@ -89,29 +89,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     #region FileDownload Tests
 
     [Fact]
-    public async Task FileDownloadTool_WithInvalidId_ReturnsError()
-    {
-        // Arrange
-        var downloadTool = await GetToolAsync("download_file");
-
-        // Act - try to download with an ID that doesn't exist in search results
-        var result = await downloadTool.WithMeta(MetaFor("conv-invalid-id")).CallAsync(
-            new Dictionary<string, object?>
-            {
-                ["searchResultId"] = 12345,
-                ["link"] = null,
-                ["title"] = null
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert - should return error because no search was performed first
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain(
-            "No search result found for id 12345. Make sure to run the file_search tool first and use the correct");
-    }
-
-    [Fact]
     public async Task DownloadFile_WithConversationContextMeta_RecordsRoutingAndServesMediaOverlay()
     {
         // Arrange

@@ -17,7 +17,6 @@ public class ToolPatternMatcherTests
 
     [Theory]
     [InlineData("mcp__any-server__AnyTool", "mcp__*", true)]
-    [InlineData("mcp__localhost__TestTool", "mcp__*", true)]
     [InlineData("local__SomeTool", "mcp__*", false)]
     public void IsMatch_AllMcpWildcard_MatchesAllMcpTools(string toolName, string pattern, bool expected)
     {

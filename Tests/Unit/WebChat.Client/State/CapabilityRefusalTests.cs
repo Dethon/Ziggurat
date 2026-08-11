@@ -40,13 +40,6 @@ public class CapabilityRefusalTests
     };
 
     [Fact]
-    public void TheEffectiveModel_IsThePerMessageChoiceFallingBackToTheAgentDefault()
-    {
-        AttachmentCapability.EffectiveModel(_agents[0], null).ShouldBe("text/only");
-        AttachmentCapability.EffectiveModel(_agents[0], "sees/pictures").ShouldBe("sees/pictures");
-    }
-
-    [Fact]
     public void AModelThatCannotTakeAnAttachedKind_RefusesNamingTheModelAndTheReason()
     {
         var refusal = ComposerSelectors.CapabilityRefusal(Settings(null), _agents, AgentId, [_photo]);

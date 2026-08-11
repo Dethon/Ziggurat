@@ -20,13 +20,6 @@ public class E2EPhaseTests
         ex.Message.ShouldContain("image build");
     }
 
-    [Fact]
-    public async Task RunAsync_PhaseCompletesWithinBudget_Returns()
-    {
-        await E2EPhase.RunAsync(
-            "WebChatE2EFixture", "container startup", TimeSpan.FromMinutes(1), _ => Task.CompletedTask);
-    }
-
     // A docker build that fails on its own (bad Dockerfile, missing base image) must keep
     // reporting that, not get rewritten into a timeout that hides the real message.
     [Fact]

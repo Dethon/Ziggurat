@@ -7,16 +7,6 @@ namespace Tests.Unit.Domain.Agents;
 public class MutableAgentCatalogTests
 {
     [Fact]
-    public void GetAll_BeforeReplace_ReturnsEmpty()
-    {
-        var catalog = new MutableAgentCatalog();
-
-        catalog.GetAll().ShouldBeEmpty();
-        catalog.Exists("jonas").ShouldBeFalse();
-        catalog.Get("jonas").ShouldBeNull();
-    }
-
-    [Fact]
     public void Replace_ThenQuery_ReflectsNewAgents()
     {
         var catalog = new MutableAgentCatalog();

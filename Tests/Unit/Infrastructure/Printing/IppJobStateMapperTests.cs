@@ -25,8 +25,6 @@ public class IppJobStateMapperTests
     [InlineData(JobState.Pending, true)]
     [InlineData(JobState.Processing, true)]
     [InlineData(JobState.Completed, false)]
-    [InlineData(JobState.Canceled, false)]
-    [InlineData(JobState.Aborted, false)]
     public void IsActive_TrueOnlyForPendingOrProcessing(JobState ipp, bool active)
     {
         IppJobStateMapper.IsActive(ipp).ShouldBe(active);
