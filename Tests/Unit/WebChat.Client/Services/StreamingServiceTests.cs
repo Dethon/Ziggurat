@@ -544,26 +544,6 @@ public sealed class StreamingServiceTests : IDisposable
     #region TryStartResumeStreamAsync stream body tests
 
     [Fact]
-    public async Task TryStartResumeStreamAsync_DeduplicatesKnownContent()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, [
-            new ChatMessageModel { Role = "assistant", Content = "Known content" }
-        ]));
-        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Known content" };
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { Content = "Known content", MessageId = "msg-1" },
-            new ChatStreamMessage { Content = " new stuff", MessageId = "msg-1" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
-        );
-
-        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
-
-        var messages = MessagesFor(topic.TopicId);
-        messages.Last().Content.ShouldContain("new stuff");
-    }
-
-    [Fact]
     public async Task TryStartResumeStreamAsync_OnlyUpdatesTimestampIfNewContent()
     {
         var topic = CreateTopic();

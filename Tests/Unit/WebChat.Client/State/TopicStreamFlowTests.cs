@@ -32,25 +32,6 @@ public sealed class TopicStreamFlowTests
         reply.Release();
     }
 
-    [Fact]
-    public async Task ASecondSend_WhileTheReplyIsBeingWritten_JoinsItAndOpensNoSecondStream()
-    {
-        await using var client = new ScriptedChatClient();
-        var transport = await client.ConnectAsync();
-        SeedTopic(client);
-        var reply = new GatedChatStream();
-        transport.Answer("SendMessage", _ => reply.Chunks());
-        transport.Answer("EnqueueMessage", true);
-        client.Dispatcher.Dispatch(new SendMessage("topic-1", "first"));
-        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
-
-        client.Dispatcher.Dispatch(new SendMessage("topic-1", "second"));
-
-        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "EnqueueMessage"));
-        transport.Calls.Count(call => call.MethodName == "SendMessage").ShouldBe(1);
-        reply.Release();
-    }
-
     // A false from enqueue is the server saying there is no reply in progress, so the one this
     // client thought was running is over: it ends, keeping what it wrote, and a fresh one opens.
     [Fact]

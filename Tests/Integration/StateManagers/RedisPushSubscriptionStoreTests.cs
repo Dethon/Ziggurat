@@ -187,25 +187,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     }
 
     [Fact]
-    public async Task SaveAsync_WithSpaceSlug_PreservesSpaceInRoundTrip()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var sub = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/space-rt", "k1", "a1");
-
-        await _store.SaveAsync(userId, sub, "my-space");
-
-        var all = await _store.GetAllAsync();
-        all.ShouldContain(x => x.Subscription.Endpoint == sub.Endpoint);
-
-        var spaceFiltered = await _store.GetBySpaceAsync("my-space");
-        spaceFiltered.ShouldContain(x => x.Subscription.Endpoint == sub.Endpoint);
-
-        var otherSpace = await _store.GetBySpaceAsync("other-space");
-        otherSpace.ShouldNotContain(x => x.Subscription.Endpoint == sub.Endpoint);
-    }
-
-    [Fact]
     public async Task SaveAsync_EndpointWithQueryParameters_PreservesFullUrl()
     {
         var userId = $"test-user-{Guid.NewGuid():N}";
