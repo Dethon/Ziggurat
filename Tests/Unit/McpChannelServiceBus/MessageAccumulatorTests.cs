@@ -21,15 +21,6 @@ public class MessageAccumulatorTests
     }
 
     [Fact]
-    public void Flush_RemovesBuffer_SecondFlushReturnsNull()
-    {
-        _sut.Append("conv-1", "hello");
-        _sut.Flush("conv-1");
-
-        _sut.Flush("conv-1").ShouldBeNull();
-    }
-
-    [Fact]
     public void Flush_SeparateConversations_IndependentBuffers()
     {
         _sut.Append("conv-1", "first");

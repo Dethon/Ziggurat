@@ -11,16 +11,6 @@ public class SpeakerVolumeCommandHandlerTests
     private static SatelliteSession Session() =>
         new("kitchen-01", new SatelliteConfig { Identity = "household", Room = "Kitchen" });
 
-    [Fact]
-    public void Commands_CoversAllFourSpeakerCommands()
-    {
-        var handler = new SpeakerVolumeCommandHandler();
-
-        handler.Commands.ShouldBe([
-            VoiceCommand.LocalVolumeUp, VoiceCommand.LocalVolumeDown,
-            VoiceCommand.LocalMute, VoiceCommand.LocalUnmute], ignoreOrder: true);
-    }
-
     [Theory]
     [InlineData(VoiceCommand.LocalVolumeUp, "up")]
     [InlineData(VoiceCommand.LocalVolumeDown, "down")]

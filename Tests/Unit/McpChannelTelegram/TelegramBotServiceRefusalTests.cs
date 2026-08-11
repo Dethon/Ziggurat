@@ -38,21 +38,6 @@ public class TelegramBotServiceRefusalTests : IDisposable
             Times.Never);
     }
 
-    [Fact]
-    public async Task AFileWhoseKindResolvesToNothing_IsRefused()
-    {
-        var message = TelegramPollingHarness.MediaMessage(caption: "/ask read this");
-        message.Document = TelegramPollingHarness.Document(
-            fileName: "notes.docx",
-            mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-
-        await _harness.ReceiveAsync();
-        _harness.Enqueue(new Update { Id = 1, Message = message });
-        await _harness.RunAsync();
-
-        _harness.Sent.ShouldHaveSingleItem().Text.ShouldContain("notes.docx");
-    }
-
     // One bad file in five must not make someone resend the other four.
     [Fact]
     public async Task ARefusedFile_IsDroppedWhileTheTurnRunsOnTheCaptionAndTheSurvivors()

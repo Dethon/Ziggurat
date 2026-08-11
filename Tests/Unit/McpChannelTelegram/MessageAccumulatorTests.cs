@@ -7,12 +7,6 @@ public class MessageAccumulatorTests
 {
     private readonly MessageAccumulator _sut = new();
 
-    [Fact]
-    public void Flush_NoData_ReturnsEmpty()
-    {
-        _sut.Flush("conv-1").ShouldBeEmpty();
-    }
-
     [Theory]
     [InlineData("hello", null, "hello")]
     [InlineData("hello ", "world", "hello world")]

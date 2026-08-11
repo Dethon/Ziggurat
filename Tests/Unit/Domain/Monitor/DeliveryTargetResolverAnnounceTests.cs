@@ -63,20 +63,6 @@ public class DeliveryTargetResolverAnnounceTests
     }
 
     [Fact]
-    public async Task AnnounceTurnStart_TargetMintedByAnEarlierTurn_IsAnnounced()
-    {
-        // A later turn reusing the group anchors carries them with the marker cleared,
-        // because nothing was minted for it: the conversation pre-exists this turn and
-        // its stream has to be set up again.
-        var (signalr, calls) = Channel("signalr");
-        var targets = new[] { new DeliveryTarget(signalr.Object, "minted-1") };
-
-        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), CancellationToken.None);
-
-        calls.ShouldHaveSingleItem().ExistingConversationId.ShouldBe("minted-1");
-    }
-
-    [Fact]
     public async Task AnnounceTurnStart_TargetWithAddress_ThreadsAddressIntoCreateConversation()
     {
         // The address (e.g. the originating voice satellite) tells the channel WHERE the

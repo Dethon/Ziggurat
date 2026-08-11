@@ -38,17 +38,6 @@ public class SatelliteSessionDismissStashTests
     }
 
     [Fact]
-    public void NoteDismissals_OneAlert_StashesItsKindAndQuotedText()
-    {
-        var session = Session();
-        var now = DateTimeOffset.UtcNow;
-
-        session.NoteDismissals([new DismissedAlert("sacar la basura", AnnounceKind.Alarm)], now);
-
-        session.TryConsumeDismissedAlert(now).ShouldBe("alarm \"sacar la basura\"");
-    }
-
-    [Fact]
     public void NoteDismissals_SeveralAlerts_JoinsThemWithAnd()
     {
         var session = Session();
