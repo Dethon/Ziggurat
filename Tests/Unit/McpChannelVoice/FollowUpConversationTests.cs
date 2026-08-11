@@ -121,7 +121,7 @@ public class FollowUpConversationTests
         sut.OnWake(null);
         h.EndUtterance(); // utterance ended (speech)
 
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "end");
         h.Events.ShouldBe(["open-first", "voice-stopped", "dispatch-first", "end"]);
         h.Events.ShouldNotContain("timed-out");
 
@@ -566,6 +566,34 @@ public class FollowUpConversationTests
         h.Session.Mic.IsOpen.ShouldBeTrue();
 
         await StopAsync(sut, run);
+    }
+
+    // The events are appended from the conversation's own task, so how long the run takes to reach
+    // one is the machine's business. Sleeping a fixed fifty milliseconds and then asserting the
+    // whole sequence held until the suite began running enough at once to outlast it, and the
+    // failure reads as a wrong order rather than an early look: the list is simply still short.
+    //
+    // The copy is defensive because Events is a plain List being written to while this reads it —
+    // enumerating one mid-Add throws rather than tearing, so a throw here means "it grew, look
+    // again" and not a failure.
+    private static async Task WaitForEventAsync(Harness h, string terminal)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                if (h.Events.ToArray().Contains(terminal))
+                {
+                    return;
+                }
+            }
+            catch (InvalidOperationException)
+            {
+            }
+
+            await Task.Delay(10);
+        }
     }
 
     private static async Task StopAsync(FollowUpConversation sut, Task run)

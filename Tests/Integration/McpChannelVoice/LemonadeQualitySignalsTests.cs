@@ -42,6 +42,10 @@ public class LemonadeQualitySignalsTests(LemonadeFixture fixture, ITestOutputHel
         {
             BaseUrl = fixture.BaseUrl,
             Language = "es",
+            // The model the fixture's container pre-pulled. Naming it on both sides is the rule for
+            // this endpoint anywhere: ask for one the server did not warm and the decode either
+            // waits out a second model load or answers from a model nobody chose.
+            Model = LemonadeFixture.SttModel,
             RequestTimeout = TimeSpan.FromMinutes(10)
         };
         var stt = new OpenAiSpeechToText(
