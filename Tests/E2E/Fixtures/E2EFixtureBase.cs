@@ -11,6 +11,27 @@ public abstract class E2EFixtureBase : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // Launched alongside the containers rather than before them. The two have nothing to say to
+        // each other until a test asks for a page, and the stack is the run's long pole — every
+        // second Chromium spent starting was a second the first container had not begun. The
+        // fixture that boots the stack for everybody was the one paying it.
+        var fixtureName = GetType().Name;
+        var containers = Task.Run(async () =>
+        {
+            // The fixtures initialise concurrently and share per-tag image locks, so one of them
+            // spends most of this phase queued behind the other's base-sdk build having started no
+            // work of its own. Budgeting builds separately stops that wait from consuming the
+            // budget that exists for starting containers — which is what made the smaller-budget
+            // fixture give up first on a cold run while the other went on to pass.
+            await E2EPhase.RunAsync(fixtureName, "image build", ImageBuildTimeout, BuildImagesAsync);
+            await E2EPhase.RunAsync(fixtureName, "container startup", ContainerStartupTimeout, StartContainersAsync);
+        });
+
+        await Task.WhenAll(LaunchBrowserAsync(), containers);
+    }
+
+    private async Task LaunchBrowserAsync()
+    {
         var headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false";
 
         _playwright = await Playwright.CreateAsync();
@@ -30,15 +51,6 @@ public abstract class E2EFixtureBase : IAsyncLifetime
                 "--autoplay-policy=no-user-gesture-required"
             ]
         });
-
-        // The fixtures initialise concurrently and share per-tag image locks, so one of them
-        // spends most of this phase queued behind the other's base-sdk build having started no
-        // work of its own. Budgeting builds separately stops that wait from consuming the budget
-        // that exists for starting containers — which is what made the smaller-budget fixture
-        // give up first on a cold run while the other went on to pass.
-        var fixtureName = GetType().Name;
-        await E2EPhase.RunAsync(fixtureName, "image build", ImageBuildTimeout, BuildImagesAsync);
-        await E2EPhase.RunAsync(fixtureName, "container startup", ContainerStartupTimeout, StartContainersAsync);
     }
 
     // isMobile is not a synonym for hasTouch: it turns on Chromium's mobile emulation — the

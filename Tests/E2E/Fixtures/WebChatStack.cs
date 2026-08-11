@@ -452,42 +452,20 @@ internal sealed class WebChatStack
         }
     }
 
+    // Torn down together, because every second of this is wall clock: the last test has finished
+    // and the run is not over until the containers are gone. Stopping seven of them in a line was
+    // several seconds of the total spent after anything was still being tested. Nothing here waits
+    // on anything else here — only the network does, and it has to outlive what is attached to it.
     private async Task StopAsync()
     {
-        if (_whisper is not null)
-        {
-            await _whisper.DisposeAsync();
-        }
-
-        if (_caddy is not null)
-        {
-            await _caddy.DisposeAsync();
-        }
-
-        if (_webui is not null)
-        {
-            await _webui.DisposeAsync();
-        }
-
-        if (_agent is not null)
-        {
-            await _agent.DisposeAsync();
-        }
-
-        if (_mcpChannelSignalR is not null)
-        {
-            await _mcpChannelSignalR.DisposeAsync();
-        }
-
-        if (_mcpVault is not null)
-        {
-            await _mcpVault.DisposeAsync();
-        }
-
-        if (_redis is not null)
-        {
-            await _redis.DisposeAsync();
-        }
+        await Task.WhenAll(
+            _whisper is null ? Task.CompletedTask : _whisper.DisposeAsync().AsTask(),
+            _caddy is null ? Task.CompletedTask : _caddy.DisposeAsync().AsTask(),
+            _webui is null ? Task.CompletedTask : _webui.DisposeAsync().AsTask(),
+            _agent is null ? Task.CompletedTask : _agent.DisposeAsync().AsTask(),
+            _mcpChannelSignalR is null ? Task.CompletedTask : _mcpChannelSignalR.DisposeAsync().AsTask(),
+            _mcpVault is null ? Task.CompletedTask : _mcpVault.DisposeAsync().AsTask(),
+            _redis is null ? Task.CompletedTask : _redis.DisposeAsync().AsTask());
 
         if (_network is not null)
         {
