@@ -247,4 +247,66 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.Locator("textarea.chat-input")).ToHaveValueAsync("");
         await Assertions.Expect(page.Locator(".composer-hint")).ToBeHiddenAsync();
     }
+
+    // The microphone can be granted and the graph still fail to come up behind it — the worklet is
+    // fetched over the network, and a phone loses one whenever it feels like it. Everything the open
+    // got as far as acquiring is live at that moment: a real capture the person can see in the
+    // status bar, and a context holding an output stream of its own because the chain ends at the
+    // destination. The failure path is the only thing left holding either, and it drops the run on
+    // the floor: nothing else ever closes them, and the next press acquires another pair.
+    //
+    // Whether that is what wedges a phone is not settled — but a recording that failed must not
+    // leave the microphone open behind it either way, and this is the one leak we can see from here.
+    [SkippableFact]
+    public async Task AGraphThatFailsToComeUp_ClosesTheMicrophoneItHadAlreadyOpened()
+    {
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await OpenAsync();
+
+        // Every microphone the page is granted, and every context it builds, kept where the test can
+        // ask about them afterwards — the run object that held them is unreachable by then.
+        await page.EvaluateAsync(
+            """
+            () => {
+                window.__streams = [];
+                window.__contexts = [];
+                const open = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+                navigator.mediaDevices.getUserMedia = async constraints => {
+                    const stream = await open(constraints);
+                    window.__streams.push(stream);
+                    return stream;
+                };
+                const Ctx = window.AudioContext;
+                window.AudioContext = function (...args) {
+                    const ctx = new Ctx(...args);
+                    window.__contexts.push(ctx);
+                    return ctx;
+                };
+                // The worklet, and only the worklet: the microphone is granted exactly as it would
+                // be on the phone, and the graph falls over one step later.
+                AudioWorklet.prototype.addModule = () => Promise.reject(new Error('no worklet today'));
+            }
+            """);
+
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Task.Delay(HoldMs);
+        await TouchAsync(cdp, "touchEnd");
+
+        // The refusal is what says the failure path has run to the end; asserting the microphone
+        // before it would pass on a graph that simply had not finished failing yet.
+        await Assertions.Expect(page.Locator(".composer-refusal"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+
+        var opened = await page.EvaluateAsync<string[]>(
+            "() => window.__streams.flatMap(s => s.getTracks().map(t => t.readyState))");
+        opened.ShouldNotBeEmpty("the microphone was never granted, so the leak is not what was tested");
+        opened.ShouldAllBe(state => state == "ended");
+
+        var contexts = await page.EvaluateAsync<string[]>("() => window.__contexts.map(c => c.state)");
+        contexts.ShouldNotBeEmpty("no context was built, so the leak is not what was tested");
+        contexts.ShouldAllBe(state => state == "closed");
+    }
 }

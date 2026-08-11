@@ -223,6 +223,13 @@ window.dictation = {
             this._startClock(run);
         }).catch(err => {
             if (this._run === run) this._run = null;
+            // Whatever the open got as far as acquiring is still live here, and this is the last
+            // place holding it: the microphone may well have been granted before the graph fell
+            // over, and the context that fell over is holding an output stream of its own because
+            // the chain ends at the destination. Dropped on the floor they are unreachable — no
+            // later press, no discard and no visibility change can ever close them, and the next
+            // attempt simply acquires another pair.
+            this._teardown(run);
             // A discard while the microphone was still opening is not a failure to open it: the
             // press was already answered, by a mis-tap hint or by nothing at all.
             if (!run.ending) this._refuse(err);
@@ -456,7 +463,10 @@ window.dictation = {
     _teardown: function (run) {
         this._stopTracks(run);
         this._closeContext(run);
-        this._clearHints();
+        // The hints belong to whichever dictation is on screen now, not to the one being torn down.
+        // A run that ends late — a slow open finishing after its own discard, a failure arriving
+        // after the next press — would otherwise blank a strip a newer recording is already drawing.
+        if (this._run === null || this._run === run) this._clearHints();
     },
 
     _closeContext: function (run) {
