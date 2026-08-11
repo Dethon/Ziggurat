@@ -44,18 +44,11 @@ public class ToolServerExtensionsTests
         McpServerProbe.CallToolFilterCount(services => services.AddToolServer(new ProbeSettings("probe")))
             .ShouldBe(1);
 
-    // A dual-role server asks as a tool server and again as a channel server. Both of the real ones
-    // pass the same error shape today, so nothing changes — but the ordering has to be observable
-    // rather than assumed.
-    [Fact]
-    public void ADualRoleServer_EndsUpWithOneFilter() =>
-        McpServerProbe.CallToolFilterCount(services => services
-            .AddToolServer(new ProbeSettings("probe"), Marked("tool-server"))
-            .AddChannelServer(DeliveryPolicy.Broadcast, errorResult: Marked("channel-server")))
-            .ShouldBe(1);
-
-    // The dual-role ordering, over the wire: the tool-server call comes first on both real ones, so
-    // its error shape is the one a caller sees.
+    // A dual-role server asks as a tool server and again as a channel server, and ends up with one
+    // filter — the count is asserted over the two real dual-role servers by
+    // McpServerContractTests.EveryServer_HasExactlyOneCallToolFilter. What is left to pin here is
+    // the ordering, over the wire: the tool-server call comes first on both real ones, so its error
+    // shape is the one a caller sees.
     [Fact]
     public async Task ADualRoleServer_AnswersWithTheShapeTheFirstCallPassed()
     {

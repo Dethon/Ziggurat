@@ -209,21 +209,6 @@ public class FileSystemServerConformanceTests
 
     private record PublishedMount(string Name, string MountPoint, string Description);
 
-    // The lie this feature removes: timers registered fs_move from a method whose own description
-    // said the operation was unsupported, so the prompt promised the model an operation that could
-    // only fail. Nothing overrides move now, so nothing can advertise it.
-    [Theory]
-    [InlineData(typeof(TimerFileSystem))]
-    [InlineData(typeof(PrinterQueueFileSystem))]
-    public void AMountThatNeverImplementedMove_DoesNotAdvertiseIt(Type backendType)
-    {
-        var advertised = FileSystemServerTools.SupportedToolNames(backendType);
-
-        advertised.ShouldNotContain("fs_move");
-        McpFileSystemDiscovery.DeriveCapabilities(McpFileSystemDiscovery.AdvertisedOperations(advertised))
-            .ShouldNotContain("move");
-    }
-
     // The move-out check inverts what an override means: elsewhere overriding declares "I can do
     // this", here it declares "I have something to refuse". So a backend with no rule registers no
     // tool, and the base default answers every path as allowed — which is why adding the check

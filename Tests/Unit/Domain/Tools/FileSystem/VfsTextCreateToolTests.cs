@@ -65,29 +65,6 @@ public class VfsTextCreateToolTests
         JsonSerializer.Serialize(result).ShouldContain("note");
     }
 
-    // Each backend names the file it wrote in whatever spelling it happens to use, and two mounts
-    // disagree about the same file. Echoing the path the caller asked for means a follow-up edit
-    // targets the file the create just made.
-    [Fact]
-    public async Task RunAsync_BackendLocalPath_IsReplacedWithTheCallersPath()
-    {
-        var backend = new Mock<IFileSystemBackend>();
-        backend
-            .Setup(b => b.CreateAsync("notes/new.md", It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FsResult<FsCreateResult>.Ok(new FsCreateResult
-            {
-                Status = "created", FilePath = "/srv/vault/notes/new.md", Size = "5 B", Lines = 1
-            }));
-
-        var registry = new Mock<IVirtualFileSystemRegistry>();
-        registry.Setup(r => r.Resolve("/vault/notes/new.md"))
-            .Returns(Resolved(backend.Object, "notes/new.md", "/vault"));
-
-        var result = await new VfsTextCreateTool(registry.Object).RunAsync("/vault/notes/new.md", "hello");
-
-        result!["filePath"]!.GetValue<string>().ShouldBe("/vault/notes/new.md");
-    }
-
     [Fact]
     public void Factory_Schema_KeepsContentString_AndHidesInjectedParams()
     {

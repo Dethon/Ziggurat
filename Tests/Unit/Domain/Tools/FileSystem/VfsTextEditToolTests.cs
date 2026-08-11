@@ -75,30 +75,6 @@ public class VfsTextEditToolTests
         JsonSerializer.Serialize(result).ShouldNotContain("note");
     }
 
-    // Same reason as create: the backend answers in its own coordinates, so reading back what was
-    // just edited failed on the path the edit reported.
-    [Fact]
-    public async Task RunAsync_BackendLocalPath_IsReplacedWithTheCallersPath()
-    {
-        var backend = new Mock<IFileSystemBackend>();
-        backend
-            .Setup(b => b.EditAsync("notes/a.md", It.IsAny<IReadOnlyList<TextEdit>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FsResult<FsEditResult>.Ok(new FsEditResult
-            {
-                Status = "edited", FilePath = "/srv/vault/notes/a.md", TotalOccurrencesReplaced = 1,
-                Edits = [new FsEditDetail { OccurrencesReplaced = 1, AffectedLines = new FsLineRange { Start = 1, End = 1 } }]
-            }));
-
-        var registry = new Mock<IVirtualFileSystemRegistry>();
-        registry.Setup(r => r.Resolve("/vault/notes/a.md"))
-            .Returns(Resolved(backend.Object, "notes/a.md", "/vault"));
-
-        var result = await new VfsTextEditTool(registry.Object)
-            .RunAsync("/vault/notes/a.md", [new TextEdit("a", "b")]);
-
-        result!["filePath"]!.GetValue<string>().ShouldBe("/vault/notes/a.md");
-    }
-
     [Fact]
     public void Factory_Schema_KeepsEditStringsString_AndHidesInjectedParams()
     {

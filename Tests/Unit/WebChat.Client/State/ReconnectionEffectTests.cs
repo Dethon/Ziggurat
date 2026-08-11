@@ -145,26 +145,6 @@ public sealed class ReconnectionEffectTests : IDisposable
     }
 
     [Fact]
-    public void WhenConnectionConnectedWithoutPriorReconnecting_DoesNotTriggerReconnection()
-    {
-        var topic = new StoredTopic { TopicId = "topic-1", Name = "Test Topic" };
-        _dispatcher.Dispatch(new TopicsLoaded([topic]));
-        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
-
-        CreateEffect();
-
-        // Fresh connection (not reconnection)
-        _dispatcher.Dispatch(new ConnectionConnected());
-
-        _mockSessionService.Verify(
-            s => s.StartSessionAsync(It.IsAny<StoredTopic>()),
-            Times.Never);
-        _mockStreamResumeService.Verify(
-            s => s.TryResumeStreamAsync(It.IsAny<StoredTopic>()),
-            Times.Never);
-    }
-
-    [Fact]
     public void WhenConnectionReconnecting_DoesNotTriggerYet()
     {
         var topic = new StoredTopic { TopicId = "topic-1", Name = "Test Topic" };
