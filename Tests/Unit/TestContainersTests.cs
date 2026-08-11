@@ -40,6 +40,24 @@ public class TestContainersTests
             $"Use TestContainers.Container/Network so the containers group under {TestContainers.ProjectName}.");
     }
 
+    // A container the suite starts through the docker CLI inherits its image's labels, and the
+    // images the fixtures reuse were built by `docker compose -p jackbot`, which stamps its own
+    // project onto them. So a CLI-started container lands in the dev stack's group unless the run
+    // says otherwise on the command line.
+    [Fact]
+    public void EveryDockerRun_PassesTheProjectLabelsOnTheCommandLine()
+    {
+        var offenders = SuiteSources()
+            .Select(file => (file, text: File.ReadAllText(file)))
+            .Where(f => Regex.IsMatch(f.text, @"""docker""") && Regex.IsMatch(f.text, @"""run"""))
+            .Where(f => !f.text.Contains($"{nameof(TestContainers)}.{nameof(TestContainers.LabelArgs)}"))
+            .Select(f => Path.GetFileName(f.file))
+            .ToArray();
+
+        offenders.ShouldBeEmpty(
+            $"Pass TestContainers.LabelArgs so the containers group under {TestContainers.ProjectName}.");
+    }
+
     private static IEnumerable<string> SuiteSources()
     {
         var root = Path.GetDirectoryName(typeof(TestContainersTests).Assembly.Location)!;

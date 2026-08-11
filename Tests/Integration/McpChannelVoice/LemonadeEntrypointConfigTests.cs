@@ -75,6 +75,7 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
         List<string> args =
         [
             "run", "--rm", "--network", "none",
+            .. TestContainers.LabelArgs("lemonade-entrypoint"),
             "--entrypoint", "sh",
             "-e", "STT_CONFIG_ONLY=1",
             "-e", "LEMONADE_CONFIG_DIR=/cfg",

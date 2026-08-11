@@ -29,6 +29,13 @@ internal static class TestContainers
     public static NetworkBuilder Network() =>
         new NetworkBuilder().WithLabel(ProjectLabel, ProjectName);
 
+    // The same two labels for a container the suite starts by shelling out to `docker run`. It
+    // needs them more than a Testcontainers one does: labels are inherited from the image, and the
+    // images the fixtures reuse were built by the dev stack's compose project, which stamps its own
+    // name onto them — so an unlabelled run appears in Docker Desktop under jackbot.
+    public static IEnumerable<string> LabelArgs(string service) =>
+        ["--label", $"{ProjectLabel}={ProjectName}", "--label", $"{ServiceLabel}={service}"];
+
     private static ContainerBuilder Label(ContainerBuilder builder, string service) =>
         builder.WithLabel(ProjectLabel, ProjectName).WithLabel(ServiceLabel, service);
 
