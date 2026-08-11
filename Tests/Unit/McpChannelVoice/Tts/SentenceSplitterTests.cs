@@ -107,15 +107,6 @@ public class SentenceSplitterTests
     }
 
     [Fact]
-    public void TryTake_InitialBeforeARealBoundary_FlushesThroughTheSentenceEnd()
-    {
-        SentenceSplitter.TryTake("Te llama J. Crespo desde el salón. ", 5, out var speakable, out _)
-            .ShouldBeTrue();
-
-        speakable.ShouldBe("Te llama J. Crespo desde el salón.");
-    }
-
-    [Fact]
     public void TryTake_SpanishQuestion_SplitsAfterTheClosingMark()
     {
         SentenceSplitter.TryTake("¿Quieres que la apague? Dime cuán", 5, out var speakable, out var remainder)

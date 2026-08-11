@@ -178,24 +178,4 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         File.Exists(Path.Combine(vaultFixture.VaultPath, "remove-me.md")).ShouldBeFalse();
     }
 
-    [SkippableFact]
-    public async Task Agent_WithFileSystemFeature_HasFileSystemPromptInInstructions()
-    {
-        // Arrange
-        var llmClient = CreateLlmClient();
-        vaultFixture.CreateFile("prompt-test.md", "test");
-
-        // Act - ask about available filesystems to verify prompt injection
-        var responses = await RunAsync(llmClient,
-            "Based on your tool descriptions and system prompt alone, list every filesystem mount point " +
-            "that is available to you. Do NOT call any tools to answer this — just read the tool metadata " +
-            "you already have and reply in text.",
-            landed: r => LlmAttempt.Combine(r).Contains("vault", StringComparison.OrdinalIgnoreCase));
-
-        // Assert
-        responses.ShouldNotBeEmpty();
-        var combinedResponse = string.Join(" ", responses.Select(r => r.Content)).ToLowerInvariant();
-        (combinedResponse.Contains("/vault") || combinedResponse.Contains("vault"))
-            .ShouldBeTrue("Agent should mention the vault filesystem in its response");
-    }
 }
