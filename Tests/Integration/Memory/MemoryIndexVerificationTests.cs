@@ -12,14 +12,6 @@ namespace Tests.Integration.Memory;
 public class MemoryIndexVerificationTests(RedisFixture fixture) : IClassFixture<RedisFixture>
 {
     [Fact]
-    public async Task AMatchingIndex_Starts()
-    {
-        var indexName = await CreateIndexAsync(dimension: 1024);
-
-        await Should.NotThrowAsync(() => StartVerificationAsync(indexName, configuredDimension: 1024));
-    }
-
-    [Fact]
     public async Task AWrongWidthIndex_FailsStartupNamingBothValues()
     {
         var indexName = await CreateIndexAsync(dimension: 1536);

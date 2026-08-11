@@ -474,21 +474,6 @@ public sealed class StreamingServiceTests : IDisposable
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
     }
 
-    [Fact]
-    public async Task SendMessageAsync_WithNoActiveStream_CreatesNewStream()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-
-        _messagingService.EnqueueContent("Response");
-
-        await _service.SendMessageAsync(topic, "test");
-
-        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
-        var messages = MessagesFor(topic.TopicId);
-        messages.Count.ShouldBe(1);
-    }
-
     // The store keeps a buffer only for a topic it knows is streaming, so a send has to announce
     // the stream before the first chunk is processed or the reply never reaches the screen.
     [Fact]

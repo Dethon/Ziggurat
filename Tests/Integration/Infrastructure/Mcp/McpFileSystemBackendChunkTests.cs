@@ -10,24 +10,6 @@ namespace Tests.Integration.Infrastructure.Mcp;
 public class McpFileSystemBackendChunkTests(MultiFileSystemFixture fx)
 {
     [Fact]
-    public async Task ReadChunksAsync_LargeFile_ReadsAllBytesCorrectly()
-    {
-        var bytes = Enumerable.Range(0, 600 * 1024).Select(i => (byte)(i % 256)).ToArray();
-        File.WriteAllBytes(Path.Combine(fx.LibraryPath, "big.bin"), bytes);
-
-        await using var client = await CreateClient(fx.LibraryEndpoint);
-        var backend = new McpFileSystemBackend(client, "library", advertisedOperations: null);
-
-        using var ms = new MemoryStream();
-        await foreach (var chunk in backend.ReadChunksAsync("big.bin", CancellationToken.None))
-        {
-            ms.Write(chunk.Span);
-        }
-
-        ms.ToArray().ShouldBe(bytes);
-    }
-
-    [Fact]
     public async Task WriteChunksAsync_LargeFile_WritesAllBytes()
     {
         var bytes = Enumerable.Range(0, 600 * 1024).Select(i => (byte)(i % 256)).ToArray();

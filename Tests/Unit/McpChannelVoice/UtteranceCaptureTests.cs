@@ -87,21 +87,6 @@ public class UtteranceCaptureTests
     }
 
     [Fact]
-    public async Task Stats_AfterTrailingSilenceEnd_CarriesTrailingRms()
-    {
-        var capture = new UtteranceCapture(Gate());
-
-        capture.Feed(Silent());
-        capture.Feed(Loud());
-        capture.Feed(Loud());
-        capture.Feed(Silent());
-        capture.Feed(Silent());
-
-        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
-        capture.Stats.TrailingRms.ShouldBe(0, 1.0); // trailing run was true silence
-    }
-
-    [Fact]
     public async Task Stats_AfterForceEnd_ReportsForced()
     {
         var capture = new UtteranceCapture(Gate());

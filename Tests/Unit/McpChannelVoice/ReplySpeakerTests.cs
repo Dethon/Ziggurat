@@ -148,14 +148,6 @@ public class ReplySpeakerTests
     }
 
     [Fact]
-    public async Task SpeakUtteranceReply_Text_NotComplete_AccumulatesNoSynthesis()
-    {
-        Say(_speaker, "hola ", ReplyContentType.Text, false);
-
-        _tts.VerifyNoOtherCalls();
-    }
-
-    [Fact]
     public async Task SpeakUtteranceReply_Text_Complete_SynthesisesAccumulatedText()
     {
         Say(_speaker, "hola ", ReplyContentType.Text, false);

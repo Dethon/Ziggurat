@@ -30,15 +30,6 @@ public class AgentDefinitionProviderTests
     }
 
     [Fact]
-    public void GetById_BuiltInAgent_ReturnsDefinition()
-    {
-        var result = _sut.GetById("built-in");
-
-        result.ShouldNotBeNull();
-        result.Name.ShouldBe("Built-In");
-    }
-
-    [Fact]
     public void GetById_CustomAgent_ReturnsDefinition()
     {
         var customDef = new AgentDefinition

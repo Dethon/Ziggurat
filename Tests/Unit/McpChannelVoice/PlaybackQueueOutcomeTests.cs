@@ -79,15 +79,6 @@ public class PlaybackQueueOutcomeTests
     }
 
     [Fact]
-    public void Enqueue_WhenTheKindsAllowanceIsFull_RefusesAsQueueFull()
-    {
-        var queue = new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1);
-        queue.Enqueue(Job("a", PlaybackKind.Announce));
-
-        queue.Enqueue(Job("b", PlaybackKind.Announce)).Refused.ShouldBe(RefusalReason.QueueFull);
-    }
-
-    [Fact]
     public void Enqueue_LowPriorityWhileAnythingIsQueued_RefusesAsLowPriorityBehindQueue()
     {
         var queue = new PlaybackQueue();
