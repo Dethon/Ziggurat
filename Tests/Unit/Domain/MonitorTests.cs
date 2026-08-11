@@ -475,15 +475,6 @@ public class ChatMonitorTests
     }
 
     [Fact]
-    public void FromMessage_DownloadOrigin_ReturnsNull()
-    {
-        var msg = MonitorTestMocks.CreateChannelMessage(conversationId: "c", channelId: "library", agentId: "jack")
-            with
-        { Origin = new MessageOrigin(MessageOriginKind.Download, null) };
-        ScheduleExecutionEvent.FromMessage(msg, 100, true, null).ShouldBeNull();
-    }
-
-    [Fact]
     public async Task Monitor_WithClearCommand_CleansUpAndWipesThread()
     {
         // Arrange

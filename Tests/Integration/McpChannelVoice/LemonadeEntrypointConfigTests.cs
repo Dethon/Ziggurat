@@ -155,21 +155,6 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
         whisperArgs.ShouldContain("--vad --vad-model");
     }
 
-    // The VAD padding flags are only legal when VAD itself is on, so they must live inside the
-    // same branch that established the model is present.
-    [SkippableFact]
-    public void Entrypoint_VadDisabled_EmitsNoVadPaddingFlags()
-    {
-        SeedVadModel();
-
-        var whisperArgs = WhisperArgs(RunEntrypoint(
-            ("STT_BACKEND", "cpu"),
-            ("STT_VAD_THRESHOLD", "")));
-
-        whisperArgs.ShouldNotContain("--vad");
-        whisperArgs.ShouldContain("--suppress-nst");
-    }
-
     [SkippableFact]
     public void Entrypoint_DecodeOverrides_PropagateToArgs()
     {

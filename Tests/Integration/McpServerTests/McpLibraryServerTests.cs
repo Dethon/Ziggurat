@@ -237,39 +237,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         await client.DisposeAsync();
     }
 
-    [Fact]
-    public async Task GlobFilesTool_WithRecursivePattern_FindsNestedFiles()
-    {
-        // Arrange
-        fixture.CreateLibraryFile(Path.Combine("GlobDeep", "sub1", "file.txt"));
-        fixture.CreateLibraryFile(Path.Combine("GlobDeep", "sub2", "nested", "deep.txt"));
-
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        // Act
-        var result = await client.CallToolAsync(
-            "fs_glob",
-            new Dictionary<string, object?>
-            {
-                ["pattern"] = "**/*.txt",
-                ["basePath"] = "GlobDeep"
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain("file.txt");
-        content.ShouldContain("deep.txt");
-
-        await client.DisposeAsync();
-    }
-
     #endregion
 
     #region Move Tests

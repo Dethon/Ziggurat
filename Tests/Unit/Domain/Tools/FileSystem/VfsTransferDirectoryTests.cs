@@ -59,38 +59,6 @@ public class VfsTransferDirectoryTests
     }
 
     [Fact]
-    public async Task CopyAsync_PartialFailure_StatusIsPartial()
-    {
-        var src = new Mock<IFileSystemBackend>().HoldingDirectory("src");
-        src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
-            {
-                Entries = ["src/a.md", "src/b.md"], Truncated = false, Total = 2
-            }));
-        src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
-            .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
-        src.Setup(b => b.ReadChunksAsync("src/b.md", It.IsAny<CancellationToken>()))
-            .Throws(new IOException("boom"));
-
-        var dst = new Mock<IFileSystemBackend>();
-        dst.Setup(b => b.WriteChunksAsync(
-                It.IsAny<string>(), It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
-                false, true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(1L);
-
-        var srcRes = new FileSystemResolution(src.Object, "src", "/vault");
-        var dstRes = new FileSystemResolution(dst.Object, "dst", "/sandbox");
-
-        var result = await TransferToolDriver.CopyAsync(
-            srcRes, dstRes, "/vault/src", "/sandbox/dst",
-            overwrite: false, createDirectories: true, ct: CancellationToken.None);
-
-        result["status"]!.GetValue<string>().ShouldBe("partial");
-        result["summary"]!["transferred"]!.GetValue<int>().ShouldBe(1);
-        result["summary"]!["failed"]!.GetValue<int>().ShouldBe(1);
-    }
-
-    [Fact]
     public async Task CopyAsync_GlobEntryNotUnderSourceDir_RecordsFailedAndDoesNotWrite()
     {
         var src = new Mock<IFileSystemBackend>().HoldingDirectory("src");

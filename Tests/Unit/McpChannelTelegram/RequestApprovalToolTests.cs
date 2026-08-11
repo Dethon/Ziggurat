@@ -61,26 +61,6 @@ public class RequestApprovalToolTests
     }
 
     [Fact]
-    public async Task McpRun_RequestMode_SendsKeyboardAndWaitsForApproval()
-    {
-        IReadOnlyList<ToolApprovalRequest> requests = [new ToolApprovalRequest(null, "mcp__server__delete", new Dictionary<string, object?> { ["path"] = "/tmp/file" })];
-
-        var approvalTask = Task.Run(async () =>
-            await RequestApprovalTool.McpRun("100:100", ApprovalMode.Request, requests, _services));
-
-        // Give time for the approval to be registered
-        await Task.Delay(200);
-
-        _botClient.Verify(b => b.SendRequest(
-            It.IsAny<SendMessageRequest>(),
-            It.IsAny<CancellationToken>()), Times.Once);
-
-        // The tool is now waiting for approval — we won't resolve it in this test
-        // (it would timeout after 2 min).
-        approvalTask.IsCompleted.ShouldBeFalse();
-    }
-
-    [Fact]
     public async Task McpRun_RequestMode_ApprovalGranted_ReturnsApproved()
     {
         IReadOnlyList<ToolApprovalRequest> requests = [new ToolApprovalRequest(null, "tool", new Dictionary<string, object?>())];

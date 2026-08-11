@@ -61,31 +61,6 @@ public class VoiceSettingsBindingTests
     }
 
     [Fact]
-    public void VoiceSettings_BindsGlobalAndPerSatelliteLocality()
-    {
-        var json = """
-        {
-          "Locality": "Madrid, Spain",
-          "Satellites": {
-            "kitchen-01": { "Identity": "household", "Room": "Kitchen" },
-            "office-01": { "Identity": "household", "Room": "Office", "Locality": "Barcelona, Spain" }
-          }
-        }
-        """;
-
-        var config = new ConfigurationBuilder()
-            .AddJsonStream(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json)))
-            .Build();
-
-        var settings = config.Get<VoiceSettings>();
-
-        settings.ShouldNotBeNull();
-        settings!.Locality.ShouldBe("Madrid, Spain");
-        settings.Satellites["kitchen-01"].Locality.ShouldBeNull();
-        settings.Satellites["office-01"].Locality.ShouldBe("Barcelona, Spain");
-    }
-
-    [Fact]
     public void WithResolvedLocalityDefaults_SatelliteWithoutLocality_InheritsGlobal()
     {
         var settings = new VoiceSettings

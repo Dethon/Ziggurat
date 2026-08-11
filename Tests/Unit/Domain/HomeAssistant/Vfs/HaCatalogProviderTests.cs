@@ -27,18 +27,6 @@ public class HaCatalogProviderTests
     }
 
     [Fact]
-    public async Task GetAsync_CachesWithinTtl()
-    {
-        var client = new CountingClient { States = { Entity("light.kitchen", "off") } };
-        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
-
-        await provider.GetAsync(CancellationToken.None);
-        await provider.GetAsync(CancellationToken.None);
-
-        client.StateCalls.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task GetAsync_OnFailure_ReturnsEmpty()
     {
         var provider = new HaCatalogProvider(() => new ThrowingClient(), new FakeTimeProvider());

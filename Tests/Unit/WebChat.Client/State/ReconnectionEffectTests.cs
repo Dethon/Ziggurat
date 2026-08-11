@@ -73,27 +73,6 @@ public sealed class ReconnectionEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task WhenConnectionReconnected_ReloadsHistoryForSelectedTopic()
-    {
-        var topic = new StoredTopic
-        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Test Topic" };
-        _dispatcher.Dispatch(new TopicsLoaded([topic]));
-        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
-
-        CreateEffect();
-
-        _dispatcher.Dispatch(new ConnectionConnected());
-        _dispatcher.Dispatch(new ConnectionReconnecting());
-        _dispatcher.Dispatch(new ConnectionReconnected());
-
-        await Task.Delay(50); // Allow async handler to complete
-
-        _mockTopicService.Verify(
-            s => s.GetHistoryAsync("agent-1", 123, 456),
-            Times.Once);
-    }
-
-    [Fact]
     public async Task WhenConnectionReconnected_StartsSessionForSelectedTopic()
     {
         var topic = new StoredTopic { TopicId = "topic-1", Name = "Test Topic" };

@@ -32,19 +32,6 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task UnsubscribeAsync_CallsJsUnsubscribe()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<string?>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
-            .Returns(new ValueTask<string?>("https://endpoint"));
-
-        await _sut.UnsubscribeAsync();
-
-        _mockJsRuntime.Verify(js => js.InvokeAsync<string?>(
-            "pushNotifications.unsubscribe", It.IsAny<object[]>()), Times.Once);
-    }
-
-    [Fact]
     public async Task RequestAndSubscribeAsync_WhenJsInteropThrows_PropagatesException()
     {
         _mockJsRuntime

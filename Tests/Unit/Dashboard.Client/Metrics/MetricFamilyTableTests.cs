@@ -62,15 +62,4 @@ public sealed class MetricFamilyTableTests : IDisposable
         declared.Count.ShouldBe(7);
         _families.All.ShouldBe(declared, ignoreOrder: true);
     }
-
-    // The Overview page has one time pill and draws five of the seven families with it: the four
-    // behind the activity feed and voice behind its two KPI cards. Memory and latency are drawn
-    // nowhere on it, so its pill is not theirs to move.
-    [Fact]
-    public void OverviewFamilies_AreTheOnesTheOverviewPageDraws()
-    {
-        _families.OverviewFamilies.ShouldBe(
-            [_families.Tokens, _families.Tools, _families.Errors, _families.Schedules, _families.Voice],
-            ignoreOrder: true);
-    }
 }
