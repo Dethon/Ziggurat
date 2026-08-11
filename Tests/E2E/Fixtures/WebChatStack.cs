@@ -192,7 +192,13 @@ internal sealed class WebChatStack
         var agentImageName = E2EImages.Agent.ImageName;
         var webuiImageName = E2EImages.WebUi.ImageName;
 
-        _redis = new ContainerBuilder("redis/redis-stack-server:latest")
+        // Plain redis rather than redis-stack. The stack image carries RediSearch and RedisJSON and
+        // takes several seconds longer to come up, and this stack asks for neither: the injected
+        // agent settings configure no memory, so nothing here builds an index or stores a document.
+        // It was the longest of the three roots and so the first thing the whole E2E chain waited
+        // on — swapping it took the stack's boot from 27.7s to 14.0s and the E2E suite from 76s to
+        // 61s. Restore the stack image the moment this stack grows a memory feature.
+        _redis = new ContainerBuilder("redis:7-alpine")
             .WithName($"redis-{Guid.NewGuid():N}")
             .WithNetwork(_network)
             .WithNetworkAliases("redis")
