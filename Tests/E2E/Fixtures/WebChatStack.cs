@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Domain.DTOs.WebChat;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
@@ -21,7 +22,7 @@ namespace Tests.E2E.Fixtures;
 // asks first) and the containers are refcounted, torn down when the last collection lets go.
 //
 // Concurrency across collections is safe because a test's server-side state is scoped to the user
-// it picks, and NextUserIndex hands out a distinct one per test across every collection.
+// it picks, and each collection reserves its own block of user identities from this stack.
 internal sealed class WebChatStack
 {
     private static readonly Lock _gate = new();
@@ -40,13 +41,21 @@ internal sealed class WebChatStack
 
     private int _sliceIndex = -1;
 
-    // A user identity is the unit of server-side isolation between tests, so two collections
-    // running at once must never draw the same one: a topic touched by one of them sorts to the
-    // top of the other's sidebar mid-assertion. Each collection reserves its own block instead of
-    // sharing a counter, which makes disjointness structural rather than a matter of how the
-    // interleaving happened to land. The blocks are sized so a collection reuses an identity no
-    // more often than the single serial chain used to.
-    public const int UsersPerCollection = 8;
+    // A space is what separates one collection's conversations from another's. The sidebar asks
+    // GetAllTopics(agentId, spaceSlug) — it is scoped by agent and space and not by user — so a
+    // topic the chat suite renamed was appearing at the top of the gesture suite's sidebar and
+    // being tapped instead of the row that suite had just made. Per-collection users do not fix
+    // that and did not; a space is the boundary the application itself draws, so each collection
+    // takes one. They must be configured on the webui or the client bounces back to the default.
+    private static readonly string[] _spaces = ["alpha", "bravo", "charlie"];
+
+    // A user identity is cheap — two environment variables — so no test needs to inherit one, and
+    // a block is sized past the number of tests in its collection so none is handed out twice. A
+    // pending approval is held against its topic, and a page opening as a user who already has
+    // topics can be handed one, which is how a test that never asked for an approval met the
+    // full-viewport modal and clicked a button that detached from under it. Raise these when a
+    // collection grows past its block rather than letting the counter wrap.
+    public const int UsersPerCollection = 24;
     public const int CollectionSlices = 3;
     public const int UserCount = UsersPerCollection * CollectionSlices;
 
@@ -69,10 +78,13 @@ internal sealed class WebChatStack
     // cap of its own.
     public TimeSpan RecordingCap { get; } = TimeSpan.FromSeconds(4);
 
-    // The first dropdown index of a caller's own block. Reserved once per collection, in whatever
-    // order the collections start.
-    public int ReserveUserBlock() =>
-        (int)((uint)Interlocked.Increment(ref _sliceIndex) % CollectionSlices) * UsersPerCollection;
+    // A collection's own slice of the stack: the first dropdown index of its block of users, and
+    // the space its pages live in. Reserved once per collection, in whatever order they start.
+    public (int UserBlock, string Space) ReserveSlice()
+    {
+        var slice = (int)((uint)Interlocked.Increment(ref _sliceIndex) % CollectionSlices);
+        return (slice * UsersPerCollection, _spaces[slice]);
+    }
 
     // Both phases are memoized separately so each keeps the caller's own budget: an image build is
     // allowed twenty minutes and a container start five, and folding them together would have a
@@ -295,6 +307,15 @@ internal sealed class WebChatStack
             .WithEnvironment(
                 $"USERS__{index}__AVATARURL",
                 $"https://api.dicebear.com/7.x/bottts/svg?seed=test{index}"));
+        // These replace the image's own Spaces array element by element rather than adding to it,
+        // so "default" has to be restated or a page that lands on "/" resolves no space at all.
+        webui = _spaces
+            .Prepend("default")
+            .Index()
+            .Aggregate(webui, (builder, entry) => builder
+                .WithEnvironment($"SPACES__{entry.Index}__SLUG", entry.Item)
+                .WithEnvironment($"SPACES__{entry.Index}__NAME", entry.Item)
+                .WithEnvironment($"SPACES__{entry.Index}__ACCENTCOLOR", SpaceConfig.DefaultAccentColor));
         _webui = webui
             // Empty string: browser falls back to relative /hubs/chat, which Caddy routes to mcp-channel-signalr
             .WithEnvironment("AGENTURL", "")

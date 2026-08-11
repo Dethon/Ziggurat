@@ -11,7 +11,10 @@ public class WebChatE2EFixture : E2EFixtureBase
     private WebChatStack Stack =>
         _stack ?? throw new InvalidOperationException("Stack not acquired. Call InitializeAsync first.");
 
-    public string WebChatUrl => _stack?.WebChatUrl ?? "";
+    // The collection's own space, so its conversations are not in the sidebar the collection
+    // running beside it is reading. Tests navigate here and nowhere else.
+    public string WebChatUrl =>
+        _stack is { WebChatUrl: { Length: > 0 } url } ? url + _space : "";
 
     public string Transcript
     {
@@ -29,11 +32,12 @@ public class WebChatE2EFixture : E2EFixtureBase
 
     public TimeSpan RecordingCap => Stack.RecordingCap;
 
-    // Walks this collection's own block of user identities. Kept local to the fixture — and so to
-    // the collection — because a collection's tests run one at a time, which is what makes reusing
-    // an identity within the block safe and sharing one across blocks not.
+    // Walks this collection's own block of user identities, one per test and never back. The
+    // modulo is a backstop for a collection that outgrows its block, not the intended path — see
+    // WebChatStack for what a reused identity costs.
     private int _userIndex = -1;
     private int _userBlock;
+    private string _space = "";
 
     public int NextUserIndex() =>
         _userBlock + (int)((uint)Interlocked.Increment(ref _userIndex) % WebChatStack.UsersPerCollection);
@@ -43,17 +47,18 @@ public class WebChatE2EFixture : E2EFixtureBase
     protected override async Task StartContainersAsync(CancellationToken ct)
     {
         _stack = await WebChatStack.AcquireAsync(ct);
-        _userBlock = _stack.ReserveUserBlock();
+        (_userBlock, _space) = _stack.ReserveSlice();
     }
 
     protected override Task StopContainersAsync() => WebChatStack.ReleaseAsync();
 }
 
 // The WebChat E2E classes are split across collections so they run at once against the one stack
-// rather than as a single serial chain, which was the run's critical path. The split is by shared
-// state, not by size: the dictation suite is alone because it is the only one that writes the
-// whisper stub's transcript, and the two gesture suites sit together because they drive the same
-// mobile drawer.
+// rather than as a single serial chain, which was the run's critical path.
+//
+// The split is by shared state rather than by size: the dictation suite is alone because it is the
+// only one that writes the whisper stub's transcript, and the two gesture suites sit together
+// because they drive the same mobile drawer.
 [CollectionDefinition(WebChatE2ECollections.Chat)]
 public class WebChatE2EChatCollection : ICollectionFixture<WebChatE2EFixture>;
 
