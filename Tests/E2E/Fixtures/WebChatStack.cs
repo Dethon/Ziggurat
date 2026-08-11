@@ -199,7 +199,6 @@ internal sealed class WebChatStack
             .WithPortBinding(6379, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(6379))
             .Build();
-        await _redis.StartAsync(ct);
 
         _mcpVault = new ContainerBuilder(mcpVaultImageName)
             .WithNetwork(_network)
@@ -208,9 +207,13 @@ internal sealed class WebChatStack
             .WithPortBinding(8080, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
             .Build();
-        await _mcpVault.StartAsync(ct);
 
-        var whisperPort = await StartWhisperStubAsync();
+        // Started together because nothing here waits on anything else here: redis and the vault
+        // are roots of the graph and the whisper stub runs in this process. Starting them in a line
+        // spent each one's wait doing nothing, and redis alone is the longest of the three.
+        var whisperPortTask = StartWhisperStubAsync();
+        await Task.WhenAll(_redis.StartAsync(ct), _mcpVault.StartAsync(ct), whisperPortTask);
+        var whisperPort = await whisperPortTask;
 
         _mcpChannelSignalR = new ContainerBuilder(signalRImageName)
             .WithNetwork(_network)
@@ -296,7 +299,6 @@ internal sealed class WebChatStack
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilMessageIsLogged("Application started"))
             .Build();
-        await _agent.StartAsync(ct);
 
         var webui = new ContainerBuilder(webuiImageName)
             .WithNetwork(_network)
@@ -322,7 +324,11 @@ internal sealed class WebChatStack
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/manifest.webmanifest")))
             .Build();
-        await _webui.StartAsync(ct);
+
+        // The webui serves files and reaches nothing, so it never had to follow the agent — and the
+        // agent's wait is for a log line the webui cannot affect. Caddy is what needs them both,
+        // and it is next.
+        await Task.WhenAll(_agent.StartAsync(ct), _webui.StartAsync(ct));
 
         var testCaddyfile =
             ":80 {\n" +
