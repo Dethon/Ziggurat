@@ -330,6 +330,88 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
         Fixture.TranscriptionStatus = 200;
     }
 
+    // Which failures are allowed to turn the microphone off for the rest of the page, and which are
+    // not. The control stops trying only for the two things that will still be true on the next
+    // press: a permission that was refused, and a browser without the APIs to record at all.
+    //
+    // Everything else is the device, and the device recovers. A phone that cannot open its
+    // microphone this second — the input held by a call, an audio server that has just restarted,
+    // no input enumerated yet after a Bluetooth headset went away — can open it perfectly well a
+    // moment later. Latching on one of those is how a working phone ends up holding a dead control
+    // it can only get back by reloading, which is not a thing anyone thinks to do; and the single
+    // sentence it used to answer with covered four unrelated faults, so nobody could tell which had
+    // happened. The name is the whole diagnosis when the phone is the only place it reproduces.
+    [SkippableFact]
+    public async Task AFailedOpen_LatchesOnlyForARefusedPermissionAndNamesWhatElseWentWrong()
+    {
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "el micrófono volvió";
+
+        var page = await OpenAsync();
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = page.Locator("[data-testid=dictation-mic]");
+        var refusal = page.Locator(".composer-refusal");
+
+        // Once, and only once: the press after it meets the microphone the device really has, which
+        // is the half of the rule that a latch would silently take away.
+        await page.EvaluateAsync(
+            """
+            () => {
+                const open = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+                let failed = false;
+                navigator.mediaDevices.getUserMedia = constraints => {
+                    if (failed) return open(constraints);
+                    failed = true;
+                    const error = new Error('Requested device not found');
+                    error.name = 'NotFoundError';
+                    return Promise.reject(error);
+                };
+            }
+            """);
+
+        var centre = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        await TouchAsync(cdp, "touchStart", Point(centre.X, centre.Y));
+        await Task.Delay(HoldMs);
+        await TouchAsync(cdp, "touchEnd");
+
+        await Assertions.Expect(refusal)
+            .ToContainTextAsync("NotFoundError", new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
+        await Assertions.Expect(mic).ToBeEnabledAsync();
+
+        // And the control really does still work, rather than merely looking as though it might.
+        await DictateAsync(cdp, page, HoldMs);
+        await Assertions.Expect(page.Locator("textarea.chat-input"))
+            .ToHaveValueAsync("el micrófono volvió", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+
+        // The words the dictation just delivered are still in the box, and a composer with text in
+        // it offers send rather than the microphone — so they go, or there is nothing to press.
+        await page.Locator("textarea.chat-input").FillAsync(string.Empty);
+        await Assertions.Expect(mic).ToBeVisibleAsync();
+
+        // The other side of the rule, last because there is no way back from it: a refused
+        // permission will still be refused on the next press, so the control stops asking.
+        await page.EvaluateAsync(
+            """
+            () => {
+                navigator.mediaDevices.getUserMedia = () => {
+                    const error = new Error('Permission denied');
+                    error.name = 'NotAllowedError';
+                    return Promise.reject(error);
+                };
+            }
+            """);
+
+        await TouchAsync(cdp, "touchStart", Point(centre.X, centre.Y));
+        await Task.Delay(HoldMs);
+        await TouchAsync(cdp, "touchEnd");
+
+        await Assertions.Expect(refusal)
+            .ToContainTextAsync("permission was refused",
+                new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
+        await Assertions.Expect(mic).ToBeDisabledAsync();
+    }
+
     // The strip takes the textarea's place rather than sitting above it, so the composer must not
     // grow when the microphone opens — everything above it would jump at the worst moment. The
     // strip and the microphone then stand side by side, so a strip that is shorter than the button

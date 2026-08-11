@@ -579,17 +579,36 @@ window.dictation = {
 
     // ---- refusals ----
 
+    // Only two failures are still true on the next press, and only they may turn the control off
+    // for the rest of the page: a permission that was refused, and a browser with nothing to record
+    // with — the one _open throws itself, a page away from any device.
+    //
+    // Everything else is the device of the moment and recovers with it. NotFoundError used to be
+    // read as a browser that cannot record, but it is a phone that has no input to give right now:
+    // an audio server that has just come back, a headset that has just gone away, an input a call is
+    // holding. Latched on one of those, the microphone stays dead until the page is reloaded, which
+    // nobody thinks to do — least of all on a phone, where the app is reopened rather than loaded.
     _refuse: function (err) {
         const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
-        const unsupported = !err || err.unsupported || err.name === 'NotFoundError';
-        if (denied || unsupported) {
+        if (denied || (err && err.unsupported)) {
             this._unavailable = true;
             this._invoke('Unavailable', denied
                 ? 'I cannot use the microphone here: permission was refused.'
                 : 'This browser will not let me record here.');
             return;
         }
-        this._invoke('Failed', 'I could not start recording.');
+        this._invoke('Failed', 'I could not start recording' + this._named(err) + '.');
+    },
+
+    // One sentence used to cover a device that would not start, a platform that aborted the start,
+    // a worklet that would not load and a graph in the wrong state — four faults reported as one
+    // and diagnosable as none. On a phone the words on screen are the whole instrument, so the
+    // failure names itself there rather than in a console nobody can open.
+    _named: function (err) {
+        if (!err) return '';
+        const said = err.message && err.message.length <= 80 ? err.message : '';
+        const parts = [err.name, said].filter(Boolean);
+        return parts.length ? ' (' + parts.join(': ') + ')' : '';
     },
 
     _invoke: function (method, argument) {
