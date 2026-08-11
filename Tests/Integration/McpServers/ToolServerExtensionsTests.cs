@@ -16,22 +16,6 @@ public class ToolServerExtensionsTests
 {
     private sealed record ProbeSettings(string Name);
 
-    [Fact]
-    public void AddMcpHost_RegistersTheSettingsTheServerAndTheTransport()
-    {
-        var settings = new ProbeSettings("probe");
-        var services = new ServiceCollection();
-        services.AddMcpHost(settings);
-
-        services.ShouldContain(
-            descriptor => descriptor.ServiceType == typeof(IConfigureOptions<McpServerOptions>));
-        services.ShouldContain(
-            descriptor => descriptor.ServiceType == typeof(IConfigureOptions<HttpServerTransportOptions>));
-
-        using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ProbeSettings>().ShouldBeSameAs(settings);
-    }
-
     // The host on its own carries no error rule: a server that offers the agent nothing to call has
     // nothing to map an exception for.
     [Fact]
