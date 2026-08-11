@@ -80,7 +80,7 @@ public class JonasMcpStackFixture : IAsyncLifetime
         await _network.CreateAsync(ct);
 
         // The channel server expects Redis at "redis:6379" on this network for state.
-        _redis = TestContainers.Container("redis/redis-stack:latest")
+        _redis = TestContainers.Container("redis/redis-stack-server:latest")
             .WithName($"redis-bench-{Guid.NewGuid():N}")
             .WithNetwork(_network)
             .WithNetworkAliases("redis")

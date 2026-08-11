@@ -13,14 +13,15 @@ using Tests.Integration.Fixtures;
 namespace Tests.Integration.Memory;
 
 [Trait("Category", "Integration")]
-public class MemoryExtractionWorkerDriftTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
+public class MemoryExtractionWorkerDriftTests(MemorySearchFixture redisFixture)
+    : IClassFixture<MemorySearchFixture>
 {
     [Fact]
     public async Task ProcessRequestAsync_WhenAdditionalTurnsArrive_DoesNotLeakThemIntoExtraction()
     {
         var stateKey = $"drift-test-{Guid.NewGuid():N}";
 
-        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(1536));
+        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(MemorySearchFixture.VectorWidth));
         var threadStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(5));
 
         // Arrange: seed initial 3-message thread

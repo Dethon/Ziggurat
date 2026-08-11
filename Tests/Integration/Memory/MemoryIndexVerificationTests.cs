@@ -9,7 +9,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Memory;
 
-public class MemoryIndexVerificationTests(RedisFixture fixture) : IClassFixture<RedisFixture>
+public class MemoryIndexVerificationTests(MemorySearchFixture fixture) : IClassFixture<MemorySearchFixture>
 {
     [Fact]
     public async Task AWrongWidthIndex_FailsStartupNamingBothValues()

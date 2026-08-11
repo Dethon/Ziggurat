@@ -12,8 +12,9 @@ namespace Tests.Integration.Memory;
 // vectors of the configured width, which a fabricated array cannot provide.
 [Trait("Category", "External")]
 [Collection(LemonadeCollection.Name)]
-public class MemoryStoreWithEmbeddingsTests(RedisFixture redisFixture, LemonadeFixture lemonadeFixture)
-    : IClassFixture<RedisFixture>
+public class MemoryStoreWithEmbeddingsTests(
+    LemonadeMemorySearchFixture redisFixture, LemonadeFixture lemonadeFixture)
+    : IClassFixture<LemonadeMemorySearchFixture>
 {
     private IEmbeddingService CreateEmbeddingService()
     {

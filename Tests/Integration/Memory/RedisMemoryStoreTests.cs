@@ -5,12 +5,9 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Memory;
 
-public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
+public class RedisMemoryStoreTests(MemorySearchFixture redisFixture) : IClassFixture<MemorySearchFixture>
 {
-    // Deliberately not the configured production width: the store builds its index at
-    // whatever dimension it is given, and these tests pin that it follows the configuration
-    // rather than a constant of its own.
-    private const int EmbeddingDimension = 1536;
+    private const int EmbeddingDimension = MemorySearchFixture.VectorWidth;
 
     private RedisStackMemoryStore CreateStore()
     {
