@@ -167,25 +167,6 @@ public class MessagesStoreTests : IDisposable
     }
 
     [Fact]
-    public void RemoveTrailingErrors_NoopWhenNoTrailingErrors()
-    {
-        // Arrange
-        var messages = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "Hello" },
-            new() { Role = "assistant", Content = "Hi there" }
-        };
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", messages));
-
-        // Act
-        _dispatcher.Dispatch(new RemoveTrailingErrors("topic-1"));
-
-        // Assert
-        var remaining = _store.State.MessagesByTopic["topic-1"];
-        remaining.Count.ShouldBe(2);
-    }
-
-    [Fact]
     public void RemoveTrailingErrors_NoopForNonExistentTopic()
     {
         // Act

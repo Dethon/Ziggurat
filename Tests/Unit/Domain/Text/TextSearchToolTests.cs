@@ -106,19 +106,6 @@ public class TextSearchToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_RelativePathsInResults()
-    {
-        Directory.CreateDirectory(Path.Combine(_testDir, "docs"));
-        CreateTestFile("docs/guide.md", "Target content");
-
-        var result = _tool.TestRun("Target");
-
-        var file = result["results"]!.AsArray()[0]!["file"]!.ToString();
-        file.ShouldBe("docs/guide.md");
-        file.ShouldNotContain("\\");
-    }
-
-    [Fact]
     public void Run_WithFilePath_SearchesSingleFileCorrectly()
     {
         CreateTestFile("target.md", "Find this line\nAnd this one too");

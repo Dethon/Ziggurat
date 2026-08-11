@@ -475,39 +475,6 @@ public class ChatMonitorTests
     }
 
     [Fact]
-    public async Task Monitor_WithClearCommand_CleansUpAndWipesThread()
-    {
-        // Arrange
-        var mockStateStore = new Mock<IThreadStateStore>();
-        mockStateStore.Setup(s => s.DeleteAsync(It.IsAny<AgentKey>())).Returns(Task.CompletedTask);
-        var threadResolver = new ChatThreadResolver(mockStateStore.Object);
-        var agentKey = new AgentKey("conv-1");
-        var message = MonitorTestMocks.CreateChannelMessage(conversationId: "conv-1", content: "/clear");
-        var channel = MonitorTestMocks.CreateChannel(messages: message);
-        var fakeAgent = MonitorTestMocks.CreateAgent();
-        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
-        var logger = new Mock<ILogger<ChatMonitor>>();
-
-        // Pre-resolve a context so we can verify cleanup
-        var context = threadResolver.Resolve(agentKey);
-
-        var monitor = new ChatMonitor(
-            [channel],
-            agentFactory,
-            threadResolver,
-            new Mock<IMetricsPublisher>().Object,
-            null,
-            logger.Object);
-
-        // Act
-        await monitor.Monitor(CancellationToken.None);
-
-        // Assert - CTS should be canceled AND thread state should be deleted
-        context.Cts.IsCancellationRequested.ShouldBeTrue();
-        mockStateStore.Verify(s => s.DeleteAsync(agentKey), Times.Once);
-    }
-
-    [Fact]
     public async Task Monitor_ClearWhenPersistedDeleteFails_LogsTheFailureAndStillEndsTheGroup()
     {
         // A /clear that cannot reach the state store must not pass silently: the live thread

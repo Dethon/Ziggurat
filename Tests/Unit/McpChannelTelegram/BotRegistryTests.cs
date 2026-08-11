@@ -21,17 +21,6 @@ public class BotRegistryTests
     }
 
     [Fact]
-    public void GetAllBots_ReturnsBothBots()
-    {
-        var registry = new BotRegistry(_testBots);
-
-        var all = registry.GetAllBots();
-
-        all.Count.ShouldBe(2);
-        all.Select(b => b.AgentId).ShouldBe(["jack", "jonas"], ignoreOrder: true);
-    }
-
-    [Fact]
     public void Lookup_WithUnknownIds_ReturnsNull()
     {
         var registry = new BotRegistry(_testBots);

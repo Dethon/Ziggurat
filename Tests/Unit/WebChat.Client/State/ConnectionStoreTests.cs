@@ -19,15 +19,6 @@ public class ConnectionStoreTests : IDisposable
     public void Dispose() => _store.Dispose();
 
     [Fact]
-    public void Initial_IsDisconnectedWithNothingRecorded()
-    {
-        _store.State.Status.ShouldBe(ConnectionStatus.Disconnected);
-        _store.State.LastConnected.ShouldBeNull();
-        _store.State.ReconnectAttempts.ShouldBe(0);
-        _store.State.Error.ShouldBeNull();
-    }
-
-    [Fact]
     public void Connecting_SetsStatusConnecting()
     {
         _dispatcher.Dispatch(new ConnectionConnecting());

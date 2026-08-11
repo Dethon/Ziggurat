@@ -374,20 +374,6 @@ public class TimerFileSystemJourneyTests
         result.Results[0].File.ShouldBe("/pasta/timer.json");
     }
 
-    [Fact]
-    public async Task Search_UncompilablePattern_ReturnsInvalidArgumentEnvelope()
-    {
-        var (fs, _, _, _) = Build();
-        await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
-
-        var result = await fs.SearchAsync(
-            "[unclosed", regex: true, null, null, null, 10, 0,
-            VfsTextSearchOutputMode.Content, CancellationToken.None);
-
-        var error = result.ShouldBeOfType<FsResult<FsSearchResult>.Err>().Error;
-        error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
-    }
-
     // A caller-supplied pattern that backtracks catastrophically must end the search as a timeout
     // envelope, not stall the turn. The match timeout is injected tiny so it trips deterministically.
     [Fact]

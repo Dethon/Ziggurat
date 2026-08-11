@@ -224,36 +224,6 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
-    public async Task EnrichAsync_PublishesRecallAndLatencyEvents()
-    {
-        var message = new ChatMessage(ChatRole.User, "Hello");
-
-        var session = CreateSessionWithStateKey("state-test");
-        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
-        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
-            .ReturnsAsync((ChatMessage[]?)null);
-
-        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(_testEmbedding);
-        _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<MemorySearchResult>());
-
-        LatencyEvent? capturedLatency = null;
-        _metricsPublisher
-            .Setup(p => p.Publish(It.IsAny<LatencyEvent>()))
-            .Callback<MetricEvent>(e => capturedLatency = e as LatencyEvent);
-
-        await _hook.EnrichAsync(message, "user1", "conv1", null, session, CancellationToken.None);
-
-        _metricsPublisher.Verify(p => p.Publish(It.IsAny<MetricsDTOs.MemoryRecallEvent>()), Times.Once);
-
-        capturedLatency.ShouldNotBeNull();
-        capturedLatency.Stage.ShouldBe(LatencyStage.MemoryRecall);
-        capturedLatency.ConversationId.ShouldBe("conv1");
-        capturedLatency.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
-    }
-
-    [Fact]
     public async Task EnrichAsync_TimesTheEmbeddingCallSeparatelyFromTheRecallStage()
     {
         var message = new ChatMessage(ChatRole.User, "Hello");

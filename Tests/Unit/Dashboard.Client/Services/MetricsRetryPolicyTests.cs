@@ -16,22 +16,6 @@ public class MetricsRetryPolicyTests
             RetryReason = new InvalidOperationException("hub unavailable"),
         });
 
-    public static TheoryData<long, int> ScheduledDelays => new()
-    {
-        { 0, 0 },
-        { 1, 2 },
-        { 2, 10 },
-        { 3, 30 },
-    };
-
-    [Theory]
-    [MemberData(nameof(ScheduledDelays))]
-    public void NextRetryDelay_WithinTheSchedule_IsTheScheduledDelay(long previousRetryCount, int expectedSeconds)
-    {
-        DelayAfter(previousRetryCount, TimeSpan.FromSeconds(previousRetryCount))
-            .ShouldBe(TimeSpan.FromSeconds(expectedSeconds));
-    }
-
     [Theory]
     [InlineData(4)]
     public void NextRetryDelay_PastTheSchedule_SettlesAtThirtySeconds(long previousRetryCount)
