@@ -106,9 +106,6 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
     private static string WhisperArgs(JsonObject config) =>
         config["whispercpp"]!["args"]!.GetValue<string>();
 
-    private static string LlamaArgs(JsonObject config) =>
-        config["llamacpp"]!["args"]!.GetValue<string>();
-
     [SkippableFact]
     public void Entrypoint_Defaults_RestoreVadPromptAndBeamSize()
     {
@@ -326,16 +323,11 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
                 p => p["pinned"]!.GetValue<bool>());
     }
 
-    // The context goes through llamacpp.args and NOT through the global ctx_size key, which looks
-    // like the obvious place and is not: lemond auto-tunes it, and the boot log says so in as many
-    // words — "Migrating config: ctx_size 4096 -> -1 (auto-tune enabled)", followed by "Auto-tune
-    // ctx_size resolved to 32768". A recipe's args survive that migration untouched (whispercpp's
-    // do), and lemond appends them AFTER its own flags, so a second --ctx-size wins on llama.cpp's
-    // last-occurrence parsing. Why bother: auto-tune resolves to the loaded model's maximum, 32768
-    // for Qwen3-Embedding-0.6B, and llama.cpp allocates that whole KV cache up front — measured on
-    // prod, a model with under a gigabyte of weights held 1.9 GiB of the iGPU's 4 GiB carveout and
-    // spilled 2.7 GiB into GTT, with whisper already resident. Nothing here embeds more than a
-    // memory statement, a forget query or a three-user-turn recall window.
+    // Auto-tune resolves the context to the loaded model's maximum, 32768 for Qwen3-Embedding-0.6B,
+    // and llama.cpp allocates that whole KV cache up front: measured on prod, a model with under a
+    // gigabyte of weights held 1.9 GiB of the iGPU's 4 GiB carveout and spilled 2.7 GiB into GTT,
+    // with whisper already resident. Nothing here embeds more than a memory statement, a forget
+    // query or a three-user-turn recall window.
     [SkippableFact]
     public void Entrypoint_Defaults_PinTheEmbeddingContextSize()
     {
@@ -343,7 +335,7 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
 
         var config = RunEntrypoint(("STT_BACKEND", "cpu"));
 
-        LlamaArgs(config).ShouldContain("--ctx-size 8192");
+        config["ctx_size"]!.GetValue<int>().ShouldBe(8192);
     }
 
     [SkippableFact]
@@ -351,14 +343,13 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
     {
         SeedVadModel();
 
-        var config = RunEntrypoint(("STT_BACKEND", "cpu"), ("EMBEDDING_CTX_SIZE", "8192"));
+        var config = RunEntrypoint(("STT_BACKEND", "cpu"), ("EMBEDDING_CTX_SIZE", "16384"));
 
-        LlamaArgs(config).ShouldContain("--ctx-size 8192");
+        config["ctx_size"]!.GetValue<int>().ShouldBe(16384);
     }
 
-    // Passing no --ctx-size at all is the only way back to lemond's auto-tune, since the flag it
-    // emits itself is the one being overridden. An operator who wants the model's maximum again
-    // needs a way to say so that does not mean editing a config lemond rewrites on every boot.
+    // Omitting the key entirely is the way back to auto-tune, for an operator who wants the model's
+    // maximum again without editing a config lemond rewrites on every boot.
     [SkippableFact]
     public void Entrypoint_CtxSizeEmpty_LeavesAutoTuneAlone()
     {
@@ -366,19 +357,33 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
 
         var config = RunEntrypoint(("STT_BACKEND", "cpu"), ("EMBEDDING_CTX_SIZE", ""));
 
-        LlamaArgs(config).ShouldNotContain("--ctx-size");
+        config.ContainsKey("ctx_size").ShouldBeFalse();
     }
 
-    // The global key is the trap this whole arrangement exists to avoid, so writing it would be
-    // actively misleading: it survives into config.json just long enough to be migrated away.
+    // ctx_size alone does not survive boot: a config arriving without config_version reads as one
+    // that predates auto-tune, and lemond migrates the value away ("Migrating config: ctx_size
+    // 4096 -> -1 (auto-tune enabled)"). Declaring the version is what makes the setting stick.
     [SkippableFact]
-    public void Entrypoint_WritesNoGlobalCtxSize()
+    public void Entrypoint_DeclaresTheConfigVersion_SoCtxSizeSurvivesMigration()
     {
         SeedVadModel();
 
         var config = RunEntrypoint(("STT_BACKEND", "cpu"));
 
-        config.ContainsKey("ctx_size").ShouldBeFalse();
+        config["config_version"]!.GetValue<int>().ShouldBe(2);
+    }
+
+    // --ctx-size is on lemond's reserved list, and a reserved argument is not ignored: the model
+    // fails to load and every embedding request 500s. This cost a production outage, so it is
+    // pinned rather than left to a comment.
+    [SkippableFact]
+    public void Entrypoint_PassesNoReservedLlamaArgs()
+    {
+        SeedVadModel();
+
+        var config = RunEntrypoint(("STT_BACKEND", "cpu"));
+
+        (config["llamacpp"]?["args"]?.GetValue<string>() ?? "").ShouldNotContain("--ctx-size");
     }
 
     [SkippableFact]

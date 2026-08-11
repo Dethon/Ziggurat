@@ -113,21 +113,29 @@ if [ -n "$VAD_THRESHOLD" ]; then
 fi
 WHISPER_ARGS="${WHISPER_ARGS# }"
 
-LLAMA_ARGS=""
-if [ -n "$EMBEDDING_CTX_SIZE" ]; then
-  LLAMA_ARGS="--ctx-size $EMBEDDING_CTX_SIZE"
-fi
-
 # A plain overwrite is fine — lemond merges its own defaults back over every key we leave out, on
 # every boot, which is also why none of this can be edited into the config volume by hand: the edit
-# would not survive a restart. The context deliberately goes through llamacpp.args rather than the
-# global ctx_size key that appears to be for exactly this. That key is auto-tuned, and the boot log
-# says so: "Migrating config: ctx_size 4096 -> -1 (auto-tune enabled)", then "Auto-tune ctx_size
-# resolved to 32768". A recipe's args survive the migration untouched, and lemond appends them after
-# its own flags, so the second --ctx-size is the one llama.cpp keeps.
+# would not survive a restart.
+#
+# The context has exactly one route, and the two that look like routes are not. It cannot go through
+# llamacpp.args: --ctx-size is on lemond's reserved list ("managed by Lemonade and cannot be
+# overridden"), and a reserved argument does not degrade to being ignored — the model fails to load
+# and every embedding request 500s. And the global ctx_size key alone is migrated away on boot
+# ("Migrating config: ctx_size 4096 -> -1 (auto-tune enabled)"), because a config arriving without
+# config_version reads as an old one that predates auto-tune. Declaring the version we are actually
+# writing is what stops that migration, so ctx_size survives to be honoured.
+#
+# If a future lemond migrates it anyway, this degrades to auto-tune at the model's maximum, which is
+# the memory cost this exists to avoid but is not an outage. Never reach for llamacpp.args again.
+CTX_CONFIG=""
+if [ -n "$EMBEDDING_CTX_SIZE" ]; then
+  CTX_CONFIG="  \"ctx_size\": $EMBEDDING_CTX_SIZE,"
+fi
+
 cat > "$CONFIG_DIR/config.json" <<EOF
 {
-  "llamacpp": { "args": "$LLAMA_ARGS" },
+  "config_version": 2,
+$CTX_CONFIG
   "whispercpp": { "backend": "$WHISPER_BACKEND", "args": "$WHISPER_ARGS" }
 }
 EOF
