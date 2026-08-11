@@ -8,7 +8,7 @@ namespace Tests.E2E.WebChat;
 // faster default everywhere else. The cases here tap fixed coordinates while the sheet is in
 // motion, so what has finished rendering by the time the first tap lands is part of what they
 // measure: on the quicker load, the settle case found no row under its finger at all.
-[Collection("WebChatE2E")]
+[Collection(WebChatE2ECollections.Hearth)]
 [Trait("Category", "E2E")]
 public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
 {

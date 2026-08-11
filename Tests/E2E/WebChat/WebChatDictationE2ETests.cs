@@ -14,7 +14,7 @@ namespace Tests.E2E.WebChat;
 // Opening a page costs about a second and a half of the suite before a single gesture is made, so a
 // case here is one page taken through everything that page can be asked about at once, rather than
 // one assertion per page.
-[Collection("WebChatE2E")]
+[Collection(WebChatE2ECollections.Dictation)]
 [Trait("Category", "E2E")]
 public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
 {

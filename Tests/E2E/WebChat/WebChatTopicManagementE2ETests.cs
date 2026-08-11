@@ -3,7 +3,7 @@ using Tests.E2E.Fixtures;
 
 namespace Tests.E2E.WebChat;
 
-[Collection("WebChatE2E")]
+[Collection(WebChatE2ECollections.Chat)]
 [Trait("Category", "E2E")]
 public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
 {
