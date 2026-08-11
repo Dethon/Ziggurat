@@ -62,7 +62,7 @@ public class RenderCoordinatorTests : IDisposable
         //
         // Wait for the first emission to arrive, then keep watching well past it: what this pins is
         // that a second one never comes, and only the waiting after the first proves that.
-        int HelloCount()
+        int helloCount()
         {
             lock (gate)
             {
@@ -71,14 +71,14 @@ public class RenderCoordinatorTests : IDisposable
         }
 
         var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (HelloCount() == 0 && DateTime.UtcNow < deadline)
+        while (helloCount() == 0 && DateTime.UtcNow < deadline)
         {
             await Task.Delay(10);
         }
 
         await Task.Delay(200);
 
-        HelloCount().ShouldBe(1);
+        helloCount().ShouldBe(1);
     }
 
     [Fact]
