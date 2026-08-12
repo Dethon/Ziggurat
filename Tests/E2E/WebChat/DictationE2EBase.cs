@@ -32,14 +32,14 @@ public abstract class DictationE2EBase
     // Long enough that the recording holds the 8192 samples the spectrum below is measured over.
     protected const int SpectrumHoldMs = 1_400;
 
-    protected async Task<IPage> OpenAsync(int? width = null, int? height = null, string? query = null)
+    protected async Task<IPage> OpenAsync(int? width = null, int? height = null)
     {
         var page = await Fixture.CreatePageAsync(hasTouch: true);
         if (width is not null && height is not null)
         {
             await page.SetViewportSizeAsync(width.Value, height.Value);
         }
-        await WebChatE2ETests.GotoWebChatAsync(page, Fixture.WebChatUrl + query);
+        await WebChatE2ETests.GotoWebChatAsync(page, Fixture.WebChatUrl);
         await WebChatE2ETests.SelectUserAndAgentAsync(page, Fixture.NextUserIndex());
 
         // With nothing typed the right-hand control is the microphone; that is the premise of
