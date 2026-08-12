@@ -171,76 +171,138 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
         await CreateTopicAsync(page, "Settle tap bravo topic message");
         await CreateTopicAsync(page, "Settle tap delta topic message");
 
-        // Stretch the settle so the finger provably arrives while the sheet is still travelling;
-        // at its real 280ms the tap races the harness's own round trips and proves nothing.
+        // Rows sort by LastMessageAt and jump as replies land. The tap point below is measured in
+        // one round trip and tapped in a later one, so a reorder in between would drop the finger
+        // on whichever conversation slid under it.
+        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page);
+
+        // Peek → Half at the sheet's own speed, and settled before anything is measured: the half
+        // detent is the resting geometry the tap point is derived from.
+        await TapHearthHandleAsync(page);
+        await WaitForSheetToSettleAsync(page, "detent-half");
+
+        // Stretch the Half → Full travel and make it linear. Stretching alone was not enough: the
+        // real cubic-bezier(.2,.8,.2,1) is front-loaded, so even over three seconds a row crossed
+        // any fixed point in about a tenth of one — shorter than the round trips that open the wait
+        // below, which is how a run reached the full detent before the first poll and then spent
+        // its whole timeout on a sheet that had stopped. Linear travel spends the same distance at
+        // one speed, so the rows sweep the point over seconds instead of a flicker.
         await page.AddStyleTagAsync(new PageAddStyleTagOptions
         {
-            Content = ".hearth { transition-duration: 3s !important; }"
+            Content = ".hearth { transition-duration: 8s !important; transition-timing-function: linear !important; }"
         });
 
-        // Peek → Half → Full. The second tap starts the travel the finger will arrive during.
-        await TapHearthHandleAsync(page);
+        // Aim between the list's two resting places: below where the rows sit at Full, above where
+        // they sit at Half. A stationary sheet covers this point at neither detent, so the wait can
+        // only be satisfied by rows in motion — a run whose travel is already over fails on the
+        // wait rather than tapping a parked row and calling it a settling one.
+        var band = await page.EvaluateAsync<System.Text.Json.JsonElement>(
+            """
+            () => {
+                const sheet = document.querySelector('.hearth');
+                const t = getComputedStyle(sheet).transform;
+                const travel = t === 'none' ? 0 : new DOMMatrix(t).m42;   // distance left to the full detent
+                const boxes = [...document.querySelectorAll('.topic-item')].map(r => r.getBoundingClientRect());
+                if (boxes.length === 0) return { rows: 0, travel, low: 0, high: 0 };
+                return {
+                    rows: boxes.length,
+                    travel,
+                    low: Math.max(...boxes.map(b => b.bottom)) - travel,  // list's bottom edge at Full
+                    high: Math.min(...boxes.map(b => b.top))              // list's top edge at Half
+                };
+            }
+            """);
+
+        band.GetProperty("rows").GetInt32().ShouldBeGreaterThanOrEqualTo(3, $"the conversation list is missing rows: {band}");
+        var low = band.GetProperty("low").GetDouble();
+        var high = band.GetProperty("high").GetDouble();
+        high.ShouldBeGreaterThan(
+            low + 40, "the conversation list is taller than the sheet's travel, so no point is clear of it at rest");
+        var aimY = (int)Math.Round((low + high) / 2);
+
+        // Half → Full: the travel the finger arrives during.
         await TapHearthHandleAsync(page);
 
         await page.EvaluateAsync(
             """
             () => {
                 window.__under = null;
-                window.__moving = null;
+                window.__travelLeft = null;
                 document.addEventListener('touchstart', e => {
                     const t = e.touches[0];
                     const hit = document.elementFromPoint(t.clientX, t.clientY);
                     const row = hit ? hit.closest('.topic-item') : null;
                     window.__under = row ? row.querySelector('.topic-name').textContent : null;
-                    window.__moving = getComputedStyle(document.querySelector('.hearth')).transform;
+                    const m = getComputedStyle(document.querySelector('.hearth')).transform;
+                    window.__travelLeft = m === 'none' ? 0 : new DOMMatrix(m).m42;
                 }, { capture: true, once: true });
             }
             """);
 
-        // The travel above is stretched to three seconds, so what this has to wait for is not a
-        // duration but a position: the finger must come down on a row, with the sheet still moving
-        // under it. A fixed wait assumed the travel had already begun when it was called, and on a
-        // loaded machine the second handle tap rendered late — 400ms in, the sheet was still short
-        // of the tap point and the finger landed on nothing, failing with no row under it. Waiting
-        // for the row to arrive at the point leaves seconds of travel still to run, so the tap is
-        // no less mid-settle than it was, and the harness's own timing is out of the assertion.
-        //
-        // The row has to be *comfortably* over the point rather than merely touching it. Waiting for
-        // first contact returned the instant a row's leading edge crossed y, and the sheet then kept
-        // moving during the round trip that follows — on a loaded machine that was enough for the
-        // row to slide back off before the finger arrived, and the tap again landed on nothing. A
-        // margin means the wait ends with the row spanning the point, so the same drift leaves it
-        // still covered; the sheet is no less in motion for it.
+        // What this waits for is a position, not a duration: the finger must come down on a row,
+        // with the sheet still moving under it. The row has to be comfortably over the point rather
+        // than merely touching it — the sheet keeps travelling during the round trip that sends the
+        // tap, and a margin means that drift leaves the row still covering the point. At the linear
+        // speed above, 24px of margin is half a second of slack on either side.
         await page.WaitForFunctionAsync(
-            """
+            // The point is baked into the expression: Playwright's .NET argument serializer hands a
+            // number to the predicate as an object, and elementFromPoint then rejects it as
+            // non-finite.
+            $$"""
             () => {
-                const hit = document.elementFromPoint(195, 650);
+                const y = {{aimY}};
+                const hit = document.elementFromPoint(195, y);
                 const row = hit ? hit.closest('.topic-item') : null;
                 if (!row) return false;
                 const box = row.getBoundingClientRect();
-                return 650 - box.top >= 20 && box.bottom - 650 >= 20;
+                return y - box.top >= 24 && box.bottom - y >= 24;
             }
             """,
             null,
             new PageWaitForFunctionOptions { Timeout = 10_000, PollingInterval = 16 });
-        await page.Touchscreen.TapAsync(195, 650);
+        await page.Touchscreen.TapAsync(195, aimY);
 
         // Give the click, and the render it causes, room to land before reading the outcome.
         await page.WaitForTimeoutAsync(1_500);
 
-        var outcome = await page.EvaluateAsync<string>(
+        var outcome = await page.EvaluateAsync<System.Text.Json.JsonElement>(
             """
             () => {
                 const selected = document.querySelector('.topic-item.selected .topic-name');
-                return (window.__under ?? '<no row under the finger>')
-                    + ' => ' + (selected ? selected.textContent : '<nothing selected>')
-                    + ' [sheet at touchstart: ' + window.__moving + ']';
+                return {
+                    under: window.__under ?? '<no row under the finger>',
+                    selected: selected ? selected.textContent : '<nothing selected>',
+                    travelLeft: window.__travelLeft ?? -1
+                };
             }
             """);
 
-        var under = outcome.Split(" => ")[0];
-        var trailer = outcome[(outcome.IndexOf(" [sheet at touchstart:", StringComparison.Ordinal))..];
+        var under = outcome.GetProperty("under").GetString();
+        var selected = outcome.GetProperty("selected").GetString();
+        var travelLeft = outcome.GetProperty("travelLeft").GetDouble();
+
         under.ShouldStartWith("Settle tap");
-        outcome.ShouldBe($"{under} => {under}{trailer}");
+        travelLeft.ShouldBeGreaterThan(
+            24, $"the sheet had all but arrived when the finger landed on \"{under}\", so this proves nothing");
+        selected.ShouldBe(under, $"tapped \"{under}\" with {travelLeft:F0}px of travel left");
     }
+
+    // The detent class arrives on a Blazor render and the transform then travels to it, so a
+    // measurement taken on the class alone reads a sheet still in flight. Two identical frames
+    // with the class already on is the sheet at rest.
+    private static async Task WaitForSheetToSettleAsync(IPage page, string detentClass) =>
+        await page.WaitForFunctionAsync(
+            """
+            detent => {
+                const sheet = document.querySelector('.hearth');
+                if (!sheet || !sheet.classList.contains(detent)) return false;
+                const t = getComputedStyle(sheet).transform;
+                const y = t === 'none' ? 0 : new DOMMatrix(t).m42;
+                const settled = window.__lastSheetY === y;
+                window.__lastSheetY = y;
+                return settled;
+            }
+            """,
+            detentClass,
+            new PageWaitForFunctionOptions { Timeout = 10_000, PollingInterval = 50 });
 }
