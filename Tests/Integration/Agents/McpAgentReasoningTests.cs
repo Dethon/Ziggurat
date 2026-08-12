@@ -41,7 +41,7 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         var (apiUrl, apiKey, model) = GetConfig();
 
         using var openRouter = new OpenRouterChatClient(apiUrl, apiKey, model);
-        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
+        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10), TimeProvider.System);
 
         await using var agent = new McpAgent(
             TestAgentSpec.Default with
@@ -86,7 +86,7 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         var (apiUrl, apiKey, model) = GetConfig();
 
         using var openRouter = new OpenRouterChatClient(apiUrl, apiKey, model);
-        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
+        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10), TimeProvider.System);
 
         await using var agent = new McpAgent(
             TestAgentSpec.Default with

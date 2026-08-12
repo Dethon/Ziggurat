@@ -107,10 +107,12 @@ public static class InjectorModule
         private IServiceCollection AddRedis(RedisConfiguration config)
         {
             return services
+                .AddSingleton(TimeProvider.System)
                 .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(config.ConnectionString))
                 .AddSingleton<IThreadStateStore>(sp => new RedisThreadStateStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
-                    TimeSpan.FromDays(config.ExpirationDays ?? 30)))
+                    TimeSpan.FromDays(config.ExpirationDays ?? 30),
+                    sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
                     sp.GetRequiredService<IConnectionMultiplexer>()));
         }

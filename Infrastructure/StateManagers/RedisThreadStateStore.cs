@@ -8,7 +8,7 @@ using StackExchange.Redis;
 
 namespace Infrastructure.StateManagers;
 
-public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan expiration)
+public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan expiration, TimeProvider time)
     : IThreadStateStore
 {
     private readonly IDatabase _db = redis.GetDatabase();
@@ -61,6 +61,45 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
 
         await _db.ListRightPushAsync(key, Serialize(messages));
         await _db.KeyExpireAsync(key, expiration);
+        await StampLastWriteAsync(key);
+    }
+
+    // Every retention decision reads this one value, so it is stamped wherever a topic's history
+    // is appended to rather than by the browser's streaming handler alone: a conversation nobody
+    // is watching is ordered and retained on the same terms as one that is.
+    private async Task StampLastWriteAsync(string historyKey)
+    {
+        if (HistoryKeyParts(historyKey) is not var (agentId, chatId, threadId))
+        {
+            return;
+        }
+
+        var topic = await GetTopicByChatIdAndThreadIdAsync(agentId, chatId, threadId);
+        if (topic is null)
+        {
+            return;
+        }
+
+        await SaveTopicAsync(topic with { LastMessageAt = time.GetUtcNow() });
+    }
+
+    // "agent-key:{agentId}:{chatId}:{threadId}", the one spelling AgentKey produces. Anything
+    // else — the GUID a session falls back to when it has no key yet — belongs to no topic and
+    // stamps nothing.
+    private static (string AgentId, long ChatId, long ThreadId)? HistoryKeyParts(string historyKey)
+    {
+        const string prefix = "agent-key:";
+        if (!historyKey.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var parts = historyKey[prefix.Length..].Split(':');
+        return parts.Length >= 3
+               && long.TryParse(parts[^2], out var chatId)
+               && long.TryParse(parts[^1], out var threadId)
+            ? (string.Join(':', parts[..^2]), chatId, threadId)
+            : null;
     }
 
     private static RedisValue[] Serialize(IReadOnlyList<ChatMessage> messages) =>
@@ -96,11 +135,29 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
     {
         var json = JsonSerializer.Serialize(topic);
         await _db.StringSetAsync(TopicKey(topic.AgentId, topic.ChatId, topic.TopicId), json, expiration);
+
+        // The conversation a history key names, pointing at the topic that owns it. Without it
+        // the only way from a conversation back to its topic is a scan of every key in the
+        // database, which is the cost this whole area exists to remove.
+        await _db.StringSetAsync(
+            ConversationKey(topic.AgentId, topic.ChatId, topic.ThreadId), topic.TopicId, expiration);
     }
 
     public async Task DeleteTopicAsync(string agentId, long chatId, string topicId)
     {
+        var topic = await ReadTopicAsync(TopicKey(agentId, chatId, topicId));
         await _db.KeyDeleteAsync(TopicKey(agentId, chatId, topicId));
+
+        if (topic is not null)
+        {
+            await _db.KeyDeleteAsync(ConversationKey(agentId, chatId, topic.ThreadId));
+        }
+    }
+
+    private async Task<TopicMetadata?> ReadTopicAsync(string topicKey)
+    {
+        var json = await _db.StringGetAsync(topicKey);
+        return json.IsNullOrEmpty ? null : JsonSerializer.Deserialize<TopicMetadata>(json.ToString());
     }
 
     public async Task<bool> ExistsAsync(string key, CancellationToken ct = default)
@@ -132,12 +189,19 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
     public async Task<TopicMetadata?> GetTopicByChatIdAndThreadIdAsync(
         string agentId, long chatId, long threadId, CancellationToken ct = default)
     {
-        var topics = await GetAllTopicsAsync(agentId);
-        return topics.FirstOrDefault(t => t.ChatId == chatId && t.ThreadId == threadId);
+        var topicId = await _db.StringGetAsync(ConversationKey(agentId, chatId, threadId));
+        return topicId.IsNullOrEmpty
+            ? null
+            : await ReadTopicAsync(TopicKey(agentId, chatId, topicId.ToString()));
     }
 
     private static string TopicKey(string agentId, long chatId, string topicId)
     {
         return $"topic:{agentId}:{chatId}:{topicId}";
+    }
+
+    private static string ConversationKey(string agentId, long chatId, long threadId)
+    {
+        return $"topic-of:{agentId}:{chatId}:{threadId}";
     }
 }

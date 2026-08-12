@@ -36,7 +36,9 @@ public static class ConfigModule
             .AddSingleton(TimeProvider.System)
             .AddSingleton<Domain.Contracts.IThreadStateStore>(sp =>
                 new Infrastructure.StateManagers.RedisThreadStateStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>(), TimeSpan.FromDays(30)))
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    TimeSpan.FromDays(30),
+                    sp.GetRequiredService<TimeProvider>()))
             .AddSingleton<Domain.Contracts.IConversationFactory, Infrastructure.Conversations.ConversationFactory>();
 
         services

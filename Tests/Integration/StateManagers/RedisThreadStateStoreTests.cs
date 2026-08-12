@@ -4,6 +4,7 @@ using Domain.DTOs.WebChat;
 using Domain.Extensions;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -12,8 +13,8 @@ namespace Tests.Integration.StateManagers;
 [Trait("Category", "Integration")]
 public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
 {
-    private RedisThreadStateStore NewStore() =>
-        new(redisFixture.Connection, TimeSpan.FromMinutes(5));
+    private RedisThreadStateStore NewStore(TimeProvider? time = null) =>
+        new(redisFixture.Connection, TimeSpan.FromMinutes(5), time ?? TimeProvider.System);
 
     [Fact]
     public async Task AppendMessagesAsync_ToFreshKey_StoresMessagesInOrder()
@@ -192,6 +193,44 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var read = (await store.GetHistoryAsync("agent-attach-text", 902, 0)).ShouldHaveSingleItem();
         read.Content.ShouldBe("what is in this?");
         read.Attachments!.Single().MediaType.ShouldBe("application/pdf");
+    }
+
+    // A topic driven by voice or by a schedule has no browser writing its last-message time, so
+    // before this it sorted and aged by when it was created however much was said in it.
+    [Fact]
+    public async Task AppendMessagesAsync_StampsTheTopicsLastWriteTime()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 3, 1, 9, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock);
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-stamp", 500, 7, "agent-stamp", "Kitchen", clock.GetUtcNow(), LastMessageAt: null));
+
+        clock.Advance(TimeSpan.FromHours(3));
+        await store.AppendMessagesAsync(
+            HistoryKey("agent-stamp", 500, 7), [new ChatMessage(ChatRole.User, "put the kettle on")]);
+
+        var topic = (await store.GetAllTopicsAsync("agent-stamp")).ShouldHaveSingleItem();
+        topic.LastMessageAt.ShouldBe(clock.GetUtcNow());
+    }
+
+    [Fact]
+    public async Task ATopicWrittenToWithNoBrowserAttached_OrdersAheadOfANewerOne()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 3, 2, 9, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock);
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-old", 510, 0, "agent-order", "Older", clock.GetUtcNow(), LastMessageAt: null));
+
+        clock.Advance(TimeSpan.FromHours(1));
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-new", 511, 0, "agent-order", "Newer", clock.GetUtcNow(), LastMessageAt: null));
+
+        clock.Advance(TimeSpan.FromHours(1));
+        await store.AppendMessagesAsync(
+            HistoryKey("agent-order", 510), [new ChatMessage(ChatRole.User, "still talking")]);
+
+        var topics = await store.GetAllTopicsAsync("agent-order");
+        topics.Select(t => t.TopicId).ShouldBe(["t-old", "t-new"]);
     }
 
     private static string HistoryKey(string agentId, long chatId, long threadId = 0) =>
