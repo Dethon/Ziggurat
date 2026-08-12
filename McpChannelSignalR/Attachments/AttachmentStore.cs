@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Settings;
@@ -15,6 +16,7 @@ namespace McpChannelSignalR.Attachments;
 // removes.
 public sealed class AttachmentStore(
     AttachmentSettings settings,
+    RetentionSettings retention,
     TimeProvider timeProvider,
     ILogger<AttachmentStore> logger)
 {
@@ -124,7 +126,9 @@ public sealed class AttachmentStore(
             return 0;
         }
 
-        var cutoff = timeProvider.GetUtcNow() - TimeSpan.FromDays(settings.RetentionDays);
+        // The conversation's own horizon, not a clock of its own: a topic and the files sent
+        // to it are removed together rather than the files going eleven months early.
+        var cutoff = timeProvider.GetUtcNow() - retention.AttachmentRetention;
         var swept = Directory.EnumerateDirectories(settings.StoragePath)
             .SelectMany(Directory.EnumerateDirectories)
             .Where(directory => StoredAt(directory) is { } storedAt && storedAt <= cutoff)

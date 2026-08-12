@@ -1,4 +1,4 @@
-using McpChannelSignalR.Settings;
+using Domain.DTOs;
 
 namespace McpChannelSignalR.Attachments;
 
@@ -8,7 +8,7 @@ namespace McpChannelSignalR.Attachments;
 // abandoned before it was sent.
 public sealed class AttachmentSweeper(
     AttachmentStore store,
-    AttachmentSettings settings,
+    RetentionSettings retention,
     ILogger<AttachmentSweeper> logger) : BackgroundService
 {
     private static readonly TimeSpan _interval = TimeSpan.FromHours(6);
@@ -24,8 +24,8 @@ public sealed class AttachmentSweeper(
                 if (swept > 0)
                 {
                     logger.LogInformation(
-                        "Swept {Count} attachments older than {Days} days from the upload store",
-                        swept, settings.RetentionDays);
+                        "Swept {Count} attachments older than {Window} from the upload store",
+                        swept, retention.AttachmentRetention);
                 }
             }
             catch (Exception ex)

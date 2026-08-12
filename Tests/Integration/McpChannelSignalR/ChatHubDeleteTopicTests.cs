@@ -35,7 +35,7 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
     public ChatHubDeleteTopicTests(RedisFixture redis)
     {
         var settings = new AttachmentSettings { StoragePath = _root };
-        _store = new AttachmentStore(settings, _time, NullLogger<AttachmentStore>.Instance);
+        _store = new AttachmentStore(settings, new RetentionSettings(), _time, NullLogger<AttachmentStore>.Instance);
         var attachments = new AttachmentService(
             settings,
             new AttachmentTickets(settings, _time),

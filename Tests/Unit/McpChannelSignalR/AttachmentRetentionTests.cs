@@ -1,3 +1,4 @@
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Settings;
@@ -16,12 +17,16 @@ public sealed class AttachmentRetentionTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"attachments-{Guid.NewGuid():N}");
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 8, 9, 12, 0, 0, TimeSpan.Zero));
     private readonly AttachmentSettings _settings;
+
+    // Files die with the conversation they were sent to rather than eleven months before it, so
+    // the window here is the retention block's and not a clock of the upload store's own.
+    private readonly RetentionSettings _retention = new();
     private readonly AttachmentStore _store;
 
     public AttachmentRetentionTests()
     {
-        _settings = new AttachmentSettings { StoragePath = _root, RetentionDays = 30 };
-        _store = new AttachmentStore(_settings, _time, NullLogger<AttachmentStore>.Instance);
+        _settings = new AttachmentSettings { StoragePath = _root };
+        _store = new AttachmentStore(_settings, _retention, _time, NullLogger<AttachmentStore>.Instance);
     }
 
     public void Dispose()
@@ -48,7 +53,7 @@ public sealed class AttachmentRetentionTests : IDisposable
     public async Task TheSweep_RemovesFilesOlderThanTheRetentionWindow()
     {
         var old = await StoreAsync("7:42", "old.png");
-        _time.Advance(TimeSpan.FromDays(_settings.RetentionDays + 1));
+        _time.Advance(_retention.AttachmentRetention + TimeSpan.FromDays(1));
         var fresh = await StoreAsync("7:42", "fresh.png");
 
         _store.Sweep().ShouldBe(1);
@@ -61,7 +66,7 @@ public sealed class AttachmentRetentionTests : IDisposable
     public async Task ASweptFilesReference_ReadsBackAsNothingRatherThanAnError()
     {
         var swept = await StoreAsync("7:42", "gone.png");
-        _time.Advance(TimeSpan.FromDays(_settings.RetentionDays + 1));
+        _time.Advance(_retention.AttachmentRetention + TimeSpan.FromDays(1));
         _store.Sweep();
 
         (await _store.ReadBytesAsync(swept.Id, CancellationToken.None)).ShouldBeNull();

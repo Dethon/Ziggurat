@@ -45,7 +45,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
         };
 
         _inbox = new ChannelInbox(_time);
-        _store = new AttachmentStore(_settings, _time, NullLogger<AttachmentStore>.Instance);
+        _store = new AttachmentStore(_settings, new RetentionSettings(), _time, NullLogger<AttachmentStore>.Instance);
         _attachments = new AttachmentService(
             _settings,
             new AttachmentTickets(_settings, _time),

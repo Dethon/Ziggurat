@@ -35,7 +35,6 @@ public record OpenRouterConfiguration
 public record RedisConfiguration
 {
     public required string ConnectionString { get; [UsedImplicitly] init; }
-    public int? ExpirationDays { get; [UsedImplicitly] init; }
 }
 
 public record ChannelEndpoint

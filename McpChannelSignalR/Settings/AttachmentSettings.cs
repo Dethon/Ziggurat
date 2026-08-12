@@ -17,10 +17,6 @@ public record AttachmentSettings
     // Short on purpose: a ticket only has to survive the picking of one message's files.
     public int TicketTtlSeconds { get; init; } = 900;
 
-    // Matches the window the conversation history already keeps, so a reference and the file it
-    // names disappear on the same order of timescale.
-    public int RetentionDays { get; init; } = 30;
-
     public IReadOnlyList<string> AllowedMediaTypes { get; init; } =
     [
         "image/png",

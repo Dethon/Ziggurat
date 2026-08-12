@@ -15,11 +15,16 @@ namespace Tests.Integration.StateManagers;
 public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
 {
     private RedisThreadStateStore NewStore(
-        TimeProvider? time = null, int snippetLength = 120, TimeSpan? archiveHorizon = null) =>
+        TimeProvider? time = null,
+        int snippetLength = 120,
+        TimeSpan? archiveHorizon = null,
+        TimeSpan? purgeHorizon = null) =>
         new(redisFixture.Connection,
             new RetentionSettings
             {
-                PurgeHorizon = TimeSpan.FromMinutes(5),
+                // The shipped horizon unless a test is about purging: it is what the index trim
+                // reads, so a short one here would take every seeded topic with it.
+                PurgeHorizon = purgeHorizon ?? TimeSpan.FromDays(365),
                 SnippetLength = snippetLength,
                 ArchiveHorizon = archiveHorizon ?? TimeSpan.FromDays(182)
             },
@@ -475,6 +480,38 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
         first.Topics.Select(t => t.Name).ShouldBe(["topic-2", "topic-1"]);
         second.Topics.Select(t => t.Name).ShouldBe(["topic-0"]);
+    }
+
+    // Expiry drops a topic's record but leaves its index member behind, and those members sit
+    // below the archive horizon where nothing reads — so nothing would ever notice them. Score is
+    // last write, so everything below the purge cutoff is expired by definition and one range
+    // removal takes the lot without scanning anything.
+    [Fact]
+    public async Task GetTopicPageAsync_TrimsIndexEntriesBelowThePurgeCutoff()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock, archiveHorizon: TimeSpan.FromDays(30), purgeHorizon: TimeSpan.FromDays(60));
+        await store.SaveTopicAsync(Topic("t-purged", 630, "agent-purge", clock.GetUtcNow()));
+        var indexKey = "topics:agent-purge:default";
+        (await redisFixture.Connection.GetDatabase().SortedSetLengthAsync(indexKey)).ShouldBe(1);
+
+        clock.Advance(TimeSpan.FromDays(61));
+        await store.GetTopicPageAsync("agent-purge", "default", null, 10);
+
+        (await redisFixture.Connection.GetDatabase().SortedSetLengthAsync(indexKey)).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task SaveTopicAsync_SetsTheTopicToExpireOnThePurgeHorizon()
+    {
+        var store = NewStore(purgeHorizon: TimeSpan.FromDays(365));
+        await store.SaveTopicAsync(Topic("t-ttl", 640, "agent-ttl", DateTimeOffset.UtcNow));
+
+        var ttl = await redisFixture.Connection.GetDatabase()
+            .KeyTimeToLiveAsync("topic:agent-ttl:640:t-ttl");
+
+        ttl.ShouldNotBeNull();
+        ttl!.Value.ShouldBeGreaterThan(TimeSpan.FromDays(364));
     }
 
     private static TopicMetadata Topic(string topicId, long chatId, string agentId, DateTimeOffset at) =>

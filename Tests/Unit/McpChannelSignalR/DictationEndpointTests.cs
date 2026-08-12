@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
@@ -43,7 +44,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         _attachmentSettings = new AttachmentSettings { StoragePath = _root, TicketTtlSeconds = 60 };
         _settings = new DictationSettings { MaxLength = TimeSpan.FromSeconds(2) };
         _tickets = new AttachmentTickets(_attachmentSettings, _time);
-        _store = new AttachmentStore(_attachmentSettings, _time, NullLogger<AttachmentStore>.Instance);
+        _store = new AttachmentStore(_attachmentSettings, new RetentionSettings(), _time, NullLogger<AttachmentStore>.Instance);
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();

@@ -52,7 +52,7 @@ public sealed class ChatHubDictationTests : IDisposable
             new AttachmentService(
                 _attachmentSettings,
                 _tickets,
-                new AttachmentStore(_attachmentSettings, _time, NullLogger<AttachmentStore>.Instance),
+                new AttachmentStore(_attachmentSettings, new RetentionSettings(), _time, NullLogger<AttachmentStore>.Instance),
                 NullLogger<AttachmentService>.Instance),
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),

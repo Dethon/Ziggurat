@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Attachments;
@@ -45,7 +46,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         };
 
         _tickets = new AttachmentTickets(_settings, _time);
-        var store = new AttachmentStore(_settings, _time, NullLogger<AttachmentStore>.Instance);
+        var store = new AttachmentStore(_settings, new RetentionSettings(), _time, NullLogger<AttachmentStore>.Instance);
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();

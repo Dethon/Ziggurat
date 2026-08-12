@@ -147,6 +147,8 @@ public sealed class RedisThreadStateStore(
     public async Task<TopicPage> GetTopicPageAsync(
         string agentId, string spaceSlug, string? cursor, int pageSize, bool archived = false)
     {
+        await TrimPurgedAsync(agentId, spaceSlug);
+
         var topics = await ReadIndexRangeAsync(agentId, spaceSlug, cursor, pageSize, archived);
 
         // A short page is the end of the range, so the client stops asking rather than finding
@@ -210,6 +212,16 @@ public sealed class RedisThreadStateStore(
 
         await IndexAsync(topic);
     }
+
+    // Key expiry drops a purged topic's record and leaves its index member behind. Those members
+    // sit below the archive horizon where nothing reads, so nothing would ever notice them. The
+    // score is last write, which makes everything below the purge cutoff expired by definition:
+    // one range removal, no scan, and no job to run it.
+    private Task TrimPurgedAsync(string agentId, string spaceSlug) =>
+        _db.SortedSetRemoveRangeByScoreAsync(
+            IndexKey(agentId, spaceSlug),
+            double.NegativeInfinity,
+            (time.GetUtcNow() - retention.PurgeHorizon).ToUnixTimeMilliseconds());
 
     private Task IndexAsync(TopicMetadata topic) =>
         _db.SortedSetAddAsync(
