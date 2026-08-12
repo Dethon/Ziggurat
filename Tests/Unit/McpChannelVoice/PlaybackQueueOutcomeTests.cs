@@ -266,7 +266,6 @@ public class PlaybackQueueOutcomeTests
         }
 
         var ticket = queue.Enqueue(Job("announce", PlaybackKind.Announce) with { Audio = fiveSeconds() });
-        var armed = time.ArmedTotal;
         var pump = queue.RunAsync(
             (_, _) => { wrote.TrySetResult(); return Task.CompletedTask; },
             CancellationToken.None, time);
@@ -274,7 +273,7 @@ public class PlaybackQueueOutcomeTests
         await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
         // Writing the audio and parking on its tail are two steps, and this test is about cutting
         // the tail — so it has to wait for the tail to exist, not for eighty milliseconds to pass.
-        await time.WaitUntilAnyArmedAsync(armed);
+        await time.WaitForAnyLiveAsync();
         queue.CompleteAndDiscardQueued();   // the link dropped
 
         // The fake clock never advances: only cutting the tail lets the loop return.

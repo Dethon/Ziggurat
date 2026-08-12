@@ -12,16 +12,23 @@ namespace Tests;
 // the suite running at full width is where likely runs out. A timer announces itself when it is
 // created, so waiting for one is an observation of the precondition rather than a guess at it.
 //
-// Timers are tracked by due time because a loop usually has more than one outstanding — a reply
+// Timers carry their due time because a loop usually has more than one outstanding — a reply
 // backstop and a playback tail overlap — and advancing on "some timer appeared" would fire whichever
 // came first. Both `Task.Delay(span, clock, ct)` and `task.WaitAsync(span, clock, ct)` arm exactly
 // one timer whose due time is that span, so the span the production code passes is the handle the
-// test already knows. A zero-length delay completes without arming anything, so there is nothing to
-// wait for and nothing to advance.
+// test already holds. A zero-length delay completes without arming anything, so a wait of no length
+// is not one of these and needs no advance.
 public sealed class ArmedClock(DateTimeOffset start) : FakeTimeProvider(start)
 {
     private readonly Lock _gate = new();
+
+    // Two counts, because a test asks one of two different questions. `_armed` is monotonic and
+    // answers "has this ever been armed", which suits a wait that happens once. `_live` rises and
+    // falls with the waits actually outstanding, which is what a wait that recurs needs — Task.Delay
+    // and Task.WaitAsync each dispose their timer when they end, so a second identical wait later in
+    // the same test is distinguishable from the first one having already fired.
     private readonly List<TimeSpan> _armed = [];
+    private readonly List<TimeSpan> _live = [];
 
     public ArmedClock() : this(DateTimeOffset.UtcNow)
     {
@@ -33,13 +40,46 @@ public sealed class ArmedClock(DateTimeOffset start) : FakeTimeProvider(start)
         lock (_gate)
         {
             _armed.Add(dueTime);
+            _live.Add(dueTime);
         }
-        return base.CreateTimer(callback, state, dueTime, period);
+
+        return new Tracked(base.CreateTimer(callback, state, dueTime, period), this, dueTime);
     }
 
-    // Monotonic, so a caller can wait for growth past a count it took earlier without a live timer
-    // being disposed underneath it.
-    public int ArmedFor(TimeSpan due)
+    // Waits for the code under test to arm the wait this advance is meant to end, then ends it.
+    // `previously` carries the count already armed for that due time when the same wait recurs, so
+    // the first one's timer cannot answer for the second.
+    public async Task AdvancePastAsync(TimeSpan due, int previously = 0)
+    {
+        await WaitUntilArmedAsync(due, previously);
+        Advance(due);
+    }
+
+    // The other half of the same problem: a test that parks a wait and then does something it
+    // expects the parked wait to see. Arming the timeout is the last step of parking, so a timer
+    // with that due time is the signal that the code is ready to be interfered with.
+    public Task WaitUntilArmedAsync(TimeSpan due, int previously = 0) =>
+        Eventually.Until(
+            () => ArmedFor(due) > previously, $"the code to arm a {due.TotalMilliseconds:0}ms wait");
+
+    // The same question asked as "one is outstanding right now", for a wait a test settles more than
+    // once. It needs no baseline and cannot be answered by a timer that has already fired.
+    public Task WaitForLiveAsync(TimeSpan due) =>
+        Eventually.Until(
+            () => Live(t => t == due), $"a {due.TotalMilliseconds:0}ms wait to be outstanding");
+
+    // For a wait whose span the code computes rather than the test choosing it — a playback tail is
+    // as long as its audio, which the test has no name for.
+    public Task WaitForAnyLiveAsync() =>
+        Eventually.Until(() => Live(_ => true), "a wait of the code's own choosing to be outstanding");
+
+    public async Task AdvancePastLiveAsync(TimeSpan due, TimeSpan by)
+    {
+        await WaitForLiveAsync(due);
+        Advance(by);
+    }
+
+    private int ArmedFor(TimeSpan due)
     {
         lock (_gate)
         {
@@ -47,44 +87,45 @@ public sealed class ArmedClock(DateTimeOffset start) : FakeTimeProvider(start)
         }
     }
 
-    public int ArmedTotal
+    private bool Live(Func<TimeSpan, bool> match)
     {
-        get
+        lock (_gate)
         {
-            lock (_gate)
-            {
-                return _armed.Count;
-            }
+            return _live.Any(match);
         }
     }
 
-    // Waits for the code under test to arm the wait this advance is meant to end, then ends it.
-    // `previously` carries the count already armed for that due time when the same wait recurs — a
-    // second follow-up window arms a second tail, and without it the first one's timer answers for
-    // both.
-    public async Task AdvancePastAsync(TimeSpan due, int previously = 0)
+    private sealed class Tracked(ITimer inner, ArmedClock clock, TimeSpan due) : ITimer
     {
-        await WaitUntilArmedAsync(due, previously);
-        Advance(due);
-    }
+        private int _disposed;
 
-    // For the other half of the same problem: a test that parks a wait and then does something it
-    // expects the parked wait to see. Arming the timeout is the last step of parking, so a timer
-    // with that due time is the signal that the code is ready to be interfered with.
-    public Task WaitUntilArmedAsync(TimeSpan due, int previously = 0) =>
-        Eventually.Until(
-            () => ArmedFor(due) > previously, $"the code to arm a {due.TotalMilliseconds:0}ms wait");
+        public bool Change(TimeSpan dueTime, TimeSpan period) => inner.Change(dueTime, period);
 
-    // For a wait whose span the code computes rather than the test choosing it — a playback tail is
-    // as long as the audio is. The test cannot name the due time, but it knows it started something
-    // that parks exactly once, so "one more timer than there were" identifies it. Take `previously`
-    // immediately before the step that arms it, or a timer from earlier in the test answers instead.
-    public Task WaitUntilAnyArmedAsync(int previously) =>
-        Eventually.Until(() => ArmedTotal > previously, "the code to arm a wait of its own choosing");
+        public void Dispose()
+        {
+            Retire();
+            inner.Dispose();
+        }
 
-    public async Task AdvanceWhenAnyArmedAsync(int previously, TimeSpan by)
-    {
-        await WaitUntilAnyArmedAsync(previously);
-        Advance(by);
+        public async ValueTask DisposeAsync()
+        {
+            Retire();
+            await inner.DisposeAsync();
+        }
+
+        private void Retire()
+        {
+            // Disposal is not promised to happen once, and a second pass would retire a live timer
+            // belonging to whoever armed the same span next.
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            lock (clock._gate)
+            {
+                clock._live.Remove(due);
+            }
+        }
     }
 }

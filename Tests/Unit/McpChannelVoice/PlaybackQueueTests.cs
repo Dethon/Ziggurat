@@ -514,7 +514,7 @@ public class PlaybackQueueTests
         // Drained means the satellite finished PLAYING, not that the hub finished writing: the Pi
         // buffers the audio and plays it at real time, and the earcon's mic must not open early.
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new ArmedClock(DateTimeOffset.UtcNow);
 
         // 16000 bytes at 16 kHz/16-bit/mono = exactly 500 ms of audio.
         static async IAsyncEnumerable<AudioChunk> halfSecond()
@@ -533,7 +533,10 @@ public class PlaybackQueueTests
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), run.Token, time);
 
         var ticket = queue.Enqueue(job);
-        await Task.Delay(80); // let the loop write the audio and reach the playback wait
+        // The loop writes the audio and then parks for as long as the audio lasts, so that 500ms
+        // wait being outstanding is the proof it got there — and the advance below has something
+        // to land on rather than firing into a timer that does not exist yet.
+        await time.WaitForLiveAsync(TimeSpan.FromMilliseconds(500));
         ticket.Completed.IsCompleted.ShouldBeFalse(); // the 500 ms of audio has not played out yet
 
         time.Advance(TimeSpan.FromMilliseconds(500)); // playback completes
@@ -546,7 +549,7 @@ public class PlaybackQueueTests
     public async Task Run_FirstChunk_PublishesSynthesisAndTurnTiming()
     {
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new ArmedClock(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         Anchors(queue).MarkTurnStart(time.GetTimestamp());
@@ -578,7 +581,7 @@ public class PlaybackQueueTests
         timing.SinceSynthesisStart.ShouldBe(TimeSpan.FromMilliseconds(300));
         timing.SinceTurnStart.ShouldBe(TimeSpan.FromMilliseconds(2300));
 
-        await Task.Delay(80);                            // let the loop reach the playback-drain wait
+        await time.WaitForAnyLiveAsync();                // the loop reached the playback-drain wait
         time.Advance(TimeSpan.FromSeconds(1));           // drain the remaining playback duration
         await run.StopAsync(pump);
     }
@@ -669,7 +672,7 @@ public class PlaybackQueueTests
     public async Task Run_FirstChunk_PublishesSpeechEndAndQueueWaitTiming()
     {
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new ArmedClock(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         Anchors(queue).MarkTurnStart(time.GetTimestamp());
@@ -708,7 +711,7 @@ public class PlaybackQueueTests
         timing.QueueWait.ShouldBe(TimeSpan.FromMilliseconds(400));
         timing.SinceSynthesisStart.ShouldBe(TimeSpan.FromMilliseconds(300));
 
-        await Task.Delay(80);                            // let the loop reach the playback-drain wait
+        await time.WaitForAnyLiveAsync();                // the loop reached the playback-drain wait
         time.Advance(TimeSpan.FromSeconds(1));           // drain the remaining playback duration
         await run.StopAsync(pump);
     }
@@ -749,7 +752,7 @@ public class PlaybackQueueTests
         // SpeechEndToFirstAudioMs omits it and EndpointTailMs sits beside the span instead of nested
         // inside it, which is ~40% of the wait at production settings.
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new ArmedClock(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         time.Advance(TimeSpan.FromSeconds(3));            // the user talking

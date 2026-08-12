@@ -39,7 +39,7 @@ public class TurnLatencyDecompositionTests
     private const int QueueWaitMs = 400;
     private const int TtsMs = 300;
 
-    private readonly FakeTimeProvider _clock = new(DateTimeOffset.UtcNow);
+    private readonly ArmedClock _clock = new(DateTimeOffset.UtcNow);
     private readonly SatelliteSession _session;
 
     // Standing in for CaptureSession: the turn anchors belong to ITurnAnchor, not to the
@@ -153,7 +153,7 @@ public class TurnLatencyDecompositionTests
 
         using var run = new CancellationTokenSource();
         var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token, _clock);
-        await Task.Delay(80);                        // let the loop reach the playback-drain wait
+        await _clock.WaitForAnyLiveAsync();          // the loop reached the playback-drain wait
         _clock.Advance(TimeSpan.FromSeconds(1));     // drain the remaining playback duration
         await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
         await run.StopAsync(pump);
