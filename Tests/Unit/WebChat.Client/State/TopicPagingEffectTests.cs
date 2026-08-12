@@ -173,6 +173,47 @@ public sealed class TopicPagingEffectTests : IDisposable
         _topicsStore.State.Topics.Select(t => t.TopicId).ShouldBe(["topic-3", "topic-2"]);
     }
 
+    // New activity arrives as a push and inserts at the top. Merged rather than replacing, so the
+    // pages someone has scrolled through survive a reply landing.
+    [Fact]
+    public async Task RefreshingTheTop_MovesABumpedRowUpWithoutCollapsingTheLoadedPages()
+    {
+        SeedTopics(4);
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        await LoadFirstPageAsync();
+        await _effect.LoadNextPageAsync();
+        _topicsStore.State.Topics.Count.ShouldBe(4);
+
+        // The oldest conversation gains a message, which on the server moves it to the top.
+        var start = new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero);
+        _topicService.SeedTopic(new global::Domain.DTOs.WebChat.TopicMetadata(
+            "topic-0", 100, 0, "agent-1", "Topic 0", start, start.AddHours(1), MessageCount: 3));
+
+        await _effect.RefreshTopAsync();
+
+        _topicsStore.State.Topics.Select(t => t.TopicId)
+            .ShouldBe(["topic-0", "topic-3", "topic-2", "topic-1"]);
+        _topicsStore.State.Topics[0].MessageCount.ShouldBe(3);
+    }
+
+    // A search and the archive are answers to a question the person asked; rows arriving into
+    // them unasked would make them a different list than the one being read.
+    [Fact]
+    public async Task RefreshingTheTop_WhileShowingTheArchive_ChangesNothing()
+    {
+        SeedTopics(4);
+        _topicService.ArchivedTopicIds.Add("topic-0");
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new ShowArchivedTopics(true));
+        await _effect.LoadFirstPageAsync();
+        _calls.Reset();
+
+        await _effect.RefreshTopAsync();
+
+        _topicsStore.State.Topics.Select(t => t.TopicId).ShouldBe(["topic-0"]);
+        _calls.Calls.ShouldBeEmpty();
+    }
+
     private void SeedTopics(int count)
     {
         var start = new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero);

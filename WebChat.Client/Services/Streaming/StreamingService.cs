@@ -275,6 +275,11 @@ public sealed class StreamingService(
             // the store's, and until the agent has persisted the turn there is nothing new to
             // be read up to. A topic nobody is looking at keeps its badge.
             await MarkReadIfViewedAsync(topic);
+
+            // The conversation has been written to, so its row has a new preview, a new position
+            // and possibly a badge — none of which this client can work out for itself now that
+            // the server owns all three.
+            dispatcher.Dispatch(new RefreshTopicList());
         }
     }
 

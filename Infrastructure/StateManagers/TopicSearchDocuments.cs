@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using Domain.DTOs.WebChat;
 using NRedisStack;
 using NRedisStack.RedisStackCommands;
@@ -187,17 +186,11 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
     // The query as terms the index can take. Anything that means something to RediSearch is
     // dropped rather than escaped: a person typing into a search box is naming words, not
     // writing a query.
-    private static string Terms(string query)
-    {
-        var cleaned = new StringBuilder(query.Length);
-        foreach (var c in query)
-        {
-            cleaned.Append(char.IsLetterOrDigit(c) ? c : ' ');
-        }
-
-        return string.Join(
-            ' ', cleaned.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
-    }
+    private static string Terms(string query) =>
+        string.Join(
+            ' ',
+            new string([.. query.Select(c => char.IsLetterOrDigit(c) ? c : ' ')])
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries));
 
     private static string Tag(string value) => value.Replace("-", "\\-");
 

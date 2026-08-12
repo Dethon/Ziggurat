@@ -21,6 +21,7 @@ public sealed class TopicPagingEffect : IDisposable
     private readonly IDisposable _loadMoreRegistration;
     private readonly IDisposable _showArchivedRegistration;
     private readonly IDisposable _searchRegistration;
+    private readonly IDisposable _refreshRegistration;
     private int _fetching;
 
     public TopicPagingEffect(
@@ -44,6 +45,37 @@ public sealed class TopicPagingEffect : IDisposable
             _ => LoadFirstPageAsync().LogFaults(_logger, nameof(ShowArchivedTopics)));
         _searchRegistration = dispatcher.RegisterHandler<SearchTopics>(
             _ => LoadFirstPageAsync().LogFaults(_logger, nameof(SearchTopics)));
+        _refreshRegistration = dispatcher.RegisterHandler<RefreshTopicList>(
+            _ => RefreshTopAsync().LogFaults(_logger, nameof(RefreshTopicList)));
+    }
+
+    // New activity, merged in rather than replacing the list. Only the ordinary list is refreshed
+    // this way: a search and the archive are answers to a question the person asked, and rows
+    // arriving into them unasked would be a different list than the one they are reading.
+    public async Task RefreshTopAsync()
+    {
+        var state = _topicsStore.State;
+        if (state.SelectedAgentId is null
+            || state.ShowingArchived
+            || !string.IsNullOrWhiteSpace(state.SearchQuery))
+        {
+            return;
+        }
+
+        var page = await _topicService.GetTopicPageAsync(
+            state.SelectedAgentId, _spaceStore.State.CurrentSlug);
+
+        if (!page.IsLive)
+        {
+            return;
+        }
+
+        // Upserted one by one, so a row already held gains the new copy in place instead of a
+        // second row, and the cursor the person has paged down to survives.
+        page.Value!.Topics
+            .Select(StoredTopic.FromMetadata)
+            .ToList()
+            .ForEach(topic => _dispatcher.Dispatch(new UpdateTopic(topic)));
     }
 
     // Switching between the ordinary list and the archive reads the other range of the same
@@ -119,5 +151,6 @@ public sealed class TopicPagingEffect : IDisposable
         _loadMoreRegistration.Dispose();
         _showArchivedRegistration.Dispose();
         _searchRegistration.Dispose();
+        _refreshRegistration.Dispose();
     }
 }

@@ -25,6 +25,12 @@ public record ShowArchivedTopics(bool Archived) : IAction;
 // which past the first page could only ever find what the client happened to have.
 public record SearchTopics(string Query) : IAction;
 
+// The command: something was written to a conversation in this space, so re-read the top of the
+// list. What comes back is merged in rather than replacing what is held, which is what moves a
+// bumped row to the top without collapsing the pages someone has scrolled through — and what
+// delivers a topic bumped from below the cursor, the row paging backwards will never reach.
+public record RefreshTopicList : IAction;
+
 public record SelectTopic(string? TopicId) : IAction;
 
 public record AddTopic(StoredTopic Topic) : IAction;

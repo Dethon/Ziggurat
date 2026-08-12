@@ -346,6 +346,48 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         topic.ReadPosition.ShouldBe(0);
     }
 
+    // A badge means what a person would count on screen. The stored list also holds tool and
+    // system turns, so counting it raw would badge one reply with six tool calls as seven unread.
+    [Fact]
+    public async Task AppendMessagesAsync_CountsOnlyTheMessagesAReaderIsShown()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-tools", 585, 0, "agent-tools", "Tooling", DateTimeOffset.UtcNow, null));
+
+        await store.AppendMessagesAsync(HistoryKey("agent-tools", 585),
+        [
+            new ChatMessage(ChatRole.User, "what is on tonight"),
+            new ChatMessage(ChatRole.Tool, "looked it up"),
+            new ChatMessage(ChatRole.System, "a note to itself"),
+            new ChatMessage(ChatRole.Assistant, "two things")
+        ]);
+
+        var topic = (await store.GetTopicPageAsync("agent-tools", "default", null, 10)).Topics
+            .ShouldHaveSingleItem();
+        topic.MessageCount.ShouldBe(2);
+    }
+
+    // An index member whose record is gone is one fewer row, not the end of the range. Deciding
+    // the cursor on rows rather than members would stop the list short of everything below it.
+    [Fact]
+    public async Task GetTopicPageAsync_AnIndexMemberWhoseRecordIsGone_DoesNotEndTheRange()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 4, 5, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock);
+        await SeedTopicsAsync(store, clock, "agent-dangling", count: 4);
+
+        // The record alone, the way key expiry leaves it: the member stays in the index.
+        await redisFixture.Connection.GetDatabase()
+            .KeyDeleteAsync("topic:agent-dangling:601:t-agent-dangling-1");
+
+        var first = await store.GetTopicPageAsync("agent-dangling", "default", null, 2);
+        var second = await store.GetTopicPageAsync("agent-dangling", "default", first.NextCursor, 2);
+
+        first.NextCursor.ShouldNotBeNull();
+        second.Topics.Select(t => t.Name).ShouldBe(["topic-0"]);
+    }
+
     // The read position is set from what the store knows rather than from what a browser
     // believed a moment ago, so a reply that landed between the two is not counted unread.
     [Fact]

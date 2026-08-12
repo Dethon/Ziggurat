@@ -79,10 +79,12 @@ public sealed class RedisThreadStateStore(
     // written here too, on the same pass, so drawing a row costs no history read.
     private async Task StampLastWriteAsync(string historyKey, IReadOnlyList<ChatMessage> appended)
     {
-        if (HistoryKeyParts(historyKey) is not var (agentId, chatId, threadId))
+        if (HistoryKeyParts(historyKey) is not { } key)
         {
             return;
         }
+
+        var (agentId, chatId, threadId) = key;
 
         var topic = await GetTopicByChatIdAndThreadIdAsync(agentId, chatId, threadId);
         if (topic is null)
@@ -94,7 +96,11 @@ public sealed class RedisThreadStateStore(
         {
             LastMessageAt = time.GetUtcNow(),
             LastMessageSnippet = Snippet(appended) ?? topic.LastMessageSnippet,
-            MessageCount = await _db.ListLengthAsync(historyKey)
+
+            // Counted in the same messages a reader is shown, so a badge means what a person
+            // would count on screen. The raw list holds tool and system turns too, and one
+            // reply with six tool calls would otherwise badge as seven unread.
+            MessageCount = topic.MessageCount + Readable(appended).Count()
         };
 
         await SaveTopicAsync(stamped);
@@ -104,12 +110,18 @@ public sealed class RedisThreadStateStore(
         await _searchDocuments.WriteAsync(stamped, Text(appended));
     }
 
+    // The messages a reader is shown: what the transcript renders, what a badge counts and what
+    // a conversation is searched by are all the same set.
+    private static IEnumerable<ChatMessage> Readable(IEnumerable<ChatMessage> messages) =>
+        messages.Where(m => m.Role == ChatRole.User || m.Role == ChatRole.Assistant);
+
+    private static string TextOf(ChatMessage message) =>
+        string.Join("", message.Contents.OfType<TextContent>().Select(c => c.Text));
+
     private static string Text(IEnumerable<ChatMessage> messages) =>
         string.Join(
             ' ',
-            messages
-                .Select(m => string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)))
-                .Where(t => !string.IsNullOrWhiteSpace(t)));
+            messages.Select(TextOf).Where(t => !string.IsNullOrWhiteSpace(t)));
 
     // Asked of the store rather than told by a browser, because the browser's idea of the count
     // is always one round trip behind: a reply that landed while it was reading would come back
@@ -121,7 +133,7 @@ public sealed class RedisThreadStateStore(
             return;
         }
 
-        await SaveTopicAsync(topic with { ReadPosition = await _db.ListLengthAsync(HistoryKey(topic)) });
+        await SaveTopicAsync(topic with { ReadPosition = topic.MessageCount });
     }
 
     // The last thing said that had anything to say. A message carrying only files leaves the
@@ -164,14 +176,28 @@ public sealed class RedisThreadStateStore(
     {
         await TrimPurgedAsync(agentId, spaceSlug);
 
-        var topics = await ReadIndexRangeAsync(agentId, spaceSlug, cursor, pageSize, archived);
+        var members = await ReadIndexRangeAsync(agentId, spaceSlug, cursor, pageSize, archived);
+        var topics = await ResolveAsync(agentId, members);
 
-        // A short page is the end of the range, so the client stops asking rather than finding
-        // out by getting nothing back.
+        // Decided on what the index held, not on what resolved: a member whose record is gone is
+        // one fewer row, not the end of the range, and counting rows would stop the list short of
+        // everything below it. The cursor is the last member's score for the same reason.
         return new TopicPage(
             topics,
-            topics.Count < pageSize ? null : Cursor(topics[^1]));
+            members.Count < pageSize ? null : Score(members[^1]));
     }
+
+    private async Task<IReadOnlyList<TopicMetadata>> ResolveAsync(
+        string agentId, IReadOnlyList<SortedSetEntry> members)
+    {
+        var topics = await Task.WhenAll(
+            members.Select(m => ReadIndexedTopicAsync(agentId, m.Element.ToString())));
+
+        return topics.OfType<TopicMetadata>().ToList();
+    }
+
+    private static string Score(SortedSetEntry member) =>
+        member.Score.ToString(CultureInfo.InvariantCulture);
 
     // The one read path. Members are ordered by last write, so the order the sidebar shows is the
     // order the structure already holds and nothing sorts in memory. Paging is keyset paging over
@@ -180,11 +206,11 @@ public sealed class RedisThreadStateStore(
     // Archived is a position in this range and never a field on a topic. The cutoff is subtracted
     // from the current time here, so changing the horizon takes effect on the next read with no
     // migration and no backfill, and the two ranges partition the index exactly.
-    private async Task<IReadOnlyList<TopicMetadata>> ReadIndexRangeAsync(
+    private async Task<IReadOnlyList<SortedSetEntry>> ReadIndexRangeAsync(
         string agentId, string spaceSlug, string? cursor, int take, bool archived)
     {
         var cutoff = (time.GetUtcNow() - retention.ArchiveHorizon).ToUnixTimeMilliseconds();
-        var members = await _db.SortedSetRangeByScoreAsync(
+        return await _db.SortedSetRangeByScoreWithScoresAsync(
             IndexKey(agentId, spaceSlug),
             start: archived ? double.NegativeInfinity : cutoff,
             stop: ParseCursor(cursor) ?? (archived ? cutoff : double.PositiveInfinity),
@@ -195,13 +221,7 @@ public sealed class RedisThreadStateStore(
             order: Order.Descending,
             skip: 0,
             take: take);
-
-        var topics = await Task.WhenAll(members.Select(m => ReadIndexedTopicAsync(agentId, m.ToString())));
-        return topics.OfType<TopicMetadata>().ToList();
     }
-
-    private static string Cursor(TopicMetadata topic) =>
-        LastWriteScore(topic).ToString(CultureInfo.InvariantCulture);
 
     private static double? ParseCursor(string? cursor) =>
         double.TryParse(cursor, CultureInfo.InvariantCulture, out var score) ? score : null;
@@ -300,8 +320,9 @@ public sealed class RedisThreadStateStore(
     // the tail of the history rather than the whole of it, because the preview is one message.
     private async Task<TopicMetadata> BackfillAsync(TopicMetadata topic)
     {
-        var count = await _db.ListLengthAsync(HistoryKey(topic));
-        var tail = await GetTailMessagesAsync(HistoryKey(topic), 20);
+        var stored = await GetMessagesAsync(HistoryKey(topic)) ?? [];
+        var count = Readable(stored).LongCount();
+        var tail = stored.TakeLast(20).ToArray();
 
         return topic with
         {
@@ -335,12 +356,11 @@ public sealed class RedisThreadStateStore(
 
         return messages is null
             ? []
-            : messages
-                .Where(m => m.Role == ChatRole.User || m.Role == ChatRole.Assistant)
+            : Readable(messages)
                 .Select(m => new ChatHistoryMessage(
                     m.MessageId,
                     m.Role.Value,
-                    string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)),
+                    TextOf(m),
                     m.GetSenderId(),
                     m.GetTimestamp(),
                     m.GetAttachments()))

@@ -13,7 +13,7 @@ namespace Tests.Integration.StateManagers;
 // whole reason the sidebar's own filter over loaded rows had to go: once the list is paged, that
 // filter can only ever find the first page.
 [Trait("Category", "Integration")]
-public class RedisTopicSearchTests(TopicSearchFixture redis) : IClassFixture<TopicSearchFixture>
+public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture<TopicSearchFixture>
 {
     // Every test's own agent id, so classes sharing this database do not answer each other's
     // searches.

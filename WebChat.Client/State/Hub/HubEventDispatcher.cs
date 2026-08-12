@@ -40,8 +40,15 @@ public sealed class HubEventDispatcher(
     // Reporting the push is all this type does. Deciding whether to resume the stream or just
     // mark it started belongs to StreamResumeEffect — resuming is a hub call, and a dispatcher
     // that made one would depend on the services that reach back through the live connection.
-    public void HandleStreamStarted(StreamStartedNotification notification) =>
+    public void HandleStreamStarted(StreamStartedNotification notification)
+    {
         dispatcher.Dispatch(new RemoteStreamStarted(notification.TopicId));
+
+        // A reply opening somewhere in the space is the one thing every client is told about a
+        // conversation it may not be holding. It is what brings a row bumped from below the
+        // cursor to the top of a list that would otherwise never page back to it.
+        dispatcher.Dispatch(new RefreshTopicList());
+    }
 
     // Taking the prompt off screen is all this is. What the approval let through arrives on the
     // topic's stream like the rest of the reply.
