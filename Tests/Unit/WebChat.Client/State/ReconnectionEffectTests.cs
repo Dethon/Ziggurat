@@ -97,11 +97,21 @@ public sealed class ReconnectionEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task WhenConnectionReconnected_ResumesStreamsForAllTopics()
+    // The sweep over every held topic is gone: the page says which replies are in flight, so
+    // recovery resumes exactly those and asks about nothing else.
+    public async Task WhenConnectionReconnected_ResumesOnlyTheStreamsThePageReported()
     {
-        var topic1 = new StoredTopic { TopicId = "topic-1", Name = "Topic 1" };
-        var topic2 = new StoredTopic { TopicId = "topic-2", Name = "Topic 2" };
-        _dispatcher.Dispatch(new TopicsLoaded([topic1, topic2]));
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        var now = DateTimeOffset.UtcNow;
+        _mockTopicService
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
+            .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
+                [
+                    new TopicMetadata("topic-1", 1, 1, "agent-1", "Topic 1", now, null),
+                    new TopicMetadata("topic-2", 2, 2, "agent-1", "Topic 2", now, null)
+                ],
+                null,
+                ["topic-2"])));
 
         _mockStreamResumeService
             .Setup(s => s.TryResumeStreamAsync(It.IsAny<StoredTopic>()))
@@ -113,14 +123,14 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
 
-        await Task.Delay(50); // Allow async handler to complete
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 2);
 
-        _mockStreamResumeService.Verify(
-            s => s.TryResumeStreamAsync(It.Is<StoredTopic>(t => t.TopicId == "topic-1")),
-            Times.Once);
         _mockStreamResumeService.Verify(
             s => s.TryResumeStreamAsync(It.Is<StoredTopic>(t => t.TopicId == "topic-2")),
             Times.Once);
+        _mockStreamResumeService.Verify(
+            s => s.TryResumeStreamAsync(It.Is<StoredTopic>(t => t.TopicId == "topic-1")),
+            Times.Never);
     }
 
     [Fact]

@@ -423,8 +423,16 @@ public sealed class ChatHub(
     public async Task<TopicPage> GetTopicPage(
         string agentId, string spaceSlug = SpaceConfig.DefaultSlug, string? cursor = null, int? pageSize = null)
     {
-        return await threadStore.GetTopicPageAsync(
+        var page = await threadStore.GetTopicPageAsync(
             agentId, spaceSlug, cursor, pageSize ?? retention.PageSize);
+
+        // Answered here rather than asked per topic: which replies are in flight is this
+        // process's own state, so it costs nothing to say alongside the rows it is about. A
+        // reply in flight further down the list is reported when that page is loaded.
+        return page with
+        {
+            LiveTopicIds = [.. page.Topics.Select(t => t.TopicId).Where(streamService.IsStreaming)]
+        };
     }
 
     public async Task SaveTopic(TopicMetadata topic, bool isNew = false)

@@ -195,11 +195,11 @@ public sealed class InitializationEffect : IDisposable
         var topics = firstPage.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
         _dispatcher.Dispatch(new TopicsLoaded(topics, firstPage.Value.NextCursor));
 
-        // No history. Opening the client costs one page of rows and nothing per conversation:
-        // the badge and the preview a row needs are on the row, and the transcript is fetched
-        // when a conversation is opened. Streams are still resumed, because a reply in flight
-        // has to reach whoever is watching for it.
-        await Task.WhenAll(topics.Select(ResumeStreamAsync));
+        // No history and no per-topic sweep. Opening the client costs one page of rows and
+        // nothing per conversation: the badge and the preview a row needs are on the row, the
+        // transcript is fetched when a conversation is opened, and the page itself says which
+        // replies are in flight.
+        TopicPageStreams.ResumeReported(topics, firstPage.Value.LiveTopicIds, _streamResumeService, _logger);
     }
 
     public Task RegisterUserAsync(string? userId = null)
@@ -224,13 +224,6 @@ public sealed class InitializationEffect : IDisposable
         }
     }
 
-    // Detached on purpose: a resumed stream is long-lived, so awaiting it would mean awaiting
-    // the conversation.
-    private Task ResumeStreamAsync(StoredTopic topic)
-    {
-        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, "stream resume");
-        return Task.CompletedTask;
-    }
 
     public void Dispose()
     {

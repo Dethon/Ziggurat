@@ -108,12 +108,15 @@ public sealed class AgentSelectionEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task HandleAgentChangedAsync_TopicIsMidStream_KeepsItsLocalMessagesAndResumes()
+    // Which replies are in flight comes with the page now, so the switch resumes what the
+    // server named and asks about nothing else.
+    public async Task HandleAgentChangedAsync_TopicIsMidStream_ResumesItAndReadsNoHistory()
     {
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
         _topicService.SeedTopic(TestChat.Topic("topic-2", chatId: 11, threadId: 21, agentId: "agent-2"));
+        _topicService.SeedTopic(TestChat.Topic("topic-3", chatId: 12, threadId: 22, agentId: "agent-2"));
         _topicService.SetHistory(11, 21, TestChat.HistoryMessage("m-1", "from the server"));
-        _dispatcher.Dispatch(new StreamStarted("topic-2"));
+        _topicService.LiveTopicIds.Add("topic-2");
         _calls.Reset();
 
         await _effect.HandleAgentChangedAsync("agent-2");

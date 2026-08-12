@@ -13,6 +13,7 @@ public sealed class ReconnectionEffect : IDisposable
     private readonly IDisposable _subscription;
     private readonly Dispatcher _dispatcher;
     private readonly ITopicService _topicService;
+    private readonly ILogger<ReconnectionEffect> _logger;
 
     public ReconnectionEffect(
         ConnectionStore connectionStore,
@@ -26,6 +27,7 @@ public sealed class ReconnectionEffect : IDisposable
     {
         _dispatcher = dispatcher;
         _topicService = topicService;
+        _logger = logger;
 
         _subscription = connectionStore.BecameLiveAgain.Subscribe(
             _ => HandleReconnectedAsync(topicsStore, spaceStore, sessionService, streamResumeService)
@@ -55,6 +57,11 @@ public sealed class ReconnectionEffect : IDisposable
             {
                 var topics = firstPage.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
                 _dispatcher.Dispatch(new TopicsLoaded(topics, firstPage.Value.NextCursor));
+
+                // The page says which replies are in flight, so recovery resumes those and asks
+                // about nothing else.
+                TopicPageStreams.ResumeReported(
+                    topics, firstPage.Value.LiveTopicIds, streamResumeService, _logger);
             }
         }
 
@@ -73,8 +80,6 @@ public sealed class ReconnectionEffect : IDisposable
                 tasks.Add(sessionService.StartSessionAsync(selectedTopic));
             }
         }
-
-        tasks.AddRange(currentState.Topics.Select(streamResumeService.TryResumeStreamAsync));
 
         await Task.WhenAll(tasks);
     }

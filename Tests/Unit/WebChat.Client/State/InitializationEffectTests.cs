@@ -143,7 +143,7 @@ public sealed class InitializationEffectTests : IDisposable
         _streamResumeService.BlockUntilReleased = true;
         _agentService.Agents = [_agentOne];
         _topicService.SeedTopic(TestChat.Topic("topic-1"));
-        _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "first"));
+        _topicService.LiveTopicIds.Add("topic-1");
 
         await _effect.HandleInitializeAsync();
 

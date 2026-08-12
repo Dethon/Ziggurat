@@ -88,8 +88,12 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
             ? null
             : Score(page[^1]).ToString(CultureInfo.InvariantCulture);
 
-        return Task.FromResult(HubResult<TopicPage>.Answered(new TopicPage(page, next)));
+        return Task.FromResult(HubResult<TopicPage>.Answered(new TopicPage(
+            page, next, [.. page.Select(t => t.TopicId).Where(LiveTopicIds.Contains)])));
     }
+
+    // Which of the seeded topics the server would report as having a reply in flight.
+    public HashSet<string> LiveTopicIds { get; } = [];
 
     // Read positions the fake was told to move, so a test can assert which conversations were
     // marked read without reaching for the seeded records.

@@ -89,15 +89,10 @@ public sealed class AgentSelectionEffect : IDisposable
         _dispatcher.Dispatch(new TopicsLoaded(topics, firstPage.Value.NextCursor));
 
         // Switching agent costs a page of rows and nothing per conversation. A transcript is
-        // fetched when its conversation is opened; a reply in flight is still resumed, because
-        // it has to reach whoever is watching for it.
-        topics.ForEach(ResumeStream);
+        // fetched when its conversation is opened, and the page says which of its replies are
+        // in flight rather than being asked about each in turn.
+        TopicPageStreams.ResumeReported(topics, firstPage.Value.LiveTopicIds, _streamResumeService, _logger);
     }
-
-    // Detached on purpose: a resumed stream is long-lived, so awaiting it would mean awaiting
-    // the conversation.
-    private void ResumeStream(StoredTopic topic) =>
-        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, "stream resume");
 
     public void Dispose()
     {

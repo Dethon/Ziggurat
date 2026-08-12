@@ -15,6 +15,7 @@ public sealed class TopicPagingEffect : IDisposable
     private readonly TopicsStore _topicsStore;
     private readonly ITopicService _topicService;
     private readonly SpaceStore _spaceStore;
+    private readonly IStreamResumeService _streamResumeService;
     private readonly ILogger<TopicPagingEffect> _logger;
     private readonly IDisposable _loadMoreRegistration;
     private int _fetching;
@@ -24,12 +25,14 @@ public sealed class TopicPagingEffect : IDisposable
         TopicsStore topicsStore,
         ITopicService topicService,
         SpaceStore spaceStore,
+        IStreamResumeService streamResumeService,
         ILogger<TopicPagingEffect> logger)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
         _topicService = topicService;
         _spaceStore = spaceStore;
+        _streamResumeService = streamResumeService;
         _logger = logger;
 
         _loadMoreRegistration = dispatcher.RegisterHandler<LoadMoreTopics>(
@@ -61,8 +64,12 @@ public sealed class TopicPagingEffect : IDisposable
                 return;
             }
 
-            _dispatcher.Dispatch(new TopicsPageAppended(
-                page.Value!.Topics.Select(StoredTopic.FromMetadata).ToList(), page.Value.NextCursor));
+            var topics = page.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
+            _dispatcher.Dispatch(new TopicsPageAppended(topics, page.Value.NextCursor));
+
+            // A reply in flight on a topic further down the list is reported when that page is
+            // loaded, which is the only moment the client learns the row exists at all.
+            TopicPageStreams.ResumeReported(topics, page.Value.LiveTopicIds, _streamResumeService, _logger);
         }
         finally
         {

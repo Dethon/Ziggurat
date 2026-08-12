@@ -14,6 +14,7 @@ public sealed class TopicPagingEffectTests : IDisposable
     private readonly TopicsStore _topicsStore;
     private readonly SpaceStore _spaceStore;
     private readonly FakeTopicService _topicService;
+    private readonly FakeStreamResumeService _streamResumeService = new();
     private readonly TopicPagingEffect _effect;
 
     public TopicPagingEffectTests()
@@ -27,6 +28,7 @@ public sealed class TopicPagingEffectTests : IDisposable
             _topicsStore,
             _topicService,
             _spaceStore,
+            _streamResumeService,
             new RecordingLogger<TopicPagingEffect>());
     }
 

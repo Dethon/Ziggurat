@@ -67,6 +67,12 @@ public sealed class ChatHubTopicTests : IDisposable
             Context = new RegisteredCaller(),
             Groups = new Mock<IGroupManager>().Object
         };
+
+        // A page call nobody scripted still has to come back with something usable, or a test
+        // about the cursor fails inside the live-stream reporting that runs after it.
+        _store.Setup(s => s.GetTopicPageAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int>()))
+            .ReturnsAsync(new TopicPage([], null));
     }
 
     [Fact]
@@ -104,6 +110,23 @@ public sealed class ChatHubTopicTests : IDisposable
 
         page.NextCursor.ShouldBe("42");
     }
+
+    // The client used to ask about every topic one at a time to find this out, which is the
+    // second unbounded fan-out on start-up after history loading.
+    [Fact]
+    public async Task GetTopicPage_SaysWhichOfItsTopicsHaveAReplyInFlight()
+    {
+        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", null, 2))
+            .ReturnsAsync(new TopicPage([Topic("busy"), Topic("quiet")], null));
+        _streamService.GetOrCreateStream("busy", "prompt", "fran", CancellationToken.None);
+
+        var page = await _hub.GetTopicPage("jack", "kitchen");
+
+        page.LiveTopicIds.ShouldBe(["busy"]);
+    }
+
+    private static TopicMetadata Topic(string topicId) => new(
+        topicId, 7, 42, "jack", topicId, new DateTimeOffset(2026, 8, 12, 0, 0, 0, TimeSpan.Zero), null);
 
     [Fact]
     public async Task GetTopicPage_CarriesTheCursorThroughToTheStore()
