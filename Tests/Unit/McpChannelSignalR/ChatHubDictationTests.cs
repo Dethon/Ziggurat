@@ -46,7 +46,7 @@ public sealed class ChatHubDictationTests : IDisposable
             approvalService: null!,
             new ChannelNotificationEmitter(new ChannelInbox(_time), DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            redisStateService: null!,
+            threadStore: null!,
             pushSubscriptionStore: null!,
             new AttachmentService(
                 _attachmentSettings,

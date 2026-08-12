@@ -1,6 +1,7 @@
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Infrastructure.StateManagers;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Hubs;
@@ -57,7 +58,7 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
             approvals,
             new ChannelNotificationEmitter(new ChannelInbox(_time), DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            new RedisStateService(redis.Connection),
+            new RedisThreadStateStore(redis.Connection, TimeSpan.FromDays(30)),
             new Mock<IPushSubscriptionStore>().Object,
             attachments,
             new DictationSettings(),

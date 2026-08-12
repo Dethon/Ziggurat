@@ -19,7 +19,7 @@ public sealed class ChatHub(
     ApprovalService approvalService,
     ChannelNotificationEmitter notificationEmitter,
     IAgentCatalog catalog,
-    RedisStateService redisStateService,
+    IThreadStateStore threadStore,
     IPushSubscriptionStore pushSubscriptionStore,
     AttachmentService attachmentService,
     DictationSettings dictationSettings,
@@ -417,17 +417,17 @@ public sealed class ChatHub(
 
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
     {
-        return await redisStateService.GetAllTopicsAsync(agentId, spaceSlug);
+        return await threadStore.GetAllTopicsAsync(agentId, spaceSlug);
     }
 
     public async Task SaveTopic(TopicMetadata topic, bool isNew = false)
     {
-        await redisStateService.SaveTopicAsync(topic);
+        await threadStore.SaveTopicAsync(topic);
     }
 
     public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistory(string agentId, long chatId, long threadId)
     {
-        return await redisStateService.GetHistoryAsync(agentId, chatId, threadId);
+        return await threadStore.GetHistoryAsync(agentId, chatId, threadId);
     }
 
     public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
@@ -443,9 +443,8 @@ public sealed class ChatHub(
         streamService.CancelStream(topicId);
         await approvalService.CancelPendingApprovalsForTopicAsync(topicId);
 
-        var agentKey = new AgentKey($"{chatId}:{threadId}", agentId);
-        await redisStateService.DeleteMessagesAsync(agentKey);
-        await redisStateService.DeleteTopicAsync(agentId, chatId, topicId);
+        await threadStore.DeleteAsync(new AgentKey($"{chatId}:{threadId}", agentId));
+        await threadStore.DeleteTopicAsync(agentId, chatId, topicId);
 
         // Removing a conversation removes what was in it. The sweep would reach these eventually;
         // deleting a topic is the person saying they want them gone now.

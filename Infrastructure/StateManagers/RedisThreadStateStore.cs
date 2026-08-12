@@ -2,6 +2,7 @@ using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.WebChat;
+using Domain.Extensions;
 using Microsoft.Extensions.AI;
 using StackExchange.Redis;
 
@@ -105,6 +106,27 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
     public async Task<bool> ExistsAsync(string key, CancellationToken ct = default)
     {
         return await _db.KeyExistsAsync(key);
+    }
+
+    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
+    {
+        var messages = await GetMessagesAsync(new AgentKey($"{chatId}:{threadId}", agentId).ToString());
+
+        return messages is null
+            ? []
+            : messages
+                .Where(m => m.Role == ChatRole.User || m.Role == ChatRole.Assistant)
+                .Select(m => new ChatHistoryMessage(
+                    m.MessageId,
+                    m.Role.Value,
+                    string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)),
+                    m.GetSenderId(),
+                    m.GetTimestamp(),
+                    m.GetAttachments()))
+                // A message that carried only files has no text and must still survive: dropping it
+                // would make an image-only message vanish on reload.
+                .Where(m => !string.IsNullOrWhiteSpace(m.Content) || m.Attachments is { Count: > 0 })
+                .ToList();
     }
 
     public async Task<TopicMetadata?> GetTopicByChatIdAndThreadIdAsync(

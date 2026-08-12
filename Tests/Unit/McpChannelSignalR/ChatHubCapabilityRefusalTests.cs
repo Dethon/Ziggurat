@@ -57,7 +57,7 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
             _catalog,
-            redisStateService: null!,
+            threadStore: null!,
             pushSubscriptionStore: null!,
             attachmentService: null!,
             new DictationSettings(),

@@ -18,6 +18,11 @@ public interface IThreadStateStore
     Task SaveTopicAsync(TopicMetadata topic);
     Task DeleteTopicAsync(string agentId, long chatId, string topicId);
 
+    // The conversation as a reader sees it, which is the same history the agent restores read
+    // through a projection. It lives here rather than beside the chat hub so there is one
+    // implementation of the key scheme and not two kept in step by hand.
+    Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId);
+
     Task<TopicMetadata?> GetTopicByChatIdAndThreadIdAsync(string agentId, long chatId, long threadId,
         CancellationToken ct = default);
 }

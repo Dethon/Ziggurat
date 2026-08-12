@@ -1,3 +1,7 @@
+using Domain.Agents;
+using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
+using Domain.Extensions;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
 using Shouldly;
@@ -117,4 +121,79 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
         (await store.GetMessageCountAsync(key)).ShouldBe(2);
     }
+
+    [Fact]
+    public async Task GetAllTopicsAsync_FiltersBySpaceSlug()
+    {
+        var store = NewStore();
+        var now = DateTimeOffset.UtcNow;
+
+        await store.SaveTopicAsync(new TopicMetadata("t-s1", 300, 0, "agent-slug", "Space1", now, null,
+            SpaceSlug: "space-a"));
+        await store.SaveTopicAsync(new TopicMetadata("t-s2", 301, 0, "agent-slug", "Space2", now, null,
+            SpaceSlug: "space-b"));
+
+        var filtered = await store.GetAllTopicsAsync("agent-slug", "space-a");
+
+        filtered.ShouldContain(t => t.TopicId == "t-s1");
+        filtered.ShouldNotContain(t => t.TopicId == "t-s2");
+    }
+
+    [Fact]
+    public async Task GetHistoryAsync_ProjectsTheStoredConversation()
+    {
+        var store = NewStore();
+        await store.AppendMessagesAsync(HistoryKey("agent-hist", 900),
+        [
+            new ChatMessage(ChatRole.User, "hello there"),
+            new ChatMessage(ChatRole.Assistant, "hi, how can I help?")
+        ]);
+
+        var history = await store.GetHistoryAsync("agent-hist", 900, 0);
+
+        history.Select(h => h.Content).ShouldBe(["hello there", "hi, how can I help?"]);
+    }
+
+    // The read keeps only text and used to discard a message whose text was empty, which would
+    // make an image-only message vanish on reload. The transcript is a record of what was sent.
+    [Fact]
+    public async Task GetHistoryAsync_AMessageWithAttachmentsAndNoText_SurvivesTheRead()
+    {
+        var store = NewStore();
+        var message = new ChatMessage(ChatRole.User, "");
+        message.SetAttachments([
+            new AttachmentReference
+            {
+                Id = "901-0/abc", FileName = "photo.png", MediaType = "image/png", SizeBytes = 4
+            }
+        ]);
+
+        await store.AppendMessagesAsync(HistoryKey("agent-attach", 901), [message]);
+
+        var read = (await store.GetHistoryAsync("agent-attach", 901, 0)).ShouldHaveSingleItem();
+        read.Content.ShouldBeNullOrEmpty();
+        read.Attachments!.Single().FileName.ShouldBe("photo.png");
+    }
+
+    [Fact]
+    public async Task GetHistoryAsync_ProjectsAttachmentsAlongsideTheText()
+    {
+        var store = NewStore();
+        var message = new ChatMessage(ChatRole.User, "what is in this?");
+        message.SetAttachments([
+            new AttachmentReference
+            {
+                Id = "902-0/def", FileName = "scan.pdf", MediaType = "application/pdf", SizeBytes = 9
+            }
+        ]);
+
+        await store.AppendMessagesAsync(HistoryKey("agent-attach-text", 902), [message]);
+
+        var read = (await store.GetHistoryAsync("agent-attach-text", 902, 0)).ShouldHaveSingleItem();
+        read.Content.ShouldBe("what is in this?");
+        read.Attachments!.Single().MediaType.ShouldBe("application/pdf");
+    }
+
+    private static string HistoryKey(string agentId, long chatId, long threadId = 0) =>
+        new AgentKey($"{chatId}:{threadId}", agentId).ToString();
 }

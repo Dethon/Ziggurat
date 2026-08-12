@@ -46,7 +46,7 @@ public class ChatHubCancelTopicTests : IDisposable
             _approvalService,
             new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            redisStateService: null!,
+            threadStore: null!,
             pushSubscriptionStore: null!,
             attachmentService: null!,
             new DictationSettings(),
