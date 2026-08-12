@@ -256,13 +256,14 @@
                         </svg>
                     </button>
                     @* A paper plane, asked for as the shape everyone already reads as "on it goes",
-                       though what goes on is the words into the box: this button never sends. *@
+                       though what goes on is the words into the box: this button never sends. The
+                       same drawing as Send, which is the one it hands the words to. *@
                     <button class="dictation-stop"
                             title="Finish and put the words in the box"
                             data-testid="dictation-stop"
                             @onclick="StopDictating">
-                        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">
-                            <path d="M3 20V4l19 8Zm2-3 11.85-5L5 7v3.5l6 1.5-6 1.5Z" />
+                        <svg class="composer-icon" viewBox="-81 -81 674 674" fill="currentColor" width="18" height="18" aria-hidden="true">
+                            <path d="M476 3.2 12.5 270.6c-18.1 10.4-15.8 35.6 2.2 43.2L121 358.4l287.3-253.2c5.5-4.9 13.3 2.6 8.6 8.3L176 407v80.5c0 23.6 28.5 32.9 42.5 15.8L282 426l124.6 52.2c14.2 6 30.4-2.9 33-18.2l72-432C515 7.8 493.3-6.8 476 3.2Z" />
                         </svg>
                     </button>
                 }
@@ -274,13 +275,24 @@
         }
         else
         {
+            @* A drawn clip rather than the "+" the platform renders in whatever font it likes: at
+               the size of this row that character is neither the weight nor the colour of the
+               shapes beside it. Held at an angle, as a clip on a page would be, so it reads as an
+               object and not as a glyph.
+
+               The clip and the paper plane are Font Awesome Free 6 outlines (CC BY 4.0). Both are
+               drawn to the edge of their own viewBox, where the Material shapes beside them fill
+               about three quarters of theirs, so the box is padded here rather than the icon shrunk:
+               the drawing then comes out the size of the trash can and the microphone next to it. *@
             <label class="btn btn-secondary attach-button" title="Attach a file">
                 <InputFile class="attach-input"
                            OnChange="HandleFilesPicked"
                            multiple
                            accept="@AcceptedKinds"
                            disabled="@_disabled" />
-                +
+                <svg class="composer-icon" viewBox="-104 -69 656 656" fill="currentColor" width="18" height="18" aria-hidden="true">
+                    <path d="M364.2 83.8c-24.4-24.4-64-24.4-88.4 0l-184 184c-42.1 42.1-42.1 110.3 0 152.4s110.3 42.1 152.4 0l152-152c10.9-10.9 28.7-10.9 39.6 0s10.9 28.7 0 39.6l-152 152c-64 64-167.6 64-231.6 0s-64-167.6 0-231.6l184-184c46.3-46.3 121.3-46.3 167.6 0s46.3 121.3 0 167.6l-176 176c-28.6 28.6-75 28.6-103.6 0s-28.6-75 0-103.6l144-144c10.9-10.9 28.7-10.9 39.6 0s10.9 28.7 0 39.6l-144 144c-6.7 6.7-6.7 17.7 0 24.4s17.7 6.7 24.4 0l176-176c24.4-24.4 24.4-64 0-88.4z" />
+                </svg>
             </label>
 
             <textarea @ref="_textareaRef"
@@ -300,14 +312,27 @@
        and does not lose its listeners to a keystroke. *@
     @if (Control == SendControl.Cancel)
     {
-        <button class="btn btn-secondary" @onclick="HandleCancel">
-            Cancel
+        <button class="btn btn-secondary cancel-button"
+                data-testid="composer-cancel"
+                title="Stop the reply"
+                aria-label="Stop the reply"
+                @onclick="HandleCancel">
+            @* A filled square reads heavier than an outline of the same width, so this one is drawn
+               a little under the size of the plane it stands in for. *@
+            <svg class="composer-icon" viewBox="2.9 2.9 18.2 18.2" fill="currentColor" width="18" height="18" aria-hidden="true">
+                <path d="M8 6h8q2 0 2 2v8q0 2-2 2H8q-2 0-2-2V8q0-2 2-2Z" />
+            </svg>
         </button>
     }
-    <button class="btn btn-primary @(Control == SendControl.Send ? "" : "control-hidden")"
+    <button class="btn btn-primary send-button @(Control == SendControl.Send ? "" : "control-hidden")"
+            data-testid="composer-send"
+            title="Send"
+            aria-label="Send"
             @onclick="HandleSubmit"
             disabled="@(!CanSend)">
-        Send
+        <svg class="composer-icon" viewBox="-81 -81 674 674" fill="currentColor" width="18" height="18" aria-hidden="true">
+            <path d="M476 3.2 12.5 270.6c-18.1 10.4-15.8 35.6 2.2 43.2L121 358.4l287.3-253.2c5.5-4.9 13.3 2.6 8.6 8.3L176 407v80.5c0 23.6 28.5 32.9 42.5 15.8L282 426l124.6 52.2c14.2 6 30.4-2.9 33-18.2l72-432C515 7.8 493.3-6.8 476 3.2Z" />
+        </svg>
     </button>
     @* The slot rather than the button carries the hidden class: the microphone keeps its place in
        the render tree, and the slot is what the way-up hint is measured against. *@

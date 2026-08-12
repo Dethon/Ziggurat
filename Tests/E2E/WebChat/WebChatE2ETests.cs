@@ -293,7 +293,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     internal static async Task DrainPendingApprovalsAsync(IPage page)
     {
         var overlay = page.Locator(".approval-modal-overlay");
-        var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+        var cancelButton = page.Locator("[data-testid=composer-cancel]");
 
         var deadline = DateTime.UtcNow.AddSeconds(90);
         while (DateTime.UtcNow < deadline)
@@ -352,6 +352,35 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // Chat input should be visible (it may be enabled if the agent auto-selected)
         var chatInput = page.Locator("textarea.chat-input");
         (await chatInput.IsVisibleAsync()).ShouldBeTrue();
+    }
+
+    // Attach, send and cancel are drawn for the same reason the microphone is: a text label beside
+    // a row of icons reads as a different kind of control, and the platform's own "+" is neither
+    // the weight nor the colour of the shapes next to it.
+    [SkippableFact]
+    public async Task TheComposerControls_AreDrawnAsIconsRatherThanWords()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync();
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+
+        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+
+        var attach = page.Locator("label.attach-button");
+        await Assertions.Expect(attach.Locator("svg")).ToBeVisibleAsync();
+        (await attach.InnerTextAsync()).Trim().ShouldBeEmpty();
+
+        // Send only takes the microphone's place once there is something to send.
+        await page.Locator("textarea.chat-input").FillAsync("something to send");
+
+        var send = page.Locator("[data-testid=composer-send]");
+        await Assertions.Expect(send.Locator("svg")).ToBeVisibleAsync();
+        (await send.InnerTextAsync()).Trim().ShouldBeEmpty();
+
+        // Every one of them says what it is to a screen reader, which the words used to do.
+        (await attach.GetAttributeAsync("title")).ShouldNotBeNullOrEmpty();
+        (await send.GetAttributeAsync("aria-label")).ShouldNotBeNullOrEmpty();
     }
 
     [SkippableFact]
@@ -477,8 +506,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
                 }
                 catch (TimeoutException) when (attempt < 2)
                 {
-                    var streamingCancel = page.Locator(
-                        "button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+                    var streamingCancel = page.Locator("[data-testid=composer-cancel]");
                     await Assertions.Expect(streamingCancel).ToBeHiddenAsync(
                         new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
                 }
@@ -495,7 +523,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             await WaitUntilApprovalAnsweredAsync(page, approved, TimeSpan.FromSeconds(10));
 
             // Wait for streaming to finish — the Cancel button is only visible while streaming.
-            var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+            var cancelButton = page.Locator("[data-testid=composer-cancel]");
             await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
 
             // Any assistant bubble with rendered text is the answer. Whether the answer shares the
@@ -540,7 +568,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             await WaitUntilApprovalAnsweredAsync(page, rejected, TimeSpan.FromSeconds(10));
 
             // Stream should stop — Cancel button disappears (only visible while streaming)
-            var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+            var cancelButton = page.Locator("[data-testid=composer-cancel]");
             await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 30_000 });
         }
         finally
@@ -568,12 +596,12 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             await chatInput.PressAsync("Enter");
 
             // Wait for Cancel button to appear (signals streaming has started)
-            var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+            var cancelButton = page.Locator("[data-testid=composer-cancel]");
             await cancelButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 40_000 });
 
             // Cancel replaces Send while the reply runs: one button in that spot, always the one
             // the user can act on.
-            var sendButton = page.Locator("button.btn-primary", new PageLocatorOptions { HasText = "Send" });
+            var sendButton = page.Locator("[data-testid=composer-send]");
             await Assertions.Expect(sendButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
             // The composer is empty once the message has gone, so the control that comes back when
             // the stream ends is the microphone rather than Send — one control in that spot, always

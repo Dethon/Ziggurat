@@ -108,7 +108,7 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
 
         // And the send button, which takes the microphone's place the moment there is text.
         await page.Locator("textarea.chat-input").FillAsync("something to send");
-        var sendBox = await page.Locator("button.btn-primary", new PageLocatorOptions { HasText = "Send" })
+        var sendBox = await page.Locator("[data-testid=composer-send]")
             .BoundingBoxAsync();
 
         sendBox.ShouldNotBeNull();

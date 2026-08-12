@@ -1469,7 +1469,6 @@ h1, h2, h3 {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0 0.9rem;
     cursor: pointer;
 }
 
@@ -2727,10 +2726,20 @@ select:focus:not(:focus-visible) {
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
+}
+
+/* Every control in this row is an icon and nothing else, so the padding is what gives each of them
+   its width. One value across all of them, or a row of same-height buttons still reads as buttons
+   of different sizes. .btn's own padding is written earlier in the file and would otherwise win. */
+.attach-button,
+.dictation-mic,
+.send-button,
+.cancel-button {
     padding: 0 1.1rem;
 }
 
-.dictation-mic-icon {
+.dictation-mic-icon,
+.composer-icon {
     flex: none;
 }
 

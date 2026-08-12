@@ -48,7 +48,7 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
 
         // One control in that spot, always the one the person is about to use: with something to
         // send, the microphone is off screen rather than standing beside Send.
-        await Assertions.Expect(page.Locator("button.btn-primary", new PageLocatorOptions { HasText = "Send" }))
+        await Assertions.Expect(page.Locator("[data-testid=composer-send]"))
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
         await Assertions.Expect(page.Locator("[data-testid=dictation-mic]")).ToBeHiddenAsync();
 
