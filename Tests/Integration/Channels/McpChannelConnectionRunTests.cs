@@ -105,8 +105,9 @@ public class McpChannelConnectionRunTests
         Volatile.Read(ref _registerCalls).ShouldBe(2);
 
         // The catalog is stable again, so nothing further is registered: a change re-registers,
-        // a health tick on its own does not.
-        await Task.Delay(300, cts.Token);
+        // a health tick on its own does not. Nothing announces a registration that never happens,
+        // so the only way to claim its absence is to leave room for it to appear.
+        await Eventually.Settle();
         Volatile.Read(ref _registerCalls).ShouldBe(2);
 
         await cts.CancelAsync();

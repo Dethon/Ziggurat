@@ -123,7 +123,7 @@ public class ChannelServerExtensionsTests
         await server.Client.DisposeAsync();
 
         await Should.ThrowAsync<Exception>(() => hangingCall);
-        await Task.Delay(TimeSpan.FromMilliseconds(200));
+        await Eventually.Settle();
         mapped.ShouldBeFalse();
 
         await server.App.StopAsync();

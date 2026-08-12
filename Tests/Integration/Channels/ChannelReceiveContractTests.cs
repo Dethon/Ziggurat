@@ -350,10 +350,17 @@ public class ChannelReceiveContractTests
             await Task.Delay(300);
 
             Interlocked.Exchange(ref posts, 0);
+            var watchedFrom = Stopwatch.GetTimestamp();
             await Task.Delay(TimeSpan.FromSeconds(1.5));
+            var watched = Stopwatch.GetElapsedTime(watchedFrom);
 
-            // One pump holding one long poll open: the server should see nothing else.
-            Volatile.Read(ref posts).ShouldBeLessThanOrEqualTo(3);
+            // One pump holding one long poll open: the server should see nothing else. The bound
+            // follows the window actually observed rather than the one asked for — a loaded machine
+            // returns from that delay late, and a fixed count then reads the longer window as a
+            // pump that is spinning. A pump that really is spinning posts in the hundreds, so this
+            // stays as sharp a discriminator as the constant it replaces.
+            var allowed = (int)watched.TotalSeconds + 2;
+            Volatile.Read(ref posts).ShouldBeLessThanOrEqualTo(allowed);
         }
         finally
         {
