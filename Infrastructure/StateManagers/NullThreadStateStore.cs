@@ -32,6 +32,10 @@ public sealed class NullThreadStateStore : IThreadStateStore
         string agentId, string spaceSlug, string? cursor, int pageSize, bool archived = false)
         => Task.FromResult(new TopicPage([], null));
 
+    public Task<TopicPage> SearchTopicsAsync(
+        string agentId, string spaceSlug, string query, string? cursor, int pageSize)
+        => Task.FromResult(new TopicPage([], null));
+
     public Task MigrateTopicsAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     public Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)

@@ -127,6 +127,52 @@ public sealed class TopicPagingEffectTests : IDisposable
         _calls.Calls.ShouldNotContain(call => call.StartsWith("topics:"));
     }
 
+    // The client-side filter over loaded rows is gone: past the first page it could only ever
+    // find what this client happened to hold.
+    [Fact]
+    public async Task Searching_AsksTheServerAndReplacesTheList()
+    {
+        SeedTopics(4);
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        await LoadFirstPageAsync();
+
+        _dispatcher.Dispatch(new SearchTopics("Topic 0"));
+        await _effect.LoadFirstPageAsync();
+
+        _calls.Calls.ShouldContain("search:Topic 0");
+        _topicsStore.State.Topics.Select(t => t.TopicId).ShouldBe(["topic-0"]);
+    }
+
+    [Fact]
+    public async Task PagingASearch_KeepsAskingTheSearchCall()
+    {
+        SeedTopics(4);
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new SearchTopics("Topic"));
+        await _effect.LoadFirstPageAsync();
+
+        await _effect.LoadNextPageAsync();
+
+        _topicsStore.State.Topics.Select(t => t.TopicId)
+            .ShouldBe(["topic-3", "topic-2", "topic-1", "topic-0"]);
+        _calls.Calls.ShouldNotContain(call => call.StartsWith("topics:"));
+    }
+
+    // An emptied search box is the ordinary list again, not a search for nothing.
+    [Fact]
+    public async Task ClearingTheSearch_ReadsTheOrdinaryListAgain()
+    {
+        SeedTopics(4);
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new SearchTopics("Topic 0"));
+        await _effect.LoadFirstPageAsync();
+
+        _dispatcher.Dispatch(new SearchTopics(""));
+        await _effect.LoadFirstPageAsync();
+
+        _topicsStore.State.Topics.Select(t => t.TopicId).ShouldBe(["topic-3", "topic-2"]);
+    }
+
     private void SeedTopics(int count)
     {
         var start = new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero);

@@ -21,6 +21,8 @@ public sealed class RedisThreadStateStore(
     // the whole conversation at once rather than in pieces.
     private readonly TimeSpan _expiration = retention.PurgeHorizon;
 
+    private readonly TopicSearchDocuments _searchDocuments = new(redis, retention.PurgeHorizon);
+
     public async Task DeleteAsync(AgentKey key)
     {
         await _db.KeyDeleteAsync(key.ToString());
@@ -88,13 +90,26 @@ public sealed class RedisThreadStateStore(
             return;
         }
 
-        await SaveTopicAsync(topic with
+        var stamped = topic with
         {
             LastMessageAt = time.GetUtcNow(),
             LastMessageSnippet = Snippet(appended) ?? topic.LastMessageSnippet,
             MessageCount = await _db.ListLengthAsync(historyKey)
-        });
+        };
+
+        await SaveTopicAsync(stamped);
+
+        // What the conversation is searched by grows on the same write that moved it, so it is
+        // never a separate thing to remember to maintain.
+        await _searchDocuments.WriteAsync(stamped, Text(appended));
     }
+
+    private static string Text(IEnumerable<ChatMessage> messages) =>
+        string.Join(
+            ' ',
+            messages
+                .Select(m => string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)))
+                .Where(t => !string.IsNullOrWhiteSpace(t)));
 
     // Asked of the store rather than told by a browser, because the browser's idea of the count
     // is always one round trip behind: a reply that landed while it was reading would come back
@@ -211,6 +226,7 @@ public sealed class RedisThreadStateStore(
             ConversationKey(topic.AgentId, topic.ChatId, topic.ThreadId), topic.TopicId, _expiration);
 
         await IndexAsync(topic);
+        await _searchDocuments.WriteAsync(topic);
     }
 
     // Key expiry drops a purged topic's record and leaves its index member behind. Those members
@@ -236,7 +252,26 @@ public sealed class RedisThreadStateStore(
         {
             await _db.KeyDeleteAsync(ConversationKey(agentId, chatId, topic.ThreadId));
             await _db.SortedSetRemoveAsync(IndexKey(agentId, topic.SpaceSlug), IndexMember(topic));
+            await _searchDocuments.DeleteAsync(topic);
         }
+    }
+
+    // Both ranges at once, deliberately: search is the way into the archive, so a cutoff has no
+    // business in it.
+    public async Task<TopicPage> SearchTopicsAsync(
+        string agentId, string spaceSlug, string query, string? cursor, int pageSize)
+    {
+        var hits = await _searchDocuments.SearchAsync(agentId, spaceSlug, query, cursor, pageSize);
+
+        var topics = await Task.WhenAll(
+            hits.Select(hit => ReadTopicAsync(TopicKey(agentId, hit.ChatId, hit.TopicId))));
+
+        var found = topics.OfType<TopicMetadata>().ToList();
+        return new TopicPage(
+            found,
+            hits.Count < pageSize
+                ? null
+                : hits[^1].Score.ToString(CultureInfo.InvariantCulture));
     }
 
     // Once per deployment, from the Agent host. Conversations stored before the index existed
@@ -249,8 +284,14 @@ public sealed class RedisThreadStateStore(
         {
             if (await ReadTopicAsync(key!) is { } topic)
             {
-                await SaveTopicAsync(await BackfillAsync(topic));
+                var backfilled = await BackfillAsync(topic);
+                await SaveTopicAsync(backfilled);
                 await _db.KeyExpireAsync(HistoryKey(topic), _expiration);
+
+                // A conversation stored before the index existed has nothing to be found by, so
+                // its document is built from the history it already has.
+                await _searchDocuments.WriteAsync(
+                    backfilled, Text(await GetMessagesAsync(HistoryKey(topic)) ?? []));
             }
         }
     }

@@ -106,6 +106,39 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     // Which of the seeded topics the server would report as having a reply in flight.
     public HashSet<string> LiveTopicIds { get; } = [];
 
+    // Matches on the name, over both ranges, the way the server's index does — a test that cares
+    // about content matching drives the store rather than this.
+    public Task<HubResult<TopicPage>> SearchTopicsAsync(
+        string agentId,
+        string query,
+        string spaceSlug = SpaceConfig.DefaultSlug,
+        string? cursor = null)
+    {
+        recorder?.Record(cursor is null ? $"search:{query}" : $"search:{query}:{cursor}");
+
+        if (NotLive)
+        {
+            return Task.FromResult(HubResult<TopicPage>.NotLive);
+        }
+
+        var ordered = _seededTopics.Concat(_savedTopics)
+            .Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug)
+            .Where(t => t.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(t => t.TopicId)
+            .Select(g => g.Last())
+            .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
+            .ToList();
+
+        var below = cursor is null
+            ? ordered
+            : ordered.Where(t => Score(t) < double.Parse(cursor, CultureInfo.InvariantCulture)).ToList();
+
+        var page = below.Take(PageSize).ToList();
+        return Task.FromResult(HubResult<TopicPage>.Answered(new TopicPage(
+            page,
+            page.Count < PageSize ? null : Score(page[^1]).ToString(CultureInfo.InvariantCulture))));
+    }
+
     // Read positions the fake was told to move, so a test can assert which conversations were
     // marked read without reaching for the seeded records.
     public IReadOnlyList<string> MarkedReadTopicIds => _markedRead;

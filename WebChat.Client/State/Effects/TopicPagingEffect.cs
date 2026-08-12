@@ -1,3 +1,4 @@
+using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
@@ -19,6 +20,7 @@ public sealed class TopicPagingEffect : IDisposable
     private readonly ILogger<TopicPagingEffect> _logger;
     private readonly IDisposable _loadMoreRegistration;
     private readonly IDisposable _showArchivedRegistration;
+    private readonly IDisposable _searchRegistration;
     private int _fetching;
 
     public TopicPagingEffect(
@@ -40,6 +42,8 @@ public sealed class TopicPagingEffect : IDisposable
             _ => LoadNextPageAsync().LogFaults(_logger, nameof(LoadMoreTopics)));
         _showArchivedRegistration = dispatcher.RegisterHandler<ShowArchivedTopics>(
             _ => LoadFirstPageAsync().LogFaults(_logger, nameof(ShowArchivedTopics)));
+        _searchRegistration = dispatcher.RegisterHandler<SearchTopics>(
+            _ => LoadFirstPageAsync().LogFaults(_logger, nameof(SearchTopics)));
     }
 
     // Switching between the ordinary list and the archive reads the other range of the same
@@ -52,8 +56,7 @@ public sealed class TopicPagingEffect : IDisposable
             return;
         }
 
-        var page = await _topicService.GetTopicPageAsync(
-            state.SelectedAgentId, _spaceStore.State.CurrentSlug, cursor: null, state.ShowingArchived);
+        var page = await FetchAsync(state, cursor: null);
 
         if (!page.IsLive)
         {
@@ -64,6 +67,15 @@ public sealed class TopicPagingEffect : IDisposable
         _dispatcher.Dispatch(new TopicsLoaded(topics, page.Value.NextCursor));
         TopicPageStreams.ResumeReported(topics, page.Value.LiveTopicIds, _streamResumeService, _logger);
     }
+
+    // Which call a page fetch is depends on what the list currently is: a search, the archive,
+    // or the ordinary list. Paged the same way whichever it is.
+    private Task<HubResult<TopicPage>> FetchAsync(TopicsState state, string? cursor) =>
+        string.IsNullOrWhiteSpace(state.SearchQuery)
+            ? _topicService.GetTopicPageAsync(
+                state.SelectedAgentId!, _spaceStore.State.CurrentSlug, cursor, state.ShowingArchived)
+            : _topicService.SearchTopicsAsync(
+                state.SelectedAgentId!, state.SearchQuery, _spaceStore.State.CurrentSlug, cursor);
 
     public async Task LoadNextPageAsync()
     {
@@ -80,9 +92,7 @@ public sealed class TopicPagingEffect : IDisposable
 
         try
         {
-            var page = await _topicService.GetTopicPageAsync(
-                state.SelectedAgentId, _spaceStore.State.CurrentSlug, state.Paging.Cursor,
-                state.ShowingArchived);
+            var page = await FetchAsync(state, state.Paging.Cursor);
 
             // Not live is not an empty page. Storing it as one would end the range and leave the
             // rest of the list unreachable until the next agent change.
@@ -108,5 +118,6 @@ public sealed class TopicPagingEffect : IDisposable
     {
         _loadMoreRegistration.Dispose();
         _showArchivedRegistration.Dispose();
+        _searchRegistration.Dispose();
     }
 }

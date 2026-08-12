@@ -15,6 +15,10 @@ public sealed record TopicsState
     // ADR 0024 and `Archived` in CONTEXT.md.
     public bool ShowingArchived { get; init; }
 
+    // What the list is currently a search for, or empty for the ordinary list. Held here rather
+    // than in the sidebar because it decides which call every page fetch makes.
+    public string SearchQuery { get; init; } = "";
+
     public bool IsLoading { get; init; }
     public string? Error { get; init; }
 

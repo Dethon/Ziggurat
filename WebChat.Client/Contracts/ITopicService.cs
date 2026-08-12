@@ -13,6 +13,14 @@ public interface ITopicService
         bool archived = false);
     Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false);
 
+    // Searching is a hub call, so it matches conversations that were never loaded and spans the
+    // archive as well as the ordinary list.
+    Task<HubResult<TopicPage>> SearchTopicsAsync(
+        string agentId,
+        string query,
+        string spaceSlug = SpaceConfig.DefaultSlug,
+        string? cursor = null);
+
     // The server decides what "read" means here, because it is the only side that knows how many
     // messages the topic holds right now.
     Task<HubResult<Nothing>> MarkTopicReadAsync(string agentId, long chatId, string topicId);

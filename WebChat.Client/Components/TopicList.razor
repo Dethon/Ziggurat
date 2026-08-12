@@ -37,7 +37,8 @@
 
         <div class="hearth-search">
             <input class="hearth-search-input" type="search" placeholder="Search conversations"
-                   @bind="_search" @bind:event="oninput" @ref="_searchInput" aria-label="Search conversations" />
+                   value="@_search" @oninput="OnSearchInput" @ref="_searchInput"
+                   aria-label="Search conversations" />
             <button class="hearth-archive-toggle @(_showingArchived ? "on" : "")"
                     @onclick="ToggleArchived"
                     aria-pressed="@_showingArchived"
@@ -48,16 +49,19 @@
 
         <div class="hearth-rows">
             @{
-                var rows = _topics
-                    .Where(t => t.AgentId == _selectedAgentId)
-                    .Where(t => string.IsNullOrWhiteSpace(_search) || t.Name.Contains(_search, StringComparison.OrdinalIgnoreCase))
-                    .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
-                    .ToList();
+                // No filter over what is loaded: the list is already the server's answer, and
+                // past the first page a local filter could only ever find the rows this client
+                // happened to hold.
+                var rows = _topics.Where(t => t.AgentId == _selectedAgentId).ToList();
             }
             @if (rows.Count == 0)
             {
                 <div class="no-topics">
-                    <span>@(_showingArchived ? "Nothing archived" : "No conversations yet")</span>
+                    <span>
+                        @(!string.IsNullOrWhiteSpace(_search)
+                            ? "Nothing found"
+                            : _showingArchived ? "Nothing archived" : "No conversations yet")
+                    </span>
                 </div>
             }
             else
@@ -121,6 +125,8 @@
     private string? _deleteConfirmTopicId;
     private bool _showingArchived;
     private string _search = "";
+    private Timer? _searchDebounce;
+    private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(250);
     private Detent _detent = Detent.Peek;
 
     private ElementReference _peekBar;
@@ -204,6 +210,17 @@
     private void HandleNewTopic() => Dispatcher.Dispatch(new CreateNewTopic());
 
     private void ToggleArchived() => Dispatcher.Dispatch(new ShowArchivedTopics(!_showingArchived));
+
+    // Typing is a hub call now, so it is not made on every keystroke: the pause is what turns a
+    // typed word into one search rather than one per letter.
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? "";
+        _searchDebounce?.Dispose();
+        _searchDebounce = new Timer(
+            _ => InvokeAsync(() => Dispatcher.Dispatch(new SearchTopics(_search))),
+            null, SearchDebounce, Timeout.InfiniteTimeSpan);
+    }
     private void ShowDeleteConfirm(string topicId) => _deleteConfirmTopicId = topicId;
     private void CancelDelete() => _deleteConfirmTopicId = null;
 
@@ -220,6 +237,7 @@
 
     public override void Dispose()
     {
+        _searchDebounce?.Dispose();
         _selfRef?.Dispose();
         base.Dispose();
     }

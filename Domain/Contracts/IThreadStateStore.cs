@@ -23,6 +23,12 @@ public interface IThreadStateStore
     Task<TopicPage> GetTopicPageAsync(
         string agentId, string spaceSlug, string? cursor, int pageSize, bool archived = false);
 
+    // By what a conversation is called and by what was said in it, over both ranges at once —
+    // search is the way into the archive, so a cutoff has no business in it. Paged like any
+    // other list of topics.
+    Task<TopicPage> SearchTopicsAsync(
+        string agentId, string spaceSlug, string query, string? cursor, int pageSize);
+
     Task SaveTopicAsync(TopicMetadata topic);
     Task DeleteTopicAsync(string agentId, long chatId, string topicId);
 

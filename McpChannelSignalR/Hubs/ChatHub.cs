@@ -444,6 +444,19 @@ public sealed class ChatHub(
         await threadStore.SaveTopicAsync(topic);
     }
 
+    // On the server, so it covers conversations this client never loaded — which is every
+    // conversation past the first page, and the whole archive.
+    public async Task<TopicPage> SearchTopics(
+        string agentId,
+        string query,
+        string spaceSlug = SpaceConfig.DefaultSlug,
+        string? cursor = null,
+        int? pageSize = null)
+    {
+        return await threadStore.SearchTopicsAsync(
+            agentId, spaceSlug, query, cursor, pageSize ?? retention.PageSize);
+    }
+
     // Read state is the store's to work out: the count it would be compared against is one round
     // trip newer than anything the browser holds.
     public async Task MarkTopicRead(string agentId, long chatId, string topicId)

@@ -20,6 +20,11 @@ public record TopicsPageAppended(IReadOnlyList<StoredTopic> Topics, string? Next
 // about any topic.
 public record ShowArchivedTopics(bool Archived) : IAction;
 
+// The command: ask the server for conversations matching this. An empty query is the ordinary
+// list again — searching is a different range to read, not a filter over the rows already held,
+// which past the first page could only ever find what the client happened to have.
+public record SearchTopics(string Query) : IAction;
+
 public record SelectTopic(string? TopicId) : IAction;
 
 public record AddTopic(StoredTopic Topic) : IAction;
@@ -95,6 +100,13 @@ public sealed class TopicsStore : IDisposable
         ShowArchivedTopics a => state with
         {
             ShowingArchived = a.Archived,
+            Paging = TopicPaging.Empty,
+            IsLoading = true
+        },
+
+        SearchTopics a => state with
+        {
+            SearchQuery = a.Query,
             Paging = TopicPaging.Empty,
             IsLoading = true
         },
