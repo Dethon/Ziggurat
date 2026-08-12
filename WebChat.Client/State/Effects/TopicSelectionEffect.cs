@@ -5,6 +5,7 @@ using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
+using TopicReadState = WebChat.Client.State.Topics.TopicReadState;
 
 namespace WebChat.Client.State.Effects;
 
@@ -87,30 +88,8 @@ public sealed class TopicSelectionEffect : IDisposable
         _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, "stream resume");
     }
 
-    private async Task MarkTopicAsReadAsync(StoredTopic topic)
-    {
-        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
-        var lastMessageId = messages.LastOrDefault(m => m.MessageId is not null)?.MessageId;
-
-        if (lastMessageId is not null && lastMessageId != topic.LastReadMessageId)
-        {
-            var updatedTopic = new StoredTopic
-            {
-                TopicId = topic.TopicId,
-                ChatId = topic.ChatId,
-                ThreadId = topic.ThreadId,
-                AgentId = topic.AgentId,
-                Name = topic.Name,
-                CreatedAt = topic.CreatedAt,
-                LastMessageAt = topic.LastMessageAt,
-                LastReadMessageId = lastMessageId,
-                SpaceSlug = topic.SpaceSlug
-            };
-            _dispatcher.Dispatch(new UpdateTopic(updatedTopic));
-
-            await _topicService.SaveTopicAsync(updatedTopic.ToMetadata());
-        }
-    }
+    private Task MarkTopicAsReadAsync(StoredTopic topic) =>
+        TopicReadState.MarkReadAsync(topic, _dispatcher, _topicService);
 
     public void Dispose()
     {

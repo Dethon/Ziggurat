@@ -432,6 +432,13 @@ public sealed class ChatHub(
         await threadStore.SaveTopicAsync(topic);
     }
 
+    // Read state is the store's to work out: the count it would be compared against is one round
+    // trip newer than anything the browser holds.
+    public async Task MarkTopicRead(string agentId, long chatId, string topicId)
+    {
+        await threadStore.MarkTopicReadAsync(agentId, chatId, topicId);
+    }
+
     public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistory(string agentId, long chatId, long threadId)
     {
         return await threadStore.GetHistoryAsync(agentId, chatId, threadId);

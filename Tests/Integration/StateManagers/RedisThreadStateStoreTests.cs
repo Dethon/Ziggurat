@@ -318,6 +318,61 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         topic.LastMessageSnippet.ShouldBe("the last thing said");
     }
 
+    // Unread is a subtraction of two numbers carried on the topic, so a badge reads no messages.
+    [Fact]
+    public async Task AppendMessagesAsync_CountsWhatTheTopicHolds()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-count", 580, 0, "agent-count", "Counting", DateTimeOffset.UtcNow, null));
+
+        await store.AppendMessagesAsync(HistoryKey("agent-count", 580),
+            [new ChatMessage(ChatRole.User, "one"), new ChatMessage(ChatRole.Assistant, "two")]);
+
+        var topic = (await store.GetTopicPageAsync("agent-count", "default", null, 10)).Topics
+            .ShouldHaveSingleItem();
+        topic.MessageCount.ShouldBe(2);
+        topic.ReadPosition.ShouldBe(0);
+    }
+
+    // The read position is set from what the store knows rather than from what a browser
+    // believed a moment ago, so a reply that landed between the two is not counted unread.
+    [Fact]
+    public async Task MarkTopicReadAsync_MovesTheReadPositionToTheMessageCount()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-read", 590, 0, "agent-read", "Reading", DateTimeOffset.UtcNow, null));
+        await store.AppendMessagesAsync(HistoryKey("agent-read", 590),
+            [new ChatMessage(ChatRole.User, "one"), new ChatMessage(ChatRole.Assistant, "two")]);
+
+        await store.MarkTopicReadAsync("agent-read", 590, "t-read");
+
+        var topic = (await store.GetTopicPageAsync("agent-read", "default", null, 10)).Topics
+            .ShouldHaveSingleItem();
+        topic.ReadPosition.ShouldBe(topic.MessageCount);
+    }
+
+    // Nobody's stored read position survives the change of meaning, so everything is marked read
+    // once rather than resolved. A sidebar full of badges nobody earned is worse than none.
+    [Fact]
+    public async Task MigrateTopicsAsync_MarksEveryExistingTopicFullyRead()
+    {
+        var store = NewStore();
+        var when = new DateTimeOffset(2026, 5, 3, 0, 0, 0, TimeSpan.Zero);
+        await WriteTopicRecordDirectlyAsync(new TopicMetadata(
+            "t-allread", 600, 0, "agent-allread", "Old", when, when));
+        await store.AppendMessagesAsync(HistoryKey("agent-allread", 600),
+            [new ChatMessage(ChatRole.User, "said before the change")]);
+
+        await store.MigrateTopicsAsync();
+
+        var topic = (await store.GetTopicPageAsync("agent-allread", "default", null, 10)).Topics
+            .ShouldHaveSingleItem();
+        topic.MessageCount.ShouldBe(1);
+        topic.ReadPosition.ShouldBe(1);
+    }
+
     // Keyset paging over the structure that already defines the order, so reaching page five
     // costs what page one costs.
     [Fact]

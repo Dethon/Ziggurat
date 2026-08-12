@@ -82,24 +82,24 @@ public sealed class TopicSelectionEffectTests : IDisposable
     [Fact]
     public async Task HandleSelectTopicAsync_UnreadMessages_MarksTheTopicAsRead()
     {
-        GivenTopic("topic-1");
+        GivenTopic("topic-1", held: 3, read: 1);
         _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "hello"));
 
         await _effect.HandleSelectTopicAsync("topic-1");
 
-        _topicService.SavedTopics.Single().LastReadMessageId.ShouldBe("m-1");
-        _topicsStore.State.Topics.Single().LastReadMessageId.ShouldBe("m-1");
+        _topicService.MarkedReadTopicIds.ShouldBe(["topic-1"]);
+        _topicsStore.State.Topics.Single().UnreadCount.ShouldBe(0);
     }
 
     [Fact]
     public async Task HandleSelectTopicAsync_NothingUnread_WritesNothing()
     {
-        GivenTopic("topic-1", lastReadMessageId: "m-1");
+        GivenTopic("topic-1", held: 1, read: 1);
         _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "hello"));
 
         await _effect.HandleSelectTopicAsync("topic-1");
 
-        _topicService.SavedTopics.ShouldBeEmpty();
+        _topicService.MarkedReadTopicIds.ShouldBeEmpty();
     }
 
     // Tapping a conversation is the user's own action, so a session that could not be started
@@ -161,7 +161,7 @@ public sealed class TopicSelectionEffectTests : IDisposable
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("history unavailable");
     }
 
-    private void GivenTopic(string topicId, string? lastReadMessageId = null)
+    private void GivenTopic(string topicId, long held = 0, long read = 0)
     {
         var topic = new StoredTopic
         {
@@ -170,7 +170,8 @@ public sealed class TopicSelectionEffectTests : IDisposable
             ThreadId = 20,
             AgentId = "agent-1",
             Name = "Topic",
-            LastReadMessageId = lastReadMessageId
+            MessageCount = held,
+            ReadPosition = read
         };
 
         _dispatcher.Dispatch(new TopicsLoaded([topic]));

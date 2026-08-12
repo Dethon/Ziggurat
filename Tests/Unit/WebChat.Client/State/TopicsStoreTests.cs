@@ -217,7 +217,7 @@ public class TopicsStoreTests : IDisposable
         // Arrange
         var metadata = new TopicMetadata(
             "topic-1", 123L, 456L, "agent-1", "Test",
-            DateTimeOffset.UtcNow, null, null, "my-space");
+            DateTimeOffset.UtcNow, null, "my-space");
 
         // Act
         var topic = StoredTopic.FromMetadata(metadata);

@@ -23,6 +23,11 @@ public interface IThreadStateStore
     Task SaveTopicAsync(TopicMetadata topic);
     Task DeleteTopicAsync(string agentId, long chatId, string topicId);
 
+    // Moves the topic's read position up to what it currently holds. Asked of the store rather
+    // than told by a caller, so a message that landed while the reader was reading is not
+    // counted unread.
+    Task MarkTopicReadAsync(string agentId, long chatId, string topicId);
+
     // Run once per deployment, from the Agent host on start-up. Everything the topic index needs
     // that a record written before it existed does not carry. A channel started against a store
     // this has not reached serves an empty list rather than falling back to a scan.

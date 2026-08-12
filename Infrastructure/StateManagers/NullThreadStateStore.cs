@@ -26,6 +26,8 @@ public sealed class NullThreadStateStore : IThreadStateStore
 
     public Task DeleteTopicAsync(string agentId, long chatId, string topicId) => Task.CompletedTask;
 
+    public Task MarkTopicReadAsync(string agentId, long chatId, string topicId) => Task.CompletedTask;
+
     public Task<TopicPage> GetTopicPageAsync(string agentId, string spaceSlug, string? cursor, int pageSize)
         => Task.FromResult(new TopicPage([], null));
 

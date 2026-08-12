@@ -126,15 +126,7 @@
         Subscribe(TopicsStore.StateObservable, s => s.Agents, a => _agents = a);
         Subscribe(TopicsStore.StateObservable, s => s.SelectedAgentId, id => _selectedAgentId = id);
         Subscribe(StreamingStore.StateObservable, s => s.StreamingTopics, ids => _streamingTopics = ids);
-        Subscribe(MessagesStore.StateObservable,
-            s => UnreadSelectors.ComputeUnreadCounts(s, TopicsStore.State, StreamingStore.State),
-            c => _unreadCounts = c);
-        Subscribe(TopicsStore.StateObservable,
-            s => UnreadSelectors.ComputeUnreadCounts(MessagesStore.State, s, StreamingStore.State),
-            c => _unreadCounts = c);
-        Subscribe(StreamingStore.StateObservable,
-            s => UnreadSelectors.ComputeUnreadCounts(MessagesStore.State, TopicsStore.State, s),
-            c => _unreadCounts = c);
+        Subscribe(TopicsStore.StateObservable, UnreadSelectors.ComputeUnreadCounts, c => _unreadCounts = c);
         Subscribe(AgentActivityStore.StateObservable,
             s => AgentActivitySelectors.GetAgentsWithActivity(s, StreamingStore.State),
             ids => _activeAgentIds = ids);

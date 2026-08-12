@@ -14,6 +14,9 @@ public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicSer
     public Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false) =>
         liveConnection.InvokeAsync("SaveTopic", topic, isNew);
 
+    public Task<HubResult<Nothing>> MarkTopicReadAsync(string agentId, long chatId, string topicId) =>
+        liveConnection.InvokeAsync("MarkTopicRead", agentId, chatId, topicId);
+
     public Task<HubResult<Nothing>> DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId) =>
         liveConnection.InvokeAsync("DeleteTopic", agentId, topicId, chatId, threadId);
 

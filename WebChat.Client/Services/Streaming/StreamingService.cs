@@ -254,7 +254,6 @@ public sealed class StreamingService(
                     dispatcher.Dispatch(new UpdateMessage(topic.TopicId, messageId!, append.Message));
                 }
 
-                await UpdateLastReadMessage(topic, chunk);
             }
         }
         catch (Exception ex) when (!TransientErrorFilter.IsTransientException(ex))
@@ -271,7 +270,22 @@ public sealed class StreamingService(
             // The single ending. A lease that no longer holds the topic — because the stop
             // button or a delete already ended this stream — changes nothing here.
             lease.Complete();
+
+            // Once the reply is over rather than once per chunk: the count it is read up to is
+            // the store's, and until the agent has persisted the turn there is nothing new to
+            // be read up to. A topic nobody is looking at keeps its badge.
+            await MarkReadIfViewedAsync(topic);
         }
+    }
+
+    private async Task MarkReadIfViewedAsync(StoredTopic topic)
+    {
+        if (topicsStore.State.SelectedTopicId != topic.TopicId)
+        {
+            return;
+        }
+
+        await topicService.MarkTopicReadAsync(topic.AgentId, topic.ChatId, topic.TopicId);
     }
 
     private static ChatMessageModel? Stashed(Dictionary<string, ChatMessageModel> stash, string? messageId) =>
@@ -285,30 +299,4 @@ public sealed class StreamingService(
         Timestamp = DateTimeOffset.UtcNow
     };
 
-    private async Task UpdateLastReadMessage(StoredTopic topic, ChatStreamMessage chunk)
-    {
-        var currentTopic = topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topic.TopicId);
-        if (currentTopic is null || chunk.MessageId is null)
-        {
-            return;
-        }
-
-        var isActivelyViewed = topicsStore.State.SelectedTopicId == topic.TopicId;
-        var lastReadMsgId = isActivelyViewed ? chunk.MessageId : currentTopic.LastReadMessageId;
-
-        if (lastReadMsgId is not null && lastReadMsgId == currentTopic.LastReadMessageId)
-        {
-            return;
-        }
-
-        var metadata = currentTopic.ToMetadata() with
-        {
-            LastMessageAt = DateTimeOffset.UtcNow,
-            LastReadMessageId = lastReadMsgId
-        };
-
-        var updatedTopic = StoredTopic.FromMetadata(metadata);
-        dispatcher.Dispatch(new UpdateTopic(updatedTopic));
-        await topicService.SaveTopicAsync(metadata);
-    }
 }

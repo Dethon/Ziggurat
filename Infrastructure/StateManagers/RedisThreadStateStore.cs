@@ -91,8 +91,22 @@ public sealed class RedisThreadStateStore(
         await SaveTopicAsync(topic with
         {
             LastMessageAt = time.GetUtcNow(),
-            LastMessageSnippet = Snippet(appended) ?? topic.LastMessageSnippet
+            LastMessageSnippet = Snippet(appended) ?? topic.LastMessageSnippet,
+            MessageCount = await _db.ListLengthAsync(historyKey)
         });
+    }
+
+    // Asked of the store rather than told by a browser, because the browser's idea of the count
+    // is always one round trip behind: a reply that landed while it was reading would come back
+    // as unread on the conversation the person is looking at.
+    public async Task MarkTopicReadAsync(string agentId, long chatId, string topicId)
+    {
+        if (await ReadTopicAsync(TopicKey(agentId, chatId, topicId)) is not { } topic)
+        {
+            return;
+        }
+
+        await SaveTopicAsync(topic with { ReadPosition = await _db.ListLengthAsync(HistoryKey(topic)) });
     }
 
     // The last thing said that had anything to say. A message carrying only files leaves the
@@ -225,9 +239,19 @@ public sealed class RedisThreadStateStore(
     // the tail of the history rather than the whole of it, because the preview is one message.
     private async Task<TopicMetadata> BackfillAsync(TopicMetadata topic)
     {
+        var count = await _db.ListLengthAsync(HistoryKey(topic));
         var tail = await GetTailMessagesAsync(HistoryKey(topic), 20);
 
-        return topic with { LastMessageSnippet = topic.LastMessageSnippet ?? Snippet(tail ?? []) };
+        return topic with
+        {
+            LastMessageSnippet = topic.LastMessageSnippet ?? Snippet(tail ?? []),
+            MessageCount = count,
+
+            // Nobody's stored read position survives the change of meaning. Every topic is
+            // marked read once, here, rather than resolved: a sidebar of badges nobody earned
+            // is worse than none at all.
+            ReadPosition = count
+        };
     }
 
     private static string HistoryKey(TopicMetadata topic) =>

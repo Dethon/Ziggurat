@@ -91,6 +91,25 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         return Task.FromResult(HubResult<TopicPage>.Answered(new TopicPage(page, next)));
     }
 
+    // Read positions the fake was told to move, so a test can assert which conversations were
+    // marked read without reaching for the seeded records.
+    public IReadOnlyList<string> MarkedReadTopicIds => _markedRead;
+
+    private readonly List<string> _markedRead = new();
+
+    public Task<HubResult<Nothing>> MarkTopicReadAsync(string agentId, long chatId, string topicId)
+    {
+        recorder?.Record($"read:{topicId}");
+
+        if (NotLive)
+        {
+            return Task.FromResult(HubResult<Nothing>.NotLive);
+        }
+
+        _markedRead.Add(topicId);
+        return Task.FromResult(HubResult<Nothing>.Answered(default));
+    }
+
     private static double Score(TopicMetadata topic) =>
         (topic.LastMessageAt ?? topic.CreatedAt).ToUnixTimeMilliseconds();
 
