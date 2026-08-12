@@ -58,10 +58,6 @@ public sealed class InitializationEffectTests : IDisposable
         _streamResumeService = new FakeStreamResumeService();
         _pushService = new FakePushSubscriptionService();
 
-        var pipeline = new MessagePipeline(
-            _dispatcher, _messagesStore, new TopicStreams(_dispatcher, _messagesStore),
-            NullLogger<MessagePipeline>.Instance);
-
         _effect = new InitializationEffect(
             _dispatcher,
             _connectionStore,
@@ -74,9 +70,6 @@ public sealed class InitializationEffectTests : IDisposable
             _streamResumeService,
             _pushService,
             _userIdentityStore,
-            _topicsStore,
-            _messagesStore,
-            pipeline,
             _spaceStore,
             _logger);
     }
@@ -103,13 +96,17 @@ public sealed class InitializationEffectTests : IDisposable
             // AgentSettingsEffect handles, so they load on every catalog rather than this one.
             "storage-get:selectedAgentId",
             "storage-set:selectedAgentId",
-            "topics:agent-1",
-            "history:10:20"
+            "topics:agent-1"
+            // No history: opening the client costs one page of rows and nothing per
+            // conversation. A transcript is fetched when its conversation is opened.
         ]);
     }
 
     [Fact]
-    public async Task HandleInitializeAsync_Completes_EveryTopicsHistoryIsInTheStore()
+    // The inverse of what this used to assert. Loading every conversation on start-up is the
+    // cost the whole of this work removes; the rows carry their own badge and preview, so the
+    // sidebar is complete without a single message.
+    public async Task HandleInitializeAsync_Completes_NoTopicsHistoryIsInTheStore()
     {
         _configService.WithSpace("default");
         _agentService.Agents = [_agentOne];
@@ -120,8 +117,8 @@ public sealed class InitializationEffectTests : IDisposable
 
         await _effect.HandleInitializeAsync();
 
-        _messagesStore.State.MessagesByTopic["topic-1"].Single().Content.ShouldBe("first");
-        _messagesStore.State.MessagesByTopic["topic-2"].Single().Content.ShouldBe("second");
+        _messagesStore.State.MessagesByTopic.ShouldBeEmpty();
+        _calls.Calls.ShouldNotContain(call => call.StartsWith("history:"));
     }
 
     [Fact]
@@ -150,7 +147,7 @@ public sealed class InitializationEffectTests : IDisposable
 
         await _effect.HandleInitializeAsync();
 
-        _messagesStore.State.MessagesByTopic["topic-1"].Single().Content.ShouldBe("first");
+        _topicsStore.State.Topics.Select(t => t.TopicId).ShouldBe(["topic-1"]);
         _streamResumeService.ResumedTopicIds.ShouldBe(["topic-1"]);
     }
 
@@ -195,8 +192,7 @@ public sealed class InitializationEffectTests : IDisposable
         _dispatcher.Dispatch(new SetAgents([_agentOne]));
 
         await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
-        await TestChat.Eventually(() =>
-            _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1", []).Count == 1);
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
         _localStorage.Values["selectedAgentId"].ShouldBe("agent-1");
     }
 
@@ -220,8 +216,7 @@ public sealed class InitializationEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionConnected());
 
         await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
-        await TestChat.Eventually(() =>
-            _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1", []).Count == 1);
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
         _localStorage.Values["selectedAgentId"].ShouldBe("agent-1");
     }
 

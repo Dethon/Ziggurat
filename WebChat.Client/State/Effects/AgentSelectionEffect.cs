@@ -1,9 +1,7 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
-using WebChat.Client.State.Messages;
 using WebChat.Client.State.Space;
-using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
@@ -15,7 +13,6 @@ public sealed class AgentSelectionEffect : IDisposable
     private readonly ILocalStorageService _localStorage;
     private readonly ITopicService _topicService;
     private readonly IStreamResumeService _streamResumeService;
-    private readonly StreamingStore _streamingStore;
     private readonly SpaceStore _spaceStore;
     private readonly ILogger<AgentSelectionEffect> _logger;
     private readonly IDisposable _selectAgentRegistration;
@@ -29,7 +26,6 @@ public sealed class AgentSelectionEffect : IDisposable
         ILocalStorageService localStorage,
         ITopicService topicService,
         IStreamResumeService streamResumeService,
-        StreamingStore streamingStore,
         SpaceStore spaceStore,
         ILogger<AgentSelectionEffect> logger)
     {
@@ -38,7 +34,6 @@ public sealed class AgentSelectionEffect : IDisposable
         _localStorage = localStorage;
         _topicService = topicService;
         _streamResumeService = streamResumeService;
-        _streamingStore = streamingStore;
         _spaceStore = spaceStore;
         _logger = logger;
 
@@ -93,31 +88,10 @@ public sealed class AgentSelectionEffect : IDisposable
         var topics = firstPage.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
         _dispatcher.Dispatch(new TopicsLoaded(topics, firstPage.Value.NextCursor));
 
-        // Gathered rather than detached, so awaiting an agent change means the new agent's
-        // history is in the store.
-        await Task.WhenAll(topics.Select(LoadTopicHistoryAsync));
-    }
-
-    private async Task LoadTopicHistoryAsync(StoredTopic topic)
-    {
-        // Skip history reload for streaming topics - they have correct local state
-        // and reloading would lose locally-added messages not yet persisted to server
-        if (_streamingStore.State.StreamingTopics.Contains(topic.TopicId))
-        {
-            ResumeStream(topic);
-            return;
-        }
-
-        var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-        if (!history.IsLive)
-        {
-            return;
-        }
-
-        var messages = history.Value!.Select(h => h.ToChatMessageModel()).ToList();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
-
-        ResumeStream(topic);
+        // Switching agent costs a page of rows and nothing per conversation. A transcript is
+        // fetched when its conversation is opened; a reply in flight is still resumed, because
+        // it has to reach whoever is watching for it.
+        topics.ForEach(ResumeStream);
     }
 
     // Detached on purpose: a resumed stream is long-lived, so awaiting it would mean awaiting

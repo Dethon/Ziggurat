@@ -48,7 +48,6 @@ public sealed class AgentSelectionEffectTests : IDisposable
             _localStorage,
             _topicService,
             _streamResumeService,
-            _streamingStore,
             _spaceStore,
             _logger);
     }
@@ -76,7 +75,10 @@ public sealed class AgentSelectionEffectTests : IDisposable
         _sessionService.Verify(s => s.ClearSession(), Times.Once);
         _localStorage.Values["selectedAgentId"].ShouldBe("agent-2");
         _topicsStore.State.Topics.Single().TopicId.ShouldBe("topic-2");
-        _messagesStore.State.MessagesByTopic["topic-2"].Single().Content.ShouldBe("hello");
+
+        // Switching agent costs one page of rows and nothing per conversation.
+        _messagesStore.State.MessagesByTopic.ShouldBeEmpty();
+        _calls.Calls.ShouldNotContain(call => call.StartsWith("history:"));
     }
 
     [Fact]

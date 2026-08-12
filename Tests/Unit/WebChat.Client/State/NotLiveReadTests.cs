@@ -73,40 +73,41 @@ public sealed class NotLiveReadTests
         client.Topics.State.Topics.ShouldBeEmpty();
     }
 
-    // The connection drops between the topic list coming back and the history being asked
-    // for, which is the window a resuming phone spends most of its time in.
+    // Opening a conversation is now the only thing that fetches a transcript, so it is where a
+    // history read that could not be made has to leave what is already on screen alone.
     [Fact]
     public async Task AHistoryFetch_ThatCouldNotBeMade_LeavesTheTranscriptOnScreen()
     {
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
         await SelectFirstAgentAsync(client);
-        client.Dispatcher.Dispatch(new MessagesLoaded("topic-2", [Message("m-1", "still here")]));
-        transport.Answer("GetTopicPage", _ =>
+        client.Dispatcher.Dispatch(new TopicsLoaded([StoredTopicOne()]));
+        client.Dispatcher.Dispatch(new MessagesLoaded("topic-1", [Message("m-1", "still here")]));
+        transport.Answer("GetHistory", _ =>
         {
             transport.State = HubConnectionState.Reconnecting;
-            return new TopicPage([TestChat.Topic("topic-2", 11, 21, "agent-2")], null);
+            return (IReadOnlyList<ChatHistoryMessage>)[TestChat.HistoryMessage("m-2", "fresh")];
         });
 
-        await client.Service<AgentSelectionEffect>().HandleAgentChangedAsync("agent-2");
+        await client.Service<TopicSelectionEffect>().HandleSelectTopicAsync("topic-1");
 
-        client.Messages.State.MessagesByTopic["topic-2"].Single().Content.ShouldBe("still here");
+        client.Messages.State.MessagesByTopic["topic-1"].Single().Content.ShouldBe("still here");
         client.Toasts.State.Toasts.ShouldBeEmpty();
     }
 
     [Fact]
-    public async Task AHistoryFetch_WhileLive_StillReplacesTheTranscript()
+    public async Task AnAgentSwitch_WhileLive_ReadsNoHistoryAtAll()
     {
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
         await SelectFirstAgentAsync(client);
-        client.Dispatcher.Dispatch(new MessagesLoaded("topic-2", [Message("m-1", "stale")]));
         transport.Answer("GetTopicPage", new TopicPage([TestChat.Topic("topic-2", 11, 21, "agent-2")], null));
         transport.Answer("GetHistory", (IReadOnlyList<ChatHistoryMessage>)[TestChat.HistoryMessage("m-2", "fresh")]);
 
         await client.Service<AgentSelectionEffect>().HandleAgentChangedAsync("agent-2");
 
-        client.Messages.State.MessagesByTopic["topic-2"].Single().Content.ShouldBe("fresh");
+        client.Topics.State.Topics.Select(topic => topic.TopicId).ShouldBe(["topic-2"]);
+        client.Messages.State.MessagesByTopic.ShouldBeEmpty();
     }
 
     // The first selection belongs to first load, so the effect only reloads from the second
