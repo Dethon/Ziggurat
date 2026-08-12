@@ -9,4 +9,8 @@ public record TopicMetadata(
     DateTimeOffset CreatedAt,
     DateTimeOffset? LastMessageAt,
     string? LastReadMessageId = null,
-    string SpaceSlug = "default");
+    string SpaceSlug = "default",
+
+    // What the row shows under the name, written on the same path that stamps the last-write
+    // time. A row costs no history read to draw.
+    string? LastMessageSnippet = null);

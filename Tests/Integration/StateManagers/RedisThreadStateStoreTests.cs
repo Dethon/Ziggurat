@@ -1,4 +1,5 @@
 using Domain.Agents;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
@@ -13,8 +14,10 @@ namespace Tests.Integration.StateManagers;
 [Trait("Category", "Integration")]
 public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
 {
-    private RedisThreadStateStore NewStore(TimeProvider? time = null) =>
-        new(redisFixture.Connection, TimeSpan.FromMinutes(5), time ?? TimeProvider.System);
+    private RedisThreadStateStore NewStore(TimeProvider? time = null, int snippetLength = 120) =>
+        new(redisFixture.Connection,
+            new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(5), SnippetLength = snippetLength },
+            time ?? TimeProvider.System);
 
     [Fact]
     public async Task AppendMessagesAsync_ToFreshKey_StoresMessagesInOrder()
@@ -275,6 +278,44 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
         var topics = (await store.GetTopicPageAsync("agent-migrate", "default", null, 10)).Topics;
         topics.Select(t => t.TopicId).ShouldBe(["t-existing-b", "t-existing-a"]);
+    }
+
+    // Written on the same path that stamps the last-write time, so a row can be drawn without
+    // reading a single message.
+    [Fact]
+    public async Task AppendMessagesAsync_StoresASnippetOfWhatWasLastSaid()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 3, 3, 9, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock, snippetLength: 12);
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-snip", 560, 0, "agent-snippet", "Kitchen", clock.GetUtcNow(), null));
+
+        await store.AppendMessagesAsync(HistoryKey("agent-snippet", 560),
+        [
+            new ChatMessage(ChatRole.User, "what is the weather"),
+            new ChatMessage(ChatRole.Assistant, "cold and bright all afternoon")
+        ]);
+
+        var topic = (await store.GetTopicPageAsync("agent-snippet", "default", null, 10)).Topics
+            .ShouldHaveSingleItem();
+        topic.LastMessageSnippet.ShouldBe("cold and bri");
+    }
+
+    [Fact]
+    public async Task MigrateTopicsAsync_BackfillsSnippetsForTopicsThatAlreadyExist()
+    {
+        var store = NewStore();
+        var when = new DateTimeOffset(2026, 5, 2, 0, 0, 0, TimeSpan.Zero);
+        await WriteTopicRecordDirectlyAsync(new TopicMetadata(
+            "t-backfill", 570, 0, "agent-backfill", "Old", when, when));
+        await store.AppendMessagesAsync(HistoryKey("agent-backfill", 570),
+            [new ChatMessage(ChatRole.Assistant, "the last thing said")]);
+
+        await store.MigrateTopicsAsync();
+
+        var topic = (await store.GetTopicPageAsync("agent-backfill", "default", null, 10)).Topics
+            .ShouldHaveSingleItem();
+        topic.LastMessageSnippet.ShouldBe("the last thing said");
     }
 
     // Keyset paging over the structure that already defines the order, so reaching page five

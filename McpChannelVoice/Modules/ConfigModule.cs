@@ -37,7 +37,9 @@ public static class ConfigModule
             .AddSingleton<Domain.Contracts.IThreadStateStore>(sp =>
                 new Infrastructure.StateManagers.RedisThreadStateStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
-                    TimeSpan.FromDays(30),
+                    // The shared retention defaults: this channel writes conversations and never
+                    // reads the list, so it needs the horizons and none of the rest.
+                    new Domain.DTOs.RetentionSettings(),
                     sp.GetRequiredService<TimeProvider>()))
             .AddSingleton<Domain.Contracts.IConversationFactory, Infrastructure.Conversations.ConversationFactory>();
 

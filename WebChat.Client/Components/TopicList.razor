@@ -74,7 +74,7 @@
                                 }
                             </div>
                             <div class="topic-meta">@FormatTime(topic.LastMessageAt ?? topic.CreatedAt)</div>
-                            <div class="topic-preview">@PreviewFor(topic.TopicId)</div>
+                            <div class="topic-preview">@topic.LastMessageSnippet</div>
                         </div>
                         @if (_deleteConfirmTopicId == topic.TopicId)
                         {
@@ -191,14 +191,6 @@
     private int GetUnreadCount(string topicId) => _unreadCounts.GetValueOrDefault(topicId);
     private bool IsTopicStreaming(string topicId) => _streamingTopics.Contains(topicId);
     private int AggregateUnread => _unreadCounts.Values.Sum();
-
-    private string PreviewFor(string topicId)
-    {
-        var msgs = MessagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []);
-        var last = msgs.LastOrDefault(m => !string.IsNullOrWhiteSpace(m.Content));
-        var text = last?.Content ?? "";
-        return text.Length > 80 ? text[..80] + "…" : text;
-    }
 
     private static string FormatTime(DateTime utc) => utc.ToLocalTime().ToString("MMM d, h:mm tt");
 

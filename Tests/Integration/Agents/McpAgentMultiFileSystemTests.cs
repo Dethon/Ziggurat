@@ -31,7 +31,7 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
 
     private McpAgent CreateAgent(OpenRouterChatClient llmClient)
     {
-        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10), TimeProvider.System);
+        var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(10) }, TimeProvider.System);
         return new McpAgent(
             TestAgentSpec.Default with
             {

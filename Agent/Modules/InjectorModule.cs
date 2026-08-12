@@ -113,7 +113,7 @@ public static class InjectorModule
                 .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(config.ConnectionString))
                 .AddSingleton<IThreadStateStore>(sp => new RedisThreadStateStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
-                    retention.PurgeHorizon,
+                    retention,
                     sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
                     sp.GetRequiredService<IConnectionMultiplexer>()))

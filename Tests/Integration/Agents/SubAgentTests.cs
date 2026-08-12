@@ -70,7 +70,7 @@ public class SubAgentTests(RedisFixture redisFixture)
 
         var llmClient = new OpenRouterChatClient(
             openRouterConfig.ApiUrl, openRouterConfig.ApiKey, "~deepseek/deepseek-v4-flash-latest:nitro");
-        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(5), TimeProvider.System);
+        var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(5) }, TimeProvider.System);
         using var effectiveClient = new ToolApprovalChatClient(llmClient, approvalHandler, "conv-test", ["domain__subagents__*"]);
 
         await using var agent = new McpAgent(

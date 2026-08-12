@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
 using Microsoft.Extensions.AI;
@@ -9,11 +10,16 @@ using StackExchange.Redis;
 
 namespace Infrastructure.StateManagers;
 
-public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan expiration, TimeProvider time)
+public sealed class RedisThreadStateStore(
+    IConnectionMultiplexer redis, RetentionSettings retention, TimeProvider time)
     : IThreadStateStore
 {
     private readonly IDatabase _db = redis.GetDatabase();
     private readonly IServer _server = redis.GetServer(redis.GetEndPoints()[0]);
+
+    // Every key a topic owns carries the same expiry, refreshed on every write, so a purge takes
+    // the whole conversation at once rather than in pieces.
+    private readonly TimeSpan _expiration = retention.PurgeHorizon;
 
     public async Task DeleteAsync(AgentKey key)
     {
@@ -50,7 +56,7 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
         }
 
         await _db.ListRightPushAsync(key, Serialize(messages));
-        await _db.KeyExpireAsync(key, expiration);
+        await _db.KeyExpireAsync(key, _expiration);
     }
 
     public async Task AppendMessagesAsync(string key, IReadOnlyList<ChatMessage> messages)
@@ -61,14 +67,15 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
         }
 
         await _db.ListRightPushAsync(key, Serialize(messages));
-        await _db.KeyExpireAsync(key, expiration);
-        await StampLastWriteAsync(key);
+        await _db.KeyExpireAsync(key, _expiration);
+        await StampLastWriteAsync(key, messages);
     }
 
     // Every retention decision reads this one value, so it is stamped wherever a topic's history
     // is appended to rather than by the browser's streaming handler alone: a conversation nobody
-    // is watching is ordered and retained on the same terms as one that is.
-    private async Task StampLastWriteAsync(string historyKey)
+    // is watching is ordered and retained on the same terms as one that is. The row's preview is
+    // written here too, on the same pass, so drawing a row costs no history read.
+    private async Task StampLastWriteAsync(string historyKey, IReadOnlyList<ChatMessage> appended)
     {
         if (HistoryKeyParts(historyKey) is not var (agentId, chatId, threadId))
         {
@@ -81,7 +88,24 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
             return;
         }
 
-        await SaveTopicAsync(topic with { LastMessageAt = time.GetUtcNow() });
+        await SaveTopicAsync(topic with
+        {
+            LastMessageAt = time.GetUtcNow(),
+            LastMessageSnippet = Snippet(appended) ?? topic.LastMessageSnippet
+        });
+    }
+
+    // The last thing said that had anything to say. A message carrying only files leaves the
+    // previous preview standing rather than blanking the row.
+    private string? Snippet(IEnumerable<ChatMessage> messages)
+    {
+        var text = messages
+            .Select(m => string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)))
+            .LastOrDefault(t => !string.IsNullOrWhiteSpace(t));
+
+        return text is null
+            ? null
+            : text.Length > retention.SnippetLength ? text[..retention.SnippetLength] : text;
     }
 
     // "agent-key:{agentId}:{chatId}:{threadId}", the one spelling AgentKey produces. Anything
@@ -154,13 +178,13 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
     public async Task SaveTopicAsync(TopicMetadata topic)
     {
         var json = JsonSerializer.Serialize(topic);
-        await _db.StringSetAsync(TopicKey(topic.AgentId, topic.ChatId, topic.TopicId), json, expiration);
+        await _db.StringSetAsync(TopicKey(topic.AgentId, topic.ChatId, topic.TopicId), json, _expiration);
 
         // The conversation a history key names, pointing at the topic that owns it. Without it
         // the only way from a conversation back to its topic is a scan of every key in the
         // database, which is the cost this whole area exists to remove.
         await _db.StringSetAsync(
-            ConversationKey(topic.AgentId, topic.ChatId, topic.ThreadId), topic.TopicId, expiration);
+            ConversationKey(topic.AgentId, topic.ChatId, topic.ThreadId), topic.TopicId, _expiration);
 
         await IndexAsync(topic);
     }
@@ -191,13 +215,23 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
         {
             if (await ReadTopicAsync(key!) is { } topic)
             {
-                await IndexAsync(topic);
-                await _db.StringSetAsync(
-                    ConversationKey(topic.AgentId, topic.ChatId, topic.ThreadId), topic.TopicId, expiration);
-                await _db.KeyExpireAsync(key, expiration);
+                await SaveTopicAsync(await BackfillAsync(topic));
+                await _db.KeyExpireAsync(HistoryKey(topic), _expiration);
             }
         }
     }
+
+    // Everything a record written before the index carries none of. The row's preview comes off
+    // the tail of the history rather than the whole of it, because the preview is one message.
+    private async Task<TopicMetadata> BackfillAsync(TopicMetadata topic)
+    {
+        var tail = await GetTailMessagesAsync(HistoryKey(topic), 20);
+
+        return topic with { LastMessageSnippet = topic.LastMessageSnippet ?? Snippet(tail ?? []) };
+    }
+
+    private static string HistoryKey(TopicMetadata topic) =>
+        new AgentKey($"{topic.ChatId}:{topic.ThreadId}", topic.AgentId).ToString();
 
     private async Task<TopicMetadata?> ReadTopicAsync(string topicKey)
     {

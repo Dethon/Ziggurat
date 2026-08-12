@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Infrastructure.Agents;
@@ -41,7 +42,7 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         var (apiUrl, apiKey, model) = GetConfig();
 
         using var openRouter = new OpenRouterChatClient(apiUrl, apiKey, model);
-        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10), TimeProvider.System);
+        var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(10) }, TimeProvider.System);
 
         await using var agent = new McpAgent(
             TestAgentSpec.Default with
@@ -86,7 +87,7 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         var (apiUrl, apiKey, model) = GetConfig();
 
         using var openRouter = new OpenRouterChatClient(apiUrl, apiKey, model);
-        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10), TimeProvider.System);
+        var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(10) }, TimeProvider.System);
 
         await using var agent = new McpAgent(
             TestAgentSpec.Default with

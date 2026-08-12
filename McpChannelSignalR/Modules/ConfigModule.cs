@@ -30,7 +30,7 @@ public static class ConfigModule
             .AddSingleton<IThreadStateStore>(sp =>
                 new RedisThreadStateStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
-                    settings.Retention.PurgeHorizon,
+                    settings.Retention,
                     sp.GetRequiredService<TimeProvider>()))
             .AddSingleton<IConversationFactory, ConversationFactory>()
             .AddSingleton<StreamService>()

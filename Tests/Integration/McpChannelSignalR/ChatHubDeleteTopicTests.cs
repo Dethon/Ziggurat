@@ -59,7 +59,7 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
             approvals,
             new ChannelNotificationEmitter(new ChannelInbox(_time), DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            new RedisThreadStateStore(redis.Connection, TimeSpan.FromDays(30), _time),
+            new RedisThreadStateStore(redis.Connection, new RetentionSettings(), _time),
             new Mock<IPushSubscriptionStore>().Object,
             attachments,
             new Mock<IHubNotificationSender>().Object,
