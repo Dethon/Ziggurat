@@ -5,7 +5,6 @@ using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
-using TopicReadState = WebChat.Client.State.Topics.TopicReadState;
 
 namespace WebChat.Client.State.Effects;
 
