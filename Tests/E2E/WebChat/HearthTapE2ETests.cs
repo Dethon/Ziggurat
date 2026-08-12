@@ -27,8 +27,13 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        await CreateTopicAsync(page, "Menu tap target topic message");
-        await CreateTopicAsync(page, "Menu tap decoy topic message");
+        // Conversations outlive the run that made them and the user index restarts every run, so
+        // an untagged name matches an earlier run's row as well as this one's — which makes the row
+        // this test aims at and the row it then reads back two different rows with one name. The
+        // tag leads because CreateTopicAsync matches on the first sixteen characters.
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        await CreateTopicAsync(page, $"{tag} target menu tap");
+        await CreateTopicAsync(page, $"{tag} decoy menu tap");
 
         // The aim below is a coordinate resolved in one round trip and tapped in the next, so the
         // list must not be reordering in between — rows sort by LastMessageAt and jump as replies
@@ -110,12 +115,15 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        await CreateTopicAsync(page, "Drag tap target topic message");
-        await CreateTopicAsync(page, "Drag tap decoy topic message");
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        await CreateTopicAsync(page, $"{tag} target drag tap");
+        await CreateTopicAsync(page, $"{tag} decoy drag tap");
 
+        // The row is named rather than found by a literal, so an earlier run's row with the same
+        // words cannot be the one this drags and taps.
         var switched = await page.EvaluateAsync<bool>(
             """
-            () => new Promise(resolve => {
+            target => new Promise(resolve => {
                 const peek = document.querySelector('.hearth-peek');
                 const p = (y, id) => ({ bubbles: true, cancelable: true, pointerId: id, isPrimary: true, clientX: 195, clientY: y });
                 peek.dispatchEvent(new PointerEvent('pointerdown', p(800, 1)));
@@ -129,7 +137,7 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
                 };
                 const tap = () => {
                     const row = [...document.querySelectorAll('.topic-item')]
-                        .find(r => r.textContent.includes('Drag tap target'));
+                        .find(r => r.textContent.includes(target));
                     row.dispatchEvent(new PointerEvent('pointerdown', p(300, 2)));
                     row.dispatchEvent(new PointerEvent('pointerup', p(300, 2)));
                     row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
@@ -143,7 +151,7 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
                 };
                 requestAnimationFrame(step);
             })
-            """);
+            """, $"{tag} target drag tap");
 
         switched.ShouldBeTrue("the tap 120ms after the drag must select the topic, not be swallowed");
     }
@@ -167,9 +175,10 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        await CreateTopicAsync(page, "Settle tap alpha topic message");
-        await CreateTopicAsync(page, "Settle tap bravo topic message");
-        await CreateTopicAsync(page, "Settle tap delta topic message");
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        await CreateTopicAsync(page, $"{tag} alpha settle tap");
+        await CreateTopicAsync(page, $"{tag} bravo settle tap");
+        await CreateTopicAsync(page, $"{tag} delta settle tap");
 
         // Rows sort by LastMessageAt and jump as replies land. The tap point below is measured in
         // one round trip and tapped in a later one, so a reorder in between would drop the finger
@@ -187,9 +196,16 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
         // below, which is how a run reached the full detent before the first poll and then spent
         // its whole timeout on a sheet that had stopped. Linear travel spends the same distance at
         // one speed, so the rows sweep the point over seconds instead of a flicker.
+        //
+        // Sixteen seconds rather than eight because the slack this buys is the only thing standing
+        // between the wait below and the tap that follows it: the sheet keeps moving during that
+        // round trip, and at eight seconds a row cleared the point in about a second and a half —
+        // which a loaded machine can spend on one round trip, and a run did, landing the finger
+        // between two rows. Halving the speed doubles the slack and costs only the time the rows
+        // take to reach the point, which is waited for rather than slept through.
         await page.AddStyleTagAsync(new PageAddStyleTagOptions
         {
-            Content = ".hearth { transition-duration: 8s !important; transition-timing-function: linear !important; }"
+            Content = ".hearth { transition-duration: 16s !important; transition-timing-function: linear !important; }"
         });
 
         // Aim between the list's two resting places: below where the rows sit at Full, above where
@@ -243,7 +259,7 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
         // with the sheet still moving under it. The row has to be comfortably over the point rather
         // than merely touching it — the sheet keeps travelling during the round trip that sends the
         // tap, and a margin means that drift leaves the row still covering the point. At the linear
-        // speed above, 24px of margin is half a second of slack on either side.
+        // speed above, 30px of margin is well over a second of slack on either side.
         await page.WaitForFunctionAsync(
             // The point is baked into the expression: Playwright's .NET argument serializer hands a
             // number to the predicate as an object, and elementFromPoint then rejects it as
@@ -255,11 +271,11 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
                 const row = hit ? hit.closest('.topic-item') : null;
                 if (!row) return false;
                 const box = row.getBoundingClientRect();
-                return y - box.top >= 24 && box.bottom - y >= 24;
+                return y - box.top >= 30 && box.bottom - y >= 30;
             }
             """,
             null,
-            new PageWaitForFunctionOptions { Timeout = 10_000, PollingInterval = 16 });
+            new PageWaitForFunctionOptions { Timeout = 25_000, PollingInterval = 16 });
         await page.Touchscreen.TapAsync(195, aimY);
 
         // Give the click, and the render it causes, room to land before reading the outcome.
@@ -281,7 +297,9 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
         var selected = outcome.GetProperty("selected").GetString();
         var travelLeft = outcome.GetProperty("travelLeft").GetDouble();
 
-        under.ShouldStartWith("Settle tap");
+        // This run's rows, not an earlier run's: the assertion below compares two names, and two
+        // rows sharing one name would let it pass while the finger and the selection disagreed.
+        under.ShouldStartWith(tag);
         travelLeft.ShouldBeGreaterThan(
             24, $"the sheet had all but arrived when the finger landed on \"{under}\", so this proves nothing");
         selected.ShouldBe(under, $"tapped \"{under}\" with {travelLeft:F0}px of travel left");

@@ -108,7 +108,17 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
 
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Task.Delay(80);
+
+        // The press has to outlast the run starting — _onUp returns without deciding anything when
+        // there is no run yet — and end well inside the 400 ms mis-tap floor, which dictation.js
+        // measures on the page's own performance.now(). Eighty milliseconds of sleep guaranteed
+        // neither: it was longer than starting takes, and a stalled round trip carried it past the
+        // floor, where the app is right to treat the gesture as the hold it had become. Waiting for
+        // the run makes the press as short as this gesture can be and still be one.
+        await page.WaitForFunctionAsync(
+            "() => window.dictation && window.dictation._run",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 15_000 });
         await TouchAsync(cdp, "touchEnd");
 
         await Assertions.Expect(page.Locator(".composer-hint"))

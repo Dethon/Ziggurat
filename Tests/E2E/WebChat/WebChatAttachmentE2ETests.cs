@@ -48,8 +48,14 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         // cannot read images fails the test as an unexplained timeout further down.
         await Assertions.Expect(page.Locator(".composer-refusal")).ToBeHiddenAsync();
 
+        // A conversation outlives the run that made it, and the user index restarts every run, so
+        // an earlier run's row can carry this same question. Clicking .First past it then opens a
+        // conversation with no attachment, and the failure arrives thirty seconds later as a
+        // missing element rather than as the wrong row.
+        var tag = Guid.NewGuid().ToString("N")[..4];
+
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("What is in this picture?");
+        await chatInput.FillAsync($"What is in this picture? {tag}");
         await chatInput.PressAsync("Enter");
 
         var attachment = page.Locator(".chat-message.user .message-attachments");
@@ -69,7 +75,7 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         await WebChatE2ETests.DismissApprovalOverlayAsync(page);
         // A conversation started by attaching a file is named after the file only until the
         // opening message arrives, and that rename is persisted, so the row carries the text.
-        await page.Locator(".topic-item", new PageLocatorOptions { HasText = "What is in this picture?" })
+        await page.Locator(".topic-item", new PageLocatorOptions { HasText = $"What is in this picture? {tag}" })
             .First.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
 
         var afterReload = page.Locator(".chat-message.user .message-attachments");

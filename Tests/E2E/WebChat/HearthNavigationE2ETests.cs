@@ -163,8 +163,12 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        await CreateTopicAsync(page, "Drift tap target topic message");
-        await CreateTopicAsync(page, "Drift tap decoy topic message");
+        // Named per run: an earlier run's rows are still in the list under this same user, and a
+        // literal would find whichever of them the list put first. The tag leads because
+        // CreateTopicAsync matches on the first sixteen characters.
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        await CreateTopicAsync(page, $"{tag} target drift tap");
+        await CreateTopicAsync(page, $"{tag} decoy drift tap");
 
         await TapHearthHandleAsync(page);
         await TapHearthHandleAsync(page);
@@ -172,9 +176,9 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
 
         var switched = await page.EvaluateAsync<bool>(
             """
-            () => new Promise(resolve => {
+            target => new Promise(resolve => {
                 const row = [...document.querySelectorAll('.topic-item')]
-                    .find(r => r.textContent.includes('Drift tap target'));
+                    .find(r => r.textContent.includes(target));
                 const rect = row.getBoundingClientRect();
                 const x = rect.x + rect.width / 2;
                 const y0 = rect.y + rect.height / 2;
@@ -202,7 +206,7 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
                     settled();
                 }, 80);
             })
-            """);
+            """, $"{tag} target drift tap");
 
         switched.ShouldBeTrue("a 12px-drift tap must still select the topic, not become a sheet gesture");
     }

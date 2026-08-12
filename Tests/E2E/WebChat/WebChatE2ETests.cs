@@ -22,7 +22,12 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         await chatInput.FillAsync("Hello, this is an E2E test message");
         await chatInput.PressAsync("Enter");
 
-        var userMessage = page.Locator(".message-content", new PageLocatorOptions { HasText = "Hello, this is an E2E test message" });
+        // .First, because the agent often quotes the message back and then two bubbles carry the
+        // text — a strict-mode violation, which fails outright instead of waiting. The user's own
+        // bubble is the earlier of the two in document order.
+        var userMessage = page
+            .Locator(".message-content", new PageLocatorOptions { HasText = "Hello, this is an E2E test message" })
+            .First;
         await userMessage.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
 
         // Wait for agent response — the assistant message element may appear early (with empty
