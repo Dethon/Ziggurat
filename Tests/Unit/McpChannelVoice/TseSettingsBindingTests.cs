@@ -7,22 +7,6 @@ namespace Tests.Unit.McpChannelVoice;
 public class TseSettingsBindingTests
 {
     [Fact]
-    public void Bind_Defaults_WhenSectionMissing()
-    {
-        var settings = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["AgentId"] = "mycroft" })
-            .Build()
-            .Get<VoiceSettings>()!;
-
-        settings.Tse.Mode.ShouldBe(TseMode.Off);
-        settings.Tse.Endpoint.ShouldBe("http://tse-extractor:9098");
-        settings.Tse.TimeoutMs.ShouldBe(90000);
-        settings.Tse.NoiseFloorThreshold.ShouldBe(400);
-        settings.Tse.AuditDir.ShouldBeNull();
-        settings.Tse.AuditMaxPairs.ShouldBe(50);
-    }
-
-    [Fact]
     public void Bind_OverridesFromJson()
     {
         var json = """

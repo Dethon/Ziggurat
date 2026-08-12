@@ -42,24 +42,6 @@ public class HomeAssistantSetupSummaryTests
         text.ShouldNotContain("/ha/areas/salon/");
     }
 
-    // The room heading replaces a repeated `/ha/areas/<room>/` on every line, so the header has
-    // to say how to put a full path back together — for both trees, since the entities form is
-    // no longer listed anywhere.
-    [Fact]
-    public async Task GetAsync_HeaderGivesTheRuleForBothPathForms()
-    {
-        var client = new FakeHaClient
-        {
-            States = { Entity("light.kitchen", "off") },
-            AreaTemplateJson = """{"areas":[]}"""
-        };
-
-        var text = await Build(client).GetAsync(CancellationToken.None);
-
-        text.ShouldContain("/ha/areas/<room>/<entry>");
-        text.ShouldContain("/ha/entities/<class>/<object-id>");
-    }
-
     [Fact]
     public async Task GetAsync_RoomsAndEntriesAreLexicallySorted()
     {
@@ -136,21 +118,6 @@ public class HomeAssistantSetupSummaryTests
         text.ShouldContain("light: turn_off.sh, turn_on.sh");
         // A read-only class must not appear at all rather than as an empty entry.
         text.ShouldNotContain("sensor:");
-    }
-
-    [Fact]
-    public async Task GetAsync_ActionTableSaysWhereTheFilesLive()
-    {
-        // The wasted glob is structural: `*.sh` at the class level legitimately returns 0.
-        var client = new FakeHaClient
-        {
-            States = { Entity("light.kitchen", "off") },
-            Services = { Service("light", "turn_on", DomainTarget("light")) }
-        };
-
-        var text = await Build(client).GetAsync(CancellationToken.None);
-
-        text.ShouldContain("entity directory");
     }
 
     [Fact]

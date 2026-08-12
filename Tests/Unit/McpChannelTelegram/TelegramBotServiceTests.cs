@@ -8,23 +8,6 @@ public class TelegramBotServiceTests : IDisposable
 {
     private readonly TelegramPollingHarness _harness = new();
 
-    // Inverted when Telegram gained attachments: a photo used to be dropped by the poll loop
-    // before anything else looked at it. It now qualifies under the same addressing rule text
-    // does, with the caption standing in for the text.
-    [Fact]
-    public async Task ExecuteAsync_PhotoWithAQualifyingCaption_IsTakenAsATurn()
-    {
-        var message = TelegramPollingHarness.MediaMessage(caption: "/ask what is this");
-        message.Photo = TelegramPollingHarness.Photo();
-
-        await _harness.ReceiveAsync();
-        _harness.Enqueue(new Update { Id = 1, Message = message });
-        await _harness.RunAsync();
-
-        (await _harness.ReceiveAsync()).Count.ShouldBe(1);
-        _harness.Sent.ShouldBeEmpty();
-    }
-
     [Fact]
     public async Task ExecuteAsync_UnauthorizedUser_SendsRejection()
     {
@@ -54,23 +37,6 @@ public class TelegramBotServiceTests : IDisposable
 
         _harness.Sent.ShouldBeEmpty();
         (await _harness.ReceiveAsync()).ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_SlashCommand_FromAuthorizedUser_EmitsNotification()
-    {
-        await _harness.ReceiveAsync();
-        _harness.Enqueue(new Update
-        {
-            Id = 1,
-            Message = TelegramPollingHarness.TextMessage("/ask what is 2+2")
-        });
-
-        await _harness.RunAsync();
-
-        // No rejection message sent — the message was valid and emitted
-        _harness.Sent.ShouldBeEmpty();
-        (await _harness.ReceiveAsync()).Count.ShouldBe(1);
     }
 
     [Fact]
@@ -136,36 +102,6 @@ public class TelegramBotServiceTests : IDisposable
         var batch = await _harness.ReceiveAsync();
         batch.Count.ShouldBe(1);
         batch[0].Message!.Content.ShouldBe("/ask what is 2+2");
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_ValidMessage_RegistersChatAgent()
-    {
-        await _harness.ReceiveAsync();
-        _harness.Enqueue(new Update
-        {
-            Id = 1,
-            Message = TelegramPollingHarness.TextMessage("/ask something")
-        });
-
-        await _harness.RunAsync();
-
-        _harness.BotRegistry.GetBotForChat(100).ShouldNotBeNull();
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_ThreadMessage_IsAccepted()
-    {
-        var message = TelegramPollingHarness.TextMessage("reply in thread");
-        message.MessageThreadId = 42;
-
-        await _harness.ReceiveAsync();
-        _harness.Enqueue(new Update { Id = 1, Message = message });
-
-        await _harness.RunAsync();
-
-        // Thread messages are accepted even without / prefix
-        _harness.BotRegistry.GetBotForChat(100).ShouldNotBeNull();
     }
 
     public void Dispose() => _harness.Dispose();

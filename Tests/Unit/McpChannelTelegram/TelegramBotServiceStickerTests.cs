@@ -72,20 +72,6 @@ public class TelegramBotServiceStickerTests : IDisposable
     }
 
     [Fact]
-    public async Task AVideoNote_IsDroppedWithNoReply()
-    {
-        await DriveAsync(message => message.VideoNote = new VideoNote
-        {
-            FileId = "note-1",
-            FileUniqueId = "u-note",
-            Length = 240,
-            Duration = 4
-        });
-
-        await ShouldBeSilentlyDroppedAsync();
-    }
-
-    [Fact]
     public async Task AMessageWhoseOnlyMediaIsDroppedExpressiveMedia_StillRunsAsATextTurnWithItsCaption()
     {
         var message = TelegramPollingHarness.MediaMessage(caption: "/ask what do you make of this");

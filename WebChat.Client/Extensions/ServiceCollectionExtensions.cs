@@ -79,6 +79,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<AgentSettingsEffect>();
             services.AddScoped<StreamResumeEffect>();
             services.AddScoped<AttachmentEffect>();
+            services.AddScoped<DictationEffect>();
             services.AddScoped<TopicRenameEffect>();
 
             return services;

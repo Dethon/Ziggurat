@@ -14,12 +14,13 @@ using Tests.Integration.Fixtures;
 namespace Tests.Integration.Memory;
 
 [Trait("Category", "Integration")]
-public class MemoryRecallHookIntegrationTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
+public class MemoryRecallHookIntegrationTests(MemorySearchFixture redisFixture)
+    : IClassFixture<MemorySearchFixture>
 {
     [Fact]
     public async Task EnrichAsync_WithStoredMemories_InjectsContextIntoMessage()
     {
-        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(1536));
+        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(MemorySearchFixture.VectorWidth));
         var embeddingService = new Mock<IEmbeddingService>();
         var queue = new MemoryExtractionQueue();
         var metricsPublisher = new Mock<IMetricsPublisher>();
@@ -73,7 +74,7 @@ public class MemoryRecallHookIntegrationTests(RedisFixture redisFixture) : IClas
     [Fact]
     public async Task EnrichAsync_UnrememberedUser_SkipsEmbeddingAndSearchButKeepsProfileAndExtraction()
     {
-        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(1536));
+        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(MemorySearchFixture.VectorWidth));
         var embeddingService = new Mock<IEmbeddingService>();
         var queue = new MemoryExtractionQueue();
 
@@ -104,7 +105,7 @@ public class MemoryRecallHookIntegrationTests(RedisFixture redisFixture) : IClas
     [Fact]
     public async Task EnrichAsync_AfterTheirFirstMemoryLands_SearchesOnTheVeryNextTurn()
     {
-        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(1536));
+        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(MemorySearchFixture.VectorWidth));
         var embeddingService = new Mock<IEmbeddingService>();
         embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateTestEmbedding());

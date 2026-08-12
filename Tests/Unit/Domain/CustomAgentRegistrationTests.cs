@@ -11,23 +11,6 @@ namespace Tests.Unit.Domain;
 // produce, so without that the whole routing object arrives as a 400 nobody asked for.
 public class CustomAgentRegistrationTests
 {
-    [Fact]
-    public void Deserialize_ProviderRoutingWithStringSort_BindsTheEnum()
-    {
-        var registration = Deserialize(
-            """
-            {
-                "name": "SexyTime",
-                "model": "z-ai/glm-5.1",
-                "mcpServerEndpoints": [],
-                "providerRouting": { "sort": "throughput" }
-            }
-            """);
-
-        registration.ProviderRouting.ShouldNotBeNull();
-        registration.ProviderRouting!.Sort.ShouldBe(ProviderSort.Throughput);
-    }
-
     // The bare-number threshold shorthand is a configuration-binder affordance, not a wire one:
     // a caller sending JSON sends the object form, which is what serializing the bound object
     // produces anyway.

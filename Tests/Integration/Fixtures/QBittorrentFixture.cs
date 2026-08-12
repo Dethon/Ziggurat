@@ -21,7 +21,7 @@ public class QBittorrentFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _container = new ContainerBuilder("qbittorrentofficial/qbittorrent-nox:5.1.2-2")
+        _container = TestContainers.Container("qbittorrentofficial/qbittorrent-nox:5.1.2-2")
             .WithPortBinding(WebUiPort, true)
             .WithEnvironment("QBT_LEGAL_NOTICE", "confirm")
             .WithEnvironment("QBT_WEBUI_PORT", WebUiPort.ToString())

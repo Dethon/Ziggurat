@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using Domain.DTOs.Channel;
@@ -28,6 +29,24 @@ public class McpChannelConnectionRunTests
 
     private static readonly IReadOnlyList<AgentCatalogEntry> _catalog =
         [new AgentCatalogEntry("jonas", "Jonas", "general")];
+
+    [Fact]
+    public async Task ConnectAsync_WhereNothingIsListening_GivesUpWithoutWaitingOutTheSdkDefault()
+    {
+        // The SDK waits a minute for the initialization handshake, and a dial at an address nothing
+        // answers used to spend all of it. A minute is longer than the run's own health-check
+        // cadence and passes before the retry below has counted a single attempt, so a channel
+        // server that is merely down holds the connection open-mouthed instead of being retried.
+        // How long to wait on a link that is not answering is this connection's decision, so it
+        // bounds the handshake rather than inheriting the default.
+        await using var connection = new McpChannelConnection("test");
+        var dialing = Stopwatch.StartNew();
+
+        await Should.ThrowAsync<Exception>(
+            () => connection.ConnectAsync("http://localhost:1/mcp", CancellationToken.None));
+
+        dialing.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(30));
+    }
 
     [Fact]
     public async Task RunAsync_RegistersTheCatalogAfterConnecting_AndAgainAfterAReconnect()
@@ -86,8 +105,9 @@ public class McpChannelConnectionRunTests
         Volatile.Read(ref _registerCalls).ShouldBe(2);
 
         // The catalog is stable again, so nothing further is registered: a change re-registers,
-        // a health tick on its own does not.
-        await Task.Delay(300, cts.Token);
+        // a health tick on its own does not. Nothing announces a registration that never happens,
+        // so the only way to claim its absence is to leave room for it to appear.
+        await Eventually.Settle();
         Volatile.Read(ref _registerCalls).ShouldBe(2);
 
         await cts.CancelAsync();

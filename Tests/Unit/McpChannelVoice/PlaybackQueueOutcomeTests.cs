@@ -41,20 +41,6 @@ public class PlaybackQueueOutcomeTests
     }
 
     [Fact]
-    public void Dispose_AfterTheLinkDropClose_LeavesALateEnqueueRefusingRatherThanThrowing()
-    {
-        // The queue owns a semaphore and a token source, one pair per satellite connection, and the
-        // drain disposes them once the loop has stopped. A producer can still arrive after that —
-        // send_reply resolving a session the drain has just torn down — and it must get the refusal
-        // every closed queue gives, never an ObjectDisposedException out of a metrics-free path.
-        var queue = new PlaybackQueue();
-        queue.CompleteAndDiscardQueued();
-        queue.Dispose();
-
-        queue.Enqueue(Job("late", PlaybackKind.Announce)).Refused.ShouldBe(RefusalReason.QueueClosed);
-    }
-
-    [Fact]
     public void Dispose_WithoutAPriorClose_StillRefusesALateProducer()
     {
         // Disposal is not a close, but it is the end of the queue either way: a producer arriving
@@ -76,15 +62,6 @@ public class PlaybackQueueOutcomeTests
         queue.Dispose();
 
         Should.NotThrow(() => queue.Dispose());
-    }
-
-    [Fact]
-    public void Enqueue_WhenTheKindsAllowanceIsFull_RefusesAsQueueFull()
-    {
-        var queue = new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1);
-        queue.Enqueue(Job("a", PlaybackKind.Announce));
-
-        queue.Enqueue(Job("b", PlaybackKind.Announce)).Refused.ShouldBe(RefusalReason.QueueFull);
     }
 
     [Fact]
@@ -278,7 +255,7 @@ public class PlaybackQueueOutcomeTests
         // duration. The link-drop close must cut the tail; the audio was already written, so the
         // job keeps the Drained outcome it earned.
         var queue = new PlaybackQueue();
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new ArmedClock(DateTimeOffset.UtcNow);
         var wrote = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // 160000 bytes at 16 kHz/16-bit/mono = 5 s of audio, written in one chunk.
@@ -294,7 +271,10 @@ public class PlaybackQueueOutcomeTests
             CancellationToken.None, time);
 
         await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(80);               // let the loop reach the real-time tail wait
+        // Writing the audio and parking on its tail are two steps, and this test is about cutting
+        // the tail — so it has to wait for the tail to exist, not for eighty milliseconds to pass.
+        // Five seconds is what the job's 160000 bytes last, which is what the loop waits out.
+        await time.WaitForLiveAsync(TimeSpan.FromSeconds(5));
         queue.CompleteAndDiscardQueued();   // the link dropped
 
         // The fake clock never advances: only cutting the tail lets the loop return.

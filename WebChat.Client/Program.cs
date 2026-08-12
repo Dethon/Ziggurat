@@ -30,6 +30,8 @@ builder.Services.AddScoped<IApprovalService, ApprovalService>();
 builder.Services.AddScoped<AttachmentEndpointResolver>();
 builder.Services.AddScoped<IAttachmentService, AttachmentService>();
 builder.Services.AddScoped<IAttachmentUploader, HttpAttachmentUploader>();
+builder.Services.AddScoped<IDictationService, DictationService>();
+builder.Services.AddScoped<IDictationBridge, JsDictationBridge>();
 builder.Services.AddScoped<ApprovalResponder>();
 
 builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
@@ -62,6 +64,7 @@ _ = app.Services.GetRequiredService<AgentActivityEffect>();
 _ = app.Services.GetRequiredService<AgentSettingsEffect>();
 _ = app.Services.GetRequiredService<StreamResumeEffect>();
 _ = app.Services.GetRequiredService<AttachmentEffect>();
+_ = app.Services.GetRequiredService<DictationEffect>();
 _ = app.Services.GetRequiredService<TopicRenameEffect>();
 
 await app.RunAsync();

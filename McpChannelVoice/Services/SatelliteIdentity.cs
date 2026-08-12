@@ -30,6 +30,9 @@ public static class VoiceEventIdentity
 {
     public static VoiceEvent About(this VoiceEvent evt, SatelliteIdentity identity) => evt with
     {
+        // The satellites are one of three places speech now reaches whisper from, and this is the
+        // one line every voice publish already passes through.
+        Channel = VoiceChannels.Satellite,
         SatelliteId = identity.SatelliteId,
         Room = identity.Room,
         Identity = identity.Identity

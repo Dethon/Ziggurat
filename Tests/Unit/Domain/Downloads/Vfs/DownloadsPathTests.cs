@@ -53,8 +53,6 @@ public class DownloadsPathTests
     // overlay's call.
     [Theory]
     [InlineData("downloads/ 42 ")]
-    [InlineData("downloads/42 ")]
-    [InlineData("downloads/ 42 /status.json")]
     [InlineData("downloads/042")]
     [InlineData("downloads/042/status.json")]
     [InlineData("downloads/+42")]

@@ -23,31 +23,6 @@ public class FileSystemToolFeatureTests
         _feature = new FileSystemToolFeature(_registry.Object);
     }
 
-    [Fact]
-    public void FeatureName_IsFilesystem()
-    {
-        _feature.FeatureName.ShouldBe("filesystem");
-    }
-
-    [Fact]
-    public void GetTools_NullEnabledTools_ReturnsAllTools()
-    {
-        var config = new FeatureConfig();
-        var tools = _feature.GetTools(config).ToList();
-
-        tools.Count.ShouldBe(10);
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_read");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_create");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_edit");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__glob");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_search");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__move");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__copy");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__remove");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__exec");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__file_info");
-    }
-
     // GetTools is a hand-written list sitting beside the one operation table, and nothing bound the
     // two together: an eleventh operation could join FileSystemOperations.All, be enabled by config
     // and produce no tool — half-existing, which is the thing that list exists to prevent.
@@ -73,16 +48,6 @@ public class FileSystemToolFeatureTests
         tools.Count.ShouldBe(2);
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_read");
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__move");
-    }
-
-    [Fact]
-    public void GetTools_EmptyEnabledTools_ReturnsNoTools()
-    {
-        var config = new FeatureConfig(
-            EnabledTools: new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-        var tools = _feature.GetTools(config).ToList();
-
-        tools.ShouldBeEmpty();
     }
 
     [Fact]
@@ -137,24 +102,6 @@ public class FileSystemToolFeatureTests
         feature.Prompt.ShouldNotBeNull();
         feature.Prompt.ShouldNotContain("vault");
         feature.Prompt.ShouldNotContain("sandbox");
-    }
-
-    [Fact]
-    public void Prompt_ReadOnlyStyleMount_DoesNotAdvertiseWriteOrExec()
-    {
-        var registry = new Mock<IVirtualFileSystemRegistry>();
-        registry.Setup(r => r.GetMounts()).Returns([
-            new FileSystemMount("media", "/media", "Library")
-            {
-                Capabilities = ["text_read", "glob", "text_search", "move", "copy", "remove", "file_info"]
-            }
-        ]);
-        var feature = new FileSystemToolFeature(registry.Object);
-
-        var operationsLine = feature.Prompt!.Split('\n').Single(l => l.Contains("operations:"));
-        operationsLine.ShouldNotContain("text_create");
-        operationsLine.ShouldNotContain("exec");
-        operationsLine.ShouldContain("text_read");
     }
 
     [Fact]

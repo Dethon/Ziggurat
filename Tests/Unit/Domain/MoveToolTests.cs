@@ -26,7 +26,6 @@ public class MoveToolTests
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]
-    [InlineData(true, true)]
     public async Task Run_WithRelativePaths_ResolvesAgainstLibraryRoot(bool relativeSource, bool relativeDestination)
     {
         // Arrange

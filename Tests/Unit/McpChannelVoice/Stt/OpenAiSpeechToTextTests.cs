@@ -1,5 +1,6 @@
 using System.Net;
 using Domain.DTOs.Voice;
+using Infrastructure.Clients.Transcription;
 using McpChannelVoice.Services.Stt;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -48,11 +49,18 @@ public class OpenAiSpeechToTextTests
     private static HttpResponseMessage Json(string body) =>
         new(HttpStatusCode.OK) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") };
 
-    private static OpenAiSpeechToText Sut(HttpMessageHandler handler, OpenAiSttConfig? config = null) =>
-        new(
-            new StubClientFactory(handler),
-            config ?? new OpenAiSttConfig { Language = "es" },
-            NullLogger<OpenAiSpeechToText>.Instance);
+    // The composed pair, exactly as the voice ConfigModule wires it: the buffering and prompt
+    // composition under test live in OpenAiSpeechToText, the POST in the shared client behind it.
+    private static OpenAiSpeechToText Sut(HttpMessageHandler handler, OpenAiSttConfig? config = null)
+    {
+        var sttConfig = config ?? new OpenAiSttConfig { Language = "es" };
+        return new OpenAiSpeechToText(
+            new LemonadeTranscriptionClient(
+                new StubClientFactory(handler),
+                sttConfig.ToTranscriptionClientConfig(),
+                NullLogger<LemonadeTranscriptionClient>.Instance),
+            sttConfig);
+    }
 
     private static async IAsyncEnumerable<AudioChunk> Chunks(params byte[][] payloads)
     {

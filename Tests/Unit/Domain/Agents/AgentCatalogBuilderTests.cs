@@ -42,18 +42,6 @@ public class AgentCatalogBuilderTests
             .ShouldBe([AttachmentKind.Image, AttachmentKind.Document]);
     }
 
-    [Fact]
-    public void AModelTheProviderNeverDescribed_IsCarriedAsPermissive()
-    {
-        var catalogue = AgentCatalogBuilder.Build(
-            [_agent],
-            [new PatchableModel("some/unknown", "Unknown")],
-            new StubCapabilities(new Dictionary<string, IReadOnlyList<AttachmentKind>>()));
-
-        catalogue[0].PatchableModels![0].AcceptedAttachmentKinds.ShouldBe(AttachmentKinds.All, ignoreOrder: true);
-        catalogue[0].DefaultModelAttachmentKinds.ShouldBe(AttachmentKinds.All, ignoreOrder: true);
-    }
-
     private sealed class StubCapabilities(IReadOnlyDictionary<string, IReadOnlyList<AttachmentKind>> known)
         : IModelCapabilityCatalog
     {

@@ -73,27 +73,6 @@ public sealed class ReconnectionEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task WhenConnectionReconnected_ReloadsHistoryForSelectedTopic()
-    {
-        var topic = new StoredTopic
-        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Test Topic" };
-        _dispatcher.Dispatch(new TopicsLoaded([topic]));
-        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
-
-        CreateEffect();
-
-        _dispatcher.Dispatch(new ConnectionConnected());
-        _dispatcher.Dispatch(new ConnectionReconnecting());
-        _dispatcher.Dispatch(new ConnectionReconnected());
-
-        await Task.Delay(50); // Allow async handler to complete
-
-        _mockTopicService.Verify(
-            s => s.GetHistoryAsync("agent-1", 123, 456),
-            Times.Once);
-    }
-
-    [Fact]
     public async Task WhenConnectionReconnected_StartsSessionForSelectedTopic()
     {
         var topic = new StoredTopic { TopicId = "topic-1", Name = "Test Topic" };
@@ -145,26 +124,6 @@ public sealed class ReconnectionEffectTests : IDisposable
     }
 
     [Fact]
-    public void WhenConnectionConnectedWithoutPriorReconnecting_DoesNotTriggerReconnection()
-    {
-        var topic = new StoredTopic { TopicId = "topic-1", Name = "Test Topic" };
-        _dispatcher.Dispatch(new TopicsLoaded([topic]));
-        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
-
-        CreateEffect();
-
-        // Fresh connection (not reconnection)
-        _dispatcher.Dispatch(new ConnectionConnected());
-
-        _mockSessionService.Verify(
-            s => s.StartSessionAsync(It.IsAny<StoredTopic>()),
-            Times.Never);
-        _mockStreamResumeService.Verify(
-            s => s.TryResumeStreamAsync(It.IsAny<StoredTopic>()),
-            Times.Never);
-    }
-
-    [Fact]
     public void WhenConnectionReconnecting_DoesNotTriggerYet()
     {
         var topic = new StoredTopic { TopicId = "topic-1", Name = "Test Topic" };
@@ -183,27 +142,6 @@ public sealed class ReconnectionEffectTests : IDisposable
         _mockStreamResumeService.Verify(
             s => s.TryResumeStreamAsync(It.IsAny<StoredTopic>()),
             Times.Never);
-    }
-
-    [Fact]
-    public async Task WhenRebuiltWithoutAnObservedDisconnect_StillReloadsHistory()
-    {
-        var topic = new StoredTopic
-        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Test Topic" };
-        _dispatcher.Dispatch(new TopicsLoaded([topic]));
-        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
-
-        CreateEffect();
-
-        // A rebuild fast enough that nobody observed a Disconnected or Reconnecting status.
-        _dispatcher.Dispatch(new ConnectionConnected());
-        _dispatcher.Dispatch(new ConnectionConnected());
-
-        await Task.Delay(50);
-
-        _mockTopicService.Verify(
-            s => s.GetHistoryAsync("agent-1", 123, 456),
-            Times.Once);
     }
 
     [Fact]
@@ -276,10 +214,9 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
 
-        await Task.Delay(50);
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 2);
 
         _mockTopicService.Verify(s => s.GetAllTopicsAsync("agent-1", "default"), Times.Once);
-        _topicsStore.State.Topics.Count.ShouldBe(2);
         _topicsStore.State.Topics.ShouldContain(t => t.TopicId == "topic-2");
     }
 

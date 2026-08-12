@@ -5,6 +5,11 @@ name: jackbot
 x-timezone: &timezone
   TZ: Europe/Madrid
 
+# One name for the STT model on every side at once: the lemonade entrypoint pre-pulls it, and the
+# voice hub and both chat channels request it. The four must agree or the model that decodes is
+# not the model that was warmed, and every transcription pays for a lazy pull of a second one.
+x-stt-model: &stt-model ${STT_MODEL:-Whisper-Large-v3-Turbo}
+
 services:
   redis:
     image: redis/redis-stack-server:latest
@@ -401,6 +406,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      Dictation__Transcription__Model: *stt-model
     networks:
       - jackbot
     depends_on:
@@ -426,6 +432,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      Dictation__Transcription__Model: *stt-model
     networks:
       - jackbot
     depends_on:
@@ -557,7 +564,7 @@ services:
     environment:
       <<: *timezone
       Announce__Escalation__WebhookUrl: ""
-      Stt__OpenAi__Model: ${STT_MODEL:-Whisper-Large-v3-Turbo}
+      Stt__OpenAi__Model: *stt-model
       Tse__Mode: "${Tse__Mode:-Off}"
       Tse__Endpoint: "${Tse__Endpoint:-http://tse-extractor:9098}"
       Tse__TimeoutMs: "${Tse__TimeoutMs:-90000}"
@@ -589,7 +596,7 @@ services:
       # Warmed by the entrypoint's pre-pull; kept in lockstep with the hub's Stt__OpenAi__Model
       # (mcp-channel-voice above) so an override warms the model the hub actually requests instead
       # of leaving the container to lazily download the right one on the first utterance.
-      STT_MODEL: ${STT_MODEL:-Whisper-Large-v3-Turbo}
+      STT_MODEL: *stt-model
       # Only read when STT_MODEL names a `user.` model, which Lemonade knows nothing about until
       # the pre-pull registers it. Lemonade resolves checkpoints against HuggingFace/ModelScope
       # only, so a self-converted model has to be published before it can be named here. The

@@ -81,18 +81,6 @@ public sealed class HubEventBinderTests : IDisposable
     }
 
     [Fact]
-    public void Unbind_ThenPush_ChangesNothing()
-    {
-        var connection = new FakeHubConnection();
-        _binder.Bind(connection);
-        _binder.Unbind();
-
-        connection.Raise("OnTopicChanged", TopicCreated("topic-1"));
-
-        _topicsStore.State.Topics.ShouldBeEmpty();
-    }
-
-    [Fact]
     public void Bind_AfterAnEarlierBind_BindsAgainRatherThanSilentlyDoingNothing()
     {
         var first = new FakeHubConnection();

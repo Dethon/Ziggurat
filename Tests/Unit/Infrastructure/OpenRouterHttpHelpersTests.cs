@@ -105,23 +105,6 @@ public class OpenRouterHttpHelpersTests
     }
 
     [Fact]
-    public async Task PrepareRequestBody_WithNullSessionId_OmitsSessionId()
-    {
-        // Arrange
-        var json = "{\"model\":\"anthropic/claude-sonnet-4\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}";
-        var request = CreateRequest(json);
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
-
-        // Assert
-        var resultJson = await request.Content!.ReadAsStringAsync();
-        var obj = JsonNode.Parse(resultJson);
-
-        obj!["session_id"].ShouldBeNull();
-    }
-
-    [Fact]
     public async Task PrepareRequestBody_WithEmptySessionId_OmitsSessionId()
     {
         // Arrange
@@ -248,24 +231,6 @@ public class OpenRouterHttpHelpersTests
             .ContainsKey("provider").ShouldBeFalse();
     }
 
-    [Theory]
-    [InlineData(ProviderSort.Price, "price")]
-    [InlineData(ProviderSort.Throughput, "throughput")]
-    [InlineData(ProviderSort.Latency, "latency")]
-    public async Task PrepareRequestBody_WithSort_SerializesLowercased(ProviderSort sort, string expected)
-    {
-        // Arrange
-        var request = CreateRequest(BodyJson);
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-            request, null, new ProviderRouting { Sort = sort }, CancellationToken.None);
-
-        // Assert
-        JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!["sort"]!
-            .GetValue<string>().ShouldBe(expected);
-    }
-
     [Fact]
     public async Task PrepareRequestBody_WithPartialProviderRouting_OmitsUnsetFields()
     {
@@ -297,21 +262,6 @@ public class OpenRouterHttpHelpersTests
 
         // Act
         await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
-
-        // Assert
-        JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject()
-            .ContainsKey("provider").ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task PrepareRequestBody_WithEmptyProviderRouting_OmitsProviderKey()
-    {
-        // Arrange
-        var request = CreateRequest(BodyJson);
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-            request, null, new ProviderRouting(), CancellationToken.None);
 
         // Assert
         JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject()

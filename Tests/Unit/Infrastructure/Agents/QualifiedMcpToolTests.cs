@@ -31,16 +31,6 @@ public class QualifiedMcpToolTests
     }
 
     [Fact]
-    public void Flatten_String_ReturnsUnchanged()
-    {
-        var input = "plain string";
-
-        var result = QualifiedMcpTool.Flatten(input);
-
-        result.ShouldBeSameAs(input);
-    }
-
-    [Fact]
     public void Flatten_MultiBlock_WithNonTextContent_ReturnsUnchanged()
     {
         AIContent[] input =

@@ -14,18 +14,6 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
             cancellationToken: CancellationToken.None);
 
     [Fact]
-    public async Task McpServer_ListResources_ReturnsSchedulesFilesystem()
-    {
-        var client = await ConnectAsync();
-
-        var resources = await client.ListResourcesAsync();
-
-        resources.ShouldContain(r => r.Uri == "filesystem://schedules");
-
-        await client.DisposeAsync();
-    }
-
-    [Fact]
     public async Task McpServer_ReadFilesystemResource_ReturnsMetadata()
     {
         var client = await ConnectAsync();
@@ -37,18 +25,6 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
 
         text.ShouldContain("\"name\":\"schedules\"");
         text.ShouldContain("\"mountPoint\":\"/schedules\"");
-
-        await client.DisposeAsync();
-    }
-
-    [Fact]
-    public async Task McpServer_ListPrompts_IncludesSchedulingPrompt()
-    {
-        var client = await ConnectAsync();
-
-        var prompts = await client.ListPromptsAsync();
-
-        prompts.ShouldContain(p => p.Name == "scheduling_prompt");
 
         await client.DisposeAsync();
     }

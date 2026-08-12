@@ -72,7 +72,7 @@ public class WakeArbiterTests
             },
             _ => { Interlocked.Increment(ref LegacyEnded); return Task.CompletedTask; });
 
-        public void OpenCapture(FakeTimeProvider time, ArbitrationSettings settings)
+        public void OpenCapture(ArmedClock time, ArbitrationSettings settings)
         {
             var gate = new SilenceGate(
                 new AdaptiveLevelTracker(500, 9, 4, 15, TimeSpan.FromSeconds(3)),
@@ -81,10 +81,10 @@ public class WakeArbiterTests
         }
     }
 
-    private static (WakeArbiter Arbiter, FakeTimeProvider Time, ListPublisher Metrics,
+    private static (WakeArbiter Arbiter, ArmedClock Time, ListPublisher Metrics,
         VoiceConversationManager Conversations) Create(ArbitrationSettings? settings = null)
     {
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new ArmedClock(DateTimeOffset.UtcNow);
         var metrics = new ListPublisher();
         var conversations = TestConversationManager(time);
         var arbiter = new WakeArbiter(
@@ -95,7 +95,7 @@ public class WakeArbiterTests
 
     // The exact IConversationFactory fake + ReplyTextAccumulator construction from
     // VoiceConversationManagerTests.Build, so handoff runs against the real manager.
-    private static VoiceConversationManager TestConversationManager(FakeTimeProvider clock)
+    private static VoiceConversationManager TestConversationManager(ArmedClock clock)
     {
         var factory = new Mock<IConversationFactory>();
         var counter = 0;
@@ -127,12 +127,29 @@ public class WakeArbiterTests
         condition().ShouldBeTrue(because);
     }
 
-    private static async Task SettleAsync(FakeTimeProvider time, int windowMs)
+    // Let DecideAfterWindowAsync reach its Task.Delay, fire it, then let the decision run.
+    //
+    // Both halves used to be fixed sleeps and both were guesses. The first guessed that the window
+    // delay had been armed, and an advance that lands before it fires nothing at all — the decision
+    // then never runs and the failure names whatever the decision was supposed to have done. The
+    // window is the arbiter's own span, so waiting for that wait to be outstanding says it exactly.
+    //
+    // The tail is the decision pausing its losers on its own task, and fifty milliseconds was a
+    // guess at how long that takes. It held while the suite ran on twelve threads and stopped
+    // holding on twenty-four, where a run failed on a pause that had simply not been written yet. A
+    // caller that can state what it is waiting for passes it and waits for the thing itself.
+    private static async Task SettleAsync(ArmedClock time, int windowMs, Func<bool>? until = null)
     {
-        // let DecideAfterWindowAsync reach its Task.Delay, then fire it, then let it run
-        await Task.Delay(50);
-        time.Advance(TimeSpan.FromMilliseconds(windowMs + 1));
-        await Task.Delay(50);
+        await time.AdvancePastLiveAsync(
+            TimeSpan.FromMilliseconds(windowMs), TimeSpan.FromMilliseconds(windowMs + 1));
+
+        if (until is null)
+        {
+            await Eventually.Settle();
+            return;
+        }
+
+        await WaitUntilAsync(until, "the decision did not settle within its deadline");
     }
 
     [Fact]
@@ -180,7 +197,10 @@ public class WakeArbiterTests
 
         arbiter.Claim("far", 200, 0.8, "wake");
         arbiter.Claim("near", 900, 0.9, "wake");
-        await SettleAsync(time, settings.WindowMs);
+
+        // Arbitration is off, so no coincidence window is ever opened and there is no wait for
+        // SettleAsync to advance past. What is claimed below is an absence, and only time buys one.
+        await Eventually.Settle();
 
         near.Paused.ShouldBe(0);
         far.Paused.ShouldBe(0);
@@ -221,7 +241,9 @@ public class WakeArbiterTests
         only.OpenCapture(time, new ArbitrationSettings());
 
         arbiter.Claim("only", 500, null, "wake");
-        await SettleAsync(time, 500);
+
+        // One satellite is not a contest, so the arbiter returns without opening a window.
+        await Eventually.Settle();
 
         only.Paused.ShouldBe(0);
         only.Capture!.Completed.IsCompleted.ShouldBeFalse();
@@ -501,7 +523,7 @@ public class WakeArbiterTests
         arbiter.Claim("dead", 300, null, "wake"); // suppressed first, and its wire write throws
         arbiter.Claim("alive", 200, null, "wake");
         arbiter.Claim("winner", 900, null, "wake");
-        await SettleAsync(time, 500);
+        await SettleAsync(time, 500, () => alive.Paused == 1 && alive.Capture!.Completed.IsCompleted);
 
         alive.Paused.ShouldBe(1);
         dead.Paused.ShouldBe(0);

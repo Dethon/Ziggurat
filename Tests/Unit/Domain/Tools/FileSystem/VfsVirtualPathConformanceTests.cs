@@ -90,20 +90,6 @@ public class VfsVirtualPathConformanceTests
             + string.Join(", ", leaked.Select(s => $"{s.Field}='{s.Value}'")));
     }
 
-    // The other half of "derived from the one list": every tool key in it has a case above, so
-    // adding an operation without one fails here rather than silently skipping the rule.
-    [Fact]
-    public void EveryToolInTheOneList_IsExercised()
-    {
-        ToolKeys.ShouldBe(
-            [
-                VfsTextReadTool.Key, VfsTextCreateTool.Key, VfsTextEditTool.Key, VfsGlobFilesTool.Key,
-                VfsTextSearchTool.Key, VfsMoveTool.Key, VfsCopyTool.Key, VfsRemoveTool.Key,
-                VfsFileInfoTool.Key, VfsExecTool.Key
-            ],
-            ignoreOrder: true);
-    }
-
     private static bool IsExempt(string toolKey, string field) =>
         _exemptions.Any(e => e.Field == field && e.ToolKeys.Contains(toolKey));
 

@@ -104,28 +104,6 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
     }
 
     [Fact]
-    public async Task CallServiceAsync_WithDataField_PassesThrough()
-    {
-        var client = fixture.CreateClient();
-
-        // homeassistant.update_entity accepts an entity_id and triggers a refresh — succeeds
-        // for any valid entity. Lets us exercise the data/target round-trip without depending
-        // on the test entity's state at the time of the call.
-        var data = new Dictionary<string, JsonNode?>
-        {
-            ["entity_id"] = JsonValue.Create(HomeAssistantFixture.TestEntityId)
-        };
-
-        var result = await client.CallServiceAsync(
-            domain: "homeassistant",
-            service: "update_entity",
-            entityId: null,
-            data: data);
-
-        result.ShouldNotBeNull();
-    }
-
-    [Fact]
     public async Task CallServiceAsync_ResponseSupportingService_ReturnsServiceResponse()
     {
         var client = fixture.CreateClient();

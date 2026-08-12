@@ -27,6 +27,14 @@ public sealed class McpChannelConnection(
     // waiting longer, and the next attempt should not be minutes away.
     private static readonly TimeSpan _maxReconnectDelay = TimeSpan.FromSeconds(30);
 
+    // How long a dial may spend on the initialization handshake before it counts as a failure. The
+    // SDK's own default is a minute, which is longer than the health-check cadence above and long
+    // enough that a channel server that is simply down holds the dial open past the point where
+    // retrying it would have been the useful thing to do. The handshake is one round trip against a
+    // server that has already accepted the connection, so a server answering it needs a fraction of
+    // this; anything slower is the retry's business, not the dial's.
+    private static readonly TimeSpan _initializationTimeout = TimeSpan.FromSeconds(10);
+
     private const string CancelCommandContent = "/cancel";
 
     private static readonly TimeSpan _minBackoff = TimeSpan.FromSeconds(1);
@@ -226,7 +234,8 @@ public sealed class McpChannelConnection(
                 {
                     Name = $"{ChannelProtocol.ChannelClientNamePrefix}{ChannelId}",
                     Version = "1.0.0"
-                }
+                },
+                InitializationTimeout = _initializationTimeout
             },
             cancellationToken: ct);
 

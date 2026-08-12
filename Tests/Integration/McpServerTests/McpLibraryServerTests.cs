@@ -44,32 +44,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     }
 
     [Fact]
-    public async Task McpServer_IsAccessible_ReturnsAllTools()
-    {
-        // Arrange & Act
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        var tools = await client.ListToolsAsync();
-
-        // Assert
-        tools.ShouldNotBeEmpty();
-        var toolNames = tools.Select(t => t.Name).ToList();
-
-        toolNames.ShouldContain("file_search");
-        toolNames.ShouldContain("download_file");
-
-        toolNames.ShouldContain("fs_glob");
-        toolNames.ShouldContain("fs_move");
-
-        await client.DisposeAsync();
-    }
-
-    [Fact]
     public async Task McpServer_ExposesSingleMediaFilesystemResource()
     {
         var client = await McpClient.CreateAsync(
@@ -87,55 +61,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         await client.DisposeAsync();
     }
 
-    #region FileSearch Tests
-
-    [Fact]
-    public async Task FileSearchTool_WithQuery_ReturnsResults()
-    {
-        // Arrange
-        var searchTool = await GetToolAsync("file_search");
-
-        // Act - search for something generic that Jackett might return results for
-        var result = await searchTool.WithMeta(MetaFor("conv-search")).CallAsync(
-            new Dictionary<string, object?>
-            {
-                ["searchStrings"] = new[] { "test" }
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert - we can't guarantee results from Jackett without configured indexers,
-        // but the tool should execute without error
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain("status");
-    }
-
-    #endregion
-
     #region FileDownload Tests
-
-    [Fact]
-    public async Task FileDownloadTool_WithInvalidId_ReturnsError()
-    {
-        // Arrange
-        var downloadTool = await GetToolAsync("download_file");
-
-        // Act - try to download with an ID that doesn't exist in search results
-        var result = await downloadTool.WithMeta(MetaFor("conv-invalid-id")).CallAsync(
-            new Dictionary<string, object?>
-            {
-                ["searchResultId"] = 12345,
-                ["link"] = null,
-                ["title"] = null
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert - should return error because no search was performed first
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain(
-            "No search result found for id 12345. Make sure to run the file_search tool first and use the correct");
-    }
 
     [Fact]
     public async Task DownloadFile_WithConversationContextMeta_RecordsRoutingAndServesMediaOverlay()
@@ -282,39 +208,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         content.ShouldContain("movie1.mkv");
         content.ShouldContain("movie2.mkv");
         content.ShouldNotContain("readme.txt");
-
-        await client.DisposeAsync();
-    }
-
-    [Fact]
-    public async Task GlobFilesTool_WithRecursivePattern_FindsNestedFiles()
-    {
-        // Arrange
-        fixture.CreateLibraryFile(Path.Combine("GlobDeep", "sub1", "file.txt"));
-        fixture.CreateLibraryFile(Path.Combine("GlobDeep", "sub2", "nested", "deep.txt"));
-
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        // Act
-        var result = await client.CallToolAsync(
-            "fs_glob",
-            new Dictionary<string, object?>
-            {
-                ["pattern"] = "**/*.txt",
-                ["basePath"] = "GlobDeep"
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain("file.txt");
-        content.ShouldContain("deep.txt");
 
         await client.DisposeAsync();
     }

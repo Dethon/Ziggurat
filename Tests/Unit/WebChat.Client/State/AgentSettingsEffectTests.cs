@@ -108,7 +108,10 @@ public sealed class AgentSettingsEffectTests : IDisposable
     public async Task StateChange_ChangedEntry_PersistsToStorage()
     {
         _dispatcher.Dispatch(new SetAgentModel("jack", "z-ai/glm-5.2"));
-        await Task.Delay(50); // fire-and-forget write
+
+        // The write is fire-and-forget, so the key appears when the effect gets to it rather than
+        // within any particular span.
+        await TestChat.Eventually(() => _storage.Values.ContainsKey("agentConfigPatch:jack"));
 
         _storage.Values["agentConfigPatch:jack"]
             .ShouldBe(JsonSerializer.Serialize(new AgentModelSettings("z-ai/glm-5.2", null)));

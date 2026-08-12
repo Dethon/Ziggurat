@@ -56,7 +56,7 @@ public class TimerFireServiceTests
 
         await service.StartAsync(CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(4));
-        await Task.Delay(50);
+        await Eventually.Settle();
         announcer.Requests.ShouldBeEmpty(); // not due yet
 
         time.Advance(TimeSpan.FromSeconds(2));

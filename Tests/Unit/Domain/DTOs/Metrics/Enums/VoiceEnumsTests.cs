@@ -75,6 +75,7 @@ public class VoiceEnumsTests
     [InlineData(VoiceDimension.Outcome, 3)]
     [InlineData(VoiceDimension.Priority, 4)]
     [InlineData(VoiceDimension.Speaker, 5)]
+    [InlineData(VoiceDimension.Channel, 6)]
     public void VoiceDimension_HasPinnedWireValues(VoiceDimension dimension, int expected) =>
         ((int)dimension).ShouldBe(expected);
 }

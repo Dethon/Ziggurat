@@ -18,14 +18,16 @@ public class ChannelReceiveToolTests
     [Fact]
     public async Task Run_MaxWaitBeyondDefaultCeiling_IsClampedAndTimesOutEarly()
     {
-        var time = new FakeTimeProvider();
+        var time = new ArmedClock();
         var inbox = new ChannelInbox(time);
         var tool = new TestableChannelReceiveTool(inbox);
 
         var call = tool.TestRun("sess-1", 90_000, CancellationToken.None);
 
-        await Task.Delay(50);
-        time.Advance(TimeSpan.FromMilliseconds(ChannelProtocol.DefaultReceiveWaitMs + 1_000));
+        // The clamped wait is the due time the parked call arms, so waiting for that timer proves
+        // the clamp was applied and makes the advance land on something that exists. Advancing
+        // first fires nothing and leaves the call parked for the full ninety seconds.
+        await time.AdvancePastAsync(TimeSpan.FromMilliseconds(ChannelProtocol.DefaultReceiveWaitMs));
 
         var json = await call.WaitAsync(TimeSpan.FromSeconds(5));
         var result = JsonSerializer.Deserialize<ChannelReceiveResult>(json, ChannelProtocol.SerializerOptions)!;

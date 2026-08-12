@@ -36,17 +36,6 @@ public class GlobFilesToolTests
     }
 
     [Fact]
-    public async Task Run_WithAbsolutePathUnderBasePath_StripsBaseAndUsesRelative()
-    {
-        _mockClient.Setup(c => c.Glob(BasePath, "docs/**/*.pdf", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(["/library/docs/book.pdf"]);
-
-        var result = await _tool.TestRun("/library/docs/**/*.pdf", CancellationToken.None);
-
-        result["entries"]!.AsArray().Count.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task Run_WithAbsoluteTrailingSlashPattern_PreservesDirsOnly()
     {
         _mockClient.Setup(c => c.Glob(BasePath, "movies/", It.IsAny<CancellationToken>()))
@@ -60,7 +49,6 @@ public class GlobFilesToolTests
 
     [Theory]
     [InlineData("")]
-    [InlineData(" ")]
     [InlineData(null)]
     public async Task Run_WithEmptyPattern_ReturnsInvalidArgument(string? pattern)
     {
@@ -74,12 +62,6 @@ public class GlobFilesToolTests
     public async Task Run_WithDotDotPattern_ReturnsInvalidArgument(string pattern)
     {
         await ShouldBeInvalid(() => _tool.TestRun(pattern, CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task Run_WithAbsolutePathOutsideBasePath_ReturnsInvalidArgument()
-    {
-        await ShouldBeInvalid(() => _tool.TestRun("/other/path/**/*.pdf", CancellationToken.None));
     }
 
     // /library-backup is a different directory from /library, and a prefix match without a

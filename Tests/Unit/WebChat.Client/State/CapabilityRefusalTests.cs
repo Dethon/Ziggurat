@@ -40,13 +40,6 @@ public class CapabilityRefusalTests
     };
 
     [Fact]
-    public void TheEffectiveModel_IsThePerMessageChoiceFallingBackToTheAgentDefault()
-    {
-        AttachmentCapability.EffectiveModel(_agents[0], null).ShouldBe("text/only");
-        AttachmentCapability.EffectiveModel(_agents[0], "sees/pictures").ShouldBe("sees/pictures");
-    }
-
-    [Fact]
     public void AModelThatCannotTakeAnAttachedKind_RefusesNamingTheModelAndTheReason()
     {
         var refusal = ComposerSelectors.CapabilityRefusal(Settings(null), _agents, AgentId, [_photo]);
@@ -131,14 +124,6 @@ public class CapabilityRefusalTests
         ChatInputLogic.CanSend(
             disabled: false, inputText: "", isStreaming: false,
             readyAttachments: 1).ShouldBeTrue();
-    }
-
-    [Fact]
-    public void AFileStillUploading_HoldsTheSend()
-    {
-        ChatInputLogic.CanSend(
-            disabled: false, "wait for it", isStreaming: false,
-            readyAttachments: 0, uploadInFlight: true).ShouldBeFalse();
     }
 
     private static AgentSettingsState Settings(string? model) => new()

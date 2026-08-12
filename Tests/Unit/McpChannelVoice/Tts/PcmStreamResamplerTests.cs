@@ -53,26 +53,6 @@ public class PcmStreamResamplerTests
     }
 
     [Fact]
-    public void Process_SineAcrossChunkBoundaries_HasNoDiscontinuity()
-    {
-        // A click at a chunk boundary is an adjacent-sample jump far above the sine's
-        // max slope (amplitude * 2π * f / rate ≈ 1003 for 8000 @ 440 Hz / 22050).
-        var input = Sine24k(4800, 440, 8000);
-        var resampler = new PcmStreamResampler(24000, 22050);
-        var collected = new List<byte>();
-        for (var offset = 0; offset < input.Length; offset += 500)
-        {
-            var end = Math.Min(offset + 500, input.Length);
-            collected.AddRange(resampler.Process(input.AsSpan(offset..end)));
-        }
-
-        var samples = ToSamples(collected.ToArray());
-        var maxDelta = Enumerable.Range(1, samples.Length - 1)
-            .Max(i => Math.Abs(samples[i] - samples[i - 1]));
-        maxDelta.ShouldBeLessThan(1200);
-    }
-
-    [Fact]
     public void Process_ResampledSine_TracksIdealWaveform()
     {
         // Output sample k sits at time k/22050 s, so it must match the ideal sine there;

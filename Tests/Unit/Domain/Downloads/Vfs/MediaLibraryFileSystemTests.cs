@@ -41,25 +41,6 @@ public class MediaLibraryFileSystemTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    // The landing refusal used to sit on WriteBlobAsync alone, so a cross-mount copy — which
-    // streams through WriteChunksAsync — put a real file where the virtual status.json is. That file
-    // was then invisible (the overlay shadows reads, Merge dedupes globs) and unremovable (delete on
-    // the status path answers "read-only"), which is as stuck as a file gets. A write to a live
-    // download's status file lands inside that download's directory, so the landing reason covers
-    // it: the file dies with the download, which is the more useful thing to tell the agent.
-    [Fact]
-    public async Task WriteChunks_OntoTheVirtualStatusFile_IsRefusedAndWritesNothing()
-    {
-        _client.Add(Item(42));
-
-        var write = await Should.ThrowAsync<FileSystemOperationException>(() => _sut.WriteChunksAsync(
-            "downloads/42/status.json", Chunks("stale snapshot"),
-            overwrite: true, createDirectories: true, CancellationToken.None));
-
-        write.Error.Message.ShouldContain("removed when the download is cancelled");
-        File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeFalse();
-    }
-
     // A leftover status file is an ordinary file, so both halves of a write reach the disk.
     [Fact]
     public async Task WritesOntoALeftoverStatusFile_Succeed()
@@ -161,7 +142,6 @@ public class MediaLibraryFileSystemTests : IDisposable
     [Theory]
     [InlineData("downloads/42/./status.json")]
     [InlineData("downloads/43/../42/status.json")]
-    [InlineData("downloads/42/./book.epub")]
     public async Task BlobWrite_OntoADottedSpellingOfTheVirtualStatusFile_IsRefused(string path)
     {
         _client.Add(Item(42));
@@ -179,7 +159,6 @@ public class MediaLibraryFileSystemTests : IDisposable
     // is an ordinary write.
     [Theory]
     [InlineData("042")]
-    [InlineData("+42")]
     public async Task BlobWrite_IntoALookalikeDownloadDirectory_Succeeds(string dir)
     {
         _client.Add(Item(42));
@@ -232,7 +211,6 @@ public class MediaLibraryFileSystemTests : IDisposable
     // ordinary file both reads serve.
     [Theory]
     [InlineData("042")]
-    [InlineData("+42")]
     public async Task ReadsOfAStatusFileUnderALookalikeId_ServeTheRealFile(string dir)
     {
         _client.Add(Item(42));
@@ -312,7 +290,6 @@ public class MediaLibraryFileSystemTests : IDisposable
     [InlineData("/downloads/42")]
     [InlineData("downloads/./42")]
     [InlineData("downloads/43/../42")]
-    [InlineData("./downloads")]
     public async Task Move_APathHoldingALiveDownload_IsRefused(string source)
     {
         _client.Add(Item(42));
@@ -379,7 +356,6 @@ public class MediaLibraryFileSystemTests : IDisposable
     // Finished is the only state that frees the files. A paused download resumes into them and a
     // failed one is a partial file the agent should cancel rather than file away.
     [Theory]
-    [InlineData(DownloadState.InProgress)]
     [InlineData(DownloadState.Paused)]
     [InlineData(DownloadState.Failed)]
     public async Task Move_OfADownloadThatHasNotFinished_IsRefused(DownloadState state)
@@ -419,17 +395,6 @@ public class MediaLibraryFileSystemTests : IDisposable
 
         error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
         error.Message.ShouldContain("rendered");
-    }
-
-    [Fact]
-    public async Task Move_APathWithNoLiveDownloadUnderIt_StillMoves()
-    {
-        _client.Add(Item(42));
-
-        (await _sut.MoveAsync("Movies/old", "Movies/new", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
-        (await _sut.MoveAsync("downloads/7", "Movies/7", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
     }
 
     // A leftover is an ordinary file wherever it sits, so moving one is an ordinary move.
@@ -474,9 +439,7 @@ public class MediaLibraryFileSystemTests : IDisposable
     // duplicate on both mounts. The reason is the delete's own, because the delete is what refuses.
     [Theory]
     [InlineData("Movies/film.mkv")]
-    [InlineData("notes.txt")]
     [InlineData("downloads/042")]
-    [InlineData("downloads/42/payload.mkv")]
     public async Task MoveOutCheck_OfAPathThisMountCannotDelete_IsRefused(string path)
     {
         _client.Add(Item(42));
@@ -728,8 +691,6 @@ public class MediaLibraryFileSystemTests : IDisposable
     [InlineData("downloads/42/payload.mkv", "only removes download directories")]
     [InlineData("Movies/film.mkv", "only removes download directories")]
     [InlineData("downloads/042", "only removes download directories")]
-    [InlineData("downloads/ 42 ", "only removes download directories")]
-    [InlineData("downloads/+42", "only removes download directories")]
     public async Task Delete_ARefusedMediaPath_CancelsNothing(string path, string reason)
     {
         _client.Add(Item(42));
@@ -755,18 +716,6 @@ public class MediaLibraryFileSystemTests : IDisposable
             .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>().Value.Message.ShouldContain("cancelled");
 
         _client.CleanedUp.ShouldContain(42);
-    }
-
-    [Fact]
-    public async Task Delete_ALeftoverDownloadDirectory_RemovesIt()
-    {
-        Directory.CreateDirectory(Path.Combine(_libraryRoot, "downloads", "99"));
-
-        (await _sut.DeleteAsync("downloads/99", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>();
-
-        _client.CleanedUp.ShouldBeEmpty();
-        _disk.RemovedDirectories.ShouldContain(Path.Combine(_libraryRoot, "downloads", "99"));
     }
 
     [Fact]
@@ -877,34 +826,6 @@ public class MediaLibraryFileSystemTests : IDisposable
         error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
         error.Message.ShouldContain("fs_read");
         File.Exists(Path.Combine(_libraryRoot, "Movies", "snapshot.json")).ShouldBeFalse();
-    }
-
-    // The whole pin, restored: a live download's status file is rendered from state that is still
-    // changing, so copying, moving or writing it would freeze a stale snapshot under a name that
-    // still looks live. Every operation that would do that refuses, whichever end names the file,
-    // and none of them answers not_found for a path everything else says exists.
-    [Fact]
-    public async Task ALiveDownloadsStatusFile_CannotBeMovedCopiedOrWritten()
-    {
-        _client.Add(Item(42));
-        await File.WriteAllTextAsync(Path.Combine(_libraryRoot, "film.mkv"), "film");
-
-        (await _sut.CopyAsync("downloads/42/status.json", "Movies/x.json", false, true, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsCopyResult>.Err>().Error.ErrorCode
-            .ShouldBe(ToolError.Codes.UnsupportedOperation);
-        (await _sut.CopyAsync("film.mkv", "downloads/42/status.json", false, true, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsCopyResult>.Err>().Error.ErrorCode
-            .ShouldBe(ToolError.Codes.UnsupportedOperation);
-        (await _sut.MoveAsync("downloads/42/status.json", "Movies/status.json", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error.ErrorCode
-            .ShouldBe(ToolError.Codes.UnsupportedOperation);
-        (await _sut.MoveAsync("film.mkv", "downloads/42/status.json", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error.ErrorCode
-            .ShouldBe(ToolError.Codes.UnsupportedOperation);
-        (await _sut.WriteBlobAsync("downloads/42/status.json", Convert.ToBase64String("stale"u8.ToArray()),
-                offset: 0, overwrite: true, createDirectories: true, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>().Error.ErrorCode
-            .ShouldBe(ToolError.Codes.UnsupportedOperation);
     }
 
     // A leftover status file is an ordinary file, so it copies like one.

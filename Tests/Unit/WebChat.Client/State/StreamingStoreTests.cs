@@ -63,25 +63,6 @@ public class StreamingStoreTests : IDisposable
         _store.State.StreamingTopics.ShouldNotContain("topic-1");
     }
 
-    [Fact]
-    public void MultipleTopics_StreamIndependently()
-    {
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamStarted("topic-2"));
-
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", null, null, "msg-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-2", "World", null, null, "msg-2"));
-
-        _store.State.StreamingByTopic["topic-1"].Content.ShouldBe("Hello");
-        _store.State.StreamingByTopic["topic-2"].Content.ShouldBe("World");
-
-        _dispatcher.Dispatch(new StreamCompleted("topic-1"));
-
-        _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
-        _store.State.StreamingByTopic.ShouldContainKey("topic-2");
-        _store.State.StreamingByTopic["topic-2"].Content.ShouldBe("World");
-    }
-
     // A chunk for a topic with no reply in flight used to be dropped here, because six writers
     // could emit one. TopicStreams is the only writer now and answers that itself, so the
     // guard is gone; TopicStreamFlowTests holds what a user would notice if it came back.

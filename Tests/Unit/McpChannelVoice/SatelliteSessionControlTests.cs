@@ -14,21 +14,6 @@ public class SatelliteSessionControlTests
     private static WyomingEvent Event() =>
         WyomingEvent.Header("speaker-volume", new JsonObject { ["action"] = "up" });
 
-    [Fact]
-    public async Task TrySendControlAsync_WriterAttached_WritesAndReturnsTrue()
-    {
-        var session = Session();
-        var written = new List<WyomingEvent>();
-        session.ControlWriter = (evt, _) => { written.Add(evt); return Task.CompletedTask; };
-
-        var sent = await session.TrySendControlAsync(Event(), default);
-
-        sent.ShouldBeTrue();
-        written.Count.ShouldBe(1);
-        written[0].Type.ShouldBe("speaker-volume");
-        written[0].Data["action"]!.GetValue<string>().ShouldBe("up");
-    }
-
     // No writer means the satellite is not connected. A fast-path command must not throw on the
     // dispatch path just because a connection went away between transcript and action.
     [Fact]

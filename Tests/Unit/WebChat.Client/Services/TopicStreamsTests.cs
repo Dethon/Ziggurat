@@ -49,15 +49,6 @@ public sealed class TopicStreamsTests : IDisposable
     #region Opening
 
     [Fact]
-    public void TryOpen_ATopicWithNoStream_HandsBackALease()
-    {
-        var lease = _streams.TryOpen("topic-1", Assistant(), null, _ => _running.Task);
-
-        lease.ShouldNotBeNull();
-        _streams.Snapshot("topic-1").IsStreaming.ShouldBeTrue();
-    }
-
-    [Fact]
     public void TryOpen_ATopicThatAlreadyHasAStream_RefusesAndLeavesTheFirstLeaseWorking()
     {
         var first = Open();

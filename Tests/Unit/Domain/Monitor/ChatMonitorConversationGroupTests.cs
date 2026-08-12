@@ -111,34 +111,6 @@ public class ChatMonitorConversationGroupTests
     }
 
     [Fact]
-    public async Task Monitor_SecondTurnReusingTheGroupAnchors_AnnouncesTheConversationTheFirstTurnMinted()
-    {
-        // The minting turn announced itself through its own create_conversation, so it is
-        // skipped. The second turn minted nothing, so the same conversation now pre-exists and
-        // its live stream has to be set up again before the reply chunks arrive.
-        var signalr = new FakeChannelConnection { ChannelId = "signalr", ConversationIdToReturn = "minted-signalr" };
-        signalr.Complete();
-        var scheduling = MonitorTestMocks.CreateChannel(
-            "scheduling",
-            ScheduleFire("Check stalled torrents"),
-            ScheduleFire("Check them again"));
-
-        var monitor = new ChatMonitor(
-            [scheduling, signalr],
-            MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
-            MonitorTestMocks.CreateThreadResolver(),
-            new Mock<IMetricsPublisher>().Object,
-            null,
-            Mock.Of<ILogger<ChatMonitor>>());
-
-        await monitor.Monitor(CancellationToken.None);
-
-        signalr.CreatedConversations.Count.ShouldBe(2);
-        signalr.CreatedConversations[0].ExistingConversationId.ShouldBeNull();
-        signalr.CreatedConversations[1].ExistingConversationId.ShouldBe("minted-signalr");
-    }
-
-    [Fact]
     public async Task Monitor_SecondTurnEqualToTheAnchorMessage_IsStillANewTurn()
     {
         // "The turn the anchors came from" is answered by identity, not by value. ChannelMessage

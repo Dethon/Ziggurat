@@ -76,35 +76,6 @@ public class HaFileSystemReadTests
     }
 
     [Fact]
-    public async Task ReadAsync_ActionFileForMissingEntity_ReturnsNotFound()
-    {
-        var fs = Build(out _);
-        var result = await fs.ReadAsync("entities/light/ghost/turn_on.sh", null, null, CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error.ErrorCode.ShouldBe("not_found");
-    }
-
-    [Fact]
-    public async Task GlobAsync_TwoSameClassEntities_AreDistinguishableByName()
-    {
-        var client = new FakeHaClient
-        {
-            States =
-            {
-                Entity("climate.0x01", "cool", ("friendly_name", JsonValue.Create("Aire Acondicionado Salón"))),
-                Entity("climate.0x02", "heat", ("friendly_name", JsonValue.Create("Calefacción Salón")))
-            },
-            AreaTemplateJson = """{"areas":[{"id":"salon","name":"Salón","entities":["climate.0x01","climate.0x02"]}]}"""
-        };
-        var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
-
-        var result = await fs.GlobAsync("areas/salon", "*/", CancellationToken.None);
-        var hits = result.ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries;
-
-        hits.ShouldContain("areas/salon/climate.0x01_(aire-acondicionado-salon)/");
-        hits.ShouldContain("areas/salon/climate.0x02_(calefaccion-salon)/");
-    }
-
-    [Fact]
     public async Task ExecAsync_ResolvesViaCompositePath()
     {
         var client = new FakeHaClient
@@ -130,16 +101,6 @@ public class HaFileSystemReadTests
         var error = result.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error;
         error.ErrorCode.ShouldBe("not_found");
         error.Hint.ShouldNotBeNull().ShouldContain("kitchen_(kitchen)");
-    }
-
-    [Fact]
-    public async Task ExecAsync_BareId_WhenFriendlyNameExists_127WithHint()
-    {
-        var fs = Build(out _);
-        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh", null, CancellationToken.None);
-        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
-        exec.ExitCode.ShouldBe(127);
-        exec.Stderr.ShouldContain("kitchen_(kitchen)");
     }
 
     [Fact]

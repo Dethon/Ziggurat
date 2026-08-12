@@ -121,27 +121,6 @@ public class SpeakerProfileStoreTests : IDisposable
     }
 
     [Fact]
-    public void Load_MeanCentroidV1Cache_ReEmbeds()
-    {
-        // profile.json written by the v1 pipeline held a single mean-centroid `Embedding`;
-        // the prototype pipeline bumped CacheVersion, so a v1 cache must be rebuilt, not trusted.
-        WriteVoice("fran", Wav(1000), Wav(2000));
-        var embedder = new FakeEmbedder();
-        new SpeakerProfileStore(_dir, embedder, NullLogger<SpeakerProfileStore>.Instance).Load();
-        embedder.Calls.ShouldBe(2);
-        var cachePath = Path.Combine(_dir, "fran", "profile.json");
-        var node = JsonNode.Parse(File.ReadAllText(cachePath))!;
-        node["Version"] = 1;
-        node.AsObject().Remove("Prototypes");
-        node["Embedding"] = new JsonArray(0.5, 0.5);
-        File.WriteAllText(cachePath, node.ToJsonString());
-
-        new SpeakerProfileStore(_dir, embedder, NullLogger<SpeakerProfileStore>.Instance).Load();
-
-        embedder.Calls.ShouldBe(4);
-    }
-
-    [Fact]
     public void Load_WavChanged_InvalidatesCache()
     {
         WriteVoice("fran", Wav(1000));

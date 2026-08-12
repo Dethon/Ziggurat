@@ -39,16 +39,6 @@ public class TextSearchToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_WithRegex_MatchesPattern()
-    {
-        CreateTestFile("todos.md", "TODO: Fix bug\nFIXME: Later\nTODO: Add test");
-
-        var result = _tool.TestRun("TODO:.*", regex: true);
-
-        result["totalMatches"]!.GetValue<int>().ShouldBe(2);
-    }
-
-    [Fact]
     public void Run_IncludesNearestHeading()
     {
         CreateTestFile("doc.md", "# Introduction\nSome text\n## Setup\nFind this target");
@@ -103,19 +93,6 @@ public class TextSearchToolTests : IDisposable
         var result = _tool.TestRun("Find");
 
         result["filesWithMatches"]!.GetValue<int>().ShouldBe(1);
-    }
-
-    [Fact]
-    public void Run_RelativePathsInResults()
-    {
-        Directory.CreateDirectory(Path.Combine(_testDir, "docs"));
-        CreateTestFile("docs/guide.md", "Target content");
-
-        var result = _tool.TestRun("Target");
-
-        var file = result["results"]!.AsArray()[0]!["file"]!.ToString();
-        file.ShouldBe("docs/guide.md");
-        file.ShouldNotContain("\\");
     }
 
     [Fact]

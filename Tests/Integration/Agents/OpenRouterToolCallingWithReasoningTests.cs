@@ -5,6 +5,8 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
 
+using Tests.Integration.Fixtures;
+
 namespace Tests.Integration.Agents;
 
 [Trait("Category", "Llm")]
@@ -45,18 +47,21 @@ public class OpenRouterToolCallingWithReasoningTests
             }
         };
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-
         try
         {
-            var updates = new List<ChatResponseUpdate>();
-            await foreach (var update in invoking.GetStreamingResponseAsync(
-                               [new ChatMessage(ChatRole.User, "Call TestTool, then say DONE")],
-                               options,
-                               cts.Token))
+            var updates = await LlmAttempt.WithinAsync(TimeSpan.FromSeconds(60), async ct =>
             {
-                updates.Add(update);
-            }
+                var collected = new List<ChatResponseUpdate>();
+                await foreach (var update in invoking.GetStreamingResponseAsync(
+                                   [new ChatMessage(ChatRole.User, "Call TestTool, then say DONE")],
+                                   options,
+                                   ct))
+                {
+                    collected.Add(update);
+                }
+
+                return collected;
+            });
 
             updates.ShouldNotBeEmpty();
         }

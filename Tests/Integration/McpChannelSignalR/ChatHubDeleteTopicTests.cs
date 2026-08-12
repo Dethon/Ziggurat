@@ -60,6 +60,7 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
             new RedisStateService(redis.Connection),
             new Mock<IPushSubscriptionStore>().Object,
             attachments,
+            new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {
             Context = new RegisteredCaller()

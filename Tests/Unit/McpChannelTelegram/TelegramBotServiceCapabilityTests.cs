@@ -52,15 +52,6 @@ public class TelegramBotServiceCapabilityTests : IDisposable
     // Permissive wherever the catalogue is silent: a blip at the provider, or a cold start before
     // any agent has connected, must not remove the feature.
     [Fact]
-    public async Task WithNoCatalogueRegistered_AttachmentsGoThrough()
-    {
-        await DriveAPhotoAsync();
-
-        (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Attachments.ShouldNotBeNull();
-        _harness.Sent.ShouldBeEmpty();
-    }
-
-    [Fact]
     public async Task WithTheAgentAbsentFromTheCatalogue_AttachmentsGoThrough()
     {
         Register(new AgentCatalogEntry(

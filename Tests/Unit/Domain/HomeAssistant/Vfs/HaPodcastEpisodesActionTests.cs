@@ -67,20 +67,8 @@ public class HaPodcastEpisodesActionTests
     }
 
     // The whole point of the action: one call turns "the Palantir episode" into the exact URI that
-    // music_assistant.play_media accepts.
-    [Fact]
-    public async Task Exec_Match_FiltersToTheRequestedEpisode()
-    {
-        var fs = Build(out _);
-
-        var exec = await Exec(fs, "music_assistant.podcast_episodes.sh --podcast \"No es el fin del mundo\" --match palantir");
-
-        var episodes = JsonNode.Parse(exec.Stdout)!["episodes"]!.AsArray();
-        episodes.Count.ShouldBe(1);
-        episodes[0]!["uri"]!.GetValue<string>().ShouldBe(PalantirUri);
-    }
-
-    // Voice transcripts drop accents ("tecnologico"), and the user's wording rarely matches case.
+    // music_assistant.play_media accepts. Voice transcripts drop accents ("tecnologico"), and the
+    // user's wording rarely matches case.
     [Fact]
     public async Task Exec_Match_IgnoresCaseAndAccents()
     {

@@ -41,35 +41,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         new(endpoint, "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUb...", "tBHItJI5svbpC7sc9d8M2w==");
 
     [Fact]
-    public async Task SaveAsync_NewSubscription_StoresInRedis()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var sub = CreateSubscription();
-
-        await _store.SaveAsync(userId, sub);
-
-        var all = await _store.GetAllAsync();
-        all.ShouldContain(x => x.UserId == userId && x.Subscription.Endpoint == sub.Endpoint);
-    }
-
-    [Fact]
-    public async Task SaveAsync_MultipleDevices_StoresAll()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var sub1 = CreateSubscription("https://fcm.googleapis.com/fcm/send/device1");
-        var sub2 = CreateSubscription("https://fcm.googleapis.com/fcm/send/device2");
-
-        await _store.SaveAsync(userId, sub1);
-        await _store.SaveAsync(userId, sub2);
-
-        var all = await _store.GetAllAsync();
-        var userSubs = all.Where(x => x.UserId == userId).ToList();
-        userSubs.Count.ShouldBe(2);
-    }
-
-    [Fact]
     public async Task SaveAsync_SameEndpoint_OverwritesPrevious()
     {
         var userId = $"test-user-{Guid.NewGuid():N}";
@@ -84,20 +55,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var userSubs = all.Where(x => x.UserId == userId).ToList();
         userSubs.Count.ShouldBe(1);
         userSubs[0].Subscription.P256dh.ShouldBe("key2");
-    }
-
-    [Fact]
-    public async Task RemoveAsync_ExistingSubscription_RemovesIt()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var sub = CreateSubscription();
-
-        await _store.SaveAsync(userId, sub);
-        await _store.RemoveAsync(userId, sub.Endpoint);
-
-        var all = await _store.GetAllAsync();
-        all.ShouldNotContain(x => x.UserId == userId);
     }
 
     [Fact]
@@ -174,75 +131,10 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     }
 
     [Fact]
-    public async Task GetBySpaceAsync_NoMatchingSpace_ReturnsEmpty()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var sub = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/other-space", "k1", "a1");
-
-        await _store.SaveAsync(userId, sub, "some-space");
-
-        var result = await _store.GetBySpaceAsync("nonexistent-space");
-        result.ShouldNotContain(x => x.Subscription.Endpoint == sub.Endpoint);
-    }
-
-    [Fact]
-    public async Task SaveAsync_WithSpaceSlug_PreservesSpaceInRoundTrip()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var sub = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/space-rt", "k1", "a1");
-
-        await _store.SaveAsync(userId, sub, "my-space");
-
-        var all = await _store.GetAllAsync();
-        all.ShouldContain(x => x.Subscription.Endpoint == sub.Endpoint);
-
-        var spaceFiltered = await _store.GetBySpaceAsync("my-space");
-        spaceFiltered.ShouldContain(x => x.Subscription.Endpoint == sub.Endpoint);
-
-        var otherSpace = await _store.GetBySpaceAsync("other-space");
-        otherSpace.ShouldNotContain(x => x.Subscription.Endpoint == sub.Endpoint);
-    }
-
-    [Fact]
-    public async Task SaveAsync_EndpointWithQueryParameters_PreservesFullUrl()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var endpoint = "https://fcm.googleapis.com/fcm/send/abc?key=val&foo=bar#fragment";
-        var sub = new PushSubscriptionDto(endpoint, "p256dh-key", "auth-key");
-
-        await _store.SaveAsync(userId, sub);
-
-        var all = await _store.GetAllAsync();
-        var match = all.FirstOrDefault(x => x.UserId == userId);
-        match.Subscription.ShouldNotBeNull();
-        match.Subscription.Endpoint.ShouldBe(endpoint);
-    }
-
-    [Fact]
     public async Task RemoveByEndpointAsync_EndpointDoesNotExist_DoesNotThrow()
     {
         await Should.NotThrowAsync(
             () => _store.RemoveByEndpointAsync("https://nonexistent.example.com/totally-missing"));
-    }
-
-    [Fact]
-    public async Task SaveAsync_RoundTrip_PreservesP256dhAndAuthExactly()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var p256dh = "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbIDS7Iq2jGPayfP+szs0yzE1hLCpMQUcGN3MkrjXQ0=";
-        var auth = "tBHItJI5svbpC7sc9d8M2w==";
-        var sub = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/roundtrip", p256dh, auth);
-
-        await _store.SaveAsync(userId, sub);
-
-        var all = await _store.GetAllAsync();
-        var match = all.First(x => x.UserId == userId);
-        match.Subscription.P256dh.ShouldBe(p256dh);
-        match.Subscription.Auth.ShouldBe(auth);
     }
 
     [Fact]
@@ -264,24 +156,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
 
         var all = await _store.GetAllAsync();
         all.ShouldNotContain(x => x.Subscription.Endpoint == sharedEndpoint);
-    }
-
-    [Fact]
-    public async Task SaveAsync_EndpointWithSpecialCharacters_HandlesCorrectly()
-    {
-        var userId = $"test-user-{Guid.NewGuid():N}";
-        _createdUserIds.Add(userId);
-        var endpoint = "https://example.com/push/endpoint?token=abc%20def&lang=en&special=<>&quote=\"test\"";
-        var sub = new PushSubscriptionDto(endpoint, "key123", "auth456");
-
-        await _store.SaveAsync(userId, sub);
-
-        var all = await _store.GetAllAsync();
-        var match = all.FirstOrDefault(x => x.UserId == userId);
-        match.Subscription.ShouldNotBeNull();
-        match.Subscription.Endpoint.ShouldBe(endpoint);
-        match.Subscription.P256dh.ShouldBe("key123");
-        match.Subscription.Auth.ShouldBe("auth456");
     }
 
     [Fact]

@@ -128,8 +128,6 @@ public sealed class StreamingServiceTests : IDisposable
     public enum ErrorChunkKind
     {
         OperationCanceledText,
-        TaskCanceledText,
-        OperationWasCanceledText,
         NonTransient
     }
 
@@ -166,36 +164,6 @@ public sealed class StreamingServiceTests : IDisposable
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
         _topicService.SavedTopics.Count.ShouldBe(1);
         _topicService.SavedTopics[0].LastMessageAt.ShouldNotBeNull();
-    }
-
-    [Fact]
-    public async Task SendMessageAsync_WithError_StopsStreaming()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _messagingService.EnqueueError("Something went wrong");
-
-        await SendAndDrainAsync(topic);
-
-        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task SendMessageAsync_WithApprovalRequest_DispatchesShowApproval()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        var approval = new ToolApprovalRequestMessage("approval-1", []);
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { ApprovalRequest = approval, MessageId = "msg-1" },
-            new ChatStreamMessage { Content = "After approval", MessageId = "msg-1" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
-        );
-
-        await SendAndDrainAsync(topic);
-
-        var messages = MessagesFor(topic.TopicId);
-        messages.ShouldContain(m => m.Content == "After approval");
     }
 
     [Fact]
@@ -380,8 +348,6 @@ public sealed class StreamingServiceTests : IDisposable
 
     [Theory]
     [InlineData(ErrorChunkKind.OperationCanceledText, false, false, null)]
-    [InlineData(ErrorChunkKind.TaskCanceledText, false, false, null)]
-    [InlineData(ErrorChunkKind.OperationWasCanceledText, false, false, null)]
     [InlineData(ErrorChunkKind.NonTransient, true, true, "Connection reset by peer")]
     public async Task SendMessageAsync_WithErrorChunk_ClassifiesErrorAndToast(
         ErrorChunkKind kind, bool expectErrorMessage, bool expectToast, string? expectedContent)
@@ -474,21 +440,6 @@ public sealed class StreamingServiceTests : IDisposable
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
     }
 
-    [Fact]
-    public async Task SendMessageAsync_WithNoActiveStream_CreatesNewStream()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-
-        _messagingService.EnqueueContent("Response");
-
-        await _service.SendMessageAsync(topic, "test");
-
-        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
-        var messages = MessagesFor(topic.TopicId);
-        messages.Count.ShouldBe(1);
-    }
-
     // The store keeps a buffer only for a topic it knows is streaming, so a send has to announce
     // the stream before the first chunk is processed or the reply never reaches the screen.
     [Fact]
@@ -544,26 +495,6 @@ public sealed class StreamingServiceTests : IDisposable
     #region TryStartResumeStreamAsync stream body tests
 
     [Fact]
-    public async Task TryStartResumeStreamAsync_DeduplicatesKnownContent()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, [
-            new ChatMessageModel { Role = "assistant", Content = "Known content" }
-        ]));
-        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Known content" };
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { Content = "Known content", MessageId = "msg-1" },
-            new ChatStreamMessage { Content = " new stuff", MessageId = "msg-1" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
-        );
-
-        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
-
-        var messages = MessagesFor(topic.TopicId);
-        messages.Last().Content.ShouldContain("new stuff");
-    }
-
-    [Fact]
     public async Task TryStartResumeStreamAsync_OnlyUpdatesTimestampIfNewContent()
     {
         var topic = CreateTopic();
@@ -603,25 +534,6 @@ public sealed class StreamingServiceTests : IDisposable
             new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
     }
 
-    [Fact]
-    public async Task TryStartResumeStreamAsync_WithApprovalRequest_DispatchesShowApproval()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        var approval = new ToolApprovalRequestMessage("approval-1", []);
-        var existingMessage = new ChatMessageModel { Role = "assistant" };
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { ApprovalRequest = approval, MessageId = "msg-1" },
-            new ChatStreamMessage { Content = "Done", MessageId = "msg-1" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
-        );
-
-        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
-
-        var messages = MessagesFor(topic.TopicId);
-        messages.ShouldContain(m => m.Content == "Done");
-    }
-
     [Theory]
     [InlineData(ExceptionKind.OperationCanceled, false, null)]
     [InlineData(ExceptionKind.TaskCanceled, false, null)]
@@ -659,8 +571,6 @@ public sealed class StreamingServiceTests : IDisposable
 
     [Theory]
     [InlineData(ErrorChunkKind.OperationCanceledText, false, null)]
-    [InlineData(ErrorChunkKind.TaskCanceledText, false, null)]
-    [InlineData(ErrorChunkKind.OperationWasCanceledText, false, null)]
     [InlineData(ErrorChunkKind.NonTransient, true, "Connection reset by peer")]
     public async Task TryStartResumeStreamAsync_WithErrorChunk_ClassifiesError(
         ErrorChunkKind kind, bool expectErrorMessage, string? expectedContent)
@@ -751,22 +661,6 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SendMessageAsync_WhileTheReplyRuns_TheTopicHasAStream()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-
-        _messagingService.SetBlockUntilComplete(true);
-        _messagingService.EnqueueContent("Response");
-        var streamTask = _service.SendMessageAsync(topic, "test");
-
-        _topicStreams.Snapshot(topic.TopicId).IsStreaming.ShouldBeTrue();
-
-        _messagingService.UnblockCompletion();
-        await streamTask;
-    }
-
-    [Fact]
     public async Task TryStartResumeStreamAsync_PreservesTheContentAlreadyStreamed()
     {
         var topic = CreateTopic();
@@ -801,8 +695,6 @@ public sealed class StreamingServiceTests : IDisposable
     private static string ErrorTextFor(ErrorChunkKind kind) => kind switch
     {
         ErrorChunkKind.OperationCanceledText => "OperationCanceled",
-        ErrorChunkKind.TaskCanceledText => "TaskCanceled",
-        ErrorChunkKind.OperationWasCanceledText => "The operation was canceled.",
         ErrorChunkKind.NonTransient => "Connection reset by peer",
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };

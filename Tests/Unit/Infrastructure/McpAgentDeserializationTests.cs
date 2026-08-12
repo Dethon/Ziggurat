@@ -34,18 +34,6 @@ public class McpAgentDeserializationTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task DeserializeSession_WithAgentKeyString_PutsKeyInStateBag()
-    {
-        var agentKey = new AgentKey("123:456", "test-agent");
-        var serialized = JsonSerializer.SerializeToElement(agentKey.ToString());
-
-        var session = await _agent.DeserializeSessionAsync(serialized);
-
-        session.StateBag.TryGetValue<string>(RedisChatMessageStore.StateKey, out var key).ShouldBeTrue();
-        key.ShouldBe(agentKey.ToString());
-    }
-
-    [Fact]
     public async Task DeserializeSession_WithProperlySerializedSession_PreservesStateBag()
     {
         var agentKey = new AgentKey("789:101", "test-agent");

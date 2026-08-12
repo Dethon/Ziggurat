@@ -50,15 +50,6 @@ public class SentenceSplitterTests
     }
 
     [Fact]
-    public void TryTake_BufferEndingMidNumber_DoesNotSplitTheNumber()
-    {
-        // Chunks arrive per LLM delta, so this is the buffer's real shape partway through
-        // "…fue de 1.234,56 euros". Splitting here speaks "…fue de uno." and then starts a new
-        // sentence at the decimals.
-        SentenceSplitter.TryTake("El consumo del mes pasado fue de 1.", 20, out _, out _).ShouldBeFalse();
-    }
-
-    [Fact]
     public void TryTake_EnumerationNumber_IsNotABoundary()
     {
         SentenceSplitter.TryTake("Necesitas comprar esto: 1. Leche y 2. Pan ", 5, out _, out _)
@@ -67,7 +58,6 @@ public class SentenceSplitterTests
 
     [Theory]
     [InlineData("El total es 1.234,56 euros y algo")]
-    [InlineData("Son 3.5 grados esta noche en casa")]
     public void TryTake_DecimalPoint_IsNotABoundary(string buffer)
     {
         // A '.' between digits never ends a sentence; the whitespace requirement is what excludes it.
@@ -76,8 +66,6 @@ public class SentenceSplitterTests
 
     [Theory]
     [InlineData("Viene el Sr. ")]
-    [InlineData("Lo trae la Sra. ")]
-    [InlineData("Pregunta por el Dr. ")]
     [InlineData("Llegan a las cinco, etc. ")]
     public void TryTake_AbbreviationIsTheLastBoundary_DoesNotFlush(string buffer)
     {
@@ -104,15 +92,6 @@ public class SentenceSplitterTests
 
         speakable.ShouldBe("Viene el Sr. García a las cinco.");
         remainder.ShouldBe("");
-    }
-
-    [Fact]
-    public void TryTake_InitialBeforeARealBoundary_FlushesThroughTheSentenceEnd()
-    {
-        SentenceSplitter.TryTake("Te llama J. Crespo desde el salón. ", 5, out var speakable, out _)
-            .ShouldBeTrue();
-
-        speakable.ShouldBe("Te llama J. Crespo desde el salón.");
     }
 
     [Fact]

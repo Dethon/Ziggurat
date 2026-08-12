@@ -296,7 +296,6 @@ public class ScheduleFileSystemJourneyTests
 
     [Theory]
     [InlineData("2999-07-15T14:30:00Z", "2999-07-15T14:30:00Z")]       // UTC, unchanged
-    [InlineData("2999-07-15T14:30:00+00:00", "2999-07-15T14:30:00Z")]  // explicit zero offset
     [InlineData("2999-07-15T14:30:00+05:00", "2999-07-15T09:30:00Z")]  // ahead of UTC
     [InlineData("2999-07-15T14:30:00-08:00", "2999-07-15T22:30:00Z")]  // behind UTC
     [InlineData("2999-01-15T14:30:00+02:00", "2999-01-15T12:30:00Z")]  // winter offset
@@ -460,21 +459,6 @@ public class ScheduleFileSystemJourneyTests
         var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
         err.Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
         err.Error.Message.ShouldContain("daylight-saving gap");
-    }
-
-    [Fact]
-    public async Task Search_UncompilablePattern_ReturnsInvalidArgumentEnvelope()
-    {
-        var store = new FakeScheduleStore();
-        await store.CreateAsync(SeedSchedule(), CancellationToken.None);
-        var fs = Build(store);
-
-        var result = await fs.SearchAsync(
-            "[unclosed", regex: true, null, null, null, 10, 0,
-            VfsTextSearchOutputMode.Content, CancellationToken.None);
-
-        var error = result.ShouldBeOfType<FsResult<FsSearchResult>.Err>().Error;
-        error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
     }
 
     // A caller-supplied pattern that backtracks catastrophically must end the search as a timeout

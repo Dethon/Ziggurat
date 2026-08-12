@@ -133,9 +133,12 @@ public class ChannelInboxTests
     [Fact]
     public async Task EnqueueFor_WhileAPollIsParked_WakesIt()
     {
-        var inbox = new ChannelInbox(new FakeTimeProvider());
+        var time = new ArmedClock();
+        var inbox = new ChannelInbox(time);
         var pending = inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
-        await Task.Delay(50);
+        // Parking the poll ends with arming its timeout, so that timer is the signal that the
+        // waiter this enqueue has to wake is registered. Sleeping instead only made it likely.
+        await time.WaitUntilArmedAsync(TimeSpan.FromSeconds(30));
 
         inbox.EnqueueFor(Subscriber, Message("c1"));
 
@@ -163,14 +166,15 @@ public class ChannelInboxTests
     [Fact]
     public async Task ReceiveAsync_WhenEmpty_WakesOnEnqueue()
     {
-        var inbox = new ChannelInbox(new FakeTimeProvider());
+        var time = new ArmedClock();
+        var inbox = new ChannelInbox(time);
         var pending = inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
 
-        // Give the waiter a moment to register before enqueueing.
-        await Task.Delay(50);
+        // Wait for the waiter to register before enqueueing.
+        await time.WaitUntilArmedAsync(TimeSpan.FromSeconds(30));
         inbox.Enqueue(Message("c1"));
 
-        var batch = await pending;
+        var batch = await pending.WaitAsync(_deadline);
 
         batch.Count.ShouldBe(1);
         batch[0].Message!.ConversationId.ShouldBe("c1");
@@ -179,30 +183,33 @@ public class ChannelInboxTests
     [Fact]
     public async Task ReceiveAsync_WhenNothingArrives_ReturnsEmptyAfterTimeout()
     {
-        var time = new FakeTimeProvider();
+        var time = new ArmedClock();
         var inbox = new ChannelInbox(time);
         var pending = inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
 
-        await Task.Delay(50);
-        time.Advance(TimeSpan.FromSeconds(31));
+        // An advance that lands before the poll arms its timeout fires nothing, and the poll then
+        // waits out a clock that has already moved past it — which is a hang, not a failure.
+        await time.AdvancePastAsync(TimeSpan.FromSeconds(30));
 
-        (await pending).ShouldBeEmpty();
+        (await pending.WaitAsync(_deadline)).ShouldBeEmpty();
     }
 
     [Fact]
     public async Task ReceiveAsync_SecondPollForSameSubscriber_DisplacesFirstWithEmptyBatch()
     {
-        var inbox = new ChannelInbox(new FakeTimeProvider());
+        var time = new ArmedClock();
+        var inbox = new ChannelInbox(time);
         var first = inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
-        await Task.Delay(50);
+        await time.WaitUntilArmedAsync(TimeSpan.FromSeconds(30));
 
         var second = inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
 
-        (await first).ShouldBeEmpty();
+        (await first.WaitAsync(_deadline)).ShouldBeEmpty();
 
-        await Task.Delay(50);
+        // The second poll parks in its turn, and only then is there a waiter for this to wake.
+        await time.WaitUntilArmedAsync(TimeSpan.FromSeconds(30), previously: 1);
         inbox.Enqueue(Message("c1"));
-        (await second).Count.ShouldBe(1);
+        (await second.WaitAsync(_deadline)).Count.ShouldBe(1);
     }
 
     [Fact]
@@ -409,13 +416,14 @@ public class ChannelInboxTests
     [Fact]
     public async Task Restore_WhileTheNextPollIsAlreadyParked_WakesIt()
     {
-        var inbox = new ChannelInbox(new FakeTimeProvider());
+        var time = new ArmedClock();
+        var inbox = new ChannelInbox(time);
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
         inbox.Enqueue(Message("c1"));
         var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
         var pending = inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
-        await Task.Delay(50);
+        await time.WaitUntilArmedAsync(TimeSpan.FromSeconds(30));
 
         inbox.Restore(Subscriber, batch);
 

@@ -74,13 +74,13 @@ public class JonasMcpStackFixture : IAsyncLifetime
                 solutionRoot, "McpChannelSignalR/Dockerfile", "mcp-channel-signalr:latest",
                 ["Domain", "Infrastructure", "McpChannelSignalR"], ct));
 
-        _network = new NetworkBuilder()
+        _network = TestContainers.Network()
             .WithName($"benchmark-{Guid.NewGuid():N}")
             .Build();
         await _network.CreateAsync(ct);
 
         // The channel server expects Redis at "redis:6379" on this network for state.
-        _redis = new ContainerBuilder("redis/redis-stack:latest")
+        _redis = TestContainers.Container("redis/redis-stack-server:latest")
             .WithName($"redis-bench-{Guid.NewGuid():N}")
             .WithNetwork(_network)
             .WithNetworkAliases("redis")
@@ -94,7 +94,7 @@ public class JonasMcpStackFixture : IAsyncLifetime
         // ~30-60s cold start overlaps their startup; the API-ready wait runs once everything is up.
         _haConfigDir = Path.Combine(Path.GetTempPath(), $"ha-bench-{Guid.NewGuid():N}");
         var haToken = HomeAssistantSeed.WriteConfig(_haConfigDir);
-        _homeAssistant = new ContainerBuilder(HomeAssistantSeed.ContainerImage)
+        _homeAssistant = TestContainers.Container(HomeAssistantSeed.ContainerImage)
             .WithName($"homeassistant-bench-{Guid.NewGuid():N}")
             .WithNetwork(_network)
             .WithNetworkAliases("homeassistant")
@@ -115,7 +115,7 @@ public class JonasMcpStackFixture : IAsyncLifetime
             "mcp-homeassistant:latest", "mcp-homeassistant", ct,
             new Dictionary<string, string> { ["HOMEASSISTANT__TOKEN"] = haToken });
 
-        _mcpChannelSignalR = new ContainerBuilder("mcp-channel-signalr:latest")
+        _mcpChannelSignalR = TestContainers.Container("mcp-channel-signalr:latest")
             .WithName($"mcp-channel-signalr-bench-{Guid.NewGuid():N}")
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-channel-signalr")
@@ -158,7 +158,7 @@ public class JonasMcpStackFixture : IAsyncLifetime
         string image, string alias, CancellationToken ct,
         IReadOnlyDictionary<string, string>? environment = null)
     {
-        var builder = new ContainerBuilder(image)
+        var builder = TestContainers.Container(image)
             .WithName($"{alias}-bench-{Guid.NewGuid():N}")
             .WithNetwork(_network!)
             .WithNetworkAliases(alias)

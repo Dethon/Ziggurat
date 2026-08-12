@@ -1374,7 +1374,11 @@ h1, h2, h3 {
     transition: background-color var(--transition-slow), border-color var(--transition-slow);
 }
 
+/* One number for everything standing in the composer's bottom row — the field, the buttons and the
+   recording strip that takes the field's place — so no control can end up shorter than the one
+   beside it. */
 .input-container {
+    --composer-control-height: 48px;
     display: flex;
     flex-wrap: wrap;
     gap: 0.875rem;
@@ -1992,6 +1996,7 @@ h1, h2, h3 {
     }
 
     .input-container {
+        --composer-control-height: 42px;
         gap: 0.625rem;
     }
 
@@ -2685,3 +2690,177 @@ select:focus:not(:focus-visible) {
 .hearth.detent-full .agent-combo-menu { top: calc(100% + 8px); bottom: auto; animation: comboDrop 0.14s ease-out; }
 .hearth.detent-full .agent-combo.open .agent-chip-caret { transform: none; }
 @keyframes comboDrop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ===================================
+   Dictation
+   =================================== */
+
+/* Hidden rather than removed: the browser registers its listeners against the microphone element
+   once, and a keystroke must not take that element away and silently unbind them. */
+.control-hidden {
+    display: none;
+}
+
+.composer-hint {
+    flex-basis: 100%;
+    padding: 0.35rem 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+}
+
+/* The microphone's own place in the row, so the way-up hint has something to sit above. The
+   compound rule is not redundant: this one is written after .control-hidden and would otherwise
+   outrank it, leaving the microphone standing beside Send. */
+.mic-slot {
+    position: relative;
+    display: inline-flex;
+}
+
+.mic-slot.control-hidden {
+    display: none;
+}
+
+.dictation-mic {
+    /* The gesture is the control: the browser reads pointer moves off it, and a text selection or
+       the platform's own long-press menu would take the pointer stream away mid-drag. */
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    padding: 0 1.1rem;
+}
+
+.dictation-mic-icon {
+    flex: none;
+}
+
+/* Rises and warms with the travel already made, so how far is left to go is visible rather than
+   guessed — the same bargain the slide-to-cancel hint makes on the other axis. */
+.dictation-lift {
+    --dictation-lift: 0;
+    position: absolute;
+    bottom: calc(100% + 0.4rem);
+    left: 50%;
+    transform: translate(-50%, calc(var(--dictation-lift) * -0.5rem));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    padding: 0.35rem 0.4rem;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    box-shadow: var(--shadow-md);
+    /* Never in the way of the finger that is holding the button underneath it. */
+    pointer-events: none;
+}
+
+.dictation-lift .lift-lock {
+    color: color-mix(in srgb, var(--accent) calc(var(--dictation-lift) * 100%), currentColor);
+}
+
+.dictation-lift .lift-arrow {
+    animation: dictation-lift-arrow 1.3s ease-in-out infinite;
+}
+
+@keyframes dictation-lift-arrow {
+    0%, 100% { transform: translateY(2px); opacity: 0.35; }
+    50% { transform: translateY(-2px); opacity: 1; }
+}
+
+/* Takes the textarea's place, so the composer keeps its height and nothing below it moves. */
+.dictation-strip {
+    --dictation-level: 0;
+    --dictation-travel: 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: var(--composer-control-height, 48px);
+    padding: 0 0.75rem;
+    border: 1px solid var(--input-border);
+    border-radius: 14px;
+    background-color: var(--input-bg);
+    overflow: hidden;
+}
+
+.dictation-pulse {
+    width: 0.6rem;
+    height: 0.6rem;
+    flex: none;
+    border-radius: 50%;
+    background-color: var(--error, #c0392b);
+    animation: dictation-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes dictation-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
+}
+
+.dictation-timer {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    min-width: 2.5rem;
+}
+
+/* One bar that grows with the voice: enough to tell a live microphone from a muted one while
+   someone is still speaking. */
+.dictation-level {
+    flex: 1;
+    height: 0.4rem;
+    border-radius: 999px;
+    background: linear-gradient(
+        to right,
+        var(--accent) calc(var(--dictation-level) * 100%),
+        var(--input-border) calc(var(--dictation-level) * 100%));
+}
+
+/* Travels and fades with the finger, so how far is left to go is visible rather than guessed. */
+.dictation-slide {
+    flex: none;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    opacity: calc(1 - var(--dictation-travel));
+    transform: translateX(calc(var(--dictation-travel) * -2rem));
+}
+
+/* Sized rather than left to the text they no longer contain: on a phone these are the only two
+   ways out of a latched dictation, and a tap target has to be worth aiming at. */
+.dictation-trash,
+.dictation-stop {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+}
+
+.dictation-trash:hover,
+.dictation-stop:hover {
+    background-color: var(--border-color);
+}
+
+.dictation-stop {
+    color: var(--accent);
+}
+
+@media (max-width: 480px) {
+    .dictation-slide {
+        font-size: 0.75rem;
+    }
+
+    .dictation-timer {
+        min-width: 2.25rem;
+    }
+}

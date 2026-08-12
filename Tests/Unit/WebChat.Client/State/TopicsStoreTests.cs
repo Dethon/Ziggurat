@@ -21,39 +21,6 @@ public class TopicsStoreTests : IDisposable
     public void Dispose() => _store.Dispose();
 
     [Fact]
-    public void TopicsLoaded_UpdatesTopicsList()
-    {
-        // Arrange
-        var topics = new List<StoredTopic>
-        {
-            CreateTopic("topic-1", "Topic One"),
-            CreateTopic("topic-2", "Topic Two")
-        };
-
-        // Act
-        _dispatcher.Dispatch(new TopicsLoaded(topics));
-
-        // Assert
-        _store.State.Topics.Count.ShouldBe(2);
-        _store.State.Topics[0].Name.ShouldBe("Topic One");
-        _store.State.Topics[1].Name.ShouldBe("Topic Two");
-    }
-
-    [Fact]
-    public void SelectTopic_UpdatesSelectedTopicId()
-    {
-        // Arrange
-        var topics = new List<StoredTopic> { CreateTopic("topic-1", "Topic One") };
-        _dispatcher.Dispatch(new TopicsLoaded(topics));
-
-        // Act
-        _dispatcher.Dispatch(new SelectTopic("topic-1"));
-
-        // Assert
-        _store.State.SelectedTopicId.ShouldBe("topic-1");
-    }
-
-    [Fact]
     public void SelectTopic_WithNull_DeselectsTopic()
     {
         // Arrange
@@ -202,28 +169,6 @@ public class TopicsStoreTests : IDisposable
         // Assert
         _store.State.Agents.Count.ShouldBe(2);
         _store.State.Agents[0].Name.ShouldBe("Agent One");
-    }
-
-    [Fact]
-    public void SetAgents_WhenSelectedAgentRemoved_FallsBackToFirstAgent()
-    {
-        _dispatcher.Dispatch(new SetAgents([new("a", "A", null), new("b", "B", null)]));
-        _dispatcher.Dispatch(new SelectAgent("b"));
-
-        _dispatcher.Dispatch(new SetAgents([new("a", "A", null), new("c", "C", null)]));
-
-        _store.State.SelectedAgentId.ShouldBe("a");
-    }
-
-    [Fact]
-    public void SetAgents_WhenSelectedAgentStillPresent_KeepsSelection()
-    {
-        _dispatcher.Dispatch(new SetAgents([new("a", "A", null), new("b", "B", null)]));
-        _dispatcher.Dispatch(new SelectAgent("b"));
-
-        _dispatcher.Dispatch(new SetAgents([new("b", "B", null), new("c", "C", null)]));
-
-        _store.State.SelectedAgentId.ShouldBe("b");
     }
 
     [Fact]

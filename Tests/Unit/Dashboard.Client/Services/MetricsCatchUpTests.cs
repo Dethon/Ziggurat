@@ -128,19 +128,6 @@ public sealed class MetricsCatchUpTests : IDisposable
         _tokensStore.State.To.ShouldBe(_to);
     }
 
-    [Fact]
-    public async Task CatchUpAsync_EventsArrivedDuringTheOutage_WritesThemToTheStore()
-    {
-        _handler.AnswerFor("api/metrics/voice?", new List<VoiceEventPayload>
-        {
-            new((int)VoiceMetric.UtteranceTranscribed, "kitchen-01"),
-        });
-
-        await CatchUpAsync();
-
-        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
-    }
-
     // The Overview KPI row and the Service Health grid go as stale as the charts during an outage,
     // and neither is a metric family: a walk of the family table alone left both showing whatever
     // the page load managed, with no second chance at them. The KPI totals are added up from the

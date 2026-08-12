@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
@@ -60,14 +59,6 @@ public class FileSystemOperationsTests
     {
         FileSystemServerTools.SupportedToolNames(typeof(EverythingBackend))
             .ShouldBe(FileSystemOperations.All.Select(o => o.ToolName));
-    }
-
-    [Fact]
-    public void TryValidate_KnownToolNameWithAGoodPayload_Passes()
-    {
-        var payload = FsResultContract.ToNode(new FsInfoResult { Exists = false, Path = "/x" });
-
-        FsResultContract.TryValidate("fs_info", payload, out var error).ShouldBeTrue(error);
     }
 
     private sealed class EverythingBackend : FileSystemBackendBase

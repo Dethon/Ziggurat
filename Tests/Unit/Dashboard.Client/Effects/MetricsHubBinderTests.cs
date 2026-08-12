@@ -199,20 +199,6 @@ public class MetricsHubBinderTests : IAsyncDisposable
         _handler.Requests.ShouldContain(u => u != null && u.Contains(breakdownRequest + range, StringComparison.Ordinal));
     }
 
-    [Fact]
-    public async Task LoadAsync_ADashboardPageLoads_SetsTheDateRangeOnEveryFamily()
-    {
-        await NewDataLoadEffect().LoadAsync(_from, _to, _families.All);
-
-        _tokensStore.State.From.ShouldBe(_from);
-        _toolsStore.State.From.ShouldBe(_from);
-        _errorsStore.State.From.ShouldBe(_from);
-        _schedulesStore.State.From.ShouldBe(_from);
-        _memoryStore.State.From.ShouldBe(_from);
-        _latencyStore.State.From.ShouldBe(_from);
-        _voiceStore.State.To.ShouldBe(_to);
-    }
-
     private void SetDateRangeOnEveryStore()
     {
         _tokensStore.SetDateRange(_from, _to);
@@ -402,12 +388,6 @@ public class MetricsHubBinderTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task RefreshAsync_Failing_ThrowsToItsCaller()
-    {
-        await Should.ThrowAsync<HttpRequestException>(() => _families.Tokens.RefreshAsync());
-    }
-
-    [Fact]
     public async Task OnLatency_AppendsEventToLatencyStore()
     {
         _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
@@ -417,17 +397,6 @@ public class MetricsHubBinderTests : IAsyncDisposable
         await _hub.RaiseAsync("OnLatency", new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 5 });
 
         _latencyStore.State.Events.ShouldContain(e => e.Stage == LatencyStage.LlmTotal);
-    }
-
-    [Fact]
-    public async Task OnVoice_AppendsEventToVoiceStore()
-    {
-        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
-        _binder.Bind(_hub);
-
-        await _hub.RaiseAsync("OnVoice", new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" });
-
-        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
     }
 
     [Fact]

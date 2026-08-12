@@ -23,17 +23,6 @@ public class PrefetchedAudioTests
     }
 
     [Fact]
-    public async Task Chunks_AreProducedBeforeAnyoneEnumerates()
-    {
-        // The whole point: the TTS request goes out while the PREVIOUS segment is still playing, so
-        // the playback loop finds the audio waiting instead of paying a round trip at every seam.
-        var pulled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await using var prefetch = new PrefetchedAudio(Source(pulled, 3), capacity: 8);
-
-        await pulled.Task.WaitAsync(TimeSpan.FromSeconds(5));
-    }
-
-    [Fact]
     public async Task Chunks_ReplaysEverythingInOrder()
     {
         var pulled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

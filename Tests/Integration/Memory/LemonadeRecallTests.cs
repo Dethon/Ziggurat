@@ -19,8 +19,8 @@ namespace Tests.Integration.Memory;
 // the search are proven together rather than one at a time against mocks.
 [Trait("Category", "External")]
 [Collection(LemonadeCollection.Name)]
-public class LemonadeRecallTests(RedisFixture redisFixture, LemonadeFixture lemonadeFixture)
-    : IClassFixture<RedisFixture>
+public class LemonadeRecallTests(LemonadeMemorySearchFixture redisFixture, LemonadeFixture lemonadeFixture)
+    : IClassFixture<LemonadeMemorySearchFixture>
 {
     [SkippableFact]
     public async Task AUserWithMemories_GetsThemBackAtTheLocalDimension()

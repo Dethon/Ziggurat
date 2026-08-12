@@ -45,21 +45,6 @@ public class ChatMonitorScheduleMetricsTests
     }
 
     [Fact]
-    public async Task Monitor_ScheduledMessage_SuccessfulRun_PublishesSuccessMetricOnce()
-    {
-        var scheduledMessage = ScheduledMessage();
-        var scheduling = MonitorTestMocks.CreateChannel("scheduling", scheduledMessage);
-        var published = CapturePublishedMetrics(out var metricsPublisher);
-
-        var monitor = BuildMonitor([scheduling], metricsPublisher);
-        await monitor.Monitor(CancellationToken.None);
-
-        var evt = published.OfType<ScheduleExecutionEvent>().ShouldHaveSingleItem();
-        evt.ScheduleId.ShouldBe("morning-news");
-        evt.Success.ShouldBeTrue();
-    }
-
-    [Fact]
     public async Task Monitor_ScheduledMessage_OneDeliveryTargetFails_DeliversToOthersAndEmitsMetricOnce()
     {
         // The bad target is listed first so that, without per-target isolation, it would

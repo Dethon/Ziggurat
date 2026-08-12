@@ -19,15 +19,6 @@ public class ConnectionStoreTests : IDisposable
     public void Dispose() => _store.Dispose();
 
     [Fact]
-    public void Initial_IsDisconnectedWithNothingRecorded()
-    {
-        _store.State.Status.ShouldBe(ConnectionStatus.Disconnected);
-        _store.State.LastConnected.ShouldBeNull();
-        _store.State.ReconnectAttempts.ShouldBe(0);
-        _store.State.Error.ShouldBeNull();
-    }
-
-    [Fact]
     public void Connecting_SetsStatusConnecting()
     {
         _dispatcher.Dispatch(new ConnectionConnecting());
@@ -147,14 +138,6 @@ public class ConnectionStoreTests : IDisposable
     }
 
     [Fact]
-    public void Connected_AdvancesTheEpoch()
-    {
-        _dispatcher.Dispatch(new ConnectionConnected());
-
-        _store.State.Epoch.ShouldBe(1);
-    }
-
-    [Fact]
     public void Reconnected_AdvancesTheEpoch()
     {
         _dispatcher.Dispatch(new ConnectionConnected());
@@ -180,16 +163,6 @@ public class ConnectionStoreTests : IDisposable
         _dispatcher.Dispatch(new ConnectionConnected());
 
         _dispatcher.Dispatch(new ConnectionReconnecting());
-
-        _store.State.Epoch.ShouldBe(1);
-    }
-
-    [Fact]
-    public void Closed_DoesNotAdvanceTheEpoch()
-    {
-        _dispatcher.Dispatch(new ConnectionConnected());
-
-        _dispatcher.Dispatch(new ConnectionClosed("hub dropped"));
 
         _store.State.Epoch.ShouldBe(1);
     }

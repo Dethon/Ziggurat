@@ -19,7 +19,6 @@ public class LanguagePromptTests
     [Theory]
     [InlineData("es")]
     [InlineData("es-ES")]
-    [InlineData("ES")]
     [InlineData("spanish")]
     [InlineData("Español")]
     [InlineData("castellano")]

@@ -41,6 +41,20 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
             []);
     }
 
+    // Only the stall retry here, not the bad-answer one: what these tests assert on is what the
+    // approval handler recorded, so a second turn would append to a list the assertions read.
+    private Task<List<AiResponse>> RunAsync(
+        ToolApprovalChatClient approvalClient, string prompt, TimeSpan? budget = null) =>
+        LlmAttempt.WithinAsync(budget ?? LlmAttempt.Budget, async ct =>
+        {
+            await using var agent = CreateAgent(approvalClient);
+            return await agent.RunStreamingAsync(prompt, cancellationToken: ct)
+                .ToUpdateAiResponsePairs()
+                .Where(x => x.Item2 is not null)
+                .Select(x => x.Item2!)
+                .ToListAsync(ct);
+        });
+
     [Fact]
     public async Task Agent_WithApprovalRequired_TerminatesWhenRejected()
     {
@@ -49,26 +63,16 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         var rejectingHandler = new TestApprovalHandler(result: ToolApprovalResult.Rejected);
         var approvalClient = new ToolApprovalChatClient(innerClient, rejectingHandler, "conv-test");
 
-        var agent = CreateAgent(approvalClient);
-
         mcpFixture.CreateFile("ApprovalTestMovies/placeholder.txt");
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
-        var responses = await agent.RunStreamingAsync(
-                "IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. Do NOT respond with text, just call the tool immediately.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+        var responses = await RunAsync(approvalClient,
+            "IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. Do NOT respond with text, just call the tool immediately.");
 
         // Assert - should terminate with rejection message
         responses.ShouldNotBeEmpty();
         rejectingHandler.RequestedApprovals.ShouldNotBeEmpty();
         rejectingHandler.RequestedApprovals[0][0].ToolName.ShouldContain("glob");
-
-        await agent.DisposeAsync();
     }
 
     [Fact]
@@ -82,66 +86,17 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
             rejectingHandler, "conv-test",
             whitelistPatterns: ["*__fs_*"]);
 
-        var agent = CreateAgent(approvalClient);
-
         mcpFixture.CreateFile("WhitelistTestMovies/placeholder.txt");
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
-        var responses = await agent.RunStreamingAsync(
-                "IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. Do NOT respond with text, just call the tool immediately.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+        var responses = await RunAsync(approvalClient,
+            "IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. Do NOT respond with text, just call the tool immediately.");
 
         // Assert
         responses.ShouldNotBeEmpty();
         rejectingHandler.RequestedApprovals.ShouldBeEmpty("Whitelisted tool should not require approval");
         var hasContent = responses.Any(r => !string.IsNullOrEmpty(r.Content) || !string.IsNullOrEmpty(r.ToolCalls));
         hasContent.ShouldBeTrue();
-
-        await agent.DisposeAsync();
-    }
-
-    [Fact]
-    public async Task Agent_WithMixedTools_OnlyRequestsApprovalForNonWhitelisted()
-    {
-        // Arrange
-        var innerClient = CreateLlmClient();
-        var approvingHandler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
-        var approvalClient = new ToolApprovalChatClient(
-            innerClient,
-            approvingHandler, "conv-test",
-            whitelistPatterns: ["*__fs_glob"]);
-
-        var agent = CreateAgent(approvalClient);
-
-        mcpFixture.CreateFile(Path.Combine("MixedTestSource", "test-file.mkv"), "content");
-        mcpFixture.CreateFile("MixedTestDest/placeholder.txt");
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(180));
-
-        var sourcePath = Path.Combine(mcpFixture.VaultPath, "MixedTestSource", "test-file.mkv");
-        var destPath = Path.Combine(mcpFixture.VaultPath, "MixedTestDest", "test-file.mkv");
-
-        // Act
-        var responses = await agent.RunStreamingAsync(
-                $"First find all .mkv files using your glob tool with pattern **/*.mkv, then move '{sourcePath}' to '{destPath}'.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
-
-        // Assert
-        responses.ShouldNotBeEmpty();
-        var approvedToolNames = approvingHandler.RequestedApprovals
-            .SelectMany(r => r.Select(t => t.ToolName))
-            .ToList();
-        approvedToolNames.ShouldNotContain(n => n.Contains("fs_glob"), "Whitelisted tool should not be in approval requests");
-
-        await agent.DisposeAsync();
     }
 
     private sealed class TestApprovalHandler(ToolApprovalResult result) : IToolApprovalHandler

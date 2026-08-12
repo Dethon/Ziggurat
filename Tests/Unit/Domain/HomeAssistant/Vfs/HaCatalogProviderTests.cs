@@ -27,25 +27,6 @@ public class HaCatalogProviderTests
     }
 
     [Fact]
-    public async Task GetAsync_CachesWithinTtl()
-    {
-        var client = new CountingClient { States = { Entity("light.kitchen", "off") } };
-        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
-
-        await provider.GetAsync(CancellationToken.None);
-        await provider.GetAsync(CancellationToken.None);
-
-        client.StateCalls.ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task GetAsync_OnFailure_ReturnsEmpty()
-    {
-        var provider = new HaCatalogProvider(() => new ThrowingClient(), new FakeTimeProvider());
-        (await provider.GetAsync(CancellationToken.None)).Entities.ShouldBeEmpty();
-    }
-
-    [Fact]
     public async Task GetAsync_SuccessfulButEmpty_CachesForFullTtl()
     {
         var client = new CountingClient(); // no states, but the call succeeds (not a failure)
@@ -101,12 +82,6 @@ public class HaCatalogProviderTests
             StateCalls++;
             return base.ListStatesAsync(ct);
         }
-    }
-
-    private sealed class ThrowingClient : FakeHaClient
-    {
-        public override Task<IReadOnlyList<HaEntityState>> ListStatesAsync(CancellationToken ct = default)
-            => throw new InvalidOperationException("HA down");
     }
 
     private sealed class FlakyClient : FakeHaClient

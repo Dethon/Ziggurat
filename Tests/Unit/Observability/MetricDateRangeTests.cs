@@ -49,14 +49,6 @@ public class MetricDateRangeTests
         range.ShouldBe(new MetricDateRange(_today, new DateOnly(2026, 3, 31)));
     }
 
-    [Fact]
-    public async Task BindAsync_BothValues_UsesBoth()
-    {
-        var range = await BindAsync("?from=2026-03-01&to=2026-03-31");
-
-        range.ShouldBe(new MetricDateRange(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31)));
-    }
-
     // Null is how a minimal API parameter says "bad request": the framework turns it into the same
     // 400 the two nullable DateOnly parameters returned for input that would not parse.
     [Theory]

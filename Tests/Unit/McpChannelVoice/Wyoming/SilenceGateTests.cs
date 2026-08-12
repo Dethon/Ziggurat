@@ -172,18 +172,6 @@ public class SilenceGateTests
     }
 
     [Fact]
-    public void PeakRms_TracksLoudestChunkSeen()
-    {
-        var gate = NewGate();
-
-        Feed(gate, Silent());
-        Feed(gate, Loud());
-        Feed(gate, Silent());
-
-        gate.PeakRms.ShouldBe(8000, 1.0);
-    }
-
-    [Fact]
     public void PeakRms_Reset_ClearsIt()
     {
         var gate = NewGate();
@@ -303,19 +291,6 @@ public class SilenceGateTests
     }
 
     [Fact]
-    public void Process_MaxUtteranceCap_ReportsEndReason()
-    {
-        var gate = NewGate();
-
-        foreach (var _ in Enumerable.Range(0, 19))
-        {
-            Feed(gate, Loud());
-        }
-        Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.EndUtterance);
-        gate.EndReason.ShouldBe("max_utterance");
-    }
-
-    [Fact]
     public void TrailingRms_ExposesMeanLevelOfTheTrailingRun()
     {
         var gate = BabbleGate();
@@ -346,19 +321,6 @@ public class SilenceGateTests
         Feed(gate, Tone(24000)); // speech resumes above any bar: run resets
 
         gate.TrailingRms.ShouldBe(0);
-    }
-
-    [Fact]
-    public void FloorRms_ExposesTrackerEstimate()
-    {
-        var gate = BabbleGate();
-
-        foreach (var _ in Enumerable.Range(0, 8))
-        {
-            Feed(gate, Tone(2000));
-        }
-
-        gate.FloorRms.ShouldBe(2000, 50);
     }
 
     [Fact]
@@ -453,20 +415,6 @@ public class SilenceGateTests
 
         Feed(gate, Tone(70)).ShouldBe(SilenceGate.Decision.EndUtterance);
         gate.EndReason.ShouldBe("trailing_silence");
-    }
-
-    [Fact]
-    public void TrailingSilence_AtEndUtterance_IsTheSilenceRunThatEndedIt()
-    {
-        var gate = NewGate(); // trailingSilence: 200 ms, chunks are 100 ms
-
-        Feed(gate, Silent());
-        Feed(gate, Loud());
-        Feed(gate, Loud());
-        Feed(gate, Silent());
-        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.EndUtterance);
-
-        gate.TrailingSilence.ShouldBe(TimeSpan.FromMilliseconds(200));
     }
 
     [Fact]

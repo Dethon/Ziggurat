@@ -10,33 +10,6 @@ namespace Tests.Unit.Infrastructure;
 
 public class ToolApprovalChatClientTests
 {
-    [Fact]
-    public async Task InvokeFunctionAsync_WhenNotWhitelisted_RequestsApproval()
-    {
-        // Arrange
-        var handler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
-        var invoked = false;
-        var function = AIFunctionFactory.Create(() =>
-        {
-            invoked = true;
-            return "result";
-        }, "mcp__server__TestTool");
-
-        var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
-
-        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test");
-        var options = new ChatOptions { Tools = [function] };
-
-        // Act
-        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
-
-        // Assert
-        handler.RequestedApprovals.ShouldNotBeEmpty();
-        handler.RequestedApprovals[0][0].ToolName.ShouldBe("mcp__server__TestTool");
-        invoked.ShouldBeTrue("Tool should have been invoked after approval");
-    }
-
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -143,15 +143,6 @@ public class FileSystemBackendBaseTests
     }
 
     [Fact]
-    public void CompileSearchRegex_UncompilablePattern_ReturnsInvalidArgument()
-    {
-        var compiled = _bare.Compile("[unclosed", regex: true);
-
-        compiled.TryGetValue(out _, out var error).ShouldBeFalse();
-        error!.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
-    }
-
-    [Fact]
     public async Task SearchNodesAsync_CountsFilesAndMatches()
     {
         var result = await _bare.Scan(

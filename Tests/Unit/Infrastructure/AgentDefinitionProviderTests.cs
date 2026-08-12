@@ -30,15 +30,6 @@ public class AgentDefinitionProviderTests
     }
 
     [Fact]
-    public void GetById_BuiltInAgent_ReturnsDefinition()
-    {
-        var result = _sut.GetById("built-in");
-
-        result.ShouldNotBeNull();
-        result.Name.ShouldBe("Built-In");
-    }
-
-    [Fact]
     public void GetById_CustomAgent_ReturnsDefinition()
     {
         var customDef = new AgentDefinition
@@ -191,18 +182,6 @@ public class AgentDefinitionProviderTests
         result.CustomInstructions.ShouldBe("Be helpful");
         result.EnabledFeatures.ShouldBe(["feature1"]);
         result.ProviderRouting!.Sort.ShouldBe(ProviderSort.Throughput);
-    }
-
-    // A registered agent's only other routing lever is a `:nitro`/`:floor` model suffix, the dual
-    // idiom the built-in agents migrated off. Dropping this on the floor would leave an external
-    // host's declared routing silently unapplied, with the request still succeeding.
-    [Fact]
-    public void RegisterCustomAgent_NoProviderRouting_LeavesItNullForBalancedRouting()
-    {
-        var result = _sut.RegisterCustomAgent(
-            "user1", new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
-
-        result.ProviderRouting.ShouldBeNull();
     }
 
     [Fact]

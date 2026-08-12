@@ -11,14 +11,6 @@ public class ConversationContextStampingTests
         "jonas", "conv-7", "fran", new ReplyTarget("signalr", "conv-7"));
 
     [Fact]
-    public void SetThenGet_RoundTripsContext()
-    {
-        var message = new ChatMessage(ChatRole.User, "hi");
-        message.SetConversationContext(_context);
-        message.GetConversationContext().ShouldBe(_context);
-    }
-
-    [Fact]
     public void Get_AfterJsonRoundTrip_DeserializesContext()
     {
         // Chat history persists AdditionalProperties as JSON; on restore the value

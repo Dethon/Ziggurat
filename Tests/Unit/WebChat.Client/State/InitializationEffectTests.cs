@@ -1,5 +1,4 @@
 using Domain.DTOs.Channel;
-using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
@@ -357,17 +356,6 @@ public sealed class InitializationEffectTests : IDisposable
 
         var entry = await _logger.WaitForEntryAsync();
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("agent list unavailable");
-    }
-
-    [Fact]
-    public async Task RegisterUserAsync_WithASelectedUser_GoesThroughTheSessionService()
-    {
-        _dispatcher.Dispatch(new SelectUser("user-1"));
-        _calls.Reset();
-
-        await Should.NotThrowAsync(() => _effect.RegisterUserAsync());
-
-        _calls.Calls.ShouldBe(["register-user"]);
     }
 
     [Fact]

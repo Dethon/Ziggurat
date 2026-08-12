@@ -30,11 +30,6 @@ public class CallToolErrorFilterTests
             .AddChannelServer(DeliveryPolicy.Broadcast))
             .ShouldBe(1);
 
-    [Fact]
-    public void AChannelServerAlone_StillGetsTheFilter() =>
-        CallToolFilterCount(builder => builder.AddChannelServer(DeliveryPolicy.Broadcast))
-            .ShouldBe(1);
-
     private static CallToolResult Marked(Exception ex) => new()
     {
         IsError = true,

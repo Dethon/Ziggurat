@@ -86,6 +86,8 @@ public sealed class WebChatLiveConnectionRegistrationTests
         services.AddScoped<AttachmentEndpointResolver>();
         services.AddScoped<IAttachmentService, AttachmentService>();
         services.AddScoped<IAttachmentUploader, HttpAttachmentUploader>();
+        services.AddScoped<IDictationService, DictationService>();
+        services.AddScoped<IDictationBridge, JsDictationBridge>();
         services.AddScoped<ApprovalResponder>();
 
         services.AddWebChatStores();

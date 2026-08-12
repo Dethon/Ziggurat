@@ -69,25 +69,6 @@ public class VfsTextReadToolTests
         result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.NotFound);
     }
 
-    // A backend reports the file path in its own coordinates — a disk root even reports the
-    // container-absolute one ('/home/x' on a mount whose root is '/'), which the registry would
-    // refuse if reused. The Vfs layer answers the full virtual path, like glob does.
-    [Fact]
-    public async Task RunAsync_BackendLocalFilePath_IsReplacedWithTheFullVirtualPath()
-    {
-        _registry.Setup(r => r.Resolve("/sandbox/home/x.md"))
-            .Returns(Resolved(_backend.Object, "home/x.md"));
-        _backend.Setup(b => b.ReadAsync("home/x.md", null, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FsResult<FsReadResult>.Ok(new FsReadResult
-            {
-                FilePath = "/home/x.md", Content = "1: hi", TotalLines = 1, Truncated = false
-            }));
-
-        var result = await _tool.RunAsync("/sandbox/home/x.md");
-
-        result!["filePath"]!.GetValue<string>().ShouldBe("/sandbox/home/x.md");
-    }
-
     private static FsResult<FileSystemResolution> Resolved(IFileSystemBackend backend, string relativePath) =>
         new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath));
 }

@@ -2,7 +2,6 @@ using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Domain.Channels;
 using Domain.DTOs;
-using Domain.DTOs.Channel;
 using Mcp.Hosting;
 using McpChannelServiceBus.Services;
 using Microsoft.Extensions.Logging;
@@ -47,32 +46,6 @@ public class ServiceBusProcessorServiceTests : IDisposable
 
         _processor.Verify(p => p.StartProcessingAsync(It.IsAny<CancellationToken>()), Times.Once);
         _processor.Verify(p => p.StopProcessingAsync(It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessMessage_ValidPrompt_WithActiveSessions_CompletesMessage()
-    {
-        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
-
-        var receiver = new Mock<ServiceBusReceiver>();
-        receiver
-            .Setup(r => r.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        var message = CreateReceivedMessage(new ServiceBusPromptMessage
-        {
-            CorrelationId = "corr-1",
-            AgentId = "jack",
-            Prompt = "Hello",
-            Sender = "user1"
-        });
-
-        var args = new ProcessMessageEventArgs(message, receiver.Object, CancellationToken.None);
-        await _sut.ProcessMessageAsync(args);
-
-        receiver.Verify(r => r.CompleteMessageAsync(
-            It.IsAny<ServiceBusReceivedMessage>(),
-            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Theory]

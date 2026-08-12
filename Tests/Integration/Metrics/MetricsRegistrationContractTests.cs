@@ -2,11 +2,14 @@ using Agent.Modules;
 using Agent.Settings;
 using Domain.Contracts;
 using Infrastructure.Metrics;
+using McpChannelSignalR.Modules;
 using McpChannelVoice.Modules;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Moq;
 using Shouldly;
+using SignalRSettings = McpChannelSignalR.Settings;
+using TelegramSettings = McpChannelTelegram.Settings;
 using VoiceSettings = McpChannelVoice.Settings;
 
 namespace Tests.Integration.Metrics;
@@ -45,6 +48,27 @@ public class MetricsRegistrationContractTests
             {
                 RedisConnectionString = UnreachableRedis
             })
+        },
+        // Both chat channels publish transcription metrics for dictation, which is what put them
+        // on this table: a host that publishes must hand callers the buffered publisher and must
+        // appear on the health roster.
+        {
+            "mcp-channel-signalr",
+            services => services.ConfigureChannel(new SignalRSettings.ChannelSettings
+            {
+                RedisConnectionString = UnreachableRedis
+            })
+        },
+        {
+            "mcp-channel-telegram",
+            services => McpChannelTelegram.Modules.ConfigModule.ConfigureChannel(
+                services,
+                new TelegramSettings.ChannelSettings
+                {
+                    Bots = [],
+                    AllowedUsernames = [],
+                    RedisConnectionString = UnreachableRedis
+                })
         }
     };
 

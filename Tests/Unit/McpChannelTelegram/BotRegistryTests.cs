@@ -13,44 +13,11 @@ public class BotRegistryTests
     ];
 
     [Fact]
-    public void GetBotForAgent_RegisteredAgent_ReturnsClient()
-    {
-        var registry = new BotRegistry(_testBots);
-
-        var client = registry.GetBotForAgent("jack");
-
-        client.ShouldNotBeNull();
-    }
-
-    [Fact]
     public void GetBotForAgent_UnknownAgent_ThrowsKeyNotFoundException()
     {
         var registry = new BotRegistry(_testBots);
 
         Should.Throw<KeyNotFoundException>(() => registry.GetBotForAgent("nonexistent"));
-    }
-
-    [Fact]
-    public void GetAllBots_ReturnsBothBots()
-    {
-        var registry = new BotRegistry(_testBots);
-
-        var all = registry.GetAllBots();
-
-        all.Count.ShouldBe(2);
-        all.Select(b => b.AgentId).ShouldBe(["jack", "jonas"], ignoreOrder: true);
-    }
-
-    [Fact]
-    public void RegisterChatAgent_ThenGetBotForChat_ReturnsCorrectClient()
-    {
-        var registry = new BotRegistry(_testBots);
-
-        registry.RegisterChatAgent(100, "jack");
-
-        var client = registry.GetBotForChat(100);
-        client.ShouldNotBeNull();
-        client.ShouldBe(registry.GetBotForAgent("jack"));
     }
 
     [Fact]

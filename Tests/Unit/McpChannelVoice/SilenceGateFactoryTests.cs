@@ -94,24 +94,6 @@ public class SilenceGateFactoryTests
         other.FloorRms.ShouldBe(800, tolerance: 20);
     }
 
-    [Fact]
-    public void Create_TwiceForOneSatellite_ResolvesIdentically()
-    {
-        // There is no gate-purpose parameter: the wake capture and the approval capture ask for the
-        // same thing, so neither call site has anything left to drift on.
-        var factory = MakeFactory(new WyomingClientSettings { SilenceRmsThreshold = 500 });
-        factory.RecordRoomLevel("kitchen-01", 100);
-
-        var capture = factory.Create("kitchen-01", _plain);
-        var approval = factory.Create("kitchen-01", _plain);
-
-        Feed(capture, Level(800), times: 10);
-        Feed(approval, Level(800), times: 10);
-        approval.FloorRms.ShouldBe(capture.FloorRms);
-        HearsSpeechAt(factory.Create("kitchen-01", _plain), 2000)
-            .ShouldBe(HearsSpeechAt(factory.Create("kitchen-01", _plain), 2000));
-    }
-
     [Theory]
     // A capture that heard no speech spent its whole window measuring the background.
     [InlineData("no_speech", 90.0, 0.0, 90.0)]

@@ -3,7 +3,7 @@ using Tests.E2E.Fixtures;
 
 namespace Tests.E2E.WebChat;
 
-[Collection("WebChatE2E")]
+[Collection(WebChatE2ECollections.Topics)]
 [Trait("Category", "E2E")]
 public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
 {
@@ -13,12 +13,19 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
+        // A conversation outlives the run that made it, and the user this test is handed comes off a
+        // counter that restarts every run — so a later run can be shown the rows an earlier one left
+        // behind under the same name. Two rows reading "Topic one" is a strict-mode violation, which
+        // fails outright rather than waiting, and it fails on the run that collided rather than the
+        // one that seeded it. A per-run tag is what the gesture suites already use for this.
+        var tag = Guid.NewGuid().ToString("N")[..4];
+
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Topic one message for E2E");
+        await chatInput.FillAsync($"Topic one {tag} message for E2E — answer in one short sentence.");
         await chatInput.PressAsync("Enter");
 
         await page.Locator(".message-content").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
@@ -26,7 +33,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         await WebChatE2ETests.ClickThroughApprovalsAsync(page, page.Locator(".hearth-new:visible"));
 
         await Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 5_000 });
-        await chatInput.FillAsync("Topic two message for E2E");
+        await chatInput.FillAsync($"Topic two {tag} message for E2E — answer in one short sentence.");
         await chatInput.PressAsync("Enter");
 
         await page.Locator(".message-content").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
@@ -40,7 +47,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         await WebChatE2ETests.WaitForRowsToStopMovingAsync(page);
 
         // Can't rely on position — other tests' topics may also be visible.
-        var topic1 = page.Locator(".topic-item", new PageLocatorOptions { HasText = "Topic one" });
+        var topic1 = page.Locator(".topic-item", new PageLocatorOptions { HasText = $"Topic one {tag}" });
         await topic1.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
 
         // .First, because the agent often quotes the message back and then two bubbles carry the
@@ -49,7 +56,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         // A row can still move under a late approval or a resumed stream, and a miss is silent,
         // so the click is retried when the messages didn't switch.
         var messageContent = page
-            .Locator(".message-content", new PageLocatorOptions { HasText = "Topic one message for E2E" }).First;
+            .Locator(".message-content", new PageLocatorOptions { HasText = $"Topic one {tag} message for E2E" }).First;
         for (var attempt = 0; ; attempt++)
         {
             await WebChatE2ETests.ClickThroughApprovalsAsync(page, topic1);
@@ -73,12 +80,17 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
 
         var page = await fixture.CreatePageAsync();
         await page.SetViewportSizeAsync(390, 844);
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
+        // Unique per run, for the same reason as the topic rows above: the name this test settles on
+        // is the one it then looks up, and an earlier run's row carrying it would match too.
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var renamedTo = $"Renamed {tag} in E2E test";
+
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Topic to rename in E2E test");
+        await chatInput.FillAsync($"Topic to rename {tag} in E2E test — answer in one short sentence.");
         await chatInput.PressAsync("Enter");
 
         // Renaming while the reply is still streaming races the read-marker save over the same
@@ -91,48 +103,13 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
 
         var editor = page.Locator(".header-conversation-edit");
         await Assertions.Expect(editor).ToBeFocusedAsync(new LocatorAssertionsToBeFocusedOptions { Timeout = 5_000 });
-        await editor.FillAsync("Renamed in E2E test");
+        await editor.FillAsync(renamedTo);
         await editor.PressAsync("Enter");
 
         await Assertions.Expect(headerName).ToHaveTextAsync(
-            "Renamed in E2E test", new LocatorAssertionsToHaveTextOptions { Timeout = 10_000 });
+            renamedTo, new LocatorAssertionsToHaveTextOptions { Timeout = 10_000 });
 
-        var renamedRow = page.Locator(".topic-item", new PageLocatorOptions { HasText = "Renamed in E2E test" });
-        await renamedRow.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
-    }
-
-    // The same title, in the same place, on a wide screen: the rail says which conversation is
-    // selected, but only the top bar lets it be renamed.
-    [SkippableFact]
-    public async Task RenameTopic_FromTheDesktopHeader_RenamesTheConversation()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await fixture.CreatePageAsync();
-        await page.SetViewportSizeAsync(1280, 900);
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
-
-        var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Topic to rename on the desktop E2E test");
-        await chatInput.PressAsync("Enter");
-
-        await page.Locator(".message-content").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
-
-        var headerName = page.Locator(".header-conversation-name");
-        await Assertions.Expect(headerName).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 10_000 });
-        await WebChatE2ETests.ClickThroughApprovalsAsync(page, headerName);
-
-        var editor = page.Locator(".header-conversation-edit");
-        await Assertions.Expect(editor).ToBeFocusedAsync(new LocatorAssertionsToBeFocusedOptions { Timeout = 5_000 });
-        await editor.FillAsync("Renamed on the desktop");
-        await editor.PressAsync("Enter");
-
-        await Assertions.Expect(headerName).ToHaveTextAsync(
-            "Renamed on the desktop", new LocatorAssertionsToHaveTextOptions { Timeout = 10_000 });
-
-        var renamedRow = page.Locator(".topic-item", new PageLocatorOptions { HasText = "Renamed on the desktop" });
+        var renamedRow = page.Locator(".topic-item", new PageLocatorOptions { HasText = renamedTo });
         await renamedRow.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
     }
 
@@ -142,28 +119,43 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
+        // Unique per run: this one deletes the row it finds, so matching an earlier run's row would
+        // delete somebody else's conversation and then assert against the survivor.
+        var tag = Guid.NewGuid().ToString("N")[..4];
+
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Topic to delete in E2E test");
+        await chatInput.FillAsync($"Topic to delete {tag} in E2E test — answer in one short sentence.");
         await chatInput.PressAsync("Enter");
 
-        var ourTopic = page.Locator(".topic-item", new PageLocatorOptions { HasText = "Topic to delete" });
+        var ourTopic = page.Locator(".topic-item", new PageLocatorOptions { HasText = $"Topic to delete {tag}" });
         await ourTopic.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // The same dismiss-and-retry guard as the other helpers: a pending approval leaked by a
         // sibling test can raise the full-viewport overlay at any moment and intercept these
-        // clicks. The confirm button only exists while its row is in confirm mode, so both
-        // clicks retry together.
+        // clicks.
+        //
+        // A row renders the delete button or the confirm pair and never both, so an attempt has to
+        // ask which state the row is in rather than assume it is back where the last attempt
+        // started. Retrying both clicks together looks equivalent and is not: the first click has
+        // already put the row in confirm mode, so every later attempt waited out its timeout on a
+        // button that cannot come back, and one intercepted confirm click failed the test three
+        // attempts later for the wrong reason.
+        var confirmDelete = ourTopic.Locator(".confirm-delete-btn");
         for (var attempt = 0; ; attempt++)
         {
             await WebChatE2ETests.DismissApprovalOverlayAsync(page);
             try
             {
-                await ourTopic.Locator(".delete-btn").ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
-                await page.Locator(".confirm-delete-btn").ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                if (await confirmDelete.CountAsync() == 0)
+                {
+                    await ourTopic.Locator(".delete-btn").ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                }
+
+                await confirmDelete.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
                 break;
             }
             catch (TimeoutException) when (attempt < 2)

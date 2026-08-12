@@ -57,20 +57,22 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
             [],
             []);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        var reasoningChunks = new List<string>();
-        await foreach (var update in agent.RunStreamingAsync(
-            "Compare 9.11 and 9.9. Which is larger? Show your reasoning.",
-            cancellationToken: cts.Token))
+        var reasoning = await LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct =>
         {
-            foreach (var content in update.Contents.OfType<TextReasoningContent>())
+            var reasoningChunks = new List<string>();
+            await foreach (var update in agent.RunStreamingAsync(
+                "Compare 9.11 and 9.9. Which is larger? Show your reasoning.",
+                cancellationToken: ct))
             {
-                reasoningChunks.Add(content.Text);
+                foreach (var content in update.Contents.OfType<TextReasoningContent>())
+                {
+                    reasoningChunks.Add(content.Text);
+                }
             }
-        }
 
-        var reasoning = string.Concat(reasoningChunks);
+            return string.Concat(reasoningChunks);
+        });
+
         reasoning.ShouldNotBeNullOrWhiteSpace(
             "McpAgent should propagate reasoningEffort='low' to OpenRouter so the provider streams reasoning tokens back.");
     }
@@ -100,20 +102,22 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
             [],
             []);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        var reasoningChunks = new List<string>();
-        await foreach (var update in agent.RunStreamingAsync(
-            "Compare 9.11 and 9.9. Which is larger? Show your reasoning.",
-            cancellationToken: cts.Token))
+        var reasoning = await LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct =>
         {
-            foreach (var content in update.Contents.OfType<TextReasoningContent>())
+            var reasoningChunks = new List<string>();
+            await foreach (var update in agent.RunStreamingAsync(
+                "Compare 9.11 and 9.9. Which is larger? Show your reasoning.",
+                cancellationToken: ct))
             {
-                reasoningChunks.Add(content.Text);
+                foreach (var content in update.Contents.OfType<TextReasoningContent>())
+                {
+                    reasoningChunks.Add(content.Text);
+                }
             }
-        }
 
-        var reasoning = string.Concat(reasoningChunks);
+            return string.Concat(reasoningChunks);
+        });
+
         reasoning.ShouldBeNullOrWhiteSpace(
             "McpAgent with reasoningEffort='none' should suppress reasoning tokens.");
     }
@@ -128,7 +132,7 @@ public class McpAgentReasoningTestsConfigPatch
     private const string ConfiguredModel = "openai/gpt-5.6-luna";
     private static readonly string[] _whitelist = ["openai/gpt-5.6-luna", "z-ai/glm-5.2"];
 
-    private static (McpAgent Agent, List<ChatOptions?> Captured, List<string> Warnings) CreateAgent(
+    private static (McpAgent Agent, List<ChatOptions?> Captured, IReadOnlyCollection<string> Warnings) CreateAgent(
         string? reasoningEffort = null)
     {
         var captured = new List<ChatOptions?>();
@@ -165,7 +169,7 @@ public class McpAgentReasoningTestsConfigPatch
         return (agent, captured, logProvider.Messages);
     }
 
-    private static async Task<(ChatOptions Options, List<string> Warnings)> RunWithPatchAsync(
+    private static async Task<(ChatOptions Options, IReadOnlyCollection<string> Warnings)> RunWithPatchAsync(
         AgentConfigPatch? patch, string? reasoningEffort = null)
     {
         var (agent, captured, warnings) = CreateAgent(reasoningEffort);

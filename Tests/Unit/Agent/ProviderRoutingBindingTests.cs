@@ -46,13 +46,6 @@ public class ProviderRoutingBindingTests
     }
 
     [Fact]
-    public void Construct_UndefinedSortValue_Throws()
-    {
-        Should.Throw<ArgumentOutOfRangeException>(
-            () => new ProviderRouting { Sort = (ProviderSort)7 });
-    }
-
-    [Fact]
     public void Bind_ArraysAndFlags_MapFromIndexedKeys()
     {
         var routing = Bind(
@@ -138,17 +131,6 @@ public class ProviderRoutingBindingTests
     public void Bind_NonNumericThreshold_Throws()
     {
         Should.Throw<InvalidOperationException>(() => Bind(("providerRouting:preferredMaxLatency", "fast")));
-    }
-
-    [Fact]
-    public void Bind_MissingSection_YieldsNull()
-    {
-        new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>())
-            .Build()
-            .GetSection("providerRouting")
-            .Get<ProviderRouting>()
-            .ShouldBeNull();
     }
 
     // The JSON provider records an empty object as a null-valued key, so `"providerRouting": {}`

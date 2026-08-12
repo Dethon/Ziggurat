@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.Contracts;
+using Infrastructure.Clients.Transcription;
 using Infrastructure.Metrics;
 using Mcp.Hosting;
 using McpChannelVoice.McpTools;
@@ -73,6 +74,8 @@ public static class ConfigModule
         services.AddHttpClient(LemonadeHttp.ClientName)
             .ConfigureHttpClient(c => c.Timeout = Timeout.InfiniteTimeSpan);
 
+        services.AddLemonadeTranscription(settings.Stt.OpenAi.ToTranscriptionClientConfig());
+
         services.AddSingleton<Services.Tse.ITseExtractorClient>(sp =>
             new Services.Tse.TseExtractorClient(
                 // No HttpClient.Timeout: the client arms its own deadline from Tse.TimeoutMs via a
@@ -100,9 +103,8 @@ public static class ConfigModule
             }
 
             var inner = new McpChannelVoice.Services.Stt.OpenAiSpeechToText(
-                sp.GetRequiredService<IHttpClientFactory>(),
-                settings.Stt.OpenAi,
-                sttLogger);
+                sp.GetRequiredService<Domain.Contracts.IAudioTranscriber>(),
+                settings.Stt.OpenAi);
 
             var segmented = McpChannelVoice.Services.Stt.SegmentedSpeechToText.Wrap(
                 inner, settings.Stt.Streaming, settings.WyomingClient, sp.GetRequiredService<ILoggerFactory>());

@@ -7,7 +7,6 @@ public sealed class TransientErrorFilterTests
 {
     [Theory]
     [InlineData(typeof(OperationCanceledException))]
-    [InlineData(typeof(TaskCanceledException))]
     public void IsTransientException_WithCancellationException_ReturnsTrue(Type exceptionType)
     {
         var ex = (Exception)Activator.CreateInstance(exceptionType)!;

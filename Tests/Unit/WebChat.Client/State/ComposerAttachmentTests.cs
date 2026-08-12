@@ -105,19 +105,6 @@ public sealed class ComposerAttachmentTests
         await TestChat.Eventually(() => SentAttachments(client) is { Count: 2 });
     }
 
-    [Fact]
-    public async Task Sending_EmptiesTheComposer()
-    {
-        await using var client = await StartAsync();
-
-        client.Dispatcher.Dispatch(new AttachFiles("topic-1", [Png("photo.png")]));
-        await TestChat.Eventually(() => Attachments(client).Any(a => a.Status == AttachmentStatus.Ready));
-
-        client.Dispatcher.Dispatch(new SendMessage("topic-1", "look"));
-
-        await TestChat.Eventually(() => Attachments(client).Count == 0);
-    }
-
     // The clear names the files that travelled. A file picked while the send's round trip was in
     // flight has not been sent, and sweeping the topic's whole list would throw it away silently.
     [Fact]

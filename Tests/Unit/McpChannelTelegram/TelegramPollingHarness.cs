@@ -43,11 +43,14 @@ internal sealed class TelegramPollingHarness : IDisposable
             new ChannelSettings
             {
                 Bots = [new AgentBotConfig { AgentId = AgentId, BotToken = "unused" }],
-                AllowedUsernames = allowedUsernames.Length > 0 ? allowedUsernames : ["alice", "bob"]
+                AllowedUsernames = allowedUsernames.Length > 0 ? allowedUsernames : ["alice", "bob"],
+                Dictation = Dictation
             },
             Emitter,
             CallbackRouter,
             Catalog,
+            new VoiceNoteDictation(
+                Transcriber, Dictation, Metrics, new Mock<ILogger<VoiceNoteDictation>>().Object),
             Time,
             new Mock<ILogger<TelegramBotService>>().Object);
 
@@ -63,6 +66,9 @@ internal sealed class TelegramPollingHarness : IDisposable
     }
 
     public Mock<ITelegramBotClient> BotClient { get; } = new();
+    public FakeTranscriber Transcriber { get; } = new();
+    public RecordingMetricsPublisher Metrics { get; } = new();
+    public DictationSettings Dictation { get; } = new();
     public FakeTimeProvider Time { get; } = new();
     public ApprovalCallbackRouter CallbackRouter { get; } = new();
     public MutableAgentCatalog Catalog { get; } = new();
@@ -101,7 +107,21 @@ internal sealed class TelegramPollingHarness : IDisposable
     {
         _cts.CancelAfter(TimeSpan.FromSeconds(1));
         await Service.StartAsync(_cts.Token);
-        await Task.Delay(200, CancellationToken.None);
+
+        // The pump awaits every update in a batch before it asks for the next one, and the mock
+        // cancels the token when it is asked for a batch the test never queued — so cancellation is
+        // precisely the moment everything enqueued has been processed. Sleeping a fixed 200ms
+        // instead was a guess about how long that takes: true on an idle machine, and on a loaded
+        // one the update had not reached the inbox yet and the assertion read it as empty. The
+        // CancelAfter above still bounds a test whose pump never gets that far.
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, _cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
         await Service.StopAsync(CancellationToken.None);
     }
 
@@ -153,6 +173,45 @@ internal sealed class TelegramPollingHarness : IDisposable
     [
         new() { FileId = fileId, FileUniqueId = "u-" + fileId, Width = 1280, Height = 720, FileSize = sizeBytes }
     ];
+
+    public static Voice VoiceNote(
+        string fileId = "voice-1",
+        int durationSeconds = 2,
+        string? mimeType = "audio/ogg",
+        long? sizeBytes = 8054) => new()
+        {
+            FileId = fileId,
+            FileUniqueId = "u-" + fileId,
+            Duration = durationSeconds,
+            MimeType = mimeType,
+            FileSize = sizeBytes
+        };
+
+    // A real Ogg/Opus file (libopus, 48 kHz mono, VoIP), which is what Telegram sends. The decode
+    // is real in these tests; only the transcriber is faked.
+    public static byte[] OggOpusFixture { get; } = Fixture("voice-note.ogg");
+
+    public static byte[] Fixture(string name) =>
+        File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Unit/McpChannelTelegram/Fixtures", name));
+
+    public void GivenTelegramHolds(string fileId, byte[] bytes, string path)
+    {
+        BotClient
+            .Setup(b => b.SendRequest(
+                It.Is<GetFileRequest>(r => r.FileId == fileId), It.IsAny<CancellationToken>()))
+            .Returns((GetFileRequest request, CancellationToken _) => Task.FromResult(new TGFile
+            {
+                FileId = request.FileId,
+                FileUniqueId = "u-" + request.FileId,
+                FilePath = path,
+                FileSize = bytes.Length
+            }));
+
+        BotClient
+            .Setup(b => b.DownloadFile(path, It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+            .Returns((string _, Stream destination, CancellationToken ct) =>
+                destination.WriteAsync(bytes, ct).AsTask());
+    }
 
     public static Document Document(
         string fileId = "doc-1",

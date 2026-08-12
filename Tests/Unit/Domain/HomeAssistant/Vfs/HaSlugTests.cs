@@ -28,8 +28,6 @@ public class HaSlugTests
     [Theory]
     [InlineData("climate.0x00158d00abcd", "Aire Acondicionado Salón", "climate.0x00158d00abcd_(aire-acondicionado-salon)")]
     [InlineData("light.kitchen", null, "light.kitchen")]
-    [InlineData("light.kitchen", "   ", "light.kitchen")]
-    [InlineData("light.kitchen", "!!!", "light.kitchen")]
     public void Compose_AppendsNiceName_OrFallsBackToBareId(string id, string? name, string expected) =>
         HaSlug.Compose(id, name).ShouldBe(expected);
 

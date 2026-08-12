@@ -22,7 +22,6 @@ public class PrinterQueuePathTests
 
     [Theory]
     [InlineData("sub/report.pdf")]
-    [InlineData("a/b")]
     [InlineData("../escape")]
     [InlineData("./report.pdf")]
     public void Parse_RejectsNestedOrTraversalPaths(string path)

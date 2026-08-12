@@ -8,6 +8,14 @@ namespace Infrastructure.Agents.Mcp;
 
 internal sealed class McpClientManager : IAsyncDisposable
 {
+    // A tool server is dialled on the way into a session, so a server that is down is paid for by
+    // the turn waiting behind it. The SDK's default is a minute; the retry below cannot shorten
+    // that, because a handshake that times out is not the HttpRequestException it handles. The
+    // handshake is one round trip against a server that has already accepted the connection, so a
+    // server that is answering needs a fraction of this. Same bound, same reasoning, as the channel
+    // connection's own dial.
+    private static readonly TimeSpan _initializationTimeout = TimeSpan.FromSeconds(10);
+
     public IReadOnlyList<McpClient> Clients { get; }
     public IReadOnlyList<AITool> Tools { get; }
     public IReadOnlyList<string> Prompts { get; }
@@ -73,7 +81,8 @@ internal sealed class McpClientManager : IAsyncDisposable
                 new McpClientOptions
                 {
                     ClientInfo = new Implementation { Name = name, Description = description, Version = "1.0.0" },
-                    Handlers = handlers
+                    Handlers = handlers,
+                    InitializationTimeout = _initializationTimeout
                 },
                 cancellationToken: ct));
 

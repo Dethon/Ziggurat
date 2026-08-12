@@ -6,7 +6,7 @@ namespace Tests.E2E.WebChat;
 
 // The feature's one end-to-end test: attach an image, send it, see it in the transcript, reload,
 // see it still there. The transcript is a record and not a session.
-[Collection("WebChatE2E")]
+[Collection(WebChatE2ECollections.Attachments)]
 [Trait("Category", "E2E")]
 public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
 {
@@ -21,7 +21,7 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
@@ -48,8 +48,14 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         // cannot read images fails the test as an unexplained timeout further down.
         await Assertions.Expect(page.Locator(".composer-refusal")).ToBeHiddenAsync();
 
+        // A conversation outlives the run that made it, and the user index restarts every run, so
+        // an earlier run's row can carry this same question. Clicking .First past it then opens a
+        // conversation with no attachment, and the failure arrives thirty seconds later as a
+        // missing element rather than as the wrong row.
+        var tag = Guid.NewGuid().ToString("N")[..4];
+
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("What is in this picture?");
+        await chatInput.FillAsync($"What is in this picture? {tag}");
         await chatInput.PressAsync("Enter");
 
         var attachment = page.Locator(".chat-message.user .message-attachments");
@@ -69,7 +75,7 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         await WebChatE2ETests.DismissApprovalOverlayAsync(page);
         // A conversation started by attaching a file is named after the file only until the
         // opening message arrives, and that rename is persisted, so the row carries the text.
-        await page.Locator(".topic-item", new PageLocatorOptions { HasText = "What is in this picture?" })
+        await page.Locator(".topic-item", new PageLocatorOptions { HasText = $"What is in this picture? {tag}" })
             .First.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
 
         var afterReload = page.Locator(".chat-message.user .message-attachments");
@@ -80,7 +86,7 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
     // The attach control is a label wearing the button class, so it only looks like the rest of
     // the composer for as long as it takes the same size as them. The phone breakpoint shrinks
     // every button, and a control that opts out of that shrink stands taller than the field and
-    // the send button beside it.
+    // the control beside it — which is the microphone until something is typed, and Send after.
     [SkippableFact]
     public async Task OnAPhoneViewport_TheAttachButtonIsAsTallAsTheSendButton()
     {
@@ -88,16 +94,24 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
 
         var page = await fixture.CreatePageAsync();
         await page.SetViewportSizeAsync(390, 844);
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        var attachBox = await page.Locator("label.attach-button").BoundingBoxAsync();
+        var attach = page.Locator("label.attach-button");
+        var micBox = await page.Locator("[data-testid=dictation-mic]").BoundingBoxAsync();
+        var attachBox = await attach.BoundingBoxAsync();
+
+        attachBox.ShouldNotBeNull();
+        micBox.ShouldNotBeNull();
+        attachBox.Height.ShouldBe(micBox.Height, tolerance: 1);
+
+        // And the send button, which takes the microphone's place the moment there is text.
+        await page.Locator("textarea.chat-input").FillAsync("something to send");
         var sendBox = await page.Locator("button.btn-primary", new PageLocatorOptions { HasText = "Send" })
             .BoundingBoxAsync();
 
-        attachBox.ShouldNotBeNull();
         sendBox.ShouldNotBeNull();
-        attachBox.Height.ShouldBe(sendBox.Height, tolerance: 1);
+        (await attach.BoundingBoxAsync())!.Height.ShouldBe(sendBox.Height, tolerance: 1);
     }
 }

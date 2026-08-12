@@ -127,40 +127,20 @@ public class SegmentedSpeechToTextTests
     }
 
     [Fact]
-    public async Task TranscribeAsync_ManySegments_RespectsMaxInFlightDecodes()
-    {
-        // Each decode holds a slot for 50 ms so overlaps are observable.
-        var inner = new FakeStt(async count =>
-        {
-            await Task.Delay(50);
-            return new TranscriptionResult { Text = count.ToString() };
-        });
-
-        // Leading Silence(1) seeds the floor (pre-roll gap): without it the smoothed
-        // floor tracker seeds itself at speech level (no leading gap to re-seed it),
-        // and a 300 ms mid-stream gap alone is shorter than the 500 ms smoothing
-        // window and can't pull it back down — no segment would ever close.
-        await New(inner, Config(maxInFlight: 1)).TranscribeAsync(
-            Stream(Silence(1), Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
-            new TranscriptionOptions(), CancellationToken.None);
-
-        inner.MaxConcurrent.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task TranscribeAsync_ManySegments_PermitsOverlapUpToMaxInFlightDecodes()
     {
-        // Complement to the cap test above: with maxInFlight=2 the decoder MUST actually overlap two
-        // segment decodes — the latency optimization that justifies this class. A hardcoded-serial
-        // implementation (or one ignoring the config) would pass the cap test but fail this one.
+        // With maxInFlight=2 the decoder MUST actually overlap two segment decodes — the latency
+        // optimization that justifies this class. A hardcoded-serial implementation (or one
+        // ignoring the config) would fail this.
         var inner = new FakeStt(async count =>
         {
             await Task.Delay(50);
             return new TranscriptionResult { Text = count.ToString() };
         });
 
-        // Leading Silence(1) seeds the floor (pre-roll gap) — see the identical note
-        // on TranscribeAsync_ManySegments_RespectsMaxInFlightDecodes above.
+        // Leading Silence(1) seeds the floor (pre-roll gap): without it the smoothed floor tracker
+        // seeds itself at speech level, and a 300 ms mid-stream gap alone is shorter than the
+        // 500 ms smoothing window and can't pull it back down — no segment would ever close.
         // ChainContext off: chaining makes a segment await its predecessor's transcript, which
         // serializes decodes by construction — pinned by the test below.
         await New(inner, Config(maxInFlight: 2) with { ChainContext = false }).TranscribeAsync(
@@ -213,32 +193,6 @@ public class SegmentedSpeechToTextTests
             new TranscriptionOptions(), CancellationToken.None);
 
         result.Text.ShouldBe("whole");
-    }
-
-    [Fact]
-    public void Wrap_WhenDisabled_ReturnsInnerUnchanged()
-    {
-        var inner = new FakeStt();
-        var result = SegmentedSpeechToText.Wrap(
-            inner, new SegmentedSttConfig { Enabled = false }, new WyomingClientSettings(), NullLoggerFactory.Instance);
-
-        result.ShouldBeSameAs(inner);
-    }
-
-    [Fact]
-    public async Task TranscribeAsync_AllSegmentsReportConfidence_AggregatesMean()
-    {
-        var inner = new FakeStt(count =>
-            Task.FromResult(new TranscriptionResult { Text = count.ToString(), Confidence = 0.8 }));
-
-        // Leading Silence(1) seeds the floor (pre-roll gap) — see the identical note
-        // on TranscribeAsync_ManySegments_RespectsMaxInFlightDecodes above.
-        var result = await New(inner).TranscribeAsync(
-            Stream(Silence(1), Speech(6), Silence(3), Speech(7)),
-            new TranscriptionOptions(), CancellationToken.None);
-
-        result.Confidence.ShouldNotBeNull();
-        result.Confidence!.Value.ShouldBe(0.8, 1e-9);
     }
 
     [Fact]

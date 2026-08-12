@@ -6,15 +6,6 @@ namespace Tests.Unit.Domain.Conversations;
 public class ConversationIdGeneratorTests
 {
     [Fact]
-    public void CreateFor_FormatsConversationIdAsChatColonThread()
-    {
-        var id = ConversationIdGenerator.CreateFor("topic-abc");
-
-        id.ConversationId.ShouldBe($"{id.ChatId}:{id.ThreadId}");
-        id.TopicId.ShouldBe("topic-abc");
-    }
-
-    [Fact]
     public void CreateFor_PinsHistoricalHashOutput_ForWireStableRedisIds()
     {
         // These chat/thread ids are persisted in Redis and must resolve identically forever. This

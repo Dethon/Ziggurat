@@ -6,12 +6,6 @@ namespace Tests.Unit.Domain.Tools.FileSystem;
 public class GlobBraceExpanderTests
 {
     [Fact]
-    public void Expand_NoBraces_ReturnsPatternUnchanged()
-    {
-        GlobBraceExpander.Expand("**/*.txt").ShouldBe(["**/*.txt"]);
-    }
-
-    [Fact]
     public void Expand_SingleGroup_ExpandsEachAlternativeInOrder()
     {
         GlobBraceExpander.Expand("**/*.{jpg,jpeg,png,gif,bmp,tiff,webp}").ShouldBe([

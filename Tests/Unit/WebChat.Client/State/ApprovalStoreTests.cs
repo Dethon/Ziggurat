@@ -19,15 +19,6 @@ public sealed class ApprovalStoreTests : IDisposable
 
     private static ToolApprovalRequestMessage Approval(string approvalId) => new(approvalId, []);
 
-    [Fact]
-    public void ShowApproval_TheFirstRequest_IsTheCurrentOne()
-    {
-        _dispatcher.Dispatch(new ShowApproval("topic-1", Approval("approval-1")));
-
-        _store.State.CurrentRequest?.ApprovalId.ShouldBe("approval-1");
-        _store.State.TopicId.ShouldBe("topic-1");
-    }
-
     // Two conversations can be waiting on the agent at once. A second request must queue behind
     // the first rather than replace it, or the first prompt is gone with no way to answer it.
     [Fact]

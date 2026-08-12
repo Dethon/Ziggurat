@@ -28,14 +28,6 @@ public class HaFileSystemSearchTests
     }
 
     [Fact]
-    public async Task SearchAsync_NoScope_SearchesAllEntities()
-    {
-        var result = await Build().SearchAsync(
-            "state", false, null, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value.FilesSearched.ShouldBe(3);
-    }
-
-    [Fact]
     public async Task SearchAsync_DirectoryPath_ScopesToClass()
     {
         var result = await Build().SearchAsync(

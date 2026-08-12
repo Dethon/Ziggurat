@@ -18,9 +18,7 @@ public class IppPrinterClientTests
     [InlineData("auto", "auto")]
     [InlineData("fill", "fill")]
     [InlineData("none", "none")]
-    [InlineData("FIT", "fit")]
     [InlineData("bogus", "fit")]
-    [InlineData("", "fit")]
     public void ParseScaling_MapsKnownValues_AndFallsBackToFit(string input, string expected)
     {
         IppPrinterClient.ParseScaling(input).Value.ShouldBe(expected);

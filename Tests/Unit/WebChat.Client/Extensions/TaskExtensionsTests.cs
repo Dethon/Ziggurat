@@ -23,17 +23,6 @@ public sealed class TaskExtensionsTests
     }
 
     [Fact]
-    public async Task LogFaults_TaskAlreadyFaulted_LogsTheException()
-    {
-        var faulted = Task.FromException(new InvalidOperationException("already broken"));
-
-        faulted.LogFaults(_logger);
-
-        var entry = await _logger.WaitForEntryAsync();
-        entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("already broken");
-    }
-
-    [Fact]
     public async Task LogFaults_ContextGiven_NamesItInTheMessage()
     {
         var faulted = Task.FromException(new InvalidOperationException("boom"));

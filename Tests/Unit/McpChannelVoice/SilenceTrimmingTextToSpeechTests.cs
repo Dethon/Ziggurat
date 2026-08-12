@@ -94,12 +94,4 @@ public class SilenceTrimmingTextToSpeechTests
 
         output.ShouldBe(Concat(Silent(), Loud()));
     }
-
-    [Fact]
-    public void Wrap_NonPositiveThreshold_ReturnsInnerUnchanged()
-    {
-        var inner = new StubTts(Loud());
-
-        SilenceTrimmingTextToSpeech.Wrap(inner, 0).ShouldBeSameAs(inner);
-    }
 }

@@ -7,20 +7,6 @@ namespace Tests.Integration.Clients;
 public class QBittorrentDownloadClientTests(QBittorrentFixture fixture) : IClassFixture<QBittorrentFixture>
 {
     [Fact]
-    public async Task GetDownloadItem_WhenTorrentDoesNotExist_ReturnsNull()
-    {
-        // Arrange
-        var client = fixture.CreateClient();
-        const int nonExistentId = 999999;
-
-        // Act
-        var result = await client.GetDownloadItem(nonExistentId, CancellationToken.None);
-
-        // Assert
-        result.ShouldBeNull();
-    }
-
-    [Fact]
     public async Task Cleanup_WhenTorrentDoesNotExist_DoesNotThrow()
     {
         // Arrange

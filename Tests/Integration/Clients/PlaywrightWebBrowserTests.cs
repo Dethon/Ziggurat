@@ -88,33 +88,6 @@ public class PlaywrightWebBrowserTests(
 
     [Trait("Category", "External")]
     [SkippableFact]
-    public async Task NavigateAsync_WithWikipedia_ReturnsContent()
-    {
-        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
-
-        var sessionId = GetUniqueSessionId();
-        try
-        {
-            // Act
-            var request = new BrowseRequest(
-                SessionId: sessionId,
-                Url: "https://en.wikipedia.org/wiki/Web_browser",
-                MaxLength: 10000);
-            var result = await fixture.Browser.NavigateAsync(request);
-
-            // Assert
-            result.Status.ShouldBe(BrowseStatus.Success);
-            result.Title.ShouldNotBeNullOrEmpty();
-            result.Content.ShouldNotBeNullOrEmpty();
-        }
-        finally
-        {
-            await fixture.Browser.CloseSessionAsync(sessionId);
-        }
-    }
-
-    [Trait("Category", "External")]
-    [SkippableFact]
     public async Task NavigateAsync_SessionPersistsAcrossCalls()
     {
         Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
@@ -180,18 +153,6 @@ public class PlaywrightWebBrowserTests(
 
     [Trait("Category", "External")]
     [SkippableFact]
-    public async Task GetCurrentPageAsync_WithNoSession_ReturnsSessionNotFound()
-    {
-        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
-
-        var result = await fixture.Browser.GetCurrentPageAsync("non-existent-session");
-
-        result.Status.ShouldBe(BrowseStatus.SessionNotFound);
-        result.ErrorMessage.ShouldNotBeNullOrEmpty();
-    }
-
-    [Trait("Category", "External")]
-    [SkippableFact]
     public async Task CloseSessionAsync_ClosesSession()
     {
         Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
@@ -208,24 +169,6 @@ public class PlaywrightWebBrowserTests(
 
         var result = await fixture.Browser.GetCurrentPageAsync(sessionId);
         result.Status.ShouldBe(BrowseStatus.SessionNotFound);
-    }
-
-    [Trait("Category", "External")]
-    [SkippableFact]
-    public async Task NavigateAsync_WithInvalidUrl_ReturnsError()
-    {
-        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
-
-        var sessionId = GetUniqueSessionId();
-
-        var request = new BrowseRequest(
-            SessionId: sessionId,
-            Url: "ftp://invalid-scheme.com",
-            MaxLength: 1000);
-        var result = await fixture.Browser.NavigateAsync(request);
-
-        result.Status.ShouldBe(BrowseStatus.Error);
-        result.ErrorMessage!.ShouldContain("http");
     }
 
     [Trait("Category", "External")]
@@ -259,12 +202,19 @@ public class PlaywrightWebBrowserTests(
         Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
 
         var sessions = Enumerable.Range(0, 4).Select(_ => GetUniqueSessionId()).ToList();
+
+        // Four live pages, none of them heavy. What this pins is that four sessions navigate at
+        // once without landing in each other's pages, and the check for that is the host each one
+        // reports — which an encyclopaedia article answers no better than a page of boilerplate
+        // does. Two of these used to be full articles, 800KB and up, and the pair of them was most
+        // of the test's seven seconds; Special:BlankPage is 34KB of the same site. The snapshot
+        // case below still loads one real article.
         var urls = new[]
         {
             "https://example.com",
             "https://example.org",
-            "https://en.wikipedia.org/wiki/C_Sharp_(programming_language)",
-            "https://en.wikipedia.org/wiki/Web_browser"
+            "https://example.net",
+            "https://en.wikipedia.org/wiki/Special:BlankPage"
         };
 
         try
@@ -309,11 +259,17 @@ public class PlaywrightWebBrowserTests(
         Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
 
         var sessions = Enumerable.Range(0, 3).Select(_ => GetUniqueSessionId()).ToList();
+
+        // Three live pages whose content differs, because "the snapshots are not each other's" is
+        // the whole assertion — three copies of the same boilerplate would pass it by accident, and
+        // three encyclopaedia articles spent fifteen seconds proving it. One real article stays:
+        // walking an accessibility tree of that size is worth doing once, and this is the case that
+        // does it.
         var urls = new[]
         {
-            "https://en.wikipedia.org/wiki/C_Sharp_(programming_language)",
-            "https://en.wikipedia.org/wiki/Python_(programming_language)",
-            "https://en.wikipedia.org/wiki/Rust_(programming_language)"
+            "https://example.com",
+            "https://en.wikipedia.org/wiki/Special:BlankPage",
+            "https://en.wikipedia.org/wiki/C_Sharp_(programming_language)"
         };
 
         try
@@ -338,7 +294,7 @@ public class PlaywrightWebBrowserTests(
                 snapshots[i].SessionId.ShouldBe(sessions[i]);
                 snapshots[i].Snapshot.ShouldNotBeNullOrEmpty();
                 snapshots[i].RefCount.ShouldBeGreaterThan(0);
-                snapshots[i].Url!.ShouldContain("wikipedia.org");
+                snapshots[i].Url!.ShouldContain(new Uri(urls[i]).Host);
 
                 testOutputHelper.WriteLine($"Session {i} ({urls[i]}): {snapshots[i].RefCount} refs, " +
                                            $"snapshot length: {snapshots[i].Snapshot!.Length}");

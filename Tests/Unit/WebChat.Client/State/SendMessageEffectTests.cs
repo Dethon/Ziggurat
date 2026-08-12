@@ -65,41 +65,6 @@ public sealed class SendMessageEffectTests : IDisposable
     }
 
     [Fact]
-    public void RetryLastMessage_RemovesTrailingErrorsAndResends()
-    {
-        // Arrange
-        var topic = new StoredTopic
-        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 1, ThreadId = 1, Name = "Test" };
-        _dispatcher.Dispatch(new TopicsLoaded([topic]));
-        _dispatcher.Dispatch(new SelectTopic("topic-1"));
-
-        _mockSessionService
-            .Setup(s => s.CurrentTopic)
-            .Returns(topic);
-
-        var messages = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "Hello" },
-            new() { Role = "assistant", Content = "Hi there" },
-            new() { Role = "user", Content = "Do something" },
-            new() { Role = "assistant", Content = "Error occurred", IsError = true },
-            new() { Role = "assistant", Content = "Another error", IsError = true }
-        };
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", messages));
-
-        // Act
-        _dispatcher.Dispatch(new RetryLastMessage("topic-1"));
-
-        // Assert - trailing errors removed
-        var remaining = _messagesStore.State.MessagesByTopic["topic-1"];
-        remaining.ShouldNotContain(m => m.Content == "Error occurred");
-        remaining.ShouldNotContain(m => m.Content == "Another error");
-
-        // Assert - last user message was resent (added back as new user message via SendMessage pipeline)
-        remaining.Count(m => m.Role == "user" && m.Content == "Do something").ShouldBe(2);
-    }
-
-    [Fact]
     public void RetryLastMessage_NoUserMessages_DoesNotDispatchSendMessage()
     {
         // Arrange

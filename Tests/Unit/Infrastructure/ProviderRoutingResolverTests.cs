@@ -15,7 +15,7 @@ public sealed class ProviderRoutingResolverTests
     public ProviderRoutingResolverTests() =>
         _logger = LoggerFactory.Create(b => b.AddProvider(_logProvider)).CreateLogger("routing");
 
-    private List<string> Logs => _logProvider.Messages;
+    private IReadOnlyCollection<string> Logs => _logProvider.Messages;
 
     // The global default carries an `ignore` the declared routing never sets: a field-by-field
     // merge would leak it while leaving `sort` intact, so only a fixture shaped like this can

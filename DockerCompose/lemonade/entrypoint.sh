@@ -22,6 +22,20 @@ MODEL_CHECKPOINT="${STT_MODEL_CHECKPOINT:-}"
 # a mismatch just means the wrong model is warmed and the right one loads on first recall,
 # which is the several-second cold start this pre-pull exists to remove.
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-Qwen3-Embedding-0.6B-GGUF}"
+# Same again for TTS. Keep in sync with the hub's Tts__OpenAi__Model; a mismatch just means
+# the wrong voice is warmed and the right one downloads on the first reply.
+TTS_MODEL="${TTS_MODEL:-kokoro-v1}"
+# llama.cpp's context, which here is the embedding model's alone — llamacpp serves nothing else in
+# this container. Lemonade auto-tunes the context to the loaded model's maximum, 32768 for
+# Qwen3-Embedding, and llama.cpp allocates the KV cache for the whole of it up front: measured on
+# prod, 4.6 GiB for a model whose weights are under a gigabyte, which filled the iGPU's 4 GiB
+# carveout and pushed the overflow into GTT with whisper already resident. Every embedding this
+# stack asks for is one memory statement, a forget query or a three-user-turn recall window, but
+# that window is bounded by what a person types rather than by anything here: 4096 was measured
+# overflowing on a real recall, so this is 8192. Raise it again if the overflow comes back — the KV
+# cache scales with it, and even 8192 costs about a quarter of what auto-tune was allocating.
+# Set empty to pass no --ctx-size at all and leave auto-tune to it.
+EMBEDDING_CTX_SIZE="${EMBEDDING_CTX_SIZE-8192}"
 
 # ${VAR-default}: unset inherits the tuned default, set-but-empty disables that flag.
 # whisper-server's own beam default is -1 (greedy); 5 matches the old wyoming-whisper, and
@@ -99,10 +113,29 @@ if [ -n "$VAD_THRESHOLD" ]; then
 fi
 WHISPER_ARGS="${WHISPER_ARGS# }"
 
-# Dedicated STT/TTS container: whispercpp is the only recipe we configure, so a plain
-# overwrite is fine (no llamacpp settings to preserve).
+# A plain overwrite is fine — lemond merges its own defaults back over every key we leave out, on
+# every boot, which is also why none of this can be edited into the config volume by hand: the edit
+# would not survive a restart.
+#
+# The context has exactly one route, and the two that look like routes are not. It cannot go through
+# llamacpp.args: --ctx-size is on lemond's reserved list ("managed by Lemonade and cannot be
+# overridden"), and a reserved argument does not degrade to being ignored — the model fails to load
+# and every embedding request 500s. And the global ctx_size key alone is migrated away on boot
+# ("Migrating config: ctx_size 4096 -> -1 (auto-tune enabled)"), because a config arriving without
+# config_version reads as an old one that predates auto-tune. Declaring the version we are actually
+# writing is what stops that migration, so ctx_size survives to be honoured.
+#
+# If a future lemond migrates it anyway, this degrades to auto-tune at the model's maximum, which is
+# the memory cost this exists to avoid but is not an outage. Never reach for llamacpp.args again.
+CTX_CONFIG=""
+if [ -n "$EMBEDDING_CTX_SIZE" ]; then
+  CTX_CONFIG="  \"ctx_size\": $EMBEDDING_CTX_SIZE,"
+fi
+
 cat > "$CONFIG_DIR/config.json" <<EOF
 {
+  "config_version": 2,
+$CTX_CONFIG
   "whispercpp": { "backend": "$WHISPER_BACKEND", "args": "$WHISPER_ARGS" }
 }
 EOF
@@ -124,21 +157,25 @@ case "$MODEL" in
     ;;
 esac
 
-echo "lemonade: whispercpp.backend=$WHISPER_BACKEND model=$MODEL embedding=$EMBEDDING_MODEL args=$WHISPER_ARGS"
-# Echoed before the STT_CONFIG_ONLY seam so the payload is assertable without a server or registry.
+echo "lemonade: whispercpp.backend=$WHISPER_BACKEND model=$MODEL embedding=$EMBEDDING_MODEL ctx_size=$EMBEDDING_CTX_SIZE tts=$TTS_MODEL args=$WHISPER_ARGS"
+# Echoed before the STT_CONFIG_ONLY seam so the payloads are assertable without a server or
+# registry. Every model this container serves is pinned, not merely pre-pulled — see the warmup
+# block below for why.
 echo "lemonade: stt pull payload=$PULL_PAYLOAD"
+for PIN_MODEL in "$MODEL" "$EMBEDDING_MODEL" "$TTS_MODEL"; do
+  echo "lemonade: pin payload={\"model_name\": \"$PIN_MODEL\", \"pinned\": true}"
+done
 
 # Test seam: config-mapping can be verified without starting the server (no GPU, no model pull).
 if [ "${STT_CONFIG_ONLY:-0}" = "1" ]; then
   exit 0
 fi
 
-# Pre-pull the tier's whisper model and the recall embedding model once the server is up, so
-# neither the first utterance pays a download nor the first turn pays a model load; Kokoro
-# (TTS) downloads on first use. The embedding model is loaded pinned: Lemonade's eviction
-# score favours dropping fast-loading models, which is exactly what a small embedding model
-# is. Its loaded-model limit is applied per model type, so this displaces neither whisper nor
-# Kokoro. Best-effort by design.
+# Pre-pull every model this container serves once the server is up, then load each of them
+# pinned: Lemonade's eviction score favours dropping fast-loading models, and an unpinned
+# model that merely looks warmed can be evicted — the next utterance, recall or reply then
+# pays the several-second load this whole block exists to remove. The loaded-model limit is
+# applied per model type, so the three pins displace nothing. Best-effort by design.
 (
   i=0
   while [ "$i" -lt 60 ]; do
@@ -148,17 +185,20 @@ fi
         -H "Content-Type: application/json" \
         -d "$PULL_PAYLOAD" >/dev/null 2>&1 \
         || echo "lemonade: pulling $MODEL failed; it will download on the first utterance" >&2
-      curl -fsS -X POST "http://127.0.0.1:13305/api/v1/pull" \
-        -H "Content-Type: application/json" \
-        -d "{\"model_name\": \"$EMBEDDING_MODEL\"}" >/dev/null 2>&1 \
-        || echo "lemonade: pulling $EMBEDDING_MODEL failed; recall will load it on first use" >&2
-      # Says so when the pin does not take, rather than leaving a model that looks pinned
-      # and is not: an unpinned embedding model can be evicted, and the next turn then pays
-      # the several-second load this whole block exists to remove.
-      curl -fsS -X POST "http://127.0.0.1:13305/api/v1/load" \
-        -H "Content-Type: application/json" \
-        -d "{\"model_name\": \"$EMBEDDING_MODEL\", \"pinned\": true}" >/dev/null 2>&1 \
-        || echo "lemonade: pinning $EMBEDDING_MODEL failed; it may be evicted" >&2
+      for PIN_MODEL in "$EMBEDDING_MODEL" "$TTS_MODEL"; do
+        curl -fsS -X POST "http://127.0.0.1:13305/api/v1/pull" \
+          -H "Content-Type: application/json" \
+          -d "{\"model_name\": \"$PIN_MODEL\"}" >/dev/null 2>&1 \
+          || echo "lemonade: pulling $PIN_MODEL failed; it will download on first use" >&2
+      done
+      # Says so when a pin does not take, rather than leaving a model that looks pinned and
+      # is not: an unpinned model can be evicted, and the next call then pays the load again.
+      for PIN_MODEL in "$MODEL" "$EMBEDDING_MODEL" "$TTS_MODEL"; do
+        curl -fsS -X POST "http://127.0.0.1:13305/api/v1/load" \
+          -H "Content-Type: application/json" \
+          -d "{\"model_name\": \"$PIN_MODEL\", \"pinned\": true}" >/dev/null 2>&1 \
+          || echo "lemonade: pinning $PIN_MODEL failed; it may be evicted" >&2
+      done
       exit 0
     fi
     i=$((i + 1))

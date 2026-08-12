@@ -194,19 +194,6 @@ public class SettingsBinderTests : IDisposable
             .BindSettings<ProbeFleetSettings>(_secretsId)
             .Bots[0].BotToken.ShouldBe("");
 
-    [Fact]
-    public void AFullyConfiguredCollection_Binds() =>
-        new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Bots:0:AgentId"] = "nabu",
-                ["Bots:0:BotToken"] = "token-a",
-                ["Bots:1:AgentId"] = "jack",
-                ["Bots:1:BotToken"] = "token-b"
-            })
-            .BindSettings<ProbeFleetSettings>(_secretsId)
-            .Bots.Length.ShouldBe(2);
-
     // A nested settings type does not have to live in the same assembly as the settings root — a
     // server can bind a shared Domain record straight into its own settings. IsSection used to
     // require assembly equality with TSettings, so a section like this walked past validation

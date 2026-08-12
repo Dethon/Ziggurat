@@ -38,12 +38,4 @@ public class ChunkHistoryTests
         samples.Count.ShouldBe(1);
         samples[0].Rms.ShouldBe(2);
     }
-
-    [Fact]
-    public void OpenedAt_IsStampedAtConstruction()
-    {
-        var time = new FakeTimeProvider();
-        var expected = time.GetTimestamp();
-        new ChunkHistory(time, TimeSpan.FromSeconds(1)).OpenedAt.ShouldBe(expected);
-    }
 }

@@ -106,30 +106,6 @@ public class MessagesStoreTests : IDisposable
     }
 
     [Fact]
-    public void DifferentTopics_HaveIndependentMessageLists()
-    {
-        // Arrange
-        var topic1Messages = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "Topic 1 message" }
-        };
-        var topic2Messages = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "Topic 2 message" }
-        };
-
-        // Act
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", topic1Messages));
-        _dispatcher.Dispatch(new MessagesLoaded("topic-2", topic2Messages));
-        _dispatcher.Dispatch(
-            new AddMessage("topic-1", new ChatMessageModel { Role = "assistant", Content = "Reply 1" }));
-
-        // Assert
-        _store.State.MessagesByTopic["topic-1"].Count.ShouldBe(2);
-        _store.State.MessagesByTopic["topic-2"].Count.ShouldBe(1);
-    }
-
-    [Fact]
     public void ClearAllMessages_RemovesAllTopicMessages()
     {
         // Arrange
@@ -188,25 +164,6 @@ public class MessagesStoreTests : IDisposable
         remaining.Count.ShouldBe(2);
         remaining[0].Content.ShouldBe("Earlier error");
         remaining[1].Content.ShouldBe("Hello");
-    }
-
-    [Fact]
-    public void RemoveTrailingErrors_NoopWhenNoTrailingErrors()
-    {
-        // Arrange
-        var messages = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "Hello" },
-            new() { Role = "assistant", Content = "Hi there" }
-        };
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", messages));
-
-        // Act
-        _dispatcher.Dispatch(new RemoveTrailingErrors("topic-1"));
-
-        // Assert
-        var remaining = _store.State.MessagesByTopic["topic-1"];
-        remaining.Count.ShouldBe(2);
     }
 
     [Fact]

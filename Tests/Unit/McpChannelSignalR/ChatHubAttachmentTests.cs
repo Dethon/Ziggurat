@@ -65,6 +65,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
             redisStateService: null!,
             pushSubscriptionStore: null!,
             _attachments,
+            new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {
             Context = new RegisteredCaller()

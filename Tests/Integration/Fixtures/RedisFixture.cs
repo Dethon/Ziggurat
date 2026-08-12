@@ -1,59 +1,46 @@
-using DotNet.Testcontainers.Builders;
-using DotNet.Testcontainers.Containers;
 using StackExchange.Redis;
 
 namespace Tests.Integration.Fixtures;
 
+// A Redis of one's own, without a container of one's own: the class gets a database on the shared
+// pool that nothing else writes to, and hands it back empty. See RedisPool for why.
+//
+// Classes that build a RedisStackMemoryStore cannot use this one — its index only exists on
+// database 0. They take MemorySearchFixture instead.
 public class RedisFixture : IAsyncLifetime
 {
-    private const int RedisPort = 6379;
-    private IContainer _container = null!;
+    private RedisLease _lease = null!;
 
     public IConnectionMultiplexer Connection { get; private set; } = null!;
+
+    // Carries the leased database, so a service configured from this string lands where the test
+    // looks for it rather than on database 0.
     public string ConnectionString { get; private set; } = null!;
+
+    public string Endpoint => _lease.Endpoint;
 
     public async Task InitializeAsync()
     {
-        // Readiness is a PING answered, not the log line and not the port alone. The log
-        // wait can start polling after "Ready to accept connections" was already written
-        // and hang forever, and the external port is answered by Docker's proxy before
-        // Redis inside is serving, which made the ConnectAsync below flaky. The port wait
-        // still guards the mapped-port lookup; the ping proves Redis is up.
-        _container = new ContainerBuilder("redis/redis-stack:latest")
-            .WithPortBinding(RedisPort, true)
-            .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilExternalTcpPortIsAvailable(RedisPort)
-                .UntilCommandIsCompleted("redis-cli", "ping"))
-            .Build();
-
-        // The shared resource reaper starts lazily on the first container of the run, and its
-        // own startup can time out while the Docker daemon is busy bringing up an E2E stack.
-        // That failure poisons every test on this fixture, so ride it out with a second try.
-        for (var attempt = 0; ; attempt++)
-        {
-            try
-            {
-                await _container.StartAsync();
-                break;
-            }
-            catch (InvalidOperationException) when (attempt < 2)
-            {
-                await Task.Delay(TimeSpan.FromSeconds(5));
-            }
-        }
-
-        var host = _container.Hostname;
-        var port = _container.GetMappedPublicPort(RedisPort);
-        ConnectionString = $"{host}:{port}";
-
-        // abortConnect=false keeps the multiplexer retrying instead of throwing if the
-        // host-side proxy needs a beat after the in-container ping succeeds.
-        Connection = await ConnectionMultiplexer.ConnectAsync($"{ConnectionString},abortConnect=false");
+        _lease = await AcquireAsync();
+        ConnectionString = _lease.ConnectionString;
+        Connection = await _lease.ConnectAsync();
     }
 
     public async Task DisposeAsync()
     {
+        if (_lease.Exclusive)
+        {
+            var server = Connection.GetServer(Connection.GetEndPoints()[0]);
+            await server.FlushDatabaseAsync(_lease.Database);
+        }
+
         await Connection.DisposeAsync();
-        await _container.DisposeAsync();
+        _lease.Return();
+    }
+
+    protected virtual async Task<RedisLease> AcquireAsync()
+    {
+        var pool = await RedisPool.GetAsync(RedisPool.KeysPool);
+        return pool.LeaseDatabase();
     }
 }

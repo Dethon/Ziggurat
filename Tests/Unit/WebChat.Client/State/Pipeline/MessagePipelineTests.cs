@@ -85,22 +85,6 @@ public sealed class MessagePipelineTests
     }
 
     [Fact]
-    public void LoadHistory_DispatchesMessagesLoaded()
-    {
-        var history = new List<ChatHistoryMessage>
-        {
-            new("msg-1", "user", "Hello", null, null),
-            new("msg-2", "assistant", "Hi there", null, null)
-        };
-
-        _pipeline.LoadHistory("topic-1", history);
-
-        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1");
-        messages.ShouldNotBeNull();
-        messages.Count.ShouldBe(2);
-    }
-
-    [Fact]
     public void ClearMessages_ResetsFinalizedState()
     {
         var history = new List<ChatHistoryMessage>

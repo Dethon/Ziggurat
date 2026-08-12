@@ -87,15 +87,15 @@ public class SubAgentTests(RedisFixture redisFixture)
             toolFeature.GetTools(featureConfig).ToList(),
             []);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        var responses = await agent.RunStreamingAsync(
+        var responses = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => agent
+            .RunStreamingAsync(
                 "Use the run_subagent tool with echo-agent to echo: 'Hello from subagent'.",
-                cancellationToken: cts.Token)
+                cancellationToken: ct)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
             .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+            .ToListAsync(ct)
+            .AsTask());
 
         responses.ShouldNotBeEmpty();
 
@@ -121,19 +121,19 @@ public class SubAgentTests(RedisFixture redisFixture)
         var openRouterConfig = CreateOpenRouterConfig();
         var factory = CreateFactory(openRouterConfig);
         var approvalHandler = new AutoApproveHandler();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         var server = redisFixture.Connection.GetServer(redisFixture.Connection.GetEndPoints()[0]);
         var keysBefore = server.Keys(pattern: "*").ToList();
 
         await using var agent = factory.CreateSubAgent(subAgentDef, approvalHandler, "conv-1", [], "test-user");
         var userMessage = new ChatMessage(ChatRole.User, "Say done");
-        var response = await agent.RunStreamingAsync(
-                [userMessage], cancellationToken: cts.Token)
+        var response = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => agent
+            .RunStreamingAsync([userMessage], cancellationToken: ct)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
             .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
+            .ToListAsync(ct)
+            .AsTask());
 
         var result = string.Join("", response.Select(r => r.Content).Where(c => !string.IsNullOrEmpty(c)));
 

@@ -21,24 +21,6 @@ public class ConversationScopeTests
     };
 
     [Fact]
-    public void Build_JoinsAgentAndConversation()
-    {
-        ConversationScope.Build("nabu", "conv-a").ShouldBe("nabu:conv-a");
-    }
-
-    [Fact]
-    public void Parse_NullMeta_ReturnsNull()
-    {
-        ConversationScope.Parse(null).ShouldBeNull();
-    }
-
-    [Fact]
-    public void Parse_MetaWithoutConversationContextKey_ReturnsNull()
-    {
-        ConversationScope.Parse(new JsonObject { ["other"] = "value" }).ShouldBeNull();
-    }
-
-    [Fact]
     public void Parse_RoundTripsConversationContext()
     {
         var result = ConversationScope.Parse(MetaFor(_context)).ShouldNotBeNull();

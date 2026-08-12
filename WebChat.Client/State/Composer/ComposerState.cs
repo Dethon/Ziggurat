@@ -35,6 +35,10 @@ public sealed record ComposerState
     // cases anyway, so a pick before then is a slower refusal rather than a wrong one.
     public AttachmentLimits? Limits { get; init; }
 
+    // One dictation at a time, and not per topic: the microphone is a property of the screen
+    // rather than of a conversation, and leaving a topic ends whatever it was recording.
+    public DictationState Dictation { get; init; } = new();
+
     public IReadOnlyList<ComposerAttachment> For(string? topicId) =>
         topicId is null ? [] : AttachmentsByTopic.GetValueOrDefault(topicId, []);
 

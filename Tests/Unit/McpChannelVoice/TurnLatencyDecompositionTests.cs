@@ -39,7 +39,7 @@ public class TurnLatencyDecompositionTests
     private const int QueueWaitMs = 400;
     private const int TtsMs = 300;
 
-    private readonly FakeTimeProvider _clock = new(DateTimeOffset.UtcNow);
+    private readonly ArmedClock _clock = new(DateTimeOffset.UtcNow);
     private readonly SatelliteSession _session;
 
     // Standing in for CaptureSession: the turn anchors belong to ITurnAnchor, not to the
@@ -153,7 +153,11 @@ public class TurnLatencyDecompositionTests
 
         using var run = new CancellationTokenSource();
         var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token, _clock);
-        await Task.Delay(80);                        // let the loop reach the playback-drain wait
+        // The reply's 16000 bytes are 500 ms at 16 kHz/16-bit/mono, and the loop waits out exactly
+        // that. Naming the span matters here: the capture this turn opened still holds gate timers
+        // of its own on this clock, so "some wait is outstanding" is answered by one of those long
+        // before the playback loop parks, and the advance then lands ahead of the wait it was for.
+        await _clock.WaitForLiveAsync(TimeSpan.FromMilliseconds(500));
         _clock.Advance(TimeSpan.FromSeconds(1));     // drain the remaining playback duration
         await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
         await run.StopAsync(pump);

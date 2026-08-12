@@ -9,7 +9,7 @@
 #     -f DockerCompose/docker-compose.yml \
 #     -f DockerCompose/docker-compose.override.linux.yml \
 #     -f DockerCompose/docker-compose.override.npu.yml \
-#     -p jackbot up -d lemonade mcp-channel-voice
+#     -p jackbot up -d lemonade mcp-channel-voice mcp-channel-signalr mcp-channel-telegram
 #
 # ONE-TIME PER HOST — the FLM backend does NOT auto-install, despite what Lemonade's release
 # notes imply. Until it is installed, `flm list --json` returns nothing, Lemonade registers
@@ -29,6 +29,11 @@
 # STT_BACKEND is untouched: it still selects the whisper.cpp device for the non-NPU tiers,
 # which this override does not use. (whisper.cpp's own `npu` device is Windows-only; on Linux
 # the FLM recipe is the only path to the NPU.)
+
+# The NPU tier's own default for the base file's one-name rule: every service that names the STT
+# model reads this anchor, so the warmed model and the requested one cannot drift apart here
+# either.
+x-stt-model: &stt-model ${STT_MODEL:-whisper-v3-turbo-FLM}
 
 services:
   lemonade:
@@ -50,8 +55,16 @@ services:
       # the base lemonade-recipe mount already covers.)
       - ./volumes/lemonade-flm:/opt/lemonade/.config/flm
     environment:
-      STT_MODEL: ${STT_MODEL:-whisper-v3-turbo-FLM}
+      STT_MODEL: *stt-model
 
   mcp-channel-voice:
     environment:
-      Stt__OpenAi__Model: ${STT_MODEL:-whisper-v3-turbo-FLM}
+      Stt__OpenAi__Model: *stt-model
+
+  mcp-channel-signalr:
+    environment:
+      Dictation__Transcription__Model: *stt-model
+
+  mcp-channel-telegram:
+    environment:
+      Dictation__Transcription__Model: *stt-model

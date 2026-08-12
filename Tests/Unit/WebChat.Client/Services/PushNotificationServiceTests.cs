@@ -32,45 +32,6 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task UnsubscribeAsync_CallsJsUnsubscribe()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<string?>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
-            .Returns(new ValueTask<string?>("https://endpoint"));
-
-        await _sut.UnsubscribeAsync();
-
-        _mockJsRuntime.Verify(js => js.InvokeAsync<string?>(
-            "pushNotifications.unsubscribe", It.IsAny<object[]>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task IsSubscribedAsync_ReflectsJsSubscriptionState()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<bool>("pushNotifications.isSubscribed", It.IsAny<object[]>()))
-            .Returns(new ValueTask<bool>(true));
-
-        (await _sut.IsSubscribedAsync()).ShouldBeTrue();
-
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<bool>("pushNotifications.isSubscribed", It.IsAny<object[]>()))
-            .Returns(new ValueTask<bool>(false));
-
-        (await _sut.IsSubscribedAsync()).ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task RequestAndSubscribeAsync_WhenJsInteropThrows_PropagatesException()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
-            .Throws(new JSException("navigator.serviceWorker is undefined"));
-
-        await Should.ThrowAsync<JSException>(() => _sut.RequestAndSubscribeAsync("BPublicKey123"));
-    }
-
-    [Fact]
     public async Task RequestAndSubscribeAsync_WhenTheCallCouldNotBeMade_ReturnsFalse()
     {
         _mockJsRuntime

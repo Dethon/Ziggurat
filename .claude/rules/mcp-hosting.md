@@ -10,7 +10,9 @@ paths:
 
 `Mcp.Hosting` holds what being an MCP server means, so no server hand-writes it. The project
 references Domain, the MCP server package and the configuration binder alone, never Infrastructure —
-two channel servers depend on Domain only and must stay that way.
+the ServiceBus channel server depends on Domain only and must stay that way. A server that needs an
+Infrastructure adapter takes the reference itself and says why (Telegram dictates, so it holds the
+shared transcription client); `Mcp.Hosting` must never make that choice on a server's behalf.
 
 - **`IConfigurationBuilder.BindSettings<TSettings>()` is the only way a server reads configuration.**
   A server may wrap it in a one-line helper (voice's `ConfigModule.GetVoiceSettings()`), but the

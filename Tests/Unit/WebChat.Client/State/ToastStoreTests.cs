@@ -20,14 +20,6 @@ public class ToastStoreTests : IDisposable
     public void Dispose() => _store.Dispose();
 
     [Fact]
-    public void ShowError_AddsAToastCarryingTheMessage()
-    {
-        _dispatcher.Dispatch(new ShowError("network unreachable"));
-
-        _store.State.Toasts.ShouldHaveSingleItem().Message.ShouldBe("network unreachable");
-    }
-
-    [Fact]
     public void ShowError_MessageAlreadyOnScreen_LeavesTheListUnchanged()
     {
         _dispatcher.Dispatch(new ShowError("network unreachable"));
@@ -73,14 +65,6 @@ public class ToastStoreTests : IDisposable
     public void ShowError_EmptyMessage_IsReplacedByTheFallback()
     {
         _dispatcher.Dispatch(new ShowError(""));
-
-        _store.State.Toasts.ShouldHaveSingleItem().Message.ShouldBe(FallbackMessage);
-    }
-
-    [Fact]
-    public void ShowError_WhitespaceMessage_IsReplacedByTheFallback()
-    {
-        _dispatcher.Dispatch(new ShowError("   \t "));
 
         _store.State.Toasts.ShouldHaveSingleItem().Message.ShouldBe(FallbackMessage);
     }

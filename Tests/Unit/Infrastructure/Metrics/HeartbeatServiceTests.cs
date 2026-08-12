@@ -40,8 +40,13 @@ public class HeartbeatServiceTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
+        // The heartbeat is published from the service's own loop, so fifty milliseconds was a bet
+        // that the loop got a thread inside them. Stopping the service before the first beat is
+        // exactly how that bet loses, and it loses as "the service never published".
         await sut.StartAsync(cts.Token);
-        await Task.Delay(50);
+        await Eventually.Until(
+            () => publisher.Events.OfType<HeartbeatEvent>().Any(e => e.Service == "test-service"),
+            "the service to publish its first heartbeat");
         await sut.StopAsync(CancellationToken.None);
 
         publisher.Events.OfType<HeartbeatEvent>()

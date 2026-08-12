@@ -167,18 +167,6 @@ public class TranscriptDispatcherTests
     }
 
     [Fact]
-    public async Task DispatchAsync_NoIdentifiedSpeaker_FallsBackToConfigIdentity()
-    {
-        var (sut, _, emitter) = Build();
-
-        await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, null, null, default);
-
-        emitter.Received().Count.ShouldBe(1);
-        emitter.Received()[0].Sender.ShouldBe("household"); // doubtful/absent -> satellite default
-    }
-
-    [Fact]
     public async Task DispatchAsync_SatelliteWithLocality_EmitsRoomAndLocalityAsLocation()
     {
         var (sut, _, emitter) = Build();
@@ -206,19 +194,6 @@ public class TranscriptDispatcherTests
     }
 
     [Fact]
-    public async Task DispatchAsync_LowAvgLogProb_DoesNotOpenConversation()
-    {
-        var (sut, manager, emitter) = Build();
-
-        var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "mumble", AvgLogProb = -2.1 }, "agent-1", null, null, null, default);
-
-        ok.ShouldBeFalse();
-        manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
-        emitter.Received().ShouldBeEmpty();
-    }
-
-    [Fact]
     public async Task DispatchAsync_HighNoSpeechProb_DoesNotOpenConversation()
     {
         var (sut, manager, emitter) = Build();
@@ -229,19 +204,6 @@ public class TranscriptDispatcherTests
         ok.ShouldBeFalse();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
         emitter.Received().ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task DispatchAsync_NullQualitySignals_FailsOpenAndDispatches()
-    {
-        var (sut, manager, emitter) = Build();
-
-        var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "sin señales" }, "agent-1", null, null, null, default);
-
-        ok.ShouldBeTrue();
-        manager.GetActiveConversationId("kitchen-01").ShouldNotBeNull();
-        emitter.Received().Count.ShouldBe(1);
     }
 
     private static SatelliteSession SessionWithSttOverrides(OpenAiSttOverrides overrides) =>

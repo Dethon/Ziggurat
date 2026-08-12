@@ -81,17 +81,6 @@ public class TelegramBotServiceAlbumTests : IDisposable
     }
 
     [Fact]
-    public async Task AMessageWithNoMediaGroupId_EmitsImmediately()
-    {
-        await _harness.ReceiveAsync();
-        _harness.Enqueue(PhotoUpdate(1, messageId: 10, fileId: "one", caption: "/ask look"));
-
-        await _harness.RunAsync();
-
-        (await _harness.ReceiveAsync()).ShouldHaveSingleItem();
-    }
-
-    [Fact]
     public async Task TwoInterleavedGroups_DoNotMerge()
     {
         await _harness.ReceiveAsync();

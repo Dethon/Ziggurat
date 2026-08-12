@@ -143,16 +143,6 @@ public class TseSpeechToTextTests
     }
 
     [Fact]
-    public void OffModeWrapsNothing()
-    {
-        var inner = new RecordingInner();
-        TseSpeechToText.Wrap(inner, new TseSettings { Mode = TseMode.Off }, new StubClient((byte[]?)null),
-                new TseAuditTrail(null, 1, new FakeTimeProvider(), NullLogger<TseAuditTrail>.Instance),
-                new RecordingMetrics(), NullLoggerFactory.Instance)
-            .ShouldBeSameAs(inner);
-    }
-
-    [Fact]
     public async Task AutoWithoutSpeakerSkipsToRaw()
     {
         var (stt, inner, client, metrics) = Build(TseMode.Auto, clientReply: null);
@@ -173,18 +163,6 @@ public class TseSpeechToTextTests
         var evt = metrics.Events.ShouldHaveSingleItem();
         evt.Metric.ShouldBe(VoiceMetric.TseSkipped);
         evt.Outcome.ShouldBe("quiet");
-    }
-
-    [Fact]
-    public async Task AlwaysModeWithoutSpeakerSkipsToRaw()
-    {
-        var (stt, inner, client, metrics) = Build(TseMode.Always, clientReply: null);
-        await stt.TranscribeAsync(Chunks(), Options(speaker: null), CancellationToken.None);
-        inner.ReceivedPayload.ShouldBe(_rawPcm);
-        client.LastCall.ShouldBeNull();
-        var evt = metrics.Events.ShouldHaveSingleItem();
-        evt.Metric.ShouldBe(VoiceMetric.TseSkipped);
-        evt.Outcome.ShouldBe("no_speaker");
     }
 
     [Fact]

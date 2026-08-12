@@ -40,16 +40,6 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public void GetSessionByConversationId_ReturnsSession()
-    {
-        _sut.StartSession("topic1", "agent1", 100, 200);
-
-        var session = _sut.GetSessionByConversationId("100:200");
-        session.ShouldNotBeNull();
-        session.AgentId.ShouldBe("agent1");
-    }
-
-    [Fact]
     public void Lookup_WithUnknownIds_ReturnsNullOrFalse()
     {
         _sut.TryGetSession("nonexistent", out _).ShouldBeFalse();

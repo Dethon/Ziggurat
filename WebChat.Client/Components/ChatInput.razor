@@ -8,6 +8,7 @@
 @inject ConnectionStore ConnectionStore
 @inject ComposerStore ComposerStore
 @inject AgentSettingsStore AgentSettingsStore
+@inject DictationEffect Dictation
 
 @code {
     // One control for every platform: the phone offers photo library, camera and file browsing
@@ -27,6 +28,9 @@
     private bool _draggingOver;
     private IReadOnlyList<ComposerAttachment> _attachments = [];
     private string? _capabilityRefusal;
+    private ElementReference _micRef;
+    private DictationState _dictation = new();
+    private long _lastTranscriptStamp;
 
     protected override void OnInitialized()
     {
@@ -54,6 +58,21 @@
 
         Subscribe(ComposerStore.StateObservable, state => state.Limits, _ => StateHasChanged());
 
+        // The words land in the composer, never in a message: the person is always the one who
+        // presses send. A transcript carries a stamp, so the same sentence dictated twice arrives
+        // twice instead of being taken for the one already in the box.
+        Subscribe(ComposerStore.StateObservable, state => state.Dictation, dictation =>
+        {
+            _dictation = dictation;
+            if (dictation.Transcript is { } transcript && transcript.Stamp != _lastTranscriptStamp)
+            {
+                _lastTranscriptStamp = transcript.Stamp;
+                _inputText = ComposerSelectors.Append(_inputText, transcript.Text);
+            }
+
+            StateHasChanged();
+        });
+
         // Switching model is the fix for a capability refusal, so the refusal has to follow it.
         Subscribe(AgentSettingsStore.StateObservable, state => state.ByAgent, _ => UpdateAttachments());
     }
@@ -63,6 +82,10 @@
         if (firstRender)
         {
             await Js.InvokeVoidAsync("chatInput.bindFileDrops", _composerRef);
+            // The microphone element is always in the markup, only hidden when the control is
+            // Send, so the browser registers against it once and never loses its listeners to a
+            // keystroke.
+            await Dictation.RegisterAsync(_micRef);
         }
     }
 
@@ -92,10 +115,23 @@
 
     private int ReadyCount => _attachments.Count(a => a.Status == AttachmentStatus.Ready);
 
-    private bool UploadInFlight => ComposerSelectors.HasUploadInFlight(_attachments);
+    // A transcript in flight is the composer being busy in exactly the sense an upload already
+    // was: the half-message it was meant to complete must not be able to go out without it.
+    private bool UploadInFlight =>
+        ComposerSelectors.HasUploadInFlight(_attachments)
+        || _dictation.Status == DictationStatus.Transcribing;
 
     private bool CanSend => ChatInputLogic.CanSend(
         _disabled, _inputText, _isStreaming, ReadyCount, UploadInFlight, _capabilityRefusal);
+
+    private SendControl Control =>
+        ComposerSelectors.SendControl(_isStreaming, _inputText, ReadyCount, _dictation.Status);
+
+    private string? Refusal => _capabilityRefusal ?? _dictation.Refusal;
+
+    private void StopDictating() => Dispatcher.Dispatch(new StopDictation());
+
+    private void DiscardDictation() => Dispatcher.Dispatch(new DiscardDictation());
 
     private void HandleFilesPicked(InputFileChangeEventArgs e)
     {
@@ -166,9 +202,14 @@
      @ondragleave="HandleDragLeave"
      @ondrop="HandleDragLeave">
 
-    @if (_capabilityRefusal is not null)
+    @if (Refusal is not null)
     {
-        <div class="composer-refusal" role="alert">@_capabilityRefusal</div>
+        <div class="composer-refusal" role="alert">@Refusal</div>
+    }
+
+    @if (_dictation.Hint is not null)
+    {
+        <div class="composer-hint">@_dictation.Hint</div>
     }
 
     @if (_attachments.Count > 0)
@@ -195,39 +236,107 @@
     }
 
     <div class="input-wrapper">
-        <label class="btn btn-secondary attach-button" title="Attach a file">
-            <InputFile class="attach-input"
-                       OnChange="HandleFilesPicked"
-                       multiple
-                       accept="@AcceptedKinds"
-                       disabled="@_disabled" />
-            +
-        </label>
+        @* The strip takes the textarea's place while the microphone is open. The clock, the level
+           meter and the travel of the discard hint are written straight to the DOM by the browser:
+           a per-frame trip through the WASM heap would buy nothing and cost the frame. *@
+        @if (_dictation.IsRecording)
+        {
+            <div class="dictation-strip" data-testid="dictation-strip">
+                <span class="dictation-pulse" aria-hidden="true"></span>
+                <span class="dictation-timer" data-testid="dictation-timer">0:00</span>
+                <span class="dictation-level" aria-hidden="true"></span>
+                @if (_dictation.Status == DictationStatus.Latched)
+                {
+                    <button class="dictation-trash"
+                            title="Throw this recording away"
+                            data-testid="dictation-trash"
+                            @onclick="DiscardDictation">
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">
+                            <path d="M7 21q-.825 0-1.412-.587Q5 19.825 5 19V6H4V4h5V3h6v1h5v2h-1v13q0 .825-.587 1.413Q17.825 21 17 21Zm10-15H7v13h10ZM9 17h2V8H9Zm4 0h2V8h-2ZM7 6v13Z" />
+                        </svg>
+                    </button>
+                    @* A paper plane, asked for as the shape everyone already reads as "on it goes",
+                       though what goes on is the words into the box: this button never sends. *@
+                    <button class="dictation-stop"
+                            title="Finish and put the words in the box"
+                            data-testid="dictation-stop"
+                            @onclick="StopDictating">
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">
+                            <path d="M3 20V4l19 8Zm2-3 11.85-5L5 7v3.5l6 1.5-6 1.5Z" />
+                        </svg>
+                    </button>
+                }
+                else
+                {
+                    <span class="dictation-slide" data-testid="dictation-slide">‹ slide to cancel</span>
+                }
+            </div>
+        }
+        else
+        {
+            <label class="btn btn-secondary attach-button" title="Attach a file">
+                <InputFile class="attach-input"
+                           OnChange="HandleFilesPicked"
+                           multiple
+                           accept="@AcceptedKinds"
+                           disabled="@_disabled" />
+                +
+            </label>
 
-        <textarea @ref="_textareaRef"
-                  class="chat-input"
-                  placeholder="Type your message..."
-                  @bind="_inputText"
-                  @bind:event="oninput"
-                  @onkeydown="HandleKeyDown"
-                  disabled="@_disabled"
-                  rows="1"></textarea>
+            <textarea @ref="_textareaRef"
+                      class="chat-input"
+                      placeholder="Type your message..."
+                      @bind="_inputText"
+                      @bind:event="oninput"
+                      @onkeydown="HandleKeyDown"
+                      disabled="@_disabled"
+                      rows="1"></textarea>
+        }
     </div>
 
-    @* One button in this spot, always the one the user can act on: while the reply runs, Send
-       could only ever be dead, so Cancel takes its place. *@
-    @if (_isStreaming)
+    @* One control in this spot, always the one the person is about to use: Cancel while the reply
+       runs, the microphone where Send would have nothing to send. The microphone stays in the
+       markup either way — hidden rather than removed — so the browser registers against it once
+       and does not lose its listeners to a keystroke. *@
+    @if (Control == SendControl.Cancel)
     {
         <button class="btn btn-secondary" @onclick="HandleCancel">
             Cancel
         </button>
     }
-    else
-    {
-        <button class="btn btn-primary"
-                @onclick="HandleSubmit"
-                disabled="@(!CanSend)">
-            Send
+    <button class="btn btn-primary @(Control == SendControl.Send ? "" : "control-hidden")"
+            @onclick="HandleSubmit"
+            disabled="@(!CanSend)">
+        Send
+    </button>
+    @* The slot rather than the button carries the hidden class: the microphone keeps its place in
+       the render tree, and the slot is what the way-up hint is measured against. *@
+    <div class="mic-slot @(Control == SendControl.Microphone ? "" : "control-hidden")">
+        @* Sliding up to latch is the one gesture with nothing on screen to announce it. It appears
+           under the finger that could make it, rises with the travel already made, and is gone the
+           moment there is nothing left to say. *@
+        @if (_dictation.Status == DictationStatus.Recording)
+        {
+            <div class="dictation-lift" data-testid="dictation-lift" aria-hidden="true">
+                <svg class="lift-arrow" viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                    <path d="M12 10.8 7.4 15.4 6 14l6-6 6 6-1.4 1.4Z" />
+                </svg>
+                <svg class="lift-lock" viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                    <path d="M6 22q-.825 0-1.412-.587Q4 20.825 4 20V10q0-.825.588-1.412Q5.175 8 6 8h1V6q0-2.075 1.463-3.538Q9.925 1 12 1t3.538 1.462Q17 3.925 17 6v2h1q.825 0 1.413.588Q20 9.175 20 10v10q0 .825-.587 1.413Q18.825 22 18 22Zm6-5q.825 0 1.413-.587Q14 15.825 14 15t-.587-1.413Q12.825 13 12 13t-1.412.587Q10 14.175 10 15t.588 1.413Q11.175 17 12 17ZM9 8h6V6q0-1.25-.875-2.125T12 3q-1.25 0-2.125.875T9 6Z" />
+                </svg>
+            </div>
+        }
+        @* Drawn rather than an emoji: the platform's font decides what an emoji looks like, and the
+           shape it picks is neither the colour nor the weight of the icons beside it. *@
+        <button type="button"
+                class="btn btn-secondary dictation-mic"
+                @ref="_micRef"
+                data-testid="dictation-mic"
+                title="Hold to dictate"
+                disabled="@(_disabled || _dictation.Unavailable || _dictation.Status == DictationStatus.Transcribing)">
+            <svg class="dictation-mic-icon" viewBox="0 0 24 24" fill="currentColor" width="20" height="20" aria-hidden="true">
+                <path d="M12 14q-1.25 0-2.125-.875T9 11V5q0-1.25.875-2.125T12 2q1.25 0 2.125.875T15 5v6q0 1.25-.875 2.125T12 14Zm-1 7v-3.075q-2.6-.35-4.3-2.325T5 11h2q0 2.075 1.463 3.537T12 16q2.075 0 3.538-1.463T17 11h2q0 2.625-1.7 4.6T13 17.925V21h-2Z" />
+            </svg>
         </button>
-    }
+    </div>
 </div>

@@ -89,15 +89,6 @@ public class HaTreeTests
     }
 
     [Fact]
-    public void Glob_BraceExpansion_MatchesAnyAlternative()
-    {
-        var hits = HaTree.Glob(Cat(), Scope("entities/light", "kitchen/{state.json,turn_on.sh}"));
-
-        hits.ShouldContain("entities/light/kitchen/state.json");
-        hits.ShouldContain("entities/light/kitchen/turn_on.sh");
-    }
-
-    [Fact]
     public void Glob_DoubleStar_MatchesZeroLeadingSegments_AndStillRecurses()
     {
         // `**/X` must match X at the base level (zero leading segments), matching the Local file

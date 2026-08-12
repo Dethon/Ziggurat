@@ -1,4 +1,5 @@
 using Domain.DTOs.Voice;
+using Infrastructure.Clients.Transcription;
 using McpChannelVoice.Services.Stt;
 using McpChannelVoice.Services.Tts;
 using McpChannelVoice.Settings;
@@ -37,15 +38,22 @@ public class LemonadeQualitySignalsTests(LemonadeFixture fixture, ITestOutputHel
             factory,
             new OpenAiTtsConfig { BaseUrl = fixture.BaseUrl },
             NullLogger<OpenAiTextToSpeech>.Instance);
+        var sttConfig = new OpenAiSttConfig
+        {
+            BaseUrl = fixture.BaseUrl,
+            Language = "es",
+            // The model the fixture's container pre-pulled. Naming it on both sides is the rule for
+            // this endpoint anywhere: ask for one the server did not warm and the decode either
+            // waits out a second model load or answers from a model nobody chose.
+            Model = LemonadeFixture.SttModel,
+            RequestTimeout = TimeSpan.FromMinutes(10)
+        };
         var stt = new OpenAiSpeechToText(
-            factory,
-            new OpenAiSttConfig
-            {
-                BaseUrl = fixture.BaseUrl,
-                Language = "es",
-                RequestTimeout = TimeSpan.FromMinutes(10)
-            },
-            NullLogger<OpenAiSpeechToText>.Instance);
+            new LemonadeTranscriptionClient(
+                factory,
+                sttConfig.ToTranscriptionClientConfig(),
+                NullLogger<LemonadeTranscriptionClient>.Instance),
+            sttConfig);
 
         var result = await stt.TranscribeAsync(
             tts.SynthesizeAsync("hola, ¿qué hora es?", new SynthesisOptions(), cts.Token),

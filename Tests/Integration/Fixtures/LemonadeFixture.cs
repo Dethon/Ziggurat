@@ -34,6 +34,21 @@ public class LemonadeFixture : IAsyncLifetime
     public const int EmbeddingDimension = 1024;
     private const string EmbeddingModelSnapshot = "models--Qwen--Qwen3-Embedding-0.6B-GGUF";
 
+    // The smallest whisper the suite can ask for, and the reason the STT test is seconds rather
+    // than the best part of a minute: production decodes with Whisper-Large-v3-Turbo, 1.6GB of
+    // weights that load on the first request and then decode on CPU, and that one test was the
+    // longest single thing in the whole run.
+    //
+    // What it pins is the shape of what comes back — that the verbose_json body carries the
+    // avg_logprob and no_speech_prob the gibberish gate reads, at the scale the shipped thresholds
+    // are cut against. A smaller model answers the same question about the same endpoint; it is a
+    // worse transcriber, which is why the assertion on the text is only that there is some. It is
+    // named here rather than left to the image default because the container pre-pulls this and the
+    // client requests it, and voice's rule is that those two must agree or the warmed model is not
+    // the one decoded with.
+    public const string SttModel = "Whisper-Base";
+    private const string SttModelFile = "ggml-base.bin";
+
     private IContainer? _container;
 
     public string? SkipReason { get; private set; }
@@ -66,9 +81,10 @@ public class LemonadeFixture : IAsyncLifetime
             // regenerates config.json into the recipe cache on every boot (as it does under compose),
             // and HF hub may touch lock files while loading a cached model. The models themselves are
             // never re-downloaded -- LocateProvisionedVolumes already proved they are present.
-            _container = new ContainerBuilder(LemonadeImageFixture.Image)
+            _container = TestContainers.Container(LemonadeImageFixture.Image)
                 .WithPortBinding(LemonadePort, true)
                 .WithEnvironment("STT_BACKEND", "cpu")
+                .WithEnvironment("STT_MODEL", SttModel)
                 .WithBindMount(Path.Combine(volumesDir, "lemonade-hf-cache"),
                     "/opt/lemonade/.cache/huggingface", AccessMode.ReadWrite)
                 .WithBindMount(Path.Combine(volumesDir, "lemonade-recipe"),
@@ -101,7 +117,11 @@ public class LemonadeFixture : IAsyncLifetime
         var volumesDir = Path.Combine(
             E2E.Fixtures.TestHelpers.FindSolutionRoot(), "DockerCompose", "volumes");
         var hub = Path.Combine(volumesDir, "lemonade-hf-cache", "hub");
-        var provisioned = Directory.Exists(Path.Combine(hub, "models--ggerganov--whisper.cpp"))
+        var whisper = Path.Combine(hub, "models--ggerganov--whisper.cpp");
+        // The named model itself, not merely the repo: the cache holds whichever checkpoints have
+        // been pulled, and the entrypoint would quietly download a missing one inside the test.
+        var provisioned = Directory.Exists(whisper)
+            && Directory.EnumerateFiles(whisper, SttModelFile, SearchOption.AllDirectories).Any()
             && Directory.Exists(Path.Combine(hub, "models--mikkoph--kokoro-onnx"))
             && Directory.Exists(Path.Combine(hub, EmbeddingModelSnapshot))
             && Directory.Exists(Path.Combine(volumesDir, "lemonade-recipe", "bin", "whispercpp"));

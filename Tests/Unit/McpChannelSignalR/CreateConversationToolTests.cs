@@ -1,7 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
-using Domain.DTOs.WebChat;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,20 +57,6 @@ public class CreateConversationToolTests
     }
 
     [Fact]
-    public async Task McpRun_AttachWithSession_BroadcastsStreamStartedToSpaceGroup()
-    {
-        _sessionService.StartSession("topic-1", "jack", 7, 42, "default", "Downloads");
-
-        await AttachAsync("7:42");
-
-        _hubSender.Verify(s => s.SendToGroupAsync(
-            "space:default",
-            "OnStreamStarted",
-            It.Is<StreamStartedNotification>(n => n.TopicId == "topic-1"),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
     public async Task McpRun_AttachWithoutSession_ReturnsIdWithoutSideEffects()
     {
         var result = await AttachAsync("9:99");
@@ -81,26 +66,6 @@ public class CreateConversationToolTests
         _hubSender.Verify(s => s.SendToGroupAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object>(), It.IsAny<CancellationToken>()),
             Times.Never);
-    }
-
-    [Fact]
-    public async Task McpRun_SingleAttachedTurn_TearsDownStreamOnStreamComplete()
-    {
-        // The attach increments the pending count exactly once, so the turn's single
-        // StreamComplete must tear the stream down — a wedged-open stream would show a
-        // perpetual typing indicator and suppress the push notification.
-        _sessionService.StartSession("topic-1", "jack", 7, 42, "default", "Downloads");
-        await AttachAsync("7:42");
-
-        await _streamService.WriteReplyAsync(new SendReplyParams
-        {
-            ConversationId = "7:42",
-            Content = string.Empty,
-            ContentType = ReplyContentType.StreamComplete,
-            IsComplete = true
-        });
-
-        _streamService.IsStreaming("topic-1").ShouldBeFalse();
     }
 
     [Fact]

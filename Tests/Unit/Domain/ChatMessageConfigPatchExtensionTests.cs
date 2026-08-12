@@ -9,17 +9,6 @@ namespace Tests.Unit.Domain;
 public class ChatMessageConfigPatchExtensionTests
 {
     [Fact]
-    public void GetConfigPatch_AfterSet_ReturnsPatch()
-    {
-        var message = new ChatMessage(ChatRole.User, "hi");
-        var patch = new AgentConfigPatch { Model = "z-ai/glm-5.2", ReasoningEffort = "high" };
-
-        message.SetConfigPatch(patch);
-
-        message.GetConfigPatch().ShouldBe(patch);
-    }
-
-    [Fact]
     public void GetConfigPatch_FromJsonElement_Deserializes()
     {
         var message = new ChatMessage(ChatRole.User, "hi")

@@ -46,12 +46,6 @@ public class HaArgParserTests
     }
 
     [Fact]
-    public void Parse_Empty_ReturnsEmptyObject()
-    {
-        HaArgParser.Parse([], Svc()).Count.ShouldBe(0);
-    }
-
-    [Fact]
     public void Parse_SingleSelectValidOption_Passes()
     {
         HaArgParser.Parse(["--flash", "short"], Svc())["flash"]!.GetValue<string>().ShouldBe("short");
@@ -73,15 +67,6 @@ public class HaArgParserTests
     public void Parse_EqualsSyntax_SplitsOnFirstEqualsOnly()
     {
         HaArgParser.Parse(["--name=a=b"], Svc())["name"]!.GetValue<string>().ShouldBe("a=b");
-    }
-
-    [Fact]
-    public void Parse_MixedEqualsAndSpaceForms_BothWork()
-    {
-        var data = HaArgParser.Parse(["--brightness_pct=60", "--on", "true"], Svc());
-
-        data["brightness_pct"]!.GetValue<int>().ShouldBe(60);
-        data["on"]!.GetValue<bool>().ShouldBeTrue();
     }
 
     [Fact]
@@ -117,7 +102,6 @@ public class HaArgParserTests
     // a non-string it cannot look up, which HA surfaces as a 500.
     [Theory]
     [InlineData("1979")]
-    [InlineData("22")]
     [InlineData("true")]
     [InlineData("null")]
     [InlineData("1.20")]

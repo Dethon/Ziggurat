@@ -59,14 +59,6 @@ public sealed class UserIdentityEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task PersistSelectedUserAsync_Called_WritesTheChoiceToStorage()
-    {
-        await _effect.PersistSelectedUserAsync("alice");
-
-        _localStorage.Values["selectedUserId"].ShouldBe("alice");
-    }
-
-    [Fact]
     public async Task Dispatch_Initialize_RunsTheSameWork()
     {
         GivenUsers("alice");

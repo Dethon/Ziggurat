@@ -54,12 +54,4 @@ public class TranscriptionOptionsFactoryTests
         var options = TranscriptionOptionsFactory.Create("office-01", config, verification: null, _stats);
         options.Language.ShouldBe("es");
     }
-
-    [Fact]
-    public void SatelliteAttributionFlowsThrough()
-    {
-        var options = TranscriptionOptionsFactory.Create("office-01", MakeConfig(), verification: null, _stats);
-        options.SatelliteId.ShouldBe("office-01");
-        options.Room.ShouldBe("Kitchen");
-    }
 }

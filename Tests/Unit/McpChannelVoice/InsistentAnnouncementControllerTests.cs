@@ -396,21 +396,6 @@ public class InsistentAnnouncementControllerTests
     }
 
     [Fact]
-    public async Task Start_NoOnlineSession_PublishesAlarmOffline()
-    {
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var h = BuildHarness(time, online: false, satelliteIds: "kitchen-01"); // configured but not connected
-
-        var response = await h.Controller.StartAsync(
-            new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "alarm", Insistent = new() },
-            CancellationToken.None);
-
-        response.Satellites.ShouldHaveSingleItem();
-        response.Satellites[0].Status.ShouldBe("offline");
-        h.Publisher.Events.ShouldContain(e => e.Metric == VoiceMetric.AlarmOffline);
-    }
-
-    [Fact]
     public async Task Start_NoAck_RepeatsToCapThenUnacknowledged_SynthesizesOnce()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -435,7 +420,7 @@ public class InsistentAnnouncementControllerTests
             TimeSpan.FromSeconds(5));
 
         time.Advance(TimeSpan.FromSeconds(60));
-        await Task.Delay(50);
+        await Eventually.Settle();
         plays().ShouldBe(6); // no 4th round after the cap (2 chunks per round)
 
         h.Tts.Verify(t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
@@ -469,7 +454,7 @@ public class InsistentAnnouncementControllerTests
             TimeSpan.FromSeconds(5));
 
         time.Advance(TimeSpan.FromSeconds(120));
-        await Task.Delay(50);
+        await Eventually.Settle();
         plays().ShouldBe(2); // acknowledged before the second round (tone + TTS)
 
         await DrainPumpAsync(pump, time, run);

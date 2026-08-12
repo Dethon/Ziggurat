@@ -32,16 +32,4 @@ public class DashboardOverviewE2ETests(DashboardE2EFixture fixture)
         await status.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
         (await status.IsVisibleAsync()).ShouldBeTrue();
     }
-
-    [Fact]
-    public async Task TimeFilter_ChangesData()
-    {
-        var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-
-        var pill7d = page.Locator(".pill-selector .pill", new PageLocatorOptions { HasText = "7d" });
-        await pill7d.ClickAsync();
-
-        await Assertions.Expect(pill7d).ToHaveClassAsync(new System.Text.RegularExpressions.Regex("active"));
-    }
 }

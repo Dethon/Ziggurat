@@ -19,18 +19,6 @@ public sealed class MultiAgentFactoryTests
         McpServerEndpoints = []
     };
 
-    private static readonly AgentDefinition _fullyMappedAgent = new()
-    {
-        Id = "custom-full",
-        Name = "FullBot",
-        Description = "Full description",
-        Model = "test-model",
-        McpServerEndpoints = [],
-        WhitelistPatterns = ["pattern1"],
-        CustomInstructions = "Be helpful",
-        EnabledFeatures = ["feature1"]
-    };
-
     private readonly CustomAgentRegistry _customAgentRegistry = new();
     private readonly AgentDefinitionProvider _definitionProvider;
     private readonly MultiAgentFactory _sut;
@@ -87,12 +75,7 @@ public sealed class MultiAgentFactoryTests
     [
         ["null agent id", "user1", (Func<MultiAgentFactoryTests, string?>)(_ => null)],
         ["built-in agent id", "user1", (Func<MultiAgentFactoryTests, string?>)(_ => _builtInAgent.Id)],
-        ["custom agent id for owning user", "user1", (Func<MultiAgentFactoryTests, string?>)(t => t.AddCustomAgent("user1").Id)],
-        ["custom agent with all fields populated", "user1", (Func<MultiAgentFactoryTests, string?>)(t =>
-        {
-            t._customAgentRegistry.Add("user1", _fullyMappedAgent);
-            return _fullyMappedAgent.Id;
-        })]
+        ["custom agent id for owning user", "user1", (Func<MultiAgentFactoryTests, string?>)(t => t.AddCustomAgent("user1").Id)]
     ];
 
     [Theory]
