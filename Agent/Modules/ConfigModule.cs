@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Agent.Settings;
+using RetentionSettings = Domain.DTOs.RetentionSettings;
 
 namespace Agent.Modules;
 
@@ -8,6 +9,7 @@ public static class ConfigModule
     public static AgentSettings GetSettings(this IConfigurationBuilder configBuilder)
     {
         var config = configBuilder
+            .AddJsonFile(RetentionSettings.FileName, optional: true)
             .AddEnvironmentVariables()
             .AddUserSecrets<Program>()
             .Build();

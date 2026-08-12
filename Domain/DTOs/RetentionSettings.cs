@@ -6,6 +6,13 @@ namespace Domain.DTOs;
 // migration and no backfill.
 public record RetentionSettings
 {
+    // The one file this block is configured in, shipped beside this type and copied into the
+    // output of every host that references Domain. Each host's own configuration entry point reads
+    // it, so an operator changing a horizon edits here and nowhere else. It is added after a host's
+    // appsettings.json and before environment variables: a host cannot quietly disagree with the
+    // policy, and one container can still be overridden for a test run.
+    public const string FileName = "retention.json";
+
     // Six months. Past this a topic stops appearing in the ordinary list; it is not deleted and
     // nothing is written on it, because archived is where it sits in the index and never a
     // state it carries. See ADR 0024.

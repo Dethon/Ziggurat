@@ -12,6 +12,13 @@
     </ItemGroup>
 
     <ItemGroup>
+      <!-- Ships into the output of everything that references Domain, which is every host that
+           writes a topic. That is what makes the retention policy one file rather than a block
+           per host, and what puts it in each container image without a Dockerfile knowing. -->
+      <Content Include="retention.json" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="FluentResults" Version="4.0.0" />
       <PackageReference Include="JetBrains.Annotations" Version="2026.2.0" />
       <PackageReference Include="Microsoft.Agents.AI.Abstractions" Version="1.17.0" />

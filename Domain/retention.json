@@ -1,0 +1,31 @@
+// The retention policy, for every process that touches a conversation.
+//
+// Three hosts write topic keys — the agent, the chat channel and the voice channel — and they must
+// agree, or a conversation ages on a different clock depending on which of them last wrote to it.
+// So this is one file rather than a block in each host's appsettings.json: it ships beside the
+// RetentionSettings type it fills, in Domain, and every host that references Domain gets it in its
+// own output. Changing a horizon is this edit and nothing else.
+//
+// It is read after each host's own appsettings.json and before environment variables, so a host
+// cannot quietly disagree with it and a single container can still be overridden for a test run
+// (RETENTION__PAGESIZE, and so on).
+{
+  "retention": {
+    // Six months. Past this a topic stops appearing in the ordinary list. It is not deleted and
+    // nothing is written on it — archived is where it sits in the index. See ADR 0024.
+    "archiveHorizon": "182.00:00:00",
+
+    // Twelve months. Past this a topic ceases to exist, taking its history, what it is searched by
+    // and the files sent to it.
+    "purgeHorizon": "365.00:00:00",
+
+    // How many rows one fetch of the sidebar costs, whatever the space has accumulated.
+    "pageSize": 30,
+
+    // How much of the last message a row shows.
+    "snippetLength": 120,
+
+    // Attachments die with the conversation they were sent to rather than eleven months before it.
+    "attachmentRetention": "365.00:00:00"
+  }
+}

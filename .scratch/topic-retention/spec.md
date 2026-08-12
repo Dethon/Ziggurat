@@ -211,10 +211,21 @@ store serves an empty sidebar until it completes.
 
 ### Configuration
 
-One retention policy block in the Agent's `appsettings.json` holding the archive horizon (six
-months), the purge horizon (twelve months), the page size, the snippet length and attachment
-retention. These are generic tunables, so nothing goes in the compose file or its `.env`. The
-thirty-day value currently defined in four places, three of them hardcoded, is removed.
+One retention policy block holding the archive horizon (six months), the purge horizon (twelve
+months), the page size, the snippet length and attachment retention. These are generic tunables,
+so nothing goes in the compose file or its `.env`. The thirty-day value currently defined in four
+places, three of them hardcoded, is removed.
+
+The block lives in `Domain/retention.json` rather than in the Agent's `appsettings.json`, which is
+where this was first written. Three hosts write topic keys — the agent, the chat channel and the
+voice channel — and each reads its own `appsettings.json`, so a block there is one file per host
+and three edits to change a horizon. Two hosts holding different horizons is not a visible failure:
+each looks correct on its own while a conversation ages on whichever of them last wrote to it. The
+file ships beside the `RetentionSettings` type it fills and is copied into the output of everything
+that references Domain, which is every host that writes a topic. Each host's own configuration
+entry point reads it after that host's `appsettings.json` and before environment variables, so a
+host cannot quietly disagree with the policy and a single container can still be overridden for a
+test run.
 
 ### Delivery
 

@@ -21,5 +21,5 @@ client is not live is covered by catch-up refetching the first page on becoming 
 - [x] Cursor tracking, page appending and deduplication live in a plain class that is tested
       without rendering anything.
 - [x] Scroll-to-load-more is covered end to end in a real browser.
-- [x] The retention policy block exists in the Agent's settings and holds the page size. Nothing
-      is added to the compose file or its environment file.
+- [x] The retention policy block exists and holds the page size, in one file every host that
+      writes a topic reads. Nothing is added to the compose file or its environment file.
