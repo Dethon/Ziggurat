@@ -60,6 +60,7 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
             threadStore: null!,
             pushSubscriptionStore: null!,
             attachmentService: null!,
+            new Mock<IHubNotificationSender>().Object,
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {

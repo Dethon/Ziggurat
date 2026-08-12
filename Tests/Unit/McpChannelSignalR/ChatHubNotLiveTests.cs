@@ -44,6 +44,7 @@ public class ChatHubNotLiveTests
             threadStore: null!,
             pushSubscriptionStore: null!,
             attachmentService: null!,
+            new Mock<IHubNotificationSender>().Object,
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {
@@ -110,6 +111,7 @@ public class ChatHubNotLiveTests
             threadStore: null!,
             pushSubscriptionStore: null!,
             attachmentService: null!,
+            new Mock<IHubNotificationSender>().Object,
             new DictationSettings(),
             factory.CreateLogger<ChatHub>())
         {

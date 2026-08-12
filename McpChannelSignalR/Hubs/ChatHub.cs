@@ -22,6 +22,7 @@ public sealed class ChatHub(
     IThreadStateStore threadStore,
     IPushSubscriptionStore pushSubscriptionStore,
     AttachmentService attachmentService,
+    IHubNotificationSender hubSender,
     DictationSettings dictationSettings,
     ILogger<ChatHub> logger) : Hub
 {
@@ -449,6 +450,15 @@ public sealed class ChatHub(
         // Removing a conversation removes what was in it. The sweep would reach these eventually;
         // deleting a topic is the person saying they want them gone now.
         attachmentService.DeleteConversation($"{chatId}:{threadId}");
+
+        // Said to the space rather than to this caller: another tab holds a row for a
+        // conversation that no longer exists, and paging only ever fetches backwards, so nothing
+        // would ever refetch that row away. Deleting a topic that is already gone says the same
+        // thing again, which is harmless and is what makes a repeated delete safe.
+        await hubSender.SendToGroupAsync(
+            $"space:{CurrentSpaceSlug ?? SpaceConfig.DefaultSlug}",
+            "OnTopicChanged",
+            new TopicChangedNotification(TopicChangeType.Deleted, topicId, SpaceSlug: CurrentSpaceSlug));
     }
 
     public async Task SubscribePush(PushSubscriptionDto subscription)

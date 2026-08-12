@@ -65,6 +65,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
             threadStore: null!,
             pushSubscriptionStore: null!,
             _attachments,
+            new Mock<IHubNotificationSender>().Object,
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {

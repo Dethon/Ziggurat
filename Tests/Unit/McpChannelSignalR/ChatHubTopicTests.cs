@@ -3,9 +3,11 @@ using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Mcp.Hosting;
+using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Hubs;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
@@ -22,10 +24,20 @@ public sealed class ChatHubTopicTests : IDisposable
     private readonly SessionService _sessionService = new();
     private readonly StreamService _streamService;
     private readonly Mock<IThreadStateStore> _store = new();
+    private readonly Mock<IHubNotificationSender> _hubSender = new();
+    private readonly string _root = Path.Combine(Path.GetTempPath(), $"attachments-{Guid.NewGuid():N}");
     private readonly ChatHub _hub;
 
     public ChatHubTopicTests()
     {
+        var attachmentSettings = new AttachmentSettings { StoragePath = _root };
+        var time = new FakeTimeProvider();
+        var attachments = new AttachmentService(
+            attachmentSettings,
+            new AttachmentTickets(attachmentSettings, time),
+            new AttachmentStore(attachmentSettings, time, NullLogger<AttachmentStore>.Instance),
+            NullLogger<AttachmentService>.Instance);
+
         _streamService = new StreamService(
             _sessionService,
             new Mock<IPushNotificationService>().Object,
@@ -45,11 +57,13 @@ public sealed class ChatHubTopicTests : IDisposable
             new Mock<IAgentCatalog>().Object,
             _store.Object,
             new Mock<IPushSubscriptionStore>().Object,
-            attachmentService: null!,
+            attachments,
+            _hubSender.Object,
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {
-            Context = new RegisteredCaller()
+            Context = new RegisteredCaller(),
+            Groups = new Mock<IGroupManager>().Object
         };
     }
 
@@ -76,5 +90,47 @@ public sealed class ChatHubTopicTests : IDisposable
         history.ShouldHaveSingleItem().Content.ShouldBe("hello");
     }
 
-    public void Dispose() => _streamService.Dispose();
+    // The delete used to succeed and say nothing, so a second tab kept showing a row for a
+    // conversation that no longer existed. Pagination makes that worse: the row will never be
+    // refetched away, because paging only ever fetches backwards.
+    [Fact]
+    public async Task DeleteTopic_TellsTheSpaceTheTopicIsGone()
+    {
+        await _hub.JoinSpace("kitchen");
+
+        await _hub.DeleteTopic("jack", "topic-1", 7, 42);
+
+        _hubSender.Verify(s => s.SendToGroupAsync(
+            "space:kitchen",
+            "OnTopicChanged",
+            It.Is<TopicChangedNotification>(n =>
+                n.ChangeType == TopicChangeType.Deleted && n.TopicId == "topic-1"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // Nothing is left to delete and the row may still be on another tab's screen, so the
+    // broadcast is what makes the second delete harmless rather than something to guard against.
+    [Fact]
+    public async Task DeleteTopic_ForATopicThatIsAlreadyGone_StillBroadcastsTheSameRemoval()
+    {
+        await _hub.JoinSpace("kitchen");
+
+        await _hub.DeleteTopic("jack", "topic-1", 7, 42);
+        await _hub.DeleteTopic("jack", "topic-1", 7, 42);
+
+        _hubSender.Verify(s => s.SendToGroupAsync(
+            "space:kitchen",
+            "OnTopicChanged",
+            It.Is<TopicChangedNotification>(n => n.TopicId == "topic-1"),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    public void Dispose()
+    {
+        _streamService.Dispose();
+        if (Directory.Exists(_root))
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+    }
 }
