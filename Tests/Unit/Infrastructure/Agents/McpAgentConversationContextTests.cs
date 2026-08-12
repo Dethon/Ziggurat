@@ -16,7 +16,7 @@ public class McpAgentConversationContextTests
     private static readonly ConversationContext _context = new(
         "jack", "conv-42", "fran", new ReplyTarget("signalr", "conv-42"));
 
-    private static (McpAgent Agent, List<ChatOptions?> Captured, List<string> Logs) CreateAgent()
+    private static (McpAgent Agent, List<ChatOptions?> Captured, IReadOnlyCollection<string> Logs) CreateAgent()
     {
         var captured = new List<ChatOptions?>();
         var logProvider = new CapturingLoggerProvider(LogLevel.Error);

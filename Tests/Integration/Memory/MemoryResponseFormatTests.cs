@@ -34,7 +34,7 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
         return (apiUrl, apiKey, model);
     }
 
-    private static (OpenRouterMemoryExtractor Extractor, List<string> Warnings) CreateExtractor(
+    private static (OpenRouterMemoryExtractor Extractor, IReadOnlyCollection<string> Warnings) CreateExtractor(
         string apiUrl, string apiKey, string model)
     {
         var chatClient = new OpenAIClient(
@@ -117,7 +117,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
         return (apiUrl, apiKey, model);
     }
 
-    private static (OpenRouterMemoryConsolidator Consolidator, List<string> Warnings) CreateConsolidator(
+    private static (OpenRouterMemoryConsolidator Consolidator, IReadOnlyCollection<string> Warnings) CreateConsolidator(
         string apiUrl, string apiKey, string model)
     {
         var chatClient = new OpenAIClient(
@@ -226,7 +226,7 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         return (apiUrl, apiKey, model);
     }
 
-    private static (OpenRouterMemoryConsolidator Consolidator, List<string> Warnings) CreateConsolidator(
+    private static (OpenRouterMemoryConsolidator Consolidator, IReadOnlyCollection<string> Warnings) CreateConsolidator(
         string apiUrl, string apiKey, string model)
     {
         var chatClient = new OpenAIClient(

@@ -77,7 +77,7 @@ public static class LlmAttempt
     public static string Combine(IEnumerable<AiResponse> responses) =>
         string.Join(" ", responses.Select(r => r.Content + " " + r.ToolCalls));
 
-    public static string Explain(string what, IReadOnlyList<string> warnings) =>
+    public static string Explain(string what, IReadOnlyCollection<string> warnings) =>
         warnings.Count == 0
             ? $"{what} (no parse warnings logged, so the model answered with a valid but empty response)"
             : $"{what} (parse warnings: {string.Join(" | ", warnings)})";

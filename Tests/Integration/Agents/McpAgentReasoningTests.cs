@@ -132,7 +132,7 @@ public class McpAgentReasoningTestsConfigPatch
     private const string ConfiguredModel = "openai/gpt-5.6-luna";
     private static readonly string[] _whitelist = ["openai/gpt-5.6-luna", "z-ai/glm-5.2"];
 
-    private static (McpAgent Agent, List<ChatOptions?> Captured, List<string> Warnings) CreateAgent(
+    private static (McpAgent Agent, List<ChatOptions?> Captured, IReadOnlyCollection<string> Warnings) CreateAgent(
         string? reasoningEffort = null)
     {
         var captured = new List<ChatOptions?>();
@@ -169,7 +169,7 @@ public class McpAgentReasoningTestsConfigPatch
         return (agent, captured, logProvider.Messages);
     }
 
-    private static async Task<(ChatOptions Options, List<string> Warnings)> RunWithPatchAsync(
+    private static async Task<(ChatOptions Options, IReadOnlyCollection<string> Warnings)> RunWithPatchAsync(
         AgentConfigPatch? patch, string? reasoningEffort = null)
     {
         var (agent, captured, warnings) = CreateAgent(reasoningEffort);
