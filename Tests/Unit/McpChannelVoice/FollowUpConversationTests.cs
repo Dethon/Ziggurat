@@ -372,7 +372,11 @@ public class FollowUpConversationTests
         h.EndUtterance();
         await WaitForCountAsync(h, "dispatch-first", 2);
 
-        h.Events.Count(e => e == "open-first").ShouldBe(2);
+        // Exactly two of each: the wait above only holds the test until the second one lands, and
+        // two fresh conversations must produce no more than that between them.
+        var events = h.Events;
+        events.Count(e => e == "open-first").ShouldBe(2);
+        events.Count(e => e == "dispatch-first").ShouldBe(2);
 
         await StopAsync(sut, run);
     }
@@ -467,6 +471,10 @@ public class FollowUpConversationTests
 
         // the coordinator must be re-armed: a later wake starts a fresh conversation
         await WakeAgainAsync(sut, h, 2);
+
+        // Exactly two, not merely two by the time the wake took: retrying a wake that OnWake
+        // discards must not leave a second turn opened behind the one this asked for.
+        h.Events.Count(e => e == "open-first").ShouldBe(2);
         h.Session.Mic.IsOpen.ShouldBeTrue();
 
         await StopAsync(sut, run);

@@ -23,7 +23,7 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
 
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var mic = await PressableMicAsync(page);
 
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
         await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
@@ -105,7 +105,7 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
 
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var mic = await PressableMicAsync(page);
 
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
 
@@ -139,7 +139,7 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
 
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var mic = await PressableMicAsync(page);
 
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
         await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
@@ -184,7 +184,7 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
             """);
 
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var mic = await PressableMicAsync(page);
 
         // No waiting for the strip: the whole point is that the gesture finishes first.
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
@@ -239,7 +239,7 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
             """);
 
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var mic = await PressableMicAsync(page);
 
         // Comfortably past the 400 ms mis-tap floor: this is a hold, not a tap, so the answer must
         // not be the hint that tells someone to hold it.
@@ -300,7 +300,7 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
             """);
 
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var mic = await PressableMicAsync(page);
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
         await Task.Delay(HoldMs);
         await TouchAsync(cdp, "touchEnd");

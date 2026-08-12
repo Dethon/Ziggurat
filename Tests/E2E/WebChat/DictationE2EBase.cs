@@ -61,12 +61,36 @@ public abstract class DictationE2EBase
     // One held dictation, start to release, for cases that care only about how it ended.
     protected static async Task DictateAsync(ICDPSession cdp, IPage page, int holdMs)
     {
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var mic = await PressableMicAsync(page);
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
         await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
         await Task.Delay(holdMs);
         await TouchAsync(cdp, "touchEnd");
+    }
+
+    // The centre of the microphone, once it is a thing a press can reach.
+    //
+    // Chromium dispatches no pointer event at all to a disabled button, and the microphone is
+    // disabled whenever the composer is — which a SignalR reconnect makes it, and a loaded machine
+    // reconnects more. A press landing in that window is swallowed whole: no run starts, no strip
+    // appears, and the case spends its timeout waiting for a recording nobody was asked for. The
+    // registered element is checked against the one on screen for the same reason, since a press is
+    // only a press if it reaches the listener.
+    protected static async Task<(double X, double Y)> PressableMicAsync(IPage page)
+    {
+        await page.WaitForFunctionAsync(
+            """
+            () => {
+                const mic = document.querySelector('[data-testid=dictation-mic]');
+                const d = window.dictation;
+                return !!(mic && !mic.disabled && d && d._mic === mic && !d._unavailable);
+            }
+            """,
+            null,
+            new PageWaitForFunctionOptions { Timeout = 30_000 });
+
+        return await CentreOfAsync(page, "[data-testid=dictation-mic]");
     }
 
     protected static async Task<(double X, double Y)> CentreOfAsync(IPage page, string selector)

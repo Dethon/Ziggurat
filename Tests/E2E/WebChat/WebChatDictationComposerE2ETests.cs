@@ -50,7 +50,7 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
             """);
 
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var mic = await PressableMicAsync(page);
 
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
         await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
@@ -212,7 +212,7 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
 
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var mic = await PressableMicAsync(page);
 
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
         await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
@@ -247,7 +247,7 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
 
         var page = await OpenAsync();
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var mic = await PressableMicAsync(page);
         var lift = page.Locator("[data-testid=dictation-lift]");
 
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
@@ -370,7 +370,7 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
             }
             """);
 
-        var centre = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var centre = await PressableMicAsync(page);
         await TouchAsync(cdp, "touchStart", Point(centre.X, centre.Y));
         await Task.Delay(HoldMs);
         await TouchAsync(cdp, "touchEnd");
@@ -431,7 +431,7 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
         var before = await composer.BoundingBoxAsync();
 
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var mic = await PressableMicAsync(page);
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
         await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
@@ -489,7 +489,7 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
         var page = await OpenAsync(width: 1280, height: 900);
 
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await CentreOfAsync(page, "[data-testid=dictation-mic]");
+        var mic = await PressableMicAsync(page);
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
         await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
