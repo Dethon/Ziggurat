@@ -52,14 +52,18 @@ public sealed class AgentActivityEffect : IDisposable
     public async Task MapAllAgentTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
     {
         var slug = _spaceStore.State.CurrentSlug;
+
+        // One page per agent, not every topic each has ever had. The indicator is about what is
+        // busy now, and anything busy is by definition recently written to, so it is on the
+        // first page.
         var fetches = await Task.WhenAll(agents.Select(async agent =>
-            (Agent: agent, Topics: await _topicService.GetAllTopicsAsync(agent.Id, slug))));
+            (Agent: agent, Page: await _topicService.GetTopicPageAsync(agent.Id, slug))));
 
         // Seeded with what we already know: an agent whose read failed keeps its last-known
         // mapping instead of losing it because a sibling agent's read succeeded. Only the
         // agents that answered get their entries replaced with the fresh read.
         var map = new Dictionary<string, string>(_activityStore.State.TopicToAgent);
-        foreach (var (agent, topics) in fetches.Where(fetch => fetch.Topics.IsLive))
+        foreach (var (agent, page) in fetches.Where(fetch => fetch.Page.IsLive))
         {
             foreach (var staleTopicId in map
                 .Where(pair => pair.Value == agent.Id)
@@ -69,7 +73,7 @@ public sealed class AgentActivityEffect : IDisposable
                 map.Remove(staleTopicId);
             }
 
-            foreach (var topic in topics.Value!)
+            foreach (var topic in page.Value!.Topics)
             {
                 map[topic.TopicId] = agent.Id;
             }

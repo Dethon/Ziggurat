@@ -5,7 +5,15 @@ namespace WebChat.Client.State.Topics;
 
 public record LoadTopics : IAction;
 
-public record TopicsLoaded(IReadOnlyList<StoredTopic> Topics) : IAction;
+// The first page of a list being started over: a first load, an agent change, or catch-up after
+// an interruption. Everything held is replaced, cursor included.
+public record TopicsLoaded(IReadOnlyList<StoredTopic> Topics, string? NextCursor = null) : IAction;
+
+// The command: fetch the page below the cursor. Ignored while one is already in flight or the
+// range has ended.
+public record LoadMoreTopics : IAction;
+
+public record TopicsPageAppended(IReadOnlyList<StoredTopic> Topics, string? NextCursor) : IAction;
 
 public record SelectTopic(string? TopicId) : IAction;
 
@@ -60,7 +68,14 @@ public sealed class TopicsStore : IDisposable
 
         TopicsLoaded a => state with
         {
-            Topics = a.Topics,
+            Paging = TopicPaging.FirstPage(a.Topics, a.NextCursor),
+            IsLoading = false,
+            Error = null
+        },
+
+        TopicsPageAppended a => state with
+        {
+            Paging = state.Paging.AppendPage(a.Topics, a.NextCursor),
             IsLoading = false,
             Error = null
         },
@@ -70,27 +85,21 @@ public sealed class TopicsStore : IDisposable
             SelectedTopicId = a.TopicId
         },
 
-        AddTopic a => state.Topics.Any(t => t.TopicId == a.Topic.TopicId)
-            ? state
-            : state with
-            {
-                Topics = state.Topics.Append(a.Topic).ToList(),
-                Error = null
-            },
+        AddTopic a => state with
+        {
+            Paging = state.Paging.Insert(a.Topic),
+            Error = null
+        },
 
         UpdateTopic a => state with
         {
-            Topics = state.Topics
-                .Select(t => t.TopicId == a.Topic.TopicId ? a.Topic : t)
-                .ToList(),
+            Paging = state.Paging.Upsert(a.Topic),
             Error = null
         },
 
         TopicRemoved a => state with
         {
-            Topics = state.Topics
-                .Where(t => t.TopicId != a.TopicId)
-                .ToList(),
+            Paging = state.Paging.Remove(a.TopicId),
             SelectedTopicId = state.SelectedTopicId == a.TopicId ? null : state.SelectedTopicId,
             Error = null
         },

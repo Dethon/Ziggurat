@@ -59,7 +59,7 @@ public sealed class ReconnectionEffectTests : IDisposable
     {
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
         _mockTopicService
-            .Setup(s => s.GetAllTopicsAsync("agent-1", "default"))
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
             .ThrowsAsync(new InvalidOperationException("catch-up failed"));
 
         CreateEffect();
@@ -205,8 +205,8 @@ public sealed class ReconnectionEffectTests : IDisposable
             new("topic-2", 789, 101, "agent-1", "New Topic", now, null)
         };
         _mockTopicService
-            .Setup(s => s.GetAllTopicsAsync("agent-1", "default"))
-            .ReturnsAsync(HubResult<IReadOnlyList<TopicMetadata>>.Answered(serverTopics));
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
+            .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(serverTopics, null)));
 
         CreateEffect();
 
@@ -216,7 +216,7 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 2);
 
-        _mockTopicService.Verify(s => s.GetAllTopicsAsync("agent-1", "default"), Times.Once);
+        _mockTopicService.Verify(s => s.GetTopicPageAsync("agent-1", "default", null), Times.Once);
         _topicsStore.State.Topics.ShouldContain(t => t.TopicId == "topic-2");
     }
 

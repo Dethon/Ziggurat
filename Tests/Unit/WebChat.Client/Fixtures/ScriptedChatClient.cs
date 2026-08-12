@@ -164,7 +164,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
     // one call fails inside an unrelated one. These are the empty-but-live answers.
     private static void ApplyDefaultAnswers(FakeHubConnection connection)
     {
-        connection.Answer("GetAllTopics", (IReadOnlyList<TopicMetadata>)[]);
+        connection.Answer("GetTopicPage", new TopicPage([], null));
         connection.Answer("GetHistory", (IReadOnlyList<ChatHistoryMessage>)[]);
         connection.Answer("GetAgents", (IReadOnlyList<AgentCatalogEntry>)[]);
         connection.Answer("GetStreamState", (object?)null);

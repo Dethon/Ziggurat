@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Mcp.Hosting;
@@ -61,6 +62,7 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
             pushSubscriptionStore: null!,
             attachmentService: null!,
             new Mock<IHubNotificationSender>().Object,
+            new RetentionSettings(),
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {

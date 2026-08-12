@@ -26,10 +26,11 @@ public static class ConfigModule
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton(TimeProvider.System)
+            .AddSingleton(settings.Retention)
             .AddSingleton<IThreadStateStore>(sp =>
                 new RedisThreadStateStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
-                    TimeSpan.FromDays(30),
+                    settings.Retention.PurgeHorizon,
                     sp.GetRequiredService<TimeProvider>()))
             .AddSingleton<IConversationFactory, ConversationFactory>()
             .AddSingleton<StreamService>()

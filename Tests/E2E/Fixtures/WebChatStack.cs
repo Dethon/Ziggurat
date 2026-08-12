@@ -276,6 +276,9 @@ internal sealed class WebChatStack
             .WithEnvironment(
                 "DICTATION__TRANSCRIPTION__BASEURL", $"http://host.docker.internal:{whisperPort}/v1")
             .WithEnvironment("DICTATION__MAXLENGTH", RecordingCap.ToString())
+            // One row a page, so a suite that can afford two conversations still exercises the
+            // second fetch. The production default is thirty and lives in appsettings.
+            .WithEnvironment("RETENTION__PAGESIZE", "1")
             .WithEnvironment("AGENTS__0__ID", "test-agent")
             .WithEnvironment("AGENTS__0__NAME", "Test Agent")
             .WithEnvironment("AGENTS__1__ID", "vision-agent")

@@ -1,5 +1,6 @@
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Mcp.Hosting;
@@ -59,6 +60,7 @@ public sealed class ChatHubTopicTests : IDisposable
             new Mock<IPushSubscriptionStore>().Object,
             attachments,
             _hubSender.Object,
+            new RetentionSettings { PageSize = 2 },
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {
@@ -88,6 +90,27 @@ public sealed class ChatHubTopicTests : IDisposable
         var history = await _hub.GetHistory("jack", 7, 42);
 
         history.ShouldHaveSingleItem().Content.ShouldBe("hello");
+    }
+
+    // The page size belongs to the retention policy, not to whoever is asking, so the ordinary
+    // sidebar asks for nothing and gets what the operator configured.
+    [Fact]
+    public async Task GetTopicPage_WithNoPageSizeAsked_UsesTheConfiguredOne()
+    {
+        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", null, 2))
+            .ReturnsAsync(new TopicPage([], "42"));
+
+        var page = await _hub.GetTopicPage("jack", "kitchen");
+
+        page.NextCursor.ShouldBe("42");
+    }
+
+    [Fact]
+    public async Task GetTopicPage_CarriesTheCursorThroughToTheStore()
+    {
+        await _hub.GetTopicPage("jack", "kitchen", cursor: "1700", pageSize: 5);
+
+        _store.Verify(s => s.GetTopicPageAsync("jack", "kitchen", "1700", 5), Times.Once);
     }
 
     // The delete used to succeed and say nothing, so a second tab kept showing a row for a

@@ -22,12 +22,12 @@ public sealed class NullThreadStateStore : IThreadStateStore
 
     public Task<bool> ExistsAsync(string key, CancellationToken ct = default) => Task.FromResult(false);
 
-    public Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string? spaceSlug = null)
-        => Task.FromResult<IReadOnlyList<TopicMetadata>>([]);
-
     public Task SaveTopicAsync(TopicMetadata topic) => Task.CompletedTask;
 
     public Task DeleteTopicAsync(string agentId, long chatId, string topicId) => Task.CompletedTask;
+
+    public Task<TopicPage> GetTopicPageAsync(string agentId, string spaceSlug, string? cursor, int pageSize)
+        => Task.FromResult(new TopicPage([], null));
 
     public Task MigrateTopicsAsync(CancellationToken ct = default) => Task.CompletedTask;
 

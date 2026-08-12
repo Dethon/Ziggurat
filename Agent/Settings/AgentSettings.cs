@@ -14,6 +14,7 @@ public record AgentSettings
     public SubAgentDefinition[] SubAgents { get; init; } = [];
     public PatchableModel[] PatchableModels { get; init; } = [];
     public AttachmentConfiguration Attachments { get; init; } = new();
+    public RetentionSettings Retention { get; init; } = new();
 }
 
 public record AttachmentConfiguration

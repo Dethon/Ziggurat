@@ -145,16 +145,20 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        try
         {
-            _selfRef = DotNetObjectReference.Create(this);
-            try
+            if (firstRender)
             {
+                _selfRef = DotNetObjectReference.Create(this);
                 await Js.InvokeVoidAsync("hearthSheet.register", _peekBar, _selfRef);
                 await Js.InvokeVoidAsync("hearthSheet.registerCommandKey", _selfRef);
             }
-            catch (JSException) { /* gestures attach later when the JS lands */ }
+
+            // A list too short to scroll cannot reach its own bottom, so this is the only way a
+            // tall screen ever asks for the page after its first.
+            await Js.InvokeVoidAsync("hearthSheet.checkRows");
         }
+        catch (JSException) { /* gestures attach later when the JS lands */ }
     }
 
     [JSInvokable] public void CommitDetent(string detent)
@@ -162,6 +166,10 @@
         _detent = Enum.Parse<Detent>(detent, ignoreCase: true);
         StateHasChanged();
     }
+
+    // Scrolling to the bottom is the ask; whether there is anything left to fetch is the paging
+    // effect's answer, so this says only that the list ran out under the person's thumb.
+    [JSInvokable] public void ReachedEndOfList() => Dispatcher.Dispatch(new LoadMoreTopics());
 
     [JSInvokable] public async Task OpenSearch()
     {

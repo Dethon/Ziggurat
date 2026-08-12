@@ -5,9 +5,11 @@ namespace WebChat.Client.Services;
 
 public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicService
 {
-    public Task<HubResult<IReadOnlyList<TopicMetadata>>> GetAllTopicsAsync(
-        string agentId, string spaceSlug = "default") =>
-        liveConnection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId, spaceSlug);
+    public Task<HubResult<TopicPage>> GetTopicPageAsync(
+        string agentId, string spaceSlug = SpaceConfig.DefaultSlug, string? cursor = null) =>
+        // The page size is the server's to decide, so it is asked for as nothing rather than
+        // guessed at here.
+        liveConnection.InvokeAsync<TopicPage>("GetTopicPage", agentId, spaceSlug, cursor, null);
 
     public Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false) =>
         liveConnection.InvokeAsync("SaveTopic", topic, isNew);

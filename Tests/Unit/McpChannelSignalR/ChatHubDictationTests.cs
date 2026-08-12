@@ -1,5 +1,6 @@
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Hubs;
@@ -54,6 +55,7 @@ public sealed class ChatHubDictationTests : IDisposable
                 new AttachmentStore(_attachmentSettings, _time, NullLogger<AttachmentStore>.Instance),
                 NullLogger<AttachmentService>.Instance),
             new Mock<IHubNotificationSender>().Object,
+            new RetentionSettings(),
             _dictation,
             NullLogger<ChatHub>.Instance)
         {

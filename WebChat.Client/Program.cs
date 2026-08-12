@@ -56,6 +56,7 @@ _ = app.Services.GetRequiredService<ReconnectionEffect>();
 _ = app.Services.GetRequiredService<SendMessageEffect>();
 _ = app.Services.GetRequiredService<TopicSelectionEffect>();
 _ = app.Services.GetRequiredService<TopicDeleteEffect>();
+_ = app.Services.GetRequiredService<TopicPagingEffect>();
 _ = app.Services.GetRequiredService<InitializationEffect>();
 _ = app.Services.GetRequiredService<AgentSelectionEffect>();
 _ = app.Services.GetRequiredService<UserIdentityEffect>();

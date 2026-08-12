@@ -81,17 +81,17 @@ public sealed class AgentSelectionEffect : IDisposable
         }
 
         var spaceSlug = _spaceStore.State.CurrentSlug;
-        var serverTopics = await _topicService.GetAllTopicsAsync(agentId, spaceSlug);
+        var firstPage = await _topicService.GetTopicPageAsync(agentId, spaceSlug);
 
         // Not live is not an empty list. Storing it as one is what empties the sidebar when a
         // resuming phone switches agents mid-rebuild; the epoch reloads it a moment later.
-        if (!serverTopics.IsLive)
+        if (!firstPage.IsLive)
         {
             return;
         }
 
-        var topics = serverTopics.Value!.Select(StoredTopic.FromMetadata).ToList();
-        _dispatcher.Dispatch(new TopicsLoaded(topics));
+        var topics = firstPage.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
+        _dispatcher.Dispatch(new TopicsLoaded(topics, firstPage.Value.NextCursor));
 
         // Gathered rather than detached, so awaiting an agent change means the new agent's
         // history is in the store.

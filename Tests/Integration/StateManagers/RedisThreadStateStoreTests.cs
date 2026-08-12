@@ -124,7 +124,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
     }
 
     [Fact]
-    public async Task GetAllTopicsAsync_FiltersBySpaceSlug()
+    public async Task GetTopicPageAsync_FiltersBySpaceSlug()
     {
         var store = NewStore();
         var now = DateTimeOffset.UtcNow;
@@ -134,7 +134,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.SaveTopicAsync(new TopicMetadata("t-s2", 301, 0, "agent-slug", "Space2", now, null,
             SpaceSlug: "space-b"));
 
-        var filtered = await store.GetAllTopicsAsync("agent-slug", "space-a");
+        var filtered = (await store.GetTopicPageAsync("agent-slug", "space-a", null, 10)).Topics;
 
         filtered.ShouldContain(t => t.TopicId == "t-s1");
         filtered.ShouldNotContain(t => t.TopicId == "t-s2");
@@ -209,7 +209,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.AppendMessagesAsync(
             HistoryKey("agent-stamp", 500, 7), [new ChatMessage(ChatRole.User, "put the kettle on")]);
 
-        var topic = (await store.GetAllTopicsAsync("agent-stamp")).ShouldHaveSingleItem();
+        var topic = ((await store.GetTopicPageAsync("agent-stamp", "default", null, 10)).Topics).ShouldHaveSingleItem();
         topic.LastMessageAt.ShouldBe(clock.GetUtcNow());
     }
 
@@ -229,7 +229,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.AppendMessagesAsync(
             HistoryKey("agent-order", 510), [new ChatMessage(ChatRole.User, "still talking")]);
 
-        var topics = await store.GetAllTopicsAsync("agent-order");
+        var topics = (await store.GetTopicPageAsync("agent-order", "default", null, 10)).Topics;
         topics.Select(t => t.TopicId).ShouldBe(["t-old", "t-new"]);
     }
 
@@ -237,13 +237,13 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
     // does not exist to anyone looking, which is what makes the scan removable rather than a
     // fallback nobody can prove is dead.
     [Fact]
-    public async Task GetAllTopicsAsync_ATopicRecordThatWasNeverIndexed_IsNotListed()
+    public async Task GetTopicPageAsync_ATopicRecordThatWasNeverIndexed_IsNotListed()
     {
         var store = NewStore();
         await WriteTopicRecordDirectlyAsync(new TopicMetadata(
             "t-unindexed", 520, 0, "agent-unindexed", "Ghost", DateTimeOffset.UtcNow, null));
 
-        (await store.GetAllTopicsAsync("agent-unindexed", "default")).ShouldBeEmpty();
+        ((await store.GetTopicPageAsync("agent-unindexed", "default", null, 10)).Topics).ShouldBeEmpty();
     }
 
     [Fact]
@@ -255,7 +255,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
         await store.DeleteTopicAsync("agent-delete", 530, "t-gone");
 
-        (await store.GetAllTopicsAsync("agent-delete", "default")).ShouldBeEmpty();
+        ((await store.GetTopicPageAsync("agent-delete", "default", null, 10)).Topics).ShouldBeEmpty();
     }
 
     // Upgrading must not hide conversations: what is already stored has no index entry, and a
@@ -273,8 +273,58 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
         await store.MigrateTopicsAsync();
 
-        var topics = await store.GetAllTopicsAsync("agent-migrate", "default");
+        var topics = (await store.GetTopicPageAsync("agent-migrate", "default", null, 10)).Topics;
         topics.Select(t => t.TopicId).ShouldBe(["t-existing-b", "t-existing-a"]);
+    }
+
+    // Keyset paging over the structure that already defines the order, so reaching page five
+    // costs what page one costs.
+    [Fact]
+    public async Task GetTopicPageAsync_ReturnsOnePageAndACursorForTheNext()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock);
+        await SeedTopicsAsync(store, clock, "agent-page", count: 5);
+
+        var first = await store.GetTopicPageAsync("agent-page", "default", cursor: null, pageSize: 2);
+
+        first.Topics.Select(t => t.Name).ShouldBe(["topic-4", "topic-3"]);
+        first.NextCursor.ShouldNotBeNull();
+
+        var second = await store.GetTopicPageAsync("agent-page", "default", first.NextCursor, pageSize: 2);
+        second.Topics.Select(t => t.Name).ShouldBe(["topic-2", "topic-1"]);
+
+        var third = await store.GetTopicPageAsync("agent-page", "default", second.NextCursor, pageSize: 2);
+        third.Topics.Select(t => t.Name).ShouldBe(["topic-0"]);
+        third.NextCursor.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task GetTopicPageAsync_ATopicWrittenToAfterBeingPagedPast_MovesToTheTop()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 4, 2, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock);
+        await SeedTopicsAsync(store, clock, "agent-bump", count: 3);
+
+        clock.Advance(TimeSpan.FromHours(1));
+        await store.AppendMessagesAsync(
+            HistoryKey("agent-bump", 600), [new ChatMessage(ChatRole.User, "back again")]);
+
+        var page = await store.GetTopicPageAsync("agent-bump", "default", cursor: null, pageSize: 3);
+
+        page.Topics.Select(t => t.Name).ShouldBe(["topic-0", "topic-2", "topic-1"]);
+    }
+
+    // Chat ids ascend with the index so a bump can be aimed at a known conversation.
+    private static async Task SeedTopicsAsync(
+        RedisThreadStateStore store, FakeTimeProvider clock, string agentId, int count)
+    {
+        foreach (var i in Enumerable.Range(0, count))
+        {
+            await store.SaveTopicAsync(new TopicMetadata(
+                $"t-{agentId}-{i}", 600 + i, 0, agentId, $"topic-{i}", clock.GetUtcNow(), clock.GetUtcNow()));
+            clock.Advance(TimeSpan.FromMinutes(1));
+        }
     }
 
     // Bypasses SaveTopicAsync on purpose: this is what an upgrade finds in the store, a record

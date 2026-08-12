@@ -1,3 +1,5 @@
+using Domain.DTOs;
+
 namespace McpChannelSignalR.Settings;
 
 public record ChannelSettings
@@ -6,6 +8,10 @@ public record ChannelSettings
     public WebPushConfig? WebPush { get; init; }
     public AttachmentSettings Attachments { get; init; } = new();
     public DictationSettings Dictation { get; init; } = new();
+
+    // The same block the Agent host binds, so the two processes writing topics agree about how
+    // long a conversation lives and where the archive begins.
+    public RetentionSettings Retention { get; init; } = new();
 }
 
 public record WebPushConfig

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 
@@ -51,26 +52,47 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     // successful read survives this one's failure.
     public HashSet<string> NotLiveForAgentIds { get; } = [];
 
-    public Task<HubResult<IReadOnlyList<TopicMetadata>>> GetAllTopicsAsync(
-        string agentId, string spaceSlug = "default")
+    // How many rows one fetch answers with. Large by default so a test that does not care about
+    // paging sees the whole seeded list on the first page.
+    public int PageSize { get; set; } = 100;
+
+    public Task<HubResult<TopicPage>> GetTopicPageAsync(
+        string agentId, string spaceSlug = SpaceConfig.DefaultSlug, string? cursor = null)
     {
-        recorder?.Record($"topics:{agentId}");
+        recorder?.Record(cursor is null ? $"topics:{agentId}" : $"topics:{agentId}:{cursor}");
 
         if (ThrowOnGetAllTopics is not null)
         {
-            return Task.FromException<HubResult<IReadOnlyList<TopicMetadata>>>(ThrowOnGetAllTopics);
+            return Task.FromException<HubResult<TopicPage>>(ThrowOnGetAllTopics);
         }
 
         if (NotLive || NotLiveForAgentIds.Contains(agentId))
         {
-            return Task.FromResult(HubResult<IReadOnlyList<TopicMetadata>>.NotLive);
+            return Task.FromResult(HubResult<TopicPage>.NotLive);
         }
 
-        return Task.FromResult(HubResult<IReadOnlyList<TopicMetadata>>.Answered(
-            _seededTopics.Concat(_savedTopics)
-                .Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug)
-                .ToList()));
+        // Ordered and cut the way the server's index is, so a cursor means the same thing here.
+        var ordered = _seededTopics.Concat(_savedTopics)
+            .Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug)
+            .GroupBy(t => t.TopicId)
+            .Select(g => g.Last())
+            .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
+            .ToList();
+
+        var below = cursor is null
+            ? ordered
+            : ordered.Where(t => Score(t) < double.Parse(cursor, CultureInfo.InvariantCulture)).ToList();
+
+        var page = below.Take(PageSize).ToList();
+        var next = page.Count < PageSize
+            ? null
+            : Score(page[^1]).ToString(CultureInfo.InvariantCulture);
+
+        return Task.FromResult(HubResult<TopicPage>.Answered(new TopicPage(page, next)));
     }
+
+    private static double Score(TopicMetadata topic) =>
+        (topic.LastMessageAt ?? topic.CreatedAt).ToUnixTimeMilliseconds();
 
     public Task<HubResult<Nothing>> JoinSpaceAsync(string spaceSlug)
     {

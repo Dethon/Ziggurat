@@ -23,6 +23,7 @@ public sealed class ChatHub(
     IPushSubscriptionStore pushSubscriptionStore,
     AttachmentService attachmentService,
     IHubNotificationSender hubSender,
+    RetentionSettings retention,
     DictationSettings dictationSettings,
     ILogger<ChatHub> logger) : Hub
 {
@@ -416,9 +417,14 @@ public sealed class ChatHub(
         await approvalService.CancelPendingApprovalsForTopicAsync(topicId);
     }
 
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
+    // One page, most recently written first, plus where the next one starts. The page size is
+    // the server's to decide unless a caller has a reason of its own, so a client that wants
+    // the ordinary sidebar asks for nothing and gets what the retention policy says.
+    public async Task<TopicPage> GetTopicPage(
+        string agentId, string spaceSlug = SpaceConfig.DefaultSlug, string? cursor = null, int? pageSize = null)
     {
-        return await threadStore.GetAllTopicsAsync(agentId, spaceSlug);
+        return await threadStore.GetTopicPageAsync(
+            agentId, spaceSlug, cursor, pageSize ?? retention.PageSize);
     }
 
     public async Task SaveTopic(TopicMetadata topic, bool isNew = false)

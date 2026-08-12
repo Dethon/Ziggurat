@@ -43,14 +43,18 @@ public sealed class ReconnectionEffect : IDisposable
         if (agentId is not null)
         {
             var spaceSlug = spaceStore.State.CurrentSlug;
-            var serverTopics = await _topicService.GetAllTopicsAsync(agentId, spaceSlug);
+
+            // The first page, not everything that was held. A bump that happened while the
+            // client was not live is covered by exactly this: paging only ever fetches
+            // backwards, so becoming live starts the list again from the top.
+            var firstPage = await _topicService.GetTopicPageAsync(agentId, spaceSlug);
 
             // Catch-up can land in the next interruption. Storing a not-live answer would
             // empty the sidebar the recovery exists to refill.
-            if (serverTopics.IsLive)
+            if (firstPage.IsLive)
             {
-                var topics = serverTopics.Value!.Select(StoredTopic.FromMetadata).ToList();
-                _dispatcher.Dispatch(new TopicsLoaded(topics));
+                var topics = firstPage.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
+                _dispatcher.Dispatch(new TopicsLoaded(topics, firstPage.Value.NextCursor));
             }
         }
 

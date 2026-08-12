@@ -1,5 +1,6 @@
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Infrastructure.StateManagers;
 using Mcp.Hosting;
@@ -62,6 +63,7 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
             new Mock<IPushSubscriptionStore>().Object,
             attachments,
             new Mock<IHubNotificationSender>().Object,
+            new RetentionSettings(),
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {

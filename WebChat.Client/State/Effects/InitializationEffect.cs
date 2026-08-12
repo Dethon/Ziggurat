@@ -197,14 +197,14 @@ public sealed class InitializationEffect : IDisposable
             await _localStorage.SetAsync("selectedAgentId", agentToSelect.Id);
         }
 
-        var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id, _spaceStore.State.CurrentSlug);
-        if (!serverTopics.IsLive)
+        var firstPage = await _topicService.GetTopicPageAsync(agentToSelect.Id, _spaceStore.State.CurrentSlug);
+        if (!firstPage.IsLive)
         {
             return;
         }
 
-        var topics = serverTopics.Value!.Select(StoredTopic.FromMetadata).ToList();
-        _dispatcher.Dispatch(new TopicsLoaded(topics));
+        var topics = firstPage.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
+        _dispatcher.Dispatch(new TopicsLoaded(topics, firstPage.Value.NextCursor));
 
         // Gathered rather than detached: awaiting first-load init has to mean history is in
         // the store, or a caller that awaits it still races the messages it asked for.

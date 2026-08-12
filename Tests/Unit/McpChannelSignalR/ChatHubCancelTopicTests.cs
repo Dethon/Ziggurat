@@ -50,6 +50,7 @@ public class ChatHubCancelTopicTests : IDisposable
             pushSubscriptionStore: null!,
             attachmentService: null!,
             new Mock<IHubNotificationSender>().Object,
+            new RetentionSettings(),
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {

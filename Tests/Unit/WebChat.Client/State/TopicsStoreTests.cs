@@ -33,19 +33,21 @@ public class TopicsStoreTests : IDisposable
         _store.State.SelectedTopicId.ShouldBeNull();
     }
 
+    // The list is held most recently written first, so a topic that has just been created leads
+    // it rather than landing at the end.
     [Fact]
-    public void AddTopic_AppendsToTopicsList()
+    public void AddTopic_PutsTheNewTopicAtTheTopOfTheList()
     {
         // Arrange
         var initialTopics = new List<StoredTopic> { CreateTopic("topic-1", "Topic One") };
         _dispatcher.Dispatch(new TopicsLoaded(initialTopics));
 
         // Act
-        _dispatcher.Dispatch(new AddTopic(CreateTopic("topic-2", "Topic Two")));
+        _dispatcher.Dispatch(new AddTopic(CreateTopic("topic-2", "Topic Two", writtenAt: DateTime.UtcNow.AddHours(1))));
 
         // Assert
         _store.State.Topics.Count.ShouldBe(2);
-        _store.State.Topics[1].TopicId.ShouldBe("topic-2");
+        _store.State.Topics[0].TopicId.ShouldBe("topic-2");
     }
 
     [Fact]
@@ -242,7 +244,8 @@ public class TopicsStoreTests : IDisposable
         metadata.SpaceSlug.ShouldBe("my-space");
     }
 
-    private static StoredTopic CreateTopic(string topicId, string name, string agentId = "agent-1")
+    private static StoredTopic CreateTopic(
+        string topicId, string name, string agentId = "agent-1", DateTime? writtenAt = null)
     {
         return new StoredTopic
         {
@@ -251,7 +254,8 @@ public class TopicsStoreTests : IDisposable
             AgentId = agentId,
             ChatId = 123,
             ThreadId = 456,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            LastMessageAt = writtenAt
         };
     }
 }

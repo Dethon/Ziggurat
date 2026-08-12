@@ -14,7 +14,12 @@ public interface IThreadStateStore
     Task AppendMessagesAsync(string key, IReadOnlyList<ChatMessage> messages);
     Task<bool> ExistsAsync(string key, CancellationToken ct = default);
 
-    Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string? spaceSlug = null);
+    // One page of the ordinary list, most recently written first. There is no call that returns
+    // every topic: the list is read one way only, so a new caller cannot reintroduce a fetch
+    // whose cost grows with everything the space has ever had. The cursor is where the last page
+    // ended, so reaching an old conversation costs what reaching a recent one costs.
+    Task<TopicPage> GetTopicPageAsync(string agentId, string spaceSlug, string? cursor, int pageSize);
+
     Task SaveTopicAsync(TopicMetadata topic);
     Task DeleteTopicAsync(string agentId, long chatId, string topicId);
 

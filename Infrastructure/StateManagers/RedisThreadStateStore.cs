@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
@@ -105,21 +106,42 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
     private static RedisValue[] Serialize(IReadOnlyList<ChatMessage> messages) =>
         messages.Select(m => (RedisValue)JsonSerializer.Serialize(m)).ToArray();
 
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string? spaceSlug = null)
+    public async Task<TopicPage> GetTopicPageAsync(
+        string agentId, string spaceSlug, string? cursor, int pageSize)
     {
-        return await ReadIndexRangeAsync(agentId, spaceSlug ?? SpaceConfig.DefaultSlug);
+        var topics = await ReadIndexRangeAsync(agentId, spaceSlug, cursor, pageSize);
+
+        // A short page is the end of the range, so the client stops asking rather than finding
+        // out by getting nothing back.
+        return new TopicPage(
+            topics,
+            topics.Count < pageSize ? null : Cursor(topics[^1]));
     }
 
     // The one read path. Members are ordered by last write, so the order the sidebar shows is the
-    // order the structure already holds and nothing sorts in memory.
-    private async Task<IReadOnlyList<TopicMetadata>> ReadIndexRangeAsync(string agentId, string spaceSlug)
+    // order the structure already holds and nothing sorts in memory. Paging is keyset paging over
+    // that same order: the cursor is the last row's score, and the next page starts below it.
+    private async Task<IReadOnlyList<TopicMetadata>> ReadIndexRangeAsync(
+        string agentId, string spaceSlug, string? cursor, int take)
     {
         var members = await _db.SortedSetRangeByScoreAsync(
-            IndexKey(agentId, spaceSlug), order: Order.Descending);
+            IndexKey(agentId, spaceSlug),
+            start: double.NegativeInfinity,
+            stop: ParseCursor(cursor) ?? double.PositiveInfinity,
+            exclude: cursor is null ? Exclude.None : Exclude.Stop,
+            order: Order.Descending,
+            skip: 0,
+            take: take);
 
         var topics = await Task.WhenAll(members.Select(m => ReadIndexedTopicAsync(agentId, m.ToString())));
         return topics.OfType<TopicMetadata>().ToList();
     }
+
+    private static string Cursor(TopicMetadata topic) =>
+        LastWriteScore(topic).ToString(CultureInfo.InvariantCulture);
+
+    private static double? ParseCursor(string? cursor) =>
+        double.TryParse(cursor, CultureInfo.InvariantCulture, out var score) ? score : null;
 
     private Task<TopicMetadata?> ReadIndexedTopicAsync(string agentId, string member)
     {

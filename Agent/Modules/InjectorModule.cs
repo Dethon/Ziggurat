@@ -2,6 +2,7 @@ using Agent.App;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
 using Infrastructure.Agents;
@@ -35,7 +36,8 @@ public static class InjectorModule
             services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);
 
             return services
-                .AddRedis(settings.Redis)
+                .AddSingleton(settings.Retention)
+                .AddRedis(settings.Redis, settings.Retention)
                 .AddMetricsPublishing("agent")
                 .AddSingleton<ChatThreadResolver>()
                 .AddSingleton<IDomainToolRegistry, DomainToolRegistry>()
@@ -104,14 +106,14 @@ public static class InjectorModule
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>()));
         }
 
-        private IServiceCollection AddRedis(RedisConfiguration config)
+        private IServiceCollection AddRedis(RedisConfiguration config, RetentionSettings retention)
         {
             return services
                 .AddSingleton(TimeProvider.System)
                 .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(config.ConnectionString))
                 .AddSingleton<IThreadStateStore>(sp => new RedisThreadStateStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
-                    TimeSpan.FromDays(config.ExpirationDays ?? 30),
+                    retention.PurgeHorizon,
                     sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
                     sp.GetRequiredService<IConnectionMultiplexer>()))
