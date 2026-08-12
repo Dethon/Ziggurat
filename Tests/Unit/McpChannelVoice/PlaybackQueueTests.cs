@@ -581,7 +581,9 @@ public class PlaybackQueueTests
         timing.SinceSynthesisStart.ShouldBe(TimeSpan.FromMilliseconds(300));
         timing.SinceTurnStart.ShouldBe(TimeSpan.FromMilliseconds(2300));
 
-        await time.WaitForAnyLiveAsync();                // the loop reached the playback-drain wait
+        // 16000 bytes at 16 kHz/16-bit/mono is 500 ms of audio, and the loop waits out exactly that
+        // before calling the job drained — so that is the wait to find outstanding and then end.
+        await time.WaitForLiveAsync(TimeSpan.FromMilliseconds(500));
         time.Advance(TimeSpan.FromSeconds(1));           // drain the remaining playback duration
         await run.StopAsync(pump);
     }
@@ -711,7 +713,9 @@ public class PlaybackQueueTests
         timing.QueueWait.ShouldBe(TimeSpan.FromMilliseconds(400));
         timing.SinceSynthesisStart.ShouldBe(TimeSpan.FromMilliseconds(300));
 
-        await time.WaitForAnyLiveAsync();                // the loop reached the playback-drain wait
+        // 16000 bytes at 16 kHz/16-bit/mono is 500 ms of audio, and the loop waits out exactly that
+        // before calling the job drained — so that is the wait to find outstanding and then end.
+        await time.WaitForLiveAsync(TimeSpan.FromMilliseconds(500));
         time.Advance(TimeSpan.FromSeconds(1));           // drain the remaining playback duration
         await run.StopAsync(pump);
     }

@@ -64,14 +64,16 @@ public sealed class ArmedClock(DateTimeOffset start) : FakeTimeProvider(start)
 
     // The same question asked as "one is outstanding right now", for a wait a test settles more than
     // once. It needs no baseline and cannot be answered by a timer that has already fired.
+    //
+    // There is deliberately no "wait for any timer" here. It reads as the convenient answer when the
+    // code picks the span rather than the test — a playback tail is as long as its audio — and it is
+    // wrong for exactly the tests that want it: a voice turn still holds its capture's gate timers
+    // on the same clock, so "some wait is outstanding" was answered instantly by one of those, the
+    // advance landed before the loop had parked, and the turn then waited out a clock already past
+    // it. A span the test cannot name is one it should work out, not one to match loosely.
     public Task WaitForLiveAsync(TimeSpan due) =>
         Eventually.Until(
-            () => Live(t => t == due), $"a {due.TotalMilliseconds:0}ms wait to be outstanding");
-
-    // For a wait whose span the code computes rather than the test choosing it — a playback tail is
-    // as long as its audio, which the test has no name for.
-    public Task WaitForAnyLiveAsync() =>
-        Eventually.Until(() => Live(_ => true), "a wait of the code's own choosing to be outstanding");
+            () => Live(due), $"a {due.TotalMilliseconds:0}ms wait to be outstanding");
 
     public async Task AdvancePastLiveAsync(TimeSpan due, TimeSpan by)
     {
@@ -87,11 +89,11 @@ public sealed class ArmedClock(DateTimeOffset start) : FakeTimeProvider(start)
         }
     }
 
-    private bool Live(Func<TimeSpan, bool> match)
+    private bool Live(TimeSpan due)
     {
         lock (_gate)
         {
-            return _live.Any(match);
+            return _live.Contains(due);
         }
     }
 

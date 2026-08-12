@@ -83,12 +83,19 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
         await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
         await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        await page.Locator(".hearth-peek .agent-chip").ClickAsync();
+        // A pending approval leaked by a sibling test can be replayed onto this fresh page at any
+        // moment, and .approval-modal-overlay covers the whole viewport: a plain click then spends
+        // its entire timeout being intercepted, which is how a loaded run failed here. The same
+        // dismiss-and-retry guard the other suites use.
+        await WebChatE2ETests.ClickThroughApprovalsAsync(page, page.Locator(".hearth-peek .agent-chip"));
         var menu = page.Locator(".hearth-peek .agent-combo-menu");
         await Assertions.Expect(menu).ToBeVisibleAsync();
 
         // Tap the chat area well above the sheet. The dismiss backdrop has to reach up there,
         // so click by coordinate instead of by locator — the backdrop covers what we aim at.
+        // An approval overlay would cover it too, and a coordinate click has no locator to retry
+        // through, so clear it first.
+        await WebChatE2ETests.DismissApprovalOverlayAsync(page);
         await page.Mouse.ClickAsync(195, 300);
 
         await Assertions.Expect(menu).Not.ToBeVisibleAsync();

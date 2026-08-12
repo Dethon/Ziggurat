@@ -273,7 +273,8 @@ public class PlaybackQueueOutcomeTests
         await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
         // Writing the audio and parking on its tail are two steps, and this test is about cutting
         // the tail — so it has to wait for the tail to exist, not for eighty milliseconds to pass.
-        await time.WaitForAnyLiveAsync();
+        // Five seconds is what the job's 160000 bytes last, which is what the loop waits out.
+        await time.WaitForLiveAsync(TimeSpan.FromSeconds(5));
         queue.CompleteAndDiscardQueued();   // the link dropped
 
         // The fake clock never advances: only cutting the tail lets the loop return.
