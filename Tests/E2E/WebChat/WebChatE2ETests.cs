@@ -383,6 +383,46 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         (await send.GetAttributeAsync("aria-label")).ShouldNotBeNullOrEmpty();
     }
 
+    // The field sits between two icons and the eye reads it as centred between them, so the two
+    // gaps have to be one gap. They were written in two places -- the row's own gap on one side of
+    // the field, the wrapper holding attach and field on the other -- and drifted apart, leaving
+    // the field closer to the clip than to the control opposite it.
+    [SkippableFact]
+    public async Task TheComposerField_SitsTheSameDistanceFromTheControlOnEitherSide()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync();
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+
+        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+
+        var field = page.Locator("textarea.chat-input");
+        var attach = page.Locator("label.attach-button");
+
+        // The microphone holds the right-hand place until there is something to send.
+        await AssertComposerGapsMatchAsync(attach, field, page.Locator("[data-testid=dictation-mic]"));
+
+        await field.FillAsync("something to send");
+        await AssertComposerGapsMatchAsync(attach, field, page.Locator("[data-testid=composer-send]"));
+    }
+
+    private static async Task AssertComposerGapsMatchAsync(ILocator left, ILocator field, ILocator right)
+    {
+        var leftBox = await left.BoundingBoxAsync();
+        var fieldBox = await field.BoundingBoxAsync();
+        var rightBox = await right.BoundingBoxAsync();
+
+        leftBox.ShouldNotBeNull();
+        fieldBox.ShouldNotBeNull();
+        rightBox.ShouldNotBeNull();
+
+        var before = fieldBox.X - (leftBox.X + leftBox.Width);
+        var after = rightBox.X - (fieldBox.X + fieldBox.Width);
+
+        after.ShouldBe(before, tolerance: 1);
+    }
+
     [SkippableFact]
     public async Task IdleWelcomeScreen_HasNoPerpetualAnimations()
     {

@@ -1376,12 +1376,15 @@ h1, h2, h3 {
 
 /* One number for everything standing in the composer's bottom row — the field, the buttons and the
    recording strip that takes the field's place — so no control can end up shorter than the one
-   beside it. */
+   beside it. The spacing between them is one number for the same reason: the row is laid out as two
+   nested flex containers, and a gap written separately in each leaves the field nearer the clip on
+   its left than the microphone on its right. */
 .input-container {
     --composer-control-height: 48px;
+    --composer-gap: 0.875rem;
     display: flex;
     flex-wrap: wrap;
-    gap: 0.875rem;
+    gap: var(--composer-gap);
     align-items: flex-end;
     max-width: 900px;
     margin: 0 auto;
@@ -1397,7 +1400,7 @@ h1, h2, h3 {
     flex: 1;
     display: flex;
     align-items: flex-end;
-    gap: 0.5rem;
+    gap: var(--composer-gap);
 }
 
 /* ===================================
@@ -1996,7 +1999,7 @@ h1, h2, h3 {
 
     .input-container {
         --composer-control-height: 42px;
-        gap: 0.625rem;
+        --composer-gap: 0.625rem;
     }
 
     .btn {
