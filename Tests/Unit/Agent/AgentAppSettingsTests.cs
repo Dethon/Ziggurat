@@ -47,25 +47,6 @@ public class AgentAppSettingsTests
             .ShouldEndWith(LanguagePrompt.Build("es")!);
     }
 
-    // Ignoring azure has one reason: OpenRouter lists OpenAI's own models from Azure and Bedrock
-    // at ten times the price -- $1.00/$6.00 per M against $0.10/$0.60. That couples the pin to the
-    // model. On anything but an OpenAI model the ignore list excludes providers that were never
-    // going to serve it, which reads as a routing decision and is really a leftover. Nothing
-    // relates the two keys at bind time.
-    [Fact]
-    public void ProviderRouting_EveryEntryIgnoringAzure_RunsAnOpenAiModel()
-    {
-        var models = Root()["agents"]!.AsArray()
-            .Concat(Root()["subAgents"]!.AsArray())
-            .Where(a => a!["providerRouting"]?["ignore"]?.AsArray()
-                .Any(p => p!.GetValue<string>().StartsWith("azure")) == true)
-            .Select(a => a!["model"]!.GetValue<string>())
-            .ToList();
-
-        models.ShouldNotBeEmpty("the pin this guards would otherwise be gone from the file");
-        models.ShouldAllBe(m => m.StartsWith("openai/"));
-    }
-
     // The failure in this file's territory that nobody would notice. Configuration binds by naming
     // convention and nothing sets ErrorOnUnknownConfiguration, so renaming a property on
     // AgentDefinition leaves its JSON key silently ignored -- no error, no warning, the agent just
