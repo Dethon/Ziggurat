@@ -11,10 +11,10 @@ which conversation, not which message.
 
 **Status:** ready-for-agent
 
-- [ ] Each topic has a searchable document holding its text, maintained as messages are
+- [x] Each topic has a searchable document holding its text, maintained as messages are
       appended.
-- [ ] Searching matches content as well as name, and returns topics.
-- [ ] Results span both the ordinary and the archived ranges.
-- [ ] A topic's searchable document expires on the same clock as the topic and is refreshed on
+- [x] Searching matches content as well as name, and returns topics.
+- [x] Results span both the ordinary and the archived ranges.
+- [x] A topic's searchable document expires on the same clock as the topic and is refreshed on
       the same write, so it is purged with it.
-- [ ] The migration builds documents for topics that already exist.
+- [x] The migration builds documents for topics that already exist.

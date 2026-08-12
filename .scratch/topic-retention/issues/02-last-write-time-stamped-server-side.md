@@ -11,9 +11,9 @@ topic before anything is keyed on it.
 
 **Status:** ready-for-agent
 
-- [ ] Appending to a topic's history updates the topic's last-write time, whatever did the
+- [x] Appending to a topic's history updates the topic's last-write time, whatever did the
       appending.
-- [ ] A conversation with no browser attached is ordered by real activity rather than by
+- [x] A conversation with no browser attached is ordered by real activity rather than by
       creation.
-- [ ] Ordering is correct without the browser writing the value.
-- [ ] Covered against a real store with a fake clock.
+- [x] Ordering is correct without the browser writing the value.
+- [x] Covered against a real store with a fake clock.

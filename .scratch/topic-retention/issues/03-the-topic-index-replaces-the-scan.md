@@ -10,11 +10,11 @@ See ADR 0024 for why the index is the only read path.
 
 **Status:** ready-for-agent
 
-- [ ] Saving a topic places it in the index at its last-write time; deleting a topic removes it.
-- [ ] The list is read only from the index.
-- [ ] A one-time migration, run from the Agent host on start-up, builds the index for topics
+- [x] Saving a topic places it in the index at its last-write time; deleting a topic removes it.
+- [x] The list is read only from the index.
+- [x] A one-time migration, run from the Agent host on start-up, builds the index for topics
       that already exist.
-- [ ] The scan-based listing is deleted rather than kept as a fallback, and nothing can reach it.
-- [ ] A channel started against a store the migration has not reached serves an empty list
+- [x] The scan-based listing is deleted rather than kept as a fallback, and nothing can reach it.
+- [x] A channel started against a store the migration has not reached serves an empty list
       rather than falling back to a scan.
-- [ ] The sidebar is unchanged to look at.
+- [x] The sidebar is unchanged to look at.

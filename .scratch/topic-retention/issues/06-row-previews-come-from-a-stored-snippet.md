@@ -11,9 +11,9 @@ topic's history without leaving every row blank.
 
 **Status:** ready-for-agent
 
-- [ ] A topic carries a truncated snippet of its last message, written on the same path that
+- [x] A topic carries a truncated snippet of its last message, written on the same path that
       stamps its last-write time.
-- [ ] Rows render the snippet from the topic rather than from loaded messages.
-- [ ] The migration backfills snippets for topics that already exist.
-- [ ] Snippet length is a setting in the retention policy block.
-- [ ] Previews are unchanged to look at.
+- [x] Rows render the snippet from the topic rather than from loaded messages.
+- [x] The migration backfills snippets for topics that already exist.
+- [x] Snippet length is a setting in the retention policy block.
+- [x] Previews are unchanged to look at.

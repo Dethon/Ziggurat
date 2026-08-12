@@ -15,12 +15,12 @@ it, so the contract change never breaks a working client mid-flight.
 
 **Status:** ready-for-agent
 
-- [ ] A topic carries how many messages it holds.
-- [ ] Read state is a position rather than a message id.
-- [ ] Unread is the difference between the two and reads no messages.
-- [ ] The stored message id is removed once nothing reads it.
-- [ ] The migration marks every existing topic fully read.
-- [ ] Marking a topic read on open still works.
-- [ ] Advancing read state while a reply streams into the topic being viewed still works, and
+- [x] A topic carries how many messages it holds.
+- [x] Read state is a position rather than a message id.
+- [x] Unread is the difference between the two and reads no messages.
+- [x] The stored message id is removed once nothing reads it.
+- [x] The migration marks every existing topic fully read.
+- [x] Marking a topic read on open still works.
+- [x] Advancing read state while a reply streams into the topic being viewed still works, and
       still does not advance for a topic that is not being viewed.
-- [ ] Badges are unchanged to look at.
+- [x] Badges are unchanged to look at.

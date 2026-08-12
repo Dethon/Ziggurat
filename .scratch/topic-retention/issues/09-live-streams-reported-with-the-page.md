@@ -10,9 +10,9 @@ removes it rather than bounding it.
 
 **Status:** ready-for-agent
 
-- [ ] A page of topics reports which of them have a topic stream in flight.
-- [ ] The per-topic stream resume sweep is gone from start-up, agent switch and reconnect.
-- [ ] Agent-activity indicators still show which agents are busy.
-- [ ] A reply in flight on a topic in a later page is reported when that page is loaded.
-- [ ] Taking over a reply already in flight still works, and a stale stream lease still does
+- [x] A page of topics reports which of them have a topic stream in flight.
+- [x] The per-topic stream resume sweep is gone from start-up, agent switch and reconnect.
+- [x] Agent-activity indicators still show which agents are busy.
+- [x] A reply in flight on a topic in a later page is reported when that page is loaded.
+- [x] Taking over a reply already in flight still works, and a stale stream lease still does
       nothing.

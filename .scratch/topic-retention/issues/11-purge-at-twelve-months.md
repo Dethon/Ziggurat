@@ -13,11 +13,11 @@ that cutoff is expired by definition and no scan is needed to find it.
 
 **Status:** ready-for-agent
 
-- [ ] A topic and its history expire twelve months after their last write, refreshed on write.
-- [ ] Index entries below the purge cutoff are removed without scanning anything.
-- [ ] Attachments are swept on the purge horizon instead of their own separate clock, so a topic
+- [x] A topic and its history expire twelve months after their last write, refreshed on write.
+- [x] Index entries below the purge cutoff are removed without scanning anything.
+- [x] Attachments are swept on the purge horizon instead of their own separate clock, so a topic
       and the files sent to it are removed together.
-- [ ] A conversation whose files are already gone still reads, naming what was sent.
-- [ ] The purge horizon and attachment retention are settings in the retention policy block.
-- [ ] The thirty-day value currently defined in four places, three of them hardcoded, is gone.
-- [ ] Covered against a real store with a fake clock.
+- [x] A conversation whose files are already gone still reads, naming what was sent.
+- [x] The purge horizon and attachment retention are settings in the retention policy block.
+- [x] The thirty-day value currently defined in four places, three of them hardcoded, is gone.
+- [x] Covered against a real store with a fake clock.

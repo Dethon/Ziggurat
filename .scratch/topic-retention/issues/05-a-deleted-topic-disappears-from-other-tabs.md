@@ -11,6 +11,6 @@ Pagination makes this worse, which is why it is fixed here rather than left.
 
 **Status:** ready-for-agent
 
-- [ ] Deleting a topic broadcasts the deletion to its space.
-- [ ] A second client removes the row without being refreshed.
-- [ ] Deleting a topic that is already gone is harmless and still broadcasts nothing wrong.
+- [x] Deleting a topic broadcasts the deletion to its space.
+- [x] A second client removes the row without being refreshed.
+- [x] Deleting a topic that is already gone is harmless and still broadcasts nothing wrong.

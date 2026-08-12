@@ -12,9 +12,9 @@ exercise a hub topic method at all.
 
 **Status:** ready-for-agent
 
-- [ ] One implementation of the topic and history key scheme remains; the channel-local
+- [x] One implementation of the topic and history key scheme remains; the channel-local
       duplicate is deleted.
-- [ ] The hub depends on the topic store interface rather than on a concrete class.
-- [ ] Every test that covered either implementation still passes, folded onto the surviving one.
-- [ ] A hub topic method can be exercised in a unit test without a container.
-- [ ] No observable behaviour changes.
+- [x] The hub depends on the topic store interface rather than on a concrete class.
+- [x] Every test that covered either implementation still passes, folded onto the surviving one.
+- [x] A hub topic method can be exercised in a unit test without a container.
+- [x] No observable behaviour changes.

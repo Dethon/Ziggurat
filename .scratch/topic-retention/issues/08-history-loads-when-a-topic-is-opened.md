@@ -12,10 +12,10 @@ count and a read position.
 
 **Status:** ready-for-agent
 
-- [ ] Starting the chat client loads no message history.
-- [ ] Switching agent loads no message history.
-- [ ] Becoming live after an interruption loads no message history beyond the open topic.
-- [ ] Opening a topic loads all of its history.
-- [ ] Badges and previews are correct for topics that have never been opened.
-- [ ] Tests that assert every topic's history reaches the client store are rewritten to assert
+- [x] Starting the chat client loads no message history.
+- [x] Switching agent loads no message history.
+- [x] Becoming live after an interruption loads no message history beyond the open topic.
+- [x] Opening a topic loads all of its history.
+- [x] Badges and previews are correct for topics that have never been opened.
+- [x] Tests that assert every topic's history reaches the client store are rewritten to assert
       that it does not.

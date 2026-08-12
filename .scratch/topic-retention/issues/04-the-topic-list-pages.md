@@ -12,14 +12,14 @@ client is not live is covered by catch-up refetching the first page on becoming 
 
 **Status:** ready-for-agent
 
-- [ ] The list hub call takes a cursor and a page size and returns a page plus the cursor for
+- [x] The list hub call takes a cursor and a page size and returns a page plus the cursor for
       the next one.
-- [ ] Scrolling to the bottom of the sidebar loads the next page.
-- [ ] A topic already shown that gains a message moves to the top and is not duplicated.
-- [ ] A topic pushed from below the cursor reaches the client.
-- [ ] Becoming live after an interruption refetches the first page.
-- [ ] Cursor tracking, page appending and deduplication live in a plain class that is tested
+- [x] Scrolling to the bottom of the sidebar loads the next page.
+- [x] A topic already shown that gains a message moves to the top and is not duplicated.
+- [x] A topic pushed from below the cursor reaches the client.
+- [x] Becoming live after an interruption refetches the first page.
+- [x] Cursor tracking, page appending and deduplication live in a plain class that is tested
       without rendering anything.
-- [ ] Scroll-to-load-more is covered end to end in a real browser.
-- [ ] The retention policy block exists in the Agent's settings and holds the page size. Nothing
+- [x] Scroll-to-load-more is covered end to end in a real browser.
+- [x] The retention policy block exists in the Agent's settings and holds the page size. Nothing
       is added to the compose file or its environment file.
