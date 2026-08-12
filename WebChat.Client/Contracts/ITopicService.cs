@@ -7,7 +7,10 @@ public interface ITopicService
     // One page, most recently written first. There is no call that returns every topic: the list
     // is read one way only, so a new caller cannot reintroduce a fetch that grows every week.
     Task<HubResult<TopicPage>> GetTopicPageAsync(
-        string agentId, string spaceSlug = SpaceConfig.DefaultSlug, string? cursor = null);
+        string agentId,
+        string spaceSlug = SpaceConfig.DefaultSlug,
+        string? cursor = null,
+        bool archived = false);
     Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false);
 
     // The server decides what "read" means here, because it is the only side that knows how many

@@ -56,10 +56,20 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     // paging sees the whole seeded list on the first page.
     public int PageSize { get; set; } = 100;
 
+    // Topics the fake should answer with only when the archived range is asked for. Archived is
+    // a position in the server's index, so the fake carries the two ranges apart rather than
+    // deciding which a topic is in.
+    public HashSet<string> ArchivedTopicIds { get; } = [];
+
     public Task<HubResult<TopicPage>> GetTopicPageAsync(
-        string agentId, string spaceSlug = SpaceConfig.DefaultSlug, string? cursor = null)
+        string agentId,
+        string spaceSlug = SpaceConfig.DefaultSlug,
+        string? cursor = null,
+        bool archived = false)
     {
-        recorder?.Record(cursor is null ? $"topics:{agentId}" : $"topics:{agentId}:{cursor}");
+        recorder?.Record(
+            (archived ? "archived" : "topics")
+            + (cursor is null ? $":{agentId}" : $":{agentId}:{cursor}"));
 
         if (ThrowOnGetAllTopics is not null)
         {
@@ -74,6 +84,7 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         // Ordered and cut the way the server's index is, so a cursor means the same thing here.
         var ordered = _seededTopics.Concat(_savedTopics)
             .Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug)
+            .Where(t => ArchivedTopicIds.Contains(t.TopicId) == archived)
             .GroupBy(t => t.TopicId)
             .Select(g => g.Last())
             .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)

@@ -11,6 +11,10 @@ public sealed record TopicsState
     public string? SelectedTopicId { get; init; }
     public IReadOnlyList<AgentCatalogEntry> Agents { get; init; } = [];
     public string? SelectedAgentId { get; init; }
+    // Which range of the index the list is being read from. Not a property of any topic — see
+    // ADR 0024 and `Archived` in CONTEXT.md.
+    public bool ShowingArchived { get; init; }
+
     public bool IsLoading { get; init; }
     public string? Error { get; init; }
 

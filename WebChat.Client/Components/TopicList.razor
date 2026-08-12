@@ -38,6 +38,11 @@
         <div class="hearth-search">
             <input class="hearth-search-input" type="search" placeholder="Search conversations"
                    @bind="_search" @bind:event="oninput" @ref="_searchInput" aria-label="Search conversations" />
+            <button class="hearth-archive-toggle @(_showingArchived ? "on" : "")"
+                    @onclick="ToggleArchived"
+                    aria-pressed="@_showingArchived"
+                    aria-label="Show archived conversations"
+                    data-tooltip="Archived">&#128451;</button>
             <AgentConfigMenu />
         </div>
 
@@ -51,7 +56,9 @@
             }
             @if (rows.Count == 0)
             {
-                <div class="no-topics"><span>No conversations yet</span></div>
+                <div class="no-topics">
+                    <span>@(_showingArchived ? "Nothing archived" : "No conversations yet")</span>
+                </div>
             }
             else
             {
@@ -112,6 +119,7 @@
     private IReadOnlySet<string> _activeAgentIds = new HashSet<string>();
 
     private string? _deleteConfirmTopicId;
+    private bool _showingArchived;
     private string _search = "";
     private Detent _detent = Detent.Peek;
 
@@ -125,6 +133,7 @@
         Subscribe(TopicsStore.StateObservable, s => s.SelectedTopicId, id => _selectedTopicId = id);
         Subscribe(TopicsStore.StateObservable, s => s.Agents, a => _agents = a);
         Subscribe(TopicsStore.StateObservable, s => s.SelectedAgentId, id => _selectedAgentId = id);
+        Subscribe(TopicsStore.StateObservable, s => s.ShowingArchived, on => _showingArchived = on);
         Subscribe(StreamingStore.StateObservable, s => s.StreamingTopics, ids => _streamingTopics = ids);
         Subscribe(TopicsStore.StateObservable, UnreadSelectors.ComputeUnreadCounts, c => _unreadCounts = c);
         Subscribe(AgentActivityStore.StateObservable,
@@ -193,6 +202,8 @@
     }
 
     private void HandleNewTopic() => Dispatcher.Dispatch(new CreateNewTopic());
+
+    private void ToggleArchived() => Dispatcher.Dispatch(new ShowArchivedTopics(!_showingArchived));
     private void ShowDeleteConfirm(string topicId) => _deleteConfirmTopicId = topicId;
     private void CancelDelete() => _deleteConfirmTopicId = null;
 

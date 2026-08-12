@@ -145,9 +145,9 @@ public sealed class RedisThreadStateStore(
         messages.Select(m => (RedisValue)JsonSerializer.Serialize(m)).ToArray();
 
     public async Task<TopicPage> GetTopicPageAsync(
-        string agentId, string spaceSlug, string? cursor, int pageSize)
+        string agentId, string spaceSlug, string? cursor, int pageSize, bool archived = false)
     {
-        var topics = await ReadIndexRangeAsync(agentId, spaceSlug, cursor, pageSize);
+        var topics = await ReadIndexRangeAsync(agentId, spaceSlug, cursor, pageSize, archived);
 
         // A short page is the end of the range, so the client stops asking rather than finding
         // out by getting nothing back.
@@ -159,14 +159,22 @@ public sealed class RedisThreadStateStore(
     // The one read path. Members are ordered by last write, so the order the sidebar shows is the
     // order the structure already holds and nothing sorts in memory. Paging is keyset paging over
     // that same order: the cursor is the last row's score, and the next page starts below it.
+    //
+    // Archived is a position in this range and never a field on a topic. The cutoff is subtracted
+    // from the current time here, so changing the horizon takes effect on the next read with no
+    // migration and no backfill, and the two ranges partition the index exactly.
     private async Task<IReadOnlyList<TopicMetadata>> ReadIndexRangeAsync(
-        string agentId, string spaceSlug, string? cursor, int take)
+        string agentId, string spaceSlug, string? cursor, int take, bool archived)
     {
+        var cutoff = (time.GetUtcNow() - retention.ArchiveHorizon).ToUnixTimeMilliseconds();
         var members = await _db.SortedSetRangeByScoreAsync(
             IndexKey(agentId, spaceSlug),
-            start: double.NegativeInfinity,
-            stop: ParseCursor(cursor) ?? double.PositiveInfinity,
-            exclude: cursor is null ? Exclude.None : Exclude.Stop,
+            start: archived ? double.NegativeInfinity : cutoff,
+            stop: ParseCursor(cursor) ?? (archived ? cutoff : double.PositiveInfinity),
+
+            // The archived range's own top is the cutoff, which belongs to the ordinary list, so
+            // its stop is exclusive whether or not a cursor supplied it.
+            exclude: archived || cursor is not null ? Exclude.Stop : Exclude.None,
             order: Order.Descending,
             skip: 0,
             take: take);

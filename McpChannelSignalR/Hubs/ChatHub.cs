@@ -421,10 +421,14 @@ public sealed class ChatHub(
     // the server's to decide unless a caller has a reason of its own, so a client that wants
     // the ordinary sidebar asks for nothing and gets what the retention policy says.
     public async Task<TopicPage> GetTopicPage(
-        string agentId, string spaceSlug = SpaceConfig.DefaultSlug, string? cursor = null, int? pageSize = null)
+        string agentId,
+        string spaceSlug = SpaceConfig.DefaultSlug,
+        string? cursor = null,
+        int? pageSize = null,
+        bool archived = false)
     {
         var page = await threadStore.GetTopicPageAsync(
-            agentId, spaceSlug, cursor, pageSize ?? retention.PageSize);
+            agentId, spaceSlug, cursor, pageSize ?? retention.PageSize, archived);
 
         // Answered here rather than asked per topic: which replies are in flight is this
         // process's own state, so it costs nothing to say alongside the rows it is about. A

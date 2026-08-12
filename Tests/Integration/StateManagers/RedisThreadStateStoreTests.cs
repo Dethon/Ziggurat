@@ -14,9 +14,15 @@ namespace Tests.Integration.StateManagers;
 [Trait("Category", "Integration")]
 public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
 {
-    private RedisThreadStateStore NewStore(TimeProvider? time = null, int snippetLength = 120) =>
+    private RedisThreadStateStore NewStore(
+        TimeProvider? time = null, int snippetLength = 120, TimeSpan? archiveHorizon = null) =>
         new(redisFixture.Connection,
-            new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(5), SnippetLength = snippetLength },
+            new RetentionSettings
+            {
+                PurgeHorizon = TimeSpan.FromMinutes(5),
+                SnippetLength = snippetLength,
+                ArchiveHorizon = archiveHorizon ?? TimeSpan.FromDays(182)
+            },
             time ?? TimeProvider.System);
 
     [Fact]
@@ -410,6 +416,69 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
         page.Topics.Select(t => t.Name).ShouldBe(["topic-0", "topic-2", "topic-1"]);
     }
+
+    // Archived is where a topic sits in the index and never a state it carries: the cutoff is
+    // subtracted from the current time when the range is built, so the boundary moves with the
+    // clock and nothing is written on either side of it.
+    [Fact]
+    public async Task GetTopicPageAsync_ATopicOlderThanTheArchiveHorizon_LeavesTheOrdinaryList()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock, archiveHorizon: TimeSpan.FromDays(30));
+        await store.SaveTopicAsync(Topic("t-fresh", 610, "agent-archive", clock.GetUtcNow()));
+        await store.SaveTopicAsync(Topic("t-stale", 611, "agent-archive", clock.GetUtcNow()));
+
+        clock.Advance(TimeSpan.FromDays(31));
+        await store.AppendMessagesAsync(
+            HistoryKey("agent-archive", 610), [new ChatMessage(ChatRole.User, "still here")]);
+
+        var ordinary = await store.GetTopicPageAsync("agent-archive", "default", null, 10);
+        var archived = await store.GetTopicPageAsync("agent-archive", "default", null, 10, archived: true);
+
+        ordinary.Topics.Select(t => t.TopicId).ShouldBe(["t-fresh"]);
+        archived.Topics.Select(t => t.TopicId).ShouldBe(["t-stale"]);
+    }
+
+    // No archive verb and no unarchive verb: the write that moved its score is the whole of it.
+    [Fact]
+    public async Task AppendMessagesAsync_ToAnArchivedTopic_ReturnsItToTheOrdinaryList()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 6, 2, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock, archiveHorizon: TimeSpan.FromDays(30));
+        await store.SaveTopicAsync(Topic("t-back", 620, "agent-unarchive", clock.GetUtcNow()));
+
+        clock.Advance(TimeSpan.FromDays(31));
+        (await store.GetTopicPageAsync("agent-unarchive", "default", null, 10)).Topics.ShouldBeEmpty();
+
+        await store.AppendMessagesAsync(
+            HistoryKey("agent-unarchive", 620), [new ChatMessage(ChatRole.User, "back again")]);
+
+        (await store.GetTopicPageAsync("agent-unarchive", "default", null, 10))
+            .Topics.Select(t => t.TopicId).ShouldBe(["t-back"]);
+        (await store.GetTopicPageAsync("agent-unarchive", "default", null, 10, archived: true))
+            .Topics.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task GetTopicPageAsync_TheArchivedRange_PagesLikeTheOrdinaryOne()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 6, 3, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock, archiveHorizon: TimeSpan.FromDays(30));
+        await SeedTopicsAsync(store, clock, "agent-archive-page", count: 3);
+
+        clock.Advance(TimeSpan.FromDays(31));
+
+        var first = await store.GetTopicPageAsync(
+            "agent-archive-page", "default", null, 2, archived: true);
+        var second = await store.GetTopicPageAsync(
+            "agent-archive-page", "default", first.NextCursor, 2, archived: true);
+
+        first.Topics.Select(t => t.Name).ShouldBe(["topic-2", "topic-1"]);
+        second.Topics.Select(t => t.Name).ShouldBe(["topic-0"]);
+    }
+
+    private static TopicMetadata Topic(string topicId, long chatId, string agentId, DateTimeOffset at) =>
+        new(topicId, chatId, 0, agentId, topicId, at, at);
 
     // Chat ids ascend with the index so a bump can be aimed at a known conversation.
     private static async Task SeedTopicsAsync(

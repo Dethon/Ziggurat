@@ -18,7 +18,10 @@ public interface IThreadStateStore
     // every topic: the list is read one way only, so a new caller cannot reintroduce a fetch
     // whose cost grows with everything the space has ever had. The cursor is where the last page
     // ended, so reaching an old conversation costs what reaching a recent one costs.
-    Task<TopicPage> GetTopicPageAsync(string agentId, string spaceSlug, string? cursor, int pageSize);
+    // Archived reads the same index below the archive cutoff. Nothing marks a topic archived and
+    // nothing unmarks it — see ADR 0024.
+    Task<TopicPage> GetTopicPageAsync(
+        string agentId, string spaceSlug, string? cursor, int pageSize, bool archived = false);
 
     Task SaveTopicAsync(TopicMetadata topic);
     Task DeleteTopicAsync(string agentId, long chatId, string topicId);

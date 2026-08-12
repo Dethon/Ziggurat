@@ -28,7 +28,8 @@ public sealed class NullThreadStateStore : IThreadStateStore
 
     public Task MarkTopicReadAsync(string agentId, long chatId, string topicId) => Task.CompletedTask;
 
-    public Task<TopicPage> GetTopicPageAsync(string agentId, string spaceSlug, string? cursor, int pageSize)
+    public Task<TopicPage> GetTopicPageAsync(
+        string agentId, string spaceSlug, string? cursor, int pageSize, bool archived = false)
         => Task.FromResult(new TopicPage([], null));
 
     public Task MigrateTopicsAsync(CancellationToken ct = default) => Task.CompletedTask;

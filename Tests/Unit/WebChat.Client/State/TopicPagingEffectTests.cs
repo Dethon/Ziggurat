@@ -93,6 +93,40 @@ public sealed class TopicPagingEffectTests : IDisposable
         _topicsStore.State.Paging.HasMore.ShouldBeTrue();
     }
 
+    // The archive is the same query over the range below the cutoff, so it opens and pages like
+    // the ordinary list and nothing about any topic is written to put it there.
+    [Fact]
+    public async Task ShowingTheArchive_ReadsTheOtherRangeFromTheTop()
+    {
+        SeedTopics(4);
+        _topicService.ArchivedTopicIds.Add("topic-0");
+        _topicService.ArchivedTopicIds.Add("topic-1");
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        await LoadFirstPageAsync();
+
+        _dispatcher.Dispatch(new ShowArchivedTopics(true));
+        await _effect.LoadFirstPageAsync();
+
+        _topicsStore.State.ShowingArchived.ShouldBeTrue();
+        _topicsStore.State.Topics.Select(t => t.TopicId).ShouldBe(["topic-1", "topic-0"]);
+    }
+
+    [Fact]
+    public async Task PagingTheArchive_KeepsAskingForTheArchivedRange()
+    {
+        SeedTopics(4);
+        Enumerable.Range(0, 4).ToList().ForEach(i => _topicService.ArchivedTopicIds.Add($"topic-{i}"));
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new ShowArchivedTopics(true));
+        await _effect.LoadFirstPageAsync();
+
+        await _effect.LoadNextPageAsync();
+
+        _topicsStore.State.Topics.Select(t => t.TopicId)
+            .ShouldBe(["topic-3", "topic-2", "topic-1", "topic-0"]);
+        _calls.Calls.ShouldNotContain(call => call.StartsWith("topics:"));
+    }
+
     private void SeedTopics(int count)
     {
         var start = new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero);

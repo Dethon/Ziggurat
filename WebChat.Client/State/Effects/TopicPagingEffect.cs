@@ -18,6 +18,7 @@ public sealed class TopicPagingEffect : IDisposable
     private readonly IStreamResumeService _streamResumeService;
     private readonly ILogger<TopicPagingEffect> _logger;
     private readonly IDisposable _loadMoreRegistration;
+    private readonly IDisposable _showArchivedRegistration;
     private int _fetching;
 
     public TopicPagingEffect(
@@ -37,6 +38,31 @@ public sealed class TopicPagingEffect : IDisposable
 
         _loadMoreRegistration = dispatcher.RegisterHandler<LoadMoreTopics>(
             _ => LoadNextPageAsync().LogFaults(_logger, nameof(LoadMoreTopics)));
+        _showArchivedRegistration = dispatcher.RegisterHandler<ShowArchivedTopics>(
+            _ => LoadFirstPageAsync().LogFaults(_logger, nameof(ShowArchivedTopics)));
+    }
+
+    // Switching between the ordinary list and the archive reads the other range of the same
+    // index from the top. Paged exactly like the ordinary list, because it is the same query.
+    public async Task LoadFirstPageAsync()
+    {
+        var state = _topicsStore.State;
+        if (state.SelectedAgentId is null)
+        {
+            return;
+        }
+
+        var page = await _topicService.GetTopicPageAsync(
+            state.SelectedAgentId, _spaceStore.State.CurrentSlug, cursor: null, state.ShowingArchived);
+
+        if (!page.IsLive)
+        {
+            return;
+        }
+
+        var topics = page.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
+        _dispatcher.Dispatch(new TopicsLoaded(topics, page.Value.NextCursor));
+        TopicPageStreams.ResumeReported(topics, page.Value.LiveTopicIds, _streamResumeService, _logger);
     }
 
     public async Task LoadNextPageAsync()
@@ -55,7 +81,8 @@ public sealed class TopicPagingEffect : IDisposable
         try
         {
             var page = await _topicService.GetTopicPageAsync(
-                state.SelectedAgentId, _spaceStore.State.CurrentSlug, state.Paging.Cursor);
+                state.SelectedAgentId, _spaceStore.State.CurrentSlug, state.Paging.Cursor,
+                state.ShowingArchived);
 
             // Not live is not an empty page. Storing it as one would end the range and leave the
             // rest of the list unreachable until the next agent change.
@@ -77,5 +104,9 @@ public sealed class TopicPagingEffect : IDisposable
         }
     }
 
-    public void Dispose() => _loadMoreRegistration.Dispose();
+    public void Dispose()
+    {
+        _loadMoreRegistration.Dispose();
+        _showArchivedRegistration.Dispose();
+    }
 }

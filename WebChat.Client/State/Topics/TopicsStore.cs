@@ -15,6 +15,11 @@ public record LoadMoreTopics : IAction;
 
 public record TopicsPageAppended(IReadOnlyList<StoredTopic> Topics, string? NextCursor) : IAction;
 
+// The command: show the archived range instead of the ordinary one, or the other way back.
+// Archived is where a topic sits in the index, so this changes which range is read and nothing
+// about any topic.
+public record ShowArchivedTopics(bool Archived) : IAction;
+
 public record SelectTopic(string? TopicId) : IAction;
 
 public record AddTopic(StoredTopic Topic) : IAction;
@@ -83,6 +88,15 @@ public sealed class TopicsStore : IDisposable
         SelectTopic a => state with
         {
             SelectedTopicId = a.TopicId
+        },
+
+        // The rows held belong to the range that was being read, so switching range starts the
+        // list over rather than mixing the two.
+        ShowArchivedTopics a => state with
+        {
+            ShowingArchived = a.Archived,
+            Paging = TopicPaging.Empty,
+            IsLoading = true
         },
 
         AddTopic a => state with
