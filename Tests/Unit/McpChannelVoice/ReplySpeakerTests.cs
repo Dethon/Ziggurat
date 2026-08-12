@@ -29,7 +29,7 @@ public class ReplySpeakerTests
     private readonly string _conversationId;
     private readonly ReplySpeaker _speaker;
     private readonly List<VoiceEvent> _published = [];
-    private readonly FakeTimeProvider _clock = new(DateTimeOffset.UtcNow);
+    private readonly ArmedClock _clock = new(DateTimeOffset.UtcNow);
 
     // The conversation mapping's own clock: its idle timer is what tears a voice conversation down,
     // and one test advances it to reach that teardown.
@@ -327,8 +327,11 @@ public class ReplySpeakerTests
         // the latency metrics from where synthesis actually happens.
         using var run = new CancellationTokenSource();
         var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token, _clock);
-        await Task.Delay(80);
-        _clock.Advance(TimeSpan.FromSeconds(1));
+
+        // Nothing here waits on the clock: this reply's audio has no nominal duration, so the loop
+        // never parks on a real-time tail and the turn settles on the playback itself. The sleep
+        // and the clock nudge that used to stand here moved neither — the 1000ms the metric below
+        // reports was already on the clock before the reply arrived.
         await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
         await run.StopAsync(pump);
 
@@ -540,7 +543,9 @@ public class ReplySpeakerTests
         // per-job handshake got wrong: the turn must NOT settle here.
         Say(_speaker, "Mañana por la tarde hará sol y unos veintidós grados. ", ReplyContentType.Text, false);
         await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(100); // let the loop finish the drain wait and settle the segment
+        // The write already landed; what is claimed past it is that a second one does not, and an
+        // absence is only ever bought with time.
+        await Eventually.Settle();
 
         written.Count.ShouldBe(1);        // exactly the opening sentence has reached the satellite
         turn.IsCompleted.ShouldBeFalse();
@@ -643,7 +648,7 @@ public class ReplySpeakerTests
 
         Say(_speaker, "Mañana por la tarde hará sol y unos veintidós grados. ", ReplyContentType.Text, false);
 
-        await Task.Delay(200);
+        await Eventually.Settle();
         lock (synthesized)
         { synthesized.ShouldBeEmpty(); }
     }

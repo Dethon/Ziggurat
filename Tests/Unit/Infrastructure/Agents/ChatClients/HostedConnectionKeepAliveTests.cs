@@ -99,7 +99,7 @@ public class HostedConnectionKeepAliveTests
 
         await StartAsync(keepAlive);
         _time.Advance(HostedConnectionKeepAliveOptions.DefaultInterval * 3);
-        await Task.Delay(50);
+        await Eventually.Settle();
         await keepAlive.StopAsync(CancellationToken.None);
 
         handler.Requests.ShouldBeEmpty();

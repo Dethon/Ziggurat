@@ -420,7 +420,7 @@ public class InsistentAnnouncementControllerTests
             TimeSpan.FromSeconds(5));
 
         time.Advance(TimeSpan.FromSeconds(60));
-        await Task.Delay(50);
+        await Eventually.Settle();
         plays().ShouldBe(6); // no 4th round after the cap (2 chunks per round)
 
         h.Tts.Verify(t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
@@ -454,7 +454,7 @@ public class InsistentAnnouncementControllerTests
             TimeSpan.FromSeconds(5));
 
         time.Advance(TimeSpan.FromSeconds(120));
-        await Task.Delay(50);
+        await Eventually.Settle();
         plays().ShouldBe(2); // acknowledged before the second round (tone + TTS)
 
         await DrainPumpAsync(pump, time, run);

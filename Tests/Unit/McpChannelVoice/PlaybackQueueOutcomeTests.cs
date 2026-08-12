@@ -255,7 +255,7 @@ public class PlaybackQueueOutcomeTests
         // duration. The link-drop close must cut the tail; the audio was already written, so the
         // job keeps the Drained outcome it earned.
         var queue = new PlaybackQueue();
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new ArmedClock(DateTimeOffset.UtcNow);
         var wrote = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // 160000 bytes at 16 kHz/16-bit/mono = 5 s of audio, written in one chunk.
@@ -266,12 +266,15 @@ public class PlaybackQueueOutcomeTests
         }
 
         var ticket = queue.Enqueue(Job("announce", PlaybackKind.Announce) with { Audio = fiveSeconds() });
+        var armed = time.ArmedTotal;
         var pump = queue.RunAsync(
             (_, _) => { wrote.TrySetResult(); return Task.CompletedTask; },
             CancellationToken.None, time);
 
         await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(80);               // let the loop reach the real-time tail wait
+        // Writing the audio and parking on its tail are two steps, and this test is about cutting
+        // the tail — so it has to wait for the tail to exist, not for eighty milliseconds to pass.
+        await time.WaitUntilAnyArmedAsync(armed);
         queue.CompleteAndDiscardQueued();   // the link dropped
 
         // The fake clock never advances: only cutting the tail lets the loop return.

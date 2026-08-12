@@ -125,10 +125,9 @@ public class BrowserSessionManagerTests
         await manager.GetOrCreateAsync("s1", ctx.Object);
         time.Advance(TimeSpan.FromMinutes(31));
 
-        // Wait for the scheduled timer callback to run
-        await Task.Delay(100);
-
-        manager.Get("s1").ShouldBeNull();
+        // The prune runs from a timer callback, so a hundred milliseconds was a bet that the
+        // callback got a thread inside them rather than a statement about pruning.
+        await Eventually.Until(() => manager.Get("s1") is null, "the idle session to be pruned");
         page.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
     }
 }

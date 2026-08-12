@@ -214,10 +214,9 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
 
-        await Task.Delay(50);
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 2);
 
         _mockTopicService.Verify(s => s.GetAllTopicsAsync("agent-1", "default"), Times.Once);
-        _topicsStore.State.Topics.Count.ShouldBe(2);
         _topicsStore.State.Topics.ShouldContain(t => t.TopicId == "topic-2");
     }
 

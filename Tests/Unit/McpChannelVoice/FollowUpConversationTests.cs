@@ -2,7 +2,6 @@ using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
-using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice;
@@ -11,19 +10,45 @@ public class FollowUpConversationTests
 {
     private sealed class Harness
     {
-        public readonly List<string> Events = [];
-        public readonly FakeTimeProvider Time = new(DateTimeOffset.UtcNow);
+        // Everything the conversation records is written from its own task and read from the test
+        // thread. A plain List torn between the two throws out of the read rather than returning a
+        // stale answer, so the lists are private and every reader gets a snapshot.
+        private readonly Lock _gate = new();
+        private readonly List<string> _events = [];
+        private readonly List<UtteranceCapture> _dispatched = [];
+        private readonly List<CaptureStats> _rejected = [];
+        private readonly List<WakeAnnouncement?> _wakeAnnouncements = [];
+
+        public readonly ArmedClock Time = new();
         public readonly SatelliteSession Session = new(
             "kitchen-01", new SatelliteConfig { Identity = "household", Room = "Kitchen" });
-        public readonly List<UtteranceCapture> Dispatched = [];
-        public readonly List<CaptureStats> Rejected = [];
-        public readonly List<WakeAnnouncement?> WakeAnnouncements = [];
         public bool DispatchResult = true;
         public bool IndicatorWritesThrow;
         public bool CaptureWasOpenAtListeningStarted;
         public int EarlyVerify;
         public bool EarlyRejectResult;
         public TaskCompletionSource<bool>? EarlyRejectGate;
+
+        public List<string> Events => Snapshot(_events);
+        public List<UtteranceCapture> Dispatched => Snapshot(_dispatched);
+        public List<CaptureStats> Rejected => Snapshot(_rejected);
+        public List<WakeAnnouncement?> WakeAnnouncements => Snapshot(_wakeAnnouncements);
+
+        private List<T> Snapshot<T>(List<T> of)
+        {
+            lock (_gate)
+            {
+                return [.. of];
+            }
+        }
+
+        private void Record<T>(List<T> to, T item)
+        {
+            lock (_gate)
+            {
+                to.Add(item);
+            }
+        }
 
         public Harness() =>
             // The satellite's own control channel, which is where the indicator events land. Driving
@@ -34,7 +59,7 @@ public class FollowUpConversationTests
                 {
                     CaptureWasOpenAtListeningStarted = Session.Mic.IsOpen;
                 }
-                Events.Add(evt.Type);
+                Record(_events, evt.Type);
                 return IndicatorWritesThrow
                     ? throw new IOException("satellite write failed")
                     : Task.CompletedTask;
@@ -61,29 +86,29 @@ public class FollowUpConversationTests
                 // capture it opens instead.
                 onWakeTurn: announcement =>
                 {
-                    Events.Add("open-first");
-                    WakeAnnouncements.Add(announcement);
+                    Record(_events, "open-first");
+                    Record(_wakeAnnouncements, announcement);
                 }),
             Turn = Session.Turn,
             TranscribeAndDispatch = (capture, isFollowUp, _) =>
             {
-                Dispatched.Add(capture);
-                Events.Add(isFollowUp ? "dispatch-followup" : "dispatch-first");
+                Record(_dispatched, capture);
+                Record(_events, isFollowUp ? "dispatch-followup" : "dispatch-first");
                 return Task.FromResult(DispatchResult);
             },
-            EnqueueChime = _ => { Events.Add("chime"); return Task.CompletedTask; },
-            EndConversation = _ => { Events.Add("end"); return Task.CompletedTask; },
+            EnqueueChime = _ => { Record(_events, "chime"); return Task.CompletedTask; },
+            EndConversation = _ => { Record(_events, "end"); return Task.CompletedTask; },
             OnSilenceTimeout = (stats, _) =>
             {
-                Events.Add("timed-out");
-                Rejected.Add(stats);
+                Record(_events, "timed-out");
+                Record(_rejected, stats);
                 return Task.CompletedTask;
             },
-            OnReplyTimeout = _ => { Events.Add("reply-timeout"); return Task.CompletedTask; },
+            OnReplyTimeout = _ => { Record(_events, "reply-timeout"); return Task.CompletedTask; },
             EarlyVerifyMs = EarlyVerify,
             EarlyReject = async (_, _) =>
             {
-                Events.Add("early-check");
+                Record(_events, "early-check");
                 return EarlyRejectGate is { } gate ? await gate.Task : EarlyRejectResult;
             }
         };
@@ -136,12 +161,10 @@ public class FollowUpConversationTests
         var run = sut.RunAsync(CancellationToken.None);
 
         sut.OnWake(null);                                    // capture opens and keeps running (no ForceEnd)
-        await Task.Delay(50);
-        h.Time.Advance(TimeSpan.FromMilliseconds(5000)); // reach the early-verify mark
-        await Task.Delay(50);
+        await h.Time.AdvancePastAsync(TimeSpan.FromMilliseconds(5000)); // reach the early-verify mark
 
+        await WaitForEventAsync(h, "end");
         h.Events.ShouldContain("early-check");
-        h.Events.ShouldContain("end");
         h.Dispatched.ShouldBeEmpty();                    // unknown speaker -> never reaches the agent
         h.Events.ShouldNotContain("dispatch-first");
         h.Events.ShouldNotContain("voice-stopped");
@@ -157,14 +180,12 @@ public class FollowUpConversationTests
         var run = sut.RunAsync(CancellationToken.None);
 
         sut.OnWake(null);
-        await Task.Delay(50);
-        h.Time.Advance(TimeSpan.FromMilliseconds(5000)); // early check fires -> allowed -> keep going
-        await Task.Delay(50);
+        await h.Time.AdvancePastAsync(TimeSpan.FromMilliseconds(5000)); // early check fires -> allowed
+        await WaitForEventAsync(h, "early-check");
         h.EndUtterance();                                // user finishes; capture ends naturally
-        await Task.Delay(50);
 
-        h.Events.ShouldContain("early-check");
-        h.Events.ShouldContain("dispatch-first");        // allowed voice dispatched normally, not truncated
+        // Allowed voice dispatched normally, not truncated.
+        await WaitForEventAsync(h, "dispatch-first");
 
         await StopAsync(sut, run);
     }
@@ -178,12 +199,12 @@ public class FollowUpConversationTests
 
         sut.OnWake(null);
         h.EndUtterance();                // first utterance ends
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "dispatch-first");
         h.Reply(spoke: true);            // agent reply spoken
-        await Task.Delay(50);
-        h.Time.Advance(TimeSpan.FromMilliseconds(400)); // tail
-        await Task.Delay(50);
+        await h.Time.AdvancePastAsync(TimeSpan.FromMilliseconds(400)); // tail
+        await WaitForFollowUpWindowAsync(h);
 
+        // The chime is queued before the tail begins, so arming that tail is already past it.
         h.Events.ShouldContain("chime");
 
         // The follow-up window opened a second capture without a new wake: the mic is live again
@@ -204,8 +225,9 @@ public class FollowUpConversationTests
         var run = sut.RunAsync(CancellationToken.None);
         var announcement = new WakeAnnouncement(1234.5, 0.87, "wake", RoomRms: 68.25);
 
+        // OpenWakeTurn runs on the caller, so the announcement has already been spent by the time
+        // OnWake returns and there is nothing to wait for.
         sut.OnWake(announcement);
-        await Task.Delay(50);
 
         h.WakeAnnouncements.ShouldHaveSingleItem().ShouldBe(announcement);
 
@@ -223,8 +245,8 @@ public class FollowUpConversationTests
 
         sut.OnWake(null);
         sut.OnWake(new WakeAnnouncement(1234.5, 0.87, "wake"));
-        await Task.Delay(50);
 
+        // Both calls returned, so the second one's early exit has already happened or not at all.
         h.WakeAnnouncements.ShouldHaveSingleItem().ShouldBeNull();
 
         await StopAsync(sut, run);
@@ -239,16 +261,14 @@ public class FollowUpConversationTests
 
         sut.OnWake(null);
         h.EndUtterance();
-        await Task.Delay(50);
-        h.Reply(spoke: true);
-        h.Time.Advance(TimeSpan.FromMilliseconds(1));
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "dispatch-first");
+        h.Reply(spoke: true);            // tail is 0, so the window opens without the clock moving
+        await WaitForFollowUpWindowAsync(h);
 
         // Second capture is the follow-up window; feeding only silence => NoSpeech => end.
         h.FeedSilence(6);
 
-        await Task.Delay(50);
-        h.Events.ShouldContain("end");
+        await WaitForEventAsync(h, "end");
         h.Events.ShouldContain("timed-out");
 
         await StopAsync(sut, run);
@@ -263,13 +283,12 @@ public class FollowUpConversationTests
 
         sut.OnWake(null);
         h.EndUtterance();
-        await Task.Delay(50);
-        h.Reply(spoke: true);
-        h.Time.Advance(TimeSpan.FromMilliseconds(1));
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "dispatch-first");
+        h.Reply(spoke: true);            // tail is 0, so the window opens without the clock moving
+        await WaitForFollowUpWindowAsync(h);
 
         h.FeedSilence(6);
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "end");
 
         // The rejected capture's gate stats reach the timeout callback, so the host can
         // publish them — rejection decisions must be tunable from field data, not guesswork.
@@ -287,11 +306,10 @@ public class FollowUpConversationTests
 
         sut.OnWake(null);
         h.EndUtterance();
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "dispatch-first");
         h.Reply(spoke: false); // agent produced no audio
 
-        await Task.Delay(50);
-        h.Events.ShouldContain("end");
+        await WaitForEventAsync(h, "end");
         h.Events.ShouldNotContain("chime");
         h.Events.ShouldNotContain("timed-out");
 
@@ -308,9 +326,8 @@ public class FollowUpConversationTests
         sut.OnWake(null);
         h.EndUtterance(); // utterance ended (speech), but transcript drops -> nothing dispatched
 
-        await Task.Delay(50);
         // No reply will ever come; the loop must end instead of blocking on the handshake.
-        h.Events.ShouldContain("end");
+        await WaitForEventAsync(h, "end");
         h.Events.ShouldNotContain("chime");
         h.Events.ShouldNotContain("reply-timeout");
 
@@ -326,13 +343,12 @@ public class FollowUpConversationTests
 
         sut.OnWake(null);
         h.EndUtterance();
-        await Task.Delay(50);
-        // The agent never answers, so the turn never settles. The backstop must fire.
-        h.Time.Advance(TimeSpan.FromMilliseconds(1000));
-        await Task.Delay(50);
+        // The agent never answers, so the turn never settles. The backstop must fire — but only
+        // once the loop has armed it.
+        await h.Time.AdvancePastAsync(TimeSpan.FromMilliseconds(1000));
 
+        await WaitForEventAsync(h, "end");
         h.Events.ShouldContain("reply-timeout");
-        h.Events.ShouldContain("end");
 
         await StopAsync(sut, run);
     }
@@ -347,17 +363,16 @@ public class FollowUpConversationTests
         // Conversation 1: wake, speak, agent stays silent -> ends.
         sut.OnWake(null);
         h.EndUtterance();
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "dispatch-first");
         h.Reply(spoke: false);
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "end");
 
         // Conversation 2: a brand-new wake must start a fresh first-utterance.
-        sut.OnWake(null);
+        await WakeAgainAsync(sut, h, 2);
         h.EndUtterance();
-        await Task.Delay(50);
+        await WaitForCountAsync(h, "dispatch-first", 2);
 
         h.Events.Count(e => e == "open-first").ShouldBe(2);
-        h.Events.Count(e => e == "dispatch-first").ShouldBe(2);
 
         await StopAsync(sut, run);
     }
@@ -371,20 +386,14 @@ public class FollowUpConversationTests
 
         sut.OnWake(null);
         h.EndUtterance();                // first utterance
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "dispatch-first");
         h.Reply(spoke: true);            // turns=0 < 1 -> opens ONE follow-up window
-        await Task.Delay(50);
-        // (tail is 0; advance the fake clock in case Task.Delay(0, fakeTime) needs a tick)
-        h.Time.Advance(TimeSpan.FromMilliseconds(1));
-        await Task.Delay(50);
+        await WaitForFollowUpWindowAsync(h); // tail is 0, so no clock move is needed
 
-        h.Session.Mic.IsOpen.ShouldBeTrue(); // one follow-up window opened
         h.EndUtterance();                // follow-up utterance
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "dispatch-followup");
         h.Reply(spoke: true);            // turns=1 >= MaxTurns=1 -> end
-        await Task.Delay(50);
-
-        h.Events.ShouldContain("end");
+        await WaitForEventAsync(h, "end");
         h.Events.ShouldNotContain("timed-out");
         // Capped at one: the first utterance plus a single follow-up reached the dispatcher, and
         // the mic is closed rather than open on a second window.
@@ -404,7 +413,7 @@ public class FollowUpConversationTests
         sut.OnWake(null);
         h.EndUtterance();
 
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "dispatch-first");
         // Gate stats and all, not just an audio stream: "forced" is the end reason the satellite's
         // own audio-stop produces, so this is the very capture the loop opened and ended.
         h.Dispatched.ShouldHaveSingleItem().Stats.EndReason.ShouldBe("forced");
@@ -424,14 +433,15 @@ public class FollowUpConversationTests
         var run = sut.RunAsync(CancellationToken.None);
 
         sut.OnWake(null);
-        await Task.Delay(50);
-        h.Time.Advance(TimeSpan.FromMilliseconds(5000)); // early-verify mark: the check is now in flight
-        await Task.Delay(50);
+        await h.Time.AdvancePastAsync(TimeSpan.FromMilliseconds(5000)); // early-verify mark
+        await WaitForEventAsync(h, "early-check");      // the check is now in flight
 
         h.Session.Mic.TryAbort().ShouldBeTrue(); // arbiter suppresses this satellite mid-verify
         h.EarlyRejectGate.SetResult(true);  // ...then the verifier rejects the audio so far
-        await Task.Delay(50);
 
+        // What is claimed from here is an absence, which no state announces: give the wrong
+        // behaviour room to appear instead of reading the instant the gate is released.
+        await Eventually.Settle();
         h.Events.ShouldContain("early-check");
         // The arbiter's pause-satellite already re-armed the satellite; a transcript here
         // would audibly done-cue a lost turn.
@@ -451,13 +461,12 @@ public class FollowUpConversationTests
         sut.OnWake(null);
         h.Session.Mic.TryAbort().ShouldBeTrue(); // arbiter suppressed this satellite
 
-        await Task.Delay(50);
+        await Eventually.Settle();
         h.Dispatched.ShouldBeEmpty();
         h.Events.ShouldNotContain("end"); // the arbiter sends pause-satellite; no transcript here
 
         // the coordinator must be re-armed: a later wake starts a fresh conversation
-        sut.OnWake(null);
-        h.Events.Count(e => e == "open-first").ShouldBe(2);
+        await WakeAgainAsync(sut, h, 2);
         h.Session.Mic.IsOpen.ShouldBeTrue();
 
         await StopAsync(sut, run);
@@ -473,9 +482,11 @@ public class FollowUpConversationTests
         sut.OnWake(null);
         h.EndUtterance(); // utterance ended (speech)
 
-        await Task.Delay(50);
-        h.Events.Count(e => e == "voice-stopped").ShouldBe(1);
-        h.Events.IndexOf("voice-stopped").ShouldBeLessThan(h.Events.IndexOf("dispatch-first"));
+        await WaitForEventAsync(h, "dispatch-first");
+        // One snapshot, so the two positions are read off the same list rather than two.
+        var events = h.Events;
+        events.Count(e => e == "voice-stopped").ShouldBe(1);
+        events.IndexOf("voice-stopped").ShouldBeLessThan(events.IndexOf("dispatch-first"));
 
         await StopAsync(sut, run);
     }
@@ -490,7 +501,7 @@ public class FollowUpConversationTests
         sut.OnWake(null);
         h.Session.Mic.TryAbort().ShouldBeTrue(); // arbiter suppressed this satellite
 
-        await Task.Delay(50);
+        await Eventually.Settle();
         h.Events.ShouldNotContain("voice-stopped");
 
         await StopAsync(sut, run);
@@ -505,16 +516,14 @@ public class FollowUpConversationTests
 
         sut.OnWake(null);
         h.EndUtterance(); // first utterance accepted -> one voice-stopped
-        await Task.Delay(50);
-        h.Reply(spoke: true);
-        h.Time.Advance(TimeSpan.FromMilliseconds(1));
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "dispatch-first");
+        h.Reply(spoke: true);            // tail is 0, so the window opens without the clock moving
+        await WaitForFollowUpWindowAsync(h);
 
         // Second capture is the follow-up window; feeding only silence => NoSpeech => end.
         h.FeedSilence(6);
 
-        await Task.Delay(50);
-        h.Events.ShouldContain("timed-out");
+        await WaitForEventAsync(h, "timed-out");
         // Only the accepted first capture fired it; the silent follow-up must not add another.
         h.Events.Count(e => e == "voice-stopped").ShouldBe(1);
 
@@ -533,13 +542,11 @@ public class FollowUpConversationTests
 
         sut.OnWake(null);
         h.EndUtterance();
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "dispatch-first");
         h.Reply(spoke: true);
-        await Task.Delay(50);
-        h.Time.Advance(TimeSpan.FromMilliseconds(400));
-        await Task.Delay(50);
+        await h.Time.AdvancePastAsync(TimeSpan.FromMilliseconds(400));
 
-        h.Events.ShouldContain("listening-started");
+        await WaitForEventAsync(h, "listening-started");
         h.CaptureWasOpenAtListeningStarted.ShouldBeFalse();
         // The first capture comes from the satellite's own wake, which lights its ring locally.
         h.Events.Count(e => e == "listening-started").ShouldBe(1);
@@ -558,11 +565,10 @@ public class FollowUpConversationTests
 
         sut.OnWake(null);
         h.EndUtterance();
-        await Task.Delay(50);
-        h.Reply(spoke: true);
-        h.Time.Advance(TimeSpan.FromMilliseconds(1));
-        await Task.Delay(50);
+        await WaitForEventAsync(h, "dispatch-first");
+        h.Reply(spoke: true);            // tail is 0, so the window opens without the clock moving
 
+        await WaitForFollowUpWindowAsync(h);
         h.Session.Mic.IsOpen.ShouldBeTrue();
 
         await StopAsync(sut, run);
@@ -572,29 +578,30 @@ public class FollowUpConversationTests
     // one is the machine's business. Sleeping a fixed fifty milliseconds and then asserting the
     // whole sequence held until the suite began running enough at once to outlast it, and the
     // failure reads as a wrong order rather than an early look: the list is simply still short.
-    //
-    // The copy is defensive because Events is a plain List being written to while this reads it —
-    // enumerating one mid-Add throws rather than tearing, so a throw here means "it grew, look
-    // again" and not a failure.
-    private static async Task WaitForEventAsync(Harness h, string terminal)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (DateTime.UtcNow < deadline)
-        {
-            try
-            {
-                if (h.Events.ToArray().Contains(terminal))
-                {
-                    return;
-                }
-            }
-            catch (InvalidOperationException)
-            {
-            }
+    private static Task WaitForEventAsync(Harness h, string terminal) =>
+        Eventually.Until(() => h.Events.Contains(terminal), $"the conversation to reach '{terminal}'");
 
-            await Task.Delay(10);
-        }
-    }
+    private static Task WaitForCountAsync(Harness h, string repeated, int times) =>
+        Eventually.Until(
+            () => h.Events.Count(e => e == repeated) >= times, $"'{repeated}' to happen {times} times");
+
+    // A follow-up window is not announced by an event of its own — the capture it opens is the
+    // window — so the live microphone is what says the loop got there.
+    private static Task WaitForFollowUpWindowAsync(Harness h) =>
+        Eventually.Until(() => h.Session.Mic.IsOpen, "the follow-up window to open a capture");
+
+    // A conversation clears its active flag in a finally, after the transcript that ended it has
+    // already been recorded, so a wake sent the instant "end" appears can still land inside the old
+    // conversation and be dropped by design. Waking until one takes is the honest way to ask for the
+    // next conversation; OnWake on a live turn returns without doing anything, so repeating is free.
+    private static Task WakeAgainAsync(FollowUpConversation sut, Harness h, int wakeNumber) =>
+        Eventually.Until(
+            () =>
+            {
+                sut.OnWake(null);
+                return h.Events.Count(e => e == "open-first") >= wakeNumber;
+            },
+            $"wake {wakeNumber} to open a fresh turn");
 
     private static async Task StopAsync(FollowUpConversation sut, Task run)
     {

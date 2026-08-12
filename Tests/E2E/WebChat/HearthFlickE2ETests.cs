@@ -78,7 +78,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         await EnsurePeekAsync(page);
         var cdp = await page.Context.NewCDPSessionAsync(page);
         var handle = await CentreOfAsync(page, ".hearth-handle");
-        await DragAsync(cdp, handle.X, handle.Y, handle.Y - 560, 56, 18);
+        await DragAsync(cdp, handle.X, handle.Y, handle.Y - 560, 56, 18, frameMs: 34);
         await WaitForSheetSettledAsync(page);
 
         // A handful of seeded rows need not overflow a full-height sheet, and a list that cannot
@@ -90,7 +90,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         overflows.ShouldBeTrue("the conversation list does not overflow, so this test would prove nothing");
 
         var rows = await CentreOfAsync(page, ".hearth-rows");
-        await DragAsync(cdp, rows.X, rows.Y + 40, rows.Y - 40, 16, 12);
+        await DragAsync(cdp, rows.X, rows.Y + 40, rows.Y - 40, 16, 12, frameMs: 28);
         await page.WaitForTimeoutAsync(500);
 
         var scrollTop = await page.EvaluateAsync<double>(
@@ -135,17 +135,18 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         // on the peek bar from which the sheet actually drags.
         var start = await CentreOfAsync(page, ".hearth-handle");
 
-        // Velocity is controlled by pixels-per-step: each CDP round trip is itself ~16ms, one
-        // touch frame, so a delay only ever slows the gesture down. Fast = 37px/frame ≈ -2.2 px/ms,
-        // straight into _settle's velocity branch. Slow = 10px per ~34ms ≈ -0.3 px/ms, which misses
-        // that branch — so it has to travel far enough (712px of peek offset down past 0.28 × 776px)
-        // for the position-ratio branch to commit Full instead. Same destination, no fling.
+        // Velocity is pixels-per-frame over the frame interval the drag stamps on its own events.
+        // Fast = 37.5px per 16ms frame ≈ -2.3 px/ms, straight into _settle's velocity branch.
+        // Slow = 10px per 34ms frame ≈ -0.3 px/ms, which misses that branch — so it has to travel
+        // far enough (712px of peek offset down past 0.28 × 776px) for the position-ratio branch to
+        // commit Full instead. Same destination, no fling.
         var travel = fast ? 300.0 : 560.0;
         var steps = fast ? 8 : 56;
         var gapMs = fast ? 0 : 18;
+        var frameMs = fast ? 16.0 : 34.0;
 
         var swipeStartedAt = DateTime.UtcNow;
-        await DragAsync(cdp, start.X, start.Y, start.Y - travel, steps, gapMs);
+        await DragAsync(cdp, start.X, start.Y, start.Y - travel, steps, gapMs, frameMs);
         var releasedAt = DateTime.UtcNow;
 
         // Read the app's own velocity the instant the drag released — do not hope, assert.
@@ -213,27 +214,44 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
 
     // touchEnd/touchCancel must carry an EMPTY touchPoints array; touchStart/touchMove must carry
     // at least one. CDP rejects the call otherwise.
-    private static Task TouchAsync(ICDPSession cdp, string type, params Dictionary<string, object>[] points) =>
+    //
+    // The timestamp is supplied rather than left to Chromium, and that is what makes the gesture a
+    // gesture instead of a measurement of this machine. The app reads its velocity as
+    // `(y - lastY) / (e.timeStamp - lastT)` (app.js:505), and an unstamped dispatch is stamped on
+    // arrival — so the divisor was however long the CDP round trip took. Dispatching the same
+    // 37px-per-frame flick on a busy box stretched that divisor until the app measured -0.50 px/ms
+    // against a -0.6 threshold and the test failed for having faithfully reported the load. Stamping
+    // each frame puts the interval back in the test's hands, where the rest of the gesture already
+    // lives.
+    private static Task TouchAsync(
+        ICDPSession cdp, string type, double atEpochSeconds, params Dictionary<string, object>[] points) =>
         cdp.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
         {
             ["type"] = type,
-            ["touchPoints"] = points
+            ["touchPoints"] = points,
+            ["timestamp"] = atEpochSeconds
         });
 
-    private static async Task DragAsync(ICDPSession cdp, double x, double yFrom, double yTo, int steps, int gapMs)
+    // frameMs is the interval the gesture claims between frames, which is now also the interval the
+    // app sees. gapMs is still real waiting, because the sheet's own animation runs on real time.
+    private static async Task DragAsync(
+        ICDPSession cdp, double x, double yFrom, double yTo, int steps, int gapMs, double frameMs)
     {
-        await TouchAsync(cdp, "touchStart", Point(x, yFrom));
+        var stampedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+        double Frame(int i) => stampedAt + (i * frameMs / 1000.0);
+
+        await TouchAsync(cdp, "touchStart", Frame(0), Point(x, yFrom));
 
         foreach (var i in Enumerable.Range(1, steps))
         {
-            await TouchAsync(cdp, "touchMove", Point(x, yFrom + (yTo - yFrom) * i / steps));
+            await TouchAsync(cdp, "touchMove", Frame(i), Point(x, yFrom + (yTo - yFrom) * i / steps));
             if (gapMs > 0)
             {
                 await Task.Delay(gapMs);
             }
         }
 
-        await TouchAsync(cdp, "touchEnd");
+        await TouchAsync(cdp, "touchEnd", Frame(steps + 1));
     }
 
     // ---- instrumentation ---------------------------------------------------------------------
