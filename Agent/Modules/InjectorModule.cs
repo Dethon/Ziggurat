@@ -114,7 +114,8 @@ public static class InjectorModule
                     TimeSpan.FromDays(config.ExpirationDays ?? 30),
                     sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>()));
+                    sp.GetRequiredService<IConnectionMultiplexer>()))
+                .AddHostedService<TopicMigrationHost>();
         }
     }
 }

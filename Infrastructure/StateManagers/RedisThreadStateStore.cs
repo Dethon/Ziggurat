@@ -107,28 +107,26 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
 
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string? spaceSlug = null)
     {
-        var topics = new List<TopicMetadata>();
+        return await ReadIndexRangeAsync(agentId, spaceSlug ?? SpaceConfig.DefaultSlug);
+    }
 
-        await foreach (var key in _server.KeysAsync(pattern: $"topic:{agentId}:*"))
-        {
-            var json = await _db.StringGetAsync(key);
-            if (json.IsNullOrEmpty)
-            {
-                continue;
-            }
+    // The one read path. Members are ordered by last write, so the order the sidebar shows is the
+    // order the structure already holds and nothing sorts in memory.
+    private async Task<IReadOnlyList<TopicMetadata>> ReadIndexRangeAsync(string agentId, string spaceSlug)
+    {
+        var members = await _db.SortedSetRangeByScoreAsync(
+            IndexKey(agentId, spaceSlug), order: Order.Descending);
 
-            var topic = JsonSerializer.Deserialize<TopicMetadata>(json.ToString());
-            if (topic is not null)
-            {
-                topics.Add(topic);
-            }
-        }
+        var topics = await Task.WhenAll(members.Select(m => ReadIndexedTopicAsync(agentId, m.ToString())));
+        return topics.OfType<TopicMetadata>().ToList();
+    }
 
-        var filtered = spaceSlug is not null
-            ? topics.Where(t => t.SpaceSlug == spaceSlug)
-            : topics;
-
-        return filtered.OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt).ToList();
+    private Task<TopicMetadata?> ReadIndexedTopicAsync(string agentId, string member)
+    {
+        var separator = member.IndexOf(':');
+        return separator > 0 && long.TryParse(member[..separator], out var chatId)
+            ? ReadTopicAsync(TopicKey(agentId, chatId, member[(separator + 1)..]))
+            : Task.FromResult<TopicMetadata?>(null);
     }
 
     public async Task SaveTopicAsync(TopicMetadata topic)
@@ -141,7 +139,13 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
         // database, which is the cost this whole area exists to remove.
         await _db.StringSetAsync(
             ConversationKey(topic.AgentId, topic.ChatId, topic.ThreadId), topic.TopicId, expiration);
+
+        await IndexAsync(topic);
     }
+
+    private Task IndexAsync(TopicMetadata topic) =>
+        _db.SortedSetAddAsync(
+            IndexKey(topic.AgentId, topic.SpaceSlug), IndexMember(topic), LastWriteScore(topic));
 
     public async Task DeleteTopicAsync(string agentId, long chatId, string topicId)
     {
@@ -151,6 +155,25 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
         if (topic is not null)
         {
             await _db.KeyDeleteAsync(ConversationKey(agentId, chatId, topic.ThreadId));
+            await _db.SortedSetRemoveAsync(IndexKey(agentId, topic.SpaceSlug), IndexMember(topic));
+        }
+    }
+
+    // Once per deployment, from the Agent host. Conversations stored before the index existed
+    // have no member in it, and a channel reading only the index would serve an empty sidebar
+    // for them forever. This is the one place a scan of the keyspace still happens, and it is
+    // what makes the listing scan removable.
+    public async Task MigrateTopicsAsync(CancellationToken ct = default)
+    {
+        await foreach (var key in _server.KeysAsync(pattern: "topic:*").WithCancellation(ct))
+        {
+            if (await ReadTopicAsync(key!) is { } topic)
+            {
+                await IndexAsync(topic);
+                await _db.StringSetAsync(
+                    ConversationKey(topic.AgentId, topic.ChatId, topic.ThreadId), topic.TopicId, expiration);
+                await _db.KeyExpireAsync(key, expiration);
+            }
         }
     }
 
@@ -203,5 +226,22 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
     private static string ConversationKey(string agentId, long chatId, long threadId)
     {
         return $"topic-of:{agentId}:{chatId}:{threadId}";
+    }
+
+    private static string IndexKey(string agentId, string spaceSlug)
+    {
+        return $"topics:{agentId}:{spaceSlug}";
+    }
+
+    // Carries the chat id because the topic key needs it, so reading a page never costs a lookup
+    // to find out where each member's record lives.
+    private static string IndexMember(TopicMetadata topic)
+    {
+        return $"{topic.ChatId}:{topic.TopicId}";
+    }
+
+    private static double LastWriteScore(TopicMetadata topic)
+    {
+        return (topic.LastMessageAt ?? topic.CreatedAt).ToUnixTimeMilliseconds();
     }
 }

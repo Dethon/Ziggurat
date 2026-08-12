@@ -233,6 +233,59 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         topics.Select(t => t.TopicId).ShouldBe(["t-old", "t-new"]);
     }
 
+    // The index is the list. A topic record sitting in the store that nothing put in the index
+    // does not exist to anyone looking, which is what makes the scan removable rather than a
+    // fallback nobody can prove is dead.
+    [Fact]
+    public async Task GetAllTopicsAsync_ATopicRecordThatWasNeverIndexed_IsNotListed()
+    {
+        var store = NewStore();
+        await WriteTopicRecordDirectlyAsync(new TopicMetadata(
+            "t-unindexed", 520, 0, "agent-unindexed", "Ghost", DateTimeOffset.UtcNow, null));
+
+        (await store.GetAllTopicsAsync("agent-unindexed", "default")).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DeleteTopicAsync_RemovesTheTopicFromTheIndex()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-gone", 530, 0, "agent-delete", "Going", DateTimeOffset.UtcNow, null));
+
+        await store.DeleteTopicAsync("agent-delete", 530, "t-gone");
+
+        (await store.GetAllTopicsAsync("agent-delete", "default")).ShouldBeEmpty();
+    }
+
+    // Upgrading must not hide conversations: what is already stored has no index entry, and a
+    // channel reading only the index would serve an empty sidebar until something wrote to each
+    // topic. The migration builds the index from the records that already exist.
+    [Fact]
+    public async Task MigrateTopicsAsync_IndexesTopicsThatAlreadyExist()
+    {
+        var store = NewStore();
+        var older = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
+        await WriteTopicRecordDirectlyAsync(new TopicMetadata(
+            "t-existing-a", 540, 0, "agent-migrate", "First", older, older.AddHours(1)));
+        await WriteTopicRecordDirectlyAsync(new TopicMetadata(
+            "t-existing-b", 541, 0, "agent-migrate", "Second", older, older.AddHours(5)));
+
+        await store.MigrateTopicsAsync();
+
+        var topics = await store.GetAllTopicsAsync("agent-migrate", "default");
+        topics.Select(t => t.TopicId).ShouldBe(["t-existing-b", "t-existing-a"]);
+    }
+
+    // Bypasses SaveTopicAsync on purpose: this is what an upgrade finds in the store, a record
+    // written before the index existed.
+    private async Task WriteTopicRecordDirectlyAsync(TopicMetadata topic)
+    {
+        await redisFixture.Connection.GetDatabase().StringSetAsync(
+            $"topic:{topic.AgentId}:{topic.ChatId}:{topic.TopicId}",
+            System.Text.Json.JsonSerializer.Serialize(topic));
+    }
+
     private static string HistoryKey(string agentId, long chatId, long threadId = 0) =>
         new AgentKey($"{chatId}:{threadId}", agentId).ToString();
 }

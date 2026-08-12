@@ -29,6 +29,8 @@ public sealed class NullThreadStateStore : IThreadStateStore
 
     public Task DeleteTopicAsync(string agentId, long chatId, string topicId) => Task.CompletedTask;
 
+    public Task MigrateTopicsAsync(CancellationToken ct = default) => Task.CompletedTask;
+
     public Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
         => Task.FromResult<IReadOnlyList<ChatHistoryMessage>>([]);
 
