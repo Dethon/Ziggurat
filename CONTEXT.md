@@ -225,6 +225,12 @@ being visible to the model long before its reference leaves the history. A refer
 whose bytes are gone hydrates to a placeholder naming the file.
 _Avoid_: rehydration, inlining, resolving, expansion
 
+**Landing**:
+Putting an attachment into a sandbox as a real file, so the model can run something against it
+rather than only look at it. It happens once, on the way in, and only where the agent has a
+mount with a workspace; an attachment that cannot be landed is still what the person said.
+_Avoid_: copying, staging, syncing, saving
+
 **Attachment capability**:
 Whether a model accepts a kind of attachment at all. It belongs to the model and not
 to the agent or the conversation, so it changes when the model does, and it is always
@@ -463,6 +469,12 @@ one operation with one answer, and it is not a backend's native copy or move: th
 inside one mount, while a transfer may span two, recurse a directory and report what
 happened to each entry.
 _Avoid_: copy, move, cross-mount copy, file operation
+
+**Workspace**:
+The one directory under a mount where a file put there stays there. It is a claim the mount
+makes about itself rather than something a caller finds by trying, and most mounts have none —
+having one says the mount is somewhere work can be done, not merely read.
+_Avoid_: home directory, writable root, scratch space
 
 ## Media library
 
