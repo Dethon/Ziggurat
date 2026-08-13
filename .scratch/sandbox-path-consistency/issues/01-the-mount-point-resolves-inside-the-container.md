@@ -10,15 +10,17 @@ appear in command output.
 
 **Status:** ready-for-agent
 
-- [ ] A command naming a file by its mount-prefixed path resolves it, in a built image.
-- [ ] The same file named by its container-native path still resolves, unchanged.
-- [ ] The alias is part of the sandbox image, so a deployment cannot come up without it.
-- [ ] A test fails if the sandbox filesystem's mount point stops matching the alias baked into
+- [x] A command naming a file by its mount-prefixed path resolves it, in a built image.
+- [x] The same file named by its container-native path still resolves, unchanged.
+- [x] The alias is part of the sandbox image, so a deployment cannot come up without it.
+- [x] A test fails if the sandbox filesystem's mount point stops matching the alias baked into
       the image.
 - [ ] An end-to-end test against the compose stack proves the alias, since no in-process fixture
-      builds the image and none can see it.
-- [ ] The exec tool description states that either spelling works inside a command, and that
+      builds the image and none can see it. *(`Tests/E2E/Sandbox/SandboxPathE2ETests.cs` is
+      written and skips itself when Docker is absent; it has not been run yet, because the Docker
+      daemon was unreachable on the machine this was implemented on.)*
+- [x] The exec tool description states that either spelling works inside a command, and that
       paths appearing in command output are container-native and need the mount prefix in front
       of them before being used as a path argument.
-- [ ] Globbing the mount is unchanged: the alias is not traversed during enumeration, and
+- [x] Globbing the mount is unchanged: the alias is not traversed during enumeration, and
       containment checks still terminate on it.

@@ -52,7 +52,11 @@ for this, and each shape below is one that has already failed here.
 ## E2E Tests
 
 - Fixtures extend `E2EFixtureBase` (`IAsyncLifetime`), which manages browser lifecycle and
-  container startup; share a fixture across a feature area's test classes with `[Collection("...")]`
+  container startup; share a fixture across a feature area's test classes with `[Collection("...")]`.
+  A fixture whose subject is a container rather than a page (`SandboxE2EFixture` — the sandbox
+  image's mount-point alias, reached over MCP) implements `IAsyncLifetime` itself and drives
+  `TestHelpers`/`E2EPhase` directly: the base always launches Chromium, and a browser nothing
+  navigates is the cost that capped how far this suite could be split
 - Use `[SkippableFact]` with `Skip.If(...)` to skip when the required stack is unavailable
 - `fixture.NextUserIndex()` gives a test its own user, which separates it from its siblings in the
   same run and from nothing else: the index restarts every run and conversations outlive the stack.

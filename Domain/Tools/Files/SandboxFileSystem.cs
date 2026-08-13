@@ -17,10 +17,11 @@ public class SandboxFileSystem(
 {
     public override string DescribeExec =>
         "Execute a bash command (`bash -lc <command>`) inside the sandbox container. The path "
-        + "argument is a relative path under the sandbox root that becomes the CWD. Empty string "
-        + "or \".\" use the home directory; absolute paths are used literally. Output is truncated "
-        + "at the configured cap. On timeout the process tree is killed. Non-zero exit codes are "
-        + "returned in the result, not as errors.";
+        + "argument is a path under the sandbox root that becomes the CWD; empty string or \".\" "
+        + "is the root itself. Inside the command, a mount-prefixed path and the container's own "
+        + "path name the same file. The reported cwd is relative to the sandbox root. Output is "
+        + "truncated at the configured cap. On timeout the process tree is killed. Non-zero exit "
+        + "codes are returned in the result, not as errors.";
 
     public override Task<FsResult<FsExecResult>> ExecAsync(
         string path, string command, int? timeoutSeconds, CancellationToken ct) =>

@@ -9,14 +9,14 @@ public static class SandboxPrompt
 
         ### Layout
 
-        - `/sandbox` — the container root (`/`). Read-accessible via filesystem tools (e.g., `/sandbox/etc/os-release`).
-        - `/sandbox/home/sandbox_user` — the **persistent workspace** (a Docker named volume). Files here survive container restarts. This is also the default working directory for command execution when you target `/sandbox`.
-        - `/sandbox/etc`, `/sandbox/usr`, `/sandbox/tmp`, etc. — system directories. They reset whenever the container is recreated and you typically cannot write to them (you run as the unprivileged `sandbox_user`).
+        - `/sandbox` — the container root (`/`), for every tool including command execution. The container knows this name too, so `/sandbox/etc/os-release` and `/etc/os-release` are the same file whether you write one as a path argument or inside a command.
+        - `/sandbox/home/sandbox_user` — the **persistent workspace** (a Docker named volume). Files here survive container restarts. Nothing puts you here by default: name it as the working directory when you want to work in it.
+        - `/sandbox/etc`, `/sandbox/usr`, `/sandbox/tmp`, etc. — system directories. They reset whenever the container is recreated and you typically cannot write to them (you run as the unprivileged `sandbox_user`) — the container root included, so a command that writes a relative file needs a working directory you own.
 
         ### Capabilities
 
         - **File operations.** Standard read/write/glob/search/move/remove all work here as on any other mount.
-        - **Command execution.** Commands run via `bash -lc` inside the container. Each call is a fresh shell — environment variables and `cd` do **not** persist between calls; files written to the persistent workspace do. See the exec tool's description for argument details, working-directory mapping, and limits.
+        - **Command execution.** Commands run via `bash -lc` inside the container. Each call is a fresh shell — environment variables and `cd` do **not** persist between calls; files written to the persistent workspace do. See the exec tool's description for argument details, the working directory, and limits.
         - **Preinstalled tooling.** `bash`, `python3` + `pip` + `venv`, `git`, `curl`, `jq`, `unzip`, plus the standard coreutils. Install extra Python packages with `pip install --user <package>` (user-scope; persists in your home).
         - **Network.** Full **outbound** network is available (you can `curl`, `git clone`, `pip install`). The sandbox does **not** publish inbound ports — external clients cannot reach a server you start inside it.
 
@@ -25,7 +25,8 @@ public static class SandboxPrompt
         - **Exit codes** are returned as data, not raised as errors — branch on them.
         - **Output is capped** per stream and the result flags truncation; for long output, redirect to a file and read it back with the file tools.
         - **Timeouts** kill the entire process tree and surface a timeout flag; raise the limit only when you genuinely need a longer-running command.
-        - **Writes outside the persistent workspace** typically fail with permission denied; keep working files under `/sandbox/home/sandbox_user/...`.
+        - **Writes outside the persistent workspace** fail with permission denied, because you run as an unprivileged user; keep working files under `/sandbox/home/sandbox_user/...` and set that as the working directory when a command writes relative files.
+        - **Paths in command output are container-native.** `pwd`, `find`, `which` and the rest answer in the container's own spelling (`/home/sandbox_user/x`). Put `/sandbox` in front of one before handing it to a filesystem tool as a path — inside another command it works as it stands. The `cwd` the exec tool reports is the exception: it already comes back as a virtual path.
 
         ### Working here
 

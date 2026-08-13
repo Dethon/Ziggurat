@@ -54,7 +54,6 @@ public class McpSandboxServerFixture : IAsyncLifetime
             .AddSingleton(new BashRunnerOptions
             {
                 ContainerRoot = settings.ContainerRoot,
-                HomeDir = settings.HomeDir,
                 DefaultTimeoutSeconds = settings.DefaultTimeoutSeconds,
                 MaxTimeoutSeconds = settings.MaxTimeoutSeconds,
                 OutputCapBytes = settings.OutputCapBytes

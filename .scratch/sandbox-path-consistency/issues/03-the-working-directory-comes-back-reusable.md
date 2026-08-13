@@ -10,20 +10,20 @@ home-directory default is gone, so the root case cannot be exercised before then
 
 **Status:** ready-for-agent
 
-- [ ] The working directory in an exec response starts with the mount point.
-- [ ] Passing that value back as a path argument reaches the directory the command actually ran
+- [x] The working directory in an exec response starts with the mount point.
+- [x] Passing that value back as a path argument reaches the directory the command actually ran
       in.
-- [ ] A command run at the container root reports the mount point with a trailing slash, which
+- [x] A command run at the container root reports the mount point with a trailing slash, which
       is how glob already spells it and what a trailing slash already means.
-- [ ] The command runner reports the working directory relative to its own configured root, and
+- [x] The command runner reports the working directory relative to its own configured root, and
       the exec tool applies the mount point using the shared translation already used for glob
       entries and search hits — neither side guesses at the other's frame.
-- [ ] Correctness does not depend on the sandbox root happening to be the container root: a
+- [x] Correctness does not depend on the sandbox root happening to be the container root: a
       differently configured root still produces a usable path.
-- [ ] The virtual-path conformance theory asserts the working directory alongside every other
+- [x] The virtual-path conformance theory asserts the working directory alongside every other
       path, against all three hostile backend spellings, with no exemption for it.
-- [ ] ADR-0016 records one exempt field rather than two, and why this one turned out to be
+- [x] ADR-0016 records one exempt field rather than two, and why this one turned out to be
       claimable after all — including why a single field was normalised at the backend when
       normalising backends was rejected as a blanket policy.
-- [ ] The exec result type documents that the working directory is relative to the backend's own
+- [x] The exec result type documents that the working directory is relative to the backend's own
       root, where someone writing a new backend will read it.
