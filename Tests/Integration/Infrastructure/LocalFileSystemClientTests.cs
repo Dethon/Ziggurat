@@ -580,6 +580,69 @@ public class LocalFileSystemClientTests : IDisposable
         hits.ShouldNotContain(h => h.Contains("self"));
     }
 
+    // A broad pattern over a large tree costs what the caller consumes, not what the tree holds:
+    // the walk is still where it stopped, not at the end.
+    [Fact]
+    public async Task Glob_ACallerThatStopsPulling_LeavesTheRestOfTheTreeUnwalked()
+    {
+        await BuildTempTree(Enumerable.Range(1, 500).Select(i => $"file{i:D3}.txt").ToArray());
+
+        var walk = _client.Glob(_testDir, "**/*");
+        var taken = new List<string>();
+        await foreach (var hit in walk.Matches)
+        {
+            taken.Add(hit);
+            if (taken.Count == 10)
+            {
+                break;
+            }
+        }
+
+        taken.Count.ShouldBe(10);
+        walk.EntriesScanned.ShouldBe(10);
+        walk.BudgetReached.ShouldBeFalse();
+    }
+
+    // The budget is lowered rather than met: a tree of fifty thousand entries proves nothing a tree
+    // of ten cannot, and costs a test run to build.
+    [Fact]
+    public async Task Glob_ATreeLargerThanTheScanBudget_StopsAtTheBudgetAndSaysSo()
+    {
+        await BuildTempTree(Enumerable.Range(1, 20).Select(i => $"file{i:D2}.txt").ToArray());
+        var client = new BoundedClient(scanBudget: 5);
+
+        var walk = client.Glob(_testDir, "**/*.pdf");
+        var hits = new List<string>();
+        await foreach (var hit in walk.Matches)
+        {
+            hits.Add(hit);
+        }
+
+        hits.ShouldBeEmpty();
+        walk.EntriesScanned.ShouldBe(5);
+        walk.BudgetReached.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Glob_CancelledPartWayThroughTheWalk_EndsAsAnAbort()
+    {
+        await BuildTempTree(Enumerable.Range(1, 200).Select(i => $"file{i:D3}.txt").ToArray());
+        using var cts = new CancellationTokenSource();
+
+        await Should.ThrowAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var _ in _client.Glob(_testDir, "**/*", cts.Token).Matches)
+            {
+                await cts.CancelAsync();
+            }
+        });
+    }
+
+    private sealed class BoundedClient(int scanBudget) : LocalFileSystemClient
+    {
+        protected override int ScanBudget => scanBudget;
+    }
+
     // Directory.Move to an existing destination throws IOException, which drives the same
     // recursive copy + delete fallback as an EXDEV cross-device move. The copy must not follow a
     // symlink out of the tree — it would exfiltrate the target's content into the destination.

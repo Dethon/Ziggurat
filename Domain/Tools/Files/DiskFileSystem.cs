@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
+using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.Files;
 
@@ -35,8 +36,14 @@ public class DiskFileSystem(
         + "expands too: `**/*.{jpg,png,gif}` matches any of the listed extensions. A trailing slash "
         + "matches directories only (e.g. `*/`, `src/**/`); otherwise both files and directories "
         + "match, with directory results returned with a trailing slash so you can tell them apart. "
-        + "Results are capped at 200; the response is `{entries, truncated, total}`. An empty result "
-        + "means nothing matched—refine the pattern.";
+        + "Results are capped at 200 and the walk stops once it has that many, so which 200 come "
+        + "back depends on enumeration order. The walk also stops after "
+        + $"{DiskWalk.MaxEntriesScanned:N0} entries have been enumerated, whatever it has found by "
+        + "then. The response is `{entries, truncated, total, entriesScanned, budgetReached}`: "
+        + "`truncated` means more matched than fit, `budgetReached` means the walk stopped before "
+        + "the tree ended, and `entriesScanned` says how much of it the answer covers. An empty "
+        + "result with `budgetReached` false means nothing matched—refine the pattern; with it "
+        + "true, narrow the basePath instead.";
 
     public override string DescribeInfo =>
         "Returns metadata about a path: exists, isDirectory, size (files only), and lastModified. "

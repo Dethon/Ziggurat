@@ -17,8 +17,14 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
         directories (e.g. `*/`, `src/**/`); without it, both files and directories match.
         Directory results are returned with a trailing slash so you can tell them apart; files
         are not. Entries are full virtual paths (including the mount point), ready to pass straight
-        to other filesystem tools. Results are lexically sorted and capped at 200 on file mounts;
-        the response is `{entries, truncated, total}`. An empty result means nothing matched.
+        to other filesystem tools, and sorted within the response.
+
+        On a file mount the walk is bounded: it stops once it has the 200 entries the response
+        carries, and stops in any case after 50,000 entries have been enumerated. `truncated` means
+        more matched than fit; `budgetReached` means the walk stopped before the tree ended, and
+        `entriesScanned` says how much of it the answer covers. An empty result with
+        `budgetReached` false means nothing matched; with it true, scope the basePath and try again
+        rather than refining the pattern.
         """;
 
     [Description(ToolDescription)]

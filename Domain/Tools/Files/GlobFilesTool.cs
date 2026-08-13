@@ -7,16 +7,6 @@ namespace Domain.Tools.Files;
 
 public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {
-    protected const string Description = """
-                                         Searches for files and directories matching a glob pattern relative to the mount root.
-                                         `*` matches one path segment, `**` recurses, `?` matches one character.
-                                         Brace alternation expands too: `**/*.{jpg,png,gif}` matches any of the listed extensions.
-                                         A trailing slash matches directories only (e.g. `*/`, `src/**/`); otherwise both files
-                                         and directories match, with directory results returned with a trailing slash so you can
-                                         tell them apart. Results are capped at 200; the response is `{entries, truncated, total}`.
-                                         An empty result means nothing matched—refine the pattern.
-                                         """;
-
     public const int FileResultCap = 200;
 
     private readonly PathJail _jail = new(libraryPath.BaseLibraryPath);
@@ -59,12 +49,20 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
         string matcherRoot, string? basePath, string pattern, CancellationToken cancellationToken)
     {
         var found = new List<string>();
+        GlobWalk walk;
         try
         {
-            var walk = client.Glob(matcherRoot, pattern, cancellationToken);
+            walk = client.Glob(matcherRoot, pattern, cancellationToken);
             await foreach (var hit in walk.Matches.WithCancellation(cancellationToken))
             {
                 found.Add(hit);
+                // One more match than the response carries is all it takes to report truncation,
+                // and past it there is nothing left to find that anyone will see. The cap is a
+                // response-shaping concern, so it ends the walk from here rather than in the client.
+                if (found.Count > FileResultCap)
+                {
+                    break;
+                }
             }
         }
         // A lazy walk raises a missing base directory on the first pull rather than at the call,
@@ -93,7 +91,9 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
         {
             Entries = capped ? relative.Take(FileResultCap).ToArray() : relative,
             Truncated = capped,
-            Total = relative.Length
+            Total = relative.Length,
+            EntriesScanned = walk.EntriesScanned,
+            BudgetReached = walk.BudgetReached
         });
     }
 

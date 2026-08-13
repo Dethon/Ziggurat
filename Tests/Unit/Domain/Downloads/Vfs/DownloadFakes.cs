@@ -115,7 +115,7 @@ public static class DownloadFakes
         public bool ThrowIfBaseMissing { get; set; }
 
         public GlobWalk Glob(string basePath, string pattern, CancellationToken cancellationToken = default) =>
-            new(Yield(basePath));
+            new(_ => Yield(basePath));
 
         // Lazily, like the real walk: a missing base directory is raised on the first pull, which
         // is where the tool's not-found envelope now catches it.

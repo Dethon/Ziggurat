@@ -13,6 +13,14 @@ namespace Domain.Tools.FileSystem;
 // which these walks have always included.
 public static class DiskWalk
 {
+    // What a walk over a disk root may cost, whatever the caller asked for. A mount whose root is a
+    // container root has no natural end, so the bound is the walk's own rather than the pattern's:
+    // fifty thousand entries enumerated, which a pattern excluding every candidate still cannot
+    // exceed. These are constants, not settings — nothing deployment-specific decides them, so they
+    // sit beside the response cap rather than in configuration, and a test lowers them by
+    // overriding rather than by building a tree this size.
+    public const int MaxEntriesScanned = 50_000;
+
     private static readonly EnumerationOptions _skipSymlinks = new()
     {
         RecurseSubdirectories = true,

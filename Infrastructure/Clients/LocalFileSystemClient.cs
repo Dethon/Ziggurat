@@ -31,6 +31,10 @@ public class LocalFileSystemClient : IFileSystemClient
     // costs rather than what the tree does. Matching is the shared glob matcher every other mount
     // uses, so one pattern language covers them all; the entry's own directory flag answers the
     // dirs-only rule that used to need a second walk.
+    // Overridable for the same reason the search's match timeout is: a test has to reach the bound
+    // without building a tree the size of the shipped one.
+    protected virtual int ScanBudget => DiskWalk.MaxEntriesScanned;
+
     public GlobWalk Glob(string basePath, string pattern, CancellationToken cancellationToken = default)
     {
         var dirsOnly = pattern.EndsWith('/');
@@ -39,10 +43,11 @@ public class LocalFileSystemClient : IFileSystemClient
         var effectivePattern = (dirsOnly ? pattern.TrimEnd('/') : pattern).Replace('\\', '/');
         var matches = GlobRegex.CompileMatcher(effectivePattern);
 
-        return new GlobWalk(Walk(basePath, matches, dirsOnly, cancellationToken));
+        return new GlobWalk(walk => Walk(walk, basePath, matches, dirsOnly, cancellationToken));
     }
 
-    private static async IAsyncEnumerable<string> Walk(
+    private async IAsyncEnumerable<string> Walk(
+        GlobWalk walk,
         string basePath,
         Func<string, bool> matches,
         bool dirsOnly,
@@ -52,21 +57,26 @@ public class LocalFileSystemClient : IFileSystemClient
         // a caller that never pulls pays nothing.
         await Task.Yield();
 
+        var budget = ScanBudget;
         foreach (var entry in DiskWalk.Entries(basePath))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            walk.EntriesScanned++;
 
-            if (dirsOnly && !entry.IsDirectory)
+            var relative = Path.GetRelativePath(basePath, entry.Path).Replace('\\', '/');
+            if ((!dirsOnly || entry.IsDirectory) && matches(relative))
             {
-                continue;
+                yield return entry.IsDirectory ? entry.Path + "/" : entry.Path;
             }
 
-            if (!matches(Path.GetRelativePath(basePath, entry.Path).Replace('\\', '/')))
+            // The budget ends the walk wherever it is, however few matches it has. The reparse-point
+            // skip is what keeps a tree finite; this stands behind it as an independent backstop,
+            // and unlike that guard it is visible to the caller.
+            if (walk.EntriesScanned >= budget)
             {
-                continue;
+                walk.BudgetReached = true;
+                yield break;
             }
-
-            yield return entry.IsDirectory ? entry.Path + "/" : entry.Path;
         }
     }
 

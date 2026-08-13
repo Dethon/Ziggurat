@@ -31,20 +31,20 @@ the call, so the catch that turns it into the not-found envelope has to wrap the
 
 **Status:** ready-for-agent
 
-- [ ] A glob over a tree with far more matches than the response carries returns promptly, having
+- [x] A glob over a tree with far more matches than the response carries returns promptly, having
       enumerated near the cap rather than the whole tree.
-- [ ] A glob over a tree with no matches stops at the scan budget and says so.
-- [ ] The budget is one definition in the domain layer, reachable from a test without building a
+- [x] A glob over a tree with no matches stops at the scan budget and says so.
+- [x] The budget is one definition in the domain layer, reachable from a test without building a
       tree that size, following the precedent of the search match timeout.
-- [ ] The glob result reports the coverage flag and a count of entries examined; the total means
+- [x] The glob result reports the coverage flag and a count of entries examined; the total means
       matches found before stopping.
-- [ ] Truncation and the coverage flag are independently observable: a capped-but-complete walk
+- [x] Truncation and the coverage flag are independently observable: a capped-but-complete walk
       sets one, an exhausted budget sets the other.
-- [ ] Cancelling a glob part way ends the walk and propagates the cancellation.
-- [ ] A pattern that trips the matcher's timeout answers the same timeout envelope a non-disk
+- [x] Cancelling a glob part way ends the walk and propagates the cancellation.
+- [x] A pattern that trips the matcher's timeout answers the same timeout envelope a non-disk
       mount answers.
-- [ ] A base path that does not exist still answers the not-found envelope.
-- [ ] Entries remain full virtual paths, sorted within the response, usable directly as input to
+- [x] A base path that does not exist still answers the not-found envelope.
+- [x] Entries remain full virtual paths, sorted within the response, usable directly as input to
       another filesystem tool.
-- [ ] The glob descriptions state the budget and the coverage flag, and no longer claim results
+- [x] The glob descriptions state the budget and the coverage flag, and no longer claim results
       are selected lexically.
