@@ -11,13 +11,14 @@ namespace Tests.E2E.WebChat;
 [Trait("Category", "E2E")]
 public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) : DictationE2EBase(fixture)
 {
-    // A phone is not a desktop here, in two directions at once.
+    // The processed path, pinned as applied settings rather than as the request. Echo
+    // cancellation is deliberately ON: the platform's raw capture path is the one the phone
+    // wedges — born-dead grants, zeros on a healthy graph, cleared only by reboot — while the
+    // voice-call path recorded through the very same wedge, confirmed live on the phone that
+    // suffers it. Fidelity for the transcriber was the old theory; the wedge was the measured
+    // result, and a dictation that always works wins.
     //
-    // Asking for echo cancellation opens the microphone on the platform's voice-call path, whose
-    // noise suppression is tuned for a human listening down a phone line rather than for a
-    // transcriber. Nothing in a dictation is ever played, so nothing should ask for either.
-    //
-    // Automatic gain is the exception, and it was learned the hard way: with it off, an Android
+    // Automatic gain was learned the hard way in its own right: with it off, an Android
     // phone held in the hand and spoken to normally delivered a recording whose loudest peak was
     // under a tenth of full scale, some 20 dB below speech. It is the one part of that chain whose
     // job is the level rather than the shape of the sound, so it stays on.
@@ -27,7 +28,7 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
     // both — then goes unpulled and hears silence. Nothing below this can catch that on a desktop,
     // which is exactly why the shape of the graph is asserted rather than only its results.
     [SkippableFact]
-    public async Task TheMicrophoneIsOpenedForARecorderRatherThanForAPhoneCall()
+    public async Task TheMicrophoneIsOpenedOnThePathThatSurvivesTheWedge()
     {
         Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
         Fixture.TranscriptionStatus = 200;
@@ -93,8 +94,8 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
         await TouchAsync(cdp, "touchEnd");
 
         // Reported rather than merely absent: a browser that does not say cannot be taken to agree.
-        opened.GetProperty("echoCancellation").GetBoolean().ShouldBeFalse();
-        opened.GetProperty("noiseSuppression").GetBoolean().ShouldBeFalse();
+        opened.GetProperty("echoCancellation").GetBoolean().ShouldBeTrue();
+        opened.GetProperty("noiseSuppression").GetBoolean().ShouldBeTrue();
         opened.GetProperty("autoGainControl").GetBoolean().ShouldBeTrue();
 
         // A graph that ends nowhere is a graph an Android device never runs.

@@ -371,20 +371,18 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         trace.ShouldContain("all zeros");
     }
 
-    // The recovery the wedge leaves room for. The wedged phone's traces show the default capture
-    // born dead — zeros from the first frame, no event ever — while other apps record fine, so the
-    // one lever left is which platform path the microphone is opened on. A run that has heard
-    // nothing by the probe reopens the microphone with the processed path (echo cancellation on)
-    // and keeps recording into the same graph; whether Android actually keys the wedge to the path
-    // is exactly what this ships to find out, and the trace records the verdict either way. Here
-    // the first open hands back a track of pure zeros and the second is the real fake microphone,
-    // so the words arriving proves the swap carried the recording, not just the meter.
+    // The verdict of the route experiment, made permanent. The wedge that kept coming back was
+    // per-path: the raw capture path came up born-dead until a reboot while the processed path
+    // recorded fine through the same wedge — confirmed live on the phone that suffers it. So the
+    // processed path is the only path: every open asks for echo cancellation, and there is no
+    // probe, no mid-run swap and no remembered route left to reason about. One grant per
+    // dictation, wedge-immune by default.
     [SkippableFact]
-    public async Task ACaptureBornSilent_ReopensOnTheProcessedPathAndStillDeliversTheWords()
+    public async Task EveryDictation_OpensOnceAndOnTheProcessedPath()
     {
         Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
         Fixture.TranscriptionStatus = 200;
-        Fixture.Transcript = "rescatado por la otra ruta";
+        Fixture.Transcript = "una sola ruta";
 
         var page = await OpenAsync();
         await page.EvaluateAsync(
@@ -392,39 +390,23 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
             () => {
                 window.__opens = [];
                 const open = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-                navigator.mediaDevices.getUserMedia = async constraints => {
+                navigator.mediaDevices.getUserMedia = constraints => {
                     window.__opens.push(constraints);
-                    if (window.__opens.length === 1) {
-                        const ctx = new AudioContext();
-                        await ctx.resume();
-                        return ctx.createMediaStreamDestination().stream;
-                    }
                     return open(constraints);
                 };
             }
             """);
 
         var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await PressableMicAsync(page);
+        await DictateAsync(cdp, page, HoldMs);
 
-        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-        // Past the silence probe with room for the swap to land and real sound to be collected
-        // behind it.
-        await Task.Delay(3_500);
-        await TouchAsync(cdp, "touchEnd");
-
+        // Words arriving proves the processed path carried a real recording end to end.
         await Assertions.Expect(page.Locator("textarea.chat-input"))
-            .ToHaveValueAsync(
-                "rescatado por la otra ruta", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+            .ToHaveValueAsync("una sola ruta", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
 
-        // The second open is the experiment: the processed path, asked for in so many words.
-        (await page.EvaluateAsync<int>("() => window.__opens.length")).ShouldBe(2);
+        (await page.EvaluateAsync<int>("() => window.__opens.length")).ShouldBe(1);
         (await page.EvaluateAsync<bool>(
-            "() => window.__opens[1].audio.echoCancellation === true")).ShouldBeTrue();
-        var trace = await page.EvaluateAsync<string>("() => window.dictation.diagnostics()");
-        trace.ShouldContain("route:");
+            "() => window.__opens[0].audio.echoCancellation === true")).ShouldBeTrue();
     }
 
     // The microphone can be granted and the graph still fail to come up behind it — the worklet is

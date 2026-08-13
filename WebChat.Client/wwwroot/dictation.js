@@ -19,10 +19,6 @@ window.dictation = {
     _limits: null,
     _unavailable: false,
     _stamped: false,
-    // 'processed' once a mid-run reroute ended in sound: the next dictation opens there directly
-    // instead of losing its first moment to a default path already known dead. Page-lifetime only,
-    // so a device restart — which is what actually clears the wedge — starts clean.
-    _route: null,
 
     // The live recording, or null between dictations.
     _run: null,
@@ -209,10 +205,8 @@ window.dictation = {
             ticket: null,
             stream: null,
             ctx: null,
-            source: null,
             encoder: null,
             drained: null,
-            swapped: false,
             meter: 0,
             meterAt: 0
         };
@@ -250,11 +244,6 @@ window.dictation = {
             // there, with no way out but reloading the page.
             this._invoke(run.latched ? 'Latched' : 'Started');
             this._startClock(run);
-            // No probe on the remembered path: there is nothing further to swap to, and a
-            // processed run that still measures dead clears the memory at the end instead.
-            if (!this._route) {
-                run.probe = setTimeout(() => this._reroute(run), 1500);
-            }
         }).catch(err => {
             if (this._run === run) this._run = null;
             // Whatever the open got as far as acquiring is still live here, and this is the last
@@ -280,8 +269,8 @@ window.dictation = {
         // Each step of the open is marked as it is passed, so a run that never comes back says where
         // it stopped. Which of these is the last line is the whole diagnosis: the microphone itself,
         // the graph the browser builds around it, or the worklet fetched over the network.
-        this._note('opening', this._route ? 'on the processed path (remembered)' : '');
-        run.stream = await navigator.mediaDevices.getUserMedia(this._constraints(this._route === 'processed'));
+        this._note('opening');
+        run.stream = await navigator.mediaDevices.getUserMedia(this._constraints());
         this._watchTracks(run);
         if (run.ending || this._run !== run) {
             this._teardown(run);
@@ -336,25 +325,24 @@ window.dictation = {
         analyser.connect(encoder);
         encoder.connect(silence);
         silence.connect(ctx.destination);
-        run.source = source;
         run.analyser = analyser;
         run.encoder = encoder;
         this._note('graph');
     },
 
-    // Echo cancellation and its noise suppression are tuned for a person listening down a line —
-    // they gate quiet speech and chew the starts of words, and nothing in a dictation is ever
-    // played, so there is no echo to cancel: whisper does better on what the microphone actually
-    // heard, which is why the default asks for neither. Automatic gain is the exception either
-    // way: asked for as false, an Android phone spoken to normally returned peaks some 20 dB below
-    // speech. The processed variant exists for one reason — it is opened on a different platform
-    // capture path, which is the only alternative a wedged default leaves.
-    _constraints: function (processed) {
+    // The processed path — echo cancellation on — is the only path, decided on evidence from the
+    // phone that kept wedging: Android's raw capture path came up born-dead (zeros on a healthy
+    // graph, cleared only by reboot) while the processed path recorded fine through the very same
+    // wedge. A dictation that always works beats marginally cleaner audio for whisper. If quiet
+    // speech ever suffers, noiseSuppression is the knob to revisit — it rides along with the
+    // path rather than selecting it. Automatic gain is its own decision: asked for as false, an
+    // Android phone spoken to normally returned peaks some 20 dB below speech.
+    _constraints: function () {
         return {
             audio: {
                 channelCount: 1,
-                echoCancellation: !!processed,
-                noiseSuppression: !!processed,
+                echoCancellation: true,
+                noiseSuppression: true,
                 autoGainControl: true
             }
         };
@@ -379,35 +367,6 @@ window.dictation = {
                     + ', agc ' + (s.autoGainControl ? 'on' : 'off') + ')';
             })
             .join(', '));
-    },
-
-    // The one lever the page holds over a wedge below it: which platform path the microphone is
-    // opened on. A healthy capture shows the analyser sound within a frame or two — automatic gain
-    // lifts even a quiet room far above the dead floor — while the wedged phone's own traces
-    // showed nothing above -78 dBFS ever. A run that has heard nothing at all by the probe is on a
-    // dead input, and waiting longer only loses more of the words; whether Android keys the wedge
-    // to the path is the experiment, and the trace records the verdict either way. The zeros
-    // already collected stay — leading silence costs a transcription nothing.
-    _reroute: async function (run) {
-        if (this._run !== run || run.ending || run.heardAt) return;
-        this._note('route', 'nothing heard — reopening on the processed path');
-        try {
-            const fresh = await navigator.mediaDevices.getUserMedia(this._constraints(true));
-            if (this._run !== run || run.ending) {
-                fresh.getTracks().forEach(track => track.stop());
-                return;
-            }
-            if (run.source) run.source.disconnect();
-            this._stopTracks(run);
-            run.stream = fresh;
-            run.swapped = true;
-            this._watchTracks(run);
-            const source = run.ctx.createMediaStreamSource(fresh);
-            source.connect(run.analyser);
-            run.source = source;
-        } catch (err) {
-            this._note('route', 'the processed path would not open' + this._named(err));
-        }
     },
 
     _latch: function () {
@@ -495,17 +454,10 @@ window.dictation = {
             // as a transcription error, inviting a retry into the same wall. The words instead
             // name the one cure that has actually worked.
             if (peak < 33) {
-                // Never latch onto a path that itself measured dead: the memory is only ever of a
-                // swap that ended in sound, and a reboot starts the page clean anyway.
-                this._route = null;
                 this._invoke('Failed',
                     'The microphone stayed open but heard pure silence — the device’s audio '
                     + 'input looks stuck. Other apps may still work; restarting the device clears it.');
                 return;
-            }
-            if (run.swapped) {
-                this._note('route', 'the processed path carried the recording');
-                this._route = 'processed';
             }
             const ticket = await run.ticket;
             if (!ticket) {
@@ -630,8 +582,8 @@ window.dictation = {
         const paint = () => {
             if (this._run !== run || run.ending) return;
             const elapsed = performance.now() - run.startedAt;
-            // Read even with no strip on screen yet: the reroute probe judges deadness by whether
-            // anything was ever heard, and that must not depend on a render having landed.
+            // Read even with no strip on screen yet: the end-of-run silence verdict turns on
+            // whether anything was ever heard, and that must not depend on a render having landed.
             const level = this._level(run).toFixed(3);
             const strip = document.querySelector('.dictation-strip');
             if (strip) {
@@ -662,7 +614,6 @@ window.dictation = {
 
     _stopClock: function (run) {
         if (run.cap) { clearTimeout(run.cap); run.cap = null; }
-        if (run.probe) { clearTimeout(run.probe); run.probe = null; }
         if (run.frame) { cancelAnimationFrame(run.frame); run.frame = null; }
     },
 
