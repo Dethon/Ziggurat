@@ -115,9 +115,11 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         var totalMatches = 0;
         var budgetReached = false;
 
-        foreach (var entry in DiskWalk.Entries(fullPath))
+        using var entries = DiskWalk.Entries(fullPath).GetEnumerator();
+        while (entries.MoveNext())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var entry = entries.Current;
             entriesScanned++;
 
             if (SearchEntry(entry, fullPath, filePattern, matchesPattern, scan,
@@ -136,9 +138,11 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
                 break;
             }
 
+            // A tree that ends exactly at a budget covered everything, so the flag asks whether
+            // anything was left rather than assuming it, as the glob walk does.
             if (entriesScanned >= ScanBudget || filesSearched >= ReadBudget)
             {
-                budgetReached = true;
+                budgetReached = entries.MoveNext();
                 break;
             }
         }

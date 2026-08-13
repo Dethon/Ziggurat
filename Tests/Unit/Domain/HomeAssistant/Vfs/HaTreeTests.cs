@@ -108,6 +108,15 @@ public class HaTreeTests
         shFiles.ShouldAllBe(h => h.EndsWith(".sh"));
     }
 
+    // One matcher serves every mount, and the disk roots have always matched case-insensitively —
+    // it is what makes `**/*.jpg` find a camera's `.JPG`. So the virtual mounts match that way too,
+    // rather than one pattern meaning two things depending on where it is sent.
+    [Fact]
+    public void Glob_PatternCase_IsIgnored()
+    {
+        HaTree.Glob(Cat(), Scope("entities/light", "KITCHEN/")).ShouldBe(["entities/light/kitchen/"]);
+    }
+
     private static GlobScope Scope(string basePath, string pattern) =>
         GlobScope.Create(basePath, pattern).ShouldBeOfType<FsResult<GlobScope>.Ok>().Value;
 }

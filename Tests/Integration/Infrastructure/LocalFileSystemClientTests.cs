@@ -571,13 +571,42 @@ public class LocalFileSystemClientTests : IDisposable
         await BuildTempTree(["real.txt", "sub/nested.txt"]);
         Directory.CreateSymbolicLink(Path.Combine(_testDir, "self"), _testDir);
 
-        var hits = await Glob("**/*");
+        var walk = _client.Glob(_testDir, "**/*");
+        var hits = new List<string>();
+        await foreach (var hit in walk.Matches)
+        {
+            hits.Add(hit);
+        }
 
-        hits.Length.ShouldBe(3);
+        hits.Count.ShouldBe(3);
         hits.ShouldContain(h => h.EndsWith("real.txt"));
         hits.ShouldContain(h => h.EndsWith("nested.txt"));
         hits.ShouldContain(h => h.EndsWith("sub/"));
         hits.ShouldNotContain(h => h.Contains("self"));
+        // The link is enumerated as an entry and skipped, so the walk sees the three real entries
+        // plus it — and nothing beneath it, which is what an entered link would have produced.
+        walk.EntriesScanned.ShouldBe(3);
+        walk.BudgetReached.ShouldBeFalse();
+    }
+
+    // The budget cutting a walk short and a tree that happens to end on the budget are different
+    // answers, and only the first is reduced coverage.
+    [Fact]
+    public async Task Glob_ATreeEndingExactlyOnTheScanBudget_ReportsFullCoverage()
+    {
+        await BuildTempTree(["a.txt", "b.txt", "c.txt"]);
+        var client = new BoundedClient(scanBudget: 3);
+
+        var walk = client.Glob(_testDir, "**/*");
+        var hits = new List<string>();
+        await foreach (var hit in walk.Matches)
+        {
+            hits.Add(hit);
+        }
+
+        hits.Count.ShouldBe(3);
+        walk.EntriesScanned.ShouldBe(3);
+        walk.BudgetReached.ShouldBeFalse();
     }
 
     // A broad pattern over a large tree costs what the caller consumes, not what the tree holds:

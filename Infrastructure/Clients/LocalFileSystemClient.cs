@@ -59,9 +59,11 @@ public class LocalFileSystemClient : IFileSystemClient
 
         var budget = ScanBudget;
         var scanned = 0;
-        foreach (var entry in DiskWalk.Entries(basePath))
+        using var entries = DiskWalk.Entries(basePath).GetEnumerator();
+        while (entries.MoveNext())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var entry = entries.Current;
             scanned++;
             walk.Record(scanned, budgetReached: false);
 
@@ -74,9 +76,13 @@ public class LocalFileSystemClient : IFileSystemClient
             // The budget ends the walk wherever it is, however few matches it has. The reparse-point
             // skip is what keeps a tree finite; this stands behind it as an independent backstop,
             // and unlike that guard it is visible to the caller.
+            //
+            // A tree that ends exactly at the budget covered everything, so the flag asks whether
+            // anything was left rather than assuming it. That question costs one entry, which is
+            // read and not examined — the count says what was examined.
             if (scanned >= budget)
             {
-                walk.Record(scanned, budgetReached: true);
+                walk.Record(scanned, entries.MoveNext());
                 yield break;
             }
         }

@@ -28,8 +28,12 @@ pointing at the root.
 - [x] Matching happens per entry, using the shared glob matcher, so one pattern language covers
       every mount.
 - [x] Every case from ticket 01 still passes, with no change to entries, ordering, cap or errors —
-      bar one named divergence, the case ticket 01 flagged as accidental: `?` was a literal on the
-      disk roots and is now the single-character wildcard every glob description already promised.
+      bar two named divergences. `?` was a literal on the disk roots and is now the
+      single-character wildcard every glob description already promised, which is the case ticket
+      01 flagged as accidental. And the shared matcher now ignores case, because the batch matcher
+      it replaced always did and dropping that would have changed what ships on the disk roots;
+      the widening reaches the virtual mounts, whose names are generated, and is pinned by a case
+      on each side.
 - [x] A link pointing at its own ancestor is neither listed nor entered: the walk terminates, the
       link is absent, and the entry count stays small.
 - [x] The reparse-point skip is carried onto the new enumeration and covered by that case, so

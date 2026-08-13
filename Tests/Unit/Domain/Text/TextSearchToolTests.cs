@@ -262,6 +262,21 @@ public class TextSearchToolTests : IDisposable
         result["truncated"]!.GetValue<bool>().ShouldBeFalse();
     }
 
+    // A tree that happens to end on the budget was covered in full, which is a different answer
+    // from a budget that cut the walk short.
+    [Fact]
+    public void Run_ATreeEndingExactlyOnABudget_ReportsFullCoverage()
+    {
+        CreateManyFiles(3);
+        var tool = new TestableTextSearchTool(_testDir, [".md"], scanBudget: 3, readBudget: 3);
+
+        var result = tool.TestRun("kubernetes");
+
+        result["budgetReached"]!.GetValue<bool>().ShouldBeFalse();
+        result["filesSearched"]!.GetValue<int>().ShouldBe(3);
+        result["entriesScanned"]!.GetValue<int>().ShouldBe(3);
+    }
+
     // Truncation and the coverage flag answer different questions: this search found everything it
     // was asked for without running out of tree.
     [Fact]
