@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
+using Domain.Prompts;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
 using Domain.Tools.Files;
@@ -12,6 +13,7 @@ using Domain.Tools.Scheduling.Vfs;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
+using McpServerSandbox.McpPrompts;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using Moq;
@@ -205,6 +207,32 @@ public class FileSystemServerConformanceTests
         published.MountPoint.ShouldBe($"/{name}");
         published.Description.ShouldBe(backend.DescribeMount);
         published.Description.ShouldNotBeNullOrWhiteSpace(name);
+    }
+
+    // The only prompt asserted anywhere in the codebase, and it earns that here because the prompt
+    // has stopped being a constant: it is built from the mount point and the workspace the server
+    // was configured with, so renaming the filesystem or moving the workspace changes it with no
+    // other edit. The mount-point guard the image alias test adds pins the alias to the mount, not
+    // to this prose, so a literal in here would go quietly wrong instead.
+    [Fact]
+    public void TheSandboxPrompt_NamesTheMountPointAndWorkspaceItWasGiven()
+    {
+        var built = SandboxPrompt.Build("/box", "home/someone");
+
+        built.ShouldContain("/box/home/someone");
+        built.ShouldNotContain("/sandbox");
+        built.ShouldNotContain("sandbox_user");
+    }
+
+    [Fact]
+    public void TheSandboxServer_BuildsItsPromptFromTheMountItPublishes()
+    {
+        using var provider = ConfiguredServer("sandbox");
+        var backend = provider.GetRequiredService<SandboxFileSystem>();
+
+        var prompt = new McpSystemPrompt(backend).GetSandboxPrompt();
+
+        prompt.ShouldContain($"{backend.MountPoint}/{backend.Workspace}");
     }
 
     // That the resource the registrar really builds carries the same three, so nothing between the

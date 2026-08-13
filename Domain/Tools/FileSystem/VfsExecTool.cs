@@ -9,16 +9,20 @@ public class VfsExecTool(IVirtualFileSystemRegistry registry)
     public const string Key = "exec";
     public const string Name = "exec";
 
+    // One description for every exec-capable mount, so it names no single mount's directories: a
+    // mount-agnostic tool spelling out one image's home directory is what put that path in two
+    // places at once. Where a mount's layout matters — which directory is writable, whether its own
+    // spelling and the mount-prefixed one name the same file — its own prompt says so.
     public const string ToolDescription = """
         Execute a bash command on a filesystem that supports execution.
         The path argument is the working directory (CWD) for the command, expressed as a virtual path
-        and used literally: the mount point itself is the filesystem's root (/sandbox is the sandbox
-        container's root directory), and a deeper path is that directory.
-        Inside the command string both spellings work: on the sandbox, /sandbox/etc/hosts and
-        /etc/hosts name the same file, so a path you were taught and a path you were given are both
-        usable as written.
-        Paths that come back in command output (`pwd`, `find`, `which`, ...) are container-native:
-        put the mount point in front of one before passing it to a filesystem tool as a path.
+        and used literally: the mount point itself is the filesystem's root, and a deeper path is that
+        directory.
+        Inside the command string, a mount's own prompt says whether a mount-prefixed path and the
+        filesystem's native spelling name the same file; where it does, either is usable as written.
+        Paths that come back in command output (`pwd`, `find`, `which`, ...) are in the filesystem's
+        native spelling: put the mount point in front of one before passing it to a filesystem tool
+        as a path.
         The `cwd` in the result is already a virtual path and needs no such prefixing.
         Commands run via `bash -lc` so login shell env (PATH, etc.) is initialised.
         Non-zero exit codes are returned as data (in `exitCode`), not as errors.
@@ -28,7 +32,7 @@ public class VfsExecTool(IVirtualFileSystemRegistry registry)
 
     [Description(ToolDescription)]
     public async Task<JsonNode> RunAsync(
-        [Description("Virtual path used as CWD (e.g., /sandbox for the container root, or any directory under it)")]
+        [Description("Virtual path used as CWD: the mount point itself for the filesystem's root, or any directory under it")]
         string path,
         [Description("Bash command line; passed to `bash -lc`")]
         string command,
