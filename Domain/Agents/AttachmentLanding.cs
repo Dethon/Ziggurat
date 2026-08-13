@@ -14,7 +14,8 @@ namespace Domain.Agents;
 // conversation and a mount is visible to the model (ADR 0021).
 //
 // The mount says where it can be written and this puts the file there (ADR 0025): under the
-// workspace, a directory per conversation and one per message, keeping the name the person used. The
+// workspace, a directory per conversation and one per message, keeping the name the person used —
+// reduced to a single safe path segment, because a sender-supplied name is untrusted input. The
 // per-message directory is what separates one message's files from another's, so two `scan.pdf`s
 // sent in one conversation both survive; two in the *same* message are separated one level
 // further down. Nothing is ever renamed, which is the property the layout exists to keep.
@@ -76,9 +77,10 @@ public static class AttachmentLanding
             // name — a person picking `scan.pdf` from two folders — and there the second gets a
             // directory of its own rather than overwriting the first or being renamed. Nothing is
             // renamed either way, which is the property the layout exists to keep.
-            var path = taken.Add(attachment.FileName)
-                ? $"{directory}/{attachment.FileName}"
-                : $"{directory}/{Disambiguate(attachment)}/{attachment.FileName}";
+            var fileName = SafeFileName(attachment.FileName);
+            var path = taken.Add(fileName)
+                ? $"{directory}/{fileName}"
+                : $"{directory}/{Disambiguate(attachment)}/{fileName}";
 
             if (await TryWriteAsync(registry, path, attachment, fetch, logger, ct))
             {
@@ -97,6 +99,20 @@ public static class AttachmentLanding
     // upload store. Its last segment alone: the first is the conversation, already in the path.
     private static string Disambiguate(AttachmentReference attachment) =>
         attachment.Id.Split('/').Last();
+
+    // A filename is one segment of the landing path, never a path of its own. WebChat sanitizes
+    // uploads at its store, but a Telegram document arrives with the sender's own name, and the
+    // sandbox jail's root is the container root — so a name with "../" segments composes a write
+    // target containment cannot refuse, and one with separators silently creates directories.
+    // Sanitized here, the seam every channel's attachments pass through, so no channel can forget.
+    private static string SafeFileName(string fileName)
+    {
+        var name = fileName.Replace('\\', '/').Split('/').Last();
+        var cleaned = new string(name
+            .Where(c => !Path.GetInvalidFileNameChars().Contains(c))
+            .ToArray());
+        return string.IsNullOrWhiteSpace(cleaned) || cleaned is "." or ".." ? "attachment" : cleaned;
+    }
 
     // The sandbox is the mount that can run something, which is the whole reason a file belongs
     // there. Asking the capability rather than the name keeps this from depending on one server's

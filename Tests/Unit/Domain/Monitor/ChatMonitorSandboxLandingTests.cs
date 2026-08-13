@@ -42,6 +42,61 @@ public class ChatMonitorSandboxLandingTests
         SizeBytes = 4
     };
 
+    // The Telegram intake passes the Bot API's sender-supplied document name straight through, so
+    // the landing seam is where a hostile name must stop: the sandbox jail's root is the container
+    // root, and a name with "../" segments composes a write target containment cannot refuse.
+    [Fact]
+    public async Task AFileNameWithDotDotSegments_LandsInsideThePerMessageDirectory()
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo with
+        {
+            Id = "7-42/jkl",
+            FileName = "../../../home/sandbox_user/.profile"
+        });
+
+        var written = sandbox.Writes.ShouldHaveSingleItem();
+        written.Path.ShouldStartWith("/home/sandbox_user/uploads/7-42/");
+        written.Path.ShouldNotContain("..");
+        written.Path.ShouldEndWith("/.profile");
+    }
+
+    // A separator inside a filename would silently create subdirectories under the landing
+    // directory — or escape it, spelled with backslashes — so only the last segment is a name.
+    [Theory]
+    [InlineData("reports/q3.pdf", "reports")]
+    [InlineData(@"..\..\evil.sh", "\\")]
+    public async Task AFileNameCarryingSeparators_LandsAsItsLastSegmentAlone(
+        string hostileName, string neverInThePath)
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo with { Id = "7-42/jkl", FileName = hostileName });
+
+        var written = sandbox.Writes.ShouldHaveSingleItem();
+        written.Path.ShouldStartWith("/home/sandbox_user/uploads/7-42/");
+        written.Path.ShouldEndWith($"/{hostileName.Split('/', '\\').Last()}");
+        written.Path.ShouldNotContain(neverInThePath);
+    }
+
+    // A name that sanitization empties still lands as a file rather than failing or writing the
+    // directory itself.
+    [Fact]
+    public async Task AFileNameThatIsNothingButSeparators_StillLandsUnderAName()
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo with { Id = "7-42/jkl", FileName = "///" });
+
+        var written = sandbox.Writes.ShouldHaveSingleItem();
+        written.Path.ShouldStartWith("/home/sandbox_user/uploads/7-42/");
+        written.Path.ShouldEndWith("/attachment");
+    }
+
     [Fact]
     public async Task EachAttachment_IsWrittenUnderAPerConversationPerMessageDirectory()
     {
