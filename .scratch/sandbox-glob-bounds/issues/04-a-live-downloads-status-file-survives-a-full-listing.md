@@ -19,9 +19,9 @@ flag and the entry count come from the disk half unchanged.
 
 **Status:** ready-for-agent
 
-- [ ] A glob over a downloads directory holding more disk entries than the response carries still
+- [x] A glob over a downloads directory holding more disk entries than the response carries still
       returns the live download's status file.
-- [ ] The coverage flag and the scanned count in a merged result are the disk walk's own values.
-- [ ] Truncation still reports correctly when the combined set exceeds the response cap.
-- [ ] A listing with no live downloads is unchanged from today.
-- [ ] The existing refusal rules on the mount are untouched.
+- [x] The coverage flag and the scanned count in a merged result are the disk walk's own values.
+- [x] Truncation still reports correctly when the combined set exceeds the response cap.
+- [x] A listing with no live downloads is unchanged from today.
+- [x] The existing refusal rules on the mount are untouched.

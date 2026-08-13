@@ -212,6 +212,12 @@ public sealed class MediaLibraryDiskFileSystem(
         where T : class =>
         await downloads.RefuseAsync(intent, path, ct) is { } refusal ? new FsResult<T>.Err(refusal) : null;
 
+    // The overlay's entries are reserved before the disk's fill the rest, because a live download
+    // owns its path here as it does in every other operation on this mount — and there are at most
+    // as many of them as there are live downloads. Filling from the disk first meant a directory
+    // holding a capful of ordinary files pushed a running download's status file out of its own
+    // listing. The coverage the response reports is the disk walk's own: the overlay enumerates a
+    // finite in-memory set and walks nothing.
     private static FsGlobResult Merge(FsGlobResult disk, IReadOnlyList<string> virtualEntries)
     {
         var added = virtualEntries.Except(disk.Entries, StringComparer.Ordinal).ToList();
@@ -220,11 +226,16 @@ public sealed class MediaLibraryDiskFileSystem(
             return disk;
         }
 
-        var combined = disk.Entries.Concat(added).ToList();
-        return new FsGlobResult
+        var reserved = added.Take(GlobFilesTool.FileResultCap).ToList();
+        var combined = reserved
+            .Concat(disk.Entries.Take(GlobFilesTool.FileResultCap - reserved.Count))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        return disk with
         {
-            Entries = combined.Take(GlobFilesTool.FileResultCap).ToList(),
-            Truncated = disk.Truncated || combined.Count > GlobFilesTool.FileResultCap,
+            Entries = combined,
+            Truncated = disk.Truncated || disk.Entries.Count + added.Count > GlobFilesTool.FileResultCap,
             Total = disk.Total + added.Count
         };
     }

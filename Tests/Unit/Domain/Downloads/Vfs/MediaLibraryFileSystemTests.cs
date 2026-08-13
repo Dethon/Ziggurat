@@ -5,6 +5,7 @@ using Domain.DTOs.FileSystem;
 using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
+using Domain.Tools.Files;
 using Domain.Tools.FileSystem;
 using Moq;
 using Shouldly;
@@ -753,6 +754,42 @@ public class MediaLibraryFileSystemTests : IDisposable
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
 
         glob.Entries.ShouldContain("downloads/42/status.json");
+    }
+
+    // A live download owns its path everywhere else on this mount, so it owns it in a listing too.
+    // The disk half filled the response first, and two hundred ordinary files pushed the status
+    // file out of the very directory the download is filling.
+    [Fact]
+    public async Task Glob_ADownloadsDirectoryFullerThanTheResponse_StillListsTheStatusFile()
+    {
+        _client.Add(Item(42));
+        _disk.GlobResults.AddRange(Enumerable
+            .Range(1, GlobFilesTool.FileResultCap + 50)
+            .Select(i => Path.Combine(_libraryRoot, "downloads", "42", $"part{i:D3}.mkv")));
+
+        var glob = (await _sut.GlobAsync("downloads/42", "*", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldContain("downloads/42/status.json");
+        glob.Entries.Count.ShouldBe(GlobFilesTool.FileResultCap);
+        glob.Truncated.ShouldBeTrue();
+    }
+
+    // The overlay enumerates a finite in-memory set and walks nothing, so what the response says
+    // about coverage is the disk walk's own answer.
+    [Fact]
+    public async Task Glob_AMergedListing_CarriesTheDiskWalksCoverage()
+    {
+        _client.Add(Item(42));
+        _disk.GlobResults.Add(Path.Combine(_libraryRoot, "downloads", "42", "payload.mkv"));
+        _disk.EntriesScanned = 1234;
+        _disk.BudgetReached = true;
+
+        var glob = (await _sut.GlobAsync("downloads/42", "*", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.EntriesScanned.ShouldBe(1234);
+        glob.BudgetReached.ShouldBeTrue();
     }
 
     [Fact]
