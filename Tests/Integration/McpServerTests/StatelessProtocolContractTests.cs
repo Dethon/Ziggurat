@@ -49,7 +49,7 @@ public class StatelessProtocolContractTests
             services => services.ConfigureMcp(new SandboxSettings.McpSettings
             {
                 ContainerRoot = "/tmp",
-                HomeDir = "/tmp",
+                HomeDir = "/tmp/home",
                 DefaultTimeoutSeconds = 5,
                 MaxTimeoutSeconds = 10,
                 OutputCapBytes = 1024,

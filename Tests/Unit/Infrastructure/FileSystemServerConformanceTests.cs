@@ -175,7 +175,7 @@ public class FileSystemServerConformanceTests
             ["sandbox"] = new SandboxFileSystem(
                 "sandbox", "A sandbox container.", Mock.Of<IFileSystemClient>(),
                 new LibraryPathConfig("/sandbox"), [".py"], Mock.Of<ICommandRunner>(),
-                "/home/sandbox_user")
+                "/sandbox/home/sandbox_user")
         };
 
     // The other half of the same idea. A mount's identity used to be written three times per server
