@@ -309,7 +309,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
         var topic = (await store.GetTopicPageAsync("agent-snippet", "default", null, 10)).Topics
             .ShouldHaveSingleItem();
-        topic.LastMessageSnippet.ShouldBe("cold and bri");
+        topic.LastMessageSnippet.ShouldBe("cold and bri…");
     }
 
     [Fact]

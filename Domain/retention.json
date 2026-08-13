@@ -23,7 +23,7 @@
     "pageSize": 30,
 
     // How much of the last message a row shows.
-    "snippetLength": 120,
+    "snippetLength": 80,
 
     // Attachments die with the conversation they were sent to rather than eleven months before it.
     "attachmentRetention": "365.00:00:00"

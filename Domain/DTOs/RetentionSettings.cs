@@ -26,7 +26,7 @@ public record RetentionSettings
     public int PageSize { get; init; } = 30;
 
     // How much of the last message a row shows. Stored on the topic, so a row needs no history.
-    public int SnippetLength { get; init; } = 120;
+    public int SnippetLength { get; init; } = 80;
 
     // Attachments die with the conversation they were sent to rather than eleven months before
     // it, so an old conversation is not a list of missing files.

@@ -146,7 +146,7 @@ public sealed class RedisThreadStateStore(
 
         return text is null
             ? null
-            : text.Length > retention.SnippetLength ? text[..retention.SnippetLength] : text;
+            : text.Length > retention.SnippetLength ? text[..retention.SnippetLength] + "…" : text;
     }
 
     // "agent-key:{agentId}:{chatId}:{threadId}", the one spelling AgentKey produces. Anything
