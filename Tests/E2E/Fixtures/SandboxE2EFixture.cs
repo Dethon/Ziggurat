@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Net;
+using System.Runtime.InteropServices;
 using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
 using ModelContextProtocol.Client;
 
@@ -19,6 +21,10 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
     private IContainer? _sandbox;
 
     public string McpEndpoint { get; private set; } = "";
+
+    // The host side of the container's persistent workspace, so a test can look at the file the
+    // container wrote where the volume — not the container's own layer — keeps it.
+    public string WorkspaceOnHost { get; private set; } = "";
 
     // Docker missing is a machine that cannot run this test, not a failing one.
     public bool Available => _sandbox is not null;
@@ -42,14 +48,21 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
             await TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.McpSandbox, ct);
         });
 
+        WorkspaceOnHost = Path.Combine(Path.GetTempPath(), $"mcp-sandbox-home-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(WorkspaceOnHost);
+
         await E2EPhase.RunAsync(name, "container startup", _containerStartupTimeout, async ct =>
         {
-            // The image's own user, not compose's unprivileged one. Compose pairs that user with a
-            // volume it owns; without the volume the container would come up with no writable home.
-            // Nothing here writes — the alias is a link every user can read — so the difference
-            // cannot reach what is being asserted.
+            // Compose's pairing, reproduced: an unprivileged user and a mount it owns at the home
+            // directory. Both halves are what make a permissions fact real here — the container
+            // root stays root-owned and unwritable, and the workspace is writable because the host
+            // directory belongs to whoever is running the test. The in-process fixture builds the
+            // server against a temporary root the test user owns outright, so it cannot tell the
+            // two apart, which is how a landing that never landed anything shipped green.
             _sandbox = TestContainers.Container(E2EImages.McpSandbox.ImageName, "mcp-sandbox")
                 .WithPortBinding(8080, true)
+                .WithBindMount(WorkspaceOnHost, ContainerWorkspace, AccessMode.ReadWrite)
+                .WithCreateParameterModifier(parameters => parameters.User = $"{Geteuid()}:{Getegid()}")
                 // The published port answers before Kestrel has bound anything — Docker's proxy
                 // accepts the connection and the app then resets it — so a TCP check returns while
                 // the server is still starting and every test fails on a reset. `GET /mcp` is the
@@ -76,7 +89,34 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
         {
             await _sandbox.DisposeAsync();
         }
+
+        try
+        {
+            if (Directory.Exists(WorkspaceOnHost))
+            {
+                Directory.Delete(WorkspaceOnHost, true);
+            }
+        }
+        catch (IOException)
+        {
+            // A leftover temp directory is not a failing test.
+        }
     }
+
+    // The sandbox's HomeDir setting, which its appsettings ships and compose gives a volume. The
+    // published workspace is read off the mount rather than written here; this is only where the
+    // host directory is attached.
+    public const string ContainerWorkspace = "/home/sandbox_user";
+
+    [DllImport("libc", SetLastError = true)]
+    private static extern uint geteuid();
+
+    [DllImport("libc", SetLastError = true)]
+    private static extern uint getegid();
+
+    private static uint Geteuid() => geteuid();
+
+    private static uint Getegid() => getegid();
 
     private static async Task<bool> DockerIsRunningAsync()
     {
@@ -96,4 +136,12 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
             return false;
         }
     }
+}
+
+// One container for every sandbox E2E class. A class fixture each would start a second container
+// for a subject that is per-image, not per-class.
+[CollectionDefinition(SandboxE2ECollection.Name)]
+public class SandboxE2ECollection : ICollectionFixture<SandboxE2EFixture>
+{
+    public const string Name = "SandboxE2E";
 }

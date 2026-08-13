@@ -65,7 +65,8 @@ public class McpSandboxServerFixture : IAsyncLifetime
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.ContainerRoot),
                 settings.AllowedExtensions,
-                sp.GetRequiredService<ICommandRunner>()))
+                sp.GetRequiredService<ICommandRunner>(),
+                settings.HomeDir))
             .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<SandboxFileSystem>()
             .AddFileSystemResource<SandboxFileSystem>();

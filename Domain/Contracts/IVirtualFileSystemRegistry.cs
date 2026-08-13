@@ -12,8 +12,13 @@ public record FileSystemResolution(IFileSystemBackend Backend, string RelativePa
     // left alone. Where the caller did name the path, echo their own string instead: at least one
     // backend answers with the container-absolute path, and prefixing a mount point onto that
     // produces nonsense.
-    public string ToVirtualPath(string backendPath) =>
-        $"{MountPoint.TrimEnd('/')}/{backendPath.TrimStart('/')}";
+    public string ToVirtualPath(string backendPath) => ToVirtualPath(MountPoint, backendPath);
+
+    // The same translation for a caller holding a mount rather than a resolution: landing composes
+    // the directory an attachment goes in from the mount point and the workspace the mount declares,
+    // before there is any path to resolve. Static so that stays one implementation rather than two.
+    public static string ToVirtualPath(string mountPoint, string backendPath) =>
+        $"{mountPoint.TrimEnd('/')}/{backendPath.TrimStart('/')}";
 }
 
 public interface IVirtualFileSystemRegistry

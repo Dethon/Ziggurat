@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.WebChat;
@@ -29,21 +30,40 @@ public static class AttachmentLanding
         string ConversationId,
         string MessageKey);
 
-    public static async Task<IReadOnlyList<string>> LandAsync(
+    // What one message's landing produced: the paths the model can act on, and the names of the
+    // files it cannot, because a partly landed message is where a bare count would make the model
+    // guess which file it lost.
+    public sealed record LandingOutcome(IReadOnlyList<string> Landed, IReadOnlyList<string> Failed)
+    {
+        public static readonly LandingOutcome Nothing = new([], []);
+    }
+
+    public static async Task<LandingOutcome> LandAsync(
         Landing landing, ILogger logger, CancellationToken ct)
     {
         var (registry, attachments, fetch, conversationId, messageKey) = landing;
-        var mountPoint = FindSandboxMountPoint(registry);
-        if (registry is null || mountPoint is null || attachments.Count == 0)
+        var sandbox = FindSandbox(registry);
+        if (registry is null || sandbox is null || attachments.Count == 0)
         {
-            return [];
+            return LandingOutcome.Nothing;
         }
 
-        var directory =
-            $"{mountPoint}/{Root}/{AttachmentEndpointPaths.ConversationDirectory(conversationId)}/{messageKey}";
+        // A mount that can run something but declares nowhere to write it lands nothing. Falling
+        // back to the mount root is what shipped: the sandbox mount is the container root, the
+        // image never creates a directory there and the container runs unprivileged, so every
+        // write failed and every turn continued as if no file had been sent (ADR 0025).
+        if (sandbox.Workspace is null)
+        {
+            return new LandingOutcome([], [.. attachments.Select(a => a.FileName)]);
+        }
+
+        var directory = FileSystemResolution.ToVirtualPath(
+            sandbox.MountPoint,
+            $"{sandbox.Workspace}/{Root}/{AttachmentEndpointPaths.ConversationDirectory(conversationId)}/{messageKey}");
         var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var landed = new List<string>();
+        var failed = new List<string>();
         foreach (var attachment in attachments)
         {
             // The per-message directory separates one message's files from another's, which is
@@ -59,9 +79,13 @@ public static class AttachmentLanding
             {
                 landed.Add(path);
             }
+            else
+            {
+                failed.Add(attachment.FileName);
+            }
         }
 
-        return landed;
+        return new LandingOutcome(landed, failed);
     }
 
     // The attachment's own id, which is what already tells two same-named files apart in the
@@ -71,11 +95,9 @@ public static class AttachmentLanding
 
     // The sandbox is the mount that can run something, which is the whole reason a file belongs
     // there. Asking the capability rather than the name keeps this from depending on one server's
-    // spelling.
-    private static string? FindSandboxMountPoint(IVirtualFileSystemRegistry? registry) =>
-        registry?.GetMounts()
-            .FirstOrDefault(m => m.Capabilities.Contains(VfsExecTool.Name))
-            ?.MountPoint;
+    // spelling — and is why the mount has to say where it can be written, rather than this knowing.
+    private static FileSystemMount? FindSandbox(IVirtualFileSystemRegistry? registry) =>
+        registry?.GetMounts().FirstOrDefault(m => m.Capabilities.Contains(VfsExecTool.Name));
 
     // A failed write is logged and the turn proceeds as context-only: a broken tool must not cost
     // an answer the model could still give.

@@ -14,7 +14,8 @@ namespace Tests.E2E.Sandbox;
 // about the mount point in process; the container is the one participant that has never heard of
 // it, and only the Dockerfile can tell it.
 [Trait("Category", "E2E")]
-public class SandboxPathE2ETests(SandboxE2EFixture fixture) : IClassFixture<SandboxE2EFixture>
+[Collection(SandboxE2ECollection.Name)]
+public class SandboxPathE2ETests(SandboxE2EFixture fixture)
 {
     [SkippableFact]
     public async Task ACommandNamingAFileByItsMountPrefixedPath_ResolvesIt()

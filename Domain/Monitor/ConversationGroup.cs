@@ -479,7 +479,7 @@ internal sealed class ConversationGroup(
         // Recorded on the message rather than written into its text: the model is told on the
         // way out, by the same step that puts the bytes back, so the transcript a person reads
         // never grows an internal path.
-        userMessage.SetSandboxPaths(landed);
+        userMessage.SetSandboxPaths(landed.Landed);
     }
 
     // Deliver each message's reply to the channel that actually sent it. The group is keyed

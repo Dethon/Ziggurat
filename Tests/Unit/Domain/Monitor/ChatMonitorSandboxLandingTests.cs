@@ -48,6 +48,39 @@ public class ChatMonitorSandboxLandingTests
         written.Bytes.ShouldBe([1, 2, 3, 4]);
     }
 
+    // The mount says where it can be written and landing puts the file there. The mount point is
+    // the container root, which the image never made writable, so a target built from it lands
+    // nothing at all (ADR 0025).
+    [Fact]
+    public async Task TheTarget_SitsUnderTheWorkspaceTheMountDeclared()
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo);
+
+        sandbox.Writes.ShouldHaveSingleItem().Path.ShouldStartWith("/home/sandbox_user/uploads/");
+
+        agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        messages!.Single().GetSandboxPaths().ShouldHaveSingleItem()
+            .ShouldStartWith("/sandbox/home/sandbox_user/uploads/");
+    }
+
+    // Falling back to the mount root is the silent failure this exists to remove, so a mount that
+    // can run something but declares nowhere to write it lands nothing.
+    [Fact]
+    public async Task AnExecCapableMountThatDeclaresNoWorkspace_LandsNothing()
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox, workspace: null);
+
+        await RunAsync(agent, _photo);
+
+        sandbox.Writes.ShouldBeEmpty();
+        agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        messages!.Single().GetSandboxPaths().ShouldBeNull();
+    }
+
     // Recorded on the message rather than written into its text: hydration is what names the
     // path to the model, so the transcript a person reads never grows an internal path.
     [Fact]
@@ -61,7 +94,7 @@ public class ChatMonitorSandboxLandingTests
         agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
         var message = messages!.Single();
         var path = message.GetSandboxPaths().ShouldHaveSingleItem();
-        path.ShouldStartWith("/sandbox/uploads/7-42/");
+        path.ShouldStartWith("/sandbox/");
         path.ShouldEndWith("/photo.png");
 
         string.Join("", message.Contents.OfType<TextContent>().Select(c => c.Text))
@@ -129,12 +162,13 @@ public class ChatMonitorSandboxLandingTests
         message.GetSandboxPaths().ShouldBeNull();
     }
 
-    private static FakeAiAgent AgentWith(RecordingSandbox? sandbox)
+    private static FakeAiAgent AgentWith(
+        RecordingSandbox? sandbox, string? workspace = "home/sandbox_user")
     {
         var agent = MonitorTestMocks.CreateAgent();
         if (sandbox is not null)
         {
-            var registry = new StubRegistry(sandbox);
+            var registry = new StubRegistry(sandbox, workspace);
             agent.FileSystemRegistry = registry;
         }
 
@@ -171,7 +205,7 @@ public class ChatMonitorSandboxLandingTests
         await monitor.Monitor(CancellationToken.None);
     }
 
-    private sealed class StubRegistry(RecordingSandbox sandbox) : IVirtualFileSystemRegistry
+    private sealed class StubRegistry(RecordingSandbox sandbox, string? workspace) : IVirtualFileSystemRegistry
     {
         public void Mount(FileSystemMount mount, IFileSystemBackend backend) { }
 
@@ -188,7 +222,8 @@ public class ChatMonitorSandboxLandingTests
         [
             new FileSystemMount("sandbox", "/sandbox", "a sandbox")
             {
-                Capabilities = [VfsExecTool.Name]
+                Capabilities = [VfsExecTool.Name],
+                Workspace = workspace
             }
         ];
     }

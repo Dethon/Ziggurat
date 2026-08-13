@@ -12,9 +12,17 @@ public class SandboxFileSystem(
     IFileSystemClient client,
     LibraryPathConfig root,
     string[] allowedExtensions,
-    ICommandRunner runner)
+    ICommandRunner runner,
+    string homeDirectory)
     : TextDiskFileSystem(filesystemName, mountDescription, client, root, allowedExtensions)
 {
+    // The home directory is the one writable, persistent place in the container: the compose volume
+    // is mounted there and everything else is either root-owned or reset with the container. It
+    // arrives as the container path the server is configured with and is published root-relative,
+    // because the sandbox root is the container root and every path the backend takes is relative
+    // to it.
+    public override string Workspace => homeDirectory.Trim('/');
+
     public override string DescribeExec =>
         "Execute a bash command (`bash -lc <command>`) inside the sandbox container. The path "
         + "argument is a path under the sandbox root that becomes the CWD; empty string or \".\" "
