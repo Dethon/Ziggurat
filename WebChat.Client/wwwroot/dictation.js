@@ -437,6 +437,17 @@ window.dictation = {
                     : 'The microphone had not finished opening, so nothing was recorded.');
                 return;
             }
+            // -60 dBFS over a whole run is not a quiet room: automatic gain lifts any live
+            // microphone's floor far above it, and the wedged phone's own traces measured -78 dB
+            // and flat zeros. Uploading it asks whisper to account for silence — which comes back
+            // as a transcription error, inviting a retry into the same wall. The words instead
+            // name the one cure that has actually worked.
+            if (peak < 33) {
+                this._invoke('Failed',
+                    'The microphone stayed open but heard pure silence — the device’s audio '
+                    + 'input looks stuck. Other apps may still work; restarting the device clears it.');
+                return;
+            }
             const ticket = await run.ticket;
             if (!ticket) {
                 this._invoke('Failed', run.ticketRefusal

@@ -321,6 +321,56 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         trace.ShouldMatch(@"last sound at \d+ms");
     }
 
+    // What a wedged phone actually does, per two traces taken in the state: grants a live-looking
+    // track, renders the whole run, and delivers digital zeros — no mute, no ended, no state
+    // change, nothing above -78 dBFS in seconds of held microphone. Uploading that asks whisper to
+    // account for silence and comes back blaming the transcription, so the person retries into the
+    // same wall. A recording the app itself measured as dead is refused on the spot, with words
+    // that name the phone's audio being stuck rather than the words nobody said.
+    [SkippableFact]
+    public async Task AMicrophoneThatGivesOnlySilence_IsRefusedAsStuckRatherThanUploaded()
+    {
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        // Distinctive: if this reaches the composer, the silence was uploaded and answered.
+        Fixture.Transcript = "esto probaría que se subió el silencio";
+
+        var page = await OpenAsync();
+        // The wedge, reproduced: a real audio track that carries only zeros — a destination node
+        // nothing feeds, on a context resumed inside the gesture so it genuinely renders.
+        await page.EvaluateAsync(
+            """
+            () => {
+                navigator.mediaDevices.getUserMedia = async () => {
+                    const ctx = new AudioContext();
+                    await ctx.resume();
+                    return ctx.createMediaStreamDestination().stream;
+                };
+            }
+            """);
+
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await PressableMicAsync(page);
+
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        await Task.Delay(HoldMs);
+        await TouchAsync(cdp, "touchEnd");
+
+        var refusal = page.Locator(".composer-refusal");
+        await Assertions.Expect(refusal)
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        (await refusal.InnerTextAsync()).ShouldContain("silence");
+
+        // Long enough for an upload that should not exist to have been answered.
+        await Task.Delay(1_500);
+        await Assertions.Expect(page.Locator("textarea.chat-input")).ToHaveValueAsync("");
+
+        var trace = await page.EvaluateAsync<string>("() => window.dictation.diagnostics()");
+        trace.ShouldContain("all zeros");
+    }
+
     // The microphone can be granted and the graph still fail to come up behind it — the worklet is
     // fetched over the network, and a phone loses one whenever it feels like it. Everything the open
     // got as far as acquiring is live at that moment: a real capture the person can see in the
