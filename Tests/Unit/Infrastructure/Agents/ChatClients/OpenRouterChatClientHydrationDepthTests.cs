@@ -79,6 +79,35 @@ public class OpenRouterChatClientHydrationDepthTests
         messages[0].Contents.OfType<TextContent>().ShouldAllBe(c => !c.Text.Contains("/sandbox/"));
     }
 
+    // A file that could not be put in the sandbox is the same kind of claim as the bytes, with the
+    // same boundary: the model is told which files it lost, in the turn it lost them, so its first
+    // answer accounts for it rather than planning commands against paths that do not exist.
+    [Fact]
+    public async Task AFileThatCouldNotBeLanded_IsNamedToTheModelWithinTheDistance()
+    {
+        var messages = Conversation(attachmentAt: 4, length: 5);
+        messages[4].SetLandingFailures(["ledger.csv"]);
+
+        var captured = await SendAsync(messages, depth: 3);
+
+        string.Join("", captured[4].Contents.OfType<TextContent>().Select(c => c.Text))
+            .ShouldContain("ledger.csv");
+    }
+
+    // Past the distance the model has neither the bytes nor the file, and a notice about neither is
+    // noise — unlike a landed path, which keeps naming a file that is still there.
+    [Fact]
+    public async Task AFileThatCouldNotBeLanded_IsNotMentionedBeyondTheDistance()
+    {
+        var messages = Conversation(attachmentAt: 0, length: 5);
+        messages[0].SetLandingFailures(["ledger.csv"]);
+
+        var captured = await SendAsync(messages, depth: 3);
+
+        string.Join("", captured[0].Contents.OfType<TextContent>().Select(c => c.Text))
+            .ShouldNotContain("ledger.csv");
+    }
+
     [Fact]
     public async Task AReferenceWhoseFileIsGone_ProducesTheSamePlaceholderAtAnyDistance()
     {

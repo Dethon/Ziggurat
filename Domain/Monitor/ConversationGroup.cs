@@ -480,6 +480,11 @@ internal sealed class ConversationGroup(
         // way out, by the same step that puts the bytes back, so the transcript a person reads
         // never grows an internal path.
         userMessage.SetSandboxPaths(landed.Landed);
+
+        // The other half of the same record. A file that could not be put there is named to the
+        // model by the same step, so a turn that lost its files says so instead of planning
+        // commands against paths that do not exist.
+        userMessage.SetLandingFailures(landed.Failed);
     }
 
     // Deliver each message's reply to the channel that actually sent it. The group is keyed

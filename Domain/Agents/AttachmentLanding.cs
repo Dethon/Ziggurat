@@ -142,6 +142,13 @@ public static class AttachmentLanding
     public static string Describe(IReadOnlyList<string> paths) =>
         $"[The attached files are in the sandbox at: {string.Join(", ", paths)}]";
 
+    // Named rather than counted: a partly landed message is where a count would make the model
+    // guess which file it lost.
+    public static string DescribeFailures(IReadOnlyList<string> fileNames) =>
+        $"[These attached files could not be put in the sandbox: {string.Join(", ", fileNames)}. "
+        + "They are not on any filesystem you can reach, so do not run commands against them, and "
+        + "say so if the answer needed them.]";
+
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> One(ReadOnlyMemory<byte> bytes)
     {
         await Task.CompletedTask;

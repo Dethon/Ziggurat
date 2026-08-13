@@ -70,7 +70,9 @@ public static class AttachmentHydration
         !message.Contents.Any(c => c is FunctionCallContent or FunctionResultContent);
 
     private static bool NeedsHydrating(ChatMessage message) =>
-        message.GetAttachments() is { Count: > 0 } || message.GetSandboxPaths() is { Count: > 0 };
+        message.GetAttachments() is { Count: > 0 }
+        || message.GetSandboxPaths() is { Count: > 0 }
+        || message.GetLandingFailures() is { Count: > 0 };
 
     private static async Task<ChatMessage> HydrateAsync(
         ChatMessage message, IAttachmentSource source, bool withinDepth, CancellationToken ct)
@@ -83,6 +85,14 @@ public static class AttachmentHydration
         if (message.GetSandboxPaths() is { Count: > 0 } paths)
         {
             contents.Add(new TextContent(AttachmentLanding.Describe(paths)));
+        }
+
+        // Which files never got there, bounded by the same distance as the bytes rather than by the
+        // landed paths' unbounded life: past it the model has neither the bytes nor the file, and a
+        // months-old notice about a file it could not have used anyway is noise.
+        if (withinDepth && message.GetLandingFailures() is { Count: > 0 } failed)
+        {
+            contents.Add(new TextContent(AttachmentLanding.DescribeFailures(failed)));
         }
 
         var attachments = message.GetAttachments() ?? [];

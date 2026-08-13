@@ -19,6 +19,7 @@ public static class ChatMessageExtensions
     private const string AttachmentsKey = "Attachments";
     private const string AttachmentChannelIdKey = "AttachmentChannelId";
     private const string SandboxPathsKey = "SandboxPaths";
+    private const string LandingFailuresKey = "LandingFailures";
 
     extension(ChatMessage message)
     {
@@ -265,6 +266,32 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[SandboxPathsKey] = paths;
+        }
+
+        // The files this turn could not put in the sandbox, by the names the person used. Recorded
+        // beside the landed paths so the turn's record is complete, but spoken only within the
+        // hydration distance: past it the model has neither the bytes nor the file, and a notice
+        // about neither is noise.
+        public IReadOnlyList<string>? GetLandingFailures()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(LandingFailuresKey);
+            return value switch
+            {
+                IReadOnlyList<string> names => names,
+                JsonElement je => je.Deserialize<IReadOnlyList<string>>(ChannelProtocol.SerializerOptions),
+                _ => null
+            };
+        }
+
+        public void SetLandingFailures(IReadOnlyList<string>? fileNames)
+        {
+            if (fileNames is null or { Count: 0 })
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[LandingFailuresKey] = fileNames;
         }
     }
 

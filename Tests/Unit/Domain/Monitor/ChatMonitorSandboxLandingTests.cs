@@ -26,6 +26,14 @@ public class ChatMonitorSandboxLandingTests
         SizeBytes = 4
     };
 
+    private static readonly AttachmentReference _ledger = new()
+    {
+        Id = "7-42/ghi",
+        FileName = "ledger.csv",
+        MediaType = "text/csv",
+        SizeBytes = 4
+    };
+
     private static readonly AttachmentReference _sameNameAgain = new()
     {
         Id = "7-42/def",
@@ -162,6 +170,47 @@ public class ChatMonitorSandboxLandingTests
         message.GetSandboxPaths().ShouldBeNull();
     }
 
+    // The turn's record is complete: what landed and what did not are both on the message, so the
+    // step that tells the model where the files are can also tell it which ones are missing.
+    [Fact]
+    public async Task AFailedSandboxWrite_NamesTheFileOnTheMessage()
+    {
+        var sandbox = new RecordingSandbox { Throws = true };
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo);
+
+        agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        messages!.Single().GetLandingFailures().ShouldBe(["photo.png"]);
+    }
+
+    // A partly landed message is where a bare count would make the model guess which file it lost.
+    [Fact]
+    public async Task APartlyLandedMessage_NamesOnlyTheFilesThatFailedAndStillReportsTheOthers()
+    {
+        var sandbox = new RecordingSandbox { FailsFor = "ledger.csv" };
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo, _ledger);
+
+        agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        var message = messages!.Single();
+        message.GetSandboxPaths().ShouldHaveSingleItem().ShouldEndWith("/photo.png");
+        message.GetLandingFailures().ShouldBe(["ledger.csv"]);
+    }
+
+    [Fact]
+    public async Task AnExecCapableMountThatDeclaresNoWorkspace_NamesEveryFileItCouldNotPlace()
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox, workspace: null);
+
+        await RunAsync(agent, _photo, _ledger);
+
+        agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        messages!.Single().GetLandingFailures().ShouldBe(["photo.png", "ledger.csv"]);
+    }
+
     private static FakeAiAgent AgentWith(
         RecordingSandbox? sandbox, string? workspace = "home/sandbox_user")
     {
@@ -232,6 +281,9 @@ public class ChatMonitorSandboxLandingTests
     {
         public bool Throws { get; init; }
 
+        // One file of several failing, which is what makes a message partly landed.
+        public string? FailsFor { get; init; }
+
         public List<(string Path, byte[] Bytes)> Writes { get; } = [];
 
         public override string FilesystemName => "sandbox";
@@ -242,7 +294,7 @@ public class ChatMonitorSandboxLandingTests
             string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
             bool overwrite, bool createDirectories, CancellationToken ct)
         {
-            if (Throws)
+            if (Throws || (FailsFor is not null && path.EndsWith(FailsFor, StringComparison.Ordinal)))
             {
                 throw new IOException("the sandbox is not there");
             }
