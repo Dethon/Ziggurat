@@ -2,6 +2,8 @@ using Agent.Modules;
 using Domain.DTOs;
 using Mcp.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.EnvironmentVariables;
+using Microsoft.Extensions.Configuration.Json;
 using Shouldly;
 
 namespace Tests.Unit.Mcp.Hosting;
@@ -13,11 +15,6 @@ namespace Tests.Unit.Mcp.Hosting;
 //
 // What that costs is invisible from any one host: each reads its own configuration and would look
 // perfectly correct while disagreeing with the other two. So these assert the shared file itself.
-//
-// In its own non-parallel collection because one test sets a process-global environment variable,
-// and the suite runs at full width: anything binding configuration in the mutation's window would
-// read the override as its own.
-[Collection(EnvironmentMutatingCollection.Name)]
 public class RetentionPolicyFileTests
 {
     private sealed record HostSettings
@@ -58,25 +55,25 @@ public class RetentionPolicyFileTests
 
     // One container is still overridable for a test run — the E2E stack serves one row a page that
     // way — so the shared file has to lose to the environment rather than win over it.
+    //
+    // Asked of the source order rather than of an override actually taking effect: the environment
+    // an override would have to be written to is the process's own, and a suite running at full
+    // width would hand that override to whatever else bound configuration in the same window. The
+    // order is the whole mechanism — a later source wins, which is the framework's own rule — so
+    // the file being added ahead of the environment is what there is to get wrong here.
     [Fact]
-    public void AnEnvironmentVariable_StillOverridesTheSharedFile()
+    public void TheSharedFile_IsReadBeforeTheEnvironment()
     {
-        Environment.SetEnvironmentVariable("Retention__PageSize", "1");
-        try
-        {
-            new ConfigurationBuilder().BindSettings<HostSettings>().Retention.PageSize.ShouldBe(1);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("Retention__PageSize", null);
-        }
-    }
-}
+        var configBuilder = new ConfigurationBuilder();
+        configBuilder.BindSettings<HostSettings>();
+        var sources = configBuilder.Sources.ToList();
 
-// xunit runs a non-parallel collection on its own, after the parallel bulk, so a test that must
-// mutate process-global state joins this collection instead of racing everything else.
-[CollectionDefinition(Name, DisableParallelization = true)]
-public static class EnvironmentMutatingCollection
-{
-    public const string Name = "environment-mutating";
+        var file = sources.FindIndex(source =>
+            source is JsonConfigurationSource json && json.Path == RetentionSettings.FileName);
+        var environment = sources.FindIndex(source => source is EnvironmentVariablesConfigurationSource);
+
+        file.ShouldBeGreaterThanOrEqualTo(0, $"{RetentionSettings.FileName} should be one of the sources");
+        environment.ShouldBeGreaterThanOrEqualTo(0, "the environment should be one of the sources");
+        file.ShouldBeLessThan(environment);
+    }
 }
