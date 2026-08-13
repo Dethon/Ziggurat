@@ -207,11 +207,13 @@ window.dictation = {
             ctx: null,
             encoder: null,
             drained: null,
+            wake: null,
             meter: 0,
             meterAt: 0
         };
         this._run = run;
         this._note('press', latched ? 'latched' : 'held');
+        this._keepAwake(run);
         // Minted while the microphone opens rather than after it: the two round trips overlap, and
         // a dictation short enough to be a mis-tap costs the request nothing because it is thrown
         // away before it is used.
@@ -371,6 +373,47 @@ window.dictation = {
             .join(', '));
     },
 
+    // A phone dims and then locks a screen nothing has touched for a while, and someone holding the
+    // microphone down and talking into it is touching nothing — the longer the dictation, the more
+    // likely the screen goes out mid-sentence. Here that is not merely dark: a locked screen hides
+    // the page, and a hidden page throws the recording away, so the words are simply gone. The wake
+    // lock is the only say a page has in that, and it is held for exactly as long as the microphone
+    // is open — never past it, because a lock nobody released is a phone that stops sleeping.
+    _keepAwake: function (run) {
+        if (!navigator.wakeLock || !navigator.wakeLock.request) return;
+        // The lock is asked for at the press and arrives a turn or more later, by which time a short
+        // dictation can be over — and a lock granted to a recording that has ended is the leak this
+        // is careful about, since nothing else holds a reference to it.
+        run.wake = navigator.wakeLock.request('screen')
+            .then(lock => {
+                if (run.ending || this._run !== run) {
+                    this._release(lock);
+                    return null;
+                }
+                this._note('awake');
+                return lock;
+            })
+            // Never a reason to refuse a dictation. A browser that has no such lock to give, a page
+            // the platform will not grant one to, a battery too low for it: the recording is the
+            // same recording, and only the screen's own timeout is left in charge of it.
+            .catch(err => {
+                this._note('awake', 'refused' + this._named(err));
+                return null;
+            });
+    },
+
+    _releaseWake: function (run) {
+        if (!run.wake) return;
+        const held = run.wake;
+        // Cleared first: every path that ends a recording passes through here, some of them twice.
+        run.wake = null;
+        held.then(lock => this._release(lock));
+    },
+
+    _release: function (lock) {
+        if (lock) lock.release().catch(() => { /* the page is going away, which releases it anyway */ });
+    },
+
     _latch: function () {
         const run = this._run;
         if (!run || run.latched) return;
@@ -390,8 +433,10 @@ window.dictation = {
         this._stopClock(run);
         // The microphone closes now — the indicator going out is what answers letting go — but the
         // graph stays up a moment longer, until the encoder has handed over the batch it was still
-        // filling.
+        // filling. The screen goes back to the phone's own timeout with the microphone: what is left
+        // is an upload, and nobody is talking to it.
         this._stopTracks(run);
+        this._releaseWake(run);
         this._clearHints();
         this._run = null;
         this._invoke('Ended');
@@ -551,6 +596,7 @@ window.dictation = {
         // off. It ends "the recording", meaning whichever one is live by then.
         this._stopClock(run);
         this._stopTracks(run);
+        this._releaseWake(run);
         this._closeContext(run);
         // The hints belong to whichever dictation is on screen now, not to the one being torn down.
         // A run that ends late — a slow open finishing after its own discard, a failure arriving

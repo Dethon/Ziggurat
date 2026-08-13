@@ -417,6 +417,93 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
             "() => window.__opens[0].audio.echoCancellation === true")).ShouldBeTrue();
     }
 
+    // A phone dims and locks a screen nothing has touched for a while, and someone holding the
+    // microphone and talking into it is touching nothing: the longer the dictation, the likelier it
+    // is cut off by the screen going out. On this app that is not merely dark — the lock hides the
+    // page, and a hidden page throws the recording away — so a sentence spoken into a phone left to
+    // itself ends as nothing at all. The screen is asked to stay awake for exactly as long as the
+    // microphone is open, and the lock is let go at both ends a recording has: the release that
+    // transcribes it, and the slide that throws it away. A lock still held after that is a phone
+    // that never sleeps again.
+    [SkippableFact]
+    public async Task ADictationInFlight_HoldsTheScreenAwakeAndLetsGoWhenItEnds()
+    {
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "la pantalla sigue encendida";
+
+        var page = await OpenAsync();
+
+        // Every lock the page asks for, kept where the test can ask about it afterwards. Stubbed
+        // rather than taken for real because a headless browser on a machine with no screen is not
+        // where the platform's own answer means anything; what is being pinned is that this app asks
+        // and lets go, at the right two moments.
+        await page.EvaluateAsync(
+            """
+            () => {
+                window.__locks = [];
+                Object.defineProperty(navigator, 'wakeLock', {
+                    configurable: true,
+                    value: {
+                        request: async type => {
+                            const lock = {
+                                type: type,
+                                released: false,
+                                release: async () => { lock.released = true; }
+                            };
+                            window.__locks.push(lock);
+                            return lock;
+                        }
+                    }
+                });
+            }
+            """);
+
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await PressableMicAsync(page);
+
+        // A recording that ends as words.
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+
+        // The lock is asked for at the press and granted a turn later, so it is waited for as the
+        // state it is rather than assumed to be there by the time the strip is.
+        await page.WaitForFunctionAsync(
+            "() => window.__locks.length > 0",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 15_000 });
+        var held = await page.EvaluateAsync<string[]>(
+            "() => window.__locks.filter(l => !l.released).map(l => l.type)");
+        held.ShouldBe(["screen"]);
+
+        await Task.Delay(HoldMs);
+        await TouchAsync(cdp, "touchEnd");
+
+        await Assertions.Expect(page.Locator("textarea.chat-input"))
+            .ToHaveValueAsync(
+                "la pantalla sigue encendida", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+        (await page.EvaluateAsync<bool>("() => window.__locks.every(l => l.released)"))
+            .ShouldBeTrue("the screen was still being held awake after the dictation ended");
+
+        // And a recording thrown away, which ends down a different path entirely.
+        await page.Locator("textarea.chat-input").FillAsync("");
+        var again = await PressableMicAsync(page);
+        await TouchAsync(cdp, "touchStart", Point(again.X, again.Y));
+        await page.WaitForFunctionAsync(
+            "() => window.__locks.length > 1",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 15_000 });
+        await TouchAsync(cdp, "touchMove", Point(again.X - 120, again.Y));
+        await TouchAsync(cdp, "touchEnd");
+
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]")).ToBeHiddenAsync();
+        await page.WaitForFunctionAsync(
+            "() => window.__locks.every(l => l.released)",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 15_000 });
+    }
+
     // The microphone can be granted and the graph still fail to come up behind it — the worklet is
     // fetched over the network, and a phone loses one whenever it feels like it. Everything the open
     // got as far as acquiring is live at that moment: a real capture the person can see in the
