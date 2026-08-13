@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Tools.Files;
 
 namespace Domain.Tools.FileSystem;
 
@@ -9,7 +10,9 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
     public const string Key = "glob";
     public const string Name = "glob";
 
-    public const string ToolDescription = """
+    // Interpolated, not spelled out: the budgets have one definition each, and prose carrying its
+    // own copy of a number goes silently wrong the day the constant moves.
+    public static readonly string ToolDescription = $$"""
         Searches a filesystem for files and directories matching a glob pattern. The pattern
         alone decides what matches — there is no mode. `*` matches one path segment, `**`
         recurses, `?` matches one character. Brace alternation expands too:
@@ -19,15 +22,14 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
         are not. Entries are full virtual paths (including the mount point), ready to pass straight
         to other filesystem tools, and sorted within the response.
 
-        On a file mount the walk is bounded: it stops once it has the 200 entries the response
-        carries, and stops in any case after 50,000 entries have been enumerated. `truncated` means
+        On a file mount the walk is bounded: it stops once it has the {{GlobFilesTool.FileResultCap}} entries the response
+        carries, and stops in any case after {{DiskWalk.MaxEntriesScanned:N0}} entries have been enumerated. `truncated` means
         more matched than fit; `budgetReached` means the walk stopped before the tree ended, and
         `entriesScanned` says how much of it the answer covers. An empty result with
         `budgetReached` false means nothing matched; with it true, scope the basePath and try again
         rather than refining the pattern.
         """;
 
-    [Description(ToolDescription)]
     public async Task<JsonNode> RunAsync(
         [Description("Virtual base path to search from (e.g., /library or /library/docs)")]
         string basePath,

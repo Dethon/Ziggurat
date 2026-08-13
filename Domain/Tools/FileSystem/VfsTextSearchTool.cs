@@ -11,19 +11,20 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
     public const string Key = "search";
     public const string Name = "text_search";
 
-    public const string ToolDescription = """
+    // Interpolated, not spelled out: the budgets have one definition each, and prose carrying its
+    // own copy of a number goes silently wrong the day the constant moves.
+    public static readonly string ToolDescription = $"""
         Searches for text across files in a filesystem, or within a single file.
         Returns matching files with line numbers and context.
 
-        On a file mount a search over a directory is bounded twice: it stops after 50,000 entries
-        have been enumerated and after 5,000 files have been read, whichever comes first.
+        On a file mount a search over a directory is bounded twice: it stops after {DiskWalk.MaxEntriesScanned:N0} entries
+        have been enumerated and after {DiskWalk.MaxFilesRead:N0} files have been read, whichever comes first.
         `budgetReached` says one of those ended the walk — distinct from `truncated`, which means
         maxResults was reached — and `entriesScanned` beside `filesSearched` says how much of the
         tree the answer covers. A large scan against zero files searched is a filePattern that
         excluded everything, not an empty directory. Searching a single filePath walks nothing.
         """;
 
-    [Description(ToolDescription)]
     public async Task<JsonNode> RunAsync(
         [Description("Text or regex pattern to search for")]
         string query,

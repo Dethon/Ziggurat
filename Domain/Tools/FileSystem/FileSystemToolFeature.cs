@@ -50,8 +50,22 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
                         }
                         : default
                 })),
-            (VfsGlobFilesTool.Key, () => AIFunctionFactory.Create(new VfsGlobFilesTool(registry).RunAsync, name: $"domain__{Feature}__{VfsGlobFilesTool.Name}")),
-            (VfsTextSearchTool.Key, () => AIFunctionFactory.Create(new VfsTextSearchTool(registry).RunAsync, name: $"domain__{Feature}__{VfsTextSearchTool.Name}")),
+            // These two descriptions interpolate the walk budgets, so they cannot live in a
+            // [Description] attribute and are handed to the factory here instead.
+            (VfsGlobFilesTool.Key, () => AIFunctionFactory.Create(
+                new VfsGlobFilesTool(registry).RunAsync,
+                new AIFunctionFactoryOptions
+                {
+                    Name = $"domain__{Feature}__{VfsGlobFilesTool.Name}",
+                    Description = VfsGlobFilesTool.ToolDescription
+                })),
+            (VfsTextSearchTool.Key, () => AIFunctionFactory.Create(
+                new VfsTextSearchTool(registry).RunAsync,
+                new AIFunctionFactoryOptions
+                {
+                    Name = $"domain__{Feature}__{VfsTextSearchTool.Name}",
+                    Description = VfsTextSearchTool.ToolDescription
+                })),
             (VfsMoveTool.Key, () => AIFunctionFactory.Create(new VfsMoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsMoveTool.Name}")),
             (VfsCopyTool.Key, () => AIFunctionFactory.Create(new VfsCopyTool(registry).RunAsync, name: $"domain__{Feature}__{VfsCopyTool.Name}")),
             (VfsRemoveTool.Key, () => AIFunctionFactory.Create(new VfsRemoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsRemoveTool.Name}")),
