@@ -11,10 +11,18 @@ public sealed class GlobWalk
 
     public IAsyncEnumerable<string> Matches { get; }
 
-    // What the walk cost, updated as it enumerates and final once the sequence ends or is
-    // abandoned. Only the walk writes them. A caller that stopped early still reads how much of the
-    // tree its answer covers, which is the one thing a finished collection could never tell it.
-    public int EntriesScanned { get; set; }
+    // What the walk cost, final once the sequence ends or is abandoned. A caller that stopped early
+    // still reads how much of the tree its answer covers, which is the one thing a finished
+    // collection could never tell it.
+    public int EntriesScanned { get; private set; }
 
-    public bool BudgetReached { get; set; }
+    public bool BudgetReached { get; private set; }
+
+    // Only the walk itself reports, which is why the setters above are private rather than a
+    // comment asking callers not to write them.
+    public void Record(int entriesScanned, bool budgetReached)
+    {
+        EntriesScanned = entriesScanned;
+        BudgetReached = budgetReached;
+    }
 }

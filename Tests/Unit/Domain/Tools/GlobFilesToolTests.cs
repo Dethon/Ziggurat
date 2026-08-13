@@ -264,8 +264,7 @@ public class GlobFilesToolTests
     {
         await Task.Yield();
         yield return hit;
-        walk.EntriesScanned = 50;
-        walk.BudgetReached = true;
+        walk.Record(entriesScanned: 50, budgetReached: true);
     }
 
     private static async IAsyncEnumerable<string> Throwing(Exception error)

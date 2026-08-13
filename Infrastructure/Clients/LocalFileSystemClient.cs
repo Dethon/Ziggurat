@@ -26,15 +26,15 @@ public class LocalFileSystemClient : IFileSystemClient
             : Task.FromResult(GetLibraryPaths(path));
     }
 
+    // Overridable for the same reason the search's match timeout is: a test has to reach the bound
+    // without building a tree the size of the shipped one.
+    protected virtual int ScanBudget => DiskWalk.MaxEntriesScanned;
+
     // One lazy pass over the tree, matching each entry as it is found. The caller stops pulling
     // once it has all it will report, so a broad pattern over a large tree costs what the response
     // costs rather than what the tree does. Matching is the shared glob matcher every other mount
     // uses, so one pattern language covers them all; the entry's own directory flag answers the
     // dirs-only rule that used to need a second walk.
-    // Overridable for the same reason the search's match timeout is: a test has to reach the bound
-    // without building a tree the size of the shipped one.
-    protected virtual int ScanBudget => DiskWalk.MaxEntriesScanned;
-
     public GlobWalk Glob(string basePath, string pattern, CancellationToken cancellationToken = default)
     {
         var dirsOnly = pattern.EndsWith('/');
@@ -53,15 +53,17 @@ public class LocalFileSystemClient : IFileSystemClient
         bool dirsOnly,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // The walk is synchronous I/O, so it leaves the caller's stack before touching the disk;
-        // a caller that never pulls pays nothing.
+        // Nothing touches the disk until the caller pulls, and the first pull hands the walk to the
+        // thread pool rather than opening a directory handle on the caller's stack.
         await Task.Yield();
 
         var budget = ScanBudget;
+        var scanned = 0;
         foreach (var entry in DiskWalk.Entries(basePath))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            walk.EntriesScanned++;
+            scanned++;
+            walk.Record(scanned, budgetReached: false);
 
             var relative = Path.GetRelativePath(basePath, entry.Path).Replace('\\', '/');
             if ((!dirsOnly || entry.IsDirectory) && matches(relative))
@@ -72,9 +74,9 @@ public class LocalFileSystemClient : IFileSystemClient
             // The budget ends the walk wherever it is, however few matches it has. The reparse-point
             // skip is what keeps a tree finite; this stands behind it as an independent backstop,
             // and unlike that guard it is visible to the caller.
-            if (walk.EntriesScanned >= budget)
+            if (scanned >= budget)
             {
-                walk.BudgetReached = true;
+                walk.Record(scanned, budgetReached: true);
                 yield break;
             }
         }

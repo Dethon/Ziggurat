@@ -132,8 +132,7 @@ public static class DownloadFakes
                 throw new DirectoryNotFoundException(basePath);
             }
 
-            walk.EntriesScanned = EntriesScanned;
-            walk.BudgetReached = BudgetReached;
+            walk.Record(EntriesScanned, BudgetReached);
             foreach (var hit in GlobResults)
             {
                 yield return hit;

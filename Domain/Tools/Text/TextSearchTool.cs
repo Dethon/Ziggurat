@@ -184,14 +184,14 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
     // The jail vets the search root, but a symlink discovered inside the tree can point anywhere —
     // following it would serve foreign file content as search results, and a link pointing at its
     // own ancestor would never end — so the walk skips symlinks wholesale. That guard is DiskWalk's,
-    // shared with the glob, which is also why the caller's filePattern never reaches an enumeration
-    // API: .NET resolves a leading "../" inside a search pattern, so "../*.md" would read above the
-    // vault. Everything under the vetted root is enumerated and names are filtered here, with the
-    // same compiled matcher every other filesystem uses.
-
-    // A bare pattern ("*.md") filters file names at any depth, as it did when EnumerateFiles
-    // matched it per directory; a pattern with a separator ("docs/*.md") filters the path
-    // relative to the searched directory.
+    // shared with the glob.
+    //
+    // The caller's filePattern never reaches an enumeration API either: .NET resolves a leading
+    // "../" inside a search pattern, so "../*.md" would read above the vault. Everything under the
+    // vetted root is enumerated and names are filtered below, with the same compiled matcher every
+    // other filesystem uses. A bare pattern ("*.md") filters file names at any depth, as it did
+    // when EnumerateFiles matched it per directory; a pattern with a separator ("docs/*.md")
+    // filters the path relative to the searched directory.
     private static string PatternCandidate(string root, string file, string? filePattern) =>
         filePattern?.Contains('/') == true
             ? Path.GetRelativePath(root, file).Replace('\\', '/')
@@ -233,10 +233,20 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             foreach (var text in File.ReadLines(filePath))
             {
                 line++;
-                pending
-                    .Where(p => p.After.Count < scan.ContextLines)
-                    .ToList()
-                    .ForEach(p => p.After.Add(Truncate(text, 100)));
+                // Every line pays this, so the context line is truncated once rather than per
+                // pending match, and the loop is a loop rather than a LINQ chain that would
+                // allocate a list of the pending matches on each one.
+                if (pending.Count > 0)
+                {
+                    var context = Truncate(text, 100);
+                    foreach (var match in pending)
+                    {
+                        if (match.After.Count < scan.ContextLines)
+                        {
+                            match.After.Add(context);
+                        }
+                    }
+                }
 
                 if (text.StartsWith('#'))
                 {

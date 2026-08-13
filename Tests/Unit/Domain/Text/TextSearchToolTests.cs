@@ -325,23 +325,27 @@ public class TextSearchToolTests : IDisposable
         WriteHugeFile("huge.md", lineLength, lineCount, "kubernetes on the last line");
 
         var baseline = GC.GetTotalMemory(forceFullCollection: true);
-        var peak = baseline;
         using var sampling = new CancellationTokenSource();
+        // The peak comes back as the sampler's result rather than through a shared field, so the
+        // assertion reads a value the task handed it rather than one another thread is writing.
         var sampler = Task.Run(
             async () =>
             {
+                var seen = baseline;
                 while (!sampling.IsCancellationRequested)
                 {
-                    peak = Math.Max(peak, GC.GetTotalMemory(forceFullCollection: false));
+                    seen = Math.Max(seen, GC.GetTotalMemory(forceFullCollection: false));
                     await Task.Delay(5, CancellationToken.None);
                 }
+
+                return seen;
             },
             CancellationToken.None);
 
         var result = _tool.TestRun("kubernetes", contextLines: 1);
 
         await sampling.CancelAsync();
-        await sampler;
+        var peak = await sampler;
 
         result["totalMatches"]!.GetValue<int>().ShouldBe(1);
         var match = result["results"]!.AsArray()[0]!["matches"]!.AsArray()[0]!;
