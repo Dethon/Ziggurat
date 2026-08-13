@@ -318,7 +318,7 @@ public class TextSearchToolTests : IDisposable
     // gigabyte of live strings; the ceiling below is far above what streaming needs and far below
     // that.
     [Fact]
-    public void Run_AFileFarLargerThanMemory_ReturnsItsMatchesWithoutHoldingIt()
+    public async Task Run_AFileFarLargerThanMemory_ReturnsItsMatchesWithoutHoldingIt()
     {
         const int lineLength = 16 * 1024;
         const int lineCount = 16 * 1024;
@@ -340,8 +340,8 @@ public class TextSearchToolTests : IDisposable
 
         var result = _tool.TestRun("kubernetes", contextLines: 1);
 
-        sampling.Cancel();
-        sampler.Wait(TimeSpan.FromSeconds(5));
+        await sampling.CancelAsync();
+        await sampler;
 
         result["totalMatches"]!.GetValue<int>().ShouldBe(1);
         var match = result["results"]!.AsArray()[0]!["matches"]!.AsArray()[0]!;
