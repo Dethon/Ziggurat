@@ -23,7 +23,7 @@ public sealed class TopicPagingEffect : IDisposable
     private readonly IDisposable _searchRegistration;
     private readonly IDisposable _refreshRegistration;
     private ITimer? _searchDebounce;
-    private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan _searchDebounceDelay = TimeSpan.FromMilliseconds(250);
     private int _fetching;
     private TopicRange? _firstPageInFlight;
 
@@ -64,7 +64,7 @@ public sealed class TopicPagingEffect : IDisposable
             _searchDebounce?.Dispose();
             _searchDebounce = timeProvider.CreateTimer(
                 _ => LoadFirstPageAsync().LogFaults(_logger, nameof(SearchTopics)),
-                null, SearchDebounce, Timeout.InfiniteTimeSpan);
+                null, _searchDebounceDelay, Timeout.InfiniteTimeSpan);
         });
         _refreshRegistration = dispatcher.RegisterHandler<RefreshTopicList>(
             _ => RefreshTopAsync().LogFaults(_logger, nameof(RefreshTopicList)));
