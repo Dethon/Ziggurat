@@ -9,6 +9,11 @@ public sealed record TopicsState
 
     public IReadOnlyList<StoredTopic> Topics => Paging.Topics;
     public string? SelectedTopicId { get; init; }
+
+    // The model of the open conversation, picked up when it was selected and held after its row
+    // leaves the loaded pages — catch-up collapses the list to a first page, and restoring the
+    // open session needs the agent, chat and thread this copy still carries.
+    public StoredTopic? SelectedTopic { get; init; }
     public IReadOnlyList<AgentCatalogEntry> Agents { get; init; } = [];
     public string? SelectedAgentId { get; init; }
     // Which range of the index the list is being read from. Not a property of any topic — see

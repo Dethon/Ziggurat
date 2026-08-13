@@ -96,9 +96,16 @@ public sealed class TopicsStore : IDisposable
             Error = null
         },
 
+        // The model is picked up here, while the row is still loaded, and kept even when a later
+        // first page replaces the list without it — the open session's identity must not depend
+        // on which page its row happens to sit on.
         SelectTopic a => state with
         {
-            SelectedTopicId = a.TopicId
+            SelectedTopicId = a.TopicId,
+            SelectedTopic = a.TopicId is null
+                ? null
+                : state.Topics.FirstOrDefault(t => t.TopicId == a.TopicId)
+                    ?? (state.SelectedTopic?.TopicId == a.TopicId ? state.SelectedTopic : null)
         },
 
         // The rows held belong to the range that was being read, so switching range starts the
@@ -133,6 +140,7 @@ public sealed class TopicsStore : IDisposable
         {
             Paging = state.Paging.Remove(a.TopicId),
             SelectedTopicId = state.SelectedTopicId == a.TopicId ? null : state.SelectedTopicId,
+            SelectedTopic = state.SelectedTopicId == a.TopicId ? null : state.SelectedTopic,
             Error = null
         },
 
@@ -147,6 +155,7 @@ public sealed class TopicsStore : IDisposable
                 Agents = a.Agents,
                 SelectedAgentId = a.Agents.FirstOrDefault()?.Id,
                 SelectedTopicId = null,
+                SelectedTopic = null,
                 SearchQuery = "",
                 ShowingArchived = false,
                 Error = null
@@ -165,6 +174,7 @@ public sealed class TopicsStore : IDisposable
         {
             SelectedAgentId = a.AgentId,
             SelectedTopicId = null,
+            SelectedTopic = null,
             SearchQuery = "",
             ShowingArchived = false
         },
@@ -177,7 +187,8 @@ public sealed class TopicsStore : IDisposable
 
         CreateNewTopic => state with
         {
-            SelectedTopicId = null
+            SelectedTopicId = null,
+            SelectedTopic = null
         },
 
         _ => state

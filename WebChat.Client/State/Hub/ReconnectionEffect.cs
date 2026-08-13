@@ -72,8 +72,13 @@ public sealed class ReconnectionEffect : IDisposable
 
         if (currentState.SelectedTopicId is not null)
         {
+            // The catch-up above collapsed the list to its first page, which a deep-scrolled
+            // open topic is not on. The row is preferred for freshness, but the session restart
+            // belongs to the selection: the model held since it was picked still carries the
+            // agent, chat and thread it needs.
             var selectedTopic = currentState.Topics
-                .FirstOrDefault(t => t.TopicId == currentState.SelectedTopicId);
+                .FirstOrDefault(t => t.TopicId == currentState.SelectedTopicId)
+                ?? currentState.SelectedTopic;
 
             if (selectedTopic is not null)
             {

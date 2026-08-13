@@ -185,6 +185,42 @@ public sealed class ReconnectionEffectTests : IDisposable
             Times.Never);
     }
 
+    // The open conversation had been scrolled deep into the list; catch-up replaces the list
+    // with its first page, which does not hold that row. The session restart and history reload
+    // belong to the selection, not to the row's luck of being on page one.
+    [Fact]
+    public async Task WhenConnectionReconnected_ASelectedTopicBelowTheFirstPage_StillRestartsItsSession()
+    {
+        var deep = new StoredTopic
+        { TopicId = "topic-deep", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Deep" };
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new TopicsLoaded([deep]));
+        _dispatcher.Dispatch(new SelectTopic("topic-deep"));
+
+        var now = DateTimeOffset.UtcNow;
+        _mockTopicService
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
+            .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
+                [new TopicMetadata("topic-top", 9, 9, "agent-1", "Top", now, null)], null)));
+        _mockSessionService
+            .Setup(s => s.StartSessionAsync(It.IsAny<StoredTopic>()))
+            .ReturnsAsync(HubResult<bool>.Answered(true));
+
+        CreateEffect();
+
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        await TestChat.Eventually(() => _mockSessionService.Invocations.Any(
+            i => i.Method.Name == nameof(IChatSessionService.StartSessionAsync)));
+
+        _mockSessionService.Verify(
+            s => s.StartSessionAsync(It.Is<StoredTopic>(t => t.TopicId == "topic-deep")),
+            Times.Once);
+        _mockTopicService.Verify(s => s.GetHistoryAsync("agent-1", 123, 456), Times.Once);
+    }
+
     [Fact]
     public void WhenConnectionReconnecting_DoesNotTriggerYet()
     {

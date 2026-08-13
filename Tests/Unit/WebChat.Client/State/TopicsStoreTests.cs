@@ -241,6 +241,45 @@ public class TopicsStoreTests : IDisposable
         _store.State.ShowingArchived.ShouldBeFalse();
     }
 
+    // Catch-up collapses the list to its first page, but the conversation stays open. The model
+    // picked up on selection is what still knows the agent, chat and thread the open session
+    // needs once the row itself is gone.
+    [Fact]
+    public void SelectTopic_HoldsTheModelAfterItsRowLeavesTheList()
+    {
+        _dispatcher.Dispatch(new TopicsLoaded([CreateTopic("topic-1", "Deep One")]));
+        _dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        _dispatcher.Dispatch(new TopicsLoaded([CreateTopic("topic-2", "Top Of List")]));
+
+        _store.State.SelectedTopic.ShouldNotBeNull();
+        _store.State.SelectedTopic.TopicId.ShouldBe("topic-1");
+        _store.State.SelectedTopic.ChatId.ShouldBe(123);
+        _store.State.SelectedTopic.ThreadId.ShouldBe(456);
+    }
+
+    [Fact]
+    public void TopicRemoved_DropsTheHeldModelWithTheSelection()
+    {
+        _dispatcher.Dispatch(new TopicsLoaded([CreateTopic("topic-1", "Topic One")]));
+        _dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        _dispatcher.Dispatch(new TopicRemoved("topic-1"));
+
+        _store.State.SelectedTopic.ShouldBeNull();
+    }
+
+    [Fact]
+    public void SelectAgent_DropsTheHeldModelWithTheSelection()
+    {
+        _dispatcher.Dispatch(new TopicsLoaded([CreateTopic("topic-1", "Topic One")]));
+        _dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        _dispatcher.Dispatch(new SelectAgent("agent-2"));
+
+        _store.State.SelectedTopic.ShouldBeNull();
+    }
+
     [Fact]
     public void FromMetadata_PreservesSpaceSlug()
     {
