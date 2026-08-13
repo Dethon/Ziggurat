@@ -14,6 +14,8 @@ public sealed class RedisThreadStateStore(
     IConnectionMultiplexer redis, RetentionSettings retention, TimeProvider time)
     : IThreadStateStore
 {
+    private const string MigrationMarkerKey = "topics:migrated";
+
     private readonly IDatabase _db = redis.GetDatabase();
     private readonly IServer _server = redis.GetServer(redis.GetEndPoints()[0]);
 
@@ -281,6 +283,14 @@ public sealed class RedisThreadStateStore(
     // what makes the listing scan removable.
     public async Task MigrateTopicsAsync(CancellationToken ct = default)
     {
+        // A rerun is not harmless: the backfill clears every badge earned since the first run,
+        // every TTL stretches to a fresh horizon, and the search documents append the whole
+        // history again. The marker is what makes "once" true across restarts.
+        if (await _db.KeyExistsAsync(MigrationMarkerKey))
+        {
+            return;
+        }
+
         await foreach (var key in _server.KeysAsync(pattern: "topic:*").WithCancellation(ct))
         {
             if (await ReadTopicAsync(key!) is { } topic)
@@ -295,6 +305,10 @@ public sealed class RedisThreadStateStore(
                     backfilled, Text(await GetMessagesAsync(HistoryKey(topic)) ?? []));
             }
         }
+
+        // Set on completion rather than on entry, so a run that died half-way is retried by the
+        // next start rather than remembered as done.
+        await _db.StringSetAsync(MigrationMarkerKey, time.GetUtcNow().ToString("O"));
     }
 
     // Everything a record written before the index carries none of. The row's preview comes off

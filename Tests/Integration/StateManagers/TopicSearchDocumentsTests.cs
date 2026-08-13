@@ -110,6 +110,7 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
     public async Task MigrateTopicsAsync_BuildsDocumentsForTopicsThatAlreadyExist()
     {
         var store = NewStore();
+        await ResetMigrationMarkerAsync();
         var when = new DateTimeOffset(2026, 5, 4, 0, 0, 0, TimeSpan.Zero);
         await redis.Connection.GetDatabase().StringSetAsync(
             $"topic:{_agentId}:750:t-existing",
@@ -123,6 +124,31 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
 
         found.Topics.Select(t => t.TopicId).ShouldBe(["t-existing"]);
     }
+
+    // A rerun passes the whole history to the document again, and the document appends: every
+    // restart would double what the conversation is searched by.
+    [Fact]
+    public async Task MigrateTopicsAsync_RunAgain_DoesNotGrowTheSearchDocument()
+    {
+        var store = NewStore();
+        await ResetMigrationMarkerAsync();
+        var when = new DateTimeOffset(2026, 5, 6, 0, 0, 0, TimeSpan.Zero);
+        await redis.Connection.GetDatabase().StringSetAsync(
+            $"topic:{_agentId}:751:t-rerun",
+            System.Text.Json.JsonSerializer.Serialize(Topic("t-rerun", 751, "Old conversation", when)));
+        await store.AppendMessagesAsync(HistoryKey(751),
+            [new ChatMessage(ChatRole.User, "something about kumquats")]);
+
+        await store.MigrateTopicsAsync();
+        await store.MigrateTopicsAsync();
+
+        var text = await redis.Connection.GetDatabase()
+            .HashGetAsync($"topicdoc:{_agentId}:751:t-rerun", "text");
+        text.ToString().Split("kumquats").Length.ShouldBe(2);
+    }
+
+    private Task ResetMigrationMarkerAsync() =>
+        redis.Connection.GetDatabase().KeyDeleteAsync("topics:migrated");
 
     // Purge takes what a topic is searched by with it, on the same clock and refreshed by the
     // same write, so nothing is left findable after the conversation is gone.
