@@ -68,7 +68,7 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         try
         {
             return filePath is not null
-                ? SearchOneFile(filePath, regex, scan)
+                ? SearchOneFile(filePath, regex, scan, cancellationToken)
                 : SearchDirectory(directoryPath, filePattern, regex, scan, cancellationToken);
         }
         catch (RegexMatchTimeoutException)
@@ -77,14 +77,15 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         }
     }
 
-    private FsResult<FsSearchResult> SearchOneFile(string filePath, bool regex, Scan scan)
+    private FsResult<FsSearchResult> SearchOneFile(
+        string filePath, bool regex, Scan scan, CancellationToken cancellationToken)
     {
         if (!ResolveExistingFile(filePath).TryGetValue(out var fullPath, out var resolveError))
         {
             return new FsResult<FsSearchResult>.Err(resolveError);
         }
 
-        var matches = MatchesIn(fullPath, scan, scan.MaxResults);
+        var matches = MatchesIn(fullPath, scan, scan.MaxResults, cancellationToken);
 
         return Build(filePath, regex, scan, filesSearched: 1, matches.Count == 0
             ? []
@@ -123,7 +124,7 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             entriesScanned++;
 
             if (SearchEntry(entry, fullPath, filePattern, matchesPattern, scan,
-                    scan.MaxResults - totalMatches) is { } matches)
+                    scan.MaxResults - totalMatches, cancellationToken) is { } matches)
             {
                 filesSearched++;
                 if (matches.Count > 0)
@@ -155,12 +156,12 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
     // file pattern excludes — which is what keeps it out of the files-read count and its budget.
     private IReadOnlyList<FsSearchMatch>? SearchEntry(
         DiskWalk.Entry entry, string root, string? filePattern,
-        Func<string, bool> matchesPattern, Scan scan, int remaining) =>
+        Func<string, bool> matchesPattern, Scan scan, int remaining, CancellationToken cancellationToken) =>
         entry.IsDirectory
         || !IsAllowedExtension(entry.Path)
         || !matchesPattern(PatternCandidate(root, entry.Path, filePattern))
             ? null
-            : MatchesIn(entry.Path, scan, remaining);
+            : MatchesIn(entry.Path, scan, remaining, cancellationToken);
 
     private static FsResult<FsSearchResult> Build(
         string path, bool regex, Scan scan, int filesSearched,
@@ -217,8 +218,11 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
     // rejected: the large log is usually the file the search was for.
     //
     // An unreadable file is not a failure of the search — skip it and keep scanning the rest. Only
-    // the read is guarded: a match timeout must reach the caller as its own envelope.
-    private static IReadOnlyList<FsSearchMatch> MatchesIn(string filePath, Scan scan, int maxMatches)
+    // the read is guarded: a match timeout must reach the caller as its own envelope, and a
+    // cancellation as the abort it is — the walk checks between entries, but this loop is the only
+    // place a cancelled caller stops streaming a file that dwarfs the tree around it.
+    private static IReadOnlyList<FsSearchMatch> MatchesIn(
+        string filePath, Scan scan, int maxMatches, CancellationToken cancellationToken)
     {
         var matches = new List<FsSearchMatch>();
         if (maxMatches <= 0)
@@ -236,6 +240,7 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             var line = 0;
             foreach (var text in File.ReadLines(filePath))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 line++;
                 // Every line pays this, so the context line is truncated once rather than per
                 // pending match, and the loop is a loop rather than a LINQ chain that would

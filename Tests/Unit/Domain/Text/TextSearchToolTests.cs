@@ -314,6 +314,20 @@ public class TextSearchToolTests : IDisposable
         Should.Throw<OperationCanceledException>(() => _tool.TestRun("kubernetes", cancellationToken: cts.Token));
     }
 
+    // The single-file path walks nothing, so the walk's own between-entries check never runs — the
+    // line loop is the only place a cancelled caller can be honoured, and a multi-hundred-MB file
+    // is exactly where honouring it matters.
+    [Fact]
+    public void Run_CancelledSingleFileSearch_EndsAsAnAbortRatherThanACompletedResult()
+    {
+        CreateTestFile("target.md", "kubernetes here");
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Should.Throw<OperationCanceledException>(() => _tool.TestRun(
+            "kubernetes", filePath: Path.Combine(_testDir, "target.md"), cancellationToken: cts.Token));
+    }
+
     // The shape the sandbox mount's alias has. Without the reparse-point skip the walk never ends,
     // and nothing else about the result would look wrong.
     [Fact]
