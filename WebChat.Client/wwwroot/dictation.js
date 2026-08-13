@@ -18,6 +18,7 @@ window.dictation = {
     // into this file to drift from the one the server holds.
     _limits: null,
     _unavailable: false,
+    _stamped: false,
 
     // The live recording, or null between dictations.
     _run: null,
@@ -49,6 +50,16 @@ window.dictation = {
         this._ref = ref;
         this._limits = limits || this._limits;
         this._note('registered', this._tracing ? 'tracing' : '');
+        // Which script this is, in the server's own words for the file. Without it a fix that
+        // failed and a fix that never reached the phone read identically — which is how five
+        // rounds of "still broken" were once spent on builds nobody could tell apart.
+        if (!this._stamped) {
+            this._stamped = true;
+            fetch('dictation.js', { method: 'HEAD' })
+                .then(r => this._note('script',
+                    r.headers.get('etag') || r.headers.get('last-modified') || 'unstamped'))
+                .catch(() => this._note('script', 'unreachable'));
+        }
 
         mic.addEventListener('pointerdown', this._onDown);
         mic.addEventListener('keydown', this._onKeyDown);
@@ -277,7 +288,18 @@ window.dictation = {
                 autoGainControl: true
             }
         });
-        this._note('microphone', run.stream.getAudioTracks().map(t => t.label || 'unnamed').join(', '));
+        this._note('microphone', run.stream.getAudioTracks()
+            .map(t => (t.label || 'unnamed') + (t.muted ? ' [muted]' : ''))
+            .join(', '));
+        // The platform taking the capture away mid-run — another app, a route change, an audio
+        // server dying — arrives only as these events, and only ever on a phone. A run that goes
+        // quiet at one second looks identical to one that heard silence unless the moment is
+        // stamped here.
+        run.stream.getAudioTracks().forEach(track => {
+            track.onmute = () => this._note('track', 'mute');
+            track.onunmute = () => this._note('track', 'unmute');
+            track.onended = () => this._note('track', 'ended');
+        });
         if (run.ending || this._run !== run) {
             this._teardown(run);
             return;
@@ -295,6 +317,10 @@ window.dictation = {
             await ctx.resume();
         }
         this._note('context', ctx.state + ' at ' + Math.round(ctx.sampleRate) + ' Hz');
+        // A graph a phone suspends mid-run stops pulling the worklet without a word to anything
+        // else; the close at the end of every run writes a line too, which is this handler
+        // reporting for duty on runs where nothing went wrong.
+        ctx.onstatechange = () => this._note('context', ctx.state);
         await ctx.audioWorklet.addModule('dictation-encoder.js');
         this._note('worklet');
         if (run.ending || this._run !== run) {
@@ -398,7 +424,13 @@ window.dictation = {
             // How much sound the run actually collected, which is the difference between a
             // microphone that was never opened, one that was opened and heard nothing, and one that
             // worked — three failures that look identical from the outside.
-            this._note('recorded', run.samples + ' samples in ' + run.chunks.length + ' batches');
+            // The count alone cannot tell speech from a dead input: zeros fill batches at exactly
+            // the rate a voice does. The peak and the last audible moment are what separate a
+            // microphone that was never opened, one that went quiet mid-run, and one that worked.
+            const peak = this._peak(run);
+            this._note('recorded', run.samples + ' samples in ' + run.chunks.length + ' batches, ' +
+                (peak > 0 ? 'peak ' + Math.round(20 * Math.log10(peak / 32768)) + ' dB' : 'all zeros') +
+                ', ' + (run.heardAt ? 'last sound at ' + run.heardAt + 'ms' : 'no sound ever heard'));
             if (run.samples === 0) {
                 this._invoke('Failed', run.encoder
                     ? 'The microphone recorded no sound at all.'
@@ -478,9 +510,13 @@ window.dictation = {
     // A floor under the capture side's own automatic gain, for a phone held at arm's length. Only
     // ever a lift and capped, so a recording of a quiet room stays a recording of a quiet room
     // rather than being pulled up to full scale as noise.
-    _gain: function (run) {
-        const peak = run.chunks.reduce(
+    _peak: function (run) {
+        return run.chunks.reduce(
             (loudest, chunk) => chunk.reduce((most, s) => Math.max(most, Math.abs(s)), loudest), 0);
+    },
+
+    _gain: function (run) {
+        const peak = this._peak(run);
         return peak === 0 ? 1 : Math.max(1, Math.min(8, 29000 / peak));
     },
 
@@ -578,7 +614,11 @@ window.dictation = {
     // is busy does not leave the bar behind.
     _level: function (run) {
         const now = performance.now();
-        const target = this._meter(this._rms(run));
+        const rms = this._rms(run);
+        // -50 dBFS: ten decibels under the meter's own floor and far above digital silence, so a
+        // capture that dies mid-run leaves behind the moment the sound stopped rather than a guess.
+        if (rms > 0.003) run.heardAt = Math.round(now - run.startedAt);
+        const target = this._meter(rms);
         const dt = run.meterAt ? Math.min(now - run.meterAt, 250) : 0;
         run.meterAt = now;
         const tau = target > run.meter ? 110 : 420;

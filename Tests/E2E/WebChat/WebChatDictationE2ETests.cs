@@ -258,6 +258,69 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.Locator(".composer-hint")).ToBeHiddenAsync();
     }
 
+    // The trace is the only witness on a phone, and this is what it must be able to say for the
+    // failure that is actually reported from there: a capture that starts, goes quiet mid-run, and
+    // leaves nothing. Three lines carry that diagnosis. The script line says which build spoke, so
+    // "still broken" after a deploy is distinguishable from "the fix never arrived". The track lines
+    // timestamp the platform taking the microphone away mid-run, which is the one event a phone
+    // fires and a desktop never does. And the recorded line carries the peak and when sound was
+    // last heard, because a count of samples cannot tell zeros from speech — a silent capture and a
+    // working one both fill batches at the same rate.
+    [SkippableFact]
+    public async Task AHeldDictation_TracesTheScriptTheTracksEventsAndWhatWasHeard()
+    {
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "quedó registrado";
+
+        var page = await OpenAsync();
+
+        // The stamp is a round trip of its own, made once at registration; registered alone does
+        // not mean it has landed yet.
+        await page.WaitForFunctionAsync(
+            "() => window.dictation.diagnostics().includes('script:')",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 15_000 });
+
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await PressableMicAsync(page);
+
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+
+        // What Android does mid-run when the platform takes the capture away, played onto the live
+        // track. A dispatched event does not flip track.muted, but the listener it reaches is the
+        // one the real event reaches, and the listener is what is under test.
+        await page.EvaluateAsync(
+            """
+            () => {
+                const track = window.dictation._run.stream.getAudioTracks()[0];
+                track.dispatchEvent(new Event('mute'));
+                track.dispatchEvent(new Event('unmute'));
+            }
+            """);
+
+        await Task.Delay(HoldMs);
+        await TouchAsync(cdp, "touchEnd");
+
+        await Assertions.Expect(page.Locator("textarea.chat-input"))
+            .ToHaveValueAsync("quedó registrado", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+
+        // The context closes after the upload, and its own statechange handler is what writes the
+        // line — the same handler that names a phone suspending the graph mid-run.
+        await page.WaitForFunctionAsync(
+            "() => window.dictation.diagnostics().includes('context: closed')",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 15_000 });
+
+        var trace = await page.EvaluateAsync<string>("() => window.dictation.diagnostics()");
+        trace.ShouldContain("track: mute");
+        trace.ShouldContain("track: unmute");
+        trace.ShouldMatch(@"peak -?\d+ dB");
+        trace.ShouldMatch(@"last sound at \d+ms");
+    }
+
     // The microphone can be granted and the graph still fail to come up behind it — the worklet is
     // fetched over the network, and a phone loses one whenever it feels like it. Everything the open
     // got as far as acquiring is live at that moment: a real capture the person can see in the
