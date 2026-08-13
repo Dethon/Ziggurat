@@ -86,6 +86,33 @@ public sealed class ChatHubTopicTests : IDisposable
         _store.Verify(s => s.SaveTopicAsync(topic), Times.Once);
     }
 
+    // A topic last driven by voice or a schedule has counters the browser never saw, so the
+    // client's copy is stale by design. The hub reads the stored topic and takes only the name;
+    // everything the server owns — counters, last write, snippet — survives the rename.
+    [Fact]
+    public async Task SaveTopic_ForAStoredTopic_TakesOnlyTheNameFromTheClient()
+    {
+        var stored = new TopicMetadata(
+            "topic-1", 7, 42, "jack", "Chat",
+            new DateTimeOffset(2026, 8, 10, 0, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 8, 12, 9, 0, 0, TimeSpan.Zero),
+            LastMessageSnippet: "the latest reply", MessageCount: 9, ReadPosition: 4);
+        _store.Setup(s => s.GetTopicAsync("jack", 7, "topic-1")).ReturnsAsync(stored);
+        var stale = stored with
+        {
+            Name = "Renamed",
+            LastMessageAt = null,
+            LastMessageSnippet = null,
+            MessageCount = 2,
+            ReadPosition = 2
+        };
+
+        await _hub.SaveTopic(stale);
+
+        var expected = stored with { Name = "Renamed" };
+        _store.Verify(s => s.SaveTopicAsync(expected), Times.Once);
+    }
+
     [Fact]
     public async Task GetHistory_ReadsThroughTheTopicStore()
     {

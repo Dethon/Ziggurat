@@ -439,9 +439,13 @@ public sealed class ChatHub(
         LiveTopicIds = [.. page.Topics.Select(t => t.TopicId).Where(streamService.IsStreaming)]
     };
 
+    // The client's copy of a topic is always a round trip stale, and for a topic last driven by
+    // voice or a schedule it is stale by design. The name is the one field a browser may set on
+    // an existing topic; everything the server owns is read back before the write.
     public async Task SaveTopic(TopicMetadata topic, bool isNew = false)
     {
-        await threadStore.SaveTopicAsync(topic);
+        var stored = await threadStore.GetTopicAsync(topic.AgentId, topic.ChatId, topic.TopicId);
+        await threadStore.SaveTopicAsync(stored is null ? topic : stored with { Name = topic.Name });
     }
 
     // On the server, so it covers conversations this client never loaded — which is every

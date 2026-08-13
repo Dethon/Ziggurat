@@ -365,6 +365,9 @@ public sealed class RedisThreadStateStore(
                 .ToList();
     }
 
+    public Task<TopicMetadata?> GetTopicAsync(string agentId, long chatId, string topicId) =>
+        ReadTopicAsync(TopicKey(agentId, chatId, topicId));
+
     public async Task<TopicMetadata?> GetTopicByChatIdAndThreadIdAsync(
         string agentId, long chatId, long threadId, CancellationToken ct = default)
     {

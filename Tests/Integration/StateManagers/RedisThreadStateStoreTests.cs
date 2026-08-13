@@ -573,6 +573,17 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
     }
 
     [Fact]
+    public async Task GetTopicAsync_ReturnsWhatWasSaved_AndNullForATopicNeverSaved()
+    {
+        var store = NewStore();
+        var topic = Topic("t-get", 670, "agent-get", DateTimeOffset.UtcNow);
+        await store.SaveTopicAsync(topic);
+
+        (await store.GetTopicAsync("agent-get", 670, "t-get")).ShouldBe(topic);
+        (await store.GetTopicAsync("agent-get", 670, "t-never")).ShouldBeNull();
+    }
+
+    [Fact]
     public async Task SaveTopicAsync_SetsTheTopicToExpireOnThePurgeHorizon()
     {
         var store = NewStore(purgeHorizon: TimeSpan.FromDays(365));

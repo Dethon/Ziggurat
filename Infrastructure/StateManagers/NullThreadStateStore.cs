@@ -44,4 +44,7 @@ public sealed class NullThreadStateStore : IThreadStateStore
     public Task<TopicMetadata?> GetTopicByChatIdAndThreadIdAsync(
         string agentId, long chatId, long threadId, CancellationToken ct = default)
         => Task.FromResult<TopicMetadata?>(null);
+
+    public Task<TopicMetadata?> GetTopicAsync(string agentId, long chatId, string topicId) =>
+        Task.FromResult<TopicMetadata?>(null);
 }

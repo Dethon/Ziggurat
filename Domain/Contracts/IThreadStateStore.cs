@@ -49,4 +49,8 @@ public interface IThreadStateStore
 
     Task<TopicMetadata?> GetTopicByChatIdAndThreadIdAsync(string agentId, long chatId, long threadId,
         CancellationToken ct = default);
+
+    // The stored topic a caller already names. A writer holding a client's copy reads this first,
+    // so counters the store learned while the browser wasn't looking are never written back stale.
+    Task<TopicMetadata?> GetTopicAsync(string agentId, long chatId, string topicId);
 }
