@@ -17,9 +17,9 @@ the trailing slash asking for directories only, and a pattern that matches nothi
 
 **Status:** ready-for-agent
 
-- [ ] The local filesystem client's existing glob scenario table covers each of the listed edges,
+- [x] The local filesystem client's existing glob scenario table covers each of the listed edges,
       asserting the entries returned rather than how they were found.
-- [ ] Every new case passes against the code as it stands, with no production change in this
+- [x] Every new case passes against the code as it stands, with no production change in this
       ticket.
-- [ ] Where a case documents behaviour that looks accidental rather than intended, it is written
+- [x] Where a case documents behaviour that looks accidental rather than intended, it is written
       as the behaviour that ships and noted as such, so the swap is judged against reality.

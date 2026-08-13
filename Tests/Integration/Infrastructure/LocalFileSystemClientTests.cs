@@ -156,6 +156,124 @@ public class LocalFileSystemClientTests : IDisposable
                 "*.pdf",
                 (hits, _) => hits.ShouldBeEmpty())
         },
+        // The edges below are the ones most at risk when the matcher underneath changes, so they
+        // pin what ships rather than what the descriptions promise.
+        new object[]
+        {
+            new GlobScenario(
+                "Dotfile_MatchesALeadingWildcard",
+                [".hidden.txt", "visible.txt"],
+                "*.txt",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(2);
+                    hits.ShouldContain(h => h.EndsWith(".hidden.txt"));
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "BaseLevelPattern_DoesNotReachNestedFiles",
+                ["root.txt", "sub/nested.txt"],
+                "*.txt",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(1);
+                    hits[0].ShouldEndWith("root.txt");
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "RecursiveSegment_MatchesZeroSegments",
+                ["root.txt", "sub/root.txt"],
+                "**/root.txt",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(2);
+                    hits.ShouldContain(h => h.EndsWith($"{Path.DirectorySeparatorChar}root.txt")
+                                            && !h.Contains("sub"));
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "RecursiveSegment_MatchesManySegments",
+                ["a/b/c/deep.txt"],
+                "**/deep.txt",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(1);
+                    hits[0].ShouldEndWith("deep.txt");
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "BareRecursiveWildcard_MatchesEveryDepth",
+                ["root.txt", "sub/nested.txt"],
+                "**",
+                (hits, _) =>
+                {
+                    hits.ShouldContain(h => h.EndsWith("root.txt"));
+                    hits.ShouldContain(h => h.EndsWith("nested.txt"));
+                    hits.ShouldContain(h => h.EndsWith("sub/"));
+                })
+        },
+        // Accidental, not intended: every glob description promises `?` matches one character, and
+        // on the disk roots it never has — the batch matcher treats it as a literal. Pinned as it
+        // ships so the matcher swap is judged against reality rather than against the prose.
+        new object[]
+        {
+            new GlobScenario(
+                "SingleCharacterWildcard_IsALiteral",
+                ["a1.txt", "a?.txt"],
+                "a?.txt",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(1);
+                    hits[0].ShouldEndWith("a?.txt");
+                })
+        },
+        // The disk matcher has always matched case-insensitively, which is what makes `*.jpg` find
+        // a camera's `.JPG`. Pinned here because the shared matcher is case-sensitive by default.
+        new object[]
+        {
+            new GlobScenario(
+                "PatternCase_IsIgnored",
+                ["movie.MKV"],
+                "*.mkv",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(1);
+                    hits[0].ShouldEndWith("movie.MKV");
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "TrailingSlashOnARecursivePattern_MatchesNestedDirsOnly",
+                ["movies/action/film.mkv", "todo.md"],
+                "movies/**/",
+                (hits, _) =>
+                {
+                    hits.ShouldAllBe(h => h.EndsWith("/"));
+                    hits.ShouldContain(h => h.EndsWith("action/"));
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "BraceAlternationOverDirectories_MatchesEachAlternative",
+                ["books/a.epub", "movies/b.mkv", "music/c.flac"],
+                "{books,movies}/*",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(2);
+                    hits.ShouldContain(h => h.EndsWith("a.epub"));
+                    hits.ShouldContain(h => h.EndsWith("b.mkv"));
+                })
+        },
         new object[]
         {
             new GlobScenario(
