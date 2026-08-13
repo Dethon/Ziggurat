@@ -20,11 +20,11 @@ budgeted.
 
 **Status:** ready-for-agent
 
-- [ ] Searching a file far larger than the process would comfortably hold returns its matches with
+- [x] Searching a file far larger than the process would comfortably hold returns its matches with
       the requested context.
-- [ ] Peak memory while searching does not scale with the size of the largest file examined.
-- [ ] Matches, context lines before and after, line numbers and the output modes are identical to
+- [x] Peak memory while searching does not scale with the size of the largest file examined.
+- [x] Matches, context lines before and after, line numbers and the output modes are identical to
       today's for every existing case.
-- [ ] Context near the first and last lines of a file behaves as it does today.
-- [ ] An unreadable file is still skipped rather than failing the search.
-- [ ] The budgets, flag and counts from ticket 05 are unchanged.
+- [x] Context near the first and last lines of a file behaves as it does today.
+- [x] An unreadable file is still skipped rather than failing the search.
+- [x] The budgets, flag and counts from ticket 05 are unchanged.

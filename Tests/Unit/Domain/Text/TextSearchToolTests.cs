@@ -313,6 +313,60 @@ public class TextSearchToolTests : IDisposable
         result["entriesScanned"]!.GetValue<int>().ShouldBe(1);
     }
 
+    // The large log is usually the file the search was for, so it is read rather than skipped — and
+    // reading it holds only what a match needs. Under a whole-file read this file costs half a
+    // gigabyte of live strings; the ceiling below is far above what streaming needs and far below
+    // that.
+    [Fact]
+    public void Run_AFileFarLargerThanMemory_ReturnsItsMatchesWithoutHoldingIt()
+    {
+        const int lineLength = 16 * 1024;
+        const int lineCount = 16 * 1024;
+        WriteHugeFile("huge.md", lineLength, lineCount, "kubernetes on the last line");
+
+        var baseline = GC.GetTotalMemory(forceFullCollection: true);
+        var peak = baseline;
+        using var sampling = new CancellationTokenSource();
+        var sampler = Task.Run(
+            async () =>
+            {
+                while (!sampling.IsCancellationRequested)
+                {
+                    peak = Math.Max(peak, GC.GetTotalMemory(forceFullCollection: false));
+                    await Task.Delay(5, CancellationToken.None);
+                }
+            },
+            CancellationToken.None);
+
+        var result = _tool.TestRun("kubernetes", contextLines: 1);
+
+        sampling.Cancel();
+        sampler.Wait(TimeSpan.FromSeconds(5));
+
+        result["totalMatches"]!.GetValue<int>().ShouldBe(1);
+        var match = result["results"]!.AsArray()[0]!["matches"]!.AsArray()[0]!;
+        match["line"]!.GetValue<int>().ShouldBe(lineCount);
+        match["text"]!.ToString().ShouldStartWith("kubernetes on the last line");
+        match["context"]!["before"]!.AsArray().Count.ShouldBe(1);
+        (peak - baseline).ShouldBeLessThan(64L * 1024 * 1024);
+    }
+
+    // Apparent size without the write cost: the body is a hole, and only the newline ending each
+    // line is written. What the search reads is the full length either way.
+    private void WriteHugeFile(string name, int lineLength, int lineCount, string lastLine)
+    {
+        using var stream = new FileStream(Path.Combine(_testDir, name), FileMode.Create, FileAccess.Write);
+        stream.SetLength((long)lineLength * lineCount);
+        foreach (var line in Enumerable.Range(1, lineCount))
+        {
+            stream.Position = (long)lineLength * line - 1;
+            stream.WriteByte((byte)'\n');
+        }
+
+        stream.Position = (long)lineLength * (lineCount - 1);
+        stream.Write(System.Text.Encoding.UTF8.GetBytes(lastLine));
+    }
+
     private void CreateManyFiles(int count)
     {
         foreach (var i in Enumerable.Range(1, count))
