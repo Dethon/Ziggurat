@@ -357,14 +357,20 @@ public class TextSearchToolTests : IDisposable
         using var sampling = new CancellationTokenSource();
         // The peak comes back as the sampler's result rather than through a shared field, so the
         // assertion reads a value the task handed it rather than one another thread is writing.
+        //
+        // Every sample collects first. An uncollected reading counts garbage as well as what is
+        // held, and the heap it reads is the whole suite's — streaming a quarter-gigabyte file
+        // through it churns far more than this ceiling, so sampled that way the number is a gen0
+        // budget shared with 23 other threads rather than a retention. A whole-file read survives
+        // the collection, which is what this is here to catch.
         var sampler = Task.Run(
             async () =>
             {
                 var seen = baseline;
                 while (!sampling.IsCancellationRequested)
                 {
-                    seen = Math.Max(seen, GC.GetTotalMemory(forceFullCollection: false));
-                    await Task.Delay(5, CancellationToken.None);
+                    seen = Math.Max(seen, GC.GetTotalMemory(forceFullCollection: true));
+                    await Task.Delay(25, CancellationToken.None);
                 }
 
                 return seen;
@@ -381,7 +387,7 @@ public class TextSearchToolTests : IDisposable
         match["line"]!.GetValue<int>().ShouldBe(lineCount);
         match["text"]!.ToString().ShouldStartWith("kubernetes on the last line");
         match["context"]!["before"]!.AsArray().Count.ShouldBe(1);
-        (peak - baseline).ShouldBeLessThan(64L * 1024 * 1024);
+        (peak - baseline).ShouldBeLessThan(16L * 1024 * 1024);
     }
 
     // Apparent size without the write cost: the body is a hole, and only the newline ending each
