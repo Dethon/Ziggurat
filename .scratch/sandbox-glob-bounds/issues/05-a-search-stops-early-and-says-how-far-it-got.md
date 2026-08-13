@@ -31,19 +31,19 @@ legitimate when it is what was meant.
 
 **Status:** ready-for-agent
 
-- [ ] A search whose file pattern matches nothing stops at the entries-scanned budget and says so,
+- [x] A search whose file pattern matches nothing stops at the entries-scanned budget and says so,
       rather than walking the whole tree.
-- [ ] A search that matches no content stops at the files-read budget and says so.
-- [ ] The entries-scanned budget is the same definition the glob walk reads; the files-read budget
+- [x] A search that matches no content stops at the files-read budget and says so.
+- [x] The entries-scanned budget is the same definition the glob walk reads; the files-read budget
       sits beside it, and both are reachable from a test without building a tree that size.
-- [ ] The search result reports the coverage flag and a count of entries examined, beside the
+- [x] The search result reports the coverage flag and a count of entries examined, beside the
       existing count of files searched.
-- [ ] Truncation on reaching the requested match count keeps its current meaning and stays
+- [x] Truncation on reaching the requested match count keeps its current meaning and stays
       distinct from the coverage flag.
-- [ ] Cancelling a search part way ends the walk and propagates the cancellation.
-- [ ] A link pointing at its own ancestor is neither searched nor entered, and the walk terminates.
-- [ ] Searching a single named file is unaffected — no walk, no budgets.
-- [ ] The backends with finite in-memory entries are unchanged and always report the flag as false.
-- [ ] The search description states both budgets and the coverage flag.
-- [ ] The sandbox prompt no longer implies a recursive glob or search at the mount root is an
+- [x] Cancelling a search part way ends the walk and propagates the cancellation.
+- [x] A link pointing at its own ancestor is neither searched nor entered, and the walk terminates.
+- [x] Searching a single named file is unaffected — no walk, no budgets.
+- [x] The backends with finite in-memory entries are unchanged and always report the flag as false.
+- [x] The search description states both budgets and the coverage flag.
+- [x] The sandbox prompt no longer implies a recursive glob or search at the mount root is an
       ordinary thing to do, and names the root as the whole container.

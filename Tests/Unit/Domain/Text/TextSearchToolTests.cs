@@ -233,6 +233,94 @@ public class TextSearchToolTests : IDisposable
         result["results"]!.AsArray()[0]!["file"]!.ToString().ShouldBe("docs/guide.md");
     }
 
+    // A file pattern that excludes everything still walks the tree, and on the sandbox mount that
+    // tree is the whole container. The budget is lowered rather than met: twenty files prove what
+    // fifty thousand would, and cost nothing to build.
+    [Fact]
+    public void Run_FilePatternMatchingNothing_StopsAtTheEntriesBudgetAndSaysSo()
+    {
+        CreateManyFiles(20);
+        var tool = new TestableTextSearchTool(_testDir, [".md"], scanBudget: 5);
+
+        var result = tool.TestRun("kubernetes", filePattern: "*.pdf");
+
+        result["budgetReached"]!.GetValue<bool>().ShouldBeTrue();
+        result["entriesScanned"]!.GetValue<int>().ShouldBe(5);
+        result["filesSearched"]!.GetValue<int>().ShouldBe(0);
+    }
+
+    [Fact]
+    public void Run_ContentMatchingNothing_StopsAtTheFilesReadBudgetAndSaysSo()
+    {
+        CreateManyFiles(20);
+        var tool = new TestableTextSearchTool(_testDir, [".md"], readBudget: 3);
+
+        var result = tool.TestRun("nothing-here");
+
+        result["budgetReached"]!.GetValue<bool>().ShouldBeTrue();
+        result["filesSearched"]!.GetValue<int>().ShouldBe(3);
+        result["truncated"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    // Truncation and the coverage flag answer different questions: this search found everything it
+    // was asked for without running out of tree.
+    [Fact]
+    public void Run_SearchThatFinishesTheTree_ReportsNeitherBudgetReached()
+    {
+        CreateTestFile("doc.md", "kubernetes");
+
+        var result = _tool.TestRun("kubernetes");
+
+        result["budgetReached"]!.GetValue<bool>().ShouldBeFalse();
+        result["entriesScanned"]!.GetValue<int>().ShouldBe(1);
+    }
+
+    [Fact]
+    public void Run_ASingleNamedFile_WalksNothingAndIsNeverBounded()
+    {
+        CreateManyFiles(20);
+        var tool = new TestableTextSearchTool(_testDir, [".md"], scanBudget: 1, readBudget: 1);
+
+        var result = tool.TestRun("kubernetes", filePath: Path.Combine(_testDir, "file01.md"));
+
+        result["filesSearched"]!.GetValue<int>().ShouldBe(1);
+        result["totalMatches"]!.GetValue<int>().ShouldBe(1);
+        result["budgetReached"]!.GetValue<bool>().ShouldBeFalse();
+        result["entriesScanned"]!.GetValue<int>().ShouldBe(0);
+    }
+
+    [Fact]
+    public void Run_CancelledPartWayThroughTheWalk_EndsAsAnAbort()
+    {
+        CreateManyFiles(20);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Should.Throw<OperationCanceledException>(() => _tool.TestRun("kubernetes", cancellationToken: cts.Token));
+    }
+
+    // The shape the sandbox mount's alias has. Without the reparse-point skip the walk never ends,
+    // and nothing else about the result would look wrong.
+    [Fact]
+    public void Run_ALinkPointingAtItsOwnAncestor_IsNeitherSearchedNorEntered()
+    {
+        CreateTestFile("real.md", "kubernetes real");
+        Directory.CreateSymbolicLink(Path.Combine(_testDir, "self"), _testDir);
+
+        var result = _tool.TestRun("kubernetes");
+
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(1);
+        result["entriesScanned"]!.GetValue<int>().ShouldBe(1);
+    }
+
+    private void CreateManyFiles(int count)
+    {
+        foreach (var i in Enumerable.Range(1, count))
+        {
+            CreateTestFile($"file{i:D2}.md", "kubernetes");
+        }
+    }
+
     private void CreateTestFile(string relativePath, string content)
     {
         var fullPath = Path.Combine(_testDir, relativePath);
@@ -245,9 +333,17 @@ public class TextSearchToolTests : IDisposable
         File.WriteAllText(fullPath, content);
     }
 
-    private class TestableTextSearchTool(string vaultPath, string[] allowedExtensions)
+    private class TestableTextSearchTool(
+        string vaultPath,
+        string[] allowedExtensions,
+        int? scanBudget = null,
+        int? readBudget = null)
         : TextSearchTool(vaultPath, allowedExtensions)
     {
+        protected override int ScanBudget => scanBudget ?? base.ScanBudget;
+
+        protected override int ReadBudget => readBudget ?? base.ReadBudget;
+
         public JsonNode TestRun(
             string query,
             bool regex = false,
@@ -256,9 +352,11 @@ public class TextSearchToolTests : IDisposable
             string directoryPath = "/",
             int maxResults = 50,
             int contextLines = 1,
-            VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content)
+            VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content,
+            CancellationToken cancellationToken = default)
         {
-            return Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines, outputMode).ToNode();
+            return Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines,
+                outputMode, cancellationToken).ToNode();
         }
     }
 }

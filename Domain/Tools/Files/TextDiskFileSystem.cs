@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
+using Domain.Tools.FileSystem;
 using Domain.Tools.Text;
 
 namespace Domain.Tools.Files;
@@ -42,7 +43,14 @@ public class TextDiskFileSystem(
         "Searches for text across files, or within a single file. Returns matching files with line "
         + "numbers and context. Scope with directoryPath, or filePath for one file; filter with "
         + "filePattern (e.g. *.md). Supports regex, maxResults, contextLines and outputMode "
-        + "(content|filesOnly).";
+        + "(content|filesOnly). A search over a directory is bounded twice: it stops after "
+        + $"{DiskWalk.MaxEntriesScanned:N0} entries have been enumerated and after "
+        + $"{DiskWalk.MaxFilesRead:N0} files have been read, whichever comes first. "
+        + "`budgetReached` says one of them ended the walk — distinct from `truncated`, which means "
+        + "maxResults was reached — and `entriesScanned` beside `filesSearched` says how much of "
+        + "the tree the answer covers: a large scan against zero files searched is a filePattern "
+        + "that excluded everything. Searching a single filePath walks nothing and is never "
+        + "bounded.";
 
     public override Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
         Task.FromResult(_read.Run(path, offset, limit));
@@ -61,5 +69,5 @@ public class TextDiskFileSystem(
         string? directoryPath, string? filePattern, int maxResults, int contextLines,
         VfsTextSearchOutputMode outputMode, CancellationToken ct) =>
         Task.FromResult(_search.Run(
-            query, regex, path, filePattern, directoryPath ?? "/", maxResults, contextLines, outputMode));
+            query, regex, path, filePattern, directoryPath ?? "/", maxResults, contextLines, outputMode, ct));
 }

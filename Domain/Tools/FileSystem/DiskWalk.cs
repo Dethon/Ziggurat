@@ -21,6 +21,12 @@ public static class DiskWalk
     // overriding rather than by building a tree this size.
     public const int MaxEntriesScanned = 50_000;
 
+    // The second cost a search has, and a different order of expense from enumerating a name:
+    // opening and reading a file. A file pattern that excludes everything is bounded by the budget
+    // above; one that excludes nothing is bounded by this. The glob never reads, so this is the
+    // search's alone.
+    public const int MaxFilesRead = 5_000;
+
     private static readonly EnumerationOptions _skipSymlinks = new()
     {
         RecurseSubdirectories = true,

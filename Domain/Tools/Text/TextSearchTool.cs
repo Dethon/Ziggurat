@@ -33,9 +33,19 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
 
     private sealed record Scan(string Query, Regex Pattern, int ContextLines, int MaxResults, VfsTextSearchOutputMode OutputMode);
 
+    // What a walk over this root covers, and why it stopped there. A search of one named file walks
+    // nothing and reports neither.
+    private sealed record Coverage(int EntriesScanned = 0, bool BudgetReached = false);
+
     // The same bounded matcher every other filesystem uses: a pattern that cannot compile comes
     // back as an envelope, and one that backtracks catastrophically ends as a timeout.
     private static readonly TimeSpan _matchTimeout = TimeSpan.FromSeconds(1);
+
+    // Overridable for the same reason the match timeout is: a test reaches the bound by lowering it
+    // rather than by building a tree the size of the shipped one.
+    protected virtual int ScanBudget => DiskWalk.MaxEntriesScanned;
+
+    protected virtual int ReadBudget => DiskWalk.MaxFilesRead;
 
     public FsResult<FsSearchResult> Run(
         string query,
@@ -45,7 +55,8 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         string directoryPath = "/",
         int maxResults = 50,
         int contextLines = 1,
-        VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content)
+        VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content,
+        CancellationToken cancellationToken = default)
     {
         if (!SearchRegex.Compile(query, regex, _matchTimeout).TryGetValue(out var pattern, out var patternError))
         {
@@ -58,7 +69,7 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         {
             return filePath is not null
                 ? SearchOneFile(filePath, regex, scan)
-                : SearchDirectory(directoryPath, filePattern, regex, scan);
+                : SearchDirectory(directoryPath, filePattern, regex, scan, cancellationToken);
         }
         catch (RegexMatchTimeoutException)
         {
@@ -77,10 +88,15 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
 
         return Build(filePath, regex, scan, filesSearched: 1, matches.Count == 0
             ? []
-            : [BuildFileResult(ToRelativePath(fullPath), matches, scan.OutputMode)], matches.Count);
+            : [BuildFileResult(ToRelativePath(fullPath), matches, scan.OutputMode)], matches.Count, new Coverage());
     }
 
-    private FsResult<FsSearchResult> SearchDirectory(string directoryPath, string? filePattern, bool regex, Scan scan)
+    // The two costs a search over a tree has, each bounded by the budget that measures it:
+    // enumerating a name, which a file pattern excluding everything still pays, and opening a file,
+    // which a pattern excluding nothing pays for every candidate. Neither can run away, and the
+    // caller's token ends the walk between entries.
+    private FsResult<FsSearchResult> SearchDirectory(
+        string directoryPath, string? filePattern, bool regex, Scan scan, CancellationToken cancellationToken)
     {
         if (!ResolveDirectory(directoryPath).TryGetValue(out var fullPath, out var resolveError))
         {
@@ -94,34 +110,57 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         }
 
         var results = new List<FsSearchFileResult>();
+        var entriesScanned = 0;
         var filesSearched = 0;
         var totalMatches = 0;
+        var budgetReached = false;
 
-        foreach (var file in EnumerateAllowedFiles(fullPath, filePattern, matchesPattern))
+        foreach (var entry in DiskWalk.Entries(fullPath))
         {
-            filesSearched++;
-            var remaining = scan.MaxResults - totalMatches;
-            if (remaining <= 0)
+            cancellationToken.ThrowIfCancellationRequested();
+            entriesScanned++;
+
+            if (SearchEntry(entry, fullPath, filePattern, matchesPattern, scan,
+                    scan.MaxResults - totalMatches) is { } matches)
+            {
+                filesSearched++;
+                if (matches.Count > 0)
+                {
+                    results.Add(BuildFileResult(ToRelativePath(entry.Path), matches, scan.OutputMode));
+                    totalMatches += matches.Count;
+                }
+            }
+
+            if (totalMatches >= scan.MaxResults)
             {
                 break;
             }
 
-            var matches = MatchesIn(file, scan, remaining);
-            if (matches.Count == 0)
+            if (entriesScanned >= ScanBudget || filesSearched >= ReadBudget)
             {
-                continue;
+                budgetReached = true;
+                break;
             }
-
-            results.Add(BuildFileResult(ToRelativePath(file), matches, scan.OutputMode));
-            totalMatches += matches.Count;
         }
 
-        return Build(directoryPath, regex, scan, filesSearched, results, totalMatches);
+        return Build(directoryPath, regex, scan, filesSearched, results, totalMatches,
+            new Coverage(entriesScanned, budgetReached));
     }
+
+    // Null for an entry this search never opens — a directory, a disallowed extension, a name the
+    // file pattern excludes — which is what keeps it out of the files-read count and its budget.
+    private IReadOnlyList<FsSearchMatch>? SearchEntry(
+        DiskWalk.Entry entry, string root, string? filePattern,
+        Func<string, bool> matchesPattern, Scan scan, int remaining) =>
+        entry.IsDirectory
+        || !IsAllowedExtension(entry.Path)
+        || !matchesPattern(PatternCandidate(root, entry.Path, filePattern))
+            ? null
+            : MatchesIn(entry.Path, scan, remaining);
 
     private static FsResult<FsSearchResult> Build(
         string path, bool regex, Scan scan, int filesSearched,
-        IReadOnlyList<FsSearchFileResult> results, int totalMatches) =>
+        IReadOnlyList<FsSearchFileResult> results, int totalMatches, Coverage coverage) =>
         new FsResult<FsSearchResult>.Ok(new FsSearchResult
         {
             Query = scan.Query,
@@ -131,6 +170,8 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             FilesWithMatches = results.Count,
             TotalMatches = totalMatches,
             Truncated = totalMatches >= scan.MaxResults,
+            EntriesScanned = coverage.EntriesScanned,
+            BudgetReached = coverage.BudgetReached,
             Results = results
         });
 
@@ -140,26 +181,13 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             ? new FsSearchFileResult { File = file, MatchCount = matches.Count }
             : new FsSearchFileResult { File = file, Matches = matches };
 
-    // The jail vets the search root, but a symlink discovered inside the tree can point
-    // anywhere — following it would serve foreign file content as search results (or recurse
-    // forever on a cycle), so the scan skips symlinks wholesale.
-    private static readonly EnumerationOptions _skipSymlinks = new()
-    {
-        RecurseSubdirectories = true,
-        AttributesToSkip = FileAttributes.ReparsePoint
-    };
-
-    // The pattern never reaches EnumerateFiles: .NET resolves a leading "../" inside a search
-    // pattern, so "../*.md" would read above the vault, and a pattern naming a missing directory
-    // or an absolute path throws straight past the envelope. Enumerate everything under the
-    // vetted root instead and filter names here, with the same compiled matcher every other
-    // filesystem uses.
-    private IEnumerable<string> EnumerateAllowedFiles(
-        string fullPath, string? filePattern, Func<string, bool> matchesPattern) =>
-        Directory
-            .EnumerateFiles(fullPath, "*", _skipSymlinks)
-            .Where(IsAllowedExtension)
-            .Where(file => matchesPattern(PatternCandidate(fullPath, file, filePattern)));
+    // The jail vets the search root, but a symlink discovered inside the tree can point anywhere —
+    // following it would serve foreign file content as search results, and a link pointing at its
+    // own ancestor would never end — so the walk skips symlinks wholesale. That guard is DiskWalk's,
+    // shared with the glob, which is also why the caller's filePattern never reaches an enumeration
+    // API: .NET resolves a leading "../" inside a search pattern, so "../*.md" would read above the
+    // vault. Everything under the vetted root is enumerated and names are filtered here, with the
+    // same compiled matcher every other filesystem uses.
 
     // A bare pattern ("*.md") filters file names at any depth, as it did when EnumerateFiles
     // matched it per directory; a pattern with a separator ("docs/*.md") filters the path
