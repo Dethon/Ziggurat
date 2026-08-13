@@ -20,8 +20,9 @@ public sealed record TopicPaging
     // false once a page comes back saying the range ended.
     public bool HasMore { get; init; } = true;
 
-    // A page fetched below the cursor. A topic already held keeps one row and takes the server's
-    // copy, so a row that gained a message after being paged past is not shown twice.
+    // A page fetched below the cursor. A topic already held keeps one row and the fresher of
+    // the two copies, so a row that gained a message after being paged past is not shown twice
+    // — and not reverted when the page that left before the push finally lands.
     public TopicPaging AppendPage(IReadOnlyList<StoredTopic> page, string? nextCursor) => this with
     {
         Topics = Merge(page, Topics),
@@ -45,12 +46,19 @@ public sealed record TopicPaging
         Topics = Topics.Where(t => t.TopicId != topicId).ToList()
     };
 
-    // First wins, so whichever side is the fresher answer is passed first.
+    // Each topic keeps the copy that has seen more of its conversation: the later write, or on
+    // the same write the higher message count. A fetched page can be older than a row it lands
+    // under — a topic that gained a push during the round trip — so arrival order alone is not
+    // freshness. Only a perfect tie falls back to first wins, so whichever side is presumed
+    // fresher is passed first.
     private static IReadOnlyList<StoredTopic> Merge(
         IEnumerable<StoredTopic> fresher, IEnumerable<StoredTopic> held) =>
         fresher.Concat(held)
             .GroupBy(t => t.TopicId)
-            .Select(g => g.First())
+            .Select(copies => copies
+                .OrderByDescending(t => t.LastWriteAt)
+                .ThenByDescending(t => t.MessageCount)
+                .First())
             .OrderByDescending(t => t.LastWriteAt)
             .ToList();
 }

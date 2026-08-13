@@ -71,6 +71,43 @@ public class TopicPagingTests
         paging.Topics.Count.ShouldBe(3);
     }
 
+    // The topic gained a message while the page carrying its older copy was on the wire. The
+    // push already showed the new snippet and count at the top; the page landing must not put
+    // the old ones back.
+    [Fact]
+    public void AppendPage_ARowThatGainedAMessageDuringTheRoundTrip_KeepsThePushedCopy()
+    {
+        var pushed = Topic("c", 5);
+        pushed.MessageCount = 3;
+        pushed.LastMessageSnippet = "the new reply";
+        var paging = TopicPaging.FirstPage([Topic("a", 0)], "100").Upsert(pushed);
+
+        var stale = Topic("c", -2);
+        stale.MessageCount = 2;
+        stale.LastMessageSnippet = "the old reply";
+        var landed = paging.AppendPage([stale], "50");
+
+        landed.Topics.Select(t => t.TopicId).ShouldBe(["c", "a"]);
+        landed.Topics[0].MessageCount.ShouldBe(3);
+        landed.Topics[0].LastMessageSnippet.ShouldBe("the new reply");
+    }
+
+    // Two copies written at the same instant tell their freshness apart by how much of the
+    // conversation each has seen.
+    [Fact]
+    public void AppendPage_TwoCopiesOfTheSameMoment_KeepsTheOneThatSawMoreMessages()
+    {
+        var held = Topic("c", 0);
+        held.MessageCount = 3;
+        var paging = TopicPaging.FirstPage([held], "100");
+
+        var stale = Topic("c", 0);
+        stale.MessageCount = 2;
+        var landed = paging.AppendPage([stale], "50");
+
+        landed.Topics.Single().MessageCount.ShouldBe(3);
+    }
+
     [Fact]
     public void Insert_ATopicAlreadyHeld_ChangesNothing()
     {
