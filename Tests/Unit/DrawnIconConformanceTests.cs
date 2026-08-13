@@ -3,20 +3,27 @@ using System.Text.RegularExpressions;
 using Shouldly;
 using Tests.E2E.Fixtures;
 
-namespace Tests.Unit.WebChat.Client;
+namespace Tests.Unit;
 
-// An icon in this app is drawn, never typed. A font glyph is rendered by whatever the platform
-// picked for it, so it arrives at a different weight and often a different colour from the SVG
-// icons sitting beside it, and an emoji arrives in full colour however the button is styled.
-// The convention was written down twice and forgotten anyway, so it is walked here rather than
+// An icon in either Blazor client is drawn, never typed. A font glyph is rendered by whatever the
+// platform picked for it, so it arrives at a different weight and often a different colour from the
+// SVG icons sitting beside it, and an emoji arrives in full colour however the control is styled.
+// The convention was written down and forgotten anyway, so it is walked here rather than
 // remembered: the markup is the only place the mistake is visible, and it is invisible on the
 // machine that makes it.
 public class DrawnIconConformanceTests
 {
+    private static readonly string[] _clients = ["WebChat.Client", "Dashboard.Client"];
+
     // The one exemption, named rather than pattern-matched, so removing it is a decision. The
     // suggestion chips are content a person reads rather than controls, and their emoji are the
     // point of them.
     private static readonly string[] _exempt = ["SuggestionChips.razor"];
+
+    // A right arrow inside a sentence is punctuation, not an icon: the dashboard labels a span by
+    // its two ends ("speech end → audio"), and drawing that would be absurd. It is the only
+    // character above the threshold that reads as prose here.
+    private const int RightArrow = 0x2192;
 
     private static readonly Regex _entity = new(@"&(#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z]+);");
 
@@ -37,7 +44,7 @@ public class DrawnIconConformanceTests
     public void EveryIconInTheMarkup_IsDrawnRatherThanTyped()
     {
         var offenders = MarkupFiles()
-            .SelectMany(file => GlyphsIn(file))
+            .SelectMany(GlyphsIn)
             .ToList();
 
         offenders.ShouldBeEmpty(
@@ -48,11 +55,11 @@ public class DrawnIconConformanceTests
     }
 
     private static IEnumerable<string> MarkupFiles() =>
-        Directory
-            .EnumerateFiles(
-                Path.Combine(TestHelpers.FindSolutionRoot(), "WebChat.Client"),
+        _clients
+            .SelectMany(client => Directory.EnumerateFiles(
+                Path.Combine(TestHelpers.FindSolutionRoot(), client),
                 "*.razor",
-                SearchOption.AllDirectories)
+                SearchOption.AllDirectories))
             .Where(f => !_exempt.Contains(Path.GetFileName(f)))
             .Order();
 
@@ -60,7 +67,7 @@ public class DrawnIconConformanceTests
         File.ReadAllLines(file)
             .SelectMany((line, index) => CodePointsIn(line)
                 .Where(IsIcon)
-                .Select(cp => $"{Path.GetFileName(file)}:{index + 1} U+{cp:X4} {Rune.GetRuneAt(char.ConvertFromUtf32(cp), 0)}"));
+                .Select(cp => $"{Path.GetFileName(file)}:{index + 1} U+{cp:X4} {char.ConvertFromUtf32(cp)}"));
 
     // Literal characters and the entities that stand for one, read the same way: what the
     // browser ends up drawing is the same either way, and both spellings are in use here.
@@ -79,5 +86,6 @@ public class DrawnIconConformanceTests
     // the quotes and the ellipsis are all under U+2190. Above it are the arrows, the geometric
     // shapes, the dingbats and the emoji — the ranges an icon gets picked from. The multiplication
     // sign is the one straggler below, because a close button is written as one.
-    private static bool IsIcon(int codePoint) => codePoint == 0x00D7 || codePoint >= 0x2190;
+    private static bool IsIcon(int codePoint) =>
+        codePoint != RightArrow && (codePoint == 0x00D7 || codePoint >= 0x2190);
 }

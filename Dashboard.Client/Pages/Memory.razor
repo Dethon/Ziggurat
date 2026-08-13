@@ -105,7 +105,20 @@
                                     <span>@evt.UserId</span>
                                     <span class="merged-count">@evt.MergedCount</span>
                                     <span class="decayed-count">@evt.DecayedCount</span>
-                                    <span>@(evt.ProfileRegenerated ? "✓" : "—")</span>
+                                    @* The dash stays typed: it is a placeholder for nothing rather
+                                       than an icon, and an em dash is exactly what it looks like. *@
+                                    <span>
+                                        @if (evt.ProfileRegenerated)
+                                        {
+                                            <svg class="regenerated-tick" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                                <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41Z" />
+                                            </svg>
+                                        }
+                                        else
+                                        {
+                                            @("—")
+                                        }
+                                    </span>
                                 </div>
                             }
                         </div>
@@ -229,7 +242,7 @@
     }
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
-    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "▲" : "▼";
+    private MarkupString SortIndicator(string column) => SortArrow.For(column, _sortColumn, _sortAsc);
 
     public void Dispose() => _metricsSub?.Dispose();
 }
