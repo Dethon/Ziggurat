@@ -13,6 +13,11 @@ namespace Tests.Unit.Mcp.Hosting;
 //
 // What that costs is invisible from any one host: each reads its own configuration and would look
 // perfectly correct while disagreeing with the other two. So these assert the shared file itself.
+//
+// In its own non-parallel collection because one test sets a process-global environment variable,
+// and the suite runs at full width: anything binding configuration in the mutation's window would
+// read the override as its own.
+[Collection(EnvironmentMutatingCollection.Name)]
 public class RetentionPolicyFileTests
 {
     private sealed record HostSettings
@@ -66,4 +71,12 @@ public class RetentionPolicyFileTests
             Environment.SetEnvironmentVariable("Retention__PageSize", null);
         }
     }
+}
+
+// xunit runs a non-parallel collection on its own, after the parallel bulk, so a test that must
+// mutate process-global state joins this collection instead of racing everything else.
+[CollectionDefinition(Name, DisableParallelization = true)]
+public static class EnvironmentMutatingCollection
+{
+    public const string Name = "environment-mutating";
 }
