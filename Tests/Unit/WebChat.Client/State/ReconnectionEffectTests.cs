@@ -133,6 +133,58 @@ public sealed class ReconnectionEffectTests : IDisposable
             Times.Never);
     }
 
+    // The person was reading the archive when the connection dropped. Catch-up re-reads that
+    // range, not the ordinary one: the toggle stays visibly on, so ordinary rows underneath it
+    // would be another list wearing the archive's clothes.
+    [Fact]
+    public async Task WhenConnectionReconnected_WhileShowingTheArchive_ReloadsTheArchivedRange()
+    {
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new ShowArchivedTopics(true));
+        var now = DateTimeOffset.UtcNow;
+        _mockTopicService
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null, true))
+            .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
+                [new TopicMetadata("topic-a", 1, 1, "agent-1", "Archived", now, null)], null)));
+
+        CreateEffect();
+
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
+        _topicsStore.State.Topics.Single().TopicId.ShouldBe("topic-a");
+        _mockTopicService.Verify(
+            s => s.GetTopicPageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), false),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task WhenConnectionReconnected_WhileSearching_ReloadsTheSearchRange()
+    {
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new SearchTopics("abc"));
+        var now = DateTimeOffset.UtcNow;
+        _mockTopicService
+            .Setup(s => s.SearchTopicsAsync("agent-1", "abc", "default", null))
+            .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
+                [new TopicMetadata("topic-s", 1, 1, "agent-1", "abc things", now, null)], null)));
+
+        CreateEffect();
+
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
+        _topicsStore.State.Topics.Single().TopicId.ShouldBe("topic-s");
+        _mockTopicService.Verify(
+            s => s.GetTopicPageAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool>()),
+            Times.Never);
+    }
+
     [Fact]
     public void WhenConnectionReconnecting_DoesNotTriggerYet()
     {

@@ -40,16 +40,17 @@ public sealed class ReconnectionEffect : IDisposable
         IChatSessionService sessionService,
         IStreamResumeService streamResumeService)
     {
-        // Re-fetch topics from server to pick up changes made while disconnected
-        var agentId = topicsStore.State.SelectedAgentId;
-        if (agentId is not null)
+        // Re-fetch topics from server to pick up changes made while disconnected. Whichever
+        // range the state says is showing — ordinary, archived or a search — is the one caught
+        // up: the person's toggle and query survive the interruption, so rows from another
+        // range would sit under a label that says otherwise.
+        var range = TopicRange.Of(topicsStore.State, spaceStore.State.CurrentSlug);
+        if (range is not null)
         {
-            var spaceSlug = spaceStore.State.CurrentSlug;
-
             // The first page, not everything that was held. A bump that happened while the
             // client was not live is covered by exactly this: paging only ever fetches
             // backwards, so becoming live starts the list again from the top.
-            var firstPage = await _topicService.GetTopicPageAsync(agentId, spaceSlug);
+            var firstPage = await range.FetchPageAsync(_topicService, cursor: null);
 
             // Catch-up can land in the next interruption. Storing a not-live answer would
             // empty the sidebar the recovery exists to refill.
