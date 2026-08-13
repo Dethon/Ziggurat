@@ -216,10 +216,10 @@ public sealed class RedisThreadStateStore(
 
         // Decided on what the index held, not on what resolved: a member whose record is gone is
         // one fewer row, not the end of the range, and counting rows would stop the list short of
-        // everything below it. The cursor is the last member's score for the same reason.
+        // everything below it. The cursor is the last member's score and name for the same reason.
         return new TopicPage(
             topics,
-            members.Count < pageSize ? null : Score(members[^1]));
+            members.Count < pageSize ? null : Cursor(members[^1]));
     }
 
     private async Task<IReadOnlyList<TopicMetadata>> ResolveAsync(
@@ -231,12 +231,16 @@ public sealed class RedisThreadStateStore(
         return topics.OfType<TopicMetadata>().ToList();
     }
 
-    private static string Score(SortedSetEntry member) =>
-        member.Score.ToString(CultureInfo.InvariantCulture);
+    // Score plus member, because the score alone cannot say where inside a run of tied scores a
+    // page ended: two topics written the same millisecond share one, and an exclusive stop on it
+    // would lose whichever tied row the page break split off.
+    private static string Cursor(SortedSetEntry member) =>
+        $"{member.Score.ToString(CultureInfo.InvariantCulture)}:{member.Element}";
 
     // The one read path. Members are ordered by last write, so the order the sidebar shows is the
     // order the structure already holds and nothing sorts in memory. Paging is keyset paging over
-    // that same order: the cursor is the last row's score, and the next page starts below it.
+    // that same order: the cursor is the last row's score and member, and the next page starts
+    // right below that row.
     //
     // Archived is a position in this range and never a field on a topic. The cutoff is subtracted
     // from the current time here, so changing the horizon takes effect on the next read with no
@@ -245,21 +249,53 @@ public sealed class RedisThreadStateStore(
         string agentId, string spaceSlug, string? cursor, int take, bool archived)
     {
         var cutoff = (time.GetUtcNow() - retention.ArchiveHorizon).ToUnixTimeMilliseconds();
-        return await _db.SortedSetRangeByScoreWithScoresAsync(
-            IndexKey(agentId, spaceSlug),
+        var key = IndexKey(agentId, spaceSlug);
+        var from = ParseCursor(cursor);
+
+        // The cursor's own score is read again inclusively — it may still hold tied rows the page
+        // break split off — and what the previous page already showed is dropped by member. The
+        // over-fetch covers exactly the tied members that may be dropped.
+        var served = from is null
+            ? 0L
+            : await _db.SortedSetLengthAsync(key, from.Value.Score, from.Value.Score);
+
+        var entries = await _db.SortedSetRangeByScoreWithScoresAsync(
+            key,
             start: archived ? double.NegativeInfinity : cutoff,
-            stop: ParseCursor(cursor) ?? (archived ? cutoff : double.PositiveInfinity),
+            stop: from?.Score ?? (archived ? cutoff : double.PositiveInfinity),
 
             // The archived range's own top is the cutoff, which belongs to the ordinary list, so
-            // its stop is exclusive whether or not a cursor supplied it.
-            exclude: archived || cursor is not null ? Exclude.Stop : Exclude.None,
+            // its stop is exclusive when no cursor supplied it.
+            exclude: archived && from is null ? Exclude.Stop : Exclude.None,
             order: Order.Descending,
             skip: 0,
-            take: take);
+            take: take + served);
+
+        // Equal scores order members reverse-lexicographically, so at the cursor's score
+        // everything at or above the cursor member has been served already.
+        return entries
+            .Where(e => from is not { } c
+                || e.Score < c.Score
+                || string.CompareOrdinal(e.Element.ToString(), c.Member) < 0)
+            .Take(take)
+            .ToList();
     }
 
-    private static double? ParseCursor(string? cursor) =>
-        double.TryParse(cursor, CultureInfo.InvariantCulture, out var score) ? score : null;
+    private static (double Score, string Member)? ParseCursor(string? cursor)
+    {
+        if (cursor is null)
+        {
+            return null;
+        }
+
+        // A cursor issued before the member rode along is a bare score; an empty member skips the
+        // whole tied run, which is exactly what that cursor always did.
+        var separator = cursor.IndexOf(':');
+        var scorePart = separator < 0 ? cursor : cursor[..separator];
+        return double.TryParse(scorePart, CultureInfo.InvariantCulture, out var score)
+            ? (score, separator < 0 ? "" : cursor[(separator + 1)..])
+            : null;
+    }
 
     private Task<TopicMetadata?> ReadIndexedTopicAsync(string agentId, string member)
     {
@@ -324,9 +360,7 @@ public sealed class RedisThreadStateStore(
         var found = topics.OfType<TopicMetadata>().ToList();
         return new TopicPage(
             found,
-            hits.Count < pageSize
-                ? null
-                : hits[^1].Score.ToString(CultureInfo.InvariantCulture));
+            hits.Count < pageSize ? null : TopicSearchDocuments.CursorFor(hits[^1]));
     }
 
     // Once per deployment, from the Agent host. Conversations stored before the index existed

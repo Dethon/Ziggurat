@@ -78,6 +78,27 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         second.Topics.Select(t => t.TopicId).ShouldBe(["t-page-0"]);
     }
 
+    // Two hits written the same millisecond share a score, and the tie can straddle a page break.
+    // A cursor of the score alone with an exclusive bound loses the rest of the tied run.
+    [Fact]
+    public async Task SearchTopicsAsync_HitsTiedOnTheSameMillisecond_SurviveAPageBoundary()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 3, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock);
+        var when = clock.GetUtcNow();
+        await store.SaveTopicAsync(Topic("t-tie-0", 770, "Compost heap zero", when));
+        await store.SaveTopicAsync(Topic("t-tie-1", 771, "Compost heap one", when));
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await store.SaveTopicAsync(Topic("t-tie-2", 772, "Compost heap two", clock.GetUtcNow()));
+
+        var first = await store.SearchTopicsAsync(_agentId, "default", "compost", null, 2);
+        var second = await store.SearchTopicsAsync(_agentId, "default", "compost", first.NextCursor, 2);
+
+        first.Topics.First().TopicId.ShouldBe("t-tie-2");
+        first.Topics.Concat(second.Topics).Select(t => t.TopicId)
+            .ShouldBe(["t-tie-0", "t-tie-1", "t-tie-2"], ignoreOrder: true);
+    }
+
     [Fact]
     public async Task SearchTopicsAsync_AnotherSpacesConversation_IsNotFound()
     {

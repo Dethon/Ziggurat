@@ -1,3 +1,4 @@
+using System.Globalization;
 using Domain.DTOs.WebChat;
 using NRedisStack;
 using NRedisStack.RedisStackCommands;
@@ -28,6 +29,10 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
     // What one conversation contributes to the index. Bounded, because a document that grew with
     // the conversation would make an old chat cost more to keep searchable than to keep.
     private const int MaxIndexedTextLength = 20_000;
+
+    // The most tied hits one cursor score is re-read for. Ties share a millisecond, so a run
+    // longer than this is out of scope.
+    private const int MaxTiedHits = 256;
 
     private readonly IDatabase _db = redis.GetDatabase();
     private readonly SearchCommands _ft = redis.GetDatabase().FT();
@@ -76,8 +81,8 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
     }
 
     // Ordered by last write like every other list of topics, and paged the same way: the cursor
-    // is the last hit's score and the next page starts below it. The range is deliberately both
-    // sides of the archive cutoff — search is the way into the archive.
+    // is the last hit's score and identity, and the next page starts right below that hit. The
+    // range is deliberately both sides of the archive cutoff — search is the way into the archive.
     public async Task<IReadOnlyList<TopicSearchHit>> SearchAsync(
         string agentId, string spaceSlug, string query, string? cursor, int pageSize)
     {
@@ -87,15 +92,33 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
             return [];
         }
 
-        var below = cursor is null
-            ? "-inf +inf"
-            : $"-inf ({cursor}";
+        if (ParseCursor(cursor) is not { } from)
+        {
+            return await RunAsync(agentId, spaceSlug, terms, "-inf +inf", pageSize);
+        }
 
+        // The cursor's own score is read again inclusively and cut by hit identity, because the
+        // score alone cannot say where inside a run of tied hits the page ended: an exclusive
+        // bound loses whatever the page break split off the run.
+        var score = from.Score.ToString(CultureInfo.InvariantCulture);
+        var tied = AfterCursor(
+            await RunAsync(agentId, spaceSlug, terms, $"{score} {score}", MaxTiedHits),
+            from.Member);
+
+        var page = tied.Take(pageSize).ToList();
+        return page.Count < pageSize
+            ? [.. page, .. await RunAsync(agentId, spaceSlug, terms, $"-inf ({score}", pageSize - page.Count)]
+            : page;
+    }
+
+    private async Task<List<TopicSearchHit>> RunAsync(
+        string agentId, string spaceSlug, string terms, string range, int take)
+    {
         var search = new Query(
                 $"@agentId:{{{Tag(agentId)}}} @space:{{{Tag(spaceSlug)}}} "
-                + $"@score:[{below}] (@name|text:({terms}))")
+                + $"@score:[{range}] (@name|text:({terms}))")
             .SetSortBy("score", ascending: false)
-            .Limit(0, pageSize)
+            .Limit(0, take)
             .Dialect(2);
 
         try
@@ -115,6 +138,31 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
             // A query the index cannot answer is an empty result, not a broken sidebar.
             return [];
         }
+    }
+
+    // Tied hits come back in a stable order, so the previous page's tail cuts the run. A cursor
+    // hit already purged keeps the whole run instead: a repeated row is recoverable, a skipped
+    // one is not.
+    private static IEnumerable<TopicSearchHit> AfterCursor(List<TopicSearchHit> tied, string member) =>
+        tied.Skip(tied.FindIndex(h => Member(h) == member) + 1);
+
+    internal static string CursorFor(TopicSearchHit hit) =>
+        $"{hit.Score.ToString(CultureInfo.InvariantCulture)}:{Member(hit)}";
+
+    private static string Member(TopicSearchHit hit) => $"{hit.ChatId}:{hit.TopicId}";
+
+    private static (double Score, string Member)? ParseCursor(string? cursor)
+    {
+        if (cursor is null)
+        {
+            return null;
+        }
+
+        var separator = cursor.IndexOf(':');
+        var scorePart = separator < 0 ? cursor : cursor[..separator];
+        return double.TryParse(scorePart, CultureInfo.InvariantCulture, out var score)
+            ? (score, separator < 0 ? "" : cursor[(separator + 1)..])
+            : null;
     }
 
     private async Task<bool> EnsureIndexAsync()

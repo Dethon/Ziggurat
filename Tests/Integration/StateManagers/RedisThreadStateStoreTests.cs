@@ -505,6 +505,28 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         third.NextCursor.ShouldBeNull();
     }
 
+    // Two conversations written the same millisecond share a score. A cursor of the score alone
+    // with an exclusive stop would lose whichever tied row a page break split off — permanently,
+    // because paging only ever fetches backwards.
+    [Fact]
+    public async Task GetTopicPageAsync_TopicsTiedOnTheSameMillisecond_SurviveAPageBoundary()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 4, 7, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock);
+        var when = clock.GetUtcNow();
+        await store.SaveTopicAsync(new TopicMetadata("t-tied-a", 700, 0, "agent-tied", "tied-a", when, when));
+        await store.SaveTopicAsync(new TopicMetadata("t-tied-b", 701, 0, "agent-tied", "tied-b", when, when));
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-top", 702, 0, "agent-tied", "top", clock.GetUtcNow(), clock.GetUtcNow()));
+
+        var first = await store.GetTopicPageAsync("agent-tied", "default", null, 2);
+        var second = await store.GetTopicPageAsync("agent-tied", "default", first.NextCursor, 2);
+
+        first.Topics.Select(t => t.TopicId).ShouldBe(["t-top", "t-tied-b"]);
+        second.Topics.Select(t => t.TopicId).ShouldBe(["t-tied-a"]);
+    }
+
     [Fact]
     public async Task GetTopicPageAsync_ATopicWrittenToAfterBeingPagedPast_MovesToTheTop()
     {
