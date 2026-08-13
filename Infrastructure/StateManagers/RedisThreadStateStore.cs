@@ -92,7 +92,7 @@ public sealed class RedisThreadStateStore(
     // record. Each patches only its own fields, inside Redis, because a whole-record
     // read-modify-write loses the other writer's fields on the designed flow: mark-read fires
     // while the reply is being stamped, and the viewed conversation comes back badged unread.
-    private static readonly string StampScript =
+    private static readonly string _stampScript =
         $$"""
         local json = redis.call('GET', KEYS[1])
         if not json then return nil end
@@ -108,7 +108,7 @@ public sealed class RedisThreadStateStore(
 
     // KEEPTTL, because reading a conversation is not writing to it: a mark-read that reset the
     // clock would keep the record alive months past the history it describes.
-    private static readonly string MarkReadScript =
+    private static readonly string _markReadScript =
         $$"""
         local json = redis.call('GET', KEYS[1])
         if not json then return nil end
@@ -138,7 +138,7 @@ public sealed class RedisThreadStateStore(
         }
 
         var result = await _db.ScriptEvaluateAsync(
-            StampScript,
+            _stampScript,
             [TopicKey(agentId, chatId, topicId.ToString())],
             [
                 time.GetUtcNow().ToString("O"),
@@ -189,7 +189,7 @@ public sealed class RedisThreadStateStore(
     // The record is all it touches: the index score is the last write, which reading is not.
     public async Task MarkTopicReadAsync(string agentId, long chatId, string topicId)
     {
-        await _db.ScriptEvaluateAsync(MarkReadScript, [TopicKey(agentId, chatId, topicId)]);
+        await _db.ScriptEvaluateAsync(_markReadScript, [TopicKey(agentId, chatId, topicId)]);
     }
 
     // The last thing said that had anything to say. A message carrying only files leaves the
