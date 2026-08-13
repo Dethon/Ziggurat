@@ -74,20 +74,12 @@ public static class GlobRegex
     }
 
     // Every mount answers a pathological pattern with the same envelope, so the catch that turns
-    // the matcher's timeout into it lives here rather than at each call site. A backend filtering a
-    // finite node set wraps the result it builds; the disk path wraps its pull loop, because a lazy
-    // walk raises the timeout while the caller is still pulling.
-    public static FsResult<FsGlobResult> Guarded(string pattern, Func<FsResult<FsGlobResult>> build)
-    {
-        try
-        {
-            return build();
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            return new FsResult<FsGlobResult>.Err(TimedOut(pattern));
-        }
-    }
+    // the matcher's timeout into it lives here — once — rather than at each call site. A backend
+    // filtering a finite node set wraps the result it builds; the disk path wraps its pull loop,
+    // because a lazy walk raises the timeout while the caller is still pulling. The sync form
+    // hands GuardedAsync an already-completed task, so GetResult never blocks.
+    public static FsResult<FsGlobResult> Guarded(string pattern, Func<FsResult<FsGlobResult>> build) =>
+        GuardedAsync(pattern, () => Task.FromResult(build())).GetAwaiter().GetResult();
 
     public static async Task<FsResult<FsGlobResult>> GuardedAsync(
         string pattern, Func<Task<FsResult<FsGlobResult>>> build)
