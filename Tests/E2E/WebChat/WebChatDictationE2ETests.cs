@@ -371,6 +371,62 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         trace.ShouldContain("all zeros");
     }
 
+    // The recovery the wedge leaves room for. The wedged phone's traces show the default capture
+    // born dead — zeros from the first frame, no event ever — while other apps record fine, so the
+    // one lever left is which platform path the microphone is opened on. A run that has heard
+    // nothing by the probe reopens the microphone with the processed path (echo cancellation on)
+    // and keeps recording into the same graph; whether Android actually keys the wedge to the path
+    // is exactly what this ships to find out, and the trace records the verdict either way. Here
+    // the first open hands back a track of pure zeros and the second is the real fake microphone,
+    // so the words arriving proves the swap carried the recording, not just the meter.
+    [SkippableFact]
+    public async Task ACaptureBornSilent_ReopensOnTheProcessedPathAndStillDeliversTheWords()
+    {
+        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
+        Fixture.TranscriptionStatus = 200;
+        Fixture.Transcript = "rescatado por la otra ruta";
+
+        var page = await OpenAsync();
+        await page.EvaluateAsync(
+            """
+            () => {
+                window.__opens = [];
+                const open = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+                navigator.mediaDevices.getUserMedia = async constraints => {
+                    window.__opens.push(constraints);
+                    if (window.__opens.length === 1) {
+                        const ctx = new AudioContext();
+                        await ctx.resume();
+                        return ctx.createMediaStreamDestination().stream;
+                    }
+                    return open(constraints);
+                };
+            }
+            """);
+
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        var mic = await PressableMicAsync(page);
+
+        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        // Past the silence probe with room for the swap to land and real sound to be collected
+        // behind it.
+        await Task.Delay(3_500);
+        await TouchAsync(cdp, "touchEnd");
+
+        await Assertions.Expect(page.Locator("textarea.chat-input"))
+            .ToHaveValueAsync(
+                "rescatado por la otra ruta", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+
+        // The second open is the experiment: the processed path, asked for in so many words.
+        (await page.EvaluateAsync<int>("() => window.__opens.length")).ShouldBe(2);
+        (await page.EvaluateAsync<bool>(
+            "() => window.__opens[1].audio.echoCancellation === true")).ShouldBeTrue();
+        var trace = await page.EvaluateAsync<string>("() => window.dictation.diagnostics()");
+        trace.ShouldContain("route:");
+    }
+
     // The microphone can be granted and the graph still fail to come up behind it — the worklet is
     // fetched over the network, and a phone loses one whenever it feels like it. Everything the open
     // got as far as acquiring is live at that moment: a real capture the person can see in the
