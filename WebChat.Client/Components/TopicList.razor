@@ -56,13 +56,14 @@
             }
             @if (rows.Count == 0)
             {
-                <div class="no-topics">
-                    <span>
-                        @(!string.IsNullOrWhiteSpace(_search)
-                            ? "Nothing found"
-                            : _showingArchived ? "Nothing archived" : "No conversations yet")
-                    </span>
-                </div>
+                @* No caption while the list's answer is on the wire: an empty list while
+                   loading is not a result. *@
+                @if (_emptyLabel is not null)
+                {
+                    <div class="no-topics">
+                        <span>@_emptyLabel</span>
+                    </div>
+                }
             }
             else
             {
@@ -125,6 +126,7 @@
     private string? _deleteConfirmTopicId;
     private bool _showingArchived;
     private string _search = "";
+    private string? _emptyLabel;
     private Detent _detent = Detent.Peek;
 
     private ElementReference _peekBar;
@@ -142,6 +144,7 @@
         // the query in the store, and a box still showing the old word would caption the new
         // agent's ordinary rows as a search.
         Subscribe(TopicsStore.StateObservable, s => s.SearchQuery, q => _search = q);
+        Subscribe(TopicsStore.StateObservable, TopicListSelectors.EmptyLabel, label => _emptyLabel = label);
         Subscribe(StreamingStore.StateObservable, s => s.StreamingTopics, ids => _streamingTopics = ids);
         Subscribe(TopicsStore.StateObservable, UnreadSelectors.ComputeUnreadCounts, c => _unreadCounts = c);
         Subscribe(AgentActivityStore.StateObservable,
