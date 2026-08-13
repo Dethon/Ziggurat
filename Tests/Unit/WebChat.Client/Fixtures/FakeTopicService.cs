@@ -41,6 +41,9 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     // Holds the delete open so a test can interleave user actions with the round trip.
     public TaskCompletionSource? DeleteGate { get; set; }
 
+    // Holds every page fetch open so a test can change the list underneath the round trip.
+    public TaskCompletionSource? PageGate { get; set; }
+
     public IReadOnlyList<TopicMetadata> SavedTopics => _savedTopics;
     public IReadOnlySet<string> DeletedTopicIds => _deletedTopicIds;
     public IReadOnlyList<string> JoinedSpaces => _joinedSpaces;
@@ -61,7 +64,7 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     // deciding which a topic is in.
     public HashSet<string> ArchivedTopicIds { get; } = [];
 
-    public Task<HubResult<TopicPage>> GetTopicPageAsync(
+    public async Task<HubResult<TopicPage>> GetTopicPageAsync(
         string agentId,
         string spaceSlug = SpaceConfig.DefaultSlug,
         string? cursor = null,
@@ -71,14 +74,19 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
             (archived ? "archived" : "topics")
             + (cursor is null ? $":{agentId}" : $":{agentId}:{cursor}"));
 
+        if (PageGate is not null)
+        {
+            await PageGate.Task;
+        }
+
         if (ThrowOnGetAllTopics is not null)
         {
-            return Task.FromException<HubResult<TopicPage>>(ThrowOnGetAllTopics);
+            throw ThrowOnGetAllTopics;
         }
 
         if (NotLive || NotLiveForAgentIds.Contains(agentId))
         {
-            return Task.FromResult(HubResult<TopicPage>.NotLive);
+            return HubResult<TopicPage>.NotLive;
         }
 
         // Ordered and cut the way the server's index is, so a cursor means the same thing here.
@@ -99,8 +107,8 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
             ? null
             : Score(page[^1]).ToString(CultureInfo.InvariantCulture);
 
-        return Task.FromResult(HubResult<TopicPage>.Answered(new TopicPage(
-            page, next, [.. page.Select(t => t.TopicId).Where(LiveTopicIds.Contains)])));
+        return HubResult<TopicPage>.Answered(new TopicPage(
+            page, next, [.. page.Select(t => t.TopicId).Where(LiveTopicIds.Contains)]));
     }
 
     // Which of the seeded topics the server would report as having a reply in flight.
@@ -108,7 +116,7 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
     // Matches on the name, over both ranges, the way the server's index does — a test that cares
     // about content matching drives the store rather than this.
-    public Task<HubResult<TopicPage>> SearchTopicsAsync(
+    public async Task<HubResult<TopicPage>> SearchTopicsAsync(
         string agentId,
         string query,
         string spaceSlug = SpaceConfig.DefaultSlug,
@@ -116,9 +124,14 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     {
         recorder?.Record(cursor is null ? $"search:{query}" : $"search:{query}:{cursor}");
 
+        if (PageGate is not null)
+        {
+            await PageGate.Task;
+        }
+
         if (NotLive)
         {
-            return Task.FromResult(HubResult<TopicPage>.NotLive);
+            return HubResult<TopicPage>.NotLive;
         }
 
         var ordered = _seededTopics.Concat(_savedTopics)
@@ -134,9 +147,9 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
             : ordered.Where(t => Score(t) < double.Parse(cursor, CultureInfo.InvariantCulture)).ToList();
 
         var page = below.Take(PageSize).ToList();
-        return Task.FromResult(HubResult<TopicPage>.Answered(new TopicPage(
+        return HubResult<TopicPage>.Answered(new TopicPage(
             page,
-            page.Count < PageSize ? null : Score(page[^1]).ToString(CultureInfo.InvariantCulture))));
+            page.Count < PageSize ? null : Score(page[^1]).ToString(CultureInfo.InvariantCulture)));
     }
 
     // Read positions the fake was told to move, so a test can assert which conversations were

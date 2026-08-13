@@ -25,6 +25,7 @@ public sealed class TopicPagingEffect : IDisposable
     private ITimer? _searchDebounce;
     private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(250);
     private int _fetching;
+    private TopicRange? _firstPageInFlight;
 
     public TopicPagingEffect(
         Dispatcher dispatcher,
@@ -65,18 +66,15 @@ public sealed class TopicPagingEffect : IDisposable
     // arriving into them unasked would be a different list than the one they are reading.
     public async Task RefreshTopAsync()
     {
-        var state = _topicsStore.State;
-        if (state.SelectedAgentId is null
-            || state.ShowingArchived
-            || !string.IsNullOrWhiteSpace(state.SearchQuery))
+        var range = CurrentRange();
+        if (range is null || range.Archived || !string.IsNullOrWhiteSpace(range.SearchQuery))
         {
             return;
         }
 
-        var page = await _topicService.GetTopicPageAsync(
-            state.SelectedAgentId, _spaceStore.State.CurrentSlug);
+        var page = await range.FetchPageAsync(_topicService, cursor: null);
 
-        if (!page.IsLive)
+        if (!page.IsLive || range != CurrentRange())
         {
             return;
         }
@@ -93,37 +91,43 @@ public sealed class TopicPagingEffect : IDisposable
     // index from the top. Paged exactly like the ordinary list, because it is the same query.
     public async Task LoadFirstPageAsync()
     {
-        var state = _topicsStore.State;
-        if (state.SelectedAgentId is null)
+        var range = CurrentRange();
+        if (range is null || range == _firstPageInFlight)
         {
             return;
         }
 
-        var page = await FetchAsync(state, cursor: null);
-
-        if (!page.IsLive)
+        // Held per range rather than as one flag: swallowing a new range's ask behind an old
+        // range's fetch would leave the new list never loaded, since the old answer is dropped.
+        _firstPageInFlight = range;
+        try
         {
-            return;
-        }
+            var page = await range.FetchPageAsync(_topicService, cursor: null);
 
-        var topics = page.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
-        _dispatcher.Dispatch(new TopicsLoaded(topics, page.Value.NextCursor));
-        TopicPageStreams.ResumeReported(topics, page.Value.LiveTopicIds, _streamResumeService, _logger);
+            if (!page.IsLive || range != CurrentRange())
+            {
+                return;
+            }
+
+            var topics = page.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
+            _dispatcher.Dispatch(new TopicsLoaded(topics, page.Value.NextCursor));
+            TopicPageStreams.ResumeReported(topics, page.Value.LiveTopicIds, _streamResumeService, _logger);
+        }
+        finally
+        {
+            if (_firstPageInFlight == range)
+            {
+                _firstPageInFlight = null;
+            }
+        }
     }
-
-    // Which call a page fetch is depends on what the list currently is: a search, the archive,
-    // or the ordinary list. Paged the same way whichever it is.
-    private Task<HubResult<TopicPage>> FetchAsync(TopicsState state, string? cursor) =>
-        string.IsNullOrWhiteSpace(state.SearchQuery)
-            ? _topicService.GetTopicPageAsync(
-                state.SelectedAgentId!, _spaceStore.State.CurrentSlug, cursor, state.ShowingArchived)
-            : _topicService.SearchTopicsAsync(
-                state.SelectedAgentId!, state.SearchQuery, _spaceStore.State.CurrentSlug, cursor);
 
     public async Task LoadNextPageAsync()
     {
         var state = _topicsStore.State;
-        if (state.SelectedAgentId is null || !state.Paging.HasMore || state.Paging.Cursor is null)
+        var range = CurrentRange();
+        var cursor = state.Paging.Cursor;
+        if (range is null || !state.Paging.HasMore || cursor is null)
         {
             return;
         }
@@ -135,11 +139,14 @@ public sealed class TopicPagingEffect : IDisposable
 
         try
         {
-            var page = await FetchAsync(state, state.Paging.Cursor);
+            var page = await range.FetchPageAsync(_topicService, cursor);
 
             // Not live is not an empty page. Storing it as one would end the range and leave the
             // rest of the list unreachable until the next agent change.
-            if (!page.IsLive)
+            // A live answer still lands only on the list that asked for it: same range, and a
+            // list whose cursor is still the one this page was fetched below — a first page
+            // replacing the list mid-flight makes this a continuation of nothing.
+            if (!page.IsLive || range != CurrentRange() || _topicsStore.State.Paging.Cursor != cursor)
             {
                 return;
             }
@@ -156,6 +163,11 @@ public sealed class TopicPagingEffect : IDisposable
             Volatile.Write(ref _fetching, 0);
         }
     }
+
+    // What the list currently is, read fresh: comparing a fetch's stamp against this after the
+    // await is what tells a stale answer from a current one.
+    private TopicRange? CurrentRange() =>
+        TopicRange.Of(_topicsStore.State, _spaceStore.State.CurrentSlug);
 
     public void Dispose()
     {

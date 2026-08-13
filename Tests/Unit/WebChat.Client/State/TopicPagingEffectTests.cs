@@ -234,6 +234,104 @@ public sealed class TopicPagingEffectTests : IDisposable
         _calls.Calls.ShouldBeEmpty();
     }
 
+    // The page was asked for on agent A's list; by the time it lands the person is reading
+    // agent B's. Landing it would merge A's rows into B's list and install A's cursor.
+    [Fact]
+    public async Task APageInFlightWhenTheAgentChanges_IsDropped()
+    {
+        SeedTopics(4);
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        await LoadFirstPageAsync();
+        _topicService.PageGate = new TaskCompletionSource();
+        var inFlight = _effect.LoadNextPageAsync();
+
+        _dispatcher.Dispatch(new SelectAgent("agent-2"));
+        var start = new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero);
+        _dispatcher.Dispatch(new TopicsLoaded(
+            [global::WebChat.Client.Models.StoredTopic.FromMetadata(new global::Domain.DTOs.WebChat.TopicMetadata(
+                "topic-b", 200, 0, "agent-2", "Topic B", start, null))],
+            "cursor-b"));
+        _topicService.PageGate.SetResult();
+        await inFlight;
+
+        _topicsStore.State.Topics.Select(t => t.TopicId).ShouldBe(["topic-b"]);
+        _topicsStore.State.Paging.Cursor.ShouldBe("cursor-b");
+    }
+
+    // An ordinary page still on the wire when the archive opens belongs to the range no longer
+    // shown, so it lands nowhere.
+    [Fact]
+    public async Task AnOrdinaryPageInFlightWhenTheArchiveOpens_IsDropped()
+    {
+        SeedTopics(4);
+        _topicService.ArchivedTopicIds.Add("topic-0");
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        await LoadFirstPageAsync();
+        var gate = _topicService.PageGate = new TaskCompletionSource();
+        var inFlight = _effect.LoadNextPageAsync();
+
+        // The archive's own first page answers straight away; the ordinary page is still held.
+        _topicService.PageGate = null;
+        _dispatcher.Dispatch(new ShowArchivedTopics(true));
+        gate.SetResult();
+        await inFlight;
+
+        _topicsStore.State.Topics.Select(t => t.TopicId).ShouldBe(["topic-0"]);
+    }
+
+    // The answer for "Topic 0" arrives while the box already says "Topic 1": showing it would
+    // caption one query's rows with another query's text.
+    [Fact]
+    public async Task ASearchAnswerForAStaleQuery_IsDropped()
+    {
+        SeedTopics(4);
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new SearchTopics("Topic 0"));
+        _topicService.PageGate = new TaskCompletionSource();
+        var inFlight = _effect.LoadFirstPageAsync();
+
+        _dispatcher.Dispatch(new SearchTopics("Topic 1"));
+        _topicService.PageGate.SetResult();
+        await inFlight;
+
+        _topicsStore.State.Topics.ShouldBeEmpty();
+    }
+
+    // Scroll-driven fetches already swallow overlapping asks; first pages have to as well, or
+    // a toggle asked twice fetches the same rows twice.
+    [Fact]
+    public async Task TwoFirstPageAsksForTheSameRange_FetchOnce()
+    {
+        SeedTopics(2);
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _topicService.PageGate = new TaskCompletionSource();
+
+        var first = _effect.LoadFirstPageAsync();
+        var second = _effect.LoadFirstPageAsync();
+        _topicService.PageGate.SetResult();
+        await Task.WhenAll(first, second);
+
+        _calls.Calls.Count(call => call.StartsWith("topics:")).ShouldBe(1);
+    }
+
+    // A refresh is a page fetch like any other: one asked on agent A's list upserts nothing
+    // into agent B's.
+    [Fact]
+    public async Task ARefreshInFlightWhenTheAgentChanges_LandsNothing()
+    {
+        SeedTopics(1);
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _topicService.PageGate = new TaskCompletionSource();
+        var inFlight = _effect.RefreshTopAsync();
+
+        _dispatcher.Dispatch(new SelectAgent("agent-2"));
+        _dispatcher.Dispatch(new TopicsLoaded([]));
+        _topicService.PageGate.SetResult();
+        await inFlight;
+
+        _topicsStore.State.Topics.ShouldBeEmpty();
+    }
+
     private void SeedTopics(int count)
     {
         var start = new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero);
