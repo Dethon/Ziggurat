@@ -127,50 +127,6 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         found.Topics.Select(t => t.TopicId).ShouldBe(["t-said"]);
     }
 
-    [Fact]
-    public async Task MigrateTopicsAsync_BuildsDocumentsForTopicsThatAlreadyExist()
-    {
-        var store = NewStore();
-        await ResetMigrationMarkerAsync();
-        var when = new DateTimeOffset(2026, 5, 4, 0, 0, 0, TimeSpan.Zero);
-        await redis.Connection.GetDatabase().StringSetAsync(
-            $"topic:{_agentId}:750:t-existing",
-            System.Text.Json.JsonSerializer.Serialize(Topic("t-existing", 750, "Old conversation", when)));
-        await store.AppendMessagesAsync(HistoryKey(750),
-            [new ChatMessage(ChatRole.User, "something about aubergines")]);
-
-        await store.MigrateTopicsAsync();
-
-        var found = await store.SearchTopicsAsync(_agentId, "default", "aubergines", null, 10);
-
-        found.Topics.Select(t => t.TopicId).ShouldBe(["t-existing"]);
-    }
-
-    // A rerun passes the whole history to the document again, and the document appends: every
-    // restart would double what the conversation is searched by.
-    [Fact]
-    public async Task MigrateTopicsAsync_RunAgain_DoesNotGrowTheSearchDocument()
-    {
-        var store = NewStore();
-        await ResetMigrationMarkerAsync();
-        var when = new DateTimeOffset(2026, 5, 6, 0, 0, 0, TimeSpan.Zero);
-        await redis.Connection.GetDatabase().StringSetAsync(
-            $"topic:{_agentId}:751:t-rerun",
-            System.Text.Json.JsonSerializer.Serialize(Topic("t-rerun", 751, "Old conversation", when)));
-        await store.AppendMessagesAsync(HistoryKey(751),
-            [new ChatMessage(ChatRole.User, "something about kumquats")]);
-
-        await store.MigrateTopicsAsync();
-        await store.MigrateTopicsAsync();
-
-        var text = await redis.Connection.GetDatabase()
-            .HashGetAsync($"topicdoc:{_agentId}:751:t-rerun", "text");
-        text.ToString().Split("kumquats").Length.ShouldBe(2);
-    }
-
-    private Task ResetMigrationMarkerAsync() =>
-        redis.Connection.GetDatabase().KeyDeleteAsync("topics:migrated");
-
     // A rename must not keep a conversation findable past the history it describes: the document
     // ages on the conversation's own writes alone.
     [Fact]

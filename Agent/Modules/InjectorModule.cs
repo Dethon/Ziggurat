@@ -116,8 +116,7 @@ public static class InjectorModule
                     retention,
                     sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>()))
-                .AddHostedService<TopicMigrationHost>();
+                    sp.GetRequiredService<IConnectionMultiplexer>()));
         }
     }
 }

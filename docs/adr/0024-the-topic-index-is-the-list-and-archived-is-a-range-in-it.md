@@ -88,7 +88,10 @@ does nothing about topics already stored. It remains worth doing separately.
   are not resolved during migration: every topic is marked fully read once, at migration.
 - The migration runs from the Agent host and the SignalR channel does not wait for it. A channel
   started against an unmigrated Redis serves an empty sidebar until the migration finishes,
-  rather than falling back to the scan the migration exists to delete.
+  rather than falling back to the scan the migration exists to delete. **The migration has since
+  run on the one deployment there is, and its code was deleted on 2026-08-13** — `MigrateTopicsAsync`,
+  its marker key and `TopicMigrationHost` no longer exist. A store predating the index would now
+  serve an empty sidebar permanently.
 - Attachment retention moves from its own 30-day clock onto the purge horizon, so a topic and
   the files sent to it now die together at twelve months instead of the files going eleven
   months early.

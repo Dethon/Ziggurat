@@ -14,10 +14,7 @@ public sealed class RedisThreadStateStore(
     IConnectionMultiplexer redis, RetentionSettings retention, TimeProvider time)
     : IThreadStateStore
 {
-    private const string MigrationMarkerKey = "topics:migrated";
-
     private readonly IDatabase _db = redis.GetDatabase();
-    private readonly IServer _server = redis.GetServer(redis.GetEndPoints()[0]);
 
     // Every key a topic owns carries the same expiry, refreshed on every write, so a purge takes
     // the whole conversation at once rather than in pieces.
@@ -370,63 +367,6 @@ public sealed class RedisThreadStateStore(
             found,
             hits.Count < pageSize ? null : TopicSearchDocuments.CursorFor(hits[^1]));
     }
-
-    // Once per deployment, from the Agent host. Conversations stored before the index existed
-    // have no member in it, and a channel reading only the index would serve an empty sidebar
-    // for them forever. This is the one place a scan of the keyspace still happens, and it is
-    // what makes the listing scan removable.
-    public async Task MigrateTopicsAsync(CancellationToken ct = default)
-    {
-        // A rerun is not harmless: the backfill clears every badge earned since the first run,
-        // every TTL stretches to a fresh horizon, and the search documents append the whole
-        // history again. The marker is what makes "once" true across restarts.
-        if (await _db.KeyExistsAsync(MigrationMarkerKey))
-        {
-            return;
-        }
-
-        await foreach (var key in _server.KeysAsync(pattern: "topic:*").WithCancellation(ct))
-        {
-            if (await ReadTopicAsync(key!) is { } topic)
-            {
-                var backfilled = await BackfillAsync(topic);
-                await SaveTopicAsync(backfilled);
-                await _db.KeyExpireAsync(HistoryKey(topic), _expiration);
-
-                // A conversation stored before the index existed has nothing to be found by, so
-                // its document is built from the history it already has.
-                await _searchDocuments.WriteAsync(
-                    backfilled, Text(await GetMessagesAsync(HistoryKey(topic)) ?? []));
-            }
-        }
-
-        // Set on completion rather than on entry, so a run that died half-way is retried by the
-        // next start rather than remembered as done.
-        await _db.StringSetAsync(MigrationMarkerKey, time.GetUtcNow().ToString("O"));
-    }
-
-    // Everything a record written before the index carries none of. The row's preview comes off
-    // the tail of the history rather than the whole of it, because the preview is one message.
-    private async Task<TopicMetadata> BackfillAsync(TopicMetadata topic)
-    {
-        var stored = await GetMessagesAsync(HistoryKey(topic)) ?? [];
-        var count = Readable(stored).LongCount();
-        var tail = stored.TakeLast(20).ToArray();
-
-        return topic with
-        {
-            LastMessageSnippet = topic.LastMessageSnippet ?? Snippet(tail ?? []),
-            MessageCount = count,
-
-            // Nobody's stored read position survives the change of meaning. Every topic is
-            // marked read once, here, rather than resolved: a sidebar of badges nobody earned
-            // is worse than none at all.
-            ReadPosition = count
-        };
-    }
-
-    private static string HistoryKey(TopicMetadata topic) =>
-        new AgentKey($"{topic.ChatId}:{topic.ThreadId}", topic.AgentId).ToString();
 
     private async Task<TopicMetadata?> ReadTopicAsync(string topicKey)
     {

@@ -272,26 +272,6 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         ((await store.GetTopicPageAsync("agent-delete", "default", null, 10)).Topics).ShouldBeEmpty();
     }
 
-    // Upgrading must not hide conversations: what is already stored has no index entry, and a
-    // channel reading only the index would serve an empty sidebar until something wrote to each
-    // topic. The migration builds the index from the records that already exist.
-    [Fact]
-    public async Task MigrateTopicsAsync_IndexesTopicsThatAlreadyExist()
-    {
-        var store = NewStore();
-        await ResetMigrationMarkerAsync();
-        var older = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
-        await WriteTopicRecordDirectlyAsync(new TopicMetadata(
-            "t-existing-a", 540, 0, "agent-migrate", "First", older, older.AddHours(1)));
-        await WriteTopicRecordDirectlyAsync(new TopicMetadata(
-            "t-existing-b", 541, 0, "agent-migrate", "Second", older, older.AddHours(5)));
-
-        await store.MigrateTopicsAsync();
-
-        var topics = (await store.GetTopicPageAsync("agent-migrate", "default", null, 10)).Topics;
-        topics.Select(t => t.TopicId).ShouldBe(["t-existing-b", "t-existing-a"]);
-    }
-
     // Written on the same path that stamps the last-write time, so a row can be drawn without
     // reading a single message.
     [Fact]
@@ -311,24 +291,6 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var topic = (await store.GetTopicPageAsync("agent-snippet", "default", null, 10)).Topics
             .ShouldHaveSingleItem();
         topic.LastMessageSnippet.ShouldBe("cold and bri…");
-    }
-
-    [Fact]
-    public async Task MigrateTopicsAsync_BackfillsSnippetsForTopicsThatAlreadyExist()
-    {
-        var store = NewStore();
-        await ResetMigrationMarkerAsync();
-        var when = new DateTimeOffset(2026, 5, 2, 0, 0, 0, TimeSpan.Zero);
-        await WriteTopicRecordDirectlyAsync(new TopicMetadata(
-            "t-backfill", 570, 0, "agent-backfill", "Old", when, when));
-        await store.AppendMessagesAsync(HistoryKey("agent-backfill", 570),
-            [new ChatMessage(ChatRole.Assistant, "the last thing said")]);
-
-        await store.MigrateTopicsAsync();
-
-        var topic = (await store.GetTopicPageAsync("agent-backfill", "default", null, 10)).Topics
-            .ShouldHaveSingleItem();
-        topic.LastMessageSnippet.ShouldBe("the last thing said");
     }
 
     // Unread is a subtraction of two numbers carried on the topic, so a badge reads no messages.
@@ -474,53 +436,6 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
             .ShouldHaveSingleItem();
         topic.MessageCount.ShouldBe(100);
         topic.ReadPosition.ShouldBe(100);
-    }
-
-    // Nobody's stored read position survives the change of meaning, so everything is marked read
-    // once rather than resolved. A sidebar full of badges nobody earned is worse than none.
-    [Fact]
-    public async Task MigrateTopicsAsync_MarksEveryExistingTopicFullyRead()
-    {
-        var store = NewStore();
-        await ResetMigrationMarkerAsync();
-        var when = new DateTimeOffset(2026, 5, 3, 0, 0, 0, TimeSpan.Zero);
-        await WriteTopicRecordDirectlyAsync(new TopicMetadata(
-            "t-allread", 600, 0, "agent-allread", "Old", when, when));
-        await store.AppendMessagesAsync(HistoryKey("agent-allread", 600),
-            [new ChatMessage(ChatRole.User, "said before the change")]);
-
-        await store.MigrateTopicsAsync();
-
-        var topic = (await store.GetTopicPageAsync("agent-allread", "default", null, 10)).Topics
-            .ShouldHaveSingleItem();
-        topic.MessageCount.ShouldBe(1);
-        topic.ReadPosition.ShouldBe(1);
-    }
-
-    // "Once per deployment" is a marker in the store, not a hope about restarts: a rerun would
-    // clear every badge earned since the first run, stretch every TTL and re-append every
-    // conversation's text to its search document.
-    [Fact]
-    public async Task MigrateTopicsAsync_RunAgain_LeavesWhatTheFirstRunBuiltAlone()
-    {
-        var store = NewStore();
-        await ResetMigrationMarkerAsync();
-        var when = new DateTimeOffset(2026, 5, 5, 0, 0, 0, TimeSpan.Zero);
-        await WriteTopicRecordDirectlyAsync(new TopicMetadata(
-            "t-once", 690, 0, "agent-once", "Old", when, when));
-        await store.AppendMessagesAsync(HistoryKey("agent-once", 690),
-            [new ChatMessage(ChatRole.User, "said before the migration")]);
-        await store.MigrateTopicsAsync();
-
-        // A reply lands after the migration; its unread badge must survive a host restart.
-        await store.AppendMessagesAsync(HistoryKey("agent-once", 690),
-            [new ChatMessage(ChatRole.Assistant, "said after it")]);
-        await store.MigrateTopicsAsync();
-
-        var topic = (await store.GetTopicPageAsync("agent-once", "default", null, 10)).Topics
-            .ShouldHaveSingleItem();
-        topic.MessageCount.ShouldBe(2);
-        topic.ReadPosition.ShouldBe(1);
     }
 
     // Keyset paging over the structure that already defines the order, so reaching page five
@@ -736,13 +651,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         }
     }
 
-    // The migration runs once per store, so a test that wants one has to take the marker away
-    // from whichever test ran it before.
-    private Task ResetMigrationMarkerAsync() =>
-        redisFixture.Connection.GetDatabase().KeyDeleteAsync("topics:migrated");
-
-    // Bypasses SaveTopicAsync on purpose: this is what an upgrade finds in the store, a record
-    // written before the index existed.
+    // Bypasses SaveTopicAsync on purpose: a topic record that nothing ever put in the index.
     private async Task WriteTopicRecordDirectlyAsync(TopicMetadata topic)
     {
         await redisFixture.Connection.GetDatabase().StringSetAsync(
