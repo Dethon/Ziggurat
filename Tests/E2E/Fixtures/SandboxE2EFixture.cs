@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using ModelContextProtocol.Client;
@@ -49,7 +50,14 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
             // cannot reach what is being asserted.
             _sandbox = TestContainers.Container(E2EImages.McpSandbox.ImageName, "mcp-sandbox")
                 .WithPortBinding(8080, true)
-                .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
+                // The published port answers before Kestrel has bound anything — Docker's proxy
+                // accepts the connection and the app then resets it — so a TCP check returns while
+                // the server is still starting and every test fails on a reset. `GET /mcp` is the
+                // cheapest request the transport really serves: 405, because the endpoint is POST.
+                .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r
+                    .ForPort(8080)
+                    .ForPath("/mcp")
+                    .ForStatusCode(HttpStatusCode.MethodNotAllowed)))
                 .Build();
             await _sandbox.StartAsync(ct);
         });
