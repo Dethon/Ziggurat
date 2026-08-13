@@ -152,9 +152,13 @@ public sealed class RedisThreadStateStore(
     }
 
     // The messages a reader is shown: what the transcript renders, what a badge counts and what
-    // a conversation is searched by are all the same set.
+    // a conversation is searched by are all the same set. Role alone is not enough — a tool-using
+    // turn persists assistant-role function calls with nothing to render, and a message carrying
+    // only files must still survive, or an image-only message would vanish on reload.
     private static IEnumerable<ChatMessage> Readable(IEnumerable<ChatMessage> messages) =>
-        messages.Where(m => m.Role == ChatRole.User || m.Role == ChatRole.Assistant);
+        messages.Where(m =>
+            (m.Role == ChatRole.User || m.Role == ChatRole.Assistant)
+            && (!string.IsNullOrWhiteSpace(TextOf(m)) || m.GetAttachments() is { Count: > 0 }));
 
     private static string TextOf(ChatMessage message) =>
         string.Join("", message.Contents.OfType<TextContent>().Select(c => c.Text));
@@ -397,6 +401,8 @@ public sealed class RedisThreadStateStore(
     {
         var messages = await GetMessagesAsync(new AgentKey($"{chatId}:{threadId}", agentId).ToString());
 
+        // Projected from the same set a badge counts, so unread never says more than the
+        // transcript shows.
         return messages is null
             ? []
             : Readable(messages)
@@ -407,9 +413,6 @@ public sealed class RedisThreadStateStore(
                     m.GetSenderId(),
                     m.GetTimestamp(),
                     m.GetAttachments()))
-                // A message that carried only files has no text and must still survive: dropping it
-                // would make an image-only message vanish on reload.
-                .Where(m => !string.IsNullOrWhiteSpace(m.Content) || m.Attachments is { Count: > 0 })
                 .ToList();
     }
 

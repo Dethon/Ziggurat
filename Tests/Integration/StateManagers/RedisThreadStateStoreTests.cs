@@ -349,7 +349,8 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
     }
 
     // A badge means what a person would count on screen. The stored list also holds tool and
-    // system turns, so counting it raw would badge one reply with six tool calls as seven unread.
+    // system turns — and a tool-using turn's assistant-role function calls, which the transcript
+    // hides — so counting by role alone would badge what the reader is never shown.
     [Fact]
     public async Task AppendMessagesAsync_CountsOnlyTheMessagesAReaderIsShown()
     {
@@ -360,6 +361,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.AppendMessagesAsync(HistoryKey("agent-tools", 585),
         [
             new ChatMessage(ChatRole.User, "what is on tonight"),
+            new ChatMessage(ChatRole.Assistant, [new FunctionCallContent("call-1", "lookup")]),
             new ChatMessage(ChatRole.Tool, "looked it up"),
             new ChatMessage(ChatRole.System, "a note to itself"),
             new ChatMessage(ChatRole.Assistant, "two things")
