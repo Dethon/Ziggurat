@@ -140,7 +140,12 @@
         {
             <div class="collapsible-block">
                 <button class="collapsible-toggle" @onclick="() => _showReasoning = !_showReasoning">
-                    <span class="toggle-icon">@(_showReasoning ? "▼" : "▶")</span>
+                    @* One triangle turned rather than two glyphs swapped, which is what the
+                       transition on .toggle-icon was always written for. *@
+                    <svg class="toggle-icon @(_showReasoning ? "open" : "")" viewBox="0 0 24 24"
+                         fill="currentColor" width="10" height="10" aria-hidden="true">
+                        <path d="M9 6l6 6-6 6Z" />
+                    </svg>
                     Reasoning
                 </button>
                 @if (_showReasoning)
@@ -156,7 +161,10 @@
         {
             <div class="collapsible-block">
                 <button class="collapsible-toggle" @onclick="() => _showToolCalls = !_showToolCalls">
-                    <span class="toggle-icon">@(_showToolCalls ? "▼" : "▶")</span>
+                    <svg class="toggle-icon @(_showToolCalls ? "open" : "")" viewBox="0 0 24 24"
+                         fill="currentColor" width="10" height="10" aria-hidden="true">
+                        <path d="M9 6l6 6-6 6Z" />
+                    </svg>
                     Tool calls
                 </button>
                 @if (_showToolCalls)
