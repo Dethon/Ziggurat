@@ -34,7 +34,10 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        if (!await DockerIsRunningAsync())
+        // The subject is a container running as a user who owns its home and nothing else, so a
+        // host that cannot produce that pairing has nothing to say here rather than something
+        // weaker: as root every write succeeds and the permissions fact inverts silently.
+        if (!OperatingSystem.IsLinux() || geteuid() == 0 || !await DockerIsRunningAsync())
         {
             return;
         }
@@ -62,7 +65,7 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
             _sandbox = TestContainers.Container(E2EImages.McpSandbox.ImageName, "mcp-sandbox")
                 .WithPortBinding(8080, true)
                 .WithBindMount(WorkspaceOnHost, ContainerWorkspace, AccessMode.ReadWrite)
-                .WithCreateParameterModifier(parameters => parameters.User = $"{Geteuid()}:{Getegid()}")
+                .WithCreateParameterModifier(parameters => parameters.User = $"{geteuid()}:{getegid()}")
                 // The published port answers before Kestrel has bound anything — Docker's proxy
                 // accepts the connection and the app then resets it — so a TCP check returns while
                 // the server is still starting and every test fails on a reset. `GET /mcp` is the
@@ -76,6 +79,17 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
         });
 
         McpEndpoint = $"http://{_sandbox!.Hostname}:{_sandbox.GetMappedPublicPort(8080)}/mcp";
+    }
+
+    // Stop and start the container the tests share, so a claim about surviving a restart is bought
+    // with a restart rather than with a look at the host side of the volume. The port is remapped
+    // on the way back up, so the endpoint is recomputed; the classes in this collection run one
+    // after another, so nothing is mid-request while it happens.
+    public async Task RestartAsync(CancellationToken ct)
+    {
+        await _sandbox!.StopAsync(ct);
+        await _sandbox.StartAsync(ct);
+        McpEndpoint = $"http://{_sandbox.Hostname}:{_sandbox.GetMappedPublicPort(8080)}/mcp";
     }
 
     public async Task<McpClient> ConnectAsync(CancellationToken ct) =>
@@ -113,10 +127,6 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
 
     [DllImport("libc", SetLastError = true)]
     private static extern uint getegid();
-
-    private static uint Geteuid() => geteuid();
-
-    private static uint Getegid() => getegid();
 
     private static async Task<bool> DockerIsRunningAsync()
     {

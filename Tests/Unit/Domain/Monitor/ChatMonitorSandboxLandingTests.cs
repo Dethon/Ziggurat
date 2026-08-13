@@ -103,6 +103,7 @@ public class ChatMonitorSandboxLandingTests
         var message = messages!.Single();
         var path = message.GetSandboxPaths().ShouldHaveSingleItem();
         path.ShouldStartWith("/sandbox/");
+        path.ShouldContain("/uploads/7-42/");
         path.ShouldEndWith("/photo.png");
 
         string.Join("", message.Contents.OfType<TextContent>().Select(c => c.Text))

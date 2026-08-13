@@ -14,6 +14,8 @@ public static class SandboxPrompt
     public static string Build(string mountPoint, string workspace)
     {
         var home = FileSystemResolution.ToVirtualPath(mountPoint, workspace);
+        // The same directory as the container spells it, which is what command output will show.
+        var native = "/" + workspace.TrimStart('/');
 
         return $"""
             ## Sandbox Filesystem
@@ -23,7 +25,7 @@ public static class SandboxPrompt
             ### Layout
 
             - `{mountPoint}` — the container root (`/`), for every tool including command execution. The container knows this name too, so `{mountPoint}/etc/os-release` and `/etc/os-release` are the same file whether you write one as a path argument or inside a command.
-            - `{home}` — the **persistent workspace** (a Docker named volume). Files here survive container restarts, and files someone sends you are put here. Nothing puts you here by default: name it as the working directory when you want to work in it.
+            - `{home}` — the **persistent workspace** (a Docker named volume). Files here survive container restarts. Nothing puts you here by default: name it as the working directory when you want to work in it.
             - `{mountPoint}/etc`, `{mountPoint}/usr`, `{mountPoint}/tmp`, etc. — system directories. They reset whenever the container is recreated and you typically cannot write to them (you run as an unprivileged user) — the container root included, so a command that writes a relative file needs a working directory you own.
 
             ### Capabilities
@@ -39,7 +41,7 @@ public static class SandboxPrompt
             - **Output is capped** per stream and the result flags truncation; for long output, redirect to a file and read it back with the file tools.
             - **Timeouts** kill the entire process tree and surface a timeout flag; raise the limit only when you genuinely need a longer-running command.
             - **Writes outside the persistent workspace** fail with permission denied, because you run as an unprivileged user; keep working files under `{home}/...` and set that as the working directory when a command writes relative files.
-            - **Paths in command output are container-native.** `pwd`, `find`, `which` and the rest answer in the container's own spelling (`/{workspace}/x`, without the mount point). Put `{mountPoint}` in front of one before handing it to a filesystem tool as a path — inside another command it works as it stands. The `cwd` the exec tool reports is the exception: it already comes back as a virtual path.
+            - **Paths in command output are container-native.** `pwd`, `find`, `which` and the rest answer in the container's own spelling (`{native}/x`, without the mount point). Put `{mountPoint}` in front of one before handing it to a filesystem tool as a path — inside another command it works as it stands. The `cwd` the exec tool reports is the exception: it already comes back as a virtual path.
 
             ### Working here
 

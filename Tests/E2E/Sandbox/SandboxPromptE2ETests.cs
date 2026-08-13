@@ -6,10 +6,11 @@ using Tests.E2E.Fixtures;
 
 namespace Tests.E2E.Sandbox;
 
-// The prompt tells the agent where to work, and here the directory it names either exists in the
-// image or does not. Nothing lower can say that: every in-process fixture builds the server against
-// a temporary root, so a prompt naming a directory nobody creates reads the same as one naming a
-// directory that is there.
+// The prompt the deployment actually serves, which is a different claim from the one the
+// conformance test makes about the text: the prompt is now built from an injected filesystem, so
+// it is constructed per request by the MCP host, and nothing below the wire exercises that. What it
+// names is then checked against the running container — the directory the agent is told to work in
+// is one it can write.
 [Trait("Category", "E2E")]
 [Collection(SandboxE2ECollection.Name)]
 public class SandboxPromptE2ETests(SandboxE2EFixture fixture)

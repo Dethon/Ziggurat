@@ -195,28 +195,11 @@ public static class ChatMessageExtensions
 
         // References, never bytes: this is what the persisted message carries, so a history read
         // costs the same whether or not files were sent (ADR 0020).
-        public IReadOnlyList<AttachmentReference>? GetAttachments()
-        {
-            var value = message.AdditionalProperties?.GetValueOrDefault(AttachmentsKey);
-            return value switch
-            {
-                IReadOnlyList<AttachmentReference> attachments => attachments,
-                JsonElement je => je.Deserialize<IReadOnlyList<AttachmentReference>>(
-                    ChannelProtocol.SerializerOptions),
-                _ => null
-            };
-        }
+        public IReadOnlyList<AttachmentReference>? GetAttachments() =>
+            GetList<AttachmentReference>(message, AttachmentsKey);
 
-        public void SetAttachments(IReadOnlyList<AttachmentReference>? attachments)
-        {
-            if (attachments is null or { Count: 0 })
-            {
-                return;
-            }
-
-            message.AdditionalProperties ??= [];
-            message.AdditionalProperties[AttachmentsKey] = attachments;
-        }
+        public void SetAttachments(IReadOnlyList<AttachmentReference>? attachments) =>
+            SetList(message, AttachmentsKey, attachments);
 
         // Which channel can still get the bytes. Hydration reads it to know who to ask; the
         // reference itself stays transport-neutral.
@@ -246,53 +229,42 @@ public static class ChatMessageExtensions
         // for the same reason the references are: the model is told on the way out, and the
         // transcript a person reads must not grow an internal path. It outlives hydration, so a
         // later turn can still act on the file after the bytes stop being sent.
-        public IReadOnlyList<string>? GetSandboxPaths()
-        {
-            var value = message.AdditionalProperties?.GetValueOrDefault(SandboxPathsKey);
-            return value switch
-            {
-                IReadOnlyList<string> paths => paths,
-                JsonElement je => je.Deserialize<IReadOnlyList<string>>(ChannelProtocol.SerializerOptions),
-                _ => null
-            };
-        }
+        public IReadOnlyList<string>? GetSandboxPaths() => GetList<string>(message, SandboxPathsKey);
 
-        public void SetSandboxPaths(IReadOnlyList<string>? paths)
-        {
-            if (paths is null or { Count: 0 })
-            {
-                return;
-            }
-
-            message.AdditionalProperties ??= [];
-            message.AdditionalProperties[SandboxPathsKey] = paths;
-        }
+        public void SetSandboxPaths(IReadOnlyList<string>? paths) =>
+            SetList(message, SandboxPathsKey, paths);
 
         // The files this turn could not put in the sandbox, by the names the person used. Recorded
         // beside the landed paths so the turn's record is complete, but spoken only within the
         // hydration distance: past it the model has neither the bytes nor the file, and a notice
         // about neither is noise.
-        public IReadOnlyList<string>? GetLandingFailures()
+        public IReadOnlyList<string>? GetLandingFailures() =>
+            GetList<string>(message, LandingFailuresKey);
+
+        public void SetLandingFailures(IReadOnlyList<string>? fileNames) =>
+            SetList(message, LandingFailuresKey, fileNames);
+    }
+
+    // The three list-valued properties are read and written the same way: the list itself on the
+    // turn that set it, a JSON element on a turn that read the message back from the store, and an
+    // empty list recorded as nothing at all rather than as an empty entry.
+    private static IReadOnlyList<T>? GetList<T>(ChatMessage message, string key) =>
+        message.AdditionalProperties?.GetValueOrDefault(key) switch
         {
-            var value = message.AdditionalProperties?.GetValueOrDefault(LandingFailuresKey);
-            return value switch
-            {
-                IReadOnlyList<string> names => names,
-                JsonElement je => je.Deserialize<IReadOnlyList<string>>(ChannelProtocol.SerializerOptions),
-                _ => null
-            };
+            IReadOnlyList<T> list => list,
+            JsonElement je => je.Deserialize<IReadOnlyList<T>>(ChannelProtocol.SerializerOptions),
+            _ => null
+        };
+
+    private static void SetList<T>(ChatMessage message, string key, IReadOnlyList<T>? values)
+    {
+        if (values is null or { Count: 0 })
+        {
+            return;
         }
 
-        public void SetLandingFailures(IReadOnlyList<string>? fileNames)
-        {
-            if (fileNames is null or { Count: 0 })
-            {
-                return;
-            }
-
-            message.AdditionalProperties ??= [];
-            message.AdditionalProperties[LandingFailuresKey] = fileNames;
-        }
+        message.AdditionalProperties ??= [];
+        message.AdditionalProperties[key] = values;
     }
 
     extension(ChatResponseUpdate update)

@@ -54,28 +54,34 @@ public class SandboxLandingE2ETests(SandboxE2EFixture fixture)
         read!.ToJsonString().ShouldContain("sent bytes");
     }
 
-    // The workspace is a volume, so what lands there outlives the container. Reading the host side
-    // of the bind mount is the only way to say that without restarting anything: a file that is
-    // there is a file the volume kept, not one held in the container's own layer.
+    // A conversation resumed tomorrow can still act on what was sent today, which is only true
+    // because the workspace is a volume. Bought with a real restart: the container's own layer is
+    // thrown away with it, so a file that reads back afterwards is one the volume kept.
     [SkippableFact]
-    public async Task AlandedFile_SitsInTheVolumeRatherThanTheContainersOwnLayer()
+    public async Task ALandedFile_IsStillThereAfterTheContainerIsRestarted()
     {
         Skip.IfNot(fixture.Available, "Docker is not available");
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-        await using var client = await fixture.ConnectAsync(cts.Token);
-        var registry = await MountAsync(client, cts.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(180));
+        string path;
+        await using (var client = await fixture.ConnectAsync(cts.Token))
+        {
+            var landed = await AttachmentLanding.LandAsync(
+                new AttachmentLanding.Landing(
+                    await MountAsync(client, cts.Token), [_notes],
+                    (_, _) => Task.FromResult<byte[]?>("kept bytes"u8.ToArray()),
+                    "7:42", "turn-volume"),
+                NullLogger.Instance,
+                cts.Token);
+            path = landed.Landed.ShouldHaveSingleItem();
+        }
 
-        await AttachmentLanding.LandAsync(
-            new AttachmentLanding.Landing(
-                registry, [_notes], (_, _) => Task.FromResult<byte[]?>("kept bytes"u8.ToArray()),
-                "7:42", "turn-volume"),
-            NullLogger.Instance,
-            cts.Token);
+        await fixture.RestartAsync(cts.Token);
 
-        var onHost = Path.Combine(
-            fixture.WorkspaceOnHost, "uploads", "7-42", "turn-volume", "notes.txt");
-        File.Exists(onHost).ShouldBeTrue(onHost);
-        (await File.ReadAllTextAsync(onHost, cts.Token)).ShouldBe("kept bytes");
+        await using var reconnected = await fixture.ConnectAsync(cts.Token);
+        var registry = await MountAsync(reconnected, cts.Token);
+        var read = await new VfsTextReadTool(registry).RunAsync(path, cancellationToken: cts.Token);
+
+        read!.ToJsonString().ShouldContain("kept bytes");
     }
 
     // The defect itself, pinned where it is real: the container root is root-owned and the server
