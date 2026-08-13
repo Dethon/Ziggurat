@@ -333,16 +333,17 @@ window.dictation = {
     // The processed path — echo cancellation on — is the only path, decided on evidence from the
     // phone that kept wedging: Android's raw capture path came up born-dead (zeros on a healthy
     // graph, cleared only by reboot) while the processed path recorded fine through the very same
-    // wedge. A dictation that always works beats marginally cleaner audio for whisper. If quiet
-    // speech ever suffers, noiseSuppression is the knob to revisit — it rides along with the
-    // path rather than selecting it. Automatic gain is its own decision: asked for as false, an
+    // wedge. Echo cancellation is what selects that path; noise suppression only rode along on
+    // it, and live it behaved as the gate the old raw-path rationale warned about — opening and
+    // closing on the speaker mid-sentence until the transcription came back nonsense — so it is
+    // asked off while the path stays. Automatic gain is its own decision: asked for as false, an
     // Android phone spoken to normally returned peaks some 20 dB below speech.
     _constraints: function () {
         return {
             audio: {
                 channelCount: 1,
                 echoCancellation: true,
-                noiseSuppression: true,
+                noiseSuppression: false,
                 autoGainControl: true
             }
         };
@@ -364,6 +365,7 @@ window.dictation = {
                 const s = t.getSettings ? t.getSettings() : {};
                 return (t.label || 'unnamed') + (t.muted ? ' [muted]' : '')
                     + ' (ec ' + (s.echoCancellation ? 'on' : 'off')
+                    + ', ns ' + (s.noiseSuppression ? 'on' : 'off')
                     + ', agc ' + (s.autoGainControl ? 'on' : 'off') + ')';
             })
             .join(', '));

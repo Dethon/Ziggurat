@@ -94,8 +94,12 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
         await TouchAsync(cdp, "touchEnd");
 
         // Reported rather than merely absent: a browser that does not say cannot be taken to agree.
+        // Echo cancellation selects the platform path that survives the wedge; noise suppression
+        // merely rode along on it, and live it turned out to be a gate — opening and closing on
+        // the speaker mid-sentence until the transcription came back nonsense. So the path stays
+        // and the gate goes.
         opened.GetProperty("echoCancellation").GetBoolean().ShouldBeTrue();
-        opened.GetProperty("noiseSuppression").GetBoolean().ShouldBeTrue();
+        opened.GetProperty("noiseSuppression").GetBoolean().ShouldBeFalse();
         opened.GetProperty("autoGainControl").GetBoolean().ShouldBeTrue();
 
         // A graph that ends nowhere is a graph an Android device never runs.
