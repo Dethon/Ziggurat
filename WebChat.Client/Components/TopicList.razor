@@ -125,8 +125,6 @@
     private string? _deleteConfirmTopicId;
     private bool _showingArchived;
     private string _search = "";
-    private Timer? _searchDebounce;
-    private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(250);
     private Detent _detent = Detent.Peek;
 
     private ElementReference _peekBar;
@@ -211,15 +209,12 @@
 
     private void ToggleArchived() => Dispatcher.Dispatch(new ShowArchivedTopics(!_showingArchived));
 
-    // Typing is a hub call now, so it is not made on every keystroke: the pause is what turns a
-    // typed word into one search rather than one per letter.
+    // Every keystroke is dispatched; the paging effect owns the pause that turns a typed word
+    // into one hub call rather than one per letter.
     private void OnSearchInput(ChangeEventArgs e)
     {
         _search = e.Value?.ToString() ?? "";
-        _searchDebounce?.Dispose();
-        _searchDebounce = new Timer(
-            _ => InvokeAsync(() => Dispatcher.Dispatch(new SearchTopics(_search))),
-            null, SearchDebounce, Timeout.InfiniteTimeSpan);
+        Dispatcher.Dispatch(new SearchTopics(_search));
     }
     private void ShowDeleteConfirm(string topicId) => _deleteConfirmTopicId = topicId;
     private void CancelDelete() => _deleteConfirmTopicId = null;
@@ -237,7 +232,6 @@
 
     public override void Dispose()
     {
-        _searchDebounce?.Dispose();
         _selfRef?.Dispose();
         base.Dispose();
     }

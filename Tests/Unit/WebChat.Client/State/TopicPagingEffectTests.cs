@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.State;
@@ -15,6 +16,7 @@ public sealed class TopicPagingEffectTests : IDisposable
     private readonly SpaceStore _spaceStore;
     private readonly FakeTopicService _topicService;
     private readonly FakeStreamResumeService _streamResumeService = new();
+    private readonly FakeTimeProvider _clock = new();
     private readonly TopicPagingEffect _effect;
 
     public TopicPagingEffectTests()
@@ -29,6 +31,7 @@ public sealed class TopicPagingEffectTests : IDisposable
             _topicService,
             _spaceStore,
             _streamResumeService,
+            _clock,
             new RecordingLogger<TopicPagingEffect>());
     }
 
@@ -156,6 +159,23 @@ public sealed class TopicPagingEffectTests : IDisposable
         _topicsStore.State.Topics.Select(t => t.TopicId)
             .ShouldBe(["topic-3", "topic-2", "topic-1", "topic-0"]);
         _calls.Calls.ShouldNotContain(call => call.StartsWith("topics:"));
+    }
+
+    // Typing is a hub call now, so it is not made on every keystroke: the pause is what turns a
+    // typed word into one search rather than one per letter.
+    [Fact]
+    public void TypingAWord_SearchesOnceAfterThePause()
+    {
+        SeedTopics(4);
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new SearchTopics("To"));
+        _dispatcher.Dispatch(new SearchTopics("Topic 0"));
+        _calls.Calls.ShouldNotContain(call => call.StartsWith("search:"));
+
+        _clock.Advance(TimeSpan.FromMilliseconds(250));
+
+        _calls.Calls.Count(call => call.StartsWith("search:")).ShouldBe(1);
+        _calls.Calls.ShouldContain("search:Topic 0");
     }
 
     // An emptied search box is the ordinary list again, not a search for nothing.

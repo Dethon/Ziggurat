@@ -22,6 +22,8 @@ public sealed class TopicPagingEffect : IDisposable
     private readonly IDisposable _showArchivedRegistration;
     private readonly IDisposable _searchRegistration;
     private readonly IDisposable _refreshRegistration;
+    private ITimer? _searchDebounce;
+    private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(250);
     private int _fetching;
 
     public TopicPagingEffect(
@@ -30,6 +32,7 @@ public sealed class TopicPagingEffect : IDisposable
         ITopicService topicService,
         SpaceStore spaceStore,
         IStreamResumeService streamResumeService,
+        TimeProvider timeProvider,
         ILogger<TopicPagingEffect> logger)
     {
         _dispatcher = dispatcher;
@@ -43,8 +46,16 @@ public sealed class TopicPagingEffect : IDisposable
             _ => LoadNextPageAsync().LogFaults(_logger, nameof(LoadMoreTopics)));
         _showArchivedRegistration = dispatcher.RegisterHandler<ShowArchivedTopics>(
             _ => LoadFirstPageAsync().LogFaults(_logger, nameof(ShowArchivedTopics)));
-        _searchRegistration = dispatcher.RegisterHandler<SearchTopics>(
-            _ => LoadFirstPageAsync().LogFaults(_logger, nameof(SearchTopics)));
+        // A search is a hub call now, so one is not made on every keystroke: the pause is what
+        // turns a typed word into one search rather than one per letter. The store already holds
+        // the latest query, so the fetch that finally runs asks for what was last typed.
+        _searchRegistration = dispatcher.RegisterHandler<SearchTopics>(_ =>
+        {
+            _searchDebounce?.Dispose();
+            _searchDebounce = timeProvider.CreateTimer(
+                _ => LoadFirstPageAsync().LogFaults(_logger, nameof(SearchTopics)),
+                null, SearchDebounce, Timeout.InfiniteTimeSpan);
+        });
         _refreshRegistration = dispatcher.RegisterHandler<RefreshTopicList>(
             _ => RefreshTopAsync().LogFaults(_logger, nameof(RefreshTopicList)));
     }
@@ -152,5 +163,6 @@ public sealed class TopicPagingEffect : IDisposable
         _showArchivedRegistration.Dispose();
         _searchRegistration.Dispose();
         _refreshRegistration.Dispose();
+        _searchDebounce?.Dispose();
     }
 }
