@@ -46,7 +46,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         };
 
         _tickets = new AttachmentTickets(_settings, _time);
-        var store = new AttachmentStore(_settings, new RetentionSettings(), _time, NullLogger<AttachmentStore>.Instance);
+        var store = new AttachmentStore(_settings, new RetentionSettings(), new FakeConversationLiveness(), _time, NullLogger<AttachmentStore>.Instance);
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();

@@ -13,6 +13,7 @@ using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Unit.McpChannelSignalR;
 using Tests.Unit.McpChannelSignalR.Fixtures;
 
 namespace Tests.Integration.McpChannelSignalR;
@@ -35,7 +36,7 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
     public ChatHubDeleteTopicTests(RedisFixture redis)
     {
         var settings = new AttachmentSettings { StoragePath = _root };
-        _store = new AttachmentStore(settings, new RetentionSettings(), _time, NullLogger<AttachmentStore>.Instance);
+        _store = new AttachmentStore(settings, new RetentionSettings(), new FakeConversationLiveness(), _time, NullLogger<AttachmentStore>.Instance);
         var attachments = new AttachmentService(
             settings,
             new AttachmentTickets(settings, _time),

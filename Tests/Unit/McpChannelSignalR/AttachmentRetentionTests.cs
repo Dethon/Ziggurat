@@ -19,14 +19,17 @@ public sealed class AttachmentRetentionTests : IDisposable
     private readonly AttachmentSettings _settings;
 
     // Files die with the conversation they were sent to rather than eleven months before it, so
-    // the window here is the retention block's and not a clock of the upload store's own.
+    // the window here is the retention block's and not a clock of the upload store's own — and
+    // aged files also wait for the conversation itself to be gone.
     private readonly RetentionSettings _retention = new();
+    private readonly FakeConversationLiveness _liveness = new();
     private readonly AttachmentStore _store;
 
     public AttachmentRetentionTests()
     {
         _settings = new AttachmentSettings { StoragePath = _root };
-        _store = new AttachmentStore(_settings, _retention, _time, NullLogger<AttachmentStore>.Instance);
+        _store = new AttachmentStore(
+            _settings, _retention, _liveness, _time, NullLogger<AttachmentStore>.Instance);
     }
 
     public void Dispose()
@@ -50,16 +53,45 @@ public sealed class AttachmentRetentionTests : IDisposable
     }
 
     [Fact]
-    public async Task TheSweep_RemovesFilesOlderThanTheRetentionWindow()
+    public async Task TheSweep_RemovesAgedFilesOfAConversationThatIsGone()
     {
         var old = await StoreAsync("7:42", "old.png");
         _time.Advance(_retention.AttachmentRetention + TimeSpan.FromDays(1));
         var fresh = await StoreAsync("7:42", "fresh.png");
 
-        _store.Sweep().ShouldBe(1);
+        (await _store.SweepAsync(CancellationToken.None)).ShouldBe(1);
 
         _store.Find(old.Id).ShouldBeNull();
         _store.Find(fresh.Id).ShouldNotBeNull();
+    }
+
+    // The conversation's purge clock restarts on every append, so a topic in continuous use is
+    // still alive when its earliest files pass the window — and keeps them: a topic and its files
+    // die together, never the files first.
+    [Fact]
+    public async Task TheSweep_KeepsAgedFilesWhileTheirConversationLives()
+    {
+        var old = await StoreAsync("7:42", "old.png");
+        _liveness.Alive.Add("7:42");
+        _time.Advance(_retention.AttachmentRetention + TimeSpan.FromDays(1));
+
+        (await _store.SweepAsync(CancellationToken.None)).ShouldBe(0);
+
+        _store.Find(old.Id).ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task AgedFilesOfAConversationThatDied_GoOnTheNextSweep()
+    {
+        var old = await StoreAsync("7:42", "old.png");
+        _liveness.Alive.Add("7:42");
+        _time.Advance(_retention.AttachmentRetention + TimeSpan.FromDays(1));
+        (await _store.SweepAsync(CancellationToken.None)).ShouldBe(0);
+
+        _liveness.Alive.Remove("7:42");
+
+        (await _store.SweepAsync(CancellationToken.None)).ShouldBe(1);
+        _store.Find(old.Id).ShouldBeNull();
     }
 
     [Fact]
@@ -67,7 +99,7 @@ public sealed class AttachmentRetentionTests : IDisposable
     {
         var swept = await StoreAsync("7:42", "gone.png");
         _time.Advance(_retention.AttachmentRetention + TimeSpan.FromDays(1));
-        _store.Sweep();
+        await _store.SweepAsync(CancellationToken.None);
 
         (await _store.ReadBytesAsync(swept.Id, CancellationToken.None)).ShouldBeNull();
     }

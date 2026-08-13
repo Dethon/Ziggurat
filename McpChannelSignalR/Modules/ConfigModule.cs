@@ -46,6 +46,7 @@ public static class ConfigModule
             .AddSingleton(settings.Dictation)
             .AddLemonadeTranscription(settings.Dictation.Transcription)
             .AddSingleton<AttachmentTickets>()
+            .AddSingleton<IConversationLiveness, AgentConversationLiveness>()
             .AddSingleton<AttachmentStore>()
             .AddSingleton<AttachmentService>()
             .AddHostedService<AttachmentSweeper>();

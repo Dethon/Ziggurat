@@ -44,7 +44,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         _attachmentSettings = new AttachmentSettings { StoragePath = _root, TicketTtlSeconds = 60 };
         _settings = new DictationSettings { MaxLength = TimeSpan.FromSeconds(2) };
         _tickets = new AttachmentTickets(_attachmentSettings, _time);
-        _store = new AttachmentStore(_attachmentSettings, new RetentionSettings(), _time, NullLogger<AttachmentStore>.Instance);
+        _store = new AttachmentStore(_attachmentSettings, new RetentionSettings(), new FakeConversationLiveness(), _time, NullLogger<AttachmentStore>.Instance);
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();

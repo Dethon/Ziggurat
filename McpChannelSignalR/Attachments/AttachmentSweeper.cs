@@ -20,7 +20,7 @@ public sealed class AttachmentSweeper(
         {
             try
             {
-                var swept = store.Sweep();
+                var swept = await store.SweepAsync(stoppingToken);
                 if (swept > 0)
                 {
                     logger.LogInformation(

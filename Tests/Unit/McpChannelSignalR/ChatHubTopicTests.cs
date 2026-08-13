@@ -36,7 +36,7 @@ public sealed class ChatHubTopicTests : IDisposable
         var attachments = new AttachmentService(
             attachmentSettings,
             new AttachmentTickets(attachmentSettings, time),
-            new AttachmentStore(attachmentSettings, new RetentionSettings(), time, NullLogger<AttachmentStore>.Instance),
+            new AttachmentStore(attachmentSettings, new RetentionSettings(), new FakeConversationLiveness(), time, NullLogger<AttachmentStore>.Instance),
             NullLogger<AttachmentService>.Instance);
 
         _streamService = new StreamService(
