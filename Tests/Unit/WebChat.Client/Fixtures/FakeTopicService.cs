@@ -87,7 +87,7 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
             .Where(t => ArchivedTopicIds.Contains(t.TopicId) == archived)
             .GroupBy(t => t.TopicId)
             .Select(g => g.Last())
-            .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
+            .OrderByDescending(t => t.LastWriteAt)
             .ToList();
 
         var below = cursor is null
@@ -126,7 +126,7 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
             .Where(t => t.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
             .GroupBy(t => t.TopicId)
             .Select(g => g.Last())
-            .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
+            .OrderByDescending(t => t.LastWriteAt)
             .ToList();
 
         var below = cursor is null
@@ -159,7 +159,7 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     }
 
     private static double Score(TopicMetadata topic) =>
-        (topic.LastMessageAt ?? topic.CreatedAt).ToUnixTimeMilliseconds();
+        topic.LastWriteAt.ToUnixTimeMilliseconds();
 
     public Task<HubResult<Nothing>> JoinSpaceAsync(string spaceSlug)
     {

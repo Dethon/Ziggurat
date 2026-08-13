@@ -79,7 +79,7 @@ public sealed class RedisThreadStateStore(
     // written here too, on the same pass, so drawing a row costs no history read.
     private async Task StampLastWriteAsync(string historyKey, IReadOnlyList<ChatMessage> appended)
     {
-        if (HistoryKeyParts(historyKey) is not { } key)
+        if (AgentKey.ChatConversationParts(historyKey) is not { } key)
         {
             return;
         }
@@ -141,31 +141,12 @@ public sealed class RedisThreadStateStore(
     private string? Snippet(IEnumerable<ChatMessage> messages)
     {
         var text = messages
-            .Select(m => string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)))
+            .Select(TextOf)
             .LastOrDefault(t => !string.IsNullOrWhiteSpace(t));
 
         return text is null
             ? null
             : text.Length > retention.SnippetLength ? text[..retention.SnippetLength] + "…" : text;
-    }
-
-    // "agent-key:{agentId}:{chatId}:{threadId}", the one spelling AgentKey produces. Anything
-    // else — the GUID a session falls back to when it has no key yet — belongs to no topic and
-    // stamps nothing.
-    private static (string AgentId, long ChatId, long ThreadId)? HistoryKeyParts(string historyKey)
-    {
-        const string prefix = "agent-key:";
-        if (!historyKey.StartsWith(prefix, StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        var parts = historyKey[prefix.Length..].Split(':');
-        return parts.Length >= 3
-               && long.TryParse(parts[^2], out var chatId)
-               && long.TryParse(parts[^1], out var threadId)
-            ? (string.Join(':', parts[..^2]), chatId, threadId)
-            : null;
     }
 
     private static RedisValue[] Serialize(IReadOnlyList<ChatMessage> messages) =>
@@ -401,8 +382,10 @@ public sealed class RedisThreadStateStore(
         return $"{topic.ChatId}:{topic.TopicId}";
     }
 
-    private static double LastWriteScore(TopicMetadata topic)
+    // Shared with the search documents, so a topic sorts identically in the index and in a
+    // search's results.
+    internal static double LastWriteScore(TopicMetadata topic)
     {
-        return (topic.LastMessageAt ?? topic.CreatedAt).ToUnixTimeMilliseconds();
+        return topic.LastWriteAt.ToUnixTimeMilliseconds();
     }
 }

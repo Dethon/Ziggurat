@@ -51,6 +51,6 @@ public sealed record TopicPaging
         fresher.Concat(held)
             .GroupBy(t => t.TopicId)
             .Select(g => g.First())
-            .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
+            .OrderByDescending(t => t.LastWriteAt)
             .ToList();
 }

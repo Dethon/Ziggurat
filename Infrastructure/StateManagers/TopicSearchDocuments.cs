@@ -1,4 +1,3 @@
-using System.Globalization;
 using Domain.DTOs.WebChat;
 using NRedisStack;
 using NRedisStack.RedisStackCommands;
@@ -7,6 +6,9 @@ using NRedisStack.Search.Literals.Enums;
 using StackExchange.Redis;
 
 namespace Infrastructure.StateManagers;
+
+// One search hit: which conversation, and the last-write score paging continues below.
+internal sealed record TopicSearchHit(long ChatId, string TopicId, double Score);
 
 // One searchable document per topic, holding what it is called and what was said in it. Search
 // returns topics rather than positions in them, because the sidebar's question is which
@@ -57,7 +59,7 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
             new("agentId", topic.AgentId),
             new("space", topic.SpaceSlug),
             new("name", topic.Name),
-            new("score", LastWriteScore(topic)),
+            new("score", RedisThreadStateStore.LastWriteScore(topic)),
             .. text is null ? Array.Empty<HashEntry>() : [new HashEntry("text", text)]
         ];
 
@@ -76,7 +78,7 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
     // Ordered by last write like every other list of topics, and paged the same way: the cursor
     // is the last hit's score and the next page starts below it. The range is deliberately both
     // sides of the archive cutoff — search is the way into the archive.
-    public async Task<IReadOnlyList<(long ChatId, string TopicId, double Score)>> SearchAsync(
+    public async Task<IReadOnlyList<TopicSearchHit>> SearchAsync(
         string agentId, string spaceSlug, string query, string? cursor, int pageSize)
     {
         var terms = Terms(query);
@@ -102,10 +104,10 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
             return
             [
                 .. result.Documents
-                    .Select(d => (
-                        ChatId: (long)d["chatId"],
-                        TopicId: d["topicId"].ToString(),
-                        Score: (double)d["score"]))
+                    .Select(d => new TopicSearchHit(
+                        (long)d["chatId"],
+                        d["topicId"].ToString(),
+                        (double)d["score"]))
             ];
         }
         catch (RedisServerException)
@@ -196,7 +198,4 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
 
     private static string DocumentKey(TopicMetadata topic) =>
         $"{KeyPrefix}{topic.AgentId}:{topic.ChatId}:{topic.TopicId}";
-
-    private static double LastWriteScore(TopicMetadata topic) =>
-        (topic.LastMessageAt ?? topic.CreatedAt).ToUnixTimeMilliseconds();
 }

@@ -84,7 +84,7 @@
                                     <div class="topic-unread-badge">@(unread > 99 ? "99+" : unread)</div>
                                 }
                             </div>
-                            <div class="topic-meta">@FormatTime(topic.LastMessageAt ?? topic.CreatedAt)</div>
+                            <div class="topic-meta">@FormatTime(topic.LastWriteAt)</div>
                             <div class="topic-preview">@topic.LastMessageSnippet</div>
                         </div>
                         @if (_deleteConfirmTopicId == topic.TopicId)

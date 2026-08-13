@@ -11,7 +11,11 @@ public class StoredTopic
     public string Name { get; set; } = "New Chat";
     public DateTime CreatedAt { get; set; }
     public DateTime? LastMessageAt { get; set; }
-    public string SpaceSlug { get; set; } = "default";
+    public string SpaceSlug { get; set; } = SpaceConfig.DefaultSlug;
+
+    // When the conversation last moved: what a row's timestamp shows and what the list is
+    // ordered by, the same reading the server's index sorts on.
+    public DateTime LastWriteAt => LastMessageAt ?? CreatedAt;
 
     // Both supplied by the server. Unread is the difference, so a badge is drawn without the
     // client holding a single one of the topic's messages.
