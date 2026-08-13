@@ -42,6 +42,28 @@ public abstract class DictationE2EBase
         await WebChatE2ETests.GotoWebChatAsync(page, Fixture.WebChatUrl);
         await WebChatE2ETests.SelectUserAndAgentAsync(page, Fixture.NextUserIndex());
 
+        // SLOW_MIC_MS=2500 makes every case here open the microphone as slowly as a loaded machine
+        // does, which is the one condition this suite goes flaky under: a case that waits out a
+        // span instead of the microphone stops the recording before it holds any audio, and the
+        // dictation ends as "the microphone had not finished opening" — reported as whatever the
+        // case was really asserting. Two cases were failing that way and neither was reproducible
+        // on a quiet machine.
+        //
+        // Above about three and a half seconds the app itself stops working rather than the tests:
+        // an AudioContext built that long after the press is outside the gesture's activation
+        // window, so `ctx.resume()` never resolves and no recording is made at all (dictation.js).
+        // Cases that patch the open themselves add to this, so their effective wait is the sum.
+        if (Environment.GetEnvironmentVariable("SLOW_MIC_MS") is { Length: > 0 } slowOpenMs)
+        {
+            await page.EvaluateAsync($$"""
+                () => {
+                    const open = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+                    navigator.mediaDevices.getUserMedia = constraints =>
+                        new Promise(resolve => setTimeout(() => resolve(open(constraints)), {{slowOpenMs}}));
+                }
+                """);
+        }
+
         // With nothing typed the right-hand control is the microphone; that is the premise of
         // every case here, so it is waited for rather than assumed.
         await Assertions.Expect(page.Locator("[data-testid=dictation-mic]"))

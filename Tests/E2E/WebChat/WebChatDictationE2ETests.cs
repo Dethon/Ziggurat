@@ -461,7 +461,15 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         var cdp = await page.Context.NewCDPSessionAsync(page);
         var mic = await PressableMicAsync(page);
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        // Past the mis-tap floor, and past the grant: the premise is a microphone that was handed
+        // over and a graph that fell over behind it, so a release that beats getUserMedia is the
+        // other case entirely — the press is answered by "the microphone had not finished opening"
+        // and this case never gets near the leak it is here for.
         await Task.Delay(HoldMs);
+        await page.WaitForFunctionAsync(
+            "() => window.__streams.length > 0",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 30_000 });
         await TouchAsync(cdp, "touchEnd");
 
         // The refusal is what says the failure path has run to the end; asserting the microphone
