@@ -54,6 +54,28 @@ public class DrawnIconConformanceTests
             + string.Join(Environment.NewLine, offenders));
     }
 
+    // The wrapper is one decision — viewBox, fill, stroke, aria-hidden — and it was hand-copied
+    // into twenty-odd components, each free to forget a piece of it. The geometry now lives in
+    // Icons.cs and the wrapper in Icon.razor, so a component names an icon and never draws one.
+    [Fact]
+    public void NoComponentSpellsAnSvgItself_TheyAreNamedFromTheIconFile()
+    {
+        var offenders = MarkupFiles()
+            .Where(f => !_svgIsTheirJob.Contains(Path.GetFileName(f)))
+            .Where(f => File.ReadAllText(f).Contains("<svg"))
+            .Select(f => Path.GetFileName(f))
+            .ToList();
+
+        offenders.ShouldBeEmpty(
+            "An icon is <Icon Glyph=\"Icons.Whatever\" />, with the geometry in Icons.cs. "
+            + "These draw their own:"
+            + Environment.NewLine
+            + string.Join(Environment.NewLine, offenders));
+    }
+
+    // The renderers themselves, which are the one place the wrapper is allowed to be written out.
+    private static readonly string[] _svgIsTheirJob = ["Icon.razor"];
+
     private static IEnumerable<string> MarkupFiles() =>
         _clients
             .SelectMany(client => Directory.EnumerateFiles(

@@ -50,10 +50,10 @@
                     {
                         <div class="events-table">
                             <div class="table-header recall-grid">
-                                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                                <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User @SortIndicator("User")</span>
-                                <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
-                                <span class='sortable @SortClass("Memories")' @onclick='() => SortBy("Memories")'>Memories Found @SortIndicator("Memories")</span>
+                                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("Memories")' @onclick='() => SortBy("Memories")'>Memories Found <SortArrow Column="Memories" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                             </div>
                             @foreach (var evt in GetSortedRecalls(state))
                             {
@@ -70,11 +70,11 @@
                     {
                         <div class="events-table">
                             <div class="table-header extraction-grid">
-                                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                                <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User @SortIndicator("User")</span>
-                                <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
-                                <span class='sortable @SortClass("Candidates")' @onclick='() => SortBy("Candidates")'>Candidates @SortIndicator("Candidates")</span>
-                                <span class='sortable @SortClass("Stored")' @onclick='() => SortBy("Stored")'>Stored @SortIndicator("Stored")</span>
+                                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("Candidates")' @onclick='() => SortBy("Candidates")'>Candidates <SortArrow Column="Candidates" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("Stored")' @onclick='() => SortBy("Stored")'>Stored <SortArrow Column="Stored" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                             </div>
                             @foreach (var evt in GetSortedExtractions(state))
                             {
@@ -92,10 +92,10 @@
                     {
                         <div class="events-table">
                             <div class="table-header dreaming-grid">
-                                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                                <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User @SortIndicator("User")</span>
-                                <span class='sortable @SortClass("Merged")' @onclick='() => SortBy("Merged")'>Merged @SortIndicator("Merged")</span>
-                                <span class='sortable @SortClass("Decayed")' @onclick='() => SortBy("Decayed")'>Decayed @SortIndicator("Decayed")</span>
+                                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("Merged")' @onclick='() => SortBy("Merged")'>Merged <SortArrow Column="Merged" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("Decayed")' @onclick='() => SortBy("Decayed")'>Decayed <SortArrow Column="Decayed" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                                 <span>Profile Regen</span>
                             </div>
                             @foreach (var evt in GetSortedDreamings(state))
@@ -110,9 +110,7 @@
                                     <span>
                                         @if (evt.ProfileRegenerated)
                                         {
-                                            <svg class="regenerated-tick" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                                                <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41Z" />
-                                            </svg>
+                                            <Icon Glyph="Icons.Check" Class="regenerated-tick" />
                                         }
                                         else
                                         {
@@ -242,7 +240,6 @@
     }
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
-    private MarkupString SortIndicator(string column) => SortArrow.For(column, _sortColumn, _sortAsc);
 
     public void Dispose() => _metricsSub?.Dispose();
 }

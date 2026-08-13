@@ -30,12 +30,12 @@
                 <h3>Recent Token Events</h3>
                 <div class="events-table">
                     <div class="table-header">
-                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                        <span class='sortable @SortClass("Sender")' @onclick='() => SortBy("Sender")'>Sender @SortIndicator("Sender")</span>
-                        <span class='sortable @SortClass("Model")' @onclick='() => SortBy("Model")'>Model @SortIndicator("Model")</span>
-                        <span class='sortable @SortClass("Input")' @onclick='() => SortBy("Input")'>Input @SortIndicator("Input")</span>
-                        <span class='sortable @SortClass("Output")' @onclick='() => SortBy("Output")'>Output @SortIndicator("Output")</span>
-                        <span class='sortable @SortClass("Cost")' @onclick='() => SortBy("Cost")'>Cost @SortIndicator("Cost")</span>
+                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Sender")' @onclick='() => SortBy("Sender")'>Sender <SortArrow Column="Sender" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Model")' @onclick='() => SortBy("Model")'>Model <SortArrow Column="Model" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Input")' @onclick='() => SortBy("Input")'>Input <SortArrow Column="Input" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Output")' @onclick='() => SortBy("Output")'>Output <SortArrow Column="Output" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Cost")' @onclick='() => SortBy("Cost")'>Cost <SortArrow Column="Cost" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                     </div>
                     @foreach (var evt in GetSortedEvents(state))
                     {
@@ -96,7 +96,6 @@
     }
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
-    private MarkupString SortIndicator(string column) => SortArrow.For(column, _sortColumn, _sortAsc);
 }
 
 <style>
