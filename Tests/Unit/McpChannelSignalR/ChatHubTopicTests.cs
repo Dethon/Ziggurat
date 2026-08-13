@@ -83,7 +83,7 @@ public sealed class ChatHubTopicTests : IDisposable
 
         await _hub.SaveTopic(topic);
 
-        _store.Verify(s => s.SaveTopicAsync(topic), Times.Once);
+        _store.Verify(s => s.SaveTopicAsync(topic, false), Times.Once);
     }
 
     // A topic last driven by voice or a schedule has counters the browser never saw, so the
@@ -109,8 +109,10 @@ public sealed class ChatHubTopicTests : IDisposable
 
         await _hub.SaveTopic(stale);
 
+        // A rename is the browser's write, not the conversation's: it keeps the TTL where it was,
+        // so only genuine writes extend a topic's life.
         var expected = stored with { Name = "Renamed" };
-        _store.Verify(s => s.SaveTopicAsync(expected), Times.Once);
+        _store.Verify(s => s.SaveTopicAsync(expected, true), Times.Once);
     }
 
     [Fact]

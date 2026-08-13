@@ -45,7 +45,7 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
         Unavailable = 2
     }
 
-    public async Task WriteAsync(TopicMetadata topic, string? appendedText = null)
+    public async Task WriteAsync(TopicMetadata topic, string? appendedText = null, bool keepTtl = false)
     {
         if (!await EnsureIndexAsync())
         {
@@ -69,7 +69,13 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
         ];
 
         await _db.HashSetAsync(key, entries);
-        await _db.KeyExpireAsync(key, expiration);
+
+        // A rename keeps the clock still: the document expires with the conversation it
+        // describes, so only the conversation's own writes push that back.
+        if (!keepTtl)
+        {
+            await _db.KeyExpireAsync(key, expiration);
+        }
     }
 
     public async Task DeleteAsync(TopicMetadata topic)

@@ -93,15 +93,15 @@ public sealed class RedisThreadStateStore(
         return updated
         """;
 
+    // KEEPTTL, because reading a conversation is not writing to it: a mark-read that reset the
+    // clock would keep the record alive months past the history it describes.
     private const string MarkReadScript =
         """
         local json = redis.call('GET', KEYS[1])
         if not json then return nil end
         local topic = cjson.decode(json)
         topic['ReadPosition'] = topic['MessageCount'] or 0
-        local updated = cjson.encode(topic)
-        redis.call('SET', KEYS[1], updated, 'PX', ARGV[1])
-        return updated
+        redis.call('SET', KEYS[1], cjson.encode(topic), 'KEEPTTL')
         """;
 
     // Every retention decision reads this one value, so it is stamped wherever a topic's history
@@ -172,22 +172,10 @@ public sealed class RedisThreadStateStore(
     // is always one round trip behind: a reply that landed while it was reading would come back
     // as unread on the conversation the person is looking at. The read position is set from the
     // count inside the script, so a stamp landing between a read and this write loses nothing.
+    // The record is all it touches: the index score is the last write, which reading is not.
     public async Task MarkTopicReadAsync(string agentId, long chatId, string topicId)
     {
-        var result = await _db.ScriptEvaluateAsync(
-            MarkReadScript,
-            [TopicKey(agentId, chatId, topicId)],
-            [(long)_expiration.TotalMilliseconds]);
-
-        if (result.IsNull)
-        {
-            return;
-        }
-
-        var topic = JsonSerializer.Deserialize<TopicMetadata>(result.ToString())!;
-        await _db.KeyExpireAsync(ConversationKey(agentId, chatId, topic.ThreadId), _expiration);
-        await IndexAsync(topic);
-        await _searchDocuments.WriteAsync(topic);
+        await _db.ScriptEvaluateAsync(MarkReadScript, [TopicKey(agentId, chatId, topicId)]);
     }
 
     // The last thing said that had anything to say. A message carrying only files leaves the
@@ -305,19 +293,22 @@ public sealed class RedisThreadStateStore(
             : Task.FromResult<TopicMetadata?>(null);
     }
 
-    public async Task SaveTopicAsync(TopicMetadata topic)
+    public async Task SaveTopicAsync(TopicMetadata topic, bool keepTtl = false)
     {
         var json = JsonSerializer.Serialize(topic);
-        await _db.StringSetAsync(TopicKey(topic.AgentId, topic.ChatId, topic.TopicId), json, _expiration);
+        await _db.StringSetAsync(
+            TopicKey(topic.AgentId, topic.ChatId, topic.TopicId), json,
+            expiry: keepTtl ? null : _expiration, keepTtl: keepTtl);
 
         // The conversation a history key names, pointing at the topic that owns it. Without it
         // the only way from a conversation back to its topic is a scan of every key in the
         // database, which is the cost this whole area exists to remove.
         await _db.StringSetAsync(
-            ConversationKey(topic.AgentId, topic.ChatId, topic.ThreadId), topic.TopicId, _expiration);
+            ConversationKey(topic.AgentId, topic.ChatId, topic.ThreadId), topic.TopicId,
+            expiry: keepTtl ? null : _expiration, keepTtl: keepTtl);
 
         await IndexAsync(topic);
-        await _searchDocuments.WriteAsync(topic);
+        await _searchDocuments.WriteAsync(topic, keepTtl: keepTtl);
     }
 
     // Key expiry drops a purged topic's record and leaves its index member behind. Those members

@@ -171,6 +171,24 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
     private Task ResetMigrationMarkerAsync() =>
         redis.Connection.GetDatabase().KeyDeleteAsync("topics:migrated");
 
+    // A rename must not keep a conversation findable past the history it describes: the document
+    // ages on the conversation's own writes alone.
+    [Fact]
+    public async Task SaveTopicAsync_KeepingTheTtl_DoesNotExtendTheSearchDocumentsLife()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(Topic("t-keepdoc", 780, "Quince jelly"));
+        var db = redis.Connection.GetDatabase();
+        var docKey = $"topicdoc:{_agentId}:780:t-keepdoc";
+        await db.KeyExpireAsync(docKey, TimeSpan.FromDays(10));
+
+        await store.SaveTopicAsync(Topic("t-keepdoc", 780, "Quince jelly renamed"), keepTtl: true);
+
+        var ttl = await db.KeyTimeToLiveAsync(docKey);
+        ttl.ShouldNotBeNull();
+        ttl.Value.ShouldBeLessThanOrEqualTo(TimeSpan.FromDays(10));
+    }
+
     // Purge takes what a topic is searched by with it, on the same clock and refreshed by the
     // same write, so nothing is left findable after the conversation is gone.
     [Fact]

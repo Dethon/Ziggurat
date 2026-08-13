@@ -622,6 +622,41 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         (await redisFixture.Connection.GetDatabase().SortedSetLengthAsync(indexKey)).ShouldBe(0);
     }
 
+    // Reading a conversation is not writing to it. A mark-read that reset the TTL would keep the
+    // record and its search document alive months past the history they describe, and search
+    // would return a conversation with an empty transcript.
+    [Fact]
+    public async Task MarkTopicReadAsync_LeavesTheTopicsExpiryWhereItWas()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(Topic("t-keep", 680, "agent-keep", DateTimeOffset.UtcNow));
+        var db = redisFixture.Connection.GetDatabase();
+        await db.KeyExpireAsync("topic:agent-keep:680:t-keep", TimeSpan.FromDays(10));
+
+        await store.MarkTopicReadAsync("agent-keep", 680, "t-keep");
+
+        var ttl = await db.KeyTimeToLiveAsync("topic:agent-keep:680:t-keep");
+        ttl.ShouldNotBeNull();
+        ttl.Value.ShouldBeLessThanOrEqualTo(TimeSpan.FromDays(10));
+    }
+
+    [Fact]
+    public async Task SaveTopicAsync_KeepingTheTtl_DoesNotExtendTheTopicsLife()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(Topic("t-rename", 681, "agent-keep", DateTimeOffset.UtcNow));
+        var db = redisFixture.Connection.GetDatabase();
+        await db.KeyExpireAsync("topic:agent-keep:681:t-rename", TimeSpan.FromDays(10));
+
+        var renamed = (await store.GetTopicAsync("agent-keep", 681, "t-rename"))! with { Name = "Renamed" };
+        await store.SaveTopicAsync(renamed, keepTtl: true);
+
+        var ttl = await db.KeyTimeToLiveAsync("topic:agent-keep:681:t-rename");
+        ttl.ShouldNotBeNull();
+        ttl.Value.ShouldBeLessThanOrEqualTo(TimeSpan.FromDays(10));
+        (await store.GetTopicAsync("agent-keep", 681, "t-rename"))!.Name.ShouldBe("Renamed");
+    }
+
     [Fact]
     public async Task GetTopicAsync_ReturnsWhatWasSaved_AndNullForATopicNeverSaved()
     {

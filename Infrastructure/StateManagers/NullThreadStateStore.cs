@@ -22,7 +22,7 @@ public sealed class NullThreadStateStore : IThreadStateStore
 
     public Task<bool> ExistsAsync(string key, CancellationToken ct = default) => Task.FromResult(false);
 
-    public Task SaveTopicAsync(TopicMetadata topic) => Task.CompletedTask;
+    public Task SaveTopicAsync(TopicMetadata topic, bool keepTtl = false) => Task.CompletedTask;
 
     public Task DeleteTopicAsync(string agentId, long chatId, string topicId) => Task.CompletedTask;
 

@@ -29,7 +29,9 @@ public interface IThreadStateStore
     Task<TopicPage> SearchTopicsAsync(
         string agentId, string spaceSlug, string query, string? cursor, int pageSize);
 
-    Task SaveTopicAsync(TopicMetadata topic);
+    // keepTtl is for writes that are not the conversation's own: a rename must not push the purge
+    // horizon back, or search returns a topic whose transcript expired months before its record.
+    Task SaveTopicAsync(TopicMetadata topic, bool keepTtl = false);
     Task DeleteTopicAsync(string agentId, long chatId, string topicId);
 
     // Moves the topic's read position up to what it currently holds. Asked of the store rather

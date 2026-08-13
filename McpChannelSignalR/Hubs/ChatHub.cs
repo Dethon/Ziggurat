@@ -441,11 +441,14 @@ public sealed class ChatHub(
 
     // The client's copy of a topic is always a round trip stale, and for a topic last driven by
     // voice or a schedule it is stale by design. The name is the one field a browser may set on
-    // an existing topic; everything the server owns is read back before the write.
+    // an existing topic; everything the server owns is read back before the write, and a rename
+    // keeps the TTL where it was — only the conversation's own writes extend its life.
     public async Task SaveTopic(TopicMetadata topic, bool isNew = false)
     {
         var stored = await threadStore.GetTopicAsync(topic.AgentId, topic.ChatId, topic.TopicId);
-        await threadStore.SaveTopicAsync(stored is null ? topic : stored with { Name = topic.Name });
+        await threadStore.SaveTopicAsync(
+            stored is null ? topic : stored with { Name = topic.Name },
+            keepTtl: stored is not null);
     }
 
     // On the server, so it covers conversations this client never loaded — which is every
