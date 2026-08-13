@@ -583,8 +583,9 @@ public class LocalFileSystemClientTests : IDisposable
         hits.ShouldContain(h => h.EndsWith("nested.txt"));
         hits.ShouldContain(h => h.EndsWith("sub/"));
         hits.ShouldNotContain(h => h.Contains("self"));
-        // The link is enumerated as an entry and skipped, so the walk sees the three real entries
-        // plus it — and nothing beneath it, which is what an entered link would have produced.
+        // Reparse points are filtered out before the walk surfaces them, so it counts only the
+        // three real entries — and nothing beneath the link, which is what entering it would
+        // have produced.
         walk.EntriesScanned.ShouldBe(3);
         walk.BudgetReached.ShouldBeFalse();
     }
