@@ -1,6 +1,6 @@
 # A glob or a search on a disk root does bounded work
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 
