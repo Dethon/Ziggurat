@@ -392,6 +392,46 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         second.Topics.Select(t => t.Name).ShouldBe(["topic-0"]);
     }
 
+    // A WebChat conversation's chat id is a 63-bit hash, wider than the double Lua numbers are.
+    // The reply stamp patches the record inside Redis, and a stamp that round-trips the id
+    // through a double writes noise back over it — after which every read of the topic throws:
+    // the sidebar's page, the search hit and the delete all fail on the one poisoned record.
+    [Fact]
+    public async Task StampingAReply_KeepsAChatIdWiderThanADoubleIntact()
+    {
+        var store = NewStore();
+        const long wideChatId = 6_437_294_812_345_678_901;
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-wide-stamp", wideChatId, 0, "agent-wide", "Wide id", DateTimeOffset.UtcNow, null));
+
+        await store.AppendMessagesAsync(
+            HistoryKey("agent-wide", wideChatId), [new ChatMessage(ChatRole.Assistant, "a reply")]);
+
+        var topic = (await store.GetTopicPageAsync("agent-wide", "default", null, 10)).Topics
+            .ShouldHaveSingleItem();
+        topic.ChatId.ShouldBe(wideChatId);
+        topic.MessageCount.ShouldBe(1);
+    }
+
+    // Mark-read is the other in-Redis patch of the same record, so it must carry the id across
+    // its round trip the same way.
+    [Fact]
+    public async Task MarkTopicReadAsync_KeepsAChatIdWiderThanADoubleIntact()
+    {
+        var store = NewStore();
+        const long wideChatId = 8_935_141_660_703_064_219;
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-wide-read", wideChatId, 0, "agent-wide-read", "Wide id", DateTimeOffset.UtcNow, null,
+            MessageCount: 2));
+
+        await store.MarkTopicReadAsync("agent-wide-read", wideChatId, "t-wide-read");
+
+        var topic = (await store.GetTopicPageAsync("agent-wide-read", "default", null, 10)).Topics
+            .ShouldHaveSingleItem();
+        topic.ChatId.ShouldBe(wideChatId);
+        topic.ReadPosition.ShouldBe(2);
+    }
+
     // The read position is set from what the store knows rather than from what a browser
     // believed a moment ago, so a reply that landed between the two is not counted unread.
     [Fact]

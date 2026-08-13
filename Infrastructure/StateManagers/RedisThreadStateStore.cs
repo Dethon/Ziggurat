@@ -75,12 +75,28 @@ public sealed class RedisThreadStateStore(
         await StampLastWriteAsync(key, messages);
     }
 
+    // Lua numbers are doubles and a WebChat chat id is a 63-bit hash, so the id is noise from
+    // the moment the record is decoded. Encoding writes that noise back over the record, after
+    // which every read of the topic throws — so the identity fields cross the round trip as the
+    // raw text they already were. Matching the quoted field name in the raw JSON is safe: inside
+    // a string value its quotes would be escaped.
+    private const string KeepWideIds =
+        """
+        local updated = cjson.encode(topic)
+        for _, field in ipairs({'ChatId', 'ThreadId'}) do
+            local wide = string.match(json, '"' .. field .. '":(%-?%d+)')
+            if wide then
+                updated = string.gsub(updated, '"' .. field .. '":[^,}]+', '"' .. field .. '":' .. wide, 1)
+            end
+        end
+        """;
+
     // The stamp runs on the Agent host while mark-read runs on the channel host, against the same
     // record. Each patches only its own fields, inside Redis, because a whole-record
     // read-modify-write loses the other writer's fields on the designed flow: mark-read fires
     // while the reply is being stamped, and the viewed conversation comes back badged unread.
-    private const string StampScript =
-        """
+    private static readonly string StampScript =
+        $$"""
         local json = redis.call('GET', KEYS[1])
         if not json then return nil end
         local topic = cjson.decode(json)
@@ -88,20 +104,21 @@ public sealed class RedisThreadStateStore(
         topic['LastWriteAt'] = ARGV[1]
         if ARGV[2] ~= '' then topic['LastMessageSnippet'] = ARGV[2] end
         topic['MessageCount'] = (topic['MessageCount'] or 0) + tonumber(ARGV[3])
-        local updated = cjson.encode(topic)
+        {{KeepWideIds}}
         redis.call('SET', KEYS[1], updated, 'PX', ARGV[4])
         return updated
         """;
 
     // KEEPTTL, because reading a conversation is not writing to it: a mark-read that reset the
     // clock would keep the record alive months past the history it describes.
-    private const string MarkReadScript =
-        """
+    private static readonly string MarkReadScript =
+        $$"""
         local json = redis.call('GET', KEYS[1])
         if not json then return nil end
         local topic = cjson.decode(json)
         topic['ReadPosition'] = topic['MessageCount'] or 0
-        redis.call('SET', KEYS[1], cjson.encode(topic), 'KEEPTTL')
+        {{KeepWideIds}}
+        redis.call('SET', KEYS[1], updated, 'KEEPTTL')
         """;
 
     // Every retention decision reads this one value, so it is stamped wherever a topic's history
