@@ -39,7 +39,7 @@ public static class SandboxPrompt
             - **Output is capped** per stream and the result flags truncation; for long output, redirect to a file and read it back with the file tools.
             - **Timeouts** kill the entire process tree and surface a timeout flag; raise the limit only when you genuinely need a longer-running command.
             - **Writes outside the persistent workspace** fail with permission denied, because you run as an unprivileged user; keep working files under `{home}/...` and set that as the working directory when a command writes relative files.
-            - **Paths in command output are container-native.** `pwd`, `find`, `which` and the rest answer in the container's own spelling (`{workspace}/x`, without the mount point). Put `{mountPoint}` in front of one before handing it to a filesystem tool as a path — inside another command it works as it stands. The `cwd` the exec tool reports is the exception: it already comes back as a virtual path.
+            - **Paths in command output are container-native.** `pwd`, `find`, `which` and the rest answer in the container's own spelling (`/{workspace}/x`, without the mount point). Put `{mountPoint}` in front of one before handing it to a filesystem tool as a path — inside another command it works as it stands. The `cwd` the exec tool reports is the exception: it already comes back as a virtual path.
 
             ### Working here
 

@@ -13,7 +13,8 @@ namespace Domain.Agents;
 // appears as a file: the upload store is never mounted, because one store serves every
 // conversation and a mount is visible to the model (ADR 0021).
 //
-// A directory per conversation and one per message, keeping the name the person used. The
+// The mount says where it can be written and this puts the file there (ADR 0025): under the
+// workspace, a directory per conversation and one per message, keeping the name the person used. The
 // per-message directory is what separates one message's files from another's, so two `scan.pdf`s
 // sent in one conversation both survive; two in the *same* message are separated one level
 // further down. Nothing is ever renamed, which is the property the layout exists to keep.
@@ -54,6 +55,10 @@ public static class AttachmentLanding
         // write failed and every turn continued as if no file had been sent (ADR 0025).
         if (sandbox.Workspace is null)
         {
+            logger.LogWarning(
+                "The {Mount} mount can run commands but declares no workspace, so {Count} attachment(s) "
+                + "were not landed; the model is told which files it cannot act on",
+                sandbox.Name, attachments.Count);
             return new LandingOutcome([], [.. attachments.Select(a => a.FileName)]);
         }
 

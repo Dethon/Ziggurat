@@ -17,12 +17,12 @@ exist until then.
 
 **Status:** ready-for-agent
 
-- [ ] The sandbox prompt names the mount point and workspace it was given, with neither spelled
+- [x] The sandbox prompt names the mount point and workspace it was given, with neither spelled
       as a literal anywhere in it.
-- [ ] Changing the sandbox's workspace setting or renaming the filesystem changes the prompt with
+- [x] Changing the sandbox's workspace setting or renaming the filesystem changes the prompt with
       no other edit.
-- [ ] The exec tool's description names no single mount's directory layout, and the guidance it
+- [x] The exec tool's description names no single mount's directory layout, and the guidance it
       used to carry about the sandbox lives in the sandbox prompt.
-- [ ] The filesystem server conformance theory asserts the sandbox prompt names the values the
+- [x] The filesystem server conformance theory asserts the sandbox prompt names the values the
       server was configured with. This is the only place a prompt is asserted anywhere, and it
       earns that here because the prompt has stopped being a constant.

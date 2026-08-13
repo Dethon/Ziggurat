@@ -20,25 +20,25 @@ introduce the sandbox E2E stack this reuses.
 
 **Status:** ready-for-agent
 
-- [ ] An attachment lands under the sandbox's declared workspace and is still there after the
+- [x] An attachment lands under the sandbox's declared workspace and is still there after the
       container is restarted.
-- [ ] The mount record carries a nullable workspace, declared by the backend, published in the
+- [x] The mount record carries a nullable workspace, declared by the backend, published in the
       `filesystem://` resource in backend coordinates, and read by discovery.
-- [ ] The landing directory is composed through the one mount-point translation, not by the
+- [x] The landing directory is composed through the one mount-point translation, not by the
       landing code joining a mount point itself.
-- [ ] The sandbox declares its workspace from its existing home-directory setting, so the
+- [x] The sandbox declares its workspace from its existing home-directory setting, so the
       setting, the declaration and the landing target cannot disagree.
-- [ ] The layout is unchanged: a directory per conversation, one per message, the person's own
+- [x] The layout is unchanged: a directory per conversation, one per message, the person's own
       filename kept, and a second same-named file in one message separated one level further
       down rather than renamed.
-- [ ] An exec-capable mount that declares no workspace lands nothing, and every mount that
+- [x] An exec-capable mount that declares no workspace lands nothing, and every mount that
       declares none behaves exactly as it does today.
-- [ ] The path reported back to the agent resolves through the filesystem tools.
-- [ ] The landing unit seam asserts the target sits under the declared workspace, with the
+- [x] The path reported back to the agent resolves through the filesystem tools.
+- [x] The landing unit seam asserts the target sits under the declared workspace, with the
       existing collision and virtual-path cases unchanged.
-- [ ] The filesystem server conformance theory records which mounts declare a workspace — the
+- [x] The filesystem server conformance theory records which mounts declare a workspace — the
       sandbox alone — and what the published resource carries.
-- [ ] An end-to-end test against the compose stack writes a file as the unprivileged user and
+- [x] An end-to-end test against the compose stack writes a file as the unprivileged user and
       reads it back. It is the only layer where the image, the volume and the user are real; the
       in-process fixture builds against a temporary root the test user owns and cannot exercise
       a permissions fact at all.
