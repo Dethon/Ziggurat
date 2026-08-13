@@ -147,6 +147,8 @@ public sealed class TopicsStore : IDisposable
                 Agents = a.Agents,
                 SelectedAgentId = a.Agents.FirstOrDefault()?.Id,
                 SelectedTopicId = null,
+                SearchQuery = "",
+                ShowingArchived = false,
                 Error = null
             },
 
@@ -156,10 +158,15 @@ public sealed class TopicsStore : IDisposable
             Error = null
         },
 
+        // The query and the archive toggle belonged to the list being read on the previous
+        // agent. A switch starts a clean ordinary view: kept, they would caption the new
+        // agent's rows as a search or archive and drive the next scroll against that range.
         SelectAgent a => state with
         {
             SelectedAgentId = a.AgentId,
-            SelectedTopicId = null
+            SelectedTopicId = null,
+            SearchQuery = "",
+            ShowingArchived = false
         },
 
         TopicsError a => state with

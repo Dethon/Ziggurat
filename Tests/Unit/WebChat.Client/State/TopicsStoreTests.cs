@@ -211,6 +211,36 @@ public class TopicsStoreTests : IDisposable
         _store.State.SelectedAgentId.ShouldBeNull();
     }
 
+    // The query and the toggle describe what was being read on the previous agent. Carried
+    // across a switch they would caption the new agent's ordinary rows as a search or archive,
+    // and drive the next scroll fetch against the wrong range.
+    [Fact]
+    public void SelectAgent_ResetsTheSearchAndTheArchiveToggle()
+    {
+        _dispatcher.Dispatch(new SearchTopics("abc"));
+        _dispatcher.Dispatch(new ShowArchivedTopics(true));
+
+        _dispatcher.Dispatch(new SelectAgent("agent-2"));
+
+        _store.State.SearchQuery.ShouldBe("");
+        _store.State.ShowingArchived.ShouldBeFalse();
+    }
+
+    // Falling back to another agent after a catalog refresh is a switch like any other.
+    [Fact]
+    public void SetAgents_WhenSelectedAgentRemoved_ResetsTheSearchAndTheArchiveToggle()
+    {
+        _dispatcher.Dispatch(new SetAgents([new("a", "A", null), new("b", "B", null)]));
+        _dispatcher.Dispatch(new SelectAgent("b"));
+        _dispatcher.Dispatch(new SearchTopics("abc"));
+        _dispatcher.Dispatch(new ShowArchivedTopics(true));
+
+        _dispatcher.Dispatch(new SetAgents([new("a", "A", null)]));
+
+        _store.State.SearchQuery.ShouldBe("");
+        _store.State.ShowingArchived.ShouldBeFalse();
+    }
+
     [Fact]
     public void FromMetadata_PreservesSpaceSlug()
     {

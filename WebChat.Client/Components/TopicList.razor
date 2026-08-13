@@ -138,6 +138,10 @@
         Subscribe(TopicsStore.StateObservable, s => s.Agents, a => _agents = a);
         Subscribe(TopicsStore.StateObservable, s => s.SelectedAgentId, id => _selectedAgentId = id);
         Subscribe(TopicsStore.StateObservable, s => s.ShowingArchived, on => _showingArchived = on);
+        // The box shows the store's query, not its own memory of it: switching agents clears
+        // the query in the store, and a box still showing the old word would caption the new
+        // agent's ordinary rows as a search.
+        Subscribe(TopicsStore.StateObservable, s => s.SearchQuery, q => _search = q);
         Subscribe(StreamingStore.StateObservable, s => s.StreamingTopics, ids => _streamingTopics = ids);
         Subscribe(TopicsStore.StateObservable, UnreadSelectors.ComputeUnreadCounts, c => _unreadCounts = c);
         Subscribe(AgentActivityStore.StateObservable,
