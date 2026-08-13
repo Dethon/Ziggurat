@@ -200,8 +200,16 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
 
         // Past the moment the microphone finishes opening, which is when the press's own account of
-        // itself used to arrive and take the latch back.
-        await Task.Delay(1_400);
+        // itself used to arrive and take the latch back. Waited for as the state it is — the run is
+        // holding audio, so the open, the graph and the worklet are all behind it — rather than as a
+        // span. A span had to cover the patched open plus everything the graph does after it, and on
+        // a loaded machine it did not: the stop landed while getUserMedia was still pending, the
+        // recording held nothing, and the dictation ended as "the microphone had not finished
+        // opening" with an empty composer to show for it.
+        await page.WaitForFunctionAsync(
+            "() => window.dictation._run && window.dictation._run.samples > 0",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 30_000 });
         await Assertions.Expect(stop)
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 1_000 });
         await Assertions.Expect(page.Locator("[data-testid=dictation-trash]")).ToBeVisibleAsync();
