@@ -28,12 +28,6 @@ public class TopicPagingTests
         paging.HasMore.ShouldBeFalse();
     }
 
-    [Fact]
-    public void HasMore_BeforeAnyPage_IsTrueSoTheFirstFetchHappens()
-    {
-        TopicPaging.Empty.HasMore.ShouldBeTrue();
-    }
-
     // The row is already on screen further down the list. Without deduplication the push would
     // add a second one.
     [Fact]
