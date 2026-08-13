@@ -24,7 +24,7 @@ public class GlobFilesToolTests
     public async Task Run_WithMatchingEntries_ReturnsEntryList()
     {
         _mockClient.Setup(c => c.Glob(BasePath, "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(["/library/book.pdf", "/library/sub/"]);
+            .Returns(Walk("/library/book.pdf", "/library/sub/"));
 
         var result = await _tool.TestRun("**/*", CancellationToken.None);
 
@@ -39,7 +39,7 @@ public class GlobFilesToolTests
     public async Task Run_WithAbsoluteTrailingSlashPattern_PreservesDirsOnly()
     {
         _mockClient.Setup(c => c.Glob(BasePath, "movies/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(["/library/movies/"]);
+            .Returns(Walk("/library/movies/"));
 
         var result = await _tool.TestRun("/library/movies/", CancellationToken.None);
 
@@ -77,7 +77,7 @@ public class GlobFilesToolTests
     {
         var entries = Enumerable.Range(1, 250).Select(i => $"/library/file{i}.pdf").ToArray();
         _mockClient.Setup(c => c.Glob(BasePath, "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(entries);
+            .Returns(Walk(entries));
 
         var result = await _tool.TestRun("**/*", CancellationToken.None);
 
@@ -93,7 +93,7 @@ public class GlobFilesToolTests
     {
         var expectedRoot = Path.Combine(BasePath, "docs");
         _mockClient.Setup(c => c.Glob(expectedRoot, "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync([Path.Combine(expectedRoot, "a.txt")]);
+            .Returns(Walk(Path.Combine(expectedRoot, "a.txt")));
 
         var result = await _tool.TestRun("**/*", "docs", CancellationToken.None);
 
@@ -116,7 +116,7 @@ public class GlobFilesToolTests
     {
         var expectedRoot = Path.Combine(BasePath, "books");
         _mockClient.Setup(c => c.Glob(expectedRoot, "*.epub", It.IsAny<CancellationToken>()))
-            .ReturnsAsync([Path.Combine(expectedRoot, "moby-dick.epub")]);
+            .Returns(Walk(Path.Combine(expectedRoot, "moby-dick.epub")));
 
         var result = await _tool.TestRun("/library/books/*.epub", "books", CancellationToken.None);
 
@@ -135,7 +135,7 @@ public class GlobFilesToolTests
     public async Task Run_WithANameContainingConsecutiveDots_MatchesInsteadOfRefusing()
     {
         _mockClient.Setup(c => c.Glob(BasePath, "**/v1..2.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(["/library/docs/v1..2.md"]);
+            .Returns(Walk("/library/docs/v1..2.md"));
 
         var result = await _tool.TestRun("**/v1..2.md", CancellationToken.None);
 
@@ -147,7 +147,7 @@ public class GlobFilesToolTests
     {
         var expectedRoot = Path.Combine(BasePath, "v1..2");
         _mockClient.Setup(c => c.Glob(expectedRoot, "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync([Path.Combine(expectedRoot, "a.txt")]);
+            .Returns(Walk(Path.Combine(expectedRoot, "a.txt")));
 
         var result = await _tool.TestRun("**/*", "v1..2", CancellationToken.None);
 
@@ -160,9 +160,20 @@ public class GlobFilesToolTests
     public async Task Run_PatternWhoseExpansionOverflowsTheCap_ReturnsInvalidArgument()
     {
         _mockClient.Setup(c => c.Glob(BasePath, It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new ArgumentException("Glob pattern expands to too many patterns."));
+            .Throws(new ArgumentException("Glob pattern expands to too many patterns."));
 
         await ShouldBeInvalid(() => _tool.TestRun(string.Concat(Enumerable.Repeat("{a,b}", 30)), CancellationToken.None));
+    }
+
+    private static GlobWalk Walk(params string[] hits) => new(Stream(hits));
+
+    private static async IAsyncEnumerable<string> Stream(string[] hits)
+    {
+        await Task.Yield();
+        foreach (var hit in hits)
+        {
+            yield return hit;
+        }
     }
 
     private static async Task ShouldBeInvalid(Func<Task<JsonNode>> call)

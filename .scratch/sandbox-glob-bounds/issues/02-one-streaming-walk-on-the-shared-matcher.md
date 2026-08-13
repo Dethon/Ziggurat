@@ -21,14 +21,16 @@ pointing at the root.
 
 **Status:** ready-for-agent
 
-- [ ] The filesystem client's glob yields entries lazily rather than returning a completed
+- [x] The filesystem client's glob yields entries lazily rather than returning a completed
       collection, and its caller can stop consuming it.
-- [ ] One recursive enumeration serves both files and directories, with each entry carrying
+- [x] One recursive enumeration serves both files and directories, with each entry carrying
       whether it is a directory.
-- [ ] Matching happens per entry, using the shared glob matcher, so one pattern language covers
+- [x] Matching happens per entry, using the shared glob matcher, so one pattern language covers
       every mount.
-- [ ] Every case from ticket 01 still passes, with no change to entries, ordering, cap or errors.
-- [ ] A link pointing at its own ancestor is neither listed nor entered: the walk terminates, the
+- [x] Every case from ticket 01 still passes, with no change to entries, ordering, cap or errors —
+      bar one named divergence, the case ticket 01 flagged as accidental: `?` was a literal on the
+      disk roots and is now the single-character wildcard every glob description already promised.
+- [x] A link pointing at its own ancestor is neither listed nor entered: the walk terminates, the
       link is absent, and the entry count stays small.
-- [ ] The reparse-point skip is carried onto the new enumeration and covered by that case, so
+- [x] The reparse-point skip is carried onto the new enumeration and covered by that case, so
       removing it fails a test rather than producing an endless walk.

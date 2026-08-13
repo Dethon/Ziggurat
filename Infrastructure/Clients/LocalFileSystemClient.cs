@@ -1,6 +1,6 @@
+using System.Runtime.CompilerServices;
 using Domain.Contracts;
 using Domain.Tools.FileSystem;
-using Microsoft.Extensions.FileSystemGlobbing;
 
 namespace Infrastructure.Clients;
 
@@ -11,15 +11,10 @@ public class LocalFileSystemClient : IFileSystemClient
     // The jail vets the argument path, but a symlink discovered inside a tree can point
     // anywhere — recursive walks and copies must not follow one (or cycle on it), so they
     // skip symlinks wholesale. AttributesToSkip is set explicitly because the default also
-    // skips hidden and system entries, which these operations have always included.
+    // skips hidden and system entries, which these operations have always included. The
+    // recursive walks take the same guard from DiskWalk, which is where they now share one pass.
     private static readonly EnumerationOptions _skipSymlinks = new()
     {
-        AttributesToSkip = FileAttributes.ReparsePoint
-    };
-
-    private static readonly EnumerationOptions _skipSymlinksRecursive = new()
-    {
-        RecurseSubdirectories = true,
         AttributesToSkip = FileAttributes.ReparsePoint
     };
 
@@ -31,39 +26,48 @@ public class LocalFileSystemClient : IFileSystemClient
             : Task.FromResult(GetLibraryPaths(path));
     }
 
-    public Task<string[]> Glob(string basePath, string pattern, CancellationToken cancellationToken = default)
+    // One lazy pass over the tree, matching each entry as it is found. The caller stops pulling
+    // once it has all it will report, so a broad pattern over a large tree costs what the response
+    // costs rather than what the tree does. Matching is the shared glob matcher every other mount
+    // uses, so one pattern language covers them all; the entry's own directory flag answers the
+    // dirs-only rule that used to need a second walk.
+    public GlobWalk Glob(string basePath, string pattern, CancellationToken cancellationToken = default)
     {
         var dirsOnly = pattern.EndsWith('/');
-        var effectivePattern = dirsOnly ? pattern.TrimEnd('/') : pattern;
+        // Virtual paths are always '/'-separated, but a pattern relativized against the glob root
+        // arrives in the platform's spelling; the matcher would read a '\' as a literal.
+        var effectivePattern = (dirsOnly ? pattern.TrimEnd('/') : pattern).Replace('\\', '/');
+        var matches = GlobRegex.CompileMatcher(effectivePattern);
 
-        var matcher = new Matcher();
-        foreach (var expanded in GlobBraceExpander.Expand(effectivePattern))
+        return new GlobWalk(Walk(basePath, matches, dirsOnly, cancellationToken));
+    }
+
+    private static async IAsyncEnumerable<string> Walk(
+        string basePath,
+        Func<string, bool> matches,
+        bool dirsOnly,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        // The walk is synchronous I/O, so it leaves the caller's stack before touching the disk;
+        // a caller that never pulls pays nothing.
+        await Task.Yield();
+
+        foreach (var entry in DiskWalk.Entries(basePath))
         {
-            matcher.AddInclude(expanded);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (dirsOnly && !entry.IsDirectory)
+            {
+                continue;
+            }
+
+            if (!matches(Path.GetRelativePath(basePath, entry.Path).Replace('\\', '/')))
+            {
+                continue;
+            }
+
+            yield return entry.IsDirectory ? entry.Path + "/" : entry.Path;
         }
-
-        var dirRelativePaths = Directory.EnumerateDirectories(basePath, "*", _skipSymlinksRecursive)
-            .Select(d => Path.GetRelativePath(basePath, d));
-        var matchedDirs = matcher.Match(basePath, dirRelativePaths)
-            .Files
-            .Select(f => Path.GetFullPath(Path.Combine(basePath, f.Path)))
-            .Where(d => d != basePath)
-            .Select(d => d + "/");
-
-        if (dirsOnly)
-        {
-            return Task.FromResult(matchedDirs.Distinct().Order(StringComparer.Ordinal).ToArray());
-        }
-
-        // Files are enumerated here rather than via matcher.GetResultsInFullPath, which walks
-        // the tree itself and follows symlinks.
-        var fileRelativePaths = Directory.EnumerateFiles(basePath, "*", _skipSymlinksRecursive)
-            .Select(f => Path.GetRelativePath(basePath, f));
-        var matchedFiles = matcher.Match(basePath, fileRelativePaths)
-            .Files
-            .Select(f => Path.GetFullPath(Path.Combine(basePath, f.Path)));
-        var result = matchedFiles.Concat(matchedDirs).Distinct().Order(StringComparer.Ordinal).ToArray();
-        return Task.FromResult(result);
     }
 
     public Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)

@@ -301,17 +301,10 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     // a bounded timeout there too, and every backend filters its nodes lazily inside a LINQ chain,
     // so the timeout lands while the listing is being materialized — here. Without this the search
     // path answered the timeout envelope and the glob path threw the raw exception out of the tool.
-    protected static FsResult<FsGlobResult> Glob(string pattern, Func<IReadOnlyList<string>> entries)
-    {
-        try
-        {
-            return Glob(entries());
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            return new FsResult<FsGlobResult>.Err(GlobRegex.TimedOut(pattern));
-        }
-    }
+    // The catch itself is GlobRegex's, shared with the disk path, which builds its own result shape
+    // and so cannot go through this helper.
+    protected static FsResult<FsGlobResult> Glob(string pattern, Func<IReadOnlyList<string>> entries) =>
+        GlobRegex.Guarded(pattern, () => Glob(entries()));
 
     protected static FsResult<FsGlobResult> Glob(IReadOnlyList<string> entries) =>
         new FsResult<FsGlobResult>.Ok(new FsGlobResult

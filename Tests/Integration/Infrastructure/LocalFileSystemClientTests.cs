@@ -31,6 +31,19 @@ public class LocalFileSystemClientTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    // The client answers a lazy walk; the scenarios assert over the whole of it, sorted the way
+    // the tool that consumes it sorts.
+    private async Task<string[]> Glob(string pattern, CancellationToken ct = default)
+    {
+        var hits = new List<string>();
+        await foreach (var hit in _client.Glob(_testDir, pattern, ct).Matches.WithCancellation(ct))
+        {
+            hits.Add(hit);
+        }
+
+        return hits.Order(StringComparer.Ordinal).ToArray();
+    }
+
     private async Task BuildTempTree(string[] setupFiles)
     {
         foreach (var entry in setupFiles)
@@ -220,19 +233,19 @@ public class LocalFileSystemClientTests : IDisposable
                     hits.ShouldContain(h => h.EndsWith("sub/"));
                 })
         },
-        // Accidental, not intended: every glob description promises `?` matches one character, and
-        // on the disk roots it never has — the batch matcher treats it as a literal. Pinned as it
-        // ships so the matcher swap is judged against reality rather than against the prose.
+        // The one place the shared matcher does not agree with the batch matcher it replaced, and
+        // the only behaviour this swap changes: `?` was a literal on the disk roots, which every
+        // glob description has always contradicted. It now matches one character, everywhere.
         new object[]
         {
             new GlobScenario(
-                "SingleCharacterWildcard_IsALiteral",
-                ["a1.txt", "a?.txt"],
+                "SingleCharacterWildcard_MatchesExactlyOneCharacter",
+                ["a1.txt", "a12.txt"],
                 "a?.txt",
                 (hits, _) =>
                 {
                     hits.Length.ShouldBe(1);
-                    hits[0].ShouldEndWith("a?.txt");
+                    hits[0].ShouldEndWith("a1.txt");
                 })
         },
         // The disk matcher has always matched case-insensitively, which is what makes `*.jpg` find
@@ -290,7 +303,7 @@ public class LocalFileSystemClientTests : IDisposable
     {
         await BuildTempTree(scenario.SetupFiles);
 
-        var hits = await _client.Glob(_testDir, scenario.Pattern);
+        var hits = await Glob(scenario.Pattern);
 
         scenario.AssertResult(hits, _testDir);
     }
@@ -536,7 +549,7 @@ public class LocalFileSystemClientTests : IDisposable
             Directory.CreateSymbolicLink(Path.Combine(_testDir, "linkdir"), outside);
             File.CreateSymbolicLink(Path.Combine(_testDir, "link.txt"), Path.Combine(outside, "secret.txt"));
 
-            var hits = await _client.Glob(_testDir, "**/*");
+            var hits = await Glob("**/*");
 
             hits.ShouldContain(h => h.EndsWith("real.txt"));
             hits.ShouldNotContain(h => h.Contains("linkdir"));
@@ -547,6 +560,24 @@ public class LocalFileSystemClientTests : IDisposable
         {
             Directory.Delete(outside, true);
         }
+    }
+
+    // The shape the sandbox mount's alias has: a link at the root of the tree pointing at that same
+    // root. Nothing fails loudly when the reparse-point skip is dropped — the walk keeps returning
+    // plausible entries and simply never ends — so this case is what protects the guard.
+    [Fact]
+    public async Task Glob_ALinkPointingAtItsOwnAncestor_IsNeitherListedNorEntered()
+    {
+        await BuildTempTree(["real.txt", "sub/nested.txt"]);
+        Directory.CreateSymbolicLink(Path.Combine(_testDir, "self"), _testDir);
+
+        var hits = await Glob("**/*");
+
+        hits.Length.ShouldBe(3);
+        hits.ShouldContain(h => h.EndsWith("real.txt"));
+        hits.ShouldContain(h => h.EndsWith("nested.txt"));
+        hits.ShouldContain(h => h.EndsWith("sub/"));
+        hits.ShouldNotContain(h => h.Contains("self"));
     }
 
     // Directory.Move to an existing destination throws IOException, which drives the same

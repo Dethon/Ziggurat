@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.FileSystem;
 
@@ -65,6 +66,39 @@ public static class GlobRegex
         sb.Append('$');
         // Glob regexes are compiled fresh per call and matched once over a small pool, so the
         // interpreter is cheaper than RegexOptions.Compiled's JIT cost.
-        return new Regex(sb.ToString(), RegexOptions.None, _matchTimeout);
+        //
+        // Case is ignored because the disk roots' batch matcher always ignored it, and that is what
+        // makes `**/*.jpg` find a camera's `.JPG`. The virtual mounts generate their own names, so
+        // adopting the disk rule widens nothing there.
+        return new Regex(sb.ToString(), RegexOptions.IgnoreCase, _matchTimeout);
+    }
+
+    // Every mount answers a pathological pattern with the same envelope, so the catch that turns
+    // the matcher's timeout into it lives here rather than at each call site. A backend filtering a
+    // finite node set wraps the result it builds; the disk path wraps its pull loop, because a lazy
+    // walk raises the timeout while the caller is still pulling.
+    public static FsResult<FsGlobResult> Guarded(string pattern, Func<FsResult<FsGlobResult>> build)
+    {
+        try
+        {
+            return build();
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return new FsResult<FsGlobResult>.Err(TimedOut(pattern));
+        }
+    }
+
+    public static async Task<FsResult<FsGlobResult>> GuardedAsync(
+        string pattern, Func<Task<FsResult<FsGlobResult>>> build)
+    {
+        try
+        {
+            return await build();
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return new FsResult<FsGlobResult>.Err(TimedOut(pattern));
+        }
     }
 }

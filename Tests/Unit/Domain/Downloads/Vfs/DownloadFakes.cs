@@ -114,10 +114,24 @@ public static class DownloadFakes
         // opt-in so the suites that never touch the disk keep their empty-result shortcut.
         public bool ThrowIfBaseMissing { get; set; }
 
-        public Task<string[]> Glob(string basePath, string pattern, CancellationToken cancellationToken = default) =>
-            ThrowIfBaseMissing && !Directory.Exists(basePath)
-                ? throw new DirectoryNotFoundException(basePath)
-                : Task.FromResult(GlobResults.ToArray());
+        public GlobWalk Glob(string basePath, string pattern, CancellationToken cancellationToken = default) =>
+            new(Yield(basePath));
+
+        // Lazily, like the real walk: a missing base directory is raised on the first pull, which
+        // is where the tool's not-found envelope now catches it.
+        private async IAsyncEnumerable<string> Yield(string basePath)
+        {
+            await Task.Yield();
+            if (ThrowIfBaseMissing && !Directory.Exists(basePath))
+            {
+                throw new DirectoryNotFoundException(basePath);
+            }
+
+            foreach (var hit in GlobResults)
+            {
+                yield return hit;
+            }
+        }
 
         public Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;

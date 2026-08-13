@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
+using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.Files;
 
@@ -49,11 +50,25 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
 
         pattern = scoped;
 
-        string[] result;
+        // The matcher's timeout is raised while the walk is being pulled, not when it is asked for,
+        // so the envelope every other mount answers wraps the loop below.
+        return await GlobRegex.GuardedAsync(pattern, () => Collect(matcherRoot, basePath, pattern, cancellationToken));
+    }
+
+    private async Task<FsResult<FsGlobResult>> Collect(
+        string matcherRoot, string? basePath, string pattern, CancellationToken cancellationToken)
+    {
+        var found = new List<string>();
         try
         {
-            result = await client.Glob(matcherRoot, pattern, cancellationToken);
+            var walk = client.Glob(matcherRoot, pattern, cancellationToken);
+            await foreach (var hit in walk.Matches.WithCancellation(cancellationToken))
+            {
+                found.Add(hit);
+            }
         }
+        // A lazy walk raises a missing base directory on the first pull rather than at the call,
+        // so the catch that turns it into the not-found envelope wraps the pull.
         catch (DirectoryNotFoundException)
         {
             return FsError.NotFound<FsGlobResult>(basePath ?? matcherRoot);
@@ -65,9 +80,13 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
             return FsError.Invalid<FsGlobResult>(ex.Message);
         }
 
-        // Return entries relative to the mount root (the disk client yields absolute paths). The
-        // agent-side VFS tool re-prefixes the mount point, so every filesystem speaks one format.
-        var relative = result.Select(p => ToMountRelative(_jail.Root, p)).ToArray();
+        // Return entries relative to the mount root (the disk client yields absolute paths), sorted
+        // for presentation. The agent-side VFS tool re-prefixes the mount point, so every filesystem
+        // speaks one format.
+        var relative = found
+            .Select(p => ToMountRelative(_jail.Root, p))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
         var capped = relative.Length > FileResultCap;
 
         return new FsResult<FsGlobResult>.Ok(new FsGlobResult
