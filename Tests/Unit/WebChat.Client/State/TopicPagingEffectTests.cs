@@ -332,6 +332,63 @@ public sealed class TopicPagingEffectTests : IDisposable
         _topicsStore.State.Topics.ShouldBeEmpty();
     }
 
+    // The refresh's answer was read before the delete committed and lands after the row was
+    // confirmed gone. A range stamp cannot see a delete, so without its own check the refresh
+    // resurrects the deleted row.
+    [Fact]
+    public async Task ARefreshInFlightWhenARowIsDeleted_DoesNotResurrectIt()
+    {
+        SeedTopics(1);
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        await LoadFirstPageAsync();
+        _topicService.PageGate = new TaskCompletionSource();
+        var inFlight = _effect.RefreshTopAsync();
+
+        _dispatcher.Dispatch(new TopicRemoved("topic-0"));
+        _topicService.PageGate.SetResult();
+        await inFlight;
+
+        _topicsStore.State.Topics.ShouldBeEmpty();
+    }
+
+    // The same delete-blind answer on the scroll path: the page below the cursor was read
+    // before the delete and must land without the deleted row, not be dropped whole.
+    [Fact]
+    public async Task APageInFlightWhenARowIsDeleted_LandsWithoutIt()
+    {
+        SeedTopics(4);
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        await LoadFirstPageAsync();
+        _topicService.PageGate = new TaskCompletionSource();
+        var inFlight = _effect.LoadNextPageAsync();
+
+        _dispatcher.Dispatch(new TopicRemoved("topic-1"));
+        _topicService.PageGate.SetResult();
+        await inFlight;
+
+        _topicsStore.State.Topics.Select(t => t.TopicId).ShouldBe(["topic-3", "topic-2", "topic-0"]);
+    }
+
+    // And on a first page: the archive or a search opened moments before a delete confirmed
+    // must not reintroduce the row its answer was too early to see removed.
+    [Fact]
+    public async Task AFirstPageInFlightWhenARowIsDeleted_LandsWithoutIt()
+    {
+        SeedTopics(2);
+        _topicService.ArchivedTopicIds.Add("topic-0");
+        _topicService.ArchivedTopicIds.Add("topic-1");
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new ShowArchivedTopics(true));
+        _topicService.PageGate = new TaskCompletionSource();
+        var inFlight = _effect.LoadFirstPageAsync();
+
+        _dispatcher.Dispatch(new TopicRemoved("topic-1"));
+        _topicService.PageGate.SetResult();
+        await inFlight;
+
+        _topicsStore.State.Topics.Select(t => t.TopicId).ShouldBe(["topic-0"]);
+    }
+
     private void SeedTopics(int count)
     {
         var start = new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero);

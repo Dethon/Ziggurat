@@ -27,6 +27,15 @@ public sealed class TopicPagingEffect : IDisposable
     private int _fetching;
     private TopicRange? _firstPageInFlight;
 
+    // A delete is not a range change, so the range stamp cannot see it: a page read before the
+    // delete committed and landing after would resurrect the row the server has already
+    // confirmed gone. Each removal is numbered so a landing page can drop exactly the rows
+    // deleted since it was asked for — a later answer that still carries the topic is the
+    // server's own word that it exists.
+    private long _removals;
+    private readonly Dictionary<string, long> _removedAt = [];
+    private readonly IDisposable _removedRegistration;
+
     public TopicPagingEffect(
         Dispatcher dispatcher,
         TopicsStore topicsStore,
@@ -59,6 +68,8 @@ public sealed class TopicPagingEffect : IDisposable
         });
         _refreshRegistration = dispatcher.RegisterHandler<RefreshTopicList>(
             _ => RefreshTopAsync().LogFaults(_logger, nameof(RefreshTopicList)));
+        _removedRegistration = dispatcher.RegisterHandler<TopicRemoved>(
+            action => _removedAt[action.TopicId] = ++_removals);
     }
 
     // New activity, merged in rather than replacing the list. Only the ordinary list is refreshed
@@ -72,6 +83,7 @@ public sealed class TopicPagingEffect : IDisposable
             return;
         }
 
+        var asked = _removals;
         var page = await range.FetchPageAsync(_topicService, cursor: null);
 
         if (!page.IsLive || range != CurrentRange())
@@ -83,6 +95,7 @@ public sealed class TopicPagingEffect : IDisposable
         // second row, and the cursor the person has paged down to survives.
         page.Value!.Topics
             .Select(StoredTopic.FromMetadata)
+            .Where(topic => !RemovedSince(topic, asked))
             .ToList()
             .ForEach(topic => _dispatcher.Dispatch(new UpdateTopic(topic)));
     }
@@ -102,6 +115,7 @@ public sealed class TopicPagingEffect : IDisposable
         _firstPageInFlight = range;
         try
         {
+            var asked = _removals;
             var page = await range.FetchPageAsync(_topicService, cursor: null);
 
             if (!page.IsLive || range != CurrentRange())
@@ -109,7 +123,10 @@ public sealed class TopicPagingEffect : IDisposable
                 return;
             }
 
-            var topics = page.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
+            var topics = page.Value!.Topics
+                .Select(StoredTopic.FromMetadata)
+                .Where(topic => !RemovedSince(topic, asked))
+                .ToList();
             _dispatcher.Dispatch(new TopicsLoaded(topics, page.Value.NextCursor));
             TopicPageStreams.ResumeReported(topics, page.Value.LiveTopicIds, _streamResumeService, _logger);
         }
@@ -139,6 +156,7 @@ public sealed class TopicPagingEffect : IDisposable
 
         try
         {
+            var asked = _removals;
             var page = await range.FetchPageAsync(_topicService, cursor);
 
             // Not live is not an empty page. Storing it as one would end the range and leave the
@@ -151,7 +169,10 @@ public sealed class TopicPagingEffect : IDisposable
                 return;
             }
 
-            var topics = page.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
+            var topics = page.Value!.Topics
+                .Select(StoredTopic.FromMetadata)
+                .Where(topic => !RemovedSince(topic, asked))
+                .ToList();
             _dispatcher.Dispatch(new TopicsPageAppended(topics, page.Value.NextCursor));
 
             // A reply in flight on a topic further down the list is reported when that page is
@@ -169,12 +190,16 @@ public sealed class TopicPagingEffect : IDisposable
     private TopicRange? CurrentRange() =>
         TopicRange.Of(_topicsStore.State, _spaceStore.State.CurrentSlug);
 
+    private bool RemovedSince(StoredTopic topic, long asked) =>
+        _removedAt.TryGetValue(topic.TopicId, out var removal) && removal > asked;
+
     public void Dispose()
     {
         _loadMoreRegistration.Dispose();
         _showArchivedRegistration.Dispose();
         _searchRegistration.Dispose();
         _refreshRegistration.Dispose();
+        _removedRegistration.Dispose();
         _searchDebounce?.Dispose();
     }
 }
