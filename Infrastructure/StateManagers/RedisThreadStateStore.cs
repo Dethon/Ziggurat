@@ -75,6 +75,35 @@ public sealed class RedisThreadStateStore(
         await StampLastWriteAsync(key, messages);
     }
 
+    // The stamp runs on the Agent host while mark-read runs on the channel host, against the same
+    // record. Each patches only its own fields, inside Redis, because a whole-record
+    // read-modify-write loses the other writer's fields on the designed flow: mark-read fires
+    // while the reply is being stamped, and the viewed conversation comes back badged unread.
+    private const string StampScript =
+        """
+        local json = redis.call('GET', KEYS[1])
+        if not json then return nil end
+        local topic = cjson.decode(json)
+        topic['LastMessageAt'] = ARGV[1]
+        topic['LastWriteAt'] = ARGV[1]
+        if ARGV[2] ~= '' then topic['LastMessageSnippet'] = ARGV[2] end
+        topic['MessageCount'] = (topic['MessageCount'] or 0) + tonumber(ARGV[3])
+        local updated = cjson.encode(topic)
+        redis.call('SET', KEYS[1], updated, 'PX', ARGV[4])
+        return updated
+        """;
+
+    private const string MarkReadScript =
+        """
+        local json = redis.call('GET', KEYS[1])
+        if not json then return nil end
+        local topic = cjson.decode(json)
+        topic['ReadPosition'] = topic['MessageCount'] or 0
+        local updated = cjson.encode(topic)
+        redis.call('SET', KEYS[1], updated, 'PX', ARGV[1])
+        return updated
+        """;
+
     // Every retention decision reads this one value, so it is stamped wherever a topic's history
     // is appended to rather than by the browser's streaming handler alone: a conversation nobody
     // is watching is ordered and retained on the same terms as one that is. The row's preview is
@@ -88,24 +117,34 @@ public sealed class RedisThreadStateStore(
 
         var (agentId, chatId, threadId) = key;
 
-        var topic = await GetTopicByChatIdAndThreadIdAsync(agentId, chatId, threadId);
-        if (topic is null)
+        var topicId = await _db.StringGetAsync(ConversationKey(agentId, chatId, threadId));
+        if (topicId.IsNullOrEmpty)
         {
             return;
         }
 
-        var stamped = topic with
+        var result = await _db.ScriptEvaluateAsync(
+            StampScript,
+            [TopicKey(agentId, chatId, topicId.ToString())],
+            [
+                time.GetUtcNow().ToString("O"),
+                Snippet(appended) ?? "",
+
+                // Counted in the same messages a reader is shown, so a badge means what a person
+                // would count on screen. The raw list holds tool and system turns too, and one
+                // reply with six tool calls would otherwise badge as seven unread.
+                Readable(appended).Count(),
+                (long)_expiration.TotalMilliseconds
+            ]);
+
+        if (result.IsNull)
         {
-            LastMessageAt = time.GetUtcNow(),
-            LastMessageSnippet = Snippet(appended) ?? topic.LastMessageSnippet,
+            return;
+        }
 
-            // Counted in the same messages a reader is shown, so a badge means what a person
-            // would count on screen. The raw list holds tool and system turns too, and one
-            // reply with six tool calls would otherwise badge as seven unread.
-            MessageCount = topic.MessageCount + Readable(appended).Count()
-        };
-
-        await SaveTopicAsync(stamped);
+        var stamped = JsonSerializer.Deserialize<TopicMetadata>(result.ToString())!;
+        await _db.KeyExpireAsync(ConversationKey(agentId, chatId, threadId), _expiration);
+        await IndexAsync(stamped);
 
         // What the conversation is searched by grows on the same write that moved it, so it is
         // never a separate thing to remember to maintain.
@@ -127,15 +166,24 @@ public sealed class RedisThreadStateStore(
 
     // Asked of the store rather than told by a browser, because the browser's idea of the count
     // is always one round trip behind: a reply that landed while it was reading would come back
-    // as unread on the conversation the person is looking at.
+    // as unread on the conversation the person is looking at. The read position is set from the
+    // count inside the script, so a stamp landing between a read and this write loses nothing.
     public async Task MarkTopicReadAsync(string agentId, long chatId, string topicId)
     {
-        if (await ReadTopicAsync(TopicKey(agentId, chatId, topicId)) is not { } topic)
+        var result = await _db.ScriptEvaluateAsync(
+            MarkReadScript,
+            [TopicKey(agentId, chatId, topicId)],
+            [(long)_expiration.TotalMilliseconds]);
+
+        if (result.IsNull)
         {
             return;
         }
 
-        await SaveTopicAsync(topic with { ReadPosition = topic.MessageCount });
+        var topic = JsonSerializer.Deserialize<TopicMetadata>(result.ToString())!;
+        await _db.KeyExpireAsync(ConversationKey(agentId, chatId, topic.ThreadId), _expiration);
+        await IndexAsync(topic);
+        await _searchDocuments.WriteAsync(topic);
     }
 
     // The last thing said that had anything to say. A message carrying only files leaves the

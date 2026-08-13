@@ -408,6 +408,32 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         topic.ReadPosition.ShouldBe(topic.MessageCount);
     }
 
+    // Stamp runs on the Agent host and mark-read on the channel host, against the same record.
+    // Whole-record read-modify-write loses one side's fields on the designed flow — mark-read
+    // fires while the reply is being stamped — so each writer must patch only its own fields
+    // atomically.
+    [Fact]
+    public async Task MarkTopicReadAsync_RacingTheStampOfAReply_LosesNeitherWrite()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-race", 650, 0, "agent-race", "Racing", DateTimeOffset.UtcNow, null));
+
+        await Task.WhenAll(Enumerable.Range(0, 100).SelectMany(i => new[]
+        {
+            store.AppendMessagesAsync(
+                HistoryKey("agent-race", 650), [new ChatMessage(ChatRole.Assistant, $"reply {i}")]),
+            store.MarkTopicReadAsync("agent-race", 650, "t-race")
+        }));
+
+        await store.MarkTopicReadAsync("agent-race", 650, "t-race");
+
+        var topic = (await store.GetTopicPageAsync("agent-race", "default", null, 10)).Topics
+            .ShouldHaveSingleItem();
+        topic.MessageCount.ShouldBe(100);
+        topic.ReadPosition.ShouldBe(100);
+    }
+
     // Nobody's stored read position survives the change of meaning, so everything is marked read
     // once rather than resolved. A sidebar full of badges nobody earned is worse than none.
     [Fact]
