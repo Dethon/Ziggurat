@@ -480,6 +480,105 @@ async fn both_thresholds_are_config_keys_and_not_constants() {
     driver.stop().await;
 }
 
+// ── Ticket 09: failure handling ───────────────────────────────────────────────────────────────
+
+fn unreachable() -> Result<Transcript, TranscribeError> {
+    Err(TranscribeError::Transport("connection refused".into()))
+}
+
+#[tokio::test]
+async fn a_failed_request_is_retried_exactly_once() {
+    let host = FakeHost::new();
+    host.will_answer(unreachable()).will_say("a la segunda");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.sent().len(), 2, "one attempt and one retry");
+    assert_eq!(host.injected(), ["a la segunda"]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn after_the_retry_fails_the_segment_is_dropped_and_the_ones_after_it_still_arrive() {
+    // One blip must not cost the whole dictation, which is the whole reason the drop is per
+    // segment rather than per dictation.
+    let host = FakeHost::new();
+    host.will_answer(unreachable())
+        .will_answer(unreachable())
+        .will_say("la segunda frase");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &two_phrases()).await;
+    host.wait_until("the second phrase to be typed", |actions| {
+        actions.iter().any(|a| matches!(a, Action::Injected(_)))
+    })
+    .await;
+
+    assert_eq!(host.sent().len(), 3, "two attempts at the first, one at the second");
+    assert_eq!(host.injected(), ["la segunda frase"]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn lemonade_being_down_for_a_whole_dictation_says_so_exactly_once() {
+    // With Lemonade down every segment fails, and a notification each would be a stream of them
+    // while the person is still speaking.
+    let host = FakeHost::new();
+    for _ in 0..8 {
+        host.will_answer(unreachable());
+    }
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver
+        .hold(SPANISH, &[speech(800), silence(600), speech(800), silence(600), speech(800)])
+        .await;
+    host.wait_until("every segment to have failed", |actions| {
+        actions.iter().filter(|a| matches!(a, Action::Sent(_))).count() == 6
+    })
+    .await;
+
+    assert_eq!(host.notifications().len(), 1, "{:?}", host.notifications());
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn the_tray_says_broken_rather_than_leaving_a_dead_lemonade_looking_slow() {
+    let host = FakeHost::new();
+    host.will_answer(unreachable()).will_answer(unreachable());
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_until("the tray to show the failure", |actions| {
+        actions.contains(&Action::Tray(TrayState::Error))
+    })
+    .await;
+
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn the_error_state_clears_on_the_next_transcript_with_no_manual_action() {
+    let host = FakeHost::new();
+    host.will_answer(unreachable()).will_answer(unreachable()).will_say("y ahora sí");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_until("the tray to show the failure", |actions| {
+        actions.contains(&Action::Tray(TrayState::Error))
+    })
+    .await;
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.injected(), ["y ahora sí"]);
+    let last_error = host.tray_states().iter().rposition(|s| *s == TrayState::Error);
+    let last_idle = host.tray_states().iter().rposition(|s| *s == TrayState::Idle);
+    assert!(last_idle > last_error, "the tray was left broken: {:?}", host.tray_states());
+    driver.stop().await;
+}
+
 fn tone_at(rate: u32, ms: u32, amplitude: i16) -> Vec<i16> {
     let samples = (rate as u64 * ms as u64 / 1000) as usize;
     (0..samples).map(|i| if i % 8 < 4 { amplitude } else { -amplitude }).collect()
