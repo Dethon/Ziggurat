@@ -3,7 +3,7 @@
 AI agent via Telegram/WebChat/MessageBus using .NET 10 LTS, MCP, and OpenRouter LLMs. The solution file is
 `Ziggurat.sln`.
 
-`satellite/` is `nabu-satellite`, a standalone Rust crate outside the .NET solution — read `satellite/CLAUDE.md` before touching it.
+Two standalone Rust crates sit outside the .NET solution and share no build with each other or with it — read each one's `CLAUDE.md` before touching it. `satellite/` is `nabu-satellite`, the Wyoming voice satellite. `speech-typist/` is the Windows speech typist: a person holds a key and their words are typed into whatever window was already in front, posting at Lemonade directly rather than through this stack (`docs/adr/0026`). Its `cargo test` must keep passing with no .NET project built and no Lemonade reachable.
 
 ## Build, Test & Format
 

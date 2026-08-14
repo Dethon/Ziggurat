@@ -165,7 +165,7 @@ pub trait Host: Send + Sync {
     fn close_capture(&self);
 
     /// Which window is in front right now.
-    fn foreground_window(&self) -> WindowId;
+    fn window_in_front(&self) -> WindowId;
 
     /// Types the text into whatever is in front, as though a person had typed it.
     fn inject(&self, injection: Injection<'_>) -> Result<(), HostError>;

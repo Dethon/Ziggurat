@@ -47,9 +47,6 @@ windows = { version = "0.58", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
-[dev-dependencies]
-tokio = { version = "1", features = ["test-util"] }  # start_paused for the watchdog tests
-
 [profile.release]
 opt-level = "z"        # one desktop executable that spends its life asleep: size beats speed
 lto = "fat"

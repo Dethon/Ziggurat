@@ -93,7 +93,7 @@ impl Host for WindowsHost {
         self.capture.close();
     }
 
-    fn foreground_window(&self) -> WindowId {
+    fn window_in_front(&self) -> WindowId {
         WindowId(unsafe { GetForegroundWindow() }.0 as u64)
     }
 
@@ -308,7 +308,7 @@ fn on_command(id: usize) {
                 with_ui(|ui| ui.tray.notify(&format!("Could not change autostart: {error}")));
             }
         }
-        id if (tray::ID_LEARN_FIRST..tray::ID_DEVICE_FIRST).contains(&id) => {
+        id if (tray::ID_LEARN_FIRST..=tray::ID_LEARN_LAST).contains(&id) => {
             let binding = id - tray::ID_LEARN_FIRST;
             hook::learn(binding);
             with_ui(|ui| ui.tray.notify("Press the key you want for this binding."));

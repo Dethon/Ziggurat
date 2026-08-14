@@ -198,7 +198,7 @@ impl Core {
         self.live = Some(Live {
             key,
             binding,
-            target: self.host.foreground_window(),
+            target: self.host.window_in_front(),
             sample_rate: format.sample_rate,
             started_ms: self.now_ms,
             waiting: VecDeque::new(),
@@ -217,7 +217,7 @@ impl Core {
         if self.live.as_ref().is_none_or(|live| live.key != key) {
             return;
         }
-        self.end_recording();
+        self.stop_listening();
         self.pump(done);
     }
 
@@ -242,13 +242,13 @@ impl Core {
         if expired {
             // A key-up lost to a remote desktop session, fast user switching or a hook that lost
             // its window would otherwise hold the microphone for as long as the process lives.
-            self.end_recording();
+            self.stop_listening();
             self.pump(done);
         }
     }
 
     /// The key came up, or the watchdog fired. The audio stops here; the queue still drains.
-    fn end_recording(&mut self) {
+    fn stop_listening(&mut self) {
         let cues = self.config.audio.cues.enabled;
         let Some(live) = self.live.as_mut() else {
             return;
@@ -352,7 +352,7 @@ impl Core {
 
         // Words in the wrong window are worse than missing words, so the target is checked
         // immediately before typing rather than when the segment was cut.
-        if self.host.foreground_window() != live.target {
+        if self.host.window_in_front() != live.target {
             live.abandoned = true;
             live.waiting.clear();
             live.ended = true;

@@ -24,8 +24,10 @@ pub const WM_TRAY: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 
 pub const ID_QUIT: usize = 3_000;
 pub const ID_AUTOSTART: usize = 2_000;
-/// One per binding, offset by its index.
+/// One per binding, offset by its index. Bounded by [`ID_LEARN_LAST`] rather than by wherever the
+/// next block of ids happens to start.
 pub const ID_LEARN_FIRST: usize = 1_000;
+pub const ID_LEARN_LAST: usize = 1_999;
 /// One per capture device, offset by its index. They do nothing: the list is there to be read.
 pub const ID_DEVICE_FIRST: usize = 4_000;
 

@@ -83,55 +83,45 @@ impl FakeHost {
         self.state.lock().unwrap().actions.clone()
     }
 
+    /// Everything recorded that `pick` says something about, in the order it happened.
+    fn each<T>(&self, pick: impl Fn(Action) -> Option<T>) -> Vec<T> {
+        self.actions().into_iter().filter_map(pick).collect()
+    }
+
     pub fn injected(&self) -> Vec<String> {
-        self.actions()
-            .into_iter()
-            .filter_map(|a| match a {
-                Action::Injected { text, .. } => Some(text),
-                _ => None,
-            })
-            .collect()
+        self.each(|a| match a {
+            Action::Injected { text, .. } => Some(text),
+            _ => None,
+        })
     }
 
     /// What each injection was told the binding was still holding down, in order.
     pub fn held_during_injection(&self) -> Vec<Option<KeyCode>> {
-        self.actions()
-            .into_iter()
-            .filter_map(|a| match a {
-                Action::Injected { held, .. } => Some(held),
-                _ => None,
-            })
-            .collect()
+        self.each(|a| match a {
+            Action::Injected { held, .. } => Some(held),
+            _ => None,
+        })
     }
 
     pub fn sent(&self) -> Vec<TranscriptionRequest> {
-        self.actions()
-            .into_iter()
-            .filter_map(|a| match a {
-                Action::Sent(request) => Some(request),
-                _ => None,
-            })
-            .collect()
+        self.each(|a| match a {
+            Action::Sent(request) => Some(request),
+            _ => None,
+        })
     }
 
     pub fn notifications(&self) -> Vec<String> {
-        self.actions()
-            .into_iter()
-            .filter_map(|a| match a {
-                Action::Notified(text) => Some(text),
-                _ => None,
-            })
-            .collect()
+        self.each(|a| match a {
+            Action::Notified(text) => Some(text),
+            _ => None,
+        })
     }
 
     pub fn tray_states(&self) -> Vec<TrayState> {
-        self.actions()
-            .into_iter()
-            .filter_map(|a| match a {
-                Action::Tray(state) => Some(state),
-                _ => None,
-            })
-            .collect()
+        self.each(|a| match a {
+            Action::Tray(state) => Some(state),
+            _ => None,
+        })
     }
 
     /// Waits until the recorded actions satisfy `predicate`, or fails the test with everything
@@ -153,25 +143,20 @@ impl FakeHost {
 
     /// How each injection was asked to make the words arrive, in order.
     pub fn injection_methods(&self) -> Vec<InjectionMethod> {
-        self.actions()
-            .into_iter()
-            .filter_map(|a| match a {
-                Action::Injected { method, .. } => Some(method),
-                _ => None,
-            })
-            .collect()
+        self.each(|a| match a {
+            Action::Injected { method, .. } => Some(method),
+            _ => None,
+        })
     }
 
     /// The keys the core last told the host to watch and swallow.
     pub fn watched_keys(&self) -> Vec<KeyCode> {
-        self.actions()
-            .into_iter()
-            .filter_map(|a| match a {
-                Action::Bindings(keys) => Some(keys),
-                _ => None,
-            })
-            .next_back()
-            .unwrap_or_default()
+        self.each(|a| match a {
+            Action::Bindings(keys) => Some(keys),
+            _ => None,
+        })
+        .pop()
+        .unwrap_or_default()
     }
 
     /// Waits for a dictation to be wholly over: the tray back to idle with nothing left in flight.
@@ -206,7 +191,7 @@ impl Host for FakeHost {
         self.record(Action::CaptureClosed);
     }
 
-    fn foreground_window(&self) -> WindowId {
+    fn window_in_front(&self) -> WindowId {
         WindowId(self.state.lock().unwrap().foreground)
     }
 

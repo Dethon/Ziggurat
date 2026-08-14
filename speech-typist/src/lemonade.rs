@@ -55,12 +55,11 @@ impl LemonadeClient {
     }
 }
 
-/// Connect failures are asked about first: reqwest reports a refused connection as a timeout as
-/// well, and "could not reach Lemonade" is the truer thing to say about a host that is down.
+/// Only a request that reached Lemonade and then ran out of time is a timeout. reqwest reports a
+/// refused connection as a timeout as well, and "could not reach Lemonade" is the truer thing to
+/// say about a host that is down.
 fn to_error(error: reqwest::Error) -> TranscribeError {
-    if error.is_connect() {
-        TranscribeError::Transport(error.to_string())
-    } else if error.is_timeout() {
+    if error.is_timeout() && !error.is_connect() {
         TranscribeError::Timeout
     } else {
         TranscribeError::Transport(error.to_string())

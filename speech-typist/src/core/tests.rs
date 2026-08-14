@@ -62,8 +62,7 @@ fn silence(ms: u32) -> Vec<i16> {
 
 /// A square-ish wave rather than a constant, so RMS means what it means for real audio.
 fn tone(ms: u32, amplitude: i16) -> Vec<i16> {
-    let samples = (RATE as u64 * ms as u64 / 1000) as usize;
-    (0..samples).map(|i| if i % 8 < 4 { amplitude } else { -amplitude }).collect()
+    tone_at(RATE, ms, amplitude)
 }
 
 fn one_spanish_binding() -> Config {
