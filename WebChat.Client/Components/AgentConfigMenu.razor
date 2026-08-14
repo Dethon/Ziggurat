@@ -18,7 +18,7 @@
                 @onclick="Toggle" @onclick:stopPropagation="true"
                 aria-haspopup="dialog" aria-expanded="@_open"
                 title="@TriggerTitle(agent)">
-            <span class="agent-config-gear" aria-hidden="true">&#9881;</span>
+            <Icon Glyph="Icons.Gear" Size="16" Class="agent-config-gear" />
             @if (patch is not null)
             {
                 <span class="agent-config-summary">@SummaryFor(agent, patch)</span>

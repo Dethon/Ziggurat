@@ -140,7 +140,9 @@
         {
             <div class="collapsible-block">
                 <button class="collapsible-toggle" @onclick="() => _showReasoning = !_showReasoning">
-                    <span class="toggle-icon">@(_showReasoning ? "▼" : "▶")</span>
+                    @* One triangle turned rather than two glyphs swapped, which is what the
+                       transition on .toggle-icon was always written for. *@
+                    <Icon Glyph="Icons.Triangle" Size="10" Class="@(_showReasoning ? "toggle-icon open" : "toggle-icon")" />
                     Reasoning
                 </button>
                 @if (_showReasoning)
@@ -156,7 +158,7 @@
         {
             <div class="collapsible-block">
                 <button class="collapsible-toggle" @onclick="() => _showToolCalls = !_showToolCalls">
-                    <span class="toggle-icon">@(_showToolCalls ? "▼" : "▶")</span>
+                    <Icon Glyph="Icons.Triangle" Size="10" Class="@(_showToolCalls ? "toggle-icon open" : "toggle-icon")" />
                     Tool calls
                 </button>
                 @if (_showToolCalls)
@@ -188,16 +190,11 @@
                 <button class="btn-copy @(_copied ? "copied" : "")" @onclick="CopyMessage" title="Copy message">
                     @if (_copied)
                     {
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="20 6 9 17 4 12"></polyline>
-                        </svg>
+                        <Icon Glyph="Icons.CheckStroked" Size="14" />
                     }
                     else
                     {
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                        </svg>
+                        <Icon Glyph="Icons.Copy" Size="14" />
                     }
                 </button>
             }
@@ -206,10 +203,7 @@
         @if (ShowRetry)
         {
             <button class="btn-retry" @onclick="OnRetry">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                </svg>
+                <Icon Glyph="Icons.Retry" Size="14" />
                 Retry
             </button>
         }

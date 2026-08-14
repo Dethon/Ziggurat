@@ -71,6 +71,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<SendMessageEffect>();
             services.AddScoped<TopicSelectionEffect>();
             services.AddScoped<TopicDeleteEffect>();
+            services.AddScoped<TopicPagingEffect>();
             services.AddScoped<InitializationEffect>();
             services.AddScoped<AgentSelectionEffect>();
             services.AddScoped<UserIdentityEffect>();

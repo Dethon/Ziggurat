@@ -279,7 +279,15 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
         await Assertions.Expect(lift).ToBeHiddenAsync();
 
-        await Task.Delay(HoldMs);
+        // The lift hint and the strip are the browser's own, written under the finger the moment it
+        // lands, so neither says the microphone is open — the gesture can be over, and latched,
+        // while getUserMedia is still pending. Stopping there ends a recording that holds nothing,
+        // which comes back as "the microphone had not finished opening" and an empty composer. So
+        // the wait is for the run holding audio, which is the state a stop needs.
+        await page.WaitForFunctionAsync(
+            "() => window.dictation._run && window.dictation._run.samples > 0",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 30_000 });
         await stop.ClickAsync();
 
         await Assertions.Expect(page.Locator("textarea.chat-input"))

@@ -357,7 +357,28 @@ Object.assign(window.hearthSheet, {
             this._rows.addEventListener('touchmove', this._onRowsTouchMove, { passive: false });
             this._rows.addEventListener('touchend', this._onRowsTouchEnd);
             this._rows.addEventListener('touchcancel', this._onRowsTouchEnd);
+            // Reaching the bottom of the list is what asks for the next page. The margin is a
+            // screenful, so the rows arrive before the person runs out of list to read.
+            this._rows.addEventListener('scroll', this._onRowsScroll, { passive: true });
         }
+    },
+
+    _onRowsScroll: function () {
+        const h = window.hearthSheet;
+        const rows = h._rows;
+        if (!rows || !h._ref) return;
+        if (rows.scrollTop + rows.clientHeight < rows.scrollHeight - rows.clientHeight) return;
+        h._ref.invokeMethodAsync('ReachedEndOfList');
+    },
+
+    // A list too short to scroll can never reach its own bottom, so a tall screen would sit on
+    // one page forever with no way to ask for the next. Asked after each render; the paging
+    // effect is what decides whether anything is left to fetch.
+    checkRows: function () {
+        const h = window.hearthSheet;
+        if (!h._rows || !h._ref) return;
+        if (h._rows.scrollHeight > h._rows.clientHeight) return;
+        h._ref.invokeMethodAsync('ReachedEndOfList');
     },
 
     // The drag gesture only applies to the mobile bottom-sheet layout, not the desktop rail.

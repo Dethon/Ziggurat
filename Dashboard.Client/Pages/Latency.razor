@@ -34,12 +34,12 @@
                 <h3>Recent Turns</h3>
                 <div class="events-table">
                     <div class="table-header">
-                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                        <span class='sortable @SortClass("Stage")' @onclick='() => SortBy("Stage")'>Stage @SortIndicator("Stage")</span>
-                        <span class='sortable @SortClass("Model")' @onclick='() => SortBy("Model")'>Model @SortIndicator("Model")</span>
-                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
-                        <span class='sortable @SortClass("Agent")' @onclick='() => SortBy("Agent")'>Agent @SortIndicator("Agent")</span>
-                        <span class='sortable @SortClass("Conversation")' @onclick='() => SortBy("Conversation")'>Conversation @SortIndicator("Conversation")</span>
+                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Stage")' @onclick='() => SortBy("Stage")'>Stage <SortArrow Column="Stage" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Model")' @onclick='() => SortBy("Model")'>Model <SortArrow Column="Model" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Agent")' @onclick='() => SortBy("Agent")'>Agent <SortArrow Column="Agent" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Conversation")' @onclick='() => SortBy("Conversation")'>Conversation <SortArrow Column="Conversation" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                     </div>
                     @foreach (var evt in GetSortedEvents(state))
                     {
@@ -121,7 +121,6 @@
     }
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
-    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "▲" : "▼";
 }
 
 <style>

@@ -35,14 +35,14 @@
                 <h3>Recent voice events</h3>
                 <div class="events-table">
                     <div class="table-header">
-                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                        <span class='sortable @SortClass("Satellite")' @onclick='() => SortBy("Satellite")'>Satellite @SortIndicator("Satellite")</span>
-                        <span class='sortable @SortClass("Room")' @onclick='() => SortBy("Room")'>Room @SortIndicator("Room")</span>
-                        <span class='sortable @SortClass("Identity")' @onclick='() => SortBy("Identity")'>Identity @SortIndicator("Identity")</span>
-                        <span class='sortable @SortClass("Metric")' @onclick='() => SortBy("Metric")'>Metric @SortIndicator("Metric")</span>
-                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
-                        <span class='sortable @SortClass("Outcome")' @onclick='() => SortBy("Outcome")'>Outcome @SortIndicator("Outcome")</span>
-                        <span class='sortable @SortClass("Error")' @onclick='() => SortBy("Error")'>Error @SortIndicator("Error")</span>
+                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Satellite")' @onclick='() => SortBy("Satellite")'>Satellite <SortArrow Column="Satellite" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Room")' @onclick='() => SortBy("Room")'>Room <SortArrow Column="Room" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Identity")' @onclick='() => SortBy("Identity")'>Identity <SortArrow Column="Identity" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Metric")' @onclick='() => SortBy("Metric")'>Metric <SortArrow Column="Metric" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Outcome")' @onclick='() => SortBy("Outcome")'>Outcome <SortArrow Column="Outcome" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Error")' @onclick='() => SortBy("Error")'>Error <SortArrow Column="Error" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                     </div>
                     @foreach (var evt in GetSortedEvents(state))
                     {
@@ -171,7 +171,6 @@
     }
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
-    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "▲" : "▼";
 }
 
 <style>

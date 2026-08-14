@@ -1,6 +1,8 @@
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Infrastructure.StateManagers;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Hubs;
@@ -11,6 +13,7 @@ using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Unit.McpChannelSignalR;
 using Tests.Unit.McpChannelSignalR.Fixtures;
 
 namespace Tests.Integration.McpChannelSignalR;
@@ -33,7 +36,7 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
     public ChatHubDeleteTopicTests(RedisFixture redis)
     {
         var settings = new AttachmentSettings { StoragePath = _root };
-        _store = new AttachmentStore(settings, _time, NullLogger<AttachmentStore>.Instance);
+        _store = new AttachmentStore(settings, new RetentionSettings(), new FakeConversationLiveness(), _time, NullLogger<AttachmentStore>.Instance);
         var attachments = new AttachmentService(
             settings,
             new AttachmentTickets(settings, _time),
@@ -57,9 +60,11 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
             approvals,
             new ChannelNotificationEmitter(new ChannelInbox(_time), DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            new RedisStateService(redis.Connection),
+            new RedisThreadStateStore(redis.Connection, new RetentionSettings(), _time),
             new Mock<IPushSubscriptionStore>().Object,
             attachments,
+            new Mock<IHubNotificationSender>().Object,
+            new RetentionSettings(),
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {

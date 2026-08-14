@@ -17,6 +17,13 @@ RUN apt-get update \
         ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
+# The mount point, spelled inside the container. The sandbox mount *is* the container root, so this
+# states a truth that already held — and it is what makes the one spelling the filesystem prompt
+# teaches work in a command as well as in an argument. Without it the agent has to know the prefix
+# is required in the path argument and forbidden three characters later in the command string.
+# Keep the target in step with the sandbox filesystem's mount point; a test pins the two together.
+RUN ln -s / /sandbox
+
 WORKDIR /app
 
 FROM base-sdk:latest AS dependencies

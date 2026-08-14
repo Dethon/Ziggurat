@@ -17,8 +17,8 @@ public class ConversationFactoryTests
         var clock = new FakeTimeProvider(now);
         var store = new Mock<IThreadStateStore>();
         TopicMetadata? saved = null;
-        store.Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>()))
-            .Callback<TopicMetadata>(t => saved = t)
+        store.Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>(), It.IsAny<bool>()))
+            .Callback<TopicMetadata, bool>((t, _) => saved = t)
             .Returns(Task.CompletedTask);
 
         var sut = new ConversationFactory(store.Object, clock);

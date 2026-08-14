@@ -1,0 +1,13 @@
+@* Which way a sortable column is pointing. Seven pages each carried their own copy of the same
+   glyph pair before this existed, so the arrow was seven decisions that happened to agree. A
+   column that is not the sorted one shows nothing, which is what the empty string did before. *@
+@if (Column == SortColumn)
+{
+    <Icon Glyph="@(Ascending ? Icons.TriangleUp : Icons.TriangleDown)" Class="sort-arrow" />
+}
+
+@code {
+    [Parameter, EditorRequired] public string Column { get; set; } = default!;
+    [Parameter] public string? SortColumn { get; set; }
+    [Parameter] public bool Ascending { get; set; }
+}

@@ -25,10 +25,10 @@
                 <h3>Error List</h3>
                 <div class="events-table">
                     <div class="table-header">
-                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                        <span class='sortable @SortClass("Service")' @onclick='() => SortBy("Service")'>Service @SortIndicator("Service")</span>
-                        <span class='sortable @SortClass("Type")' @onclick='() => SortBy("Type")'>Type @SortIndicator("Type")</span>
-                        <span class='sortable @SortClass("Message")' @onclick='() => SortBy("Message")'>Message @SortIndicator("Message")</span>
+                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Service")' @onclick='() => SortBy("Service")'>Service <SortArrow Column="Service" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Type")' @onclick='() => SortBy("Type")'>Type <SortArrow Column="Type" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Message")' @onclick='() => SortBy("Message")'>Message <SortArrow Column="Message" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                     </div>
                     @foreach (var evt in GetSortedEvents(state))
                     {
@@ -94,7 +94,6 @@
     }
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
-    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "▲" : "▼";
 }
 
 <style>

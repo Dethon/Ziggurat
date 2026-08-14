@@ -5,10 +5,25 @@ namespace WebChat.Client.State.Topics;
 
 public sealed record TopicsState
 {
-    public IReadOnlyList<StoredTopic> Topics { get; init; } = [];
+    public TopicPaging Paging { get; init; } = TopicPaging.Empty;
+
+    public IReadOnlyList<StoredTopic> Topics => Paging.Topics;
     public string? SelectedTopicId { get; init; }
+
+    // The model of the open conversation, picked up when it was selected and held after its row
+    // leaves the loaded pages — catch-up collapses the list to a first page, and restoring the
+    // open session needs the agent, chat and thread this copy still carries.
+    public StoredTopic? SelectedTopic { get; init; }
     public IReadOnlyList<AgentCatalogEntry> Agents { get; init; } = [];
     public string? SelectedAgentId { get; init; }
+    // Which range of the index the list is being read from. Not a property of any topic — see
+    // ADR 0024 and `Archived` in CONTEXT.md.
+    public bool ShowingArchived { get; init; }
+
+    // What the list is currently a search for, or empty for the ordinary list. Held here rather
+    // than in the sidebar because it decides which call every page fetch makes.
+    public string SearchQuery { get; init; } = "";
+
     public bool IsLoading { get; init; }
     public string? Error { get; init; }
 

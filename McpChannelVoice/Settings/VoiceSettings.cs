@@ -1,3 +1,5 @@
+using Domain.DTOs;
+
 namespace McpChannelVoice.Settings;
 
 public record VoiceSettings
@@ -17,6 +19,11 @@ public record VoiceSettings
     public TseSettings Tse { get; init; } = new();
     public ArbitrationSettings Arbitration { get; init; } = new();
     public CommandSettings Commands { get; init; } = new();
+
+    // The same block the Agent and chat hosts bind. This channel writes conversations and never
+    // reads the list, so only the purge horizon reaches anything here — but it has to be the same
+    // number, or a topic voice wrote would age on a different clock from one anybody else wrote.
+    public RetentionSettings Retention { get; init; } = new();
 
     // Channel-wide default geographic locality (e.g. "Madrid, Spain"). Satellites that don't set
     // their own Locality inherit this one. Surfaced to the agent via SatelliteConfig.DisplayLocation.

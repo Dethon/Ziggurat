@@ -14,6 +14,7 @@ public record AgentSettings
     public SubAgentDefinition[] SubAgents { get; init; } = [];
     public PatchableModel[] PatchableModels { get; init; } = [];
     public AttachmentConfiguration Attachments { get; init; } = new();
+    public RetentionSettings Retention { get; init; } = new();
 }
 
 public record AttachmentConfiguration
@@ -34,7 +35,6 @@ public record OpenRouterConfiguration
 public record RedisConfiguration
 {
     public required string ConnectionString { get; [UsedImplicitly] init; }
-    public int? ExpirationDays { get; [UsedImplicitly] init; }
 }
 
 public record ChannelEndpoint

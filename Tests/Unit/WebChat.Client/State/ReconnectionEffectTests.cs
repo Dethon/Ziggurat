@@ -59,7 +59,7 @@ public sealed class ReconnectionEffectTests : IDisposable
     {
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
         _mockTopicService
-            .Setup(s => s.GetAllTopicsAsync("agent-1", "default"))
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
             .ThrowsAsync(new InvalidOperationException("catch-up failed"));
 
         CreateEffect();
@@ -97,11 +97,21 @@ public sealed class ReconnectionEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task WhenConnectionReconnected_ResumesStreamsForAllTopics()
+    // The sweep over every held topic is gone: the page says which replies are in flight, so
+    // recovery resumes exactly those and asks about nothing else.
+    public async Task WhenConnectionReconnected_ResumesOnlyTheStreamsThePageReported()
     {
-        var topic1 = new StoredTopic { TopicId = "topic-1", Name = "Topic 1" };
-        var topic2 = new StoredTopic { TopicId = "topic-2", Name = "Topic 2" };
-        _dispatcher.Dispatch(new TopicsLoaded([topic1, topic2]));
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        var now = DateTimeOffset.UtcNow;
+        _mockTopicService
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
+            .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
+                [
+                    new TopicMetadata("topic-1", 1, 1, "agent-1", "Topic 1", now, null),
+                    new TopicMetadata("topic-2", 2, 2, "agent-1", "Topic 2", now, null)
+                ],
+                null,
+                ["topic-2"])));
 
         _mockStreamResumeService
             .Setup(s => s.TryResumeStreamAsync(It.IsAny<StoredTopic>()))
@@ -113,14 +123,102 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
 
-        await Task.Delay(50); // Allow async handler to complete
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 2);
 
-        _mockStreamResumeService.Verify(
-            s => s.TryResumeStreamAsync(It.Is<StoredTopic>(t => t.TopicId == "topic-1")),
-            Times.Once);
         _mockStreamResumeService.Verify(
             s => s.TryResumeStreamAsync(It.Is<StoredTopic>(t => t.TopicId == "topic-2")),
             Times.Once);
+        _mockStreamResumeService.Verify(
+            s => s.TryResumeStreamAsync(It.Is<StoredTopic>(t => t.TopicId == "topic-1")),
+            Times.Never);
+    }
+
+    // The person was reading the archive when the connection dropped. Catch-up re-reads that
+    // range, not the ordinary one: the toggle stays visibly on, so ordinary rows underneath it
+    // would be another list wearing the archive's clothes.
+    [Fact]
+    public async Task WhenConnectionReconnected_WhileShowingTheArchive_ReloadsTheArchivedRange()
+    {
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new ShowArchivedTopics(true));
+        var now = DateTimeOffset.UtcNow;
+        _mockTopicService
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null, true))
+            .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
+                [new TopicMetadata("topic-a", 1, 1, "agent-1", "Archived", now, null)], null)));
+
+        CreateEffect();
+
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
+        _topicsStore.State.Topics.Single().TopicId.ShouldBe("topic-a");
+        _mockTopicService.Verify(
+            s => s.GetTopicPageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), false),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task WhenConnectionReconnected_WhileSearching_ReloadsTheSearchRange()
+    {
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new SearchTopics("abc"));
+        var now = DateTimeOffset.UtcNow;
+        _mockTopicService
+            .Setup(s => s.SearchTopicsAsync("agent-1", "abc", "default", null))
+            .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
+                [new TopicMetadata("topic-s", 1, 1, "agent-1", "abc things", now, null)], null)));
+
+        CreateEffect();
+
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
+        _topicsStore.State.Topics.Single().TopicId.ShouldBe("topic-s");
+        _mockTopicService.Verify(
+            s => s.GetTopicPageAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool>()),
+            Times.Never);
+    }
+
+    // The open conversation had been scrolled deep into the list; catch-up replaces the list
+    // with its first page, which does not hold that row. The session restart and history reload
+    // belong to the selection, not to the row's luck of being on page one.
+    [Fact]
+    public async Task WhenConnectionReconnected_ASelectedTopicBelowTheFirstPage_StillRestartsItsSession()
+    {
+        var deep = new StoredTopic
+        { TopicId = "topic-deep", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Deep" };
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new TopicsLoaded([deep]));
+        _dispatcher.Dispatch(new SelectTopic("topic-deep"));
+
+        var now = DateTimeOffset.UtcNow;
+        _mockTopicService
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
+            .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
+                [new TopicMetadata("topic-top", 9, 9, "agent-1", "Top", now, null)], null)));
+        _mockSessionService
+            .Setup(s => s.StartSessionAsync(It.IsAny<StoredTopic>()))
+            .ReturnsAsync(HubResult<bool>.Answered(true));
+
+        CreateEffect();
+
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        await TestChat.Eventually(() => _mockSessionService.Invocations.Any(
+            i => i.Method.Name == nameof(IChatSessionService.StartSessionAsync)));
+
+        _mockSessionService.Verify(
+            s => s.StartSessionAsync(It.Is<StoredTopic>(t => t.TopicId == "topic-deep")),
+            Times.Once);
+        _mockTopicService.Verify(s => s.GetHistoryAsync("agent-1", 123, 456), Times.Once);
     }
 
     [Fact]
@@ -205,8 +303,8 @@ public sealed class ReconnectionEffectTests : IDisposable
             new("topic-2", 789, 101, "agent-1", "New Topic", now, null)
         };
         _mockTopicService
-            .Setup(s => s.GetAllTopicsAsync("agent-1", "default"))
-            .ReturnsAsync(HubResult<IReadOnlyList<TopicMetadata>>.Answered(serverTopics));
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
+            .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(serverTopics, null)));
 
         CreateEffect();
 
@@ -216,7 +314,7 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 2);
 
-        _mockTopicService.Verify(s => s.GetAllTopicsAsync("agent-1", "default"), Times.Once);
+        _mockTopicService.Verify(s => s.GetTopicPageAsync("agent-1", "default", null), Times.Once);
         _topicsStore.State.Topics.ShouldContain(t => t.TopicId == "topic-2");
     }
 

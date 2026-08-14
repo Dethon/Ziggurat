@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Settings;
@@ -15,6 +16,8 @@ namespace McpChannelSignalR.Attachments;
 // removes.
 public sealed class AttachmentStore(
     AttachmentSettings settings,
+    RetentionSettings retention,
+    IConversationLiveness liveness,
     TimeProvider timeProvider,
     ILogger<AttachmentStore> logger)
 {
@@ -117,18 +120,19 @@ public sealed class AttachmentStore(
     // Everything topic deletion never reaches: conversations nobody deletes, and files uploaded
     // for a message that was abandoned before it was sent. Both look the same from here — an
     // attachment directory older than the window — so both go the same way.
-    public int Sweep()
+    public async Task<int> SweepAsync(CancellationToken ct)
     {
         if (!Directory.Exists(settings.StoragePath))
         {
             return 0;
         }
 
-        var cutoff = timeProvider.GetUtcNow() - TimeSpan.FromDays(settings.RetentionDays);
-        var swept = Directory.EnumerateDirectories(settings.StoragePath)
-            .SelectMany(Directory.EnumerateDirectories)
-            .Where(directory => StoredAt(directory) is { } storedAt && storedAt <= cutoff)
-            .Count(TryDeleteDirectory);
+        var cutoff = timeProvider.GetUtcNow() - retention.AttachmentRetention;
+        var swept = 0;
+        foreach (var conversation in Directory.EnumerateDirectories(settings.StoragePath))
+        {
+            swept += await SweepConversationAsync(conversation, cutoff, ct);
+        }
 
         Directory.EnumerateDirectories(settings.StoragePath)
             .Where(conversation => !Directory.EnumerateFileSystemEntries(conversation).Any())
@@ -138,24 +142,58 @@ public sealed class AttachmentStore(
         return swept;
     }
 
-    private DateTimeOffset? StoredAt(string directory)
+    // The age threshold alone was a clock of the store's own: the conversation's purge clock
+    // restarts on every append, so a topic in continuous use kept its transcript while this swept
+    // its earliest files. Aged files now also wait for the conversation to be gone, so a topic and
+    // its files die together — the files at most one window after the topic, never before it.
+    private async Task<int> SweepConversationAsync(
+        string conversation, DateTimeOffset cutoff, CancellationToken ct)
+    {
+        var attachments = Directory.EnumerateDirectories(conversation)
+            .Select(directory => (Directory: directory, Metadata: ReadMetadata(directory)))
+            .ToList();
+
+        var aged = attachments
+            .Where(a => (a.Metadata?.StoredAt ?? DateTimeOffset.MinValue) <= cutoff)
+            .ToList();
+        if (aged.Count == 0)
+        {
+            return 0;
+        }
+
+        // Any readable metadata names the conversation; a directory with none was never completed
+        // and holds nothing the transcript can reference, so it needs no liveness answer.
+        // Any readable metadata names the conversation; a directory with none was never completed
+        // and holds nothing the transcript can reference, so it needs no liveness answer.
+        var conversationId = attachments
+            .Select(a => a.Metadata?.ConversationId)
+            .FirstOrDefault(id => id is not null);
+        if (conversationId is not null && await liveness.IsAliveAsync(conversationId, ct))
+        {
+            return 0;
+        }
+
+        return aged.Count(a => TryDeleteDirectory(a.Directory));
+    }
+
+    // Null is an attachment that was never completed — no metadata, or metadata nothing can read —
+    // which the sweep treats as old enough to go rather than keeping forever.
+    private Metadata? ReadMetadata(string directory)
     {
         var metadataPath = Path.Combine(directory, MetadataFileName);
         if (!File.Exists(metadataPath))
         {
-            // An attachment directory with no metadata was never completed. Treat it as old
-            // enough to sweep rather than leaving it forever.
-            return DateTimeOffset.MinValue;
+            return null;
         }
 
         try
         {
-            return JsonSerializer.Deserialize<Metadata>(File.ReadAllText(metadataPath))?.StoredAt;
+            return JsonSerializer.Deserialize<Metadata>(File.ReadAllText(metadataPath));
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Unreadable attachment metadata at {Path}; sweeping it", metadataPath);
-            return DateTimeOffset.MinValue;
+            return null;
         }
     }
 

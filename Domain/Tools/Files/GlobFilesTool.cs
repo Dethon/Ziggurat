@@ -1,21 +1,12 @@
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
+using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.Files;
 
 public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {
-    protected const string Description = """
-                                         Searches for files and directories matching a glob pattern relative to the mount root.
-                                         `*` matches one path segment, `**` recurses, `?` matches one character.
-                                         Brace alternation expands too: `**/*.{jpg,png,gif}` matches any of the listed extensions.
-                                         A trailing slash matches directories only (e.g. `*/`, `src/**/`); otherwise both files
-                                         and directories match, with directory results returned with a trailing slash so you can
-                                         tell them apart. Results are capped at 200; the response is `{entries, truncated, total}`.
-                                         An empty result means nothing matched—refine the pattern.
-                                         """;
-
     public const int FileResultCap = 200;
 
     private readonly PathJail _jail = new(libraryPath.BaseLibraryPath);
@@ -49,11 +40,33 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
 
         pattern = scoped;
 
-        string[] result;
+        // The matcher's timeout is raised while the walk is being pulled, not when it is asked for,
+        // so the envelope every other mount answers wraps the loop below.
+        return await GlobRegex.GuardedAsync(pattern, () => Collect(matcherRoot, basePath, pattern, cancellationToken));
+    }
+
+    private async Task<FsResult<FsGlobResult>> Collect(
+        string matcherRoot, string? basePath, string pattern, CancellationToken cancellationToken)
+    {
+        var found = new List<string>();
+        GlobWalk walk;
         try
         {
-            result = await client.Glob(matcherRoot, pattern, cancellationToken);
+            walk = client.Glob(matcherRoot, pattern, cancellationToken);
+            await foreach (var hit in walk.Matches.WithCancellation(cancellationToken))
+            {
+                found.Add(hit);
+                // One more match than the response carries is all it takes to report truncation,
+                // and past it there is nothing left to find that anyone will see. The cap is a
+                // response-shaping concern, so it ends the walk from here rather than in the client.
+                if (found.Count > FileResultCap)
+                {
+                    break;
+                }
+            }
         }
+        // A lazy walk raises a missing base directory on the first pull rather than at the call,
+        // so the catch that turns it into the not-found envelope wraps the pull.
         catch (DirectoryNotFoundException)
         {
             return FsError.NotFound<FsGlobResult>(basePath ?? matcherRoot);
@@ -65,16 +78,22 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
             return FsError.Invalid<FsGlobResult>(ex.Message);
         }
 
-        // Return entries relative to the mount root (the disk client yields absolute paths). The
-        // agent-side VFS tool re-prefixes the mount point, so every filesystem speaks one format.
-        var relative = result.Select(p => ToMountRelative(_jail.Root, p)).ToArray();
+        // Return entries relative to the mount root (the disk client yields absolute paths), sorted
+        // for presentation. The agent-side VFS tool re-prefixes the mount point, so every filesystem
+        // speaks one format.
+        var relative = found
+            .Select(p => ToMountRelative(_jail.Root, p))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
         var capped = relative.Length > FileResultCap;
 
         return new FsResult<FsGlobResult>.Ok(new FsGlobResult
         {
             Entries = capped ? relative.Take(FileResultCap).ToArray() : relative,
             Truncated = capped,
-            Total = relative.Length
+            Total = relative.Length,
+            EntriesScanned = walk.EntriesScanned,
+            BudgetReached = walk.BudgetReached
         });
     }
 

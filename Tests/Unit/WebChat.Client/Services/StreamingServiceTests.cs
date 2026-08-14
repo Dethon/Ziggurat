@@ -148,22 +148,32 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SendMessageAsync_OnComplete_StopsStreamingAndPersistsTopic()
+    // The reply's end marks the conversation on screen read. The timestamp it used to write
+    // alongside is the store's now, stamped wherever a topic's history is appended to.
+    public async Task SendMessageAsync_OnComplete_StopsStreamingAndMarksTheViewedTopicRead()
     {
-        // Merges three originals: OnComplete_StopsStreaming, OnComplete_UpdatesTopicTimestamp,
-        // OnComplete_CallsTopicService. All share a single-content arrange; we assert all
-        // three observables in one pass to avoid variant explosion.
         var topic = CreateTopic();
-        topic.LastMessageAt = null;
-        _dispatcher.Dispatch(new AddTopic(topic));
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
         _messagingService.EnqueueContent("Done");
 
         await SendAndDrainAsync(topic);
 
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
-        _topicService.SavedTopics.Count.ShouldBe(1);
-        _topicService.SavedTopics[0].LastMessageAt.ShouldNotBeNull();
+        _topicService.MarkedReadTopicIds.ShouldBe([topic.TopicId]);
+        _topicService.SavedTopics.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_OnComplete_ForATopicNobodyIsLookingAt_LeavesItUnread()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _messagingService.EnqueueContent("Done");
+
+        await SendAndDrainAsync(topic);
+
+        _topicService.MarkedReadTopicIds.ShouldBeEmpty();
     }
 
     [Fact]
@@ -514,12 +524,13 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task TryStartResumeStreamAsync_WithNewContent_UpdatesTimestamp()
+    // A resumed reply ends like any other: the topic on screen is marked read, and nothing about
+    // when it was last written to is the client's to say.
+    public async Task TryStartResumeStreamAsync_WithNewContent_MarksTheViewedTopicRead()
     {
         var topic = CreateTopic();
-        topic.LastMessageAt = new DateTime(2024, 1, 1);
-        _dispatcher.Dispatch(new AddTopic(topic));
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
         var existingMessage = new ChatMessageModel { Role = "assistant" };
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = "New content", MessageId = "msg-1" },
@@ -528,10 +539,8 @@ public sealed class StreamingServiceTests : IDisposable
 
         await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
 
-        _topicService.SavedTopics.Count.ShouldBe(1);
-        _topicService.SavedTopics[0].LastMessageAt.ShouldNotBeNull();
-        _topicService.SavedTopics[0].LastMessageAt!.Value.ShouldBeGreaterThan(
-            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        _topicService.MarkedReadTopicIds.ShouldBe([topic.TopicId]);
+        _topicService.SavedTopics.ShouldBeEmpty();
     }
 
     [Theory]

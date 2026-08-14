@@ -57,11 +57,29 @@ filesystem tool against a backend answering in three deliberately hostile spelli
 fails if any path in any response is not a virtual path. Its tool set is derived from
 `FileSystemOperations.All`, so an operation added without a case is impossible.
 
-Two fields have no virtual path and are named as exemptions where the rule is enforced. The
-trash location a disk root reports sits outside every mount; three backends already
-answered empty and the disk root joins them, since nothing reads it. The working directory
-an `exec` reports is the backend's own, filled by four backends with four different
-meanings.
+One field has no virtual path and is named as an exemption where the rule is enforced: a
+glob entry outside the requested source directory of a transfer, which is outside the
+coordinate frame the request was made in. The trash location a disk root reports sits
+outside every mount; three backends already answered empty and the disk root joins them,
+since nothing reads it.
+
+The working directory an `exec` reports was the second exemption and is no longer. It was
+exempt because a backend answered it in its own coordinates and four backends meant four
+different things by it, so no mount could claim it. That was a fact about the result
+contract rather than about the field: the working directory is a path the caller never
+named, which is exactly the half of the rule that translates. So the contract says what the
+field means — the directory the command ran in, relative to the backend's own configured
+root, the root itself being the empty string — and the tool prefixes the mount point through
+the same `ToVirtualPath` glob entries and search hits use. The root round-trips as the mount
+point with a trailing slash, which is how glob already spells a directory.
+
+Normalising this one field at the backend does not reopen "normalise every backend to
+answer mount-relative", rejected below. That was a blanket policy: every operation of every
+backend, moving the wire format for a guarantee the tool boundary already gives. This is one
+field of one result type, and it buys something the boundary cannot give on its own — the
+mount point can only be prefixed onto a path already expressed relative to the backend's
+root, and the backend is the only component that knows that root. Where a backend already
+answers in coordinates a mount cannot claim, the tool still echoes the caller's own string.
 
 ## A tool's result type is not its backend's
 
@@ -101,5 +119,7 @@ the agent process with the resolution in hand.
 - A tool that starts answering in backend coordinates fails a test rather than reaching
   production.
 - An exemption is a decision spent in the test file with a line of reason, rather than an
-  oversight nobody notices.
-- The backend result contract is unchanged, so no MCP server needed updating.
+  oversight nobody notices — and one that turns out to be claimable is spent back.
+- The backend result contract is unchanged but for the one field named above, whose meaning
+  is now documented on `FsExecResult` where someone writing a new exec-capable backend
+  reads it.

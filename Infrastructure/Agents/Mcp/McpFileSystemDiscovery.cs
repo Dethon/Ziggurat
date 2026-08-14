@@ -70,7 +70,8 @@ internal static class McpFileSystemDiscovery
 
                 var mount = new FileSystemMount(metadata.Name, metadata.MountPoint, metadata.Description ?? "")
                 {
-                    Capabilities = capabilities
+                    Capabilities = capabilities,
+                    Workspace = metadata.Workspace
                 };
                 var backend = new McpFileSystemBackend(client, metadata.Name, advertised, logger);
                 return (mount, backend);
@@ -109,5 +110,6 @@ internal static class McpFileSystemDiscovery
             .Select(o => o.Capability!)
             .ToList();
 
-    private record FileSystemResourceMetadata(string Name, string MountPoint, string? Description);
+    private record FileSystemResourceMetadata(
+        string Name, string MountPoint, string? Description, string? Workspace);
 }

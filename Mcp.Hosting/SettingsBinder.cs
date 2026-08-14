@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using Domain.DTOs;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.UserSecrets;
 
@@ -35,6 +36,7 @@ public static class SettingsBinder
     {
         ArgumentNullException.ThrowIfNull(configBuilder);
 
+        configBuilder.AddJsonFile(RetentionSettings.FileName, optional: true);
         configBuilder.AddEnvironmentVariables();
         if (userSecretsId is not null)
         {

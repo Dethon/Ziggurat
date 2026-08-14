@@ -22,3 +22,18 @@ body {
 }
 
 a { color: var(--accent-blue); text-decoration: none; }
+
+/* Icons drawn rather than typed. Sized in em so each one follows the text it sits in — a table
+   header at 0.7rem and a row cell at 0.82rem both get an arrow in proportion. */
+.sort-arrow {
+    width: 0.9em;
+    height: 0.9em;
+    vertical-align: -0.15em;
+}
+
+.regenerated-tick {
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.15em;
+    color: var(--accent-green);
+}

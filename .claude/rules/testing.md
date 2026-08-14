@@ -52,7 +52,11 @@ for this, and each shape below is one that has already failed here.
 ## E2E Tests
 
 - Fixtures extend `E2EFixtureBase` (`IAsyncLifetime`), which manages browser lifecycle and
-  container startup; share a fixture across a feature area's test classes with `[Collection("...")]`
+  container startup; share a fixture across a feature area's test classes with `[Collection("...")]`.
+  A fixture whose subject is a container rather than a page (`SandboxE2EFixture` — the sandbox
+  image's mount-point alias, reached over MCP) implements `IAsyncLifetime` itself and drives
+  `TestHelpers`/`E2EPhase` directly: the base always launches Chromium, and a browser nothing
+  navigates is the cost that capped how far this suite could be split
 - Use `[SkippableFact]` with `Skip.If(...)` to skip when the required stack is unavailable
 - `fixture.NextUserIndex()` gives a test its own user, which separates it from its siblings in the
   same run and from nothing else: the index restarts every run and conversations outlive the stack.
@@ -63,3 +67,12 @@ for this, and each shape below is one that has already failed here.
   waits for a control that can take it; an approval overlay leaked by a sibling covers the whole
   viewport, so clicks go through `ClickThroughApprovalsAsync`; and the app reads flick velocity off
   event timestamps, so a CDP drag stamps its own frames rather than being stamped on arrival
+- A wait belongs to the test that can satisfy it. Conversations in a space outlive the test that
+  made them, so "nothing anywhere is streaming" is a claim about siblings' replies this test cannot
+  finish — one that never completes then costs every later wait its whole cap.
+  `WaitForRowsToStopMovingAsync` takes the caller's tag for that reason and asks the streaming
+  question only of the rows carrying it; `RowSettle` is the rule on its own, unit-tested
+- What a run spent its wall clock on is answerable rather than guessable: set `E2E_TRACE_FILE` and
+  every fixture phase, container start and row-settle wait appends its seconds to that file
+  (`E2ETrace`, a null check when the variable is unset). Read it beside the run's `.trx` — the trx
+  says which test was slow, the trace says which wait inside it was

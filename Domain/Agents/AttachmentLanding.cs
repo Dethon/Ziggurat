@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.WebChat;
@@ -12,7 +13,9 @@ namespace Domain.Agents;
 // appears as a file: the upload store is never mounted, because one store serves every
 // conversation and a mount is visible to the model (ADR 0021).
 //
-// A directory per conversation and one per message, keeping the name the person used. The
+// The mount says where it can be written and this puts the file there (ADR 0025): under the
+// workspace, a directory per conversation and one per message, keeping the name the person used —
+// reduced to a single safe path segment, because a sender-supplied name is untrusted input. The
 // per-message directory is what separates one message's files from another's, so two `scan.pdf`s
 // sent in one conversation both survive; two in the *same* message are separated one level
 // further down. Nothing is ever renamed, which is the property the layout exists to keep.
@@ -29,21 +32,44 @@ public static class AttachmentLanding
         string ConversationId,
         string MessageKey);
 
-    public static async Task<IReadOnlyList<string>> LandAsync(
+    // What one message's landing produced: the paths the model can act on, and the names of the
+    // files it cannot, because a partly landed message is where a bare count would make the model
+    // guess which file it lost.
+    public sealed record LandingOutcome(IReadOnlyList<string> Landed, IReadOnlyList<string> Failed)
+    {
+        public static readonly LandingOutcome Nothing = new([], []);
+    }
+
+    public static async Task<LandingOutcome> LandAsync(
         Landing landing, ILogger logger, CancellationToken ct)
     {
         var (registry, attachments, fetch, conversationId, messageKey) = landing;
-        var mountPoint = FindSandboxMountPoint(registry);
-        if (registry is null || mountPoint is null || attachments.Count == 0)
+        var sandbox = FindSandbox(registry);
+        if (registry is null || sandbox is null || attachments.Count == 0)
         {
-            return [];
+            return LandingOutcome.Nothing;
         }
 
-        var directory =
-            $"{mountPoint}/{Root}/{AttachmentEndpointPaths.ConversationDirectory(conversationId)}/{messageKey}";
+        // A mount that can run something but declares nowhere to write it lands nothing. Falling
+        // back to the mount root is what shipped: the sandbox mount is the container root, the
+        // image never creates a directory there and the container runs unprivileged, so every
+        // write failed and every turn continued as if no file had been sent (ADR 0025).
+        if (sandbox.Workspace is null)
+        {
+            logger.LogWarning(
+                "The {Mount} mount can run commands but declares no workspace, so {Count} attachment(s) "
+                + "were not landed; the model is told which files it cannot act on",
+                sandbox.Name, attachments.Count);
+            return new LandingOutcome([], [.. attachments.Select(a => a.FileName)]);
+        }
+
+        var directory = FileSystemResolution.ToVirtualPath(
+            sandbox.MountPoint,
+            $"{sandbox.Workspace}/{Root}/{AttachmentEndpointPaths.ConversationDirectory(conversationId)}/{messageKey}");
         var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var landed = new List<string>();
+        var failed = new List<string>();
         foreach (var attachment in attachments)
         {
             // The per-message directory separates one message's files from another's, which is
@@ -51,17 +77,22 @@ public static class AttachmentLanding
             // name — a person picking `scan.pdf` from two folders — and there the second gets a
             // directory of its own rather than overwriting the first or being renamed. Nothing is
             // renamed either way, which is the property the layout exists to keep.
-            var path = taken.Add(attachment.FileName)
-                ? $"{directory}/{attachment.FileName}"
-                : $"{directory}/{Disambiguate(attachment)}/{attachment.FileName}";
+            var fileName = SafeFileName(attachment.FileName);
+            var path = taken.Add(fileName)
+                ? $"{directory}/{fileName}"
+                : $"{directory}/{Disambiguate(attachment)}/{fileName}";
 
             if (await TryWriteAsync(registry, path, attachment, fetch, logger, ct))
             {
                 landed.Add(path);
             }
+            else
+            {
+                failed.Add(attachment.FileName);
+            }
         }
 
-        return landed;
+        return new LandingOutcome(landed, failed);
     }
 
     // The attachment's own id, which is what already tells two same-named files apart in the
@@ -69,13 +100,25 @@ public static class AttachmentLanding
     private static string Disambiguate(AttachmentReference attachment) =>
         attachment.Id.Split('/').Last();
 
+    // A filename is one segment of the landing path, never a path of its own. WebChat sanitizes
+    // uploads at its store, but a Telegram document arrives with the sender's own name, and the
+    // sandbox jail's root is the container root — so a name with "../" segments composes a write
+    // target containment cannot refuse, and one with separators silently creates directories.
+    // Sanitized here, the seam every channel's attachments pass through, so no channel can forget.
+    private static string SafeFileName(string fileName)
+    {
+        var name = fileName.Replace('\\', '/').Split('/').Last();
+        var cleaned = new string(name
+            .Where(c => !Path.GetInvalidFileNameChars().Contains(c))
+            .ToArray());
+        return string.IsNullOrWhiteSpace(cleaned) || cleaned is "." or ".." ? "attachment" : cleaned;
+    }
+
     // The sandbox is the mount that can run something, which is the whole reason a file belongs
     // there. Asking the capability rather than the name keeps this from depending on one server's
-    // spelling.
-    private static string? FindSandboxMountPoint(IVirtualFileSystemRegistry? registry) =>
-        registry?.GetMounts()
-            .FirstOrDefault(m => m.Capabilities.Contains(VfsExecTool.Name))
-            ?.MountPoint;
+    // spelling — and is why the mount has to say where it can be written, rather than this knowing.
+    private static FileSystemMount? FindSandbox(IVirtualFileSystemRegistry? registry) =>
+        registry?.GetMounts().FirstOrDefault(m => m.Capabilities.Contains(VfsExecTool.Name));
 
     // A failed write is logged and the turn proceeds as context-only: a broken tool must not cost
     // an answer the model could still give.
@@ -119,6 +162,13 @@ public static class AttachmentLanding
 
     public static string Describe(IReadOnlyList<string> paths) =>
         $"[The attached files are in the sandbox at: {string.Join(", ", paths)}]";
+
+    // Named rather than counted: a partly landed message is where a count would make the model
+    // guess which file it lost.
+    public static string DescribeFailures(IReadOnlyList<string> fileNames) =>
+        $"[These attached files could not be put in the sandbox: {string.Join(", ", fileNames)}. "
+        + "They are not on any filesystem you can reach, so do not run commands against them, and "
+        + "say so if the answer needed them.]";
 
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> One(ReadOnlyMemory<byte> bytes)
     {

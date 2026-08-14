@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Infrastructure.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
@@ -16,6 +17,7 @@ public class MemoryDreamingServiceTests
     private readonly Mock<IMetricsPublisher> _metricsPublisher = new();
     private readonly MemoryDreamingOptions _options = new();
     private readonly MemoryDreamingService _service;
+    private readonly IReadOnlyCollection<string> _warnings;
 
     private static readonly DateTimeOffset _now = new(2026, 3, 28, 3, 0, 0, TimeSpan.Zero);
 
@@ -45,13 +47,16 @@ public class MemoryDreamingServiceTests
         _metricsPublisher
             .Setup(p => p.Publish(It.IsAny<MetricEvent>()));
 
+        var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        _warnings = logs.Messages;
+
         _service = new MemoryDreamingService(
             _store.Object,
             _consolidator.Object,
             _embeddingService.Object,
             _metricsPublisher.Object,
             Mock.Of<ICronValidator>(),
-            NullLogger<MemoryDreamingService>.Instance,
+            LoggerFactory.Create(builder => builder.AddProvider(logs)).CreateLogger<MemoryDreamingService>(),
             _options);
     }
 
@@ -172,6 +177,124 @@ public class MemoryDreamingServiceTests
 
         _store.Verify(s => s.DeleteAsync("user1", "m1", It.IsAny<CancellationToken>()), Times.Once);
         _store.Verify(s => s.DeleteAsync("user1", "m2", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // The ids in a decision came back through a language model, which was given them and asked to
+    // repeat them. It mostly does, and sometimes returns "Mem_3" for "mem_3" — the right memory,
+    // typed differently. Matched exactly, both source ids miss, the decision falls under the
+    // two-source guard and is dropped without a word: the pass reports fewer merges than the model
+    // decided and nothing says why. Ids are mem_{Guid:N}, so two of them cannot differ by case
+    // alone and there is nothing to lose by ignoring it.
+    [Fact]
+    public async Task RunDreamingForUserAsync_MergeSourceIdsInAnotherCase_StillMergesThem()
+    {
+        var m1 = MakeMemory("mem_1", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10));
+        var m2 = MakeMemory("mem_2", "user1", MemoryCategory.Fact, 0.8, _now.AddDays(-5), _now.AddDays(-5));
+
+        _store
+            .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry> { m1, m2 });
+
+        var mergeDecision = new MergeDecision(
+            SourceIds: ["Mem_1", "MEM_2"],
+            Action: MergeAction.Merge,
+            MergedContent: "Combined fact about user",
+            Category: MemoryCategory.Fact,
+            Importance: 0.85,
+            Tags: ["merged"]);
+
+        _consolidator
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([mergeDecision])
+            .ReturnsAsync([]);
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        _store.Verify(s => s.StoreAsync(
+            It.Is<MemoryEntry>(m => m.Content == "Combined fact about user"),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        // The stored id, not the one the model typed: the store is asked to delete by key, and a
+        // key it does not hold deletes nothing while the merged memory it duplicates lives on.
+        _store.Verify(s => s.DeleteAsync("user1", "mem_1", It.IsAny<CancellationToken>()), Times.Once);
+        _store.Verify(s => s.DeleteAsync("user1", "mem_2", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RunDreamingForUserAsync_SupersededSourceIdInAnotherCase_DeletesTheStoredOne()
+    {
+        var oldMemory = MakeMemory("mem_old", "user1", MemoryCategory.Fact, 0.5, _now.AddDays(-30), _now.AddDays(-30));
+        var newMemory = MakeMemory("mem_new", "user1", MemoryCategory.Fact, 0.9, _now.AddDays(-1), _now.AddDays(-1));
+
+        _store
+            .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry> { oldMemory, newMemory });
+
+        _consolidator
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new MergeDecision(SourceIds: ["Mem_Old", "Mem_New"], Action: MergeAction.SupersedeOlder)])
+            .ReturnsAsync([]);
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        _store.Verify(s => s.DeleteAsync("user1", "mem_old", It.IsAny<CancellationToken>()), Times.Once);
+        _store.Verify(s => s.DeleteAsync("user1", "mem_new", It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // A source id that names no memory at all is still dropped: the guard exists because a model
+    // can invent one, and ignoring case is not the same as accepting anything.
+    [Fact]
+    public async Task RunDreamingForUserAsync_MergeSourceIdThatNamesNoMemory_IsStillDropped()
+    {
+        var m1 = MakeMemory("mem_1", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10));
+
+        _store
+            .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry> { m1 });
+
+        _consolidator
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new MergeDecision(
+                SourceIds: ["mem_1", "mem_invented"],
+                Action: MergeAction.Merge,
+                MergedContent: "Combined fact about user",
+                Category: MemoryCategory.Fact,
+                Importance: 0.85,
+                Tags: [])])
+            .ReturnsAsync([]);
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        _store.Verify(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.DeleteAsync("user1", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // Dropping it is right; dropping it without a word is what made the same thing happen to the
+    // wrongly-cased ids for as long as it did. A pass that consolidates less than the model asked
+    // for should say which id it could not place.
+    [Fact]
+    public async Task RunDreamingForUserAsync_ADecisionDroppedForUnknownIds_SaysWhich()
+    {
+        var m1 = MakeMemory("mem_1", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10));
+
+        _store
+            .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry> { m1 });
+
+        _consolidator
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new MergeDecision(
+                SourceIds: ["mem_1", "mem_invented"],
+                Action: MergeAction.Merge,
+                MergedContent: "Combined fact about user",
+                Category: MemoryCategory.Fact,
+                Importance: 0.85,
+                Tags: [])])
+            .ReturnsAsync([]);
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        _warnings.ShouldContain(message => message.Contains("mem_invented", StringComparison.Ordinal));
     }
 
     [Fact]

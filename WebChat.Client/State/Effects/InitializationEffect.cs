@@ -3,8 +3,6 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Connection;
-using WebChat.Client.State.Messages;
-using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
@@ -24,9 +22,6 @@ public sealed class InitializationEffect : IDisposable
     private readonly IStreamResumeService _streamResumeService;
     private readonly IPushSubscriptionService _pushNotificationService;
     private readonly UserIdentityStore _userIdentityStore;
-    private readonly TopicsStore _topicsStore;
-    private readonly MessagesStore _messagesStore;
-    private readonly IMessagePipeline _pipeline;
     private readonly SpaceStore _spaceStore;
     private readonly ILogger<InitializationEffect> _logger;
     private readonly IDisposable _initializeRegistration;
@@ -47,9 +42,6 @@ public sealed class InitializationEffect : IDisposable
         IStreamResumeService streamResumeService,
         IPushSubscriptionService pushNotificationService,
         UserIdentityStore userIdentityStore,
-        TopicsStore topicsStore,
-        MessagesStore messagesStore,
-        IMessagePipeline pipeline,
         SpaceStore spaceStore,
         ILogger<InitializationEffect> logger)
     {
@@ -64,9 +56,6 @@ public sealed class InitializationEffect : IDisposable
         _streamResumeService = streamResumeService;
         _pushNotificationService = pushNotificationService;
         _userIdentityStore = userIdentityStore;
-        _topicsStore = topicsStore;
-        _messagesStore = messagesStore;
-        _pipeline = pipeline;
         _spaceStore = spaceStore;
         _logger = logger;
 
@@ -197,18 +186,20 @@ public sealed class InitializationEffect : IDisposable
             await _localStorage.SetAsync("selectedAgentId", agentToSelect.Id);
         }
 
-        var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id, _spaceStore.State.CurrentSlug);
-        if (!serverTopics.IsLive)
+        var firstPage = await _topicService.GetTopicPageAsync(agentToSelect.Id, _spaceStore.State.CurrentSlug);
+        if (!firstPage.IsLive)
         {
             return;
         }
 
-        var topics = serverTopics.Value!.Select(StoredTopic.FromMetadata).ToList();
-        _dispatcher.Dispatch(new TopicsLoaded(topics));
+        var topics = firstPage.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
+        _dispatcher.Dispatch(new TopicsLoaded(topics, firstPage.Value.NextCursor));
 
-        // Gathered rather than detached: awaiting first-load init has to mean history is in
-        // the store, or a caller that awaits it still races the messages it asked for.
-        await Task.WhenAll(topics.Select(LoadTopicHistoryAsync));
+        // No history and no per-topic sweep. Opening the client costs one page of rows and
+        // nothing per conversation: the badge and the preview a row needs are on the row, the
+        // transcript is fetched when a conversation is opened, and the page itself says which
+        // replies are in flight.
+        TopicPageStreams.ResumeReported(topics, firstPage.Value.LiveTopicIds, _streamResumeService, _logger);
     }
 
     public Task RegisterUserAsync(string? userId = null)
@@ -233,50 +224,6 @@ public sealed class InitializationEffect : IDisposable
         }
     }
 
-    private async Task LoadTopicHistoryAsync(StoredTopic topic)
-    {
-        var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-        if (!history.IsLive)
-        {
-            return;
-        }
-
-        _pipeline.LoadHistory(topic.TopicId, history.Value!);
-
-        // If this topic is currently selected, mark it as read so no stale badges appear
-        if (_topicsStore.State.SelectedTopicId == topic.TopicId)
-        {
-            await MarkTopicAsReadAsync(topic);
-        }
-
-        // Detached on purpose: a resumed stream is long-lived, so awaiting it would mean
-        // awaiting the conversation.
-        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, "stream resume");
-    }
-
-    private async Task MarkTopicAsReadAsync(StoredTopic topic)
-    {
-        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
-        var lastMessageId = messages.LastOrDefault(m => m.MessageId is not null)?.MessageId;
-
-        if (lastMessageId is not null && lastMessageId != topic.LastReadMessageId)
-        {
-            var updatedTopic = new StoredTopic
-            {
-                TopicId = topic.TopicId,
-                ChatId = topic.ChatId,
-                ThreadId = topic.ThreadId,
-                AgentId = topic.AgentId,
-                Name = topic.Name,
-                CreatedAt = topic.CreatedAt,
-                LastMessageAt = topic.LastMessageAt,
-                LastReadMessageId = lastMessageId,
-                SpaceSlug = topic.SpaceSlug
-            };
-            _dispatcher.Dispatch(new UpdateTopic(updatedTopic));
-            await _topicService.SaveTopicAsync(updatedTopic.ToMetadata());
-        }
-    }
 
     public void Dispose()
     {

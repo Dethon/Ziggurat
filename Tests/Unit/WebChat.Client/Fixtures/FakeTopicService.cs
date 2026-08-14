@@ -1,3 +1,4 @@
+using System.Globalization;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 
@@ -40,6 +41,9 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     // Holds the delete open so a test can interleave user actions with the round trip.
     public TaskCompletionSource? DeleteGate { get; set; }
 
+    // Holds every page fetch open so a test can change the list underneath the round trip.
+    public TaskCompletionSource? PageGate { get; set; }
+
     public IReadOnlyList<TopicMetadata> SavedTopics => _savedTopics;
     public IReadOnlySet<string> DeletedTopicIds => _deletedTopicIds;
     public IReadOnlyList<string> JoinedSpaces => _joinedSpaces;
@@ -51,26 +55,124 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     // successful read survives this one's failure.
     public HashSet<string> NotLiveForAgentIds { get; } = [];
 
-    public Task<HubResult<IReadOnlyList<TopicMetadata>>> GetAllTopicsAsync(
-        string agentId, string spaceSlug = "default")
+    // How many rows one fetch answers with. Large by default so a test that does not care about
+    // paging sees the whole seeded list on the first page.
+    public int PageSize { get; set; } = 100;
+
+    // Topics the fake should answer with only when the archived range is asked for. Archived is
+    // a position in the server's index, so the fake carries the two ranges apart rather than
+    // deciding which a topic is in.
+    public HashSet<string> ArchivedTopicIds { get; } = [];
+
+    public async Task<HubResult<TopicPage>> GetTopicPageAsync(
+        string agentId,
+        string spaceSlug = SpaceConfig.DefaultSlug,
+        string? cursor = null,
+        bool archived = false)
     {
-        recorder?.Record($"topics:{agentId}");
+        recorder?.Record(
+            (archived ? "archived" : "topics")
+            + (cursor is null ? $":{agentId}" : $":{agentId}:{cursor}"));
+
+        if (PageGate is not null)
+        {
+            await PageGate.Task;
+        }
 
         if (ThrowOnGetAllTopics is not null)
         {
-            return Task.FromException<HubResult<IReadOnlyList<TopicMetadata>>>(ThrowOnGetAllTopics);
+            throw ThrowOnGetAllTopics;
         }
 
         if (NotLive || NotLiveForAgentIds.Contains(agentId))
         {
-            return Task.FromResult(HubResult<IReadOnlyList<TopicMetadata>>.NotLive);
+            return HubResult<TopicPage>.NotLive;
         }
 
-        return Task.FromResult(HubResult<IReadOnlyList<TopicMetadata>>.Answered(
-            _seededTopics.Concat(_savedTopics)
-                .Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug)
-                .ToList()));
+        // Ordered and cut the way the server's index is, so a cursor means the same thing here.
+        var ordered = _seededTopics.Concat(_savedTopics)
+            .Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug)
+            .Where(t => ArchivedTopicIds.Contains(t.TopicId) == archived)
+            .GroupBy(t => t.TopicId)
+            .Select(g => g.Last())
+            .OrderByDescending(t => t.LastWriteAt)
+            .ToList();
+
+        var below = cursor is null
+            ? ordered
+            : ordered.Where(t => Score(t) < double.Parse(cursor, CultureInfo.InvariantCulture)).ToList();
+
+        var page = below.Take(PageSize).ToList();
+        var next = page.Count < PageSize
+            ? null
+            : Score(page[^1]).ToString(CultureInfo.InvariantCulture);
+
+        return HubResult<TopicPage>.Answered(new TopicPage(
+            page, next, [.. page.Select(t => t.TopicId).Where(LiveTopicIds.Contains)]));
     }
+
+    // Which of the seeded topics the server would report as having a reply in flight.
+    public HashSet<string> LiveTopicIds { get; } = [];
+
+    // Matches on the name, over both ranges, the way the server's index does — a test that cares
+    // about content matching drives the store rather than this.
+    public async Task<HubResult<TopicPage>> SearchTopicsAsync(
+        string agentId,
+        string query,
+        string spaceSlug = SpaceConfig.DefaultSlug,
+        string? cursor = null)
+    {
+        recorder?.Record(cursor is null ? $"search:{query}" : $"search:{query}:{cursor}");
+
+        if (PageGate is not null)
+        {
+            await PageGate.Task;
+        }
+
+        if (NotLive)
+        {
+            return HubResult<TopicPage>.NotLive;
+        }
+
+        var ordered = _seededTopics.Concat(_savedTopics)
+            .Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug)
+            .Where(t => t.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(t => t.TopicId)
+            .Select(g => g.Last())
+            .OrderByDescending(t => t.LastWriteAt)
+            .ToList();
+
+        var below = cursor is null
+            ? ordered
+            : ordered.Where(t => Score(t) < double.Parse(cursor, CultureInfo.InvariantCulture)).ToList();
+
+        var page = below.Take(PageSize).ToList();
+        return HubResult<TopicPage>.Answered(new TopicPage(
+            page,
+            page.Count < PageSize ? null : Score(page[^1]).ToString(CultureInfo.InvariantCulture)));
+    }
+
+    // Read positions the fake was told to move, so a test can assert which conversations were
+    // marked read without reaching for the seeded records.
+    public IReadOnlyList<string> MarkedReadTopicIds => _markedRead;
+
+    private readonly List<string> _markedRead = new();
+
+    public Task<HubResult<Nothing>> MarkTopicReadAsync(string agentId, long chatId, string topicId)
+    {
+        recorder?.Record($"read:{topicId}");
+
+        if (NotLive)
+        {
+            return Task.FromResult(HubResult<Nothing>.NotLive);
+        }
+
+        _markedRead.Add(topicId);
+        return Task.FromResult(HubResult<Nothing>.Answered(default));
+    }
+
+    private static double Score(TopicMetadata topic) =>
+        topic.LastWriteAt.ToUnixTimeMilliseconds();
 
     public Task<HubResult<Nothing>> JoinSpaceAsync(string spaceSlug)
     {

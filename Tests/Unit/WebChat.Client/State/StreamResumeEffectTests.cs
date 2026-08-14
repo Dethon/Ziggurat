@@ -44,8 +44,8 @@ public sealed class StreamResumeEffectTests : IDisposable
         _streamingStore.State.StreamingTopics.ShouldNotContain("topic-1");
     }
 
-    // Marking an unknown topic as streaming would be a stream nothing is tracking, and this
-    // client has no way to create one any more.
+    // An unknown topic has no row to resume with yet: nothing is marked streaming and nothing
+    // is asked of the hub until the row arrives.
     [Fact]
     public void RemoteStreamStarted_UnknownTopic_LeavesTheStreamingStateAlone()
     {
@@ -53,6 +53,44 @@ public sealed class StreamResumeEffectTests : IDisposable
 
         _streamingStore.State.StreamingTopics.ShouldNotContain("topic-1");
         _streamResumeService.ResumedTopicIds.ShouldBeEmpty();
+    }
+
+    // Another user wrote to a topic below this client's cursor: the push names a row not held,
+    // and the refresh the same push triggers upserts that row a moment later. The resume waits
+    // for the row instead of dying with the lookup, so the indicator and the live reply behave
+    // as they do for a loaded row.
+    [Fact]
+    public async Task RemoteStreamStarted_TopicNotYetLoaded_ResumesWhenItsRowArrives()
+    {
+        _dispatcher.Dispatch(new RemoteStreamStarted("topic-1"));
+        _streamResumeService.ResumedTopicIds.ShouldBeEmpty();
+
+        _dispatcher.Dispatch(new UpdateTopic(Topic("topic-1")));
+
+        await TestChat.Eventually(() => _streamResumeService.ResumedTopicIds.Contains("topic-1"));
+    }
+
+    [Fact]
+    public async Task RemoteStreamStarted_ARowCreatedMomentsLater_ResumesOnItsArrival()
+    {
+        _dispatcher.Dispatch(new RemoteStreamStarted("topic-1"));
+
+        _dispatcher.Dispatch(new AddTopic(Topic("topic-1")));
+
+        await TestChat.Eventually(() => _streamResumeService.ResumedTopicIds.Contains("topic-1"));
+    }
+
+    // The wait is settled by the first arrival; later copies of the row are ordinary upserts.
+    [Fact]
+    public async Task RemoteStreamStarted_TheRowArrivingTwice_ResumesOnce()
+    {
+        _dispatcher.Dispatch(new RemoteStreamStarted("topic-1"));
+        _dispatcher.Dispatch(new UpdateTopic(Topic("topic-1")));
+        await TestChat.Eventually(() => _streamResumeService.ResumedTopicIds.Contains("topic-1"));
+
+        _dispatcher.Dispatch(new UpdateTopic(Topic("topic-1")));
+
+        _streamResumeService.ResumedTopicIds.Count.ShouldBe(1);
     }
 
     // Two pushes back to back for one topic resume it once: the second finds the first still

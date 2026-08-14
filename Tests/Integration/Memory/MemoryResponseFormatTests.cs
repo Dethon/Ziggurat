@@ -172,7 +172,12 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
             Enum.IsDefined(decision.Action).ShouldBeTrue(
                 $"Action '{decision.Action}' should be a valid MergeAction");
             decision.SourceIds.ShouldNotBeEmpty("Each decision must reference source memory IDs");
-            decision.SourceIds.ShouldAllBe(id => memories.Any(m => m.Id == id),
+            // Without case, which is how the dreaming service places them: the model is given these
+            // ids and asked to repeat them, and it returns "Mem_3" for "mem_3" often enough to fail
+            // a run. That is the right memory named in the wrong shape, and holding this test to a
+            // stricter rule than the code it covers only reports a model's typing as a defect.
+            decision.SourceIds.ShouldAllBe(
+                id => memories.Any(m => string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase)),
                 "Source IDs should reference input memory IDs");
 
             if (decision.Action == MergeAction.Merge)

@@ -1,5 +1,6 @@
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
@@ -44,7 +45,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
         };
 
         _inbox = new ChannelInbox(_time);
-        _store = new AttachmentStore(_settings, _time, NullLogger<AttachmentStore>.Instance);
+        _store = new AttachmentStore(_settings, new RetentionSettings(), new FakeConversationLiveness(), _time, NullLogger<AttachmentStore>.Instance);
         _attachments = new AttachmentService(
             _settings,
             new AttachmentTickets(_settings, _time),
@@ -62,9 +63,11 @@ public sealed class ChatHubAttachmentTests : IDisposable
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            redisStateService: null!,
+            threadStore: null!,
             pushSubscriptionStore: null!,
             _attachments,
+            new Mock<IHubNotificationSender>().Object,
+            new RetentionSettings(),
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {

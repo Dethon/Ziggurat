@@ -1,5 +1,6 @@
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Hubs;
@@ -46,13 +47,15 @@ public sealed class ChatHubDictationTests : IDisposable
             approvalService: null!,
             new ChannelNotificationEmitter(new ChannelInbox(_time), DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            redisStateService: null!,
+            threadStore: null!,
             pushSubscriptionStore: null!,
             new AttachmentService(
                 _attachmentSettings,
                 _tickets,
-                new AttachmentStore(_attachmentSettings, _time, NullLogger<AttachmentStore>.Instance),
+                new AttachmentStore(_attachmentSettings, new RetentionSettings(), new FakeConversationLiveness(), _time, NullLogger<AttachmentStore>.Instance),
                 NullLogger<AttachmentService>.Instance),
+            new Mock<IHubNotificationSender>().Object,
+            new RetentionSettings(),
             _dictation,
             NullLogger<ChatHub>.Instance)
         {

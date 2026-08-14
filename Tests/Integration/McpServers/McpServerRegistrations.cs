@@ -175,8 +175,11 @@ public static class McpServerRegistrations
         Row("sandbox", "McpServerSandbox", McpServerRole.Tool,
             new SandboxSettings.McpSettings
             {
-                ContainerRoot = "/sandbox",
-                HomeDir = "/home/sandbox_user",
+                // A non-"/" root on purpose: the workspace the conformance test pins is derived
+                // relative to the configured root, and this pairing is the one a trimmed absolute
+                // HomeDir used to get wrong.
+                ContainerRoot = "/srv/jail",
+                HomeDir = "/srv/jail/home/sandbox_user",
                 DefaultTimeoutSeconds = 30,
                 MaxTimeoutSeconds = 300,
                 OutputCapBytes = 65536,

@@ -37,21 +37,35 @@
 
         <div class="hearth-search">
             <input class="hearth-search-input" type="search" placeholder="Search conversations"
-                   @bind="_search" @bind:event="oninput" @ref="_searchInput" aria-label="Search conversations" />
+                   value="@_search" @oninput="OnSearchInput" @ref="_searchInput"
+                   aria-label="Search conversations" />
+            <button class="hearth-archive-toggle @(_showingArchived ? "on" : "")"
+                    @onclick="ToggleArchived"
+                    aria-pressed="@_showingArchived"
+                    aria-label="Show archived conversations"
+                    data-tooltip="Archived">
+                <Icon Glyph="Icons.Archive" Size="18" />
+            </button>
             <AgentConfigMenu />
         </div>
 
         <div class="hearth-rows">
             @{
-                var rows = _topics
-                    .Where(t => t.AgentId == _selectedAgentId)
-                    .Where(t => string.IsNullOrWhiteSpace(_search) || t.Name.Contains(_search, StringComparison.OrdinalIgnoreCase))
-                    .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
-                    .ToList();
+                // No filter over what is loaded: the list is already the server's answer, and
+                // past the first page a local filter could only ever find the rows this client
+                // happened to hold.
+                var rows = _topics.Where(t => t.AgentId == _selectedAgentId).ToList();
             }
             @if (rows.Count == 0)
             {
-                <div class="no-topics"><span>No conversations yet</span></div>
+                @* No caption while the list's answer is on the wire: an empty list while
+                   loading is not a result. *@
+                @if (_emptyLabel is not null)
+                {
+                    <div class="no-topics">
+                        <span>@_emptyLabel</span>
+                    </div>
+                }
             }
             else
             {
@@ -73,19 +87,25 @@
                                     <div class="topic-unread-badge">@(unread > 99 ? "99+" : unread)</div>
                                 }
                             </div>
-                            <div class="topic-meta">@FormatTime(topic.LastMessageAt ?? topic.CreatedAt)</div>
-                            <div class="topic-preview">@PreviewFor(topic.TopicId)</div>
+                            <div class="topic-meta">@FormatTime(topic.LastWriteAt)</div>
+                            <div class="topic-preview">@topic.LastMessageSnippet</div>
                         </div>
                         @if (_deleteConfirmTopicId == topic.TopicId)
                         {
                             <div class="delete-confirm">
-                                <button class="confirm-delete-btn" @onclick="() => ConfirmDelete(topic)" @onclick:stopPropagation="true" aria-label="Confirm delete">&#10003;</button>
-                                <button class="cancel-delete-btn" @onclick="CancelDelete" @onclick:stopPropagation="true" aria-label="Cancel delete">&times;</button>
+                                <button class="confirm-delete-btn" @onclick="() => ConfirmDelete(topic)" @onclick:stopPropagation="true" aria-label="Confirm delete">
+                                    <Icon Glyph="Icons.Check" Size="16" />
+                                </button>
+                                <button class="cancel-delete-btn" @onclick="CancelDelete" @onclick:stopPropagation="true" aria-label="Cancel delete">
+                                    <Icon Glyph="Icons.Close" Size="16" />
+                                </button>
                             </div>
                         }
                         else
                         {
-                            <button class="delete-btn" @onclick="() => ShowDeleteConfirm(topic.TopicId)" @onclick:stopPropagation="true" aria-label="Delete conversation">&times;</button>
+                            <button class="delete-btn" @onclick="() => ShowDeleteConfirm(topic.TopicId)" @onclick:stopPropagation="true" aria-label="Delete conversation">
+                                <Icon Glyph="Icons.Close" Size="14" />
+                            </button>
                         }
                     </div>
                 }
@@ -112,7 +132,9 @@
     private IReadOnlySet<string> _activeAgentIds = new HashSet<string>();
 
     private string? _deleteConfirmTopicId;
+    private bool _showingArchived;
     private string _search = "";
+    private string? _emptyLabel;
     private Detent _detent = Detent.Peek;
 
     private ElementReference _peekBar;
@@ -125,16 +147,14 @@
         Subscribe(TopicsStore.StateObservable, s => s.SelectedTopicId, id => _selectedTopicId = id);
         Subscribe(TopicsStore.StateObservable, s => s.Agents, a => _agents = a);
         Subscribe(TopicsStore.StateObservable, s => s.SelectedAgentId, id => _selectedAgentId = id);
+        Subscribe(TopicsStore.StateObservable, s => s.ShowingArchived, on => _showingArchived = on);
+        // The box shows the store's query, not its own memory of it: switching agents clears
+        // the query in the store, and a box still showing the old word would caption the new
+        // agent's ordinary rows as a search.
+        Subscribe(TopicsStore.StateObservable, s => s.SearchQuery, q => _search = q);
+        Subscribe(TopicsStore.StateObservable, TopicListSelectors.EmptyLabel, label => _emptyLabel = label);
         Subscribe(StreamingStore.StateObservable, s => s.StreamingTopics, ids => _streamingTopics = ids);
-        Subscribe(MessagesStore.StateObservable,
-            s => UnreadSelectors.ComputeUnreadCounts(s, TopicsStore.State, StreamingStore.State),
-            c => _unreadCounts = c);
-        Subscribe(TopicsStore.StateObservable,
-            s => UnreadSelectors.ComputeUnreadCounts(MessagesStore.State, s, StreamingStore.State),
-            c => _unreadCounts = c);
-        Subscribe(StreamingStore.StateObservable,
-            s => UnreadSelectors.ComputeUnreadCounts(MessagesStore.State, TopicsStore.State, s),
-            c => _unreadCounts = c);
+        Subscribe(TopicsStore.StateObservable, UnreadSelectors.ComputeUnreadCounts, c => _unreadCounts = c);
         Subscribe(AgentActivityStore.StateObservable,
             s => AgentActivitySelectors.GetAgentsWithActivity(s, StreamingStore.State),
             ids => _activeAgentIds = ids);
@@ -145,16 +165,20 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        try
         {
-            _selfRef = DotNetObjectReference.Create(this);
-            try
+            if (firstRender)
             {
+                _selfRef = DotNetObjectReference.Create(this);
                 await Js.InvokeVoidAsync("hearthSheet.register", _peekBar, _selfRef);
                 await Js.InvokeVoidAsync("hearthSheet.registerCommandKey", _selfRef);
             }
-            catch (JSException) { /* gestures attach later when the JS lands */ }
+
+            // A list too short to scroll cannot reach its own bottom, so this is the only way a
+            // tall screen ever asks for the page after its first.
+            await Js.InvokeVoidAsync("hearthSheet.checkRows");
         }
+        catch (JSException) { /* gestures attach later when the JS lands */ }
     }
 
     [JSInvokable] public void CommitDetent(string detent)
@@ -162,6 +186,10 @@
         _detent = Enum.Parse<Detent>(detent, ignoreCase: true);
         StateHasChanged();
     }
+
+    // Scrolling to the bottom is the ask; whether there is anything left to fetch is the paging
+    // effect's answer, so this says only that the list ran out under the person's thumb.
+    [JSInvokable] public void ReachedEndOfList() => Dispatcher.Dispatch(new LoadMoreTopics());
 
     [JSInvokable] public async Task OpenSearch()
     {
@@ -184,14 +212,6 @@
     private bool IsTopicStreaming(string topicId) => _streamingTopics.Contains(topicId);
     private int AggregateUnread => _unreadCounts.Values.Sum();
 
-    private string PreviewFor(string topicId)
-    {
-        var msgs = MessagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []);
-        var last = msgs.LastOrDefault(m => !string.IsNullOrWhiteSpace(m.Content));
-        var text = last?.Content ?? "";
-        return text.Length > 80 ? text[..80] + "…" : text;
-    }
-
     private static string FormatTime(DateTime utc) => utc.ToLocalTime().ToString("MMM d, h:mm tt");
 
     private void HandleTopicClick(StoredTopic topic)
@@ -201,6 +221,16 @@
     }
 
     private void HandleNewTopic() => Dispatcher.Dispatch(new CreateNewTopic());
+
+    private void ToggleArchived() => Dispatcher.Dispatch(new ShowArchivedTopics(!_showingArchived));
+
+    // Every keystroke is dispatched; the paging effect owns the pause that turns a typed word
+    // into one hub call rather than one per letter.
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? "";
+        Dispatcher.Dispatch(new SearchTopics(_search));
+    }
     private void ShowDeleteConfirm(string topicId) => _deleteConfirmTopicId = topicId;
     private void CancelDelete() => _deleteConfirmTopicId = null;
 

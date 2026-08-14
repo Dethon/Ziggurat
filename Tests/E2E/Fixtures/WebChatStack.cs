@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Domain.DTOs.WebChat;
@@ -226,6 +227,7 @@ internal sealed class WebChatStack
             return;
         }
 
+        var stackElapsed = Stopwatch.StartNew();
         _network = TestContainers.Network()
             .WithName($"e2e-webchat-{Guid.NewGuid():N}")
             .Build();
@@ -236,13 +238,13 @@ internal sealed class WebChatStack
         var agentImageName = E2EImages.Agent.ImageName;
         var webuiImageName = E2EImages.WebUi.ImageName;
 
-        // Plain redis rather than redis-stack. The stack image carries RediSearch and RedisJSON and
-        // takes several seconds longer to come up, and this stack asks for neither: the injected
-        // agent settings configure no memory, so nothing here builds an index or stores a document.
-        // It was the longest of the three roots and so the first thing the whole E2E chain waited
-        // on — swapping it took the stack's boot from 27.7s to 14.0s and the E2E suite from 76s to
-        // 61s. Restore the stack image the moment this stack grows a memory feature.
-        _redis = TestContainers.Container("redis:7-alpine")
+        // The stack image, not plain redis: topic search indexes through RediSearch, and on a
+        // redis without it the search path degrades to empty results — a stack on plain redis
+        // would pass E2E while exercising the fallback instead of the feature. The slower boot
+        // this image costs was once traded away (27.7s to 14.0s) when nothing here indexed
+        // anything; that stopped being true when the chat channel started writing search
+        // documents.
+        _redis = TestContainers.Container("redis/redis-stack-server:latest")
             .WithName($"redis-{Guid.NewGuid():N}")
             .WithNetwork(_network)
             .WithNetworkAliases("redis")
@@ -262,7 +264,10 @@ internal sealed class WebChatStack
         // are roots of the graph and the whisper stub runs in this process. Starting them in a line
         // spent each one's wait doing nothing, and redis alone is the longest of the three.
         var whisperPortTask = StartWhisperStubAsync();
-        await Task.WhenAll(_redis.StartAsync(ct), _mcpVault.StartAsync(ct), whisperPortTask);
+        await Task.WhenAll(
+            E2ETrace.TimeAsync("start:redis", () => _redis.StartAsync(ct)),
+            E2ETrace.TimeAsync("start:vault", () => _mcpVault.StartAsync(ct)),
+            whisperPortTask);
         var whisperPort = await whisperPortTask;
 
         _mcpChannelSignalR = TestContainers.Container(signalRImageName)
@@ -276,6 +281,9 @@ internal sealed class WebChatStack
             .WithEnvironment(
                 "DICTATION__TRANSCRIPTION__BASEURL", $"http://host.docker.internal:{whisperPort}/v1")
             .WithEnvironment("DICTATION__MAXLENGTH", RecordingCap.ToString())
+            // One row a page, so a suite that can afford two conversations still exercises the
+            // second fetch. The production default is thirty and lives in appsettings.
+            .WithEnvironment("RETENTION__PAGESIZE", "1")
             .WithEnvironment("AGENTS__0__ID", "test-agent")
             .WithEnvironment("AGENTS__0__NAME", "Test Agent")
             .WithEnvironment("AGENTS__1__ID", "vision-agent")
@@ -288,7 +296,7 @@ internal sealed class WebChatStack
                     .ForPath("/hubs/chat/negotiate")
                     .WithMethod(HttpMethod.Post)))
             .Build();
-        await _mcpChannelSignalR.StartAsync(ct);
+        await E2ETrace.TimeAsync("start:signalr", () => _mcpChannelSignalR.StartAsync(ct));
 
         // Inject a minimal appsettings.json so the agent only connects to E2E services.
         // Raise with E2E_AGENT_LOG_LEVEL=Debug when a failing run needs the agent's own account
@@ -377,8 +385,13 @@ internal sealed class WebChatStack
 
         // The webui serves files and reaches nothing, so it never had to follow the agent — and the
         // agent's wait is for a log line the webui cannot affect. Caddy is what needs them both,
-        // and it is next.
-        await Task.WhenAll(_agent.StartAsync(ct), _webui.StartAsync(ct));
+        // and it is next. Starting it beside them saves its own boot and was tried: it also puts
+        // three container starts into the same window as every other fixture's, and the host answers
+        // that by timing one of them out somewhere else in the suite — two runs in four lost the
+        // Jackett and library-server fixtures to it. Three seconds is not worth buying with that.
+        await Task.WhenAll(
+            E2ETrace.TimeAsync("start:agent", () => _agent.StartAsync(ct)),
+            E2ETrace.TimeAsync("start:webui", () => _webui.StartAsync(ct)));
 
         var testCaddyfile =
             ":80 {\n" +
@@ -413,7 +426,7 @@ internal sealed class WebChatStack
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(80).ForPath("/manifest.webmanifest")))
             .Build();
-        await _caddy.StartAsync(ct);
+        await E2ETrace.TimeAsync("start:caddy", () => _caddy.StartAsync(ct));
 
         var host = _caddy.Hostname;
         var port = _caddy.GetMappedPublicPort(80);
@@ -441,6 +454,7 @@ internal sealed class WebChatStack
             await Task.Delay(1_000, ct);
         }
 
+        E2ETrace.Write("start:total", stackElapsed.Elapsed.TotalSeconds);
         WebChatUrl = $"{baseUrl}/";
     }
 

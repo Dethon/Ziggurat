@@ -36,12 +36,11 @@ public class VfsVirtualPathConformanceTests
         };
 
     // The fields that genuinely have no virtual path, listed where the rule is enforced so that an
-    // exemption is a decision rather than an oversight. There are two.
+    // exemption is a decision rather than an oversight. There is one. The exec working directory
+    // used to be the other: a backend answers it relative to its own root, so the mount point goes
+    // in front of it like any other path the caller never named.
     private static readonly IReadOnlyList<Exemption> _exemptions =
     [
-        new("cwd", [VfsExecTool.Key],
-            "The working directory a backend reports is its own — four backends fill it with four "
-            + "different meanings, and no mount can claim it."),
         new("error", [VfsCopyTool.Key, VfsMoveTool.Key],
             "A glob entry outside the requested source directory is outside the coordinate frame, so "
             + "it has no virtual path. The entry reports no source at all and the backend's raw "

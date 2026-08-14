@@ -23,7 +23,7 @@ New configuration lives in `appsettings.json` / `appsettings.Development.json` b
 - **Secrets** (API keys, connection strings, credentials) — placeholder entry in `DockerCompose/.env` (never a real value), wired into `docker-compose.yml` as `${VAR_NAME}`.
 - **Non-generic parameters** — inherently per-deployment values (a satellite's host IP, a topology-dependent URL) — a `docker-compose.yml` environment entry (placeholder like `changeme` where there's no safe default).
 
-A new generic tunable (threshold, window, feature flag) belongs in `appsettings.json` **alone**. When adding code that reads a new setting, update whichever category applies in the same change.
+A new generic tunable (threshold, window, feature flag) belongs in `appsettings.json` **alone** — unless several hosts must agree on its value, in which case it belongs in a **shared policy file**: one file shipped beside its settings type in `Domain`, copied into every referencing host's output, and read after each host's `appsettings.json` and before environment variables, so a host cannot quietly disagree while a single container can still be overridden. `Domain/retention.json` (`RetentionSettings`) is the pattern to copy. When adding code that reads a new setting, update whichever category applies in the same change.
 
 ## Multi-Agent Patterns
 

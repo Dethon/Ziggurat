@@ -1,0 +1,19 @@
+@* The one place an icon's wrapper is written out. Every component names a glyph from Icons.cs and
+   gets the same viewBox, fill and aria-hidden, so forgetting one of them is no longer possible.
+   The label belongs to the control, never here. *@
+<svg class="@Class"
+     viewBox="@Glyph.ViewBox"
+     width="@Size"
+     height="@Size"
+     fill="currentColor"
+     aria-hidden="true">@((MarkupString)Glyph.Body)</svg>
+
+@code {
+    [Parameter, EditorRequired] public IconGlyph Glyph { get; set; } = default!;
+
+    // Null leaves the size to CSS, which is how the sort arrow and the tick are drawn: both follow
+    // the text they sit in rather than a number written at the call site.
+    [Parameter] public string? Size { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+}

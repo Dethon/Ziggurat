@@ -11,7 +11,6 @@ public class BashRunnerTests
     private readonly BashRunnerOptions _settings = new()
     {
         ContainerRoot = "/",
-        HomeDir = "/tmp",
         DefaultTimeoutSeconds = 2,
         MaxTimeoutSeconds = 3,
         OutputCapBytes = 1024
@@ -49,26 +48,90 @@ public class BashRunnerTests
     }
 
     [SkippableFact]
-    public async Task RunAsync_EmptyPath_UsesHomeDirAsCwd()
+    public async Task RunAsync_EmptyPath_UsesContainerRootAsCwd()
     {
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
         var result = (await runner.RunAsync("", "pwd", null, CancellationToken.None)).ToNode();
 
-        result["stdout"]!.GetValue<string>().Trim().ShouldBe("/tmp");
-        result["cwd"]!.GetValue<string>().ShouldBe("/tmp");
+        result["stdout"]!.GetValue<string>().Trim().ShouldBe("/");
     }
 
     [SkippableFact]
-    public async Task RunAsync_DotPath_UsesHomeDirAsCwd()
+    public async Task RunAsync_DotPath_UsesContainerRootAsCwd()
     {
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
         var result = (await runner.RunAsync(".", "pwd", null, CancellationToken.None)).ToNode();
 
-        result["stdout"]!.GetValue<string>().Trim().ShouldBe("/tmp");
+        result["stdout"]!.GetValue<string>().Trim().ShouldBe("/");
+    }
+
+    // The reported working directory is the runner's half of the coordinate contract: it answers
+    // relative to the root it was configured with, and the exec tool puts the mount point in front.
+    // Asserted against a root that is not "/" — with the production root, every path is already
+    // root-relative by accident and this would prove nothing.
+    [SkippableFact]
+    public async Task RunAsync_ReportsCwdRelativeToItsOwnContainerRoot()
+    {
+        SkipIfNotLinux();
+        using var root = new TempRoot();
+        Directory.CreateDirectory(Path.Combine(root.Path, "work"));
+        var runner = new BashRunner(root.Options);
+
+        var result = (await runner.RunAsync("work", "pwd", null, CancellationToken.None)).ToNode();
+
+        result["cwd"]!.GetValue<string>().ShouldBe("work");
+        result["stdout"]!.GetValue<string>().Trim().ShouldBe(Path.Combine(root.Path, "work"));
+    }
+
+    // The root round-trips as the empty path, which is what the mount point with a trailing slash
+    // means once it is prefixed.
+    [SkippableFact]
+    public async Task RunAsync_AtTheContainerRoot_ReportsTheEmptyPath()
+    {
+        SkipIfNotLinux();
+        using var root = new TempRoot();
+        var runner = new BashRunner(root.Options);
+
+        var result = (await runner.RunAsync("", "pwd", null, CancellationToken.None)).ToNode();
+
+        result["cwd"]!.GetValue<string>().ShouldBe("");
+        result["stdout"]!.GetValue<string>().Trim().ShouldBe(root.Path);
+    }
+
+    // An absolute path is a path under the root like any other. Taking it verbatim let a working
+    // directory leave the mount the response is expressed in.
+    [SkippableFact]
+    public async Task RunAsync_AbsolutePath_ResolvesUnderTheContainerRoot()
+    {
+        SkipIfNotLinux();
+        using var root = new TempRoot();
+        Directory.CreateDirectory(Path.Combine(root.Path, "work"));
+        var runner = new BashRunner(root.Options);
+
+        var result = (await runner.RunAsync("/work", "pwd", null, CancellationToken.None)).ToNode();
+
+        result["cwd"]!.GetValue<string>().ShouldBe("work");
+        result["stdout"]!.GetValue<string>().Trim().ShouldBe(Path.Combine(root.Path, "work"));
+    }
+
+    // Traversal cannot buy what an absolute path no longer buys — and it is refused rather than
+    // redirected, because answering for the root would report a directory nobody asked for.
+    [SkippableFact]
+    public async Task RunAsync_PathClimbingOutOfTheRoot_IsRefused()
+    {
+        SkipIfNotLinux();
+        using var root = new TempRoot();
+        var runner = new BashRunner(root.Options);
+
+        var result = (await runner.RunAsync("../../etc", "pwd", null, CancellationToken.None)).ToNode();
+
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        result["message"]!.GetValue<string>().ShouldContain(root.Path);
     }
 
     [SkippableFact]
@@ -226,4 +289,37 @@ public class BashRunnerTests
     // stack trace. The full name (not just "BashRunner") avoids matching this test class.
     private static bool IsFromBashRunner(Exception ex) =>
         ex.StackTrace?.Contains(typeof(BashRunner).FullName!, StringComparison.Ordinal) ?? false;
+
+    // A container root that is not "/", so the difference between the runner's own coordinates and
+    // the machine's is visible at all.
+    private sealed class TempRoot : IDisposable
+    {
+        public TempRoot()
+        {
+            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"bash-root-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(Path);
+        }
+
+        public string Path { get; }
+
+        public BashRunnerOptions Options => new()
+        {
+            ContainerRoot = Path,
+            DefaultTimeoutSeconds = 2,
+            MaxTimeoutSeconds = 3,
+            OutputCapBytes = 1024
+        };
+
+        public void Dispose()
+        {
+            try
+            {
+                Directory.Delete(Path, true);
+            }
+            catch
+            {
+                // A temp directory that outlives the run is not a test failure.
+            }
+        }
+    }
 }

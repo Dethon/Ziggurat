@@ -1,0 +1,28 @@
+@* The one place an icon's wrapper is written out. Every component names a glyph from Icons.cs and
+   gets the same viewBox handling, the same fill-or-stroke decision and the same aria-hidden, so
+   forgetting one of them is no longer possible. The label belongs to the control, never here. *@
+<svg class="@Class"
+     viewBox="@Glyph.ViewBox"
+     width="@Size"
+     height="@Size"
+     fill="@(Stroked ? "none" : "currentColor")"
+     stroke="@(Stroked ? "currentColor" : null)"
+     stroke-width="@StrokeWidth"
+     stroke-linecap="@(Stroked ? "round" : null)"
+     stroke-linejoin="@(Stroked ? "round" : null)"
+     aria-hidden="true">@((MarkupString)Glyph.Body)</svg>
+
+@code {
+    [Parameter, EditorRequired] public IconGlyph Glyph { get; set; } = default!;
+
+    // Null leaves the size to CSS, which is how the empty state's illustration and the toast's
+    // cross were already drawn.
+    [Parameter] public string? Size { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private bool Stroked => Glyph.StrokeWidth is not null;
+
+    private string? StrokeWidth =>
+        Glyph.StrokeWidth?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+}

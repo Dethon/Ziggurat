@@ -150,6 +150,36 @@ conversation someone can open, so a scheduled task fires under the conversation 
 delivered into and not under the schedule.
 _Avoid_: conversation id, target conversation, delivery key
 
+**Topic**:
+The lasting record of one conversation: what it is called, when it began, when it was
+last written to, and how much of it has been read. It is what a row in the chat client
+is, and it is what everything about retention acts on. A conversation group is its
+runtime counterpart and never outlives the process, so a topic outlives every group that
+ever ran on it.
+_Avoid_: conversation, thread, chat, session
+
+## Topic lifecycle
+
+**Topic index**:
+The ordered record of a space's topics, most recently written first. It decides what the
+list shows, where a page ends and which topics are archived, and it is the only way the
+list is ever read — a topic missing from it does not exist to anyone looking.
+_Avoid_: topic list, recency index, sorted set
+
+**Archived**:
+Where a topic sits in the index rather than something it has been told. A topic is
+archived once its last write is old enough, so nothing marks it and nothing unmarks it:
+writing to it makes it current again in the same act. It stays whole and readable, and
+being archived costs the ordinary list nothing.
+_Avoid_: archive flag, hidden, soft delete, inactive
+
+**Purge**:
+A topic ceasing to exist because nothing wrote to it for long enough. It is never a
+decision taken about a particular topic and leaves no record behind, and it takes
+everything belonging to that topic at once: its history, what it is searched by, and the
+files sent to it.
+_Avoid_: delete, expire, cleanup, retention sweep
+
 ## Chat streaming
 
 **Topic stream** (chat client only):
@@ -194,6 +224,12 @@ and never on the way in. It reaches back a fixed distance, so an attachment stop
 being visible to the model long before its reference leaves the history. A reference
 whose bytes are gone hydrates to a placeholder naming the file.
 _Avoid_: rehydration, inlining, resolving, expansion
+
+**Landing**:
+Putting an attachment into a sandbox as a real file, so the model can run something against it
+rather than only look at it. It happens once, on the way in, and only where the agent has a
+mount with a workspace; an attachment that cannot be landed is still what the person said.
+_Avoid_: copying, staging, syncing, saving
 
 **Attachment capability**:
 Whether a model accepts a kind of attachment at all. It belongs to the model and not
@@ -433,6 +469,12 @@ one operation with one answer, and it is not a backend's native copy or move: th
 inside one mount, while a transfer may span two, recurse a directory and report what
 happened to each entry.
 _Avoid_: copy, move, cross-mount copy, file operation
+
+**Workspace**:
+The one directory under a mount where a file put there stays there. It is a claim the mount
+makes about itself rather than something a caller finds by trying, and most mounts have none —
+having one says the mount is somewhere work can be done, not merely read.
+_Avoid_: home directory, writable root, scratch space
 
 ## Media library
 

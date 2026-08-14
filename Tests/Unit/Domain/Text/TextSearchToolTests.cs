@@ -233,6 +233,194 @@ public class TextSearchToolTests : IDisposable
         result["results"]!.AsArray()[0]!["file"]!.ToString().ShouldBe("docs/guide.md");
     }
 
+    // A file pattern that excludes everything still walks the tree, and on the sandbox mount that
+    // tree is the whole container. The budget is lowered rather than met: twenty files prove what
+    // fifty thousand would, and cost nothing to build.
+    [Fact]
+    public void Run_FilePatternMatchingNothing_StopsAtTheEntriesBudgetAndSaysSo()
+    {
+        CreateManyFiles(20);
+        var tool = new TestableTextSearchTool(_testDir, [".md"], scanBudget: 5);
+
+        var result = tool.TestRun("kubernetes", filePattern: "*.pdf");
+
+        result["budgetReached"]!.GetValue<bool>().ShouldBeTrue();
+        result["entriesScanned"]!.GetValue<int>().ShouldBe(5);
+        result["filesSearched"]!.GetValue<int>().ShouldBe(0);
+    }
+
+    [Fact]
+    public void Run_ContentMatchingNothing_StopsAtTheFilesReadBudgetAndSaysSo()
+    {
+        CreateManyFiles(20);
+        var tool = new TestableTextSearchTool(_testDir, [".md"], readBudget: 3);
+
+        var result = tool.TestRun("nothing-here");
+
+        result["budgetReached"]!.GetValue<bool>().ShouldBeTrue();
+        result["filesSearched"]!.GetValue<int>().ShouldBe(3);
+        result["truncated"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    // A tree that happens to end on the budget was covered in full, which is a different answer
+    // from a budget that cut the walk short.
+    [Fact]
+    public void Run_ATreeEndingExactlyOnABudget_ReportsFullCoverage()
+    {
+        CreateManyFiles(3);
+        var tool = new TestableTextSearchTool(_testDir, [".md"], scanBudget: 3, readBudget: 3);
+
+        var result = tool.TestRun("kubernetes");
+
+        result["budgetReached"]!.GetValue<bool>().ShouldBeFalse();
+        result["filesSearched"]!.GetValue<int>().ShouldBe(3);
+        result["entriesScanned"]!.GetValue<int>().ShouldBe(3);
+    }
+
+    // Truncation and the coverage flag answer different questions: this search found everything it
+    // was asked for without running out of tree.
+    [Fact]
+    public void Run_SearchThatFinishesTheTree_ReportsNeitherBudgetReached()
+    {
+        CreateTestFile("doc.md", "kubernetes");
+
+        var result = _tool.TestRun("kubernetes");
+
+        result["budgetReached"]!.GetValue<bool>().ShouldBeFalse();
+        result["entriesScanned"]!.GetValue<int>().ShouldBe(1);
+    }
+
+    [Fact]
+    public void Run_ASingleNamedFile_WalksNothingAndIsNeverBounded()
+    {
+        CreateManyFiles(20);
+        var tool = new TestableTextSearchTool(_testDir, [".md"], scanBudget: 1, readBudget: 1);
+
+        var result = tool.TestRun("kubernetes", filePath: Path.Combine(_testDir, "file01.md"));
+
+        result["filesSearched"]!.GetValue<int>().ShouldBe(1);
+        result["totalMatches"]!.GetValue<int>().ShouldBe(1);
+        result["budgetReached"]!.GetValue<bool>().ShouldBeFalse();
+        result["entriesScanned"]!.GetValue<int>().ShouldBe(0);
+    }
+
+    [Fact]
+    public void Run_CancelledPartWayThroughTheWalk_EndsAsAnAbort()
+    {
+        CreateManyFiles(20);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Should.Throw<OperationCanceledException>(() => _tool.TestRun("kubernetes", cancellationToken: cts.Token));
+    }
+
+    // The single-file path walks nothing, so the walk's own between-entries check never runs — the
+    // line loop is the only place a cancelled caller can be honoured, and a multi-hundred-MB file
+    // is exactly where honouring it matters.
+    [Fact]
+    public void Run_CancelledSingleFileSearch_EndsAsAnAbortRatherThanACompletedResult()
+    {
+        CreateTestFile("target.md", "kubernetes here");
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Should.Throw<OperationCanceledException>(() => _tool.TestRun(
+            "kubernetes", filePath: Path.Combine(_testDir, "target.md"), cancellationToken: cts.Token));
+    }
+
+    // The shape the sandbox mount's alias has. Without the reparse-point skip the walk never ends,
+    // and nothing else about the result would look wrong.
+    [Fact]
+    public void Run_ALinkPointingAtItsOwnAncestor_IsNeitherSearchedNorEntered()
+    {
+        CreateTestFile("real.md", "kubernetes real");
+        Directory.CreateSymbolicLink(Path.Combine(_testDir, "self"), _testDir);
+
+        var result = _tool.TestRun("kubernetes");
+
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(1);
+        result["entriesScanned"]!.GetValue<int>().ShouldBe(1);
+    }
+
+    // The large log is usually the file the search was for, so it is read rather than skipped — and
+    // reading it holds only what a match needs. Under a whole-file read this file costs half a
+    // gigabyte of live strings; the ceiling below is far above what streaming needs and far below
+    // that.
+    [Fact]
+    public async Task Run_AFileFarLargerThanMemory_ReturnsItsMatchesWithoutHoldingIt()
+    {
+        const int lineLength = 16 * 1024;
+        const int lineCount = 16 * 1024;
+        WriteHugeFile("huge.md", lineLength, lineCount, "kubernetes on the last line");
+
+        var baseline = GC.GetTotalMemory(forceFullCollection: true);
+        using var sampling = new CancellationTokenSource();
+        // The peak comes back as the sampler's result rather than through a shared field, so the
+        // assertion reads a value the task handed it rather than one another thread is writing.
+        //
+        // Every sample collects first. An uncollected reading counts garbage as well as what is
+        // held, and the heap it reads is the whole suite's — streaming a quarter-gigabyte file
+        // through it churns far more than this ceiling, so sampled that way the number is a gen0
+        // budget shared with 23 other threads rather than a retention. A whole-file read survives
+        // the collection, which is what this is here to catch.
+        var sampler = Task.Run(
+            async () =>
+            {
+                var seen = baseline;
+                while (!sampling.IsCancellationRequested)
+                {
+                    seen = Math.Max(seen, GC.GetTotalMemory(forceFullCollection: true));
+                    await Task.Delay(25, CancellationToken.None);
+                }
+
+                return seen;
+            },
+            CancellationToken.None);
+
+        var result = _tool.TestRun("kubernetes", contextLines: 1);
+
+        await sampling.CancelAsync();
+        var peak = await sampler;
+
+        result["totalMatches"]!.GetValue<int>().ShouldBe(1);
+        var match = result["results"]!.AsArray()[0]!["matches"]!.AsArray()[0]!;
+        match["line"]!.GetValue<int>().ShouldBe(lineCount);
+        match["text"]!.ToString().ShouldStartWith("kubernetes on the last line");
+        match["context"]!["before"]!.AsArray().Count.ShouldBe(1);
+        // The heap this reads is the whole suite's, and only the peak is a maximum over the seven
+        // seconds the search takes — the baseline is a single instant. So every megabyte a sibling
+        // holds live during those seconds lands on this side of the subtraction and nothing takes it
+        // off again: at full width the difference reached 28MB against a 16MB ceiling and failed
+        // three runs in eight, on a search that holds kilobytes. Streaming and a whole-file read are
+        // four hundred megabytes apart, so the ceiling has room to sit clear of that noise and still
+        // fail on the read this exists to catch.
+        (peak - baseline).ShouldBeLessThan(128L * 1024 * 1024);
+    }
+
+    // Apparent size without the write cost: the body is a hole, and only the newline ending each
+    // line is written. What the search reads is the full length either way.
+    private void WriteHugeFile(string name, int lineLength, int lineCount, string lastLine)
+    {
+        using var stream = new FileStream(Path.Combine(_testDir, name), FileMode.Create, FileAccess.Write);
+        stream.SetLength((long)lineLength * lineCount);
+        foreach (var line in Enumerable.Range(1, lineCount))
+        {
+            stream.Position = (long)lineLength * line - 1;
+            stream.WriteByte((byte)'\n');
+        }
+
+        stream.Position = (long)lineLength * (lineCount - 1);
+        stream.Write(System.Text.Encoding.UTF8.GetBytes(lastLine));
+    }
+
+    private void CreateManyFiles(int count)
+    {
+        foreach (var i in Enumerable.Range(1, count))
+        {
+            CreateTestFile($"file{i:D2}.md", "kubernetes");
+        }
+    }
+
     private void CreateTestFile(string relativePath, string content)
     {
         var fullPath = Path.Combine(_testDir, relativePath);
@@ -245,9 +433,17 @@ public class TextSearchToolTests : IDisposable
         File.WriteAllText(fullPath, content);
     }
 
-    private class TestableTextSearchTool(string vaultPath, string[] allowedExtensions)
+    private class TestableTextSearchTool(
+        string vaultPath,
+        string[] allowedExtensions,
+        int? scanBudget = null,
+        int? readBudget = null)
         : TextSearchTool(vaultPath, allowedExtensions)
     {
+        protected override int ScanBudget => scanBudget ?? base.ScanBudget;
+
+        protected override int ReadBudget => readBudget ?? base.ReadBudget;
+
         public JsonNode TestRun(
             string query,
             bool regex = false,
@@ -256,9 +452,11 @@ public class TextSearchToolTests : IDisposable
             string directoryPath = "/",
             int maxResults = 50,
             int contextLines = 1,
-            VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content)
+            VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content,
+            CancellationToken cancellationToken = default)
         {
-            return Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines, outputMode).ToNode();
+            return Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines,
+                outputMode, cancellationToken).ToNode();
         }
     }
 }

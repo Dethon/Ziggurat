@@ -48,7 +48,6 @@ public sealed class AgentSelectionEffectTests : IDisposable
             _localStorage,
             _topicService,
             _streamResumeService,
-            _streamingStore,
             _spaceStore,
             _logger);
     }
@@ -76,7 +75,10 @@ public sealed class AgentSelectionEffectTests : IDisposable
         _sessionService.Verify(s => s.ClearSession(), Times.Once);
         _localStorage.Values["selectedAgentId"].ShouldBe("agent-2");
         _topicsStore.State.Topics.Single().TopicId.ShouldBe("topic-2");
-        _messagesStore.State.MessagesByTopic["topic-2"].Single().Content.ShouldBe("hello");
+
+        // Switching agent costs one page of rows and nothing per conversation.
+        _messagesStore.State.MessagesByTopic.ShouldBeEmpty();
+        _calls.Calls.ShouldNotContain(call => call.StartsWith("history:"));
     }
 
     [Fact]
@@ -106,12 +108,15 @@ public sealed class AgentSelectionEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task HandleAgentChangedAsync_TopicIsMidStream_KeepsItsLocalMessagesAndResumes()
+    // Which replies are in flight comes with the page now, so the switch resumes what the
+    // server named and asks about nothing else.
+    public async Task HandleAgentChangedAsync_TopicIsMidStream_ResumesItAndReadsNoHistory()
     {
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
         _topicService.SeedTopic(TestChat.Topic("topic-2", chatId: 11, threadId: 21, agentId: "agent-2"));
+        _topicService.SeedTopic(TestChat.Topic("topic-3", chatId: 12, threadId: 22, agentId: "agent-2"));
         _topicService.SetHistory(11, 21, TestChat.HistoryMessage("m-1", "from the server"));
-        _dispatcher.Dispatch(new StreamStarted("topic-2"));
+        _topicService.LiveTopicIds.Add("topic-2");
         _calls.Reset();
 
         await _effect.HandleAgentChangedAsync("agent-2");

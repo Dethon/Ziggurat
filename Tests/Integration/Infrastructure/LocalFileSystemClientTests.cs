@@ -31,6 +31,19 @@ public class LocalFileSystemClientTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    // The client answers a lazy walk; the scenarios assert over the whole of it, sorted the way
+    // the tool that consumes it sorts.
+    private async Task<string[]> Glob(string pattern, CancellationToken ct = default)
+    {
+        var hits = new List<string>();
+        await foreach (var hit in _client.Glob(_testDir, pattern, ct).Matches.WithCancellation(ct))
+        {
+            hits.Add(hit);
+        }
+
+        return hits.Order(StringComparer.Ordinal).ToArray();
+    }
+
     private async Task BuildTempTree(string[] setupFiles)
     {
         foreach (var entry in setupFiles)
@@ -156,6 +169,124 @@ public class LocalFileSystemClientTests : IDisposable
                 "*.pdf",
                 (hits, _) => hits.ShouldBeEmpty())
         },
+        // The edges below are the ones most at risk when the matcher underneath changes, so they
+        // pin what ships rather than what the descriptions promise.
+        new object[]
+        {
+            new GlobScenario(
+                "Dotfile_MatchesALeadingWildcard",
+                [".hidden.txt", "visible.txt"],
+                "*.txt",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(2);
+                    hits.ShouldContain(h => h.EndsWith(".hidden.txt"));
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "BaseLevelPattern_DoesNotReachNestedFiles",
+                ["root.txt", "sub/nested.txt"],
+                "*.txt",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(1);
+                    hits[0].ShouldEndWith("root.txt");
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "RecursiveSegment_MatchesZeroSegments",
+                ["root.txt", "sub/root.txt"],
+                "**/root.txt",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(2);
+                    hits.ShouldContain(h => h.EndsWith($"{Path.DirectorySeparatorChar}root.txt")
+                                            && !h.Contains("sub"));
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "RecursiveSegment_MatchesManySegments",
+                ["a/b/c/deep.txt"],
+                "**/deep.txt",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(1);
+                    hits[0].ShouldEndWith("deep.txt");
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "BareRecursiveWildcard_MatchesEveryDepth",
+                ["root.txt", "sub/nested.txt"],
+                "**",
+                (hits, _) =>
+                {
+                    hits.ShouldContain(h => h.EndsWith("root.txt"));
+                    hits.ShouldContain(h => h.EndsWith("nested.txt"));
+                    hits.ShouldContain(h => h.EndsWith("sub/"));
+                })
+        },
+        // The one place the shared matcher does not agree with the batch matcher it replaced, and
+        // the only behaviour this swap changes: `?` was a literal on the disk roots, which every
+        // glob description has always contradicted. It now matches one character, everywhere.
+        new object[]
+        {
+            new GlobScenario(
+                "SingleCharacterWildcard_MatchesExactlyOneCharacter",
+                ["a1.txt", "a12.txt"],
+                "a?.txt",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(1);
+                    hits[0].ShouldEndWith("a1.txt");
+                })
+        },
+        // The disk matcher has always matched case-insensitively, which is what makes `*.jpg` find
+        // a camera's `.JPG`. Pinned here because the shared matcher is case-sensitive by default.
+        new object[]
+        {
+            new GlobScenario(
+                "PatternCase_IsIgnored",
+                ["movie.MKV"],
+                "*.mkv",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(1);
+                    hits[0].ShouldEndWith("movie.MKV");
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "TrailingSlashOnARecursivePattern_MatchesNestedDirsOnly",
+                ["movies/action/film.mkv", "todo.md"],
+                "movies/**/",
+                (hits, _) =>
+                {
+                    hits.ShouldAllBe(h => h.EndsWith("/"));
+                    hits.ShouldContain(h => h.EndsWith("action/"));
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "BraceAlternationOverDirectories_MatchesEachAlternative",
+                ["books/a.epub", "movies/b.mkv", "music/c.flac"],
+                "{books,movies}/*",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(2);
+                    hits.ShouldContain(h => h.EndsWith("a.epub"));
+                    hits.ShouldContain(h => h.EndsWith("b.mkv"));
+                })
+        },
         new object[]
         {
             new GlobScenario(
@@ -172,7 +303,7 @@ public class LocalFileSystemClientTests : IDisposable
     {
         await BuildTempTree(scenario.SetupFiles);
 
-        var hits = await _client.Glob(_testDir, scenario.Pattern);
+        var hits = await Glob(scenario.Pattern);
 
         scenario.AssertResult(hits, _testDir);
     }
@@ -418,7 +549,7 @@ public class LocalFileSystemClientTests : IDisposable
             Directory.CreateSymbolicLink(Path.Combine(_testDir, "linkdir"), outside);
             File.CreateSymbolicLink(Path.Combine(_testDir, "link.txt"), Path.Combine(outside, "secret.txt"));
 
-            var hits = await _client.Glob(_testDir, "**/*");
+            var hits = await Glob("**/*");
 
             hits.ShouldContain(h => h.EndsWith("real.txt"));
             hits.ShouldNotContain(h => h.Contains("linkdir"));
@@ -429,6 +560,117 @@ public class LocalFileSystemClientTests : IDisposable
         {
             Directory.Delete(outside, true);
         }
+    }
+
+    // The shape the sandbox mount's alias has: a link at the root of the tree pointing at that same
+    // root. Nothing fails loudly when the reparse-point skip is dropped — the walk keeps returning
+    // plausible entries and simply never ends — so this case is what protects the guard.
+    [Fact]
+    public async Task Glob_ALinkPointingAtItsOwnAncestor_IsNeitherListedNorEntered()
+    {
+        await BuildTempTree(["real.txt", "sub/nested.txt"]);
+        Directory.CreateSymbolicLink(Path.Combine(_testDir, "self"), _testDir);
+
+        var walk = _client.Glob(_testDir, "**/*");
+        var hits = new List<string>();
+        await foreach (var hit in walk.Matches)
+        {
+            hits.Add(hit);
+        }
+
+        hits.Count.ShouldBe(3);
+        hits.ShouldContain(h => h.EndsWith("real.txt"));
+        hits.ShouldContain(h => h.EndsWith("nested.txt"));
+        hits.ShouldContain(h => h.EndsWith("sub/"));
+        hits.ShouldNotContain(h => h.Contains("self"));
+        // Reparse points are filtered out before the walk surfaces them, so it counts only the
+        // three real entries — and nothing beneath the link, which is what entering it would
+        // have produced.
+        walk.EntriesScanned.ShouldBe(3);
+        walk.BudgetReached.ShouldBeFalse();
+    }
+
+    // The budget cutting a walk short and a tree that happens to end on the budget are different
+    // answers, and only the first is reduced coverage.
+    [Fact]
+    public async Task Glob_ATreeEndingExactlyOnTheScanBudget_ReportsFullCoverage()
+    {
+        await BuildTempTree(["a.txt", "b.txt", "c.txt"]);
+        var client = new BoundedClient(scanBudget: 3);
+
+        var walk = client.Glob(_testDir, "**/*");
+        var hits = new List<string>();
+        await foreach (var hit in walk.Matches)
+        {
+            hits.Add(hit);
+        }
+
+        hits.Count.ShouldBe(3);
+        walk.EntriesScanned.ShouldBe(3);
+        walk.BudgetReached.ShouldBeFalse();
+    }
+
+    // A broad pattern over a large tree costs what the caller consumes, not what the tree holds:
+    // the walk is still where it stopped, not at the end.
+    [Fact]
+    public async Task Glob_ACallerThatStopsPulling_LeavesTheRestOfTheTreeUnwalked()
+    {
+        await BuildTempTree(Enumerable.Range(1, 500).Select(i => $"file{i:D3}.txt").ToArray());
+
+        var walk = _client.Glob(_testDir, "**/*");
+        var taken = new List<string>();
+        await foreach (var hit in walk.Matches)
+        {
+            taken.Add(hit);
+            if (taken.Count == 10)
+            {
+                break;
+            }
+        }
+
+        taken.Count.ShouldBe(10);
+        walk.EntriesScanned.ShouldBe(10);
+        walk.BudgetReached.ShouldBeFalse();
+    }
+
+    // The budget is lowered rather than met: a tree of fifty thousand entries proves nothing a tree
+    // of ten cannot, and costs a test run to build.
+    [Fact]
+    public async Task Glob_ATreeLargerThanTheScanBudget_StopsAtTheBudgetAndSaysSo()
+    {
+        await BuildTempTree(Enumerable.Range(1, 20).Select(i => $"file{i:D2}.txt").ToArray());
+        var client = new BoundedClient(scanBudget: 5);
+
+        var walk = client.Glob(_testDir, "**/*.pdf");
+        var hits = new List<string>();
+        await foreach (var hit in walk.Matches)
+        {
+            hits.Add(hit);
+        }
+
+        hits.ShouldBeEmpty();
+        walk.EntriesScanned.ShouldBe(5);
+        walk.BudgetReached.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Glob_CancelledPartWayThroughTheWalk_EndsAsAnAbort()
+    {
+        await BuildTempTree(Enumerable.Range(1, 200).Select(i => $"file{i:D3}.txt").ToArray());
+        using var cts = new CancellationTokenSource();
+
+        await Should.ThrowAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var _ in _client.Glob(_testDir, "**/*", cts.Token).Matches)
+            {
+                await cts.CancelAsync();
+            }
+        });
+    }
+
+    private sealed class BoundedClient(int scanBudget) : LocalFileSystemClient
+    {
+        protected override int ScanBudget => scanBudget;
     }
 
     // Directory.Move to an existing destination throws IOException, which drives the same

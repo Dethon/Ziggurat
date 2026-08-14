@@ -73,7 +73,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         await CreateTopicAsync(page, $"Scroll one {tag} answer briefly");
         await CreateTopicAsync(page, $"Scroll two {tag} answer briefly");
         await CreateTopicAsync(page, $"Scroll three {tag} answer briefly");
-        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page);
+        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page, tag);
 
         await EnsurePeekAsync(page);
         var cdp = await page.Context.NewCDPSessionAsync(page);
@@ -119,7 +119,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         await CreateTopicAsync(page, $"Row alpha {tag} answer briefly");
         await CreateTopicAsync(page, $"Row bravo {tag} answer briefly");
         await CreateTopicAsync(page, $"Row delta {tag} answer briefly");
-        var rowsAtRest = await WebChatE2ETests.WaitForRowsToStopMovingAsync(page);
+        var rowsAtRest = await WebChatE2ETests.WaitForRowsToStopMovingAsync(page, tag);
 
         await EnsurePeekAsync(page);
         var overlayInTheWay = await page.Locator(".approval-modal-overlay").CountAsync();

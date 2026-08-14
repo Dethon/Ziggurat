@@ -22,14 +22,14 @@
 @if (_isReconnecting)
 {
     <div class="connection-status reconnecting">
-        <span class="status-icon">⟳</span>
+        <Icon Glyph="Icons.Sync" Size="14" Class="status-icon" />
         <span>Reconnecting...</span>
     </div>
 }
 else if (!_isConnected)
 {
     <div class="connection-status disconnected">
-        <span class="status-icon">○</span>
+        <Icon Glyph="Icons.Ring" Size="14" Class="status-icon" />
         <span>Disconnected</span>
     </div>
 }

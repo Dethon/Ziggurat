@@ -13,6 +13,7 @@ public sealed class ReconnectionEffect : IDisposable
     private readonly IDisposable _subscription;
     private readonly Dispatcher _dispatcher;
     private readonly ITopicService _topicService;
+    private readonly ILogger<ReconnectionEffect> _logger;
 
     public ReconnectionEffect(
         ConnectionStore connectionStore,
@@ -26,6 +27,7 @@ public sealed class ReconnectionEffect : IDisposable
     {
         _dispatcher = dispatcher;
         _topicService = topicService;
+        _logger = logger;
 
         _subscription = connectionStore.BecameLiveAgain.Subscribe(
             _ => HandleReconnectedAsync(topicsStore, spaceStore, sessionService, streamResumeService)
@@ -38,19 +40,29 @@ public sealed class ReconnectionEffect : IDisposable
         IChatSessionService sessionService,
         IStreamResumeService streamResumeService)
     {
-        // Re-fetch topics from server to pick up changes made while disconnected
-        var agentId = topicsStore.State.SelectedAgentId;
-        if (agentId is not null)
+        // Re-fetch topics from server to pick up changes made while disconnected. Whichever
+        // range the state says is showing — ordinary, archived or a search — is the one caught
+        // up: the person's toggle and query survive the interruption, so rows from another
+        // range would sit under a label that says otherwise.
+        var range = TopicRange.Of(topicsStore.State, spaceStore.State.CurrentSlug);
+        if (range is not null)
         {
-            var spaceSlug = spaceStore.State.CurrentSlug;
-            var serverTopics = await _topicService.GetAllTopicsAsync(agentId, spaceSlug);
+            // The first page, not everything that was held. A bump that happened while the
+            // client was not live is covered by exactly this: paging only ever fetches
+            // backwards, so becoming live starts the list again from the top.
+            var firstPage = await range.FetchPageAsync(_topicService, cursor: null);
 
             // Catch-up can land in the next interruption. Storing a not-live answer would
             // empty the sidebar the recovery exists to refill.
-            if (serverTopics.IsLive)
+            if (firstPage.IsLive)
             {
-                var topics = serverTopics.Value!.Select(StoredTopic.FromMetadata).ToList();
-                _dispatcher.Dispatch(new TopicsLoaded(topics));
+                var topics = firstPage.Value!.Topics.Select(StoredTopic.FromMetadata).ToList();
+                _dispatcher.Dispatch(new TopicsLoaded(topics, firstPage.Value.NextCursor));
+
+                // The page says which replies are in flight, so recovery resumes those and asks
+                // about nothing else.
+                TopicPageStreams.ResumeReported(
+                    topics, firstPage.Value.LiveTopicIds, streamResumeService, _logger);
             }
         }
 
@@ -60,8 +72,13 @@ public sealed class ReconnectionEffect : IDisposable
 
         if (currentState.SelectedTopicId is not null)
         {
+            // The catch-up above collapsed the list to its first page, which a deep-scrolled
+            // open topic is not on. The row is preferred for freshness, but the session restart
+            // belongs to the selection: the model held since it was picked still carries the
+            // agent, chat and thread it needs.
             var selectedTopic = currentState.Topics
-                .FirstOrDefault(t => t.TopicId == currentState.SelectedTopicId);
+                .FirstOrDefault(t => t.TopicId == currentState.SelectedTopicId)
+                ?? currentState.SelectedTopic;
 
             if (selectedTopic is not null)
             {
@@ -69,8 +86,6 @@ public sealed class ReconnectionEffect : IDisposable
                 tasks.Add(sessionService.StartSessionAsync(selectedTopic));
             }
         }
-
-        tasks.AddRange(currentState.Topics.Select(streamResumeService.TryResumeStreamAsync));
 
         await Task.WhenAll(tasks);
     }

@@ -108,7 +108,7 @@ public sealed class TopicRenameEffectTests : IDisposable
         saved.ChatId.ShouldBe(10);
         saved.ThreadId.ShouldBe(20);
         saved.AgentId.ShouldBe("agent-1");
-        saved.LastReadMessageId.ShouldBe("m-1");
+        saved.ReadPosition.ShouldBe(3);
         saved.SpaceSlug.ShouldBe("default");
     }
 
@@ -156,7 +156,8 @@ public sealed class TopicRenameEffectTests : IDisposable
         Name = name,
         CreatedAt = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
         LastMessageAt = new DateTime(2026, 1, 2, 4, 5, 6, DateTimeKind.Utc),
-        LastReadMessageId = "m-1"
+        MessageCount = 3,
+        ReadPosition = 3
     };
 
     private void GivenTopic(string topicId, string name)

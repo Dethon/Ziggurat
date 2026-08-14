@@ -229,7 +229,9 @@
                     }
                     <button class="attachment-remove"
                             title="@(attachment.Status == AttachmentStatus.Uploading ? "Cancel" : "Remove")"
-                            @onclick="() => RemoveAttachment(attachment)">×</button>
+                            @onclick="() => RemoveAttachment(attachment)">
+                        <Icon Glyph="Icons.Close" Size="14" />
+                    </button>
                 </div>
             }
         </div>
@@ -251,9 +253,7 @@
                             title="Throw this recording away"
                             data-testid="dictation-trash"
                             @onclick="DiscardDictation">
-                        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">
-                            <path d="M7 21q-.825 0-1.412-.587Q5 19.825 5 19V6H4V4h5V3h6v1h5v2h-1v13q0 .825-.587 1.413Q17.825 21 17 21Zm10-15H7v13h10ZM9 17h2V8H9Zm4 0h2V8h-2ZM7 6v13Z" />
-                        </svg>
+                        <Icon Glyph="Icons.Trash" Size="18" />
                     </button>
                     @* A paper plane, asked for as the shape everyone already reads as "on it goes",
                        though what goes on is the words into the box: this button never sends. The
@@ -262,9 +262,7 @@
                             title="Finish and put the words in the box"
                             data-testid="dictation-stop"
                             @onclick="StopDictating">
-                        <svg class="composer-icon" viewBox="-81 -81 674 674" fill="currentColor" width="18" height="18" aria-hidden="true">
-                            <path d="M476 3.2 12.5 270.6c-18.1 10.4-15.8 35.6 2.2 43.2L121 358.4l287.3-253.2c5.5-4.9 13.3 2.6 8.6 8.3L176 407v80.5c0 23.6 28.5 32.9 42.5 15.8L282 426l124.6 52.2c14.2 6 30.4-2.9 33-18.2l72-432C515 7.8 493.3-6.8 476 3.2Z" />
-                        </svg>
+                        <Icon Glyph="Icons.PaperPlane" Size="18" Class="composer-icon" />
                     </button>
                 }
                 else
@@ -290,9 +288,7 @@
                            multiple
                            accept="@AcceptedKinds"
                            disabled="@_disabled" />
-                <svg class="composer-icon" viewBox="-104 -69 656 656" fill="currentColor" width="18" height="18" aria-hidden="true">
-                    <path d="M364.2 83.8c-24.4-24.4-64-24.4-88.4 0l-184 184c-42.1 42.1-42.1 110.3 0 152.4s110.3 42.1 152.4 0l152-152c10.9-10.9 28.7-10.9 39.6 0s10.9 28.7 0 39.6l-152 152c-64 64-167.6 64-231.6 0s-64-167.6 0-231.6l184-184c46.3-46.3 121.3-46.3 167.6 0s46.3 121.3 0 167.6l-176 176c-28.6 28.6-75 28.6-103.6 0s-28.6-75 0-103.6l144-144c10.9-10.9 28.7-10.9 39.6 0s10.9 28.7 0 39.6l-144 144c-6.7 6.7-6.7 17.7 0 24.4s17.7 6.7 24.4 0l176-176c24.4-24.4 24.4-64 0-88.4z" />
-                </svg>
+                <Icon Glyph="Icons.Paperclip" Size="18" Class="composer-icon" />
             </label>
 
             <textarea @ref="_textareaRef"
@@ -319,9 +315,7 @@
                 @onclick="HandleCancel">
             @* A filled square reads heavier than an outline of the same width, so this one is drawn
                a little under the size of the plane it stands in for. *@
-            <svg class="composer-icon" viewBox="2.9 2.9 18.2 18.2" fill="currentColor" width="18" height="18" aria-hidden="true">
-                <path d="M8 6h8q2 0 2 2v8q0 2-2 2H8q-2 0-2-2V8q0-2 2-2Z" />
-            </svg>
+            <Icon Glyph="Icons.Square" Size="18" Class="composer-icon" />
         </button>
     }
     <button class="btn btn-primary send-button @(Control == SendControl.Send ? "" : "control-hidden")"
@@ -330,9 +324,7 @@
             aria-label="Send"
             @onclick="HandleSubmit"
             disabled="@(!CanSend)">
-        <svg class="composer-icon" viewBox="-81 -81 674 674" fill="currentColor" width="18" height="18" aria-hidden="true">
-            <path d="M476 3.2 12.5 270.6c-18.1 10.4-15.8 35.6 2.2 43.2L121 358.4l287.3-253.2c5.5-4.9 13.3 2.6 8.6 8.3L176 407v80.5c0 23.6 28.5 32.9 42.5 15.8L282 426l124.6 52.2c14.2 6 30.4-2.9 33-18.2l72-432C515 7.8 493.3-6.8 476 3.2Z" />
-        </svg>
+        <Icon Glyph="Icons.PaperPlane" Size="18" Class="composer-icon" />
     </button>
     @* The slot rather than the button carries the hidden class: the microphone keeps its place in
        the render tree, and the slot is what the way-up hint is measured against. *@
@@ -343,12 +335,8 @@
         @if (_dictation.Status == DictationStatus.Recording)
         {
             <div class="dictation-lift" data-testid="dictation-lift" aria-hidden="true">
-                <svg class="lift-arrow" viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                    <path d="M12 10.8 7.4 15.4 6 14l6-6 6 6-1.4 1.4Z" />
-                </svg>
-                <svg class="lift-lock" viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-                    <path d="M6 22q-.825 0-1.412-.587Q4 20.825 4 20V10q0-.825.588-1.412Q5.175 8 6 8h1V6q0-2.075 1.463-3.538Q9.925 1 12 1t3.538 1.462Q17 3.925 17 6v2h1q.825 0 1.413.588Q20 9.175 20 10v10q0 .825-.587 1.413Q18.825 22 18 22Zm6-5q.825 0 1.413-.587Q14 15.825 14 15t-.587-1.413Q12.825 13 12 13t-1.412.587Q10 14.175 10 15t.588 1.413Q11.175 17 12 17ZM9 8h6V6q0-1.25-.875-2.125T12 3q-1.25 0-2.125.875T9 6Z" />
-                </svg>
+                <Icon Glyph="Icons.ChevronUp" Size="16" Class="lift-arrow" />
+                <Icon Glyph="Icons.Lock" Size="14" Class="lift-lock" />
             </div>
         }
         @* Drawn rather than an emoji: the platform's font decides what an emoji looks like, and the
@@ -359,9 +347,7 @@
                 data-testid="dictation-mic"
                 title="Hold to dictate"
                 disabled="@(_disabled || _dictation.Unavailable || _dictation.Status == DictationStatus.Transcribing)">
-            <svg class="dictation-mic-icon" viewBox="0 0 24 24" fill="currentColor" width="20" height="20" aria-hidden="true">
-                <path d="M12 14q-1.25 0-2.125-.875T9 11V5q0-1.25.875-2.125T12 2q1.25 0 2.125.875T15 5v6q0 1.25-.875 2.125T12 14Zm-1 7v-3.075q-2.6-.35-4.3-2.325T5 11h2q0 2.075 1.463 3.537T12 16q2.075 0 3.538-1.463T17 11h2q0 2.625-1.7 4.6T13 17.925V21h-2Z" />
-            </svg>
+            <Icon Glyph="Icons.Microphone" Size="20" Class="dictation-mic-icon" />
         </button>
     </div>
 </div>

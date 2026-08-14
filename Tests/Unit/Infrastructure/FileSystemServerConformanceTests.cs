@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
+using Domain.Prompts;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
 using Domain.Tools.Files;
@@ -12,6 +13,7 @@ using Domain.Tools.Scheduling.Vfs;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
+using McpServerSandbox.McpPrompts;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using Moq;
@@ -78,6 +80,22 @@ public class FileSystemServerConformanceTests
             ]
         };
 
+    // Which mounts say where they can be written, and where. A workspace is the writable, persistent
+    // directory an attachment lands in (ADR 0025), published in the backend's own coordinates; a
+    // mount that declares none lands nothing. The sandbox is the only one, and the vault and the
+    // media library declare nothing on purpose — a claim nobody reads is one waiting to go stale.
+    private static readonly IReadOnlyDictionary<string, string?> _workspaces =
+        new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["timers"] = null,
+            ["schedules"] = null,
+            ["print-queue"] = null,
+            ["ha"] = null,
+            ["media"] = null,
+            ["vault"] = null,
+            ["sandbox"] = "home/sandbox_user"
+        };
+
     // The shipped server, not a re-registration of it: each row drives the ConfigModule that runs in
     // production, so a module that never called AddFileSystemTools<T>() or AddFileSystemResource<T>()
     // fails here. Hand-registering the registrar instead — which this test used to do — can only
@@ -100,6 +118,14 @@ public class FileSystemServerConformanceTests
             .SingleOrDefault(resource => resource.ProtocolResource?.Uri == $"filesystem://{name}");
         mount.ShouldNotBeNull($"{serverId} must publish its {name} mount");
         mount.ProtocolResource!.Name.ShouldBe(name);
+
+        // The shipped backend, so the workspace this pins is the one the server was configured with
+        // rather than one a test constructed. The sandbox's comes from its own HomeDir setting: the
+        // setting, the declaration and the landing target cannot disagree.
+        var configured = (FileSystemBackendBase)provider.GetRequiredService(backendType);
+        configured.Workspace.ShouldBe(_workspaces[name], serverId);
+        Published(FileSystemServerResource.Describe(configured)).Workspace
+            .ShouldBe(_workspaces[name], serverId);
 
         // The backend's own declaration of the same set: what it overrides is what the server
         // registers is what the mount publishes.
@@ -148,7 +174,8 @@ public class FileSystemServerConformanceTests
                 new LibraryPathConfig("/vault"), [".md"]),
             ["sandbox"] = new SandboxFileSystem(
                 "sandbox", "A sandbox container.", Mock.Of<IFileSystemClient>(),
-                new LibraryPathConfig("/sandbox"), [".py"], Mock.Of<ICommandRunner>())
+                new LibraryPathConfig("/sandbox"), [".py"], Mock.Of<ICommandRunner>(),
+                "/sandbox/home/sandbox_user")
         };
 
     // The other half of the same idea. A mount's identity used to be written three times per server
@@ -182,6 +209,32 @@ public class FileSystemServerConformanceTests
         published.Description.ShouldNotBeNullOrWhiteSpace(name);
     }
 
+    // The only prompt asserted anywhere in the codebase, and it earns that here because the prompt
+    // has stopped being a constant: it is built from the mount point and the workspace the server
+    // was configured with, so renaming the filesystem or moving the workspace changes it with no
+    // other edit. The mount-point guard the image alias test adds pins the alias to the mount, not
+    // to this prose, so a literal in here would go quietly wrong instead.
+    [Fact]
+    public void TheSandboxPrompt_NamesTheMountPointAndWorkspaceItWasGiven()
+    {
+        var built = SandboxPrompt.Build("/box", "home/someone");
+
+        built.ShouldContain("/box/home/someone");
+        built.ShouldNotContain("/sandbox");
+        built.ShouldNotContain("sandbox_user");
+    }
+
+    [Fact]
+    public void TheSandboxServer_BuildsItsPromptFromTheMountItPublishes()
+    {
+        using var provider = ConfiguredServer("sandbox");
+        var backend = provider.GetRequiredService<SandboxFileSystem>();
+
+        var prompt = new McpSystemPrompt(backend).GetSandboxPrompt();
+
+        prompt.ShouldContain($"{backend.MountPoint}/{backend.Workspace}");
+    }
+
     // That the resource the registrar really builds carries the same three, so nothing between the
     // backend and the wire re-derives them.
     [Fact]
@@ -207,7 +260,7 @@ public class FileSystemServerConformanceTests
         JsonSerializer.Deserialize<PublishedMount>(
             json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
 
-    private record PublishedMount(string Name, string MountPoint, string Description);
+    private record PublishedMount(string Name, string MountPoint, string Description, string? Workspace);
 
     // The move-out check inverts what an override means: elsewhere overriding declares "I can do
     // this", here it declares "I have something to refuse". So a backend with no rule registers no

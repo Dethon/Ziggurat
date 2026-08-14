@@ -19,9 +19,11 @@ public sealed class ChatHub(
     ApprovalService approvalService,
     ChannelNotificationEmitter notificationEmitter,
     IAgentCatalog catalog,
-    RedisStateService redisStateService,
+    IThreadStateStore threadStore,
     IPushSubscriptionStore pushSubscriptionStore,
     AttachmentService attachmentService,
+    IHubNotificationSender hubSender,
+    RetentionSettings retention,
     DictationSettings dictationSettings,
     ILogger<ChatHub> logger) : Hub
 {
@@ -415,19 +417,63 @@ public sealed class ChatHub(
         await approvalService.CancelPendingApprovalsForTopicAsync(topicId);
     }
 
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
+    // One page, most recently written first, plus where the next one starts. The page size is
+    // the server's to decide unless a caller has a reason of its own, so a client that wants
+    // the ordinary sidebar asks for nothing and gets what the retention policy says.
+    public async Task<TopicPage> GetTopicPage(
+        string agentId,
+        string spaceSlug = SpaceConfig.DefaultSlug,
+        string? cursor = null,
+        int? pageSize = null,
+        bool archived = false)
     {
-        return await redisStateService.GetAllTopicsAsync(agentId, spaceSlug);
+        return WithLiveStreams(await threadStore.GetTopicPageAsync(
+            agentId, spaceSlug, cursor, pageSize ?? retention.PageSize, archived));
     }
 
+    // Answered here rather than asked per topic: which replies are in flight is this process's
+    // own state, so it costs nothing to say alongside the rows it is about. Every page of topics
+    // goes through this, searches included — a row is a row however it was found.
+    private TopicPage WithLiveStreams(TopicPage page) => page with
+    {
+        LiveTopicIds = [.. page.Topics.Select(t => t.TopicId).Where(streamService.IsStreaming)]
+    };
+
+    // The client's copy of a topic is always a round trip stale, and for a topic last driven by
+    // voice or a schedule it is stale by design. The name is the one field a browser may set on
+    // an existing topic; everything the server owns is read back before the write, and a rename
+    // keeps the TTL where it was — only the conversation's own writes extend its life.
     public async Task SaveTopic(TopicMetadata topic, bool isNew = false)
     {
-        await redisStateService.SaveTopicAsync(topic);
+        var stored = await threadStore.GetTopicAsync(topic.AgentId, topic.ChatId, topic.TopicId);
+        await threadStore.SaveTopicAsync(
+            stored is null ? topic : stored with { Name = topic.Name },
+            keepTtl: stored is not null);
+    }
+
+    // On the server, so it covers conversations this client never loaded — which is every
+    // conversation past the first page, and the whole archive.
+    public async Task<TopicPage> SearchTopics(
+        string agentId,
+        string query,
+        string spaceSlug = SpaceConfig.DefaultSlug,
+        string? cursor = null,
+        int? pageSize = null)
+    {
+        return WithLiveStreams(await threadStore.SearchTopicsAsync(
+            agentId, spaceSlug, query, cursor, pageSize ?? retention.PageSize));
+    }
+
+    // Read state is the store's to work out: the count it would be compared against is one round
+    // trip newer than anything the browser holds.
+    public async Task MarkTopicRead(string agentId, long chatId, string topicId)
+    {
+        await threadStore.MarkTopicReadAsync(agentId, chatId, topicId);
     }
 
     public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistory(string agentId, long chatId, long threadId)
     {
-        return await redisStateService.GetHistoryAsync(agentId, chatId, threadId);
+        return await threadStore.GetHistoryAsync(agentId, chatId, threadId);
     }
 
     public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
@@ -443,13 +489,21 @@ public sealed class ChatHub(
         streamService.CancelStream(topicId);
         await approvalService.CancelPendingApprovalsForTopicAsync(topicId);
 
-        var agentKey = new AgentKey($"{chatId}:{threadId}", agentId);
-        await redisStateService.DeleteMessagesAsync(agentKey);
-        await redisStateService.DeleteTopicAsync(agentId, chatId, topicId);
+        await threadStore.DeleteAsync(new AgentKey($"{chatId}:{threadId}", agentId));
+        await threadStore.DeleteTopicAsync(agentId, chatId, topicId);
 
         // Removing a conversation removes what was in it. The sweep would reach these eventually;
         // deleting a topic is the person saying they want them gone now.
         attachmentService.DeleteConversation($"{chatId}:{threadId}");
+
+        // Said to the space rather than to this caller: another tab holds a row for a
+        // conversation that no longer exists, and paging only ever fetches backwards, so nothing
+        // would ever refetch that row away. Deleting a topic that is already gone says the same
+        // thing again, which is harmless and is what makes a repeated delete safe.
+        await hubSender.SendToGroupAsync(
+            $"space:{CurrentSpaceSlug ?? SpaceConfig.DefaultSlug}",
+            "OnTopicChanged",
+            new TopicChangedNotification(TopicChangeType.Deleted, topicId, SpaceSlug: CurrentSpaceSlug));
     }
 
     public async Task SubscribePush(PushSubscriptionDto subscription)

@@ -5,7 +5,31 @@ namespace WebChat.Client.State.Topics;
 
 public record LoadTopics : IAction;
 
-public record TopicsLoaded(IReadOnlyList<StoredTopic> Topics) : IAction;
+// The first page of a list being started over: a first load, an agent change, or catch-up after
+// an interruption. Everything held is replaced, cursor included.
+public record TopicsLoaded(IReadOnlyList<StoredTopic> Topics, string? NextCursor = null) : IAction;
+
+// The command: fetch the page below the cursor. Ignored while one is already in flight or the
+// range has ended.
+public record LoadMoreTopics : IAction;
+
+public record TopicsPageAppended(IReadOnlyList<StoredTopic> Topics, string? NextCursor) : IAction;
+
+// The command: show the archived range instead of the ordinary one, or the other way back.
+// Archived is where a topic sits in the index, so this changes which range is read and nothing
+// about any topic.
+public record ShowArchivedTopics(bool Archived) : IAction;
+
+// The command: ask the server for conversations matching this. An empty query is the ordinary
+// list again — searching is a different range to read, not a filter over the rows already held,
+// which past the first page could only ever find what the client happened to have.
+public record SearchTopics(string Query) : IAction;
+
+// The command: something was written to a conversation in this space, so re-read the top of the
+// list. What comes back is merged in rather than replacing what is held, which is what moves a
+// bumped row to the top without collapsing the pages someone has scrolled through — and what
+// delivers a topic bumped from below the cursor, the row paging backwards will never reach.
+public record RefreshTopicList : IAction;
 
 public record SelectTopic(string? TopicId) : IAction;
 
@@ -60,38 +84,63 @@ public sealed class TopicsStore : IDisposable
 
         TopicsLoaded a => state with
         {
-            Topics = a.Topics,
+            Paging = TopicPaging.FirstPage(a.Topics, a.NextCursor),
             IsLoading = false,
             Error = null
         },
 
-        SelectTopic a => state with
+        TopicsPageAppended a => state with
         {
-            SelectedTopicId = a.TopicId
+            Paging = state.Paging.AppendPage(a.Topics, a.NextCursor),
+            IsLoading = false,
+            Error = null
         },
 
-        AddTopic a => state.Topics.Any(t => t.TopicId == a.Topic.TopicId)
-            ? state
-            : state with
-            {
-                Topics = state.Topics.Append(a.Topic).ToList(),
-                Error = null
-            },
+        // The model is picked up here, while the row is still loaded, and kept even when a later
+        // first page replaces the list without it — the open session's identity must not depend
+        // on which page its row happens to sit on.
+        SelectTopic a => state with
+        {
+            SelectedTopicId = a.TopicId,
+            SelectedTopic = a.TopicId is null
+                ? null
+                : state.Topics.FirstOrDefault(t => t.TopicId == a.TopicId)
+                    ?? (state.SelectedTopic?.TopicId == a.TopicId ? state.SelectedTopic : null)
+        },
+
+        // The rows held belong to the range that was being read, so switching range starts the
+        // list over rather than mixing the two.
+        ShowArchivedTopics a => state with
+        {
+            ShowingArchived = a.Archived,
+            Paging = TopicPaging.Empty,
+            IsLoading = true
+        },
+
+        SearchTopics a => state with
+        {
+            SearchQuery = a.Query,
+            Paging = TopicPaging.Empty,
+            IsLoading = true
+        },
+
+        AddTopic a => state with
+        {
+            Paging = state.Paging.Insert(a.Topic),
+            Error = null
+        },
 
         UpdateTopic a => state with
         {
-            Topics = state.Topics
-                .Select(t => t.TopicId == a.Topic.TopicId ? a.Topic : t)
-                .ToList(),
+            Paging = state.Paging.Upsert(a.Topic),
             Error = null
         },
 
         TopicRemoved a => state with
         {
-            Topics = state.Topics
-                .Where(t => t.TopicId != a.TopicId)
-                .ToList(),
+            Paging = state.Paging.Remove(a.TopicId),
             SelectedTopicId = state.SelectedTopicId == a.TopicId ? null : state.SelectedTopicId,
+            SelectedTopic = state.SelectedTopicId == a.TopicId ? null : state.SelectedTopic,
             Error = null
         },
 
@@ -106,6 +155,9 @@ public sealed class TopicsStore : IDisposable
                 Agents = a.Agents,
                 SelectedAgentId = a.Agents.FirstOrDefault()?.Id,
                 SelectedTopicId = null,
+                SelectedTopic = null,
+                SearchQuery = "",
+                ShowingArchived = false,
                 Error = null
             },
 
@@ -115,10 +167,16 @@ public sealed class TopicsStore : IDisposable
             Error = null
         },
 
+        // The query and the archive toggle belonged to the list being read on the previous
+        // agent. A switch starts a clean ordinary view: kept, they would caption the new
+        // agent's rows as a search or archive and drive the next scroll against that range.
         SelectAgent a => state with
         {
             SelectedAgentId = a.AgentId,
-            SelectedTopicId = null
+            SelectedTopicId = null,
+            SelectedTopic = null,
+            SearchQuery = "",
+            ShowingArchived = false
         },
 
         TopicsError a => state with
@@ -129,7 +187,8 @@ public sealed class TopicsStore : IDisposable
 
         CreateNewTopic => state with
         {
-            SelectedTopicId = null
+            SelectedTopicId = null,
+            SelectedTopic = null
         },
 
         _ => state

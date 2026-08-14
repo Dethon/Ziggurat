@@ -1,5 +1,6 @@
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Mcp.Hosting;
 using McpChannelSignalR.Hubs;
@@ -41,9 +42,11 @@ public class ChatHubNotLiveTests
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            redisStateService: null!,
+            threadStore: null!,
             pushSubscriptionStore: null!,
             attachmentService: null!,
+            new Mock<IHubNotificationSender>().Object,
+            new RetentionSettings(),
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {
@@ -107,9 +110,11 @@ public class ChatHubNotLiveTests
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            redisStateService: null!,
+            threadStore: null!,
             pushSubscriptionStore: null!,
             attachmentService: null!,
+            new Mock<IHubNotificationSender>().Object,
+            new RetentionSettings(),
             new DictationSettings(),
             factory.CreateLogger<ChatHub>())
         {

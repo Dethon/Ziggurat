@@ -38,7 +38,7 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
         // The aim below is a coordinate resolved in one round trip and tapped in the next, so the
         // list must not be reordering in between — rows sort by LastMessageAt and jump as replies
         // land, which drops the tap on whichever conversation slid under the point.
-        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page);
+        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page, tag);
 
         await TapHearthHandleAsync(page);
         await TapHearthHandleAsync(page);
@@ -183,7 +183,7 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
         // Rows sort by LastMessageAt and jump as replies land. The tap point below is measured in
         // one round trip and tapped in a later one, so a reorder in between would drop the finger
         // on whichever conversation slid under it.
-        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page);
+        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page, tag);
 
         // Peek → Half at the sheet's own speed, and settled before anything is measured: the half
         // detent is the resting geometry the tap point is derived from.

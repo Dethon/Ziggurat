@@ -20,6 +20,7 @@ internal static class E2EPhase
         {
             await body(cts.Token);
             Console.WriteLine($"[e2e] {fixtureName}: {phase} finished in {elapsed.Elapsed.TotalSeconds:0.0}s");
+            E2ETrace.Write($"phase:{phase}", elapsed.Elapsed.TotalSeconds, fixtureName);
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {

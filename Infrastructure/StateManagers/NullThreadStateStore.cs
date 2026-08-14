@@ -22,14 +22,27 @@ public sealed class NullThreadStateStore : IThreadStateStore
 
     public Task<bool> ExistsAsync(string key, CancellationToken ct = default) => Task.FromResult(false);
 
-    public Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string? spaceSlug = null)
-        => Task.FromResult<IReadOnlyList<TopicMetadata>>([]);
-
-    public Task SaveTopicAsync(TopicMetadata topic) => Task.CompletedTask;
+    public Task SaveTopicAsync(TopicMetadata topic, bool keepTtl = false) => Task.CompletedTask;
 
     public Task DeleteTopicAsync(string agentId, long chatId, string topicId) => Task.CompletedTask;
+
+    public Task MarkTopicReadAsync(string agentId, long chatId, string topicId) => Task.CompletedTask;
+
+    public Task<TopicPage> GetTopicPageAsync(
+        string agentId, string spaceSlug, string? cursor, int pageSize, bool archived = false)
+        => Task.FromResult(new TopicPage([], null));
+
+    public Task<TopicPage> SearchTopicsAsync(
+        string agentId, string spaceSlug, string query, string? cursor, int pageSize)
+        => Task.FromResult(new TopicPage([], null));
+
+    public Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
+        => Task.FromResult<IReadOnlyList<ChatHistoryMessage>>([]);
 
     public Task<TopicMetadata?> GetTopicByChatIdAndThreadIdAsync(
         string agentId, long chatId, long threadId, CancellationToken ct = default)
         => Task.FromResult<TopicMetadata?>(null);
+
+    public Task<TopicMetadata?> GetTopicAsync(string agentId, long chatId, string topicId) =>
+        Task.FromResult<TopicMetadata?>(null);
 }

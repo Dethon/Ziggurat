@@ -21,7 +21,6 @@ public static class ConfigModule
             .AddSingleton(new BashRunnerOptions
             {
                 ContainerRoot = settings.ContainerRoot,
-                HomeDir = settings.HomeDir,
                 DefaultTimeoutSeconds = settings.DefaultTimeoutSeconds,
                 MaxTimeoutSeconds = settings.MaxTimeoutSeconds,
                 OutputCapBytes = settings.OutputCapBytes
@@ -37,7 +36,8 @@ public static class ConfigModule
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.ContainerRoot),
                 settings.AllowedExtensions,
-                sp.GetRequiredService<ICommandRunner>()))
+                sp.GetRequiredService<ICommandRunner>(),
+                settings.HomeDir))
             .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<SandboxFileSystem>()
             .AddFileSystemResource<SandboxFileSystem>()

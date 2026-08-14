@@ -26,6 +26,14 @@ public class ChatMonitorSandboxLandingTests
         SizeBytes = 4
     };
 
+    private static readonly AttachmentReference _ledger = new()
+    {
+        Id = "7-42/ghi",
+        FileName = "ledger.csv",
+        MediaType = "text/csv",
+        SizeBytes = 4
+    };
+
     private static readonly AttachmentReference _sameNameAgain = new()
     {
         Id = "7-42/def",
@@ -33,6 +41,61 @@ public class ChatMonitorSandboxLandingTests
         MediaType = "image/png",
         SizeBytes = 4
     };
+
+    // The Telegram intake passes the Bot API's sender-supplied document name straight through, so
+    // the landing seam is where a hostile name must stop: the sandbox jail's root is the container
+    // root, and a name with "../" segments composes a write target containment cannot refuse.
+    [Fact]
+    public async Task AFileNameWithDotDotSegments_LandsInsideThePerMessageDirectory()
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo with
+        {
+            Id = "7-42/jkl",
+            FileName = "../../../home/sandbox_user/.profile"
+        });
+
+        var written = sandbox.Writes.ShouldHaveSingleItem();
+        written.Path.ShouldStartWith("/home/sandbox_user/uploads/7-42/");
+        written.Path.ShouldNotContain("..");
+        written.Path.ShouldEndWith("/.profile");
+    }
+
+    // A separator inside a filename would silently create subdirectories under the landing
+    // directory — or escape it, spelled with backslashes — so only the last segment is a name.
+    [Theory]
+    [InlineData("reports/q3.pdf", "reports")]
+    [InlineData(@"..\..\evil.sh", "\\")]
+    public async Task AFileNameCarryingSeparators_LandsAsItsLastSegmentAlone(
+        string hostileName, string neverInThePath)
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo with { Id = "7-42/jkl", FileName = hostileName });
+
+        var written = sandbox.Writes.ShouldHaveSingleItem();
+        written.Path.ShouldStartWith("/home/sandbox_user/uploads/7-42/");
+        written.Path.ShouldEndWith($"/{hostileName.Split('/', '\\').Last()}");
+        written.Path.ShouldNotContain(neverInThePath);
+    }
+
+    // A name that sanitization empties still lands as a file rather than failing or writing the
+    // directory itself.
+    [Fact]
+    public async Task AFileNameThatIsNothingButSeparators_StillLandsUnderAName()
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo with { Id = "7-42/jkl", FileName = "///" });
+
+        var written = sandbox.Writes.ShouldHaveSingleItem();
+        written.Path.ShouldStartWith("/home/sandbox_user/uploads/7-42/");
+        written.Path.ShouldEndWith("/attachment");
+    }
 
     [Fact]
     public async Task EachAttachment_IsWrittenUnderAPerConversationPerMessageDirectory()
@@ -48,6 +111,39 @@ public class ChatMonitorSandboxLandingTests
         written.Bytes.ShouldBe([1, 2, 3, 4]);
     }
 
+    // The mount says where it can be written and landing puts the file there. The mount point is
+    // the container root, which the image never made writable, so a target built from it lands
+    // nothing at all (ADR 0025).
+    [Fact]
+    public async Task TheTarget_SitsUnderTheWorkspaceTheMountDeclared()
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo);
+
+        sandbox.Writes.ShouldHaveSingleItem().Path.ShouldStartWith("/home/sandbox_user/uploads/");
+
+        agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        messages!.Single().GetSandboxPaths().ShouldHaveSingleItem()
+            .ShouldStartWith("/sandbox/home/sandbox_user/uploads/");
+    }
+
+    // Falling back to the mount root is the silent failure this exists to remove, so a mount that
+    // can run something but declares nowhere to write it lands nothing.
+    [Fact]
+    public async Task AnExecCapableMountThatDeclaresNoWorkspace_LandsNothing()
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox, workspace: null);
+
+        await RunAsync(agent, _photo);
+
+        sandbox.Writes.ShouldBeEmpty();
+        agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        messages!.Single().GetSandboxPaths().ShouldBeNull();
+    }
+
     // Recorded on the message rather than written into its text: hydration is what names the
     // path to the model, so the transcript a person reads never grows an internal path.
     [Fact]
@@ -61,7 +157,8 @@ public class ChatMonitorSandboxLandingTests
         agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
         var message = messages!.Single();
         var path = message.GetSandboxPaths().ShouldHaveSingleItem();
-        path.ShouldStartWith("/sandbox/uploads/7-42/");
+        path.ShouldStartWith("/sandbox/");
+        path.ShouldContain("/uploads/7-42/");
         path.ShouldEndWith("/photo.png");
 
         string.Join("", message.Contents.OfType<TextContent>().Select(c => c.Text))
@@ -129,12 +226,54 @@ public class ChatMonitorSandboxLandingTests
         message.GetSandboxPaths().ShouldBeNull();
     }
 
-    private static FakeAiAgent AgentWith(RecordingSandbox? sandbox)
+    // The turn's record is complete: what landed and what did not are both on the message, so the
+    // step that tells the model where the files are can also tell it which ones are missing.
+    [Fact]
+    public async Task AFailedSandboxWrite_NamesTheFileOnTheMessage()
+    {
+        var sandbox = new RecordingSandbox { Throws = true };
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo);
+
+        agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        messages!.Single().GetLandingFailures().ShouldBe(["photo.png"]);
+    }
+
+    // A partly landed message is where a bare count would make the model guess which file it lost.
+    [Fact]
+    public async Task APartlyLandedMessage_NamesOnlyTheFilesThatFailedAndStillReportsTheOthers()
+    {
+        var sandbox = new RecordingSandbox { FailsFor = "ledger.csv" };
+        var agent = AgentWith(sandbox);
+
+        await RunAsync(agent, _photo, _ledger);
+
+        agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        var message = messages!.Single();
+        message.GetSandboxPaths().ShouldHaveSingleItem().ShouldEndWith("/photo.png");
+        message.GetLandingFailures().ShouldBe(["ledger.csv"]);
+    }
+
+    [Fact]
+    public async Task AnExecCapableMountThatDeclaresNoWorkspace_NamesEveryFileItCouldNotPlace()
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox, workspace: null);
+
+        await RunAsync(agent, _photo, _ledger);
+
+        agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        messages!.Single().GetLandingFailures().ShouldBe(["photo.png", "ledger.csv"]);
+    }
+
+    private static FakeAiAgent AgentWith(
+        RecordingSandbox? sandbox, string? workspace = "home/sandbox_user")
     {
         var agent = MonitorTestMocks.CreateAgent();
         if (sandbox is not null)
         {
-            var registry = new StubRegistry(sandbox);
+            var registry = new StubRegistry(sandbox, workspace);
             agent.FileSystemRegistry = registry;
         }
 
@@ -171,7 +310,7 @@ public class ChatMonitorSandboxLandingTests
         await monitor.Monitor(CancellationToken.None);
     }
 
-    private sealed class StubRegistry(RecordingSandbox sandbox) : IVirtualFileSystemRegistry
+    private sealed class StubRegistry(RecordingSandbox sandbox, string? workspace) : IVirtualFileSystemRegistry
     {
         public void Mount(FileSystemMount mount, IFileSystemBackend backend) { }
 
@@ -188,7 +327,8 @@ public class ChatMonitorSandboxLandingTests
         [
             new FileSystemMount("sandbox", "/sandbox", "a sandbox")
             {
-                Capabilities = [VfsExecTool.Name]
+                Capabilities = [VfsExecTool.Name],
+                Workspace = workspace
             }
         ];
     }
@@ -196,6 +336,9 @@ public class ChatMonitorSandboxLandingTests
     private sealed class RecordingSandbox : FileSystemBackendBase
     {
         public bool Throws { get; init; }
+
+        // One file of several failing, which is what makes a message partly landed.
+        public string? FailsFor { get; init; }
 
         public List<(string Path, byte[] Bytes)> Writes { get; } = [];
 
@@ -207,7 +350,7 @@ public class ChatMonitorSandboxLandingTests
             string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
             bool overwrite, bool createDirectories, CancellationToken ct)
         {
-            if (Throws)
+            if (Throws || (FailsFor is not null && path.EndsWith(FailsFor, StringComparison.Ordinal)))
             {
                 throw new IOException("the sandbox is not there");
             }

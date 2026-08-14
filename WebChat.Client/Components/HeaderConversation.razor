@@ -21,7 +21,7 @@
                   role="button" tabindex="0" title="Rename conversation"
                   @onclick="() => BeginEdit(topic)">@topic.Name</span>
         }
-        <span class="header-conversation-time">@FormatTime(topic.LastMessageAt ?? topic.CreatedAt)</span>
+        <span class="header-conversation-time">@FormatTime(topic.LastWriteAt)</span>
     </div>
 }
 

@@ -26,11 +26,11 @@
                 <h3>Execution History</h3>
                 <div class="events-table">
                     <div class="table-header">
-                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                        <span class='sortable @SortClass("Schedule")' @onclick='() => SortBy("Schedule")'>Schedule @SortIndicator("Schedule")</span>
-                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
-                        <span class='sortable @SortClass("Status")' @onclick='() => SortBy("Status")'>Status @SortIndicator("Status")</span>
-                        <span class='sortable @SortClass("Details")' @onclick='() => SortBy("Details")'>Details @SortIndicator("Details")</span>
+                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Schedule")' @onclick='() => SortBy("Schedule")'>Schedule <SortArrow Column="Schedule" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Status")' @onclick='() => SortBy("Status")'>Status <SortArrow Column="Status" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <span class='sortable @SortClass("Details")' @onclick='() => SortBy("Details")'>Details <SortArrow Column="Details" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                     </div>
                     @foreach (var evt in GetSortedEvents(state))
                     {
@@ -92,7 +92,6 @@
     }
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
-    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "▲" : "▼";
 }
 
 <style>

@@ -3,14 +3,26 @@ using System.Text;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
+using Domain.Tools.Files;
 
 namespace Infrastructure.Clients.Bash;
 
 public class BashRunner(BashRunnerOptions options) : ICommandRunner
 {
+    // The runner's own coordinates. Every working directory is resolved against this root and
+    // reported relative to it; which mount point goes in front is the exec tool's business, not
+    // this one's. The jail is the same containment decision the file tools make, so a path that
+    // climbs out — or reaches out through a symlink — lands back at the root rather than
+    // somewhere the response cannot name.
+    private readonly PathJail _jail = new(options.ContainerRoot);
+
     public async Task<FsResult<FsExecResult>> RunAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
-        var cwd = ResolveCwd(path);
+        if (!TryResolveCwd(path, out var cwd))
+        {
+            return FsError.Invalid<FsExecResult>(_jail.DeniedMessage);
+        }
+
         if (!Directory.Exists(cwd))
         {
             return FsError.Fail<FsExecResult>(
@@ -82,22 +94,31 @@ public class BashRunner(BashRunnerOptions options) : ICommandRunner
             TimedOut = timedOut,
             Truncated = stdoutResult.Truncated || stderrResult.Truncated,
             DurationMs = sw.ElapsedMilliseconds,
-            Cwd = cwd
+            Cwd = ToRootRelative(cwd)
         });
     }
 
-    private string ResolveCwd(string path)
+    // Total: every path names a place under the root, including the empty one and an absolute one.
+    // There is no home-directory case — the mount point means the container root here as it does in
+    // glob, read, search and info.
+    //
+    // A path that still climbs out is refused rather than clamped. Redirecting it would answer for
+    // a directory the caller never asked for, which is the shape of mistake this whole change
+    // exists to remove; with the root at "/" nothing can climb out anyway.
+    private bool TryResolveCwd(string path, out string cwd)
     {
-        if (string.IsNullOrEmpty(path) || path == ".")
-        {
-            return options.HomeDir;
-        }
+        var normalized = path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+        cwd = Path.GetFullPath(Path.Combine(_jail.Root, normalized));
 
-        var combined = Path.IsPathRooted(path)
-            ? Path.GetFullPath(path)
-            : Path.GetFullPath(Path.Combine(options.ContainerRoot, path));
+        return _jail.Contains(cwd);
+    }
 
-        return combined;
+    // The root reports as the empty path, which is the mount point with a trailing slash once the
+    // tool has prefixed it — the spelling glob already uses for a directory.
+    private string ToRootRelative(string cwd)
+    {
+        var relative = Path.GetRelativePath(_jail.Root, cwd);
+        return relative == "." ? "" : relative.Replace(Path.DirectorySeparatorChar, '/');
     }
 
     private static async Task<(string Text, bool Truncated)> ReadCappedAsync(

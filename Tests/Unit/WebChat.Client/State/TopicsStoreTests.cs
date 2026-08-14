@@ -33,19 +33,21 @@ public class TopicsStoreTests : IDisposable
         _store.State.SelectedTopicId.ShouldBeNull();
     }
 
+    // The list is held most recently written first, so a topic that has just been created leads
+    // it rather than landing at the end.
     [Fact]
-    public void AddTopic_AppendsToTopicsList()
+    public void AddTopic_PutsTheNewTopicAtTheTopOfTheList()
     {
         // Arrange
         var initialTopics = new List<StoredTopic> { CreateTopic("topic-1", "Topic One") };
         _dispatcher.Dispatch(new TopicsLoaded(initialTopics));
 
         // Act
-        _dispatcher.Dispatch(new AddTopic(CreateTopic("topic-2", "Topic Two")));
+        _dispatcher.Dispatch(new AddTopic(CreateTopic("topic-2", "Topic Two", writtenAt: DateTime.UtcNow.AddHours(1))));
 
         // Assert
         _store.State.Topics.Count.ShouldBe(2);
-        _store.State.Topics[1].TopicId.ShouldBe("topic-2");
+        _store.State.Topics[0].TopicId.ShouldBe("topic-2");
     }
 
     [Fact]
@@ -209,13 +211,82 @@ public class TopicsStoreTests : IDisposable
         _store.State.SelectedAgentId.ShouldBeNull();
     }
 
+    // The query and the toggle describe what was being read on the previous agent. Carried
+    // across a switch they would caption the new agent's ordinary rows as a search or archive,
+    // and drive the next scroll fetch against the wrong range.
+    [Fact]
+    public void SelectAgent_ResetsTheSearchAndTheArchiveToggle()
+    {
+        _dispatcher.Dispatch(new SearchTopics("abc"));
+        _dispatcher.Dispatch(new ShowArchivedTopics(true));
+
+        _dispatcher.Dispatch(new SelectAgent("agent-2"));
+
+        _store.State.SearchQuery.ShouldBe("");
+        _store.State.ShowingArchived.ShouldBeFalse();
+    }
+
+    // Falling back to another agent after a catalog refresh is a switch like any other.
+    [Fact]
+    public void SetAgents_WhenSelectedAgentRemoved_ResetsTheSearchAndTheArchiveToggle()
+    {
+        _dispatcher.Dispatch(new SetAgents([new("a", "A", null), new("b", "B", null)]));
+        _dispatcher.Dispatch(new SelectAgent("b"));
+        _dispatcher.Dispatch(new SearchTopics("abc"));
+        _dispatcher.Dispatch(new ShowArchivedTopics(true));
+
+        _dispatcher.Dispatch(new SetAgents([new("a", "A", null)]));
+
+        _store.State.SearchQuery.ShouldBe("");
+        _store.State.ShowingArchived.ShouldBeFalse();
+    }
+
+    // Catch-up collapses the list to its first page, but the conversation stays open. The model
+    // picked up on selection is what still knows the agent, chat and thread the open session
+    // needs once the row itself is gone.
+    [Fact]
+    public void SelectTopic_HoldsTheModelAfterItsRowLeavesTheList()
+    {
+        _dispatcher.Dispatch(new TopicsLoaded([CreateTopic("topic-1", "Deep One")]));
+        _dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        _dispatcher.Dispatch(new TopicsLoaded([CreateTopic("topic-2", "Top Of List")]));
+
+        _store.State.SelectedTopic.ShouldNotBeNull();
+        _store.State.SelectedTopic.TopicId.ShouldBe("topic-1");
+        _store.State.SelectedTopic.ChatId.ShouldBe(123);
+        _store.State.SelectedTopic.ThreadId.ShouldBe(456);
+    }
+
+    [Fact]
+    public void TopicRemoved_DropsTheHeldModelWithTheSelection()
+    {
+        _dispatcher.Dispatch(new TopicsLoaded([CreateTopic("topic-1", "Topic One")]));
+        _dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        _dispatcher.Dispatch(new TopicRemoved("topic-1"));
+
+        _store.State.SelectedTopic.ShouldBeNull();
+    }
+
+    [Fact]
+    public void SelectAgent_DropsTheHeldModelWithTheSelection()
+    {
+        _dispatcher.Dispatch(new TopicsLoaded([CreateTopic("topic-1", "Topic One")]));
+        _dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        _dispatcher.Dispatch(new SelectAgent("agent-2"));
+
+        _store.State.SelectedTopic.ShouldBeNull();
+    }
+
     [Fact]
     public void FromMetadata_PreservesSpaceSlug()
     {
         // Arrange
         var metadata = new TopicMetadata(
             "topic-1", 123L, 456L, "agent-1", "Test",
-            DateTimeOffset.UtcNow, null, null, "my-space");
+            DateTimeOffset.UtcNow, null, "my-space");
 
         // Act
         var topic = StoredTopic.FromMetadata(metadata);
@@ -242,7 +313,8 @@ public class TopicsStoreTests : IDisposable
         metadata.SpaceSlug.ShouldBe("my-space");
     }
 
-    private static StoredTopic CreateTopic(string topicId, string name, string agentId = "agent-1")
+    private static StoredTopic CreateTopic(
+        string topicId, string name, string agentId = "agent-1", DateTime? writtenAt = null)
     {
         return new StoredTopic
         {
@@ -251,7 +323,8 @@ public class TopicsStoreTests : IDisposable
             AgentId = agentId,
             ChatId = 123,
             ThreadId = 456,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            LastMessageAt = writtenAt
         };
     }
 }

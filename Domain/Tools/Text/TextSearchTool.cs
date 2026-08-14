@@ -33,9 +33,19 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
 
     private sealed record Scan(string Query, Regex Pattern, int ContextLines, int MaxResults, VfsTextSearchOutputMode OutputMode);
 
+    // What a walk over this root covers, and why it stopped there. A search of one named file walks
+    // nothing and reports neither.
+    private sealed record Coverage(int EntriesScanned = 0, bool BudgetReached = false);
+
     // The same bounded matcher every other filesystem uses: a pattern that cannot compile comes
     // back as an envelope, and one that backtracks catastrophically ends as a timeout.
     private static readonly TimeSpan _matchTimeout = TimeSpan.FromSeconds(1);
+
+    // Overridable for the same reason the match timeout is: a test reaches the bound by lowering it
+    // rather than by building a tree the size of the shipped one.
+    protected virtual int ScanBudget => DiskWalk.MaxEntriesScanned;
+
+    protected virtual int ReadBudget => DiskWalk.MaxFilesRead;
 
     public FsResult<FsSearchResult> Run(
         string query,
@@ -45,7 +55,8 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         string directoryPath = "/",
         int maxResults = 50,
         int contextLines = 1,
-        VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content)
+        VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content,
+        CancellationToken cancellationToken = default)
     {
         if (!SearchRegex.Compile(query, regex, _matchTimeout).TryGetValue(out var pattern, out var patternError))
         {
@@ -57,8 +68,8 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         try
         {
             return filePath is not null
-                ? SearchOneFile(filePath, regex, scan)
-                : SearchDirectory(directoryPath, filePattern, regex, scan);
+                ? SearchOneFile(filePath, regex, scan, cancellationToken)
+                : SearchDirectory(directoryPath, filePattern, regex, scan, cancellationToken);
         }
         catch (RegexMatchTimeoutException)
         {
@@ -66,21 +77,27 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         }
     }
 
-    private FsResult<FsSearchResult> SearchOneFile(string filePath, bool regex, Scan scan)
+    private FsResult<FsSearchResult> SearchOneFile(
+        string filePath, bool regex, Scan scan, CancellationToken cancellationToken)
     {
         if (!ResolveExistingFile(filePath).TryGetValue(out var fullPath, out var resolveError))
         {
             return new FsResult<FsSearchResult>.Err(resolveError);
         }
 
-        var matches = MatchesIn(fullPath, scan, scan.MaxResults);
+        var matches = MatchesIn(fullPath, scan, scan.MaxResults, cancellationToken);
 
         return Build(filePath, regex, scan, filesSearched: 1, matches.Count == 0
             ? []
-            : [BuildFileResult(ToRelativePath(fullPath), matches, scan.OutputMode)], matches.Count);
+            : [BuildFileResult(ToRelativePath(fullPath), matches, scan.OutputMode)], matches.Count, new Coverage());
     }
 
-    private FsResult<FsSearchResult> SearchDirectory(string directoryPath, string? filePattern, bool regex, Scan scan)
+    // The two costs a search over a tree has, each bounded by the budget that measures it:
+    // enumerating a name, which a file pattern excluding everything still pays, and opening a file,
+    // which a pattern excluding nothing pays for every candidate. Neither can run away, and the
+    // caller's token ends the walk between entries.
+    private FsResult<FsSearchResult> SearchDirectory(
+        string directoryPath, string? filePattern, bool regex, Scan scan, CancellationToken cancellationToken)
     {
         if (!ResolveDirectory(directoryPath).TryGetValue(out var fullPath, out var resolveError))
         {
@@ -94,34 +111,61 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         }
 
         var results = new List<FsSearchFileResult>();
+        var entriesScanned = 0;
         var filesSearched = 0;
         var totalMatches = 0;
+        var budgetReached = false;
 
-        foreach (var file in EnumerateAllowedFiles(fullPath, filePattern, matchesPattern))
+        using var entries = DiskWalk.Entries(fullPath).GetEnumerator();
+        while (entries.MoveNext())
         {
-            filesSearched++;
-            var remaining = scan.MaxResults - totalMatches;
-            if (remaining <= 0)
+            cancellationToken.ThrowIfCancellationRequested();
+            var entry = entries.Current;
+            entriesScanned++;
+
+            if (SearchEntry(entry, fullPath, filePattern, matchesPattern, scan,
+                    scan.MaxResults - totalMatches, cancellationToken) is { } matches)
+            {
+                filesSearched++;
+                if (matches.Count > 0)
+                {
+                    results.Add(BuildFileResult(ToRelativePath(entry.Path), matches, scan.OutputMode));
+                    totalMatches += matches.Count;
+                }
+            }
+
+            if (totalMatches >= scan.MaxResults)
             {
                 break;
             }
 
-            var matches = MatchesIn(file, scan, remaining);
-            if (matches.Count == 0)
+            // A tree that ends exactly at a budget covered everything, so the flag asks whether
+            // anything was left rather than assuming it, as the glob walk does.
+            if (entriesScanned >= ScanBudget || filesSearched >= ReadBudget)
             {
-                continue;
+                budgetReached = entries.MoveNext();
+                break;
             }
-
-            results.Add(BuildFileResult(ToRelativePath(file), matches, scan.OutputMode));
-            totalMatches += matches.Count;
         }
 
-        return Build(directoryPath, regex, scan, filesSearched, results, totalMatches);
+        return Build(directoryPath, regex, scan, filesSearched, results, totalMatches,
+            new Coverage(entriesScanned, budgetReached));
     }
+
+    // Null for an entry this search never opens — a directory, a disallowed extension, a name the
+    // file pattern excludes — which is what keeps it out of the files-read count and its budget.
+    private IReadOnlyList<FsSearchMatch>? SearchEntry(
+        DiskWalk.Entry entry, string root, string? filePattern,
+        Func<string, bool> matchesPattern, Scan scan, int remaining, CancellationToken cancellationToken) =>
+        entry.IsDirectory
+        || !IsAllowedExtension(entry.Path)
+        || !matchesPattern(PatternCandidate(root, entry.Path, filePattern))
+            ? null
+            : MatchesIn(entry.Path, scan, remaining, cancellationToken);
 
     private static FsResult<FsSearchResult> Build(
         string path, bool regex, Scan scan, int filesSearched,
-        IReadOnlyList<FsSearchFileResult> results, int totalMatches) =>
+        IReadOnlyList<FsSearchFileResult> results, int totalMatches, Coverage coverage) =>
         new FsResult<FsSearchResult>.Ok(new FsSearchResult
         {
             Query = scan.Query,
@@ -131,6 +175,8 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             FilesWithMatches = results.Count,
             TotalMatches = totalMatches,
             Truncated = totalMatches >= scan.MaxResults,
+            EntriesScanned = coverage.EntriesScanned,
+            BudgetReached = coverage.BudgetReached,
             Results = results
         });
 
@@ -140,30 +186,17 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             ? new FsSearchFileResult { File = file, MatchCount = matches.Count }
             : new FsSearchFileResult { File = file, Matches = matches };
 
-    // The jail vets the search root, but a symlink discovered inside the tree can point
-    // anywhere — following it would serve foreign file content as search results (or recurse
-    // forever on a cycle), so the scan skips symlinks wholesale.
-    private static readonly EnumerationOptions _skipSymlinks = new()
-    {
-        RecurseSubdirectories = true,
-        AttributesToSkip = FileAttributes.ReparsePoint
-    };
-
-    // The pattern never reaches EnumerateFiles: .NET resolves a leading "../" inside a search
-    // pattern, so "../*.md" would read above the vault, and a pattern naming a missing directory
-    // or an absolute path throws straight past the envelope. Enumerate everything under the
-    // vetted root instead and filter names here, with the same compiled matcher every other
-    // filesystem uses.
-    private IEnumerable<string> EnumerateAllowedFiles(
-        string fullPath, string? filePattern, Func<string, bool> matchesPattern) =>
-        Directory
-            .EnumerateFiles(fullPath, "*", _skipSymlinks)
-            .Where(IsAllowedExtension)
-            .Where(file => matchesPattern(PatternCandidate(fullPath, file, filePattern)));
-
-    // A bare pattern ("*.md") filters file names at any depth, as it did when EnumerateFiles
-    // matched it per directory; a pattern with a separator ("docs/*.md") filters the path
-    // relative to the searched directory.
+    // The jail vets the search root, but a symlink discovered inside the tree can point anywhere —
+    // following it would serve foreign file content as search results, and a link pointing at its
+    // own ancestor would never end — so the walk skips symlinks wholesale. That guard is DiskWalk's,
+    // shared with the glob.
+    //
+    // The caller's filePattern never reaches an enumeration API either: .NET resolves a leading
+    // "../" inside a search pattern, so "../*.md" would read above the vault. Everything under the
+    // vetted root is enumerated and names are filtered below, with the same compiled matcher every
+    // other filesystem uses. A bare pattern ("*.md") filters file names at any depth, as it did
+    // when EnumerateFiles matched it per directory; a pattern with a separator ("docs/*.md")
+    // filters the path relative to the searched directory.
     private static string PatternCandidate(string root, string file, string? filePattern) =>
         filePattern?.Contains('/') == true
             ? Path.GetRelativePath(root, file).Replace('\\', '/')
@@ -172,56 +205,108 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
     private bool IsAllowedExtension(string filePath) =>
         AllowedExtensions.Contains(Path.GetExtension(filePath).ToLowerInvariant());
 
-    // An unreadable file is not a failure of the search — skip it and keep scanning the rest. Only
-    // the read is guarded: a match timeout must reach the caller as its own envelope.
-    private static IReadOnlyList<FsSearchMatch> MatchesIn(string filePath, Scan scan, int maxMatches)
+    // A match under construction: everything it reports is known when its line is read, bar the
+    // context that follows it, which the next few lines fill in.
+    private sealed record Pending(int Line, string Text, string? Section, IReadOnlyList<string> Before)
     {
-        string[] lines;
+        public List<string> After { get; } = [];
+    }
+
+    // Lines are read one at a time, holding only what a match needs — the matching line and the
+    // context around it — so a file costs the same to search whatever its size. Reading it whole
+    // was a memory risk proportional to the largest file in the tree, and skipping large files was
+    // rejected: the large log is usually the file the search was for.
+    //
+    // An unreadable file is not a failure of the search — skip it and keep scanning the rest. Only
+    // the read is guarded: a match timeout must reach the caller as its own envelope, and a
+    // cancellation as the abort it is — the walk checks between entries, but this loop is the only
+    // place a cancelled caller stops streaming a file that dwarfs the tree around it.
+    private static IReadOnlyList<FsSearchMatch> MatchesIn(
+        string filePath, Scan scan, int maxMatches, CancellationToken cancellationToken)
+    {
+        var matches = new List<FsSearchMatch>();
+        if (maxMatches <= 0)
+        {
+            return matches;
+        }
+
+        var before = new Queue<string>();
+        var pending = new List<Pending>();
+        var taken = 0;
+        string? section = null;
+
         try
         {
-            lines = File.ReadAllLines(filePath);
+            var line = 0;
+            foreach (var text in File.ReadLines(filePath))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                line++;
+                // Every line pays this, so the context line is truncated once rather than per
+                // pending match, and the loop is a loop rather than a LINQ chain that would
+                // allocate a list of the pending matches on each one.
+                if (pending.Count > 0)
+                {
+                    var context = Truncate(text, 100);
+                    foreach (var match in pending)
+                    {
+                        if (match.After.Count < scan.ContextLines)
+                        {
+                            match.After.Add(context);
+                        }
+                    }
+                }
+
+                if (text.StartsWith('#'))
+                {
+                    section = text.TrimStart('#').Trim();
+                }
+
+                if (taken < maxMatches && scan.Pattern.IsMatch(text))
+                {
+                    taken++;
+                    pending.Add(new Pending(line, Truncate(text, 200), section, before.ToList()));
+                }
+
+                before.Enqueue(Truncate(text, 100));
+                if (before.Count > scan.ContextLines)
+                {
+                    before.Dequeue();
+                }
+
+                Retire(matches, pending, scan.ContextLines);
+                if (taken == maxMatches && pending.Count == 0)
+                {
+                    break;
+                }
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return [];
         }
 
-        return lines
-            .Select((text, index) => (Text: text, Index: index))
-            .Where(line => IsMatchingLine(line.Text, scan))
-            .Take(maxMatches)
-            .Select(line => BuildMatch(lines, line.Index, scan.ContextLines))
-            .ToList();
+        // Whatever the end of the file left short of its context still reports what it has.
+        matches.AddRange(pending.Select(BuildMatch));
+        return matches;
     }
 
-    private static bool IsMatchingLine(string line, Scan scan) => scan.Pattern.IsMatch(line);
-
-    private static FsSearchMatch BuildMatch(string[] lines, int index, int contextLines)
+    private static void Retire(List<FsSearchMatch> matches, List<Pending> pending, int contextLines)
     {
-        var before = contextLines > 0 ? Context(lines.Take(index).TakeLast(contextLines)) : [];
-        var after = contextLines > 0 ? Context(lines.Skip(index + 1).Take(contextLines)) : [];
-
-        return new FsSearchMatch
-        {
-            Line = index + 1,
-            Text = Truncate(lines[index], 200),
-            Section = FindNearestHeading(lines, index),
-            Context = before.Count > 0 || after.Count > 0
-                ? new FsSearchContext { Before = before, After = after }
-                : null
-        };
+        var complete = pending.TakeWhile(p => p.After.Count >= contextLines).ToList();
+        matches.AddRange(complete.Select(BuildMatch));
+        pending.RemoveRange(0, complete.Count);
     }
 
-    private static IReadOnlyList<string> Context(IEnumerable<string> lines) =>
-        lines.Select(l => Truncate(l, 100)).ToList();
-
-    private static string? FindNearestHeading(string[] lines, int lineIndex) =>
-        lines
-            .Take(lineIndex + 1)
-            .Reverse()
-            .FirstOrDefault(l => l.StartsWith('#'))
-            ?.TrimStart('#')
-            .Trim();
+    private static FsSearchMatch BuildMatch(Pending pending) => new()
+    {
+        Line = pending.Line,
+        Text = pending.Text,
+        Section = pending.Section,
+        Context = pending.Before.Count > 0 || pending.After.Count > 0
+            ? new FsSearchContext { Before = pending.Before, After = pending.After }
+            : null
+    };
 
     private static string Truncate(string text, int maxLength) =>
         text.Length > maxLength ? text[..maxLength] + "..." : text;

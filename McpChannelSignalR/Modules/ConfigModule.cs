@@ -25,10 +25,13 @@ public static class ConfigModule
             .AddSingleton<MutableAgentCatalog>()
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
-            .AddSingleton<RedisStateService>()
             .AddSingleton(TimeProvider.System)
+            .AddSingleton(settings.Retention)
             .AddSingleton<IThreadStateStore>(sp =>
-                new RedisThreadStateStore(sp.GetRequiredService<IConnectionMultiplexer>(), TimeSpan.FromDays(30)))
+                new RedisThreadStateStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    settings.Retention,
+                    sp.GetRequiredService<TimeProvider>()))
             .AddSingleton<IConversationFactory, ConversationFactory>()
             .AddSingleton<StreamService>()
             .AddSingleton<IStreamService>(sp => sp.GetRequiredService<StreamService>())
@@ -43,6 +46,7 @@ public static class ConfigModule
             .AddSingleton(settings.Dictation)
             .AddLemonadeTranscription(settings.Dictation.Transcription)
             .AddSingleton<AttachmentTickets>()
+            .AddSingleton<IConversationLiveness, AgentConversationLiveness>()
             .AddSingleton<AttachmentStore>()
             .AddSingleton<AttachmentService>()
             .AddHostedService<AttachmentSweeper>();
