@@ -1,6 +1,6 @@
 # Speech typist
 
-Status: ready-for-agent
+Status: implemented — the Windows half awaits a real machine (see the issues)
 
 ## Problem Statement
 

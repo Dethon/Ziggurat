@@ -15,13 +15,20 @@ the escape hatch is that you know when you are using it.
 
 **Blocked by:** 04.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] With no microphone configured, the system default is captured
-- [ ] A name fragment in config selects a different capture device
-- [ ] A configured device that is not present is reported clearly and does not silently fall back
-- [ ] Synthetic Unicode key events remain the default injection method
-- [ ] The config switch selects clipboard paste, which restores the previous clipboard contents
-- [ ] The method is never chosen automatically per application
-- [ ] Device resolution from a name fragment and injection-method selection are tested without
+- [x] With no microphone configured, the system default is captured
+- [x] A name fragment in config selects a different capture device
+- [x] A configured device that is not present is reported clearly and does not silently fall back
+- [x] Synthetic Unicode key events remain the default injection method
+- [x] The config switch selects clipboard paste, which restores the previous clipboard contents
+- [x] The method is never chosen automatically per application
+- [x] Device resolution from a name fragment and injection-method selection are tested without
       Windows; the two real implementations are verified by hand
+
+## Comments
+
+2026-08-14 — Done for the halves that need no Windows: device resolution from a name fragment
+(case-insensitive, first match wins, a name that matches nothing reported with the devices
+that are present) and the injection method reaching every segment unchanged. The two real
+implementations — WASAPI device selection and clipboard paste — are written and unverified.

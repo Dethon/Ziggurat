@@ -34,16 +34,26 @@ The endpoint and model come from the environment for now; the config file is tic
 
 **Blocked by:** None — can start immediately (independent of 01, which only de-risks 03).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The crate builds and `cargo test` passes with no .NET project built and no Lemonade reachable
-- [ ] A single host port trait carries every outward operation; there is no second seam
-- [ ] Inward events arrive on a channel a test can fill directly
-- [ ] A fake host records injections, tray states and cues, and answers transcription as scripted
-- [ ] Driving a binding down, frames, binding up through the fake host injects the transcript
-- [ ] A dictation with no speech in it injects nothing and reports no error
-- [ ] A loopback fake Lemonade test asserts the multipart shape, the part's `.wav` filename, and the
+- [x] The crate builds and `cargo test` passes with no .NET project built and no Lemonade reachable
+- [x] A single host port trait carries every outward operation; there is no second seam
+- [x] Inward events arrive on a channel a test can fill directly
+- [x] A fake host records injections, tray states and cues, and answers transcription as scripted
+- [x] Driving a binding down, frames, binding up through the fake host injects the transcript
+- [x] A dictation with no speech in it injects nothing and reports no error
+- [x] A loopback fake Lemonade test asserts the multipart shape, the part's `.wav` filename, and the
       `model`, `language` and `response_format` fields as actually sent
-- [ ] `verbose_json` parsing returns the text and the duration-weighted quality signals
-- [ ] A response body with no segments yields no signals rather than an error
-- [ ] A request timeout and a 500 surface as distinguishable errors
+- [x] `verbose_json` parsing returns the text and the duration-weighted quality signals
+- [x] A response body with no segments yields no signals rather than an error
+- [x] A request timeout and a 500 surface as distinguishable errors
+
+## Comments
+
+2026-08-14 — Done. The core, the one host port, its fake, and the Lemonade client, all driven
+from WSL. `cargo test` passes with no .NET project built and no Lemonade reachable.
+
+One thing the loopback test could not pin here: a connection refused reads as a timeout in
+this sandbox rather than a refusal, so the transport-error test uses a host that cannot
+resolve instead. That failure means "Lemonade is not there" in every environment, which is
+the case the retry path actually cares about.

@@ -25,14 +25,22 @@ say so in a comment.
 
 **Blocked by:** 04.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A pause in speech produces a cut, and the padding either side of it is retained
-- [ ] Speech with no pause for 20 s is force-cut at a low-energy point, inside Whisper's window
-- [ ] Segments are transcribed one at a time and injected strictly in order
-- [ ] Each transcript is trimmed; every segment after the first is prefixed with one space
-- [ ] Nothing else about the transcript is altered
-- [ ] A dictation with no speech in it still injects nothing
-- [ ] Thresholds and windows are config keys with sensible documented defaults
-- [ ] The detector is replaceable without changing the core
-- [ ] All of the above is tested through the fake host and the pure detector, with no Windows
+- [x] A pause in speech produces a cut, and the padding either side of it is retained
+- [x] Speech with no pause for 20 s is force-cut at a low-energy point, inside Whisper's window
+- [x] Segments are transcribed one at a time and injected strictly in order
+- [x] Each transcript is trimmed; every segment after the first is prefixed with one space
+- [x] Nothing else about the transcript is altered
+- [x] A dictation with no speech in it still injects nothing
+- [x] Thresholds and windows are config keys with sensible documented defaults
+- [x] The detector is replaceable without changing the core
+- [x] All of the above is tested through the fake host and the pure detector, with no Windows
+
+## Comments
+
+2026-08-14 — Done. One detail worth recording: the padding either side of a cut is not
+symmetrical machinery. The trailing side is literal — the segment keeps ~200 ms of the pause
+so a final consonant is not clipped. The leading side is a rolling pre-roll that a long pause
+cannot grow, because retaining the pause itself would hand whisper a segment that is mostly
+silence and invite the very hallucination ticket 08 exists to catch.

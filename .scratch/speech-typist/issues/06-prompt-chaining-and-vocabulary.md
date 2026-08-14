@@ -17,13 +17,21 @@ when it composes a prompt per request from the room and the prior segment.
 
 **Blocked by:** 05.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The first segment's request carries the binding's vocabulary and no chained text
-- [ ] Each later segment's request carries the vocabulary followed by the previous transcript's tail
-- [ ] A long chain is truncated near the prompt limit, keeping the vocabulary and dropping the
+- [x] The first segment's request carries the binding's vocabulary and no chained text
+- [x] Each later segment's request carries the vocabulary followed by the previous transcript's tail
+- [x] A long chain is truncated near the prompt limit, keeping the vocabulary and dropping the
       oldest chained text
-- [ ] A dropped segment does not poison the chain for the segments after it
-- [ ] The vocabulary is a config key on the binding
-- [ ] Prompt composition and truncation are covered as pure units, and the composed prompt is
+- [x] A dropped segment does not poison the chain for the segments after it
+- [x] The vocabulary is a config key on the binding
+- [x] Prompt composition and truncation are covered as pure units, and the composed prompt is
       asserted as actually sent through the loopback fake Lemonade
+
+## Comments
+
+2026-08-14 — Done, following `McpChannelVoice/Services/Stt/WhisperPromptBuilder.cs` exactly:
+vocabulary first, the previous transcript last because it sits closest to the audio, and the
+cap applied here rather than left to whisper.cpp, which keeps the tail of an over-long prompt
+and would therefore eat the vocabulary. `max_prompt_chars` defaults to 700, the same number
+the voice hub pins.

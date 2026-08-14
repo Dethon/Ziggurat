@@ -24,12 +24,21 @@ one must work.
 
 **Blocked by:** 09 (reuses its notification path and tray error state).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The window in front is identified when the binding goes down
-- [ ] A changed window discards the remaining segments and injects nothing into the new one
-- [ ] That discard notifies once, not once per remaining segment
-- [ ] A dictation whose key-up never arrives ends by itself and closes the capture device
-- [ ] A second binding pressed during a live dictation is ignored and the first continues
-- [ ] Injection with a modifier-carrying binding held releases and restores that modifier
-- [ ] All of the above is covered through the fake host, including the timeout, with no Windows
+- [x] The window in front is identified when the binding goes down
+- [x] A changed window discards the remaining segments and injects nothing into the new one
+- [x] That discard notifies once, not once per remaining segment
+- [x] A dictation whose key-up never arrives ends by itself and closes the capture device
+- [x] A second binding pressed during a live dictation is ignored and the first continues
+- [x] Injection with a modifier-carrying binding held releases and restores that modifier
+- [x] All of the above is covered through the fake host, including the timeout, with no Windows
+
+## Comments
+
+2026-08-14 — Done. The modifier case needed the port to change: injection now carries the key
+the binding is still holding, and the host decides whether that key is a modifier, because
+which keys are modifiers is platform knowledge. The core hands over the key, not the answer.
+
+The watchdog reads a monotonic clock that arrives as an event rather than sleeping, so a test
+moves time instead of waiting two minutes for it.

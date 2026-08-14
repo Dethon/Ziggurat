@@ -28,7 +28,7 @@ API to test.
 
 **Blocked by:** 01 (the toolchain must be known to work), 02 (the port must exist to implement).
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] Holding the binding key anywhere in Windows starts a dictation; releasing it ends one
 - [ ] The binding key never reaches the window in front and never toggles its own state
@@ -39,3 +39,20 @@ API to test.
 - [ ] No window is created at any point
 - [ ] The whole path works with nothing from `Ziggurat.sln` running, only Lemonade
 - [ ] The executable is a single file with no accompanying DLLs
+
+## Comments
+
+2026-08-14 — Written and type-checked for Windows from WSL; none of it has been run on a real
+machine, so every box stays open. What is here: the low-level hook with suppression, WASAPI
+capture through cpal opened on key-down, `SendInput` Unicode injection, the foreground window's
+identity, four tray states, balloon notifications, learn mode, the microphone list and the
+autostart toggle.
+
+The part of "the hook and its suppression" that can be wrong quietly does **not** live in the
+Windows module: `speech-typist/src/keys.rs` is the decision table — what is swallowed, that a
+key's own auto-repeat is not a second press, that the learn-mode key never reaches the editor
+underneath — and it is tested in WSL. What is left in `src/win/` is plumbing thin enough to read,
+which is what this ticket assumed.
+
+No window is created in the sense that matters: the binary is built for the windows subsystem and
+the only `HWND` is `HWND_MESSAGE`, which is never shown, never painted and cannot be focused.

@@ -15,13 +15,19 @@ needs a manual reset.
 
 **Blocked by:** 05.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A failed request is retried exactly once
-- [ ] After the retry fails the segment is dropped and the following segments still transcribe and
+- [x] A failed request is retried exactly once
+- [x] After the retry fails the segment is dropped and the following segments still transcribe and
       inject
-- [ ] With Lemonade unreachable for a whole dictation, exactly one notification is raised
-- [ ] The tray shows its error state, distinct from idle, recording and transcribing
-- [ ] The error state clears on the next successful transcript with no manual action
-- [ ] The prompt chain is unaffected by the segment that produced nothing
-- [ ] Retry, drop, notification count and tray transitions are all covered through the fake host
+- [x] With Lemonade unreachable for a whole dictation, exactly one notification is raised
+- [x] The tray shows its error state, distinct from idle, recording and transcribing
+- [x] The error state clears on the next successful transcript with no manual action
+- [x] The prompt chain is unaffected by the segment that produced nothing
+- [x] Retry, drop, notification count and tray transitions are all covered through the fake host
+
+## Comments
+
+2026-08-14 — Done. The behaviour was already in the core from ticket 02; this ticket is the
+tests that pin it. They were checked against a mutation — letting the retry run three times
+instead of two fails five of them — so they are not passing by accident.

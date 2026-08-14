@@ -25,12 +25,25 @@ Whisper capitalising the start of every segment so a mid-sentence cut can read o
 
 **Blocked by:** 07 (the tray menu it extends), 11 (the device list serves its name fragment).
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] A release script cross-compiles from WSL and produces one executable with no extra DLLs
-- [ ] The release profile is tuned for size
+- [x] A release script cross-compiles from WSL and produces one executable with no extra DLLs
+- [x] The release profile is tuned for size
 - [ ] The tray toggles starting with Windows, off by default, by writing the user's Run key
 - [ ] Turning it off removes what turning it on added
 - [ ] The tray lists the capture devices it can see
-- [ ] `speech-typist/CLAUDE.md` records the invariants above, including the accepted rough edges
-- [ ] `satellite/CLAUDE.md` is untouched and the two crates still share no build
+- [x] `speech-typist/CLAUDE.md` records the invariants above, including the accepted rough edges
+- [x] `satellite/CLAUDE.md` is untouched and the two crates still share no build
+
+## Comments
+
+2026-08-14 — Done except what needs the machine. `scripts/build-release.sh` cross-compiles from
+WSL and prints the imported DLLs, because the invariant worth checking is not the size but that
+every import is a Windows system DLL. The release profile is `opt-level = "z"` with fat LTO and
+`panic = "abort"`; the result is 1.7 MB.
+
+`speech-typist/CLAUDE.md` holds the invariants and the accepted rough edges. `satellite/CLAUDE.md`
+is untouched and the two crates share no build — there is no workspace at the repository root, and
+neither crate's manifest mentions the other.
+
+The autostart toggle and the device list are written; nobody has clicked them.

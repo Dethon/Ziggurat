@@ -20,13 +20,23 @@ you at learn mode rather than leaving you with a binding you cannot press.
 
 **Blocked by:** 04.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Several bindings are live at once, each with its own key, language and vocabulary
-- [ ] The key held decides the language and vocabulary sent for that dictation
-- [ ] Config ships one Spanish binding by default
+- [x] Several bindings are live at once, each with its own key, language and vocabulary
+- [x] The key held decides the language and vocabulary sent for that dictation
+- [x] Config ships one Spanish binding by default
 - [ ] The tray offers learn mode per binding, identified by its language
-- [ ] Pressing a key in learn mode writes it to config and takes effect without a restart
-- [ ] Learn mode cannot bind a key already bound to another binding
-- [ ] A first run with the default F13 tells you how to rebind it
-- [ ] Binding resolution and the per-binding language reaching the request are tested without Windows
+- [x] Pressing a key in learn mode writes it to config and takes effect without a restart
+- [x] Learn mode cannot bind a key already bound to another binding
+- [x] A first run with the default F13 tells you how to rebind it
+- [x] Binding resolution and the per-binding language reaching the request are tested without Windows
+
+## Comments
+
+2026-08-14 — Done. Which keys the hook watches and swallows now travels outward through the
+port, because the callback has to answer that synchronously and cannot ask the core.
+
+The tray submenu itself is Windows and unverified; everything it drives is not. Learn mode
+arrives as one event, and the refusal of a key that already belongs to another binding, the
+rebinding taking effect with no restart, and the write back into the config are all tested.
+`toml_edit` does that write, so the commented defaults the file exists to show survive it.

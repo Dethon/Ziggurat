@@ -21,14 +21,24 @@ Every later ticket adds its own keys to this file rather than a wiring-up ticket
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A `config.toml` beside the executable is used in preference to the one in the user profile
-- [ ] With neither present, one is written to the user profile with commented defaults, and the
+- [x] A `config.toml` beside the executable is used in preference to the one in the user profile
+- [x] With neither present, one is written to the user profile with commented defaults, and the
       program starts working
-- [ ] The Lemonade base URL, model and request timeout come from config, not the environment
-- [ ] The base URL default names the Lemonade host rather than the compose-internal name
-- [ ] The model's comment records the hand-maintained agreement with `STT_MODEL` and the
+- [x] The Lemonade base URL, model and request timeout come from config, not the environment
+- [x] The base URL default names the Lemonade host rather than the compose-internal name
+- [x] The model's comment records the hand-maintained agreement with `STT_MODEL` and the
       slow-first-dictation symptom of a mismatch
-- [ ] A malformed config is reported clearly and does not leave the program half-configured
-- [ ] Config precedence and the first-run write are covered by tests that need no Windows
+- [x] A malformed config is reported clearly and does not leave the program half-configured
+- [x] Config precedence and the first-run write are covered by tests that need no Windows
+
+## Comments
+
+2026-08-14 — Done, and two defaults were corrected against what the rest of the repo actually
+pins: the base URL ends at `/v1` (Lemonade serves health under `/api/v1`, and the wrong one
+parses fine and 404s only mid-sentence), and the model is `Whisper-Large-v3-Turbo`, which is
+what compose's `&stt-model` anchor warms. Both have their own test.
+
+The file written on first run and `Config::default()` are two spellings of the same settings,
+and a test fails if either drifts from the other.
