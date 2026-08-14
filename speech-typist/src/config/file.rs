@@ -95,6 +95,55 @@ pub fn locations() -> (PathBuf, PathBuf) {
     (beside_exe, profile_dir.join("speech-typist").join(FILE_NAME))
 }
 
+/// Writes one binding's key back into the file it came from, leaving everything else — including
+/// every comment a person may have written — exactly as it was. Learn mode is the only caller:
+/// re-serializing the whole config would silently delete the commented defaults that are the
+/// reason the file is written in the first place.
+pub fn save_binding_key(
+    path: &Path,
+    bindings: &[super::Binding],
+    index: usize,
+) -> Result<(), ConfigError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| ConfigError::Unreadable { path: path.to_path_buf(), why: e.to_string() })?;
+    let rewritten = with_binding_keys(&text, bindings, index)
+        .map_err(|why| ConfigError::Malformed { path: path.to_path_buf(), why })?;
+    std::fs::write(path, rewritten)
+        .map_err(|e| ConfigError::NotWritten { path: path.to_path_buf(), why: e.to_string() })
+}
+
+/// The pure half of [`save_binding_key`]. A file that named its bindings has the one key edited
+/// in place; a file that relied on the defaults and never named them gets the whole set written
+/// out, so the key it is now bound to is visible rather than implied.
+pub fn with_binding_keys(
+    text: &str,
+    bindings: &[super::Binding],
+    index: usize,
+) -> Result<String, String> {
+    use toml_edit::{value, ArrayOfTables, DocumentMut, Item, Table};
+
+    let mut document: DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| e.to_string())?;
+    let binding = bindings.get(index).ok_or_else(|| format!("there is no binding {index}"))?;
+
+    if let Some(Item::ArrayOfTables(existing)) = document.get_mut("bindings") {
+        if let Some(table) = existing.get_mut(index) {
+            table["key"] = value(binding.key.0 as i64);
+            return Ok(document.to_string());
+        }
+    }
+
+    let mut written = ArrayOfTables::new();
+    for binding in bindings {
+        let mut table = Table::new();
+        table["key"] = value(binding.key.0 as i64);
+        table["language"] = value(binding.language.clone());
+        table["vocabulary"] = value(binding.vocabulary.clone());
+        written.push(table);
+    }
+    document["bindings"] = Item::ArrayOfTables(written);
+    Ok(document.to_string())
+}
+
 /// What first run writes. Every key it names carries its default, so this file and
 /// [`Config::default`] cannot disagree without a test noticing.
 pub const DEFAULTS: &str = r#"# speech-typist — hold a key, talk, and the words appear in whatever window you were using.
@@ -289,6 +338,51 @@ mod tests {
     fn the_model_default_is_the_one_compose_warms_the_container_with() {
         // DockerCompose/docker-compose.yml: `x-stt-model: &stt-model ${STT_MODEL:-...}`.
         assert_eq!(Config::default().lemonade.model, "Whisper-Large-v3-Turbo");
+    }
+
+    #[test]
+    fn rewriting_a_binding_key_leaves_every_other_line_and_every_comment_alone() {
+        // Re-serializing the whole config would delete the commented defaults, which are the
+        // reason the file is written for the person in the first place.
+        let original = DEFAULTS;
+        let mut bindings = Config::default().bindings;
+        bindings[0].key = KeyCode(0x21);
+
+        let rewritten = with_binding_keys(original, &bindings, 0).unwrap();
+
+        assert!(rewritten.contains("key = 33"), "{rewritten}");
+        assert!(!rewritten.contains("key = 124"));
+        assert!(rewritten.contains("# speech-typist"), "the header comment survived");
+        assert!(rewritten.contains("STT_MODEL"), "the model's warning survived");
+        assert_eq!(toml::from_str::<Config>(&rewritten).unwrap().bindings[0].key, KeyCode(0x21));
+    }
+
+    #[test]
+    fn a_config_that_never_named_its_bindings_gets_them_written_out() {
+        // The key it is now bound to has to be visible in the file rather than implied by the
+        // default it no longer is.
+        let original = "[lemonade]\nmodel = \"Whisper-Base\"\n";
+        let bindings =
+            vec![Binding { key: KeyCode(0x21), language: "en".into(), vocabulary: "nabu".into() }];
+
+        let rewritten = with_binding_keys(original, &bindings, 0).unwrap();
+
+        let parsed: Config = toml::from_str(&rewritten).unwrap();
+        assert_eq!(parsed.bindings, bindings);
+        assert_eq!(parsed.lemonade.model, "Whisper-Base", "the rest of the file survived");
+    }
+
+    #[test]
+    fn rewriting_touches_only_the_binding_it_was_asked_about() {
+        let original = "[[bindings]]\nkey = 124\nlanguage = \"es\"\n\n[[bindings]]\nkey = 125\nlanguage = \"en\"\n";
+        let mut bindings: Vec<Binding> = toml::from_str::<Config>(original).unwrap().bindings;
+        bindings[1].key = KeyCode(0x21);
+
+        let rewritten = with_binding_keys(original, &bindings, 1).unwrap();
+
+        let parsed: Config = toml::from_str(&rewritten).unwrap();
+        assert_eq!(parsed.bindings[0].key, KeyCode(124));
+        assert_eq!(parsed.bindings[1].key, KeyCode(0x21));
     }
 
     #[test]

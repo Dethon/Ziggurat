@@ -21,6 +21,7 @@ pub enum Action {
     CaptureClosed,
     Cue(Cue),
     Tray(TrayState),
+    Bindings(Vec<KeyCode>),
     Sent(TranscriptionRequest),
     Injected { text: String, held: Option<KeyCode> },
     Notified(String),
@@ -150,6 +151,18 @@ impl FakeHost {
         }
     }
 
+    /// The keys the core last told the host to watch and swallow.
+    pub fn watched_keys(&self) -> Vec<KeyCode> {
+        self.actions()
+            .into_iter()
+            .filter_map(|a| match a {
+                Action::Bindings(keys) => Some(keys),
+                _ => None,
+            })
+            .next_back()
+            .unwrap_or_default()
+    }
+
     /// Waits for a dictation to be wholly over: the tray back to idle with nothing left in flight.
     pub async fn wait_for_idle(&self) {
         self.wait_until("the dictation to finish", |actions| {
@@ -192,6 +205,10 @@ impl Host for FakeHost {
         }
         self.record(Action::Injected { text: text.to_string(), held });
         Ok(())
+    }
+
+    fn set_bindings(&self, keys: &[KeyCode]) {
+        self.record(Action::Bindings(keys.to_vec()));
     }
 
     fn set_tray(&self, state: TrayState) {

@@ -7,6 +7,8 @@ use crate::config::{Binding, Config, DEFAULT_BINDING_KEY};
 use crate::host::{Cue, HostEvent, KeyCode, TranscribeError, Transcript, TrayState};
 use crate::testing::{Action, FakeHost};
 
+use super::Session;
+
 const SPANISH: KeyCode = DEFAULT_BINDING_KEY;
 const RATE: u32 = 16_000;
 
@@ -24,8 +26,12 @@ impl Driver {
     }
 
     fn start_with(host: Arc<FakeHost>, config: Config) -> Self {
+        Self::start_session(host, Session::transient(config))
+    }
+
+    fn start_session(host: Arc<FakeHost>, session: Session) -> Self {
         let (events, rx) = mpsc::channel(256);
-        let running = tokio::spawn(super::run(host.clone(), rx, config));
+        let running = tokio::spawn(super::run(host.clone(), rx, session));
         Self { host, events, running: Some(running) }
     }
 
@@ -170,7 +176,12 @@ async fn a_key_that_is_not_bound_does_nothing_at_all() {
     driver.send(HostEvent::Tick { at_ms: 1 }).await;
 
     driver.stop().await;
-    assert!(host.actions().is_empty(), "recorded: {:?}", host.actions());
+    let after_startup: Vec<_> = host
+        .actions()
+        .into_iter()
+        .filter(|a| !matches!(a, Action::Bindings(_)))
+        .collect();
+    assert!(after_startup.is_empty(), "recorded: {after_startup:?}");
 }
 
 // ── Ticket 05: segmenting and progressive injection ───────────────────────────────────────────
@@ -704,6 +715,148 @@ async fn injection_is_told_which_key_is_still_being_held() {
         "the key was still down for the first and released by the second"
     );
     driver.stop().await;
+}
+
+// ── Ticket 07: bindings, languages and learn mode ─────────────────────────────────────────────
+
+/// A config file on disk, so learn mode has somewhere real to write back to.
+struct ConfigFile(std::path::PathBuf);
+
+impl ConfigFile {
+    fn holding(contents: &str) -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "speech-typist-learn-{}-{:?}.toml",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::write(&path, contents).unwrap();
+        Self(path)
+    }
+
+    fn contents(&self) -> String {
+        std::fs::read_to_string(&self.0).unwrap()
+    }
+}
+
+impl Drop for ConfigFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+#[tokio::test]
+async fn the_key_held_decides_the_language_and_the_vocabulary_for_that_dictation() {
+    // There is no active binding and no mode: which key was held is the whole choice.
+    let host = FakeHost::new();
+    host.will_say("commit message").will_say("hola");
+    let mut config = two_bindings();
+    config.bindings[0].vocabulary = "Ziggurat".into();
+    config.bindings[1].vocabulary = "WASAPI, nabu".into();
+    let driver = Driver::start_with(host.clone(), config);
+
+    driver.hold(ENGLISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_until("both dictations to finish", |a| {
+        a.iter().filter(|x| matches!(x, Action::Injected { .. })).count() == 2
+    })
+    .await;
+
+    let sent = host.sent();
+    assert_eq!(sent[0].language, "en");
+    assert_eq!(sent[0].prompt.as_deref(), Some("WASAPI, nabu"));
+    assert_eq!(sent[1].language, "es");
+    assert_eq!(sent[1].prompt.as_deref(), Some("Ziggurat"));
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn the_host_is_told_which_keys_to_watch_before_anything_else_happens() {
+    // The hook decides whether to swallow a key inside its own callback, so it cannot ask the
+    // core; the set has to be on that side already.
+    let host = FakeHost::new();
+    let driver = Driver::start_with(host.clone(), two_bindings());
+
+    host.wait_until("the bindings to be announced", |a| {
+        matches!(a.first(), Some(Action::Bindings(_)))
+    })
+    .await;
+
+    assert_eq!(host.watched_keys(), [SPANISH, ENGLISH]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_learned_key_is_live_immediately_and_written_to_the_config() {
+    let file = ConfigFile::holding("[[bindings]]\nkey = 124\nlanguage = \"es\"\nvocabulary = \"\"\n");
+    let host = FakeHost::new();
+    host.will_say("con la tecla nueva");
+    let session = Session {
+        config: one_spanish_binding(),
+        config_path: file.0.clone(),
+        first_run: false,
+    };
+    let driver = Driver::start_session(host.clone(), session);
+
+    driver.send(HostEvent::BindingLearned { binding: 0, key: KeyCode(0x21) }).await;
+    host.wait_until("the new key to be announced", |a| {
+        a.iter().filter(|x| matches!(x, Action::Bindings(_))).count() == 2
+    })
+    .await;
+    driver.hold(KeyCode(0x21), &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.watched_keys(), [KeyCode(0x21)], "no restart needed");
+    assert_eq!(host.injected(), ["con la tecla nueva"]);
+    assert!(file.contents().contains("key = 33"), "written: {}", file.contents());
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn setting_the_english_key_cannot_take_the_spanish_one() {
+    let file = ConfigFile::holding("[[bindings]]\nkey = 124\n");
+    let host = FakeHost::new();
+    let session =
+        Session { config: two_bindings(), config_path: file.0.clone(), first_run: false };
+    let driver = Driver::start_session(host.clone(), session);
+
+    driver.send(HostEvent::BindingLearned { binding: 1, key: SPANISH }).await;
+    host.wait_until("the refusal", |a| a.iter().any(|x| matches!(x, Action::Notified(_)))).await;
+
+    assert_eq!(host.watched_keys(), [SPANISH, ENGLISH], "nothing was rebound");
+    assert!(host.notifications()[0].contains("es"), "{:?}", host.notifications());
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_first_run_with_the_default_binding_says_how_to_change_it() {
+    // Many keyboards cannot produce F13, and a person left holding a key they cannot press has
+    // no way to discover learn mode exists.
+    let host = FakeHost::new();
+    let session = Session {
+        config: one_spanish_binding(),
+        config_path: std::path::PathBuf::new(),
+        first_run: true,
+    };
+    let driver = Driver::start_session(host.clone(), session);
+
+    host.wait_until("the greeting", |a| a.iter().any(|x| matches!(x, Action::Notified(_)))).await;
+
+    let greeting = &host.notifications()[0];
+    assert!(greeting.contains("F13"), "{greeting}");
+    assert!(greeting.contains("set binding"), "{greeting}");
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_later_run_says_nothing_at_all() {
+    let host = FakeHost::new();
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    host.wait_until("startup", |a| !a.is_empty()).await;
+    driver.stop().await;
+
+    assert!(host.notifications().is_empty());
 }
 
 fn tone_at(rate: u32, ms: u32, amplitude: i16) -> Vec<i16> {

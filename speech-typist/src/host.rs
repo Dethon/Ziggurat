@@ -117,6 +117,10 @@ pub enum HostEvent {
     /// A monotonic clock reading in milliseconds. The watchdog is the only thing that reads it,
     /// and it is an event rather than a `sleep` so that a test can move time without waiting.
     Tick { at_ms: u64 },
+    /// Learn mode finished: the tray asked to rebind `binding` and this is the key that was
+    /// pressed. Capturing it belongs to the host, because it is the keyboard hook reading one
+    /// event rather than new machinery, and because no key but this one should reach the core.
+    BindingLearned { binding: usize, key: KeyCode },
     /// The tray asked to quit.
     Quit,
 }
@@ -144,6 +148,11 @@ pub trait Host: Send + Sync {
     /// keys are modifiers is platform knowledge, so the core hands over the key rather than the
     /// answer. The shipped default binding has no modifier precisely so this is rarely exercised.
     fn inject(&self, text: &str, held: Option<KeyCode>) -> Result<(), HostError>;
+
+    /// Which keys start a dictation, and are therefore swallowed for as long as they are held.
+    /// The hook has to answer that synchronously in its callback, so the set lives on the host
+    /// side; the core sends it at startup and again whenever learn mode changes it.
+    fn set_bindings(&self, keys: &[KeyCode]);
 
     fn set_tray(&self, state: TrayState);
 

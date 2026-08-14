@@ -52,9 +52,25 @@ struct Live {
     detector: Box<dyn SegmentDetector>,
 }
 
+/// What the speech typist starts with: the settings, the file they came from so learn mode can
+/// write back to it, and whether that file had to be created.
+pub struct Session {
+    pub config: Config,
+    pub config_path: std::path::PathBuf,
+    pub first_run: bool,
+}
+
+impl Session {
+    /// For tests and for a host that has no file to write back to.
+    pub fn transient(config: Config) -> Self {
+        Self { config, config_path: std::path::PathBuf::new(), first_run: false }
+    }
+}
+
 struct Core {
     host: Arc<dyn Host>,
     config: Config,
+    config_path: std::path::PathBuf,
     live: Option<Live>,
     /// Survives the dictation it happened in: the error state clears on the next transcript that
     /// arrives, so it never needs a manual reset.
@@ -66,15 +82,20 @@ struct Core {
 /// What a finished request carries back to the loop.
 struct Done(Result<Transcript, TranscribeError>);
 
-pub async fn run(host: Arc<dyn Host>, mut events: mpsc::Receiver<HostEvent>, config: Config) {
+pub async fn run(host: Arc<dyn Host>, mut events: mpsc::Receiver<HostEvent>, session: Session) {
     let mut core = Core {
         host,
-        config,
+        config: session.config,
+        config_path: session.config_path,
         live: None,
         failing: false,
         tray: TrayState::Idle,
         now_ms: 0,
     };
+    core.announce_bindings();
+    if session.first_run {
+        core.greet();
+    }
     let (done_tx, mut done_rx) = mpsc::channel::<Done>(4);
 
     loop {
@@ -96,7 +117,57 @@ impl Core {
             HostEvent::BindingUp(key) => self.on_up(key, done),
             HostEvent::Frame(samples) => self.on_frame(samples, done),
             HostEvent::Tick { at_ms } => self.on_tick(at_ms, done),
+            HostEvent::BindingLearned { binding, key } => self.on_learned(binding, key),
             HostEvent::Quit => {}
+        }
+    }
+
+    fn announce_bindings(&self) {
+        let keys: Vec<KeyCode> = self.config.bindings.iter().map(|b| b.key).collect();
+        self.host.set_bindings(&keys);
+    }
+
+    /// F13 is the shipped default because no application uses it, and many keyboards cannot
+    /// produce it. Pointing at learn mode on the first run is what stops that from leaving a
+    /// person with a binding they cannot press.
+    fn greet(&self) {
+        let default = self
+            .config
+            .bindings
+            .iter()
+            .any(|binding| binding.key == crate::config::DEFAULT_BINDING_KEY);
+        if default {
+            self.host.notify(
+                "Hold F13 to dictate. If your keyboard has no F13, use the tray's \"set binding\" \
+                 menu and press the key you want instead.",
+            );
+        }
+    }
+
+    fn on_learned(&mut self, binding: usize, key: KeyCode) {
+        if self.config.bindings.get(binding).is_none() {
+            return;
+        }
+        // Setting the English key must not silently take the Spanish one's, so a key that is
+        // already spoken for is refused rather than moved.
+        if let Some(other) = self.config.binding_for(key) {
+            if other != binding {
+                let language = &self.config.bindings[other].language;
+                self.host.notify(&format!("That key is already the {language} binding."));
+                return;
+            }
+        }
+
+        self.config.bindings[binding].key = key;
+        self.announce_bindings();
+        let language = self.config.bindings[binding].language.clone();
+        // Live immediately, whether or not the file could be written: a config that cannot be
+        // saved is worth saying so about, and is not a reason to refuse the rebinding.
+        match crate::config::save_binding_key(&self.config_path, &self.config.bindings, binding) {
+            Ok(()) => self.host.notify(&format!("The {language} binding is that key now.")),
+            Err(error) => self.host.notify(&format!(
+                "The {language} binding is that key now, but it could not be saved: {error}"
+            )),
         }
     }
 

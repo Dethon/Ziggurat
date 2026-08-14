@@ -9,7 +9,9 @@ use crate::host::KeyCode;
 
 mod file;
 
-pub use file::{load, locations, ConfigError, Loaded, DEFAULTS, FILE_NAME};
+pub use file::{
+    load, locations, save_binding_key, with_binding_keys, ConfigError, Loaded, DEFAULTS, FILE_NAME,
+};
 
 /// F13. No application uses it, which is what makes it a safe default — and many keyboards cannot
 /// produce it, which is what the tray's learn mode is for.
