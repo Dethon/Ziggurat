@@ -19,7 +19,7 @@ namespace Tests.Integration.Clients;
 // input from plain Playwright actions. With that compensation gone, these tests pass only because
 // Camoufox does it natively — so if a future Camoufox regresses, they fail and tell us the
 // workaround needs to come back.
-[Collection("PlaywrightWebBrowserIntegration")]
+[Collection(PlaywrightCollections.SharedBrowser)]
 public class BrowserJQueryWidgetCompatTests(
     PlaywrightWebBrowserFixture fixture,
     ITestOutputHelper output) : IAsyncLifetime

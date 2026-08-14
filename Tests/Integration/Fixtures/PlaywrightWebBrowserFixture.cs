@@ -1,188 +1,36 @@
 using System.Diagnostics;
-using Docker.DotNet;
-using Docker.DotNet.Models;
 using Domain.Contracts;
-using DotNet.Testcontainers.Builders;
-using DotNet.Testcontainers.Containers;
-
 using Infrastructure.Clients.Browser;
 
 namespace Tests.Integration.Fixtures;
 
+// One collection's view of a Camoufox. The container and the browser server live in
+// CamoufoxBackend and are refcounted across every collection naming the same pool; a fixture
+// instance owns nothing of its own.
 public class PlaywrightWebBrowserFixture : IAsyncLifetime
 {
-    private const string CamoufoxImageName = "camoufox:latest";
+    private CamoufoxBackend? _backend;
 
-    private IContainer? _container;
-    private string? _initializationError;
+    protected virtual string Pool => CamoufoxBackend.SharedPool;
 
-    public PlaywrightWebBrowser Browser { get; private set; } = null!;
+    private CamoufoxBackend Backend =>
+        _backend ?? throw new InvalidOperationException("Backend not acquired. Call InitializeAsync first.");
+
+    public PlaywrightWebBrowser Browser => Backend.Browser;
     public bool IsAvailable => true;
     public string? InitializationError => null;
 
     // The Camoufox WebSocket the Browser is connected to. Exposed so tests that need a raw
     // Playwright connection (e.g. verifying the server survives a hostile page) can reach the
     // same backend without standing up their own container.
-    public string? WsEndpoint { get; private set; }
+    public string? WsEndpoint => _backend?.WsEndpoint;
 
-    public async Task InitializeAsync()
-    {
-        // Try local wsEndpoint first (faster if Camoufox is already running)
-        if (await TryInitializeLocalAsync())
-        {
-            return;
-        }
+    public async Task InitializeAsync() => _backend = await CamoufoxBackend.AcquireAsync(Pool);
 
-        if (await TryInitializeContainerAsync())
-        {
-            return;
-        }
+    public Task DisposeAsync() => CamoufoxBackend.ReleaseAsync(Pool);
 
-        throw new InvalidOperationException(
-            $"Could not initialize Camoufox browser. {_initializationError}");
-    }
-
-    private async Task<bool> TryInitializeLocalAsync()
-    {
-        var localWsEndpoint = Environment.GetEnvironmentVariable("CAMOUFOX__WSENDPOINT");
-        if (string.IsNullOrEmpty(localWsEndpoint))
-        {
-            return false;
-        }
-
-        try
-        {
-            Browser = new PlaywrightWebBrowser(wsEndpoint: localWsEndpoint);
-            WsEndpoint = localWsEndpoint;
-
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            var request = new BrowseRequest(
-                SessionId: "test-init",
-                Url: "https://example.com",
-                MaxLength: 1000);
-            var result = await Browser.NavigateAsync(request, cts.Token);
-
-            if (result.Status == BrowseStatus.Success)
-            {
-                await Browser.CloseSessionAsync("test-init", cts.Token);
-                return true;
-            }
-
-            await Browser.DisposeAsync();
-            _initializationError = result.ErrorMessage;
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _initializationError = $"Local Camoufox failed: {ex.Message}";
-            await Browser.DisposeAsync();
-            return false;
-        }
-    }
-
-    private static string FindSolutionRoot() => E2E.Fixtures.TestHelpers.FindSolutionRoot();
-
-    private static async Task<bool> CamoufoxImageExistsAsync()
-    {
-        try
-        {
-            using var client = new DockerClientBuilder().Build();
-            var images = await client.Images.ListImagesAsync(new ImagesListParameters
-            {
-                Filters = new Dictionary<string, IDictionary<string, bool>>
-                {
-                    ["reference"] = new Dictionary<string, bool> { [CamoufoxImageName] = true }
-                }
-            });
-
-            return images.Count > 0;
-        }
-        catch
-        {
-            // If the image cannot be queried, fall back to building it.
-            return false;
-        }
-    }
-
-    private async Task<bool> TryInitializeContainerAsync()
-    {
-        try
-        {
-            ContainerBuilder containerBuilder;
-            if (await CamoufoxImageExistsAsync())
-            {
-                // Reuse the existing image. Rebuilding via ImageFromDockerfileBuilder
-                // would inject a fresh org.testcontainers.session-id label, producing
-                // a new image id every run and orphaning the prior 7GB image as a
-                // dangling layer even though the build is a full cache hit.
-                containerBuilder = TestContainers.Container(CamoufoxImageName);
-            }
-            else
-            {
-                var solutionRoot = FindSolutionRoot();
-                var dockerfileDir = Path.Combine(solutionRoot, "DockerCompose", "camoufox");
-
-                var image = new ImageFromDockerfileBuilder()
-                    .WithDockerfileDirectory(dockerfileDir)
-                    .WithDockerfile("Dockerfile")
-                    .WithName(CamoufoxImageName)
-                    .WithDeleteIfExists(false)
-                    .WithCleanUp(false)
-                    .Build();
-
-                using var buildCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-                await image.CreateAsync(buildCts.Token);
-
-                containerBuilder = TestContainers.Container(image);
-            }
-
-            _container = containerBuilder
-                .WithPortBinding(9377, true)
-                // Docker's default /dev/shm is 64MB, which is where a browser puts its shared
-                // graphics and IPC buffers — the documented cause of a browser dying under load in
-                // a container, and this suite drives parallel sessions through one. A whole
-                // collection rides on this container: when the server went down mid-run, nineteen
-                // tests failed together on a closed WebSocket, none of them for a reason of their
-                // own. The compose service survives the same crash because it is set to restart;
-                // nothing restarts this one.
-                .WithCreateParameterModifier(p =>
-                    (p.HostConfig ??= new()).ShmSize = 1024L * 1024 * 1024)
-                .WithWaitStrategy(Wait.ForUnixContainer()
-                    .UntilHttpRequestIsSucceeded(r => r.ForPort(9377).ForPath("/json")))
-                .Build();
-
-            using var startCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-            await _container.StartAsync(startCts.Token);
-
-            var host = _container.Hostname;
-            var port = _container.GetMappedPublicPort(9377);
-
-            WsEndpoint = $"ws://{host}:{port}/browser";
-            Browser = new PlaywrightWebBrowser(wsEndpoint: WsEndpoint);
-
-            using var warmupCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-            var request = new BrowseRequest(
-                SessionId: "test-init",
-                Url: "https://example.com",
-                MaxLength: 1000);
-            var result = await Browser.NavigateAsync(request, warmupCts.Token);
-
-            if (result.Status == BrowseStatus.Success)
-            {
-                await Browser.CloseSessionAsync("test-init", warmupCts.Token);
-                return true;
-            }
-
-            _initializationError = $"Container browser failed: {result.ErrorMessage}";
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _initializationError = $"Container initialization failed: {ex.Message}";
-            return false;
-        }
-    }
-
+    // Clears cookies on the one page context every fixture.Browser session shares, which is why
+    // the classes that call it stay in a single collection — see PlaywrightCollectionLayoutTests.
     public Task ClearContextStateAsync() => Browser.ClearCookiesAsync();
 
     // JS-heavy live pages render form elements client-side after
@@ -219,18 +67,36 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
             await Task.Delay(interval);
         }
     }
-
-    public async Task DisposeAsync()
-    {
-        await Browser.DisposeAsync();
-        if (_container != null)
-        {
-            await _container.DisposeAsync();
-        }
-
-        // Image is intentionally not disposed to preserve Docker layer cache across test runs
-    }
 }
 
-[CollectionDefinition("PlaywrightWebBrowserIntegration")]
+// The classes that time a production code path and assert on the milliseconds take this instead:
+// same fixture, a browser server nothing else is driving. What they measure is real latency
+// through a real browser, so a server answering three other collections at once is not a slower
+// version of the same reading — it is a different one, and the run that asked for it failed every
+// budget in both classes.
+public sealed class QuietBrowserFixture : PlaywrightWebBrowserFixture
+{
+    protected override string Pool => CamoufoxBackend.QuietPool;
+}
+
+// Two collections, so the browser-integration classes run at once rather than as a single serial
+// chain — which was as long as all their spans added up to, and on a slow run was what the whole
+// suite finished behind.
+//
+// The line between them is whether a class asserts on elapsed time. Those go in Timing, which has
+// a backend to itself and stays serialised internally so the two of them do not measure each other.
+// The rest share the other backend: they assert on what came back rather than how quickly, and
+// several of them drive the fixture's one PlaywrightWebBrowser and clear its cookies between tests,
+// which is its own reason to keep them in one collection. PlaywrightCollectionLayoutTests holds
+// both halves of that rule.
+[CollectionDefinition(PlaywrightCollections.SharedBrowser)]
 public class PlaywrightWebBrowserIntegrationCollection : ICollectionFixture<PlaywrightWebBrowserFixture>;
+
+[CollectionDefinition(PlaywrightCollections.Timing)]
+public class PlaywrightTimingCollection : ICollectionFixture<QuietBrowserFixture>;
+
+public static class PlaywrightCollections
+{
+    public const string SharedBrowser = "PlaywrightWebBrowserIntegration";
+    public const string Timing = "Playwright.Timing";
+}

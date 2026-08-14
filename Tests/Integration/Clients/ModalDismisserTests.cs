@@ -15,8 +15,8 @@ namespace Tests.Integration.Clients;
 // and then ~29 button/text probes each block 500ms. That latency hit production browsing and the
 // integration test suite alike. These tests pin the fast path AND prove real modals still dismiss,
 // using hermetic SetContentAsync pages (no network) against the shared Camoufox backend.
-[Collection("PlaywrightWebBrowserIntegration")]
-public class ModalDismisserTests(PlaywrightWebBrowserFixture fixture) : IAsyncLifetime
+[Collection(PlaywrightCollections.Timing)]
+public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -62,19 +62,25 @@ public class ModalDismisserTests(PlaywrightWebBrowserFixture fixture) : IAsyncLi
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
 
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync(
-            "<!doctype html><html><body><h1>Hello</h1><p>Plain page with no modals.</p></body></html>");
+        var fastest = await LatencyBudget.FastestAsync(async () =>
+        {
+            var page = await _context!.NewPageAsync();
+            await page.SetContentAsync(
+                "<!doctype html><html><body><h1>Hello</h1><p>Plain page with no modals.</p></body></html>");
 
-        var dismisser = new ModalDismisser();
-        var sw = Stopwatch.StartNew();
-        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
-        sw.Stop();
+            var dismisser = new ModalDismisser();
+            var sw = Stopwatch.StartNew();
+            var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+            sw.Stop();
 
-        result.ShouldBeEmpty();
+            result.ShouldBeEmpty();
+            await page.CloseAsync();
+            return sw.ElapsedMilliseconds;
+        });
+
         // Bounds the no-modal cost to roughly the detection window (~300ms) — guards against a
         // regression back toward the old multi-second blocking waits.
-        sw.ElapsedMilliseconds.ShouldBeLessThan(800);
+        fastest.ShouldBeLessThan(800);
     }
 
     // Pins the empirically-chosen detection window (~300ms): a consent overlay that renders shortly
@@ -129,16 +135,23 @@ public class ModalDismisserTests(PlaywrightWebBrowserFixture fixture) : IAsyncLi
         var bulk = string.Concat(Enumerable.Range(0, 3000).Select(i =>
             $"<div class='card-{i} modal-body popup-inner overlay-tile cookie-note'>" +
             $"<span class='close-icon'>row {i}</span></div>"));
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync("<!doctype html><html><body>" + bulk + "</body></html>");
 
-        var dismisser = new ModalDismisser();
-        var sw = Stopwatch.StartNew();
-        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
-        sw.Stop();
+        var fastest = await LatencyBudget.FastestAsync(async () =>
+        {
+            var page = await _context!.NewPageAsync();
+            await page.SetContentAsync("<!doctype html><html><body>" + bulk + "</body></html>");
 
-        result.ShouldBeEmpty();
-        sw.ElapsedMilliseconds.ShouldBeLessThan(800);
+            var dismisser = new ModalDismisser();
+            var sw = Stopwatch.StartNew();
+            var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+            sw.Stop();
+
+            result.ShouldBeEmpty();
+            await page.CloseAsync();
+            return sw.ElapsedMilliseconds;
+        });
+
+        fastest.ShouldBeLessThan(800);
     }
 
     // The text-pattern fallback, which runs only when no button SELECTOR matched. Here the dismiss

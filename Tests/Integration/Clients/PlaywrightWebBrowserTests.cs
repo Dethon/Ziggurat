@@ -5,7 +5,7 @@ using Xunit.Abstractions;
 
 namespace Tests.Integration.Clients;
 
-[Collection("PlaywrightWebBrowserIntegration")]
+[Collection(PlaywrightCollections.SharedBrowser)]
 public class PlaywrightWebBrowserTests(
     PlaywrightWebBrowserFixture fixture,
     ITestOutputHelper testOutputHelper) : IAsyncLifetime

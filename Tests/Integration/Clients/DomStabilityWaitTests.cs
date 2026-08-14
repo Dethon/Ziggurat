@@ -11,8 +11,8 @@ namespace Tests.Integration.Clients;
 // sleeps — a hard 600ms floor — the price of even a fully static page, while capping total patience
 // at 1200ms for a page still rendering. These tests pin both ends: a settled page must clear fast,
 // and a page still mutating must be waited out rather than sampled early.
-[Collection("PlaywrightWebBrowserIntegration")]
-public class DomStabilityWaitTests(PlaywrightWebBrowserFixture fixture) : IAsyncLifetime
+[Collection(PlaywrightCollections.Timing)]
+public class DomStabilityWaitTests(QuietBrowserFixture fixture) : IAsyncLifetime
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -58,14 +58,20 @@ public class DomStabilityWaitTests(PlaywrightWebBrowserFixture fixture) : IAsync
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
 
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync("<!doctype html><html><body><p>static content</p></body></html>");
+        var fastest = await LatencyBudget.FastestAsync(async () =>
+        {
+            var page = await _context!.NewPageAsync();
+            await page.SetContentAsync("<!doctype html><html><body><p>static content</p></body></html>");
 
-        var sw = Stopwatch.StartNew();
-        await PlaywrightWebBrowser.WaitForDomStabilityAsync(page, CancellationToken.None);
-        sw.Stop();
+            var sw = Stopwatch.StartNew();
+            await PlaywrightWebBrowser.WaitForDomStabilityAsync(page, CancellationToken.None);
+            sw.Stop();
 
-        sw.ElapsedMilliseconds.ShouldBeLessThan(550);
+            await page.CloseAsync();
+            return sw.ElapsedMilliseconds;
+        });
+
+        fastest.ShouldBeLessThan(550);
     }
 
     // The coverage half of the trade: content injected repeatedly after DOMContentLoaded must be
@@ -136,26 +142,32 @@ public class DomStabilityWaitTests(PlaywrightWebBrowserFixture fixture) : IAsync
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
 
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync(
-            "<!doctype html><html><body><p>article body</p><div id='spinner'></div></body></html>");
-        await page.EvaluateAsync(
-            """
-            () => {
-                let deg = 0;
-                setInterval(() => {
-                    const s = document.getElementById('spinner');
-                    deg = (deg + 7) % 360;
-                    s.style.transform = 'rotate(' + deg + 'deg)';
-                    s.className = 'spin-' + deg;
-                }, 30);
-            }
-            """);
+        var fastest = await LatencyBudget.FastestAsync(async () =>
+        {
+            var page = await _context!.NewPageAsync();
+            await page.SetContentAsync(
+                "<!doctype html><html><body><p>article body</p><div id='spinner'></div></body></html>");
+            await page.EvaluateAsync(
+                """
+                () => {
+                    let deg = 0;
+                    setInterval(() => {
+                        const s = document.getElementById('spinner');
+                        deg = (deg + 7) % 360;
+                        s.style.transform = 'rotate(' + deg + 'deg)';
+                        s.className = 'spin-' + deg;
+                    }, 30);
+                }
+                """);
 
-        var sw = Stopwatch.StartNew();
-        await PlaywrightWebBrowser.WaitForDomStabilityAsync(page, CancellationToken.None);
-        sw.Stop();
+            var sw = Stopwatch.StartNew();
+            await PlaywrightWebBrowser.WaitForDomStabilityAsync(page, CancellationToken.None);
+            sw.Stop();
 
-        sw.ElapsedMilliseconds.ShouldBeLessThan(700);
+            await page.CloseAsync();
+            return sw.ElapsedMilliseconds;
+        });
+
+        fastest.ShouldBeLessThan(700);
     }
 }
