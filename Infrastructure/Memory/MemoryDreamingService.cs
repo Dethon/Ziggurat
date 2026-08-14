@@ -127,12 +127,42 @@ public class MemoryDreamingService(
     private async Task<int> MergeAsync(string userId, IReadOnlyList<MemoryEntry> activeMemories, CancellationToken ct)
     {
         var decisions = await consolidator.ConsolidateAsync(activeMemories, ct);
-        var activeIds = activeMemories.Select(m => m.Id).ToHashSet();
+
+        // Keyed without case, and resolving to the id the store holds rather than the one that came
+        // back. A decision's ids went out to a language model and came back retyped: mostly
+        // verbatim, sometimes "Mem_3" for "mem_3" — the right memory, the wrong shape. Matched
+        // exactly, both ids of a pair miss at once, the decision falls under the two-source guard
+        // below, and the pass consolidates less than the model decided with nothing said. Ids are
+        // mem_{Guid:N}, so no two can differ by case alone and there is nothing to lose here.
+        //
+        // The value matters as much as the comparer: what is kept is the stored id, because these
+        // go on to DeleteAsync, which is a lookup by key — handed the model's spelling it would
+        // remove nothing, leaving the sources of a merge alive beside the memory that replaced them.
+        var storedIds = activeMemories
+            .DistinctBy(m => m.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(m => m.Id, m => m.Id, StringComparer.OrdinalIgnoreCase);
         var mergedCount = 0;
 
         foreach (var decision in decisions)
         {
-            var validSourceIds = decision.SourceIds.Where(activeIds.Contains).Distinct().ToList();
+            var validSourceIds = decision.SourceIds
+                .Select(id => storedIds.GetValueOrDefault(id))
+                .OfType<string>()
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            // An id that names no memory is still dropped — a model can invent one, and ignoring
+            // case is not the same as accepting anything. Saying which one is what stops the next
+            // mismatch of this kind from going unnoticed for as long as the casing did.
+            var unplaceable = decision.SourceIds.Where(id => !storedIds.ContainsKey(id)).ToList();
+            if (unplaceable.Count > 0)
+            {
+                logger.LogWarning(
+                    "Dreaming for {UserId}: consolidation named {UnknownIds}, which no active memory holds; "
+                    + "{Action} keeps {ValidCount} of {SourceCount} sources",
+                    userId, string.Join(", ", unplaceable), decision.Action,
+                    validSourceIds.Count, decision.SourceIds.Count);
+            }
 
             switch (decision.Action)
             {
