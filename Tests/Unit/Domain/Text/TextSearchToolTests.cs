@@ -387,7 +387,14 @@ public class TextSearchToolTests : IDisposable
         match["line"]!.GetValue<int>().ShouldBe(lineCount);
         match["text"]!.ToString().ShouldStartWith("kubernetes on the last line");
         match["context"]!["before"]!.AsArray().Count.ShouldBe(1);
-        (peak - baseline).ShouldBeLessThan(16L * 1024 * 1024);
+        // The heap this reads is the whole suite's, and only the peak is a maximum over the seven
+        // seconds the search takes — the baseline is a single instant. So every megabyte a sibling
+        // holds live during those seconds lands on this side of the subtraction and nothing takes it
+        // off again: at full width the difference reached 28MB against a 16MB ceiling and failed
+        // three runs in eight, on a search that holds kilobytes. Streaming and a whole-file read are
+        // four hundred megabytes apart, so the ceiling has room to sit clear of that noise and still
+        // fail on the read this exists to catch.
+        (peak - baseline).ShouldBeLessThan(128L * 1024 * 1024);
     }
 
     // Apparent size without the write cost: the body is a hole, and only the newline ending each
