@@ -260,6 +260,47 @@ one: the same audio keeps accumulating under the same clock, and only the way it
 changes, from letting go to pressing.
 _Avoid_: locked recording, hands-free, toggle mode
 
+## Speech typing
+
+These terms describe a dictation that ends in a person's own keyboard instead of a
+conversation. A speech typist dictates in exactly the sense above — the word is not
+reserved for the channels — and these are the parts of it the channels have no need
+of, because a channel has one place for words to go and a desktop has as many as
+there are windows.
+
+**Speech typist**:
+A program on a person's own machine that turns their dictations into typing in
+whatever they were already working in. It belongs to no conversation and reaches no
+agent: nothing it produces is a message, and it remembers nothing once the words are
+out.
+_Avoid_: dictation client, voice keyboard, dictation app
+
+**Binding**:
+A key a person holds to dictate, together with the language the words are expected in
+and the vocabulary they should be spelled by. Several exist at once, and choosing one
+is choosing all of it — there is no mode to be in and nothing to switch.
+_Avoid_: hotkey, shortcut, keybind, profile
+
+**Segment**:
+A stretch of one dictation, cut where the person paused, that is turned into words on
+its own and typed the moment it is ready. It is a part of the dictation and never a
+dictation itself: it inherits the binding, it is understood in the light of the
+segment before it, and its words join the ones already typed.
+_Avoid_: chunk, fragment, piece, utterance
+
+**Injection**:
+Words arriving in another program as though the person had typed them there. Nothing
+downstream can tell that they did not, which is what makes it injection rather than
+delivery.
+_Avoid_: paste, output, send keys, emit
+
+**Target window**:
+The window a dictation was begun in front of, and the only one its words are allowed
+to arrive in. A dictation whose target stops being the one in front ends where it is,
+with the rest of its words unsaid — words in the wrong window are worse than missing
+ones.
+_Avoid_: focused window, active window, foreground
+
 ## Channel connection
 
 **Connection generation**:
