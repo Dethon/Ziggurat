@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::config::{Binding, Config, DEFAULT_BINDING_KEY};
-use crate::host::{Cue, HostEvent, KeyCode, TrayState};
+use crate::host::{Cue, HostEvent, KeyCode, TranscribeError, TrayState};
 use crate::testing::{Action, FakeHost};
 
 const SPANISH: KeyCode = DEFAULT_BINDING_KEY;
@@ -269,6 +269,93 @@ async fn a_dictation_that_only_ever_falls_silent_asks_nothing_of_lemonade() {
 
     assert!(host.sent().is_empty());
     assert!(host.injected().is_empty());
+    driver.stop().await;
+}
+
+// ── Ticket 06: prompt chaining and vocabulary ─────────────────────────────────────────────────
+
+fn with_vocabulary(vocabulary: &str) -> Config {
+    Config {
+        bindings: vec![Binding { vocabulary: vocabulary.into(), ..Binding::default() }],
+        ..Config::default()
+    }
+}
+
+#[tokio::test]
+async fn the_first_segment_carries_the_vocabulary_and_no_chained_text() {
+    let host = FakeHost::new();
+    host.will_say("hola Ziggurat");
+    let driver = Driver::start_with(host.clone(), with_vocabulary("Ziggurat, Lemonade"));
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.sent()[0].prompt.as_deref(), Some("Ziggurat, Lemonade"));
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn each_later_segment_carries_the_vocabulary_and_then_what_was_just_said() {
+    // A phrase that continues across a pause is understood as one thought rather than starting
+    // from nothing, and what was said last sits closest to the audio being decoded.
+    let host = FakeHost::new();
+    host.will_say("estaba diciendo que").will_say("todo funciona");
+    let driver = Driver::start_with(host.clone(), with_vocabulary("Ziggurat"));
+
+    driver.hold(SPANISH, &two_phrases()).await;
+    host.wait_for_idle().await;
+
+    let prompts: Vec<_> = host.sent().iter().map(|r| r.prompt.clone()).collect();
+    assert_eq!(
+        prompts,
+        [Some("Ziggurat".into()), Some("Ziggurat estaba diciendo que".into())]
+    );
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_segment_that_produced_nothing_does_not_poison_the_chain_after_it() {
+    // The middle segment fails outright. The third must still be chained to the first, because
+    // the alternative is a chain that stalls on the one thing that never produced words.
+    let host = FakeHost::new();
+    host.will_say("primera")
+        .will_answer(Err(TranscribeError::Status(500)))
+        .will_answer(Err(TranscribeError::Status(500)))
+        .will_say("tercera");
+    let driver = Driver::start_with(host.clone(), with_vocabulary("Ziggurat"));
+
+    driver
+        .hold(SPANISH, &[speech(800), silence(600), speech(800), silence(600), speech(800)])
+        .await;
+    host.wait_until("the third segment to be typed", |actions| {
+        actions.iter().filter(|a| matches!(a, Action::Injected(_))).count() == 2
+    })
+    .await;
+
+    let prompts: Vec<_> = host.sent().iter().map(|r| r.prompt.clone()).collect();
+    assert_eq!(
+        prompts,
+        [
+            Some("Ziggurat".into()),
+            Some("Ziggurat primera".into()), // the failing segment
+            Some("Ziggurat primera".into()), // its one retry
+            Some("Ziggurat primera".into()), // the segment after it, chained past the gap
+        ]
+    );
+    assert_eq!(host.injected(), ["primera", " tercera"]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_binding_with_no_vocabulary_sends_no_prompt_on_its_first_segment() {
+    let host = FakeHost::new();
+    host.will_say("hola");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.sent()[0].prompt, None);
     driver.stop().await;
 }
 

@@ -113,6 +113,11 @@ base_url = "http://ai370:13305/v1"
 model = "Whisper-Large-v3-Turbo"
 # Per-segment. A request that outlives it is retried once and then that segment is dropped.
 request_timeout_secs = 30
+# Each request's prompt is the binding's vocabulary followed by what the previous segment turned
+# out to say. whisper.cpp caps the prompt at 224 tokens and keeps the TAIL, which would eat the
+# vocabulary, so the cap is applied here and it is the chained text that loses its oldest words.
+# This is characters, deliberately under that token budget rather than tuned to it.
+max_prompt_chars = 700
 
 [audio]
 # A case-insensitive fragment of the capture device's name. Empty means the system default, so

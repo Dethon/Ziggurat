@@ -50,6 +50,9 @@ pub struct LemonadeConfig {
     /// symptom is a slow first dictation rather than a failure.
     pub model: String,
     pub request_timeout_secs: u64,
+    /// A character approximation of whisper's 224-token prompt limit, deliberately under it. The
+    /// same number the voice hub pins as `Stt:OpenAi:MaxPromptChars`.
+    pub max_prompt_chars: usize,
 }
 
 impl Default for LemonadeConfig {
@@ -58,6 +61,7 @@ impl Default for LemonadeConfig {
             base_url: "http://ai370:13305/v1".into(),
             model: "Whisper-Large-v3-Turbo".into(),
             request_timeout_secs: 30,
+            max_prompt_chars: 700,
         }
     }
 }

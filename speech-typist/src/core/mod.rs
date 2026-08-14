@@ -15,6 +15,7 @@ use crate::host::{
     Cue, Host, HostEvent, KeyCode, TranscribeError, Transcript, TranscriptionRequest, TrayState,
     WindowId,
 };
+use crate::prompt;
 use crate::wav;
 
 #[cfg(test)]
@@ -219,7 +220,13 @@ impl Core {
         let request = TranscriptionRequest {
             wav: wav::from_pcm(&segment, live.sample_rate),
             language: binding.language.clone(),
-            prompt: None,
+            // The chain reads `previous`, which only an accepted transcript writes — so a segment
+            // that produced nothing is skipped rather than stalling the ones after it.
+            prompt: prompt::compose(
+                &binding.vocabulary,
+                live.previous.as_deref(),
+                self.config.lemonade.max_prompt_chars,
+            ),
         };
         live.inflight = Some(Attempt { request: request.clone(), tries: 1 });
         self.send(request, done);
