@@ -13,14 +13,14 @@
   "retention": {
     // Six months. Past this a topic stops appearing in the ordinary list. It is not deleted and
     // nothing is written on it — archived is where it sits in the index. See ADR 0024.
-    "archiveHorizon": "182.00:00:00",
+    "archiveHorizon": "60.00:00:00",
 
     // Twelve months. Past this a topic ceases to exist, taking its history, what it is searched by
     // and the files sent to it.
     "purgeHorizon": "365.00:00:00",
 
     // How many rows one fetch of the sidebar costs, whatever the space has accumulated.
-    "pageSize": 30,
+    "pageSize": 10,
 
     // How much of the last message a row shows.
     "snippetLength": 80,
