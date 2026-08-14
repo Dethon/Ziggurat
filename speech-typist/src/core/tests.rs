@@ -173,6 +173,105 @@ async fn a_key_that_is_not_bound_does_nothing_at_all() {
     assert!(host.actions().is_empty(), "recorded: {:?}", host.actions());
 }
 
+// ── Ticket 05: segmenting and progressive injection ───────────────────────────────────────────
+
+/// Two phrases with a pause between them, which is what the detector cuts on.
+fn two_phrases() -> Vec<Vec<i16>> {
+    vec![speech(800), silence(600), speech(800)]
+}
+
+#[tokio::test]
+async fn every_segment_after_the_first_is_joined_with_exactly_one_space() {
+    let host = FakeHost::new();
+    host.will_say("  hola que tal  ").will_say("  todo bien  ");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &two_phrases()).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.injected(), ["hola que tal", " todo bien"]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn segments_are_asked_for_one_at_a_time_and_typed_strictly_in_order() {
+    let host = FakeHost::new();
+    host.will_say("uno").will_say("dos").will_say("tres");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver
+        .hold(
+            SPANISH,
+            &[speech(800), silence(600), speech(800), silence(600), speech(800)],
+        )
+        .await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.injected(), ["uno", " dos", " tres"]);
+    // One in flight at a time is what makes the ordering an invariant rather than a race, and
+    // what makes the prompt chain possible at all.
+    let steps: Vec<_> = host
+        .actions()
+        .into_iter()
+        .filter(|a| matches!(a, Action::Sent(_) | Action::Injected(_)))
+        .map(|a| matches!(a, Action::Sent(_)))
+        .collect();
+    assert_eq!(steps, [true, false, true, false, true, false], "a request overlapped an injection");
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn words_arrive_while_the_key_is_still_held() {
+    // The whole point of segmenting: a long dictation reads onto the screen at roughly the speed
+    // it is spoken rather than all at once when the key comes up.
+    let host = FakeHost::new();
+    host.will_say("primera frase");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::Frame(silence(600))).await;
+    host.wait_until("the first phrase to be typed", |actions| {
+        actions.iter().any(|a| matches!(a, Action::Injected(_)))
+    })
+    .await;
+
+    assert!(
+        !host.actions().contains(&Action::CaptureClosed),
+        "the key was never released, so the microphone must still be open"
+    );
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    host.wait_for_idle().await;
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn nothing_but_the_surrounding_whitespace_is_rewritten() {
+    // Whisper already punctuates and capitalises. A rewrite layer would fight it.
+    let host = FakeHost::new();
+    host.will_say(" ¿Qué tal, Ziggurat? Todo bien. ");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.injected(), ["¿Qué tal, Ziggurat? Todo bien."]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_dictation_that_only_ever_falls_silent_asks_nothing_of_lemonade() {
+    let host = FakeHost::new();
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[silence(600), silence(600), silence(600)]).await;
+    host.wait_for_idle().await;
+
+    assert!(host.sent().is_empty());
+    assert!(host.injected().is_empty());
+    driver.stop().await;
+}
+
 fn tone_at(rate: u32, ms: u32, amplitude: i16) -> Vec<i16> {
     let samples = (rate as u64 * ms as u64 / 1000) as usize;
     (0..samples).map(|i| if i % 8 < 4 { amplitude } else { -amplitude }).collect()

@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::config::Config;
+use crate::detector::{EnergyDetector, SegmentDetector};
 use crate::host::{
     Cue, Host, HostEvent, KeyCode, TranscribeError, Transcript, TranscriptionRequest, TrayState,
     WindowId,
@@ -45,9 +46,9 @@ struct Live {
     /// leaves it alone rather than clearing it.
     previous: Option<String>,
     injected_any: bool,
-    /// Everything heard so far in the current segment. Replaced by the detector in ticket 05.
-    buffer: Vec<i16>,
-    heard_speech: bool,
+    /// Where the audio is cut into segments. Held by the dictation rather than by the core, so a
+    /// detector never carries state from one dictation into the next.
+    detector: Box<dyn SegmentDetector>,
 }
 
 struct Core {
@@ -135,8 +136,7 @@ impl Core {
             told: false,
             previous: None,
             injected_any: false,
-            buffer: Vec::new(),
-            heard_speech: false,
+            detector: Box::new(EnergyDetector::new(&self.config.detector, format.sample_rate)),
         });
         self.refresh_tray();
     }
@@ -156,10 +156,7 @@ impl Core {
         if live.ended || live.abandoned {
             return;
         }
-        if rms(&samples) >= self.config.detector.speech_rms {
-            live.heard_speech = true;
-        }
-        live.buffer.extend_from_slice(&samples);
+        live.waiting.extend(live.detector.push(&samples));
         self.pump(done);
     }
 
@@ -188,10 +185,7 @@ impl Core {
             return;
         }
         live.ended = true;
-        if live.heard_speech && !live.buffer.is_empty() {
-            live.waiting.push_back(std::mem::take(&mut live.buffer));
-        }
-        live.buffer = Vec::new();
+        live.waiting.extend(live.detector.flush());
         self.host.close_capture();
         if cues {
             self.host.play_cue(Cue::Stop);
@@ -341,14 +335,4 @@ impl Core {
         }
         self.live = None;
     }
-}
-
-/// i16 amplitude units, the same units the detector thresholds are written in.
-pub fn rms(samples: &[i16]) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let energy: f64 =
-        samples.iter().map(|&s| s as f64 * s as f64).sum::<f64>() / samples.len() as f64;
-    energy.sqrt() as f32
 }
