@@ -5,6 +5,8 @@ AI agent via Telegram/WebChat/MessageBus using .NET 10 LTS, MCP, and OpenRouter 
 
 Two standalone Rust crates sit outside the .NET solution and share no build with each other or with it — read each one's `CLAUDE.md` before touching it. `satellite/` is `nabu-satellite`, the Wyoming voice satellite. `speech-typist/` is the Windows speech typist: a person holds a key and their words are typed into whatever window was already in front, posting at Lemonade directly rather than through this stack (`docs/adr/0026`). Its `cargo test` must keep passing with no .NET project built and no Lemonade reachable.
 
+There is no Cargo workspace and no `Cargo.toml` at the root, deliberately — the two crates pin different targets and must not share a build. The cost is that rust-analyzer sees two projects and refuses to pick one, so `.vscode/settings.json` and `.zed/settings.json` name both in `linkedProjects`; a third crate goes in both lists. The two crates do pin the **same toolchain**, and should keep doing so: an editor runs one proc-macro server, and pinning them apart makes serde's derives fail to expand in whichever crate loses, which reads as errors the compiler never sees.
+
 ## Build, Test & Format
 
 - `Tests/Unit` runs standalone. `Tests/Integration` and E2E tests (`[Trait("Category", "E2E")]`) need Docker, but their fixtures spin up the containers themselves (testcontainers for integration, the compose stack for E2E) — just run `dotnet test`; set `PLAYWRIGHT_HEADLESS=false` to watch the browser.

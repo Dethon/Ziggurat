@@ -1,3 +1,7 @@
+# The same channel `satellite/rust-toolchain.toml` pins, deliberately. The two crates share no
+# build, but an editor loads them in one session and runs a single proc-macro server against one
+# toolchain's ABI — pin them apart and serde's derives fail to expand in whichever crate loses,
+# which reads as errors all over `config/` and `satellite/src/` that the compiler never sees.
 [toolchain]
-channel = "1.91.1"
+channel = "1.97.1"
 targets = ["x86_64-pc-windows-msvc"]

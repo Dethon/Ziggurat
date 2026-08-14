@@ -2,7 +2,7 @@
 name = "speech-typist"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.91"
+rust-version = "1.97"
 license = "MIT"
 
 [[bin]]
