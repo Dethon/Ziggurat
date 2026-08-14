@@ -73,7 +73,7 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
 ## Building
 
 ```sh
-scripts/build-release.sh          # one .exe, ~1.3 MB, cross-compiled from WSL
+scripts/build-release.sh          # one .exe, ~1.3 MB, cross-compiled from WSL (runnable from anywhere)
 cargo test                        # the whole suite, no Windows and no network needed
 cargo xwin check --target x86_64-pc-windows-msvc   # type-check the Windows half from WSL
 ```
@@ -83,8 +83,14 @@ cargo-xwin downloads the MSVC headers and import libraries on first use and cach
 
 `.cargo/config.toml` statically links the CRT. Without it the executable needs `vcruntime140.dll`,
 which ships with the VC++ redistributable and is not on a clean machine — and one file that needs
-a redistributable is not one file. The release script prints the imported DLLs for that reason;
-every one of them must be a Windows system DLL.
+a redistributable is not one file. The release script reads the PE import table for that reason;
+every entry in it must be a Windows system DLL.
+
+The same file passes `/ignore:4099`, which is what keeps a clean build quiet. Linking the static
+CRT otherwise emits about fifty-five lines of LNK4099 — lld hunting for Microsoft's PDBs for
+`libcmt.lib` and `libvcruntime.lib`, which cargo-xwin does not download and which nothing here
+would read. It is scoped to that one warning deliberately: `-A linker_messages` would hide a real
+link failure just as effectively.
 
 Crates that were established to cross-compile this way: `cpal` (WASAPI capture and device
 enumeration), `windows` 0.58 (hook, tray, injection, registry, cue playback), `reqwest` with **no

@@ -1,4 +1,9 @@
 # Statically link the CRT so the executable really is one file: the UCRT ships with Windows 10,
 # but vcruntime140.dll comes from the VC++ redistributable and is not on a clean machine.
+#
+# /ignore:4099 silences the ~55 lines of LNK4099 that linking the static CRT otherwise prints on
+# every build — lld looking for Microsoft's own PDBs for libcmt.lib and libvcruntime.lib, which
+# cargo-xwin does not download and which no build here has any use for. It is scoped to that one
+# warning rather than muting the linker, so a real link problem still reaches the terminal.
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static"]
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=/ignore:4099"]
