@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::host::KeyCode;
 
+mod file;
+
+pub use file::{load, locations, ConfigError, Loaded, DEFAULTS, FILE_NAME};
+
 /// F13. No application uses it, which is what makes it a safe default — and many keyboards cannot
 /// produce it, which is what the tray's learn mode is for.
 pub const DEFAULT_BINDING_KEY: KeyCode = KeyCode(0x7C);
@@ -51,8 +55,8 @@ pub struct LemonadeConfig {
 impl Default for LemonadeConfig {
     fn default() -> Self {
         Self {
-            base_url: "http://ai370:13305/api/v1".into(),
-            model: "Whisper-Base".into(),
+            base_url: "http://ai370:13305/v1".into(),
+            model: "Whisper-Large-v3-Turbo".into(),
             request_timeout_secs: 30,
         }
     }
@@ -176,5 +180,23 @@ impl Config {
     /// Which binding a key belongs to, or `None` for a key that is not bound at all.
     pub fn binding_for(&self, key: KeyCode) -> Option<usize> {
         self.bindings.iter().position(|b| b.key == key)
+    }
+
+    /// What TOML cannot express: a config that parses and still leaves the speech typist unable
+    /// to do anything is reported rather than started.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.bindings.is_empty() {
+            return Err("no bindings, so no key would ever start a dictation".into());
+        }
+        let mut keys: Vec<KeyCode> = self.bindings.iter().map(|b| b.key).collect();
+        keys.sort();
+        let clash = keys.windows(2).find(|pair| pair[0] == pair[1]);
+        if let Some(pair) = clash {
+            return Err(format!(
+                "key {} is bound twice, so neither binding's language could win",
+                pair[0].0
+            ));
+        }
+        Ok(())
     }
 }
