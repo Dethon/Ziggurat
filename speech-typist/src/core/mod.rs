@@ -293,9 +293,10 @@ impl Core {
             return;
         }
 
-        let joined =
-            if live.injected_any { format!(" {text}") } else { text.clone() };
-        if let Err(error) = self.host.inject(&joined) {
+        let joined = if live.injected_any { format!(" {text}") } else { text.clone() };
+        // Still held means the binding's key is logically down while these characters are sent.
+        let held = (!live.ended).then_some(live.key);
+        if let Err(error) = self.host.inject(&joined, held) {
             self.tell_once(&format!("Could not type the transcript: {error}"));
             self.failing = true;
             return;

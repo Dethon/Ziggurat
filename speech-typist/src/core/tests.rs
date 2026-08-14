@@ -213,7 +213,7 @@ async fn segments_are_asked_for_one_at_a_time_and_typed_strictly_in_order() {
     let steps: Vec<_> = host
         .actions()
         .into_iter()
-        .filter(|a| matches!(a, Action::Sent(_) | Action::Injected(_)))
+        .filter(|a| matches!(a, Action::Sent(_) | Action::Injected { .. }))
         .map(|a| matches!(a, Action::Sent(_)))
         .collect();
     assert_eq!(steps, [true, false, true, false, true, false], "a request overlapped an injection");
@@ -232,7 +232,7 @@ async fn words_arrive_while_the_key_is_still_held() {
     driver.send(HostEvent::Frame(speech(800))).await;
     driver.send(HostEvent::Frame(silence(600))).await;
     host.wait_until("the first phrase to be typed", |actions| {
-        actions.iter().any(|a| matches!(a, Action::Injected(_)))
+        actions.iter().any(|a| matches!(a, Action::Injected { .. }))
     })
     .await;
 
@@ -328,7 +328,7 @@ async fn a_segment_that_produced_nothing_does_not_poison_the_chain_after_it() {
         .hold(SPANISH, &[speech(800), silence(600), speech(800), silence(600), speech(800)])
         .await;
     host.wait_until("the third segment to be typed", |actions| {
-        actions.iter().filter(|a| matches!(a, Action::Injected(_))).count() == 2
+        actions.iter().filter(|a| matches!(a, Action::Injected { .. })).count() == 2
     })
     .await;
 
@@ -512,7 +512,7 @@ async fn after_the_retry_fails_the_segment_is_dropped_and_the_ones_after_it_stil
 
     driver.hold(SPANISH, &two_phrases()).await;
     host.wait_until("the second phrase to be typed", |actions| {
-        actions.iter().any(|a| matches!(a, Action::Injected(_)))
+        actions.iter().any(|a| matches!(a, Action::Injected { .. }))
     })
     .await;
 
@@ -576,6 +576,133 @@ async fn the_error_state_clears_on_the_next_transcript_with_no_manual_action() {
     let last_error = host.tray_states().iter().rposition(|s| *s == TrayState::Error);
     let last_idle = host.tray_states().iter().rposition(|s| *s == TrayState::Idle);
     assert!(last_idle > last_error, "the tray was left broken: {:?}", host.tray_states());
+    driver.stop().await;
+}
+
+// ── Ticket 10: dictation lifecycle guards ─────────────────────────────────────────────────────
+
+const ENGLISH: KeyCode = KeyCode(0x7D);
+
+fn two_bindings() -> Config {
+    Config {
+        bindings: vec![
+            Binding::default(),
+            Binding { key: ENGLISH, language: "en".into(), vocabulary: String::new() },
+        ],
+        ..Config::default()
+    }
+}
+
+fn typed_yet(actions: &[Action]) -> usize {
+    actions.iter().filter(|a| matches!(a, Action::Injected { .. })).count()
+}
+
+#[tokio::test]
+async fn a_changed_window_discards_the_rest_and_types_nothing_into_the_new_one() {
+    // The tail of a sentence landing in a terminal, a chat box or a game is the failure this
+    // exists to prevent: words in the wrong window are worse than missing words.
+    let host = FakeHost::new();
+    host.will_say("primera").will_say("segunda").will_say("tercera");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::Frame(silence(600))).await;
+    host.wait_until("the first phrase to be typed", |a| typed_yet(a) == 1).await;
+
+    host.move_to_window(2); // the person let go and clicked into something else
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::Frame(silence(600))).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    host.wait_until("the discard", |a| a.iter().any(|x| matches!(x, Action::Notified(_)))).await;
+
+    assert_eq!(host.injected(), ["primera"]);
+    assert_eq!(host.notifications().len(), 1, "once, not once per remaining segment");
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_dictation_whose_key_up_never_arrives_ends_by_itself_and_closes_the_capture() {
+    // A hook can lose a key-up to a remote desktop session or fast user switching. Without this
+    // the microphone stays open for the life of the process — a correctness requirement, not a
+    // nicety.
+    let host = FakeHost::new();
+    host.will_say("y entonces me fui");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.send(HostEvent::Tick { at_ms: 0 }).await;
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::Tick { at_ms: 120_000 }).await;
+    host.wait_for_idle().await;
+
+    assert!(host.actions().contains(&Action::CaptureClosed));
+    assert_eq!(host.injected(), ["y entonces me fui"], "what was said still arrives");
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn the_watchdog_leaves_a_dictation_that_is_merely_long_alone() {
+    let host = FakeHost::new();
+    host.will_say("sigo hablando");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.send(HostEvent::Tick { at_ms: 0 }).await;
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::Tick { at_ms: 119_000 }).await;
+    driver.send(HostEvent::Frame(silence(600))).await;
+    host.wait_until("the phrase to be typed", |a| typed_yet(a) == 1).await;
+
+    assert!(!host.actions().contains(&Action::CaptureClosed), "the key is still held");
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    host.wait_for_idle().await;
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_second_binding_pressed_during_a_live_dictation_is_ignored() {
+    // Two languages must never interleave into the same window.
+    let host = FakeHost::new();
+    host.will_say("en español");
+    let driver = Driver::start_with(host.clone(), two_bindings());
+
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::BindingDown(ENGLISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::BindingUp(ENGLISH)).await;
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    host.wait_for_idle().await;
+
+    let opens = host.actions().iter().filter(|a| **a == Action::CaptureOpened).count();
+    assert_eq!(opens, 1, "the second binding opened a second capture");
+    assert_eq!(host.sent()[0].language, "es", "the first dictation carried on undisturbed");
+    assert_eq!(host.injected(), ["en español"]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn injection_is_told_which_key_is_still_being_held() {
+    // A binding that is itself a modifier would otherwise chord every character it types. Which
+    // keys are modifiers is the host's knowledge, so it is handed the key rather than the answer.
+    let host = FakeHost::new();
+    host.will_say("mientras hablo").will_say("y al soltar");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::Frame(silence(600))).await;
+    host.wait_until("the phrase typed mid-dictation", |a| typed_yet(a) == 1).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(
+        host.held_during_injection(),
+        [Some(SPANISH), None],
+        "the key was still down for the first and released by the second"
+    );
     driver.stop().await;
 }
 

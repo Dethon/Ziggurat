@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use tokio::sync::Notify;
 
 use crate::host::{
-    CaptureFormat, Cue, Host, HostError, TranscribeError, Transcript, TranscriptionRequest,
-    TrayState, WindowId,
+    CaptureFormat, Cue, Host, HostError, KeyCode, TranscribeError, Transcript,
+    TranscriptionRequest, TrayState, WindowId,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -22,7 +22,7 @@ pub enum Action {
     Cue(Cue),
     Tray(TrayState),
     Sent(TranscriptionRequest),
-    Injected(String),
+    Injected { text: String, held: Option<KeyCode> },
     Notified(String),
 }
 
@@ -86,7 +86,18 @@ impl FakeHost {
         self.actions()
             .into_iter()
             .filter_map(|a| match a {
-                Action::Injected(text) => Some(text),
+                Action::Injected { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// What each injection was told the binding was still holding down, in order.
+    pub fn held_during_injection(&self) -> Vec<Option<KeyCode>> {
+        self.actions()
+            .into_iter()
+            .filter_map(|a| match a {
+                Action::Injected { held, .. } => Some(held),
                 _ => None,
             })
             .collect()
@@ -175,11 +186,11 @@ impl Host for FakeHost {
         WindowId(self.state.lock().unwrap().foreground)
     }
 
-    fn inject(&self, text: &str) -> Result<(), HostError> {
+    fn inject(&self, text: &str, held: Option<KeyCode>) -> Result<(), HostError> {
         if let Some(why) = self.state.lock().unwrap().inject_failure.clone() {
             return Err(HostError(why));
         }
-        self.record(Action::Injected(text.to_string()));
+        self.record(Action::Injected { text: text.to_string(), held });
         Ok(())
     }
 

@@ -137,7 +137,13 @@ pub trait Host: Send + Sync {
     fn foreground_window(&self) -> WindowId;
 
     /// Types the text into whatever is in front, as though a person had typed it.
-    fn inject(&self, text: &str) -> Result<(), HostError>;
+    ///
+    /// `held` is the binding's key if it is still being held, because segments are typed while
+    /// the person is still speaking. If that key is a modifier, the host must release it for the
+    /// duration of the call and restore it afterwards, or every character arrives chorded. Which
+    /// keys are modifiers is platform knowledge, so the core hands over the key rather than the
+    /// answer. The shipped default binding has no modifier precisely so this is rarely exercised.
+    fn inject(&self, text: &str, held: Option<KeyCode>) -> Result<(), HostError>;
 
     fn set_tray(&self, state: TrayState);
 
