@@ -37,9 +37,9 @@ public class RetentionPolicyFileTests
     {
         var settings = new ConfigurationBuilder().BindSettings<HostSettings>();
 
-        settings.Retention.ArchiveHorizon.ShouldBe(TimeSpan.FromDays(182));
+        settings.Retention.ArchiveHorizon.ShouldBe(TimeSpan.FromDays(60));
         settings.Retention.PurgeHorizon.ShouldBe(TimeSpan.FromDays(365));
-        settings.Retention.PageSize.ShouldBe(30);
+        settings.Retention.PageSize.ShouldBe(20);
     }
 
     // The agent host binds its settings through its own entry point rather than through

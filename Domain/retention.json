@@ -20,7 +20,7 @@
     "purgeHorizon": "365.00:00:00",
 
     // How many rows one fetch of the sidebar costs, whatever the space has accumulated.
-    "pageSize": 10,
+    "pageSize": 20,
 
     // How much of the last message a row shows.
     "snippetLength": 80,
