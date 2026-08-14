@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use tokio::sync::Notify;
 
 use crate::host::{
-    CaptureFormat, Cue, Host, HostError, Injection, InjectionMethod, KeyCode, TranscribeError,
-    Transcript, TranscriptionRequest, TrayState, WindowId,
+    CaptureFormat, Cue, DictationMode, Host, HostError, Injection, InjectionMethod, KeyCode,
+    TranscribeError, Transcript, TranscriptionRequest, TrayState, WindowId,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -22,6 +22,7 @@ pub enum Action {
     Cue(Cue),
     Tray(TrayState),
     Bindings(Vec<KeyCode>),
+    Mode(DictationMode),
     Sent(TranscriptionRequest),
     Injected { text: String, held: Option<KeyCode>, method: InjectionMethod },
     Notified(String),
@@ -149,6 +150,15 @@ impl FakeHost {
         })
     }
 
+    /// The dictation mode the core last told the host to show ticked.
+    pub fn announced_mode(&self) -> Option<DictationMode> {
+        self.each(|a| match a {
+            Action::Mode(mode) => Some(mode),
+            _ => None,
+        })
+        .pop()
+    }
+
     /// The keys the core last told the host to watch and swallow.
     pub fn watched_keys(&self) -> Vec<KeyCode> {
         self.each(|a| match a {
@@ -209,6 +219,10 @@ impl Host for FakeHost {
 
     fn set_bindings(&self, keys: &[KeyCode]) {
         self.record(Action::Bindings(keys.to_vec()));
+    }
+
+    fn set_dictation_mode(&self, mode: DictationMode) {
+        self.record(Action::Mode(mode));
     }
 
     fn set_tray(&self, state: TrayState) {

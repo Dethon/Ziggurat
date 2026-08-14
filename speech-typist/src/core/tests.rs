@@ -3,9 +3,10 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use crate::config::{Binding, Config, DictationConfig, DictationMode, DEFAULT_BINDING_KEY};
+use crate::config::{Binding, Config, DictationConfig, DEFAULT_BINDING_KEY};
 use crate::host::{
-    Cue, HostEvent, InjectionMethod, KeyCode, TranscribeError, Transcript, TrayState,
+    Cue, DictationMode, HostEvent, InjectionMethod, KeyCode, TranscribeError, Transcript,
+    TrayState,
 };
 use crate::testing::{Action, FakeHost};
 
@@ -175,7 +176,7 @@ async fn a_key_that_is_not_bound_does_nothing_at_all() {
     let after_startup: Vec<_> = host
         .actions()
         .into_iter()
-        .filter(|a| !matches!(a, Action::Bindings(_)))
+        .filter(|a| !matches!(a, Action::Bindings(_) | Action::Mode(_)))
         .collect();
     assert!(after_startup.is_empty(), "recorded: {after_startup:?}");
 }
@@ -1005,6 +1006,68 @@ async fn holding_is_still_the_default_and_still_ends_on_release() {
 
     assert_eq!(host.injected(), ["sujetando"]);
     driver.stop().await;
+}
+
+#[tokio::test]
+async fn the_tray_is_told_which_mode_to_show_ticked_before_anything_else_happens() {
+    let host = FakeHost::new();
+    let driver = Driver::start_with(host.clone(), latched());
+
+    host.wait_until("the mode to be announced", |a| {
+        a.iter().any(|x| matches!(x, Action::Mode(_)))
+    })
+    .await;
+
+    assert_eq!(host.announced_mode(), Some(DictationMode::Latch));
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn the_tray_can_switch_the_mode_and_the_next_dictation_uses_it() {
+    let file = ConfigFile::holding("[dictation]\nmode = \"hold\"\n");
+    let host = FakeHost::new();
+    host.will_say("ya no hace falta sujetar");
+    let session = Session {
+        config: one_spanish_binding(),
+        config_path: file.0.clone(),
+        first_run: false,
+    };
+    let driver = Driver::start_session(host.clone(), session);
+
+    driver.send(HostEvent::DictationModeSet(DictationMode::Latch)).await;
+    host.wait_until("the new mode to be announced", |a| {
+        a.iter().filter(|x| matches!(x, Action::Mode(_))).count() == 2
+    })
+    .await;
+
+    // Latched now: the press that begins it is not undone by letting go.
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.announced_mode(), Some(DictationMode::Latch));
+    assert_eq!(host.injected(), ["ya no hace falta sujetar"]);
+    assert!(file.contents().contains("latch"), "written: {}", file.contents());
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn switching_to_the_mode_already_in_use_changes_nothing_and_says_nothing() {
+    let host = FakeHost::new();
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.send(HostEvent::DictationModeSet(DictationMode::Hold)).await;
+    driver.send(HostEvent::Tick { at_ms: 1 }).await;
+    driver.stop().await;
+
+    assert!(host.notifications().is_empty(), "{:?}", host.notifications());
+    assert_eq!(
+        host.actions().iter().filter(|a| matches!(a, Action::Mode(_))).count(),
+        1,
+        "only the announcement made at startup"
+    );
 }
 
 // ── Ticket 11: how the text arrives ───────────────────────────────────────────────────────────

@@ -73,8 +73,12 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
   keeps the *tail*, which would eat the vocabulary — the one part a person actually wrote. So the
   chained text loses its oldest words instead. Same rule as
   `McpChannelVoice/Services/Stt/WhisperPromptBuilder.cs`.
-- **Learn mode edits the config, it does not rewrite it.** `toml_edit` changes one key in place,
-  because re-serializing would delete the commented defaults the file exists to show.
+- **Everything the tray changes goes through the core, and is written with `toml_edit`.** Learn
+  mode and the latched-dictation tick both raise an event rather than writing settings on the
+  host's side, so the core stays the one owner of the config; both edit the file in place,
+  because re-serializing would delete the commented defaults the file exists to show. The tray
+  never flips its own tick either — it draws what the core last announced, so a change that could
+  not be saved does not read as though it had been.
 - **There is no logging, on purpose.** The binary has no console subsystem, so a `tracing`
   subscriber would write where nobody can read it — it was carried for a while and dropped, and
   dropping `tracing-subscriber` alone took 400 KB off the executable. Everything a person needs to

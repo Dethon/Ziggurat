@@ -144,6 +144,31 @@ pub fn with_binding_keys(
     Ok(document.to_string())
 }
 
+/// Writes the dictation mode back into the file it came from, leaving every other line and every
+/// comment as it was — the same reason [`save_binding_key`] uses `toml_edit` rather than
+/// re-serializing.
+pub fn save_dictation_mode(path: &Path, mode: super::DictationMode) -> Result<(), ConfigError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| ConfigError::Unreadable { path: path.to_path_buf(), why: e.to_string() })?;
+    let rewritten = with_dictation_mode(&text, mode)
+        .map_err(|why| ConfigError::Malformed { path: path.to_path_buf(), why })?;
+    std::fs::write(path, rewritten)
+        .map_err(|e| ConfigError::NotWritten { path: path.to_path_buf(), why: e.to_string() })
+}
+
+/// The pure half of [`save_dictation_mode`].
+pub fn with_dictation_mode(text: &str, mode: super::DictationMode) -> Result<String, String> {
+    use toml_edit::{value, DocumentMut};
+
+    let mut document: DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| e.to_string())?;
+    let spelling = match mode {
+        super::DictationMode::Hold => "hold",
+        super::DictationMode::Latch => "latch",
+    };
+    document["dictation"]["mode"] = value(spelling);
+    Ok(document.to_string())
+}
+
 /// What first run writes. Every key it names carries its default, so this file and
 /// [`Config::default`] cannot disagree without a test noticing.
 pub const DEFAULTS: &str = r#"# speech-typist — hold a key, talk, and the words appear in whatever window you were using.
@@ -380,6 +405,29 @@ mod tests {
         assert!(rewritten.contains("# speech-typist"), "the header comment survived");
         assert!(rewritten.contains("STT_MODEL"), "the model's warning survived");
         assert_eq!(toml::from_str::<Config>(&rewritten).unwrap().bindings[0].key, KeyCode(0x21));
+    }
+
+    #[test]
+    fn switching_the_mode_from_the_tray_leaves_every_other_line_and_comment_alone() {
+        let rewritten = with_dictation_mode(DEFAULTS, DictationMode::Latch).unwrap();
+
+        assert_eq!(toml::from_str::<Config>(&rewritten).unwrap().dictation.mode, DictationMode::Latch);
+        assert!(rewritten.contains("# speech-typist"), "the header comment survived");
+        assert!(rewritten.contains("slots_pinned_error"), "the model's warning survived");
+        assert_eq!(
+            toml::from_str::<Config>(&rewritten).unwrap().lemonade,
+            Config::default().lemonade
+        );
+    }
+
+    #[test]
+    fn a_config_that_never_named_a_mode_gets_one_written() {
+        let rewritten = with_dictation_mode("[lemonade]\nmodel = \"x\"\n", DictationMode::Latch)
+            .unwrap();
+
+        let parsed: Config = toml::from_str(&rewritten).unwrap();
+        assert_eq!(parsed.dictation.mode, DictationMode::Latch);
+        assert_eq!(parsed.lemonade.model, "x", "the rest of the file survived");
     }
 
     #[test]

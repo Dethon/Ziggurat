@@ -27,6 +27,19 @@ pub enum InjectionMethod {
     ClipboardPaste,
 }
 
+/// How a dictation begins and ends.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DictationMode {
+    /// The key is held for as long as the person speaks, and letting go ends it.
+    #[default]
+    Hold,
+    /// A latched dictation: one press begins it, the next press of the same key ends it, and
+    /// nothing is held in between. It is the same dictation either way — only the way it can end
+    /// changes, which is why this is a mode and not a second kind of thing.
+    Latch,
+}
+
 /// One transcript on its way into the window in front.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Injection<'a> {
@@ -149,6 +162,9 @@ pub enum HostEvent {
     /// A monotonic clock reading in milliseconds. The watchdog is the only thing that reads it,
     /// and it is an event rather than a `sleep` so that a test can move time without waiting.
     Tick { at_ms: u64 },
+    /// The tray asked for the other dictation mode. It is an event rather than the tray writing
+    /// the config itself, because the core owns the settings and is what makes one live.
+    DictationModeSet(DictationMode),
     /// Learn mode finished: the tray asked to rebind `binding` and this is the key that was
     /// pressed. Capturing it belongs to the host, because it is the keyboard hook reading one
     /// event rather than new machinery, and because no key but this one should reach the core.
@@ -179,6 +195,10 @@ pub trait Host: Send + Sync {
     /// The hook has to answer that synchronously in its callback, so the set lives on the host
     /// side; the core sends it at startup and again whenever learn mode changes it.
     fn set_bindings(&self, keys: &[KeyCode]);
+
+    /// Which mode the tray should show ticked. Sent at startup and whenever it changes, for the
+    /// same reason the bindings are: the menu is drawn on the host's thread and cannot ask.
+    fn set_dictation_mode(&self, mode: DictationMode);
 
     fn set_tray(&self, state: TrayState);
 

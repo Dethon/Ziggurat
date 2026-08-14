@@ -38,7 +38,8 @@ settings travel if you carry the executable on a stick.
 - `dictation.mode` — `hold` (the default) holds the key for as long as you speak. `latch` makes
   one press begin the dictation and the next press of the same key end it, with nothing held in
   between. Only the key that began it can end it, and a latched dictation you forget about still
-  closes itself on the watchdog.
+  closes itself on the watchdog. The tray's **Latched dictation** tick is the same setting, and
+  writes it back to this file.
 - `injection.method` — `keys` types Unicode key events; `clipboard-paste` is the escape hatch for
   applications that mishandle them, and it restores whatever you had copied.
 - `[[bindings]]` — a key, the language its words are expected in, and the vocabulary they should
@@ -49,8 +50,12 @@ settings travel if you carry the executable on a stick.
 ## The tray
 
 Four states: idle, recording, transcribing, and an error ring when Lemonade is not answering. The
-menu holds per-binding learn mode, the microphone list, a **Start with Windows** toggle (off until
-you ask for it, and turning it off removes exactly what turning it on added), and quit.
+menu holds per-binding learn mode, the microphone list, a **Latched dictation** tick (press to
+start and press again to stop, instead of holding), a **Start with Windows** toggle (off until you
+ask for it, and turning it off removes exactly what turning it on added), and quit.
+
+Both ticks are written back to `config.toml` and take effect immediately, so the menu and the file
+are two views of one setting rather than two places to set it.
 
 ## Building
 

@@ -24,6 +24,7 @@ pub const WM_TRAY: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 
 pub const ID_QUIT: usize = 3_000;
 pub const ID_AUTOSTART: usize = 2_000;
+pub const ID_LATCH: usize = 2_001;
 /// One per binding, offset by its index. Bounded by [`ID_LEARN_LAST`] rather than by wherever the
 /// next block of ids happens to start.
 pub const ID_LEARN_FIRST: usize = 1_000;
@@ -109,7 +110,13 @@ impl Drop for Tray {
 
 /// The menu, rebuilt on every right-click so the autostart tick and the device list are whatever
 /// they are right now rather than whatever they were at startup.
-pub fn show_menu(hwnd: HWND, languages: &[String], devices: &[String], autostart: bool) {
+pub fn show_menu(
+    hwnd: HWND,
+    languages: &[String],
+    devices: &[String],
+    autostart: bool,
+    latched: bool,
+) {
     unsafe {
         let Ok(menu) = CreatePopupMenu() else {
             return;
@@ -139,6 +146,10 @@ pub fn show_menu(hwnd: HWND, languages: &[String], devices: &[String], autostart
         }
 
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        // Ticked means a press starts the dictation and another ends it; unticked means the key
+        // is held throughout. Both are the same dictation, so this is one item and not two.
+        let latch_tick = if latched { MF_CHECKED } else { MF_UNCHECKED };
+        let _ = AppendMenuW(menu, MF_STRING | latch_tick, ID_LATCH, w!("Latched dictation"));
         let tick = if autostart { MF_CHECKED } else { MF_UNCHECKED };
         let _ = AppendMenuW(menu, MF_STRING | tick, ID_AUTOSTART, w!("Start with Windows"));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());

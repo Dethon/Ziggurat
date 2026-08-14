@@ -28,8 +28,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::config::Config;
 use crate::core::Session;
 use crate::host::{
-    CaptureFormat, Cue, Host, HostError, HostEvent, Injection, KeyCode, TranscribeError,
-    Transcript, TranscriptionRequest, TrayState, WindowId,
+    CaptureFormat, Cue, DictationMode, Host, HostError, HostEvent, Injection, KeyCode,
+    TranscribeError, Transcript, TranscriptionRequest, TrayState, WindowId,
 };
 use crate::lemonade::LemonadeClient;
 
@@ -46,6 +46,8 @@ const WM_UI: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 2;
 enum UiCommand {
     Tray(TrayState),
     Notify(String),
+    /// Which dictation mode the menu should show ticked. The core owns it; the tray only draws it.
+    Latched(bool),
 }
 
 #[derive(Default)]
@@ -105,6 +107,10 @@ impl Host for WindowsHost {
         hook::set_bindings(keys);
     }
 
+    fn set_dictation_mode(&self, mode: DictationMode) {
+        self.outbox.push(UiCommand::Latched(mode == DictationMode::Latch));
+    }
+
     fn set_tray(&self, state: TrayState) {
         self.outbox.push(UiCommand::Tray(state));
     }
@@ -135,6 +141,7 @@ struct Ui {
     events: tokio::sync::mpsc::Sender<HostEvent>,
     outbox: Arc<Outbox>,
     started: std::time::Instant,
+    latched: bool,
 }
 
 // Thread-local rather than a static: the tray icon and the window belong to the thread that
@@ -234,6 +241,7 @@ fn run_message_loop(
         events: events.clone(),
         outbox,
         started: std::time::Instant::now(),
+        latched: false,
     };
     UI.with(|slot| *slot.borrow_mut() = Some(ui));
 
@@ -274,7 +282,7 @@ extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam:
             if lparam.0 as u32 == WM_RBUTTONUP {
                 with_ui(|ui| {
                     let autostart = autostart::is_on();
-                    tray::show_menu(hwnd, &ui.languages, &ui.devices, autostart);
+                    tray::show_menu(hwnd, &ui.languages, &ui.devices, autostart, ui.latched);
                 });
             }
             LRESULT(0)
@@ -294,6 +302,13 @@ extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam:
 fn on_command(id: usize) {
     match id {
         tray::ID_QUIT => unsafe { PostQuitMessage(0) },
+        tray::ID_LATCH => with_ui(|ui| {
+            // The core decides and answers back through set_dictation_mode; the tick is not
+            // flipped here, so a mode that could not be saved does not read as if it had been.
+            let wanted =
+                if ui.latched { DictationMode::Hold } else { DictationMode::Latch };
+            let _ = ui.events.try_send(HostEvent::DictationModeSet(wanted));
+        }),
         tray::ID_AUTOSTART => {
             let wanted = !autostart::is_on();
             if let Err(error) = autostart::set(wanted) {
@@ -314,6 +329,7 @@ fn apply(ui: &mut Ui) {
         match command {
             UiCommand::Tray(state) => ui.tray.set_state(state),
             UiCommand::Notify(message) => ui.tray.notify(&message),
+            UiCommand::Latched(latched) => ui.latched = latched,
         }
     }
 }

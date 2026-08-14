@@ -117,6 +117,7 @@ impl Core {
             HostEvent::BindingUp(key) => self.on_up(key, done),
             HostEvent::Frame(samples) => self.on_frame(samples, done),
             HostEvent::Tick { at_ms } => self.on_tick(at_ms, done),
+            HostEvent::DictationModeSet(mode) => self.on_mode(mode),
             HostEvent::BindingLearned { binding, key } => self.on_learned(binding, key),
             HostEvent::Quit => {}
         }
@@ -130,6 +131,29 @@ impl Core {
     fn announce_bindings(&self) {
         let keys: Vec<KeyCode> = self.config.bindings.iter().map(|b| b.key).collect();
         self.host.set_bindings(&keys);
+        self.host.set_dictation_mode(self.config.dictation.mode);
+    }
+
+    /// The tray asked for the other mode. A dictation already running keeps the mode it began
+    /// under, because `Live` was built with it and switching mid-dictation would leave a person
+    /// holding a key that no longer ends anything.
+    fn on_mode(&mut self, mode: crate::host::DictationMode) {
+        if mode == self.config.dictation.mode {
+            return;
+        }
+        self.config.dictation.mode = mode;
+        self.host.set_dictation_mode(mode);
+        match crate::config::save_dictation_mode(&self.config_path, mode) {
+            Ok(()) => self.host.notify(match mode {
+                crate::host::DictationMode::Latch => {
+                    "Press to start dictating, and press again to stop."
+                }
+                crate::host::DictationMode::Hold => "Hold the key while you dictate.",
+            }),
+            Err(error) => self
+                .host
+                .notify(&format!("The mode changed, but it could not be saved: {error}")),
+        }
     }
 
     /// F13 is the shipped default because no application uses it, and many keyboards cannot
