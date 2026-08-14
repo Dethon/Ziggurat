@@ -228,6 +228,31 @@ async fn segments_are_asked_for_one_at_a_time_and_typed_strictly_in_order() {
 }
 
 #[tokio::test]
+async fn a_monologue_with_no_pause_still_reads_onto_the_screen_in_order() {
+    // Speaking for a minute straight must not silently lose everything after the first half
+    // minute. The detector's own test pins where the cut lands; this one pins that the core does
+    // the ordinary thing with what comes out of it.
+    let host = FakeHost::new();
+    host.will_say("primera parte").will_say("segunda parte").will_say("tercera parte");
+    let mut config = one_spanish_binding();
+    config.detector.max_segment_ms = 2_000;
+    let driver = Driver::start_with(host.clone(), config);
+
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    for _ in 0..6 {
+        driver.send(HostEvent::Frame(speech(1_000))).await;
+    }
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    host.wait_for_idle().await;
+
+    let typed = host.injected();
+    assert!(typed.len() >= 2, "an unbroken monologue was never cut: {typed:?}");
+    assert_eq!(typed[0], "primera parte");
+    assert!(typed[1..].iter().all(|t| t.starts_with(' ')), "the joining broke: {typed:?}");
+    driver.stop().await;
+}
+
+#[tokio::test]
 async fn words_arrive_while_the_key_is_still_held() {
     // The whole point of segmenting: a long dictation reads onto the screen at roughly the speed
     // it is spoken rather than all at once when the key comes up.

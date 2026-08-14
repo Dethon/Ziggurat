@@ -21,8 +21,6 @@ serde_json = "1"
 toml = "0.8"
 toml_edit = "0.22"     # learn mode rewrites one key without losing the file's comments
 anyhow = "1"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # No TLS: Lemonade is a plain-HTTP service on the LAN, and dropping the TLS stack is what keeps the
 # single executable small. A config naming an https:// base URL will fail to connect, by design.
 reqwest = { version = "0.12", default-features = false }

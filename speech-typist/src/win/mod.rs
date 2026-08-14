@@ -144,16 +144,8 @@ thread_local! {
 }
 
 pub fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "speech_typist=info".into()),
-        )
-        .init();
-
     let (beside_exe, in_profile) = crate::config::locations();
     let loaded = crate::config::load(&beside_exe, &in_profile)?;
-    tracing::info!(path = %loaded.path.display(), first_run = loaded.written, "config");
     let config = loaded.config.clone();
 
     // Frames and key events share this queue. It is sized so a transient stall in the core cannot

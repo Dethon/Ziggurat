@@ -249,7 +249,6 @@ impl Core {
 
     /// The key came up, or the watchdog fired. The audio stops here; the queue still drains.
     fn stop_listening(&mut self) {
-        let cues = self.config.audio.cues.enabled;
         let Some(live) = self.live.as_mut() else {
             return;
         };
@@ -259,9 +258,6 @@ impl Core {
         live.ended = true;
         live.waiting.extend(live.detector.flush());
         self.host.close_capture();
-        if cues {
-            self.host.play_cue(Cue::Stop);
-        }
     }
 
     /// Starts the next request if there is one and nothing is in flight, then settles the tray and

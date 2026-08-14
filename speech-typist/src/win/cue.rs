@@ -12,20 +12,16 @@ const RATE: u32 = 22_050;
 
 pub struct Cues {
     start: Vec<u8>,
-    stop: Vec<u8>,
 }
 
 impl Cues {
-    /// Rising for "speak now", falling for "that's the end of it" — the direction is the whole
-    /// message, since the two are heard a sentence apart and never side by side.
     pub fn new() -> Self {
-        Self { start: tone(880.0, 70), stop: tone(587.0, 70) }
+        Self { start: tone(880.0, 70) }
     }
 
     pub fn play(&self, cue: Cue) {
         let wav = match cue {
             Cue::Start => &self.start,
-            Cue::Stop => &self.stop,
         };
         // SND_ASYNC so a cue never delays opening the microphone, SND_NODEFAULT so a failure is
         // silence rather than Windows' own ding. SND_ASYNC reads the buffer after this returns,

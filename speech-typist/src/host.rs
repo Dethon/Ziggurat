@@ -54,12 +54,12 @@ pub enum TrayState {
     Error,
 }
 
-/// The two cues. `Start` means "speak now" and is therefore played after the capture device is
-/// open, never when the key was received.
+/// The one cue. It means "speak now", which is why it is played after the capture device is open
+/// rather than when the key was received — that ordering is the whole mitigation for opening the
+/// device on key-down with no pre-roll.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cue {
     Start,
-    Stop,
 }
 
 /// What the capture device turned out to be. There is no resampler: whatever rate the device

@@ -64,11 +64,16 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
   `McpChannelVoice/Services/Stt/WhisperPromptBuilder.cs`.
 - **Learn mode edits the config, it does not rewrite it.** `toml_edit` changes one key in place,
   because re-serializing would delete the commented defaults the file exists to show.
+- **There is no logging, on purpose.** The binary has no console subsystem, so a `tracing`
+  subscriber would write where nobody can read it — it was carried for a while and dropped, and
+  dropping `tracing-subscriber` alone took 400 KB off the executable. Everything a person needs to
+  know reaches them through the tray's balloon. Before adding a log, decide where it is going to
+  be read.
 
 ## Building
 
 ```sh
-scripts/build-release.sh          # one .exe, ~1.7 MB, cross-compiled from WSL
+scripts/build-release.sh          # one .exe, ~1.3 MB, cross-compiled from WSL
 cargo test                        # the whole suite, no Windows and no network needed
 cargo xwin check --target x86_64-pc-windows-msvc   # type-check the Windows half from WSL
 ```

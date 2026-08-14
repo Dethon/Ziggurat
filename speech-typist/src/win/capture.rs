@@ -78,7 +78,10 @@ fn build(
     let format = CaptureFormat { sample_rate: config.sample_rate().0 };
     let channels = config.channels() as usize;
 
-    let on_error = |error| tracing::warn!(%error, "capture stream error");
+    // Nowhere to report this to: the callback is on a real-time audio thread with no route to
+    // the tray. A stream that dies mid-dictation shows up as the dictation producing no words,
+    // which the person can see, and as the next key-down opening the device again.
+    let on_error = |_| {};
     let stream = match config.sample_format() {
         cpal::SampleFormat::I16 => device.build_input_stream(
             &config.into(),

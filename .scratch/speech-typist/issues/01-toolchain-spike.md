@@ -35,7 +35,7 @@ ticket asked for and worth saying plainly: rather than build a spike and delete 
 pieces were proved by cross-compiling the real crate. That answers the same question — can these
 crates link for `x86_64-pc-windows-msvc` from WSL — and leaves nothing to delete.
 
-What is proved from here: `cargo xwin build --release` produces one 1.7 MB executable, and every
+What is proved from here: `cargo xwin build --release` produces one 1.3 MB executable, and every
 DLL it imports is a Windows system DLL (`.cargo/config.toml` links the CRT statically, without
 which it would need `vcruntime140.dll` from the VC++ redistributable). The crate choices and
 versions, the build invocation and the size are in `speech-typist/CLAUDE.md`.

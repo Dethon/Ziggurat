@@ -23,6 +23,10 @@ pub struct KeySwitch {
     bound: Vec<KeyCode>,
     /// The binding currently held, so a key's own auto-repeat is not a second dictation.
     held: Option<KeyCode>,
+    /// A key whose release is still owed a swallow but means nothing: the key just learned, and
+    /// any second binding pressed while a dictation is live. Keeping it apart from `held` is what
+    /// stops either one being reported as a dictation ending.
+    silenced: Option<KeyCode>,
     /// Armed by the tray's "set binding" menu: the next key pressed becomes that binding's.
     learning: Option<usize>,
 }
@@ -42,8 +46,15 @@ impl KeySwitch {
         if let Some(binding) = self.learning {
             if down {
                 self.learning = None;
-                self.held = Some(key);
+                self.silenced = Some(key);
                 return Decision::Swallow(Some(HostEvent::BindingLearned { binding, key }));
+            }
+            return Decision::Swallow(None);
+        }
+
+        if self.silenced == Some(key) {
+            if up {
+                self.silenced = None;
             }
             return Decision::Swallow(None);
         }
@@ -56,7 +67,14 @@ impl KeySwitch {
             return Decision::Swallow(None);
         }
 
-        if down && self.held.is_none() && self.bound.contains(&key) {
+        if down && self.bound.contains(&key) {
+            if self.held.is_some() {
+                // A second binding while one is live. The core would ignore it anyway, so there
+                // is nothing to say — but it is still a binding key and must not land in the
+                // window as a literal keystroke.
+                self.silenced = Some(key);
+                return Decision::Swallow(None);
+            }
             self.held = Some(key);
             return Decision::Swallow(Some(HostEvent::BindingDown(key)));
         }
@@ -125,11 +143,26 @@ mod tests {
     }
 
     #[test]
-    fn a_second_binding_pressed_while_one_is_held_never_leaves_the_hook() {
+    fn a_second_binding_pressed_while_one_is_held_is_swallowed_and_says_nothing() {
+        // It is a binding key, so it must not land in the window as a literal F14 — that is the
+        // harm swallowing exists to prevent. And the core ignores a second binding during a live
+        // dictation anyway, so there is nothing to tell it.
         let mut switch = armed(&[F13, F14]);
         switch.on_key(F13, true, false);
 
-        assert_eq!(switch.on_key(F14, true, false), Decision::Pass);
+        assert_eq!(switch.on_key(F14, true, false), Decision::Swallow(None));
+        assert_eq!(switch.on_key(F14, false, true), Decision::Swallow(None));
+    }
+
+    #[test]
+    fn the_key_just_learned_is_not_reported_as_a_dictation_ending() {
+        // Its key-up has to be swallowed — it must not reach the window either — but swallowing
+        // it is not the same as claiming a dictation just ended on it.
+        let mut switch = armed(&[F13]);
+        switch.learn(1);
+        switch.on_key(A, true, false);
+
+        assert_eq!(switch.on_key(A, false, true), Decision::Swallow(None));
     }
 
     #[test]
@@ -144,7 +177,7 @@ mod tests {
             pressed,
             Decision::Swallow(Some(HostEvent::BindingLearned { binding: 1, key: A }))
         );
-        assert_eq!(released, Decision::Swallow(Some(HostEvent::BindingUp(A))));
+        assert_eq!(released, Decision::Swallow(None));
         assert_eq!(switch.on_key(A, true, false), Decision::Pass, "learn mode reads one key");
     }
 

@@ -40,7 +40,7 @@ Whisper capitalising the start of every segment so a mid-sentence cut can read o
 2026-08-14 — Done except what needs the machine. `scripts/build-release.sh` cross-compiles from
 WSL and prints the imported DLLs, because the invariant worth checking is not the size but that
 every import is a Windows system DLL. The release profile is `opt-level = "z"` with fat LTO and
-`panic = "abort"`; the result is 1.7 MB.
+`panic = "abort"`; the result is 1.3 MB.
 
 `speech-typist/CLAUDE.md` holds the invariants and the accepted rough edges. `satellite/CLAUDE.md`
 is untouched and the two crates share no build — there is no workspace at the repository root, and
