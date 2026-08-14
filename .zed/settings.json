@@ -1,0 +1,13 @@
+{
+  // Two independent Rust crates, no workspace and no Cargo.toml at the root — so rust-analyzer
+  // discovers two projects and cannot pick one ("more than one project"). Naming both is what
+  // makes it load each on its own terms instead. The VS Code equivalent is in
+  // `.vscode/settings.json`; keep the two lists in step.
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "linkedProjects": ["satellite/Cargo.toml", "speech-typist/Cargo.toml"]
+      }
+    }
+  }
+}

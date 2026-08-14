@@ -1,0 +1,53 @@
+[package]
+name = "speech-typist"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97"
+license = "MIT"
+
+[[bin]]
+name = "speech-typist"
+path = "src/main.rs"
+
+[lib]
+name = "speech_typist"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync", "macros", "time"] }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+toml_edit = "0.22"     # learn mode rewrites one key without losing the file's comments
+anyhow = "1"
+# No TLS: Lemonade is a plain-HTTP service on the LAN, and dropping the TLS stack is what keeps the
+# single executable small. A config naming an https:// base URL will fail to connect, by design.
+reqwest = { version = "0.12", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+cpal = "0.15"          # WASAPI capture and device enumeration; pure Rust over the windows crate
+# The tray is Shell_NotifyIconW directly rather than a tray crate: one message loop already exists
+# for the keyboard hook, the same call carries the balloon notifications, and it is one fewer
+# thing that has to cross-compile.
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+opt-level = "z"        # one desktop executable that spends its life asleep: size beats speed
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
