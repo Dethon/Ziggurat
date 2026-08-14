@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.E2E.Fixtures;
@@ -141,15 +142,28 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     // anything by coordinate, and keep rejecting approval prompts, because .approval-modal-overlay
     // (z-index 1000) covers the whole viewport and swallows the gesture.
     //
-    // The rule is unchanged — two readings a second apart that agree, with nothing streaming — but
-    // the wait now falls between them rather than before the first, so a caller whose replies landed
-    // long ago is told so on its first look instead of after a second of sleeping. Requiring more
-    // than one agreeing pair was tried and reverted: rows that reorder while two replies stream
-    // rarely agree twice running, and the case that used to settle in five seconds spent the whole
-    // seventy-five second cap.
-    internal static async Task<string> WaitForRowsToStopMovingAsync(IPage page)
+    // The rule is unchanged — two readings a second apart that agree, with none of the caller's own
+    // replies still streaming — but the wait now falls between them rather than before the first, so
+    // a caller whose replies landed long ago is told so on its first look instead of after a second
+    // of sleeping. Requiring more than one agreeing pair was tried and reverted: rows that reorder
+    // while two replies stream rarely agree twice running, and the case that used to settle in five
+    // seconds spent the whole cap.
+    //
+    // The caller's tag is what says which rows are its own; RowSettle holds why the question is
+    // narrowed to them. Waiting on every row in the space instead was the suite's single largest
+    // source of wall-clock variance: one sibling's reply that never completes leaves a row pulsing,
+    // and every later wait in that space then spent its whole cap before passing anyway.
+    internal static Task<string> WaitForRowsToStopMovingAsync(
+        IPage page, string tag, [CallerMemberName] string caller = "") =>
+        E2ETrace.TimeAsync($"rows-settle:{caller}", () => WaitForRowsToStopMovingCoreAsync(page, tag));
+
+    // Long enough to cover a reply that has to be waited out, short enough that a wait which cannot
+    // be satisfied is a cost the run can absorb. Settling is normally under ten seconds.
+    private static readonly TimeSpan _rowsSettleCap = TimeSpan.FromSeconds(30);
+
+    private static async Task<string> WaitForRowsToStopMovingCoreAsync(IPage page, string tag)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(75);
+        var deadline = DateTime.UtcNow + _rowsSettleCap;
         var previous = "";
         while (DateTime.UtcNow < deadline)
         {
@@ -160,7 +174,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
                     .map(r => (r.classList.contains('is-streaming') ? '*' : '')
                         + r.querySelector('.topic-name').textContent.trim()).join('|')
                 """);
-            if (snapshot == previous && !snapshot.Contains('*'))
+            if (RowSettle.HasSettled(previous, snapshot, tag))
             {
                 return snapshot;
             }
@@ -169,7 +183,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             await page.WaitForTimeoutAsync(1_000);
         }
 
-        return $"{previous} (STILL MOVING at 75s cap)";
+        return $"{previous} (STILL MOVING at {_rowsSettleCap.TotalSeconds:0}s cap)";
     }
 
     // The prompt on screen is the oldest request still waiting (ApprovalState.Pending is a

@@ -44,7 +44,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         // and when that row is topic two, HandleTopicClick sees the selection is unchanged and
         // dispatches nothing: the click "succeeds" and the messages never switch. Wait for the
         // order to stop moving first.
-        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page);
+        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page, tag);
 
         // Can't rely on position — other tests' topics may also be visible.
         var topic1 = page.Locator(".topic-item", new PageLocatorOptions { HasText = $"Topic one {tag}" });
@@ -99,7 +99,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
 
         // The rows reorder under every streamed chunk, and a scroll aimed at a moving list lands
         // wherever the list happens to be.
-        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page);
+        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page, tag);
 
         // The reload is the point: it is the only way to see what one page of the sidebar
         // actually holds, because both conversations were created in this client and are held
