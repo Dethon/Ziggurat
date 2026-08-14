@@ -63,8 +63,12 @@ impl EnergyDetector {
         let speech_end = self.analysed.saturating_sub(self.silence_run);
         let end = (speech_end + self.padding).min(self.buffer.len());
         let segment = self.buffer[..end].to_vec();
-        self.buffer.clear();
-        self.analysed = 0;
+        // Only what was emitted is dropped. A cut lands partway through a frame, and everything
+        // after it is audio nobody has looked at yet — clearing the buffer here would throw away
+        // whatever was said next. What is left over is the rest of the pause, which the pre-roll
+        // then shrinks to `padding` on its own.
+        self.buffer.drain(..end);
+        self.analysed = self.analysed.saturating_sub(end);
         self.in_speech = false;
         self.silence_run = 0;
         segment
@@ -235,6 +239,27 @@ mod tests {
         assert!(
             (620..=850).contains(&length),
             "expected the speech plus a bounded lead-in, got {length} ms"
+        );
+    }
+
+    #[test]
+    fn speech_arriving_in_the_same_frame_as_the_pause_that_cut_is_not_thrown_away() {
+        // A cut happens partway through a frame, and everything after the cut point in that same
+        // frame is audio nobody has looked at yet. Discarding it loses whatever was said next —
+        // invisible with the ~10 ms frames WASAPI delivers, and a lost sentence with larger ones.
+        let mut detector = detector();
+        detector.push(&speech(600));
+
+        let mut one_frame = quiet(600);
+        one_frame.extend(speech(800));
+        let cuts = detector.push(&one_frame);
+        let rest = detector.flush().expect("the speech after the pause survived the cut");
+
+        assert_eq!(cuts.len(), 1);
+        assert!(
+            ms(rest.len()) > 700,
+            "only {} ms of the 800 ms spoken after the pause survived",
+            ms(rest.len())
         );
     }
 
