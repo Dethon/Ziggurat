@@ -72,8 +72,17 @@ nothing the protocol carries applies, and the parts that do would be reimplement
 - The model name now has a fifth place to agree with `STT_MODEL`. The compose file already
   keeps four in lockstep and says why; the speech typist's config is outside compose and
   cannot be pinned by the same anchor, so a model override has to be repeated there by hand.
-  A mismatch is not an error, which is what makes it worth writing down: Lemonade lazily
-  pulls whatever it was asked for, and the symptom is a slow first dictation, not a failure.
+
+  **Corrected 2026-08-14, after the first run on real hardware.** This originally read "a
+  mismatch is not an error ... Lemonade lazily pulls whatever it was asked for, and the symptom
+  is a slow first dictation, not a failure". That is wrong, and wrong in the direction that
+  matters: Lemonade holds one transcription model at a time, the deployed one is **pinned**, and
+  a request naming any other model is refused with `409 slots_pinned_error` — "All loaded models
+  of type transcription are pinned. Unload a model first." Nothing is transcribed and nothing is
+  typed. The prod instance answers `Whisper-Large-v3-Turbo-ES`, the Spanish fine-tune, which is
+  not compose's `${STT_MODEL:-Whisper-Large-v3-Turbo}` fallback either. So this is a hard
+  coupling to a running server's state, not a soft one — which strengthens rather than weakens
+  the decision below to accept the duplication, but it is a sharper cost than was signed up for.
 - The Lemonade URL is a per-deployment value in a file next to the executable. The
   compose-internal `lemonade:13305` is meaningless from a Windows desktop, so the default
   names the host.

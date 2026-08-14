@@ -155,11 +155,13 @@ pub const DEFAULTS: &str = r#"# speech-typist — hold a key, talk, and the word
 # The Lemonade host as seen from this desktop. The compose-internal "lemonade:13305" means
 # nothing from here, so this names the host instead.
 base_url = "http://ai370:13305/v1"
-# Kept in agreement with STT_MODEL by hand: compose's &stt-model anchor keeps four sides in
-# lockstep and cannot reach this file, which is outside compose. A mismatch is NOT an error —
-# Lemonade lazily pulls whatever it was asked for — so the symptom is a slow first dictation
-# rather than a failure.
-model = "Whisper-Large-v3-Turbo"
+# The transcription model Lemonade currently has LOADED, which must be named exactly. Lemonade
+# holds one transcription model at a time and the deployed one is pinned, so asking for any other
+# name is refused with 409 slots_pinned_error and nothing is typed at all. Kept in agreement with
+# the stack's STT_MODEL by hand: compose's &stt-model anchor keeps four sides in lockstep and
+# cannot reach this file, which is outside compose. Ask the server what it has:
+#   curl -s http://ai370:13305/api/v1/health | grep -o '"model_loaded":"[^"]*"'
+model = "Whisper-Large-v3-Turbo-ES"
 # Per-segment. A request that outlives it is retried once and then that segment is dropped.
 request_timeout_secs = 30
 # Each request's prompt is the binding's vocabulary followed by what the previous segment turned
@@ -215,12 +217,20 @@ watchdog_secs = 120
 # vocabulary they should be spelled by. Several can be listed and all are live at once; there is
 # no mode to be in. The key held decides the language and the vocabulary for that dictation.
 #
-# key is a Windows virtual-key code. 124 is F13, which no application uses — and which many
-# keyboards cannot produce, so use the tray's "set binding" submenu to press the key you
-# actually want and have it written here.
+# key is a Windows virtual-key code. 124 is F13 and 125 is F14, which no application uses — and
+# which many keyboards cannot produce, so use the tray's "set binding" submenu to press the key
+# you actually want and have it written here.
+#
+# The model named above decides what these can realistically be: a Spanish fine-tune transcribes
+# English poorly whatever `language` says. Both bindings still go to the one loaded model.
 [[bindings]]
 key = 124
 language = "es"
+vocabulary = ""
+
+[[bindings]]
+key = 125
+language = "en"
 vocabulary = ""
 "#;
 
@@ -309,10 +319,14 @@ mod tests {
     }
 
     #[test]
-    fn the_written_defaults_say_why_the_model_has_to_be_kept_in_step_by_hand() {
+    fn the_written_defaults_say_what_a_wrong_model_name_actually_does() {
+        // It was assumed to be slow-but-working until the live instance answered 409 on
+        // 2026-08-14. Saying "slow first dictation" here would send someone looking for a
+        // performance problem when nothing is being typed at all.
         assert!(DEFAULTS.contains("STT_MODEL"));
-        assert!(DEFAULTS.contains("slow first dictation"));
         assert!(DEFAULTS.contains("&stt-model"));
+        assert!(DEFAULTS.contains("slots_pinned_error"));
+        assert!(!DEFAULTS.contains("slow first dictation"));
     }
 
     #[test]
@@ -335,9 +349,11 @@ mod tests {
     }
 
     #[test]
-    fn the_model_default_is_the_one_compose_warms_the_container_with() {
-        // DockerCompose/docker-compose.yml: `x-stt-model: &stt-model ${STT_MODEL:-...}`.
-        assert_eq!(Config::default().lemonade.model, "Whisper-Large-v3-Turbo");
+    fn the_model_default_is_the_one_the_deployed_lemonade_has_loaded() {
+        // Not compose's `${STT_MODEL:-Whisper-Large-v3-Turbo}` fallback: the deployment overrides
+        // it with the Spanish fine-tune, and naming the fallback here gets a 409 rather than the
+        // slow first dictation the fallback would have cost.
+        assert_eq!(Config::default().lemonade.model, "Whisper-Large-v3-Turbo-ES");
     }
 
     #[test]
@@ -440,7 +456,7 @@ mod tests {
         assert_eq!(loaded.config.lemonade.model, "Whisper-Large-V3");
         assert_eq!(loaded.config.lemonade.request_timeout_secs, 30);
         assert_eq!(loaded.config.gate, crate::config::GateConfig::default());
-        assert_eq!(loaded.config.bindings, vec![Binding::default()]);
+        assert_eq!(loaded.config.bindings, vec![Binding::default(), Binding::english()]);
     }
 
     #[test]

@@ -27,11 +27,16 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
   problems the .NET side's `AudioContainer` exists to solve are problems this does not have. No
   resampler either: the WAV declares whatever rate the device opened at, exactly as
   `WavAudio.FromPcm` does by taking whatever rate it was handed.
-- **The model name agrees with `STT_MODEL` by hand.** `DockerCompose/docker-compose.yml` keeps
-  four sides in lockstep with its `&stt-model` anchor; this config is outside compose and beyond
-  the anchor's reach, so it is a fifth that has to be repeated. A mismatch is **not** an error —
-  Lemonade lazily pulls whatever it was asked for — so the symptom is a slow first dictation, not
-  a failure, which is exactly why it needs writing down.
+- **The model name must be the one Lemonade has loaded, and a wrong one breaks it outright.**
+  `DockerCompose/docker-compose.yml` keeps four sides in lockstep with its `&stt-model` anchor;
+  this config is outside compose and beyond the anchor's reach, so it is a fifth that has to be
+  repeated by hand. It was assumed while this was written that a mismatch would merely be slow —
+  Lemonade lazily pulling what it was asked for — and that is **false**: Lemonade holds one
+  transcription model at a time, the deployed one is pinned, and asking for any other name is
+  refused with `409 slots_pinned_error` so nothing is typed at all. Measured against the live
+  instance on 2026-08-14, which answers `Whisper-Large-v3-Turbo-ES`; compose's
+  `${STT_MODEL:-Whisper-Large-v3-Turbo}` fallback is *not* what runs. Ask the server rather than
+  assuming: `curl -s http://ai370:13305/api/v1/health | grep -o '"model_loaded":"[^"]*"'`.
 - **The base URL is `/v1`, not `/api/v1`.** Lemonade serves both; health lives under `/api/v1`
   and the OpenAI-compatible routes under `/v1`. The wrong one parses fine and 404s only when
   somebody is mid-sentence. A test pins it.

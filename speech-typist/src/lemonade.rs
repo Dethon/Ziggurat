@@ -47,10 +47,10 @@ impl LemonadeClient {
             .map_err(to_error)?;
 
         let status = response.status().as_u16();
-        if !(200..300).contains(&status) {
-            return Err(TranscribeError::Status(status));
-        }
         let text = response.text().await.map_err(to_error)?;
+        if !(200..300).contains(&status) {
+            return Err(TranscribeError::Status { code: status, detail: why_refused(&text) });
+        }
         parse_verbose_json(&text)
     }
 }
@@ -95,6 +95,23 @@ pub fn multipart_body(boundary: &str, model: &str, request: &TranscriptionReques
     body.extend_from_slice(b"\r\n");
     body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
     body
+}
+
+/// What Lemonade said about a refusal, in the shape it says it: `{"error":{"message":"..."}}`.
+/// Worth digging out rather than reporting a bare status, because the one refusal this hits in
+/// practice — asking for a transcription model while a different one is loaded and pinned —
+/// answers a 409 whose message names the actual problem.
+fn why_refused(body: &str) -> String {
+    let trimmed = body.trim();
+    serde_json::from_str::<Value>(trimmed)
+        .ok()
+        .and_then(|json| {
+            json.get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| trimmed.chars().take(200).collect())
 }
 
 /// Reads back the text and the duration-weighted quality signals. A body carrying no segments —
@@ -163,6 +180,7 @@ mod tests {
 
     enum Reply {
         Body(&'static str),
+        BodyWithStatus(u16, &'static str),
         Status(u16),
         Never,
     }
@@ -192,6 +210,13 @@ mod tests {
                     Reply::Body(body) => {
                         let response = format!(
                             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                            body.len()
+                        );
+                        let _ = socket.write_all(response.as_bytes()).await;
+                    }
+                    Reply::BodyWithStatus(code, body) => {
+                        let response = format!(
+                            "HTTP/1.1 {code} Nope\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
                             body.len()
                         );
                         let _ = socket.write_all(response.as_bytes()).await;
@@ -326,12 +351,43 @@ mod tests {
         let refused = FakeLemonade::answering(Reply::Status(500)).await;
         assert_eq!(
             refused.client().transcribe(&a_request()).await.unwrap_err(),
-            TranscribeError::Status(500)
+            TranscribeError::Status { code: 500, detail: String::new() }
         );
 
         let wedged = FakeLemonade::answering(Reply::Never).await;
         let client = LemonadeClient::new(&wedged.base_url, "Whisper-Base", Duration::from_millis(150));
         assert_eq!(client.transcribe(&a_request()).await.unwrap_err(), TranscribeError::Timeout);
+    }
+
+    #[tokio::test]
+    async fn a_refusal_carries_what_lemonade_said_about_it() {
+        // Measured against the live instance on 2026-08-14: asking for a transcription model
+        // while a different one is loaded and pinned answers exactly this. "Lemonade answered
+        // 409" on its own tells a person nothing about what to change.
+        let body = r#"{"error":{"code":"slots_pinned_error","message":"All loaded models of type transcription are pinned. Unload a model first.","param":"model","requested_model":"Whisper-Large-v3-Turbo","type":"slots_pinned_error"}}"#;
+        let refused = FakeLemonade::answering(Reply::BodyWithStatus(409, body)).await;
+
+        let error = refused.client().transcribe(&a_request()).await.unwrap_err();
+
+        assert_eq!(
+            error,
+            TranscribeError::Status {
+                code: 409,
+                detail: "All loaded models of type transcription are pinned. Unload a model first."
+                    .into()
+            }
+        );
+        assert!(error.to_string().contains("pinned"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_refusal_that_is_not_json_still_says_something() {
+        let refused = FakeLemonade::answering(Reply::BodyWithStatus(502, "upstream is down")).await;
+
+        assert_eq!(
+            refused.client().transcribe(&a_request()).await.unwrap_err(),
+            TranscribeError::Status { code: 502, detail: "upstream is down".into() }
+        );
     }
 
     #[tokio::test]

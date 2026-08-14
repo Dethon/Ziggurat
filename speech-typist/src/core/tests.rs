@@ -351,8 +351,8 @@ async fn a_segment_that_produced_nothing_does_not_poison_the_chain_after_it() {
     // the alternative is a chain that stalls on the one thing that never produced words.
     let host = FakeHost::new();
     host.will_say("primera")
-        .will_answer(Err(TranscribeError::Status(500)))
-        .will_answer(Err(TranscribeError::Status(500)))
+        .will_answer(Err(TranscribeError::Status { code: 500, detail: String::new() }))
+        .will_answer(Err(TranscribeError::Status { code: 500, detail: String::new() }))
         .will_say("tercera");
     let driver = Driver::start_with(host.clone(), with_vocabulary("Ziggurat"));
 

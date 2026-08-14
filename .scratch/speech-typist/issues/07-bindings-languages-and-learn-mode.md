@@ -24,7 +24,7 @@ you at learn mode rather than leaving you with a binding you cannot press.
 
 - [x] Several bindings are live at once, each with its own key, language and vocabulary
 - [x] The key held decides the language and vocabulary sent for that dictation
-- [x] Config ships one Spanish binding by default
+- [x] Config ships a Spanish binding by default (and, from 2026-08-14, an English one beside it)
 - [ ] The tray offers learn mode per binding, identified by its language
 - [x] Pressing a key in learn mode writes it to config and takes effect without a restart
 - [x] Learn mode cannot bind a key already bound to another binding
@@ -40,3 +40,8 @@ The tray submenu itself is Windows and unverified; everything it drives is not. 
 arrives as one event, and the refusal of a key that already belongs to another binding, the
 rebinding taking effect with no restart, and the write back into the config are all tested.
 `toml_edit` does that write, so the commented defaults the file exists to show survive it.
+
+2026-08-14 (later) — The shipped config now carries two bindings, F13 for Spanish and F14 for
+English, rather than the one the spec asked for. Requested after the first real run: story 9 is
+about a key per language, and shipping only one of them left the other as manual setup on every
+install. Nothing else changed — both are ordinary bindings, both live at once, no mode.

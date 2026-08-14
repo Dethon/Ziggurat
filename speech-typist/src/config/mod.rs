@@ -13,9 +13,10 @@ pub use file::{
     load, locations, save_binding_key, with_binding_keys, ConfigError, Loaded, DEFAULTS, FILE_NAME,
 };
 
-/// F13. No application uses it, which is what makes it a safe default — and many keyboards cannot
-/// produce it, which is what the tray's learn mode is for.
+/// F13 and F14. No application uses either, which is what makes them safe defaults — and many
+/// keyboards cannot produce them, which is what the tray's learn mode is for.
 pub const DEFAULT_BINDING_KEY: KeyCode = KeyCode(0x7C);
+pub const DEFAULT_ENGLISH_BINDING_KEY: KeyCode = KeyCode(0x7D);
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -36,7 +37,7 @@ impl Default for Config {
             detector: DetectorConfig::default(),
             gate: GateConfig::default(),
             injection: InjectionConfig::default(),
-            bindings: vec![Binding::default()],
+            bindings: vec![Binding::default(), Binding::english()],
         }
     }
 }
@@ -47,9 +48,11 @@ pub struct LemonadeConfig {
     /// Names the Lemonade host, not the compose-internal `lemonade:13305`, which means nothing
     /// from a Windows desktop.
     pub base_url: String,
-    /// Must agree with `STT_MODEL` by hand: compose's `&stt-model` anchor cannot reach this file.
-    /// A mismatch is not an error — Lemonade lazily pulls whatever it was asked for — so the
-    /// symptom is a slow first dictation rather than a failure.
+    /// Must name the transcription model Lemonade currently has loaded. Lemonade holds one
+    /// transcription model at a time and the deployed one is pinned, so asking for a different
+    /// one is refused outright with a 409 `slots_pinned_error` — not, as was assumed while this
+    /// was written, lazily pulled at the cost of a slow first dictation. Measured against the
+    /// live instance on 2026-08-14.
     pub model: String,
     pub request_timeout_secs: u64,
     /// A character approximation of whisper's 224-token prompt limit, deliberately under it. The
@@ -61,7 +64,7 @@ impl Default for LemonadeConfig {
     fn default() -> Self {
         Self {
             base_url: "http://ai370:13305/v1".into(),
-            model: "Whisper-Large-v3-Turbo".into(),
+            model: "Whisper-Large-v3-Turbo-ES".into(),
             request_timeout_secs: 30,
             max_prompt_chars: 700,
         }
@@ -168,6 +171,18 @@ pub struct Binding {
 impl Default for Binding {
     fn default() -> Self {
         Self { key: DEFAULT_BINDING_KEY, language: "es".into(), vocabulary: String::new() }
+    }
+}
+
+impl Binding {
+    /// The second shipped binding. Dictating Spanish prose and dictating English identifiers are
+    /// two key presses rather than a mode to remember being in.
+    pub fn english() -> Self {
+        Self {
+            key: DEFAULT_ENGLISH_BINDING_KEY,
+            language: "en".into(),
+            vocabulary: String::new(),
+        }
     }
 }
 

@@ -99,8 +99,10 @@ impl Transcript {
 pub enum TranscribeError {
     /// The request did not answer inside the per-segment timeout.
     Timeout,
-    /// Lemonade answered, and said no.
-    Status(u16),
+    /// Lemonade answered, and said no. `detail` is whatever it said about why — a 409 means the
+    /// loaded transcription model is pinned and the one being asked for is a different one, and
+    /// the code alone does not tell anybody that.
+    Status { code: u16, detail: String },
     /// Nothing answered: connection refused, DNS, a socket that died mid-body.
     Transport(String),
     /// Something answered and it was not a transcription response.
@@ -111,7 +113,10 @@ impl std::fmt::Display for TranscribeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Timeout => write!(f, "Lemonade did not answer in time"),
-            Self::Status(code) => write!(f, "Lemonade answered {code}"),
+            Self::Status { code, detail } if detail.is_empty() => {
+                write!(f, "Lemonade answered {code}")
+            }
+            Self::Status { code, detail } => write!(f, "Lemonade answered {code}: {detail}"),
             Self::Transport(why) => write!(f, "could not reach Lemonade: {why}"),
             Self::Malformed(why) => write!(f, "Lemonade sent something unreadable: {why}"),
         }

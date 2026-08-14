@@ -15,9 +15,9 @@ each is sent as you go, and each transcript is typed the moment it comes back.
 Copy `speech-typist.exe` anywhere and run it. Uninstalling is deleting it.
 
 On first run it writes a `config.toml` under `%APPDATA%\speech-typist\` with every setting
-commented, and tells you the default binding is F13. If your keyboard has no F13 — most do not —
-right-click the tray icon, choose **Set binding**, pick the language, and press the key you
-actually want.
+commented, and tells you the default bindings are F13 (Spanish) and F14 (English). If your
+keyboard has neither — most do not — right-click the tray icon, choose **Set binding**, pick the
+language, and press the key you actually want.
 
 A `config.toml` sitting **beside the executable** wins over the one in your profile, so the
 settings travel if you carry the executable on a stick.
@@ -26,8 +26,10 @@ settings travel if you carry the executable on a stick.
 
 - `lemonade.base_url` — the Lemonade host as seen from this desktop. The compose-internal
   `lemonade:13305` means nothing from here.
-- `lemonade.model` — keep it in agreement with `STT_MODEL` by hand. A mismatch is not an error;
-  the symptom is a slow first dictation while Lemonade pulls what you asked for.
+- `lemonade.model` — the model Lemonade currently has **loaded**, named exactly. Get it wrong and
+  every dictation fails with a 409: Lemonade holds one transcription model at a time and the
+  deployed one is pinned, so it refuses to swap rather than obliging. Ask the server what it has:
+  `curl -s http://ai370:13305/api/v1/health | grep -o '"model_loaded":"[^"]*"'`.
 - `audio.device_name` — a case-insensitive fragment of a microphone's name. Empty means the system
   default. The tray's **Microphones** submenu lists what Windows calls the devices it can see.
 - `detector.*` — where a dictation is cut into segments. Raise the thresholds in a loud room.
@@ -36,8 +38,9 @@ settings travel if you carry the executable on a stick.
 - `injection.method` — `keys` types Unicode key events; `clipboard-paste` is the escape hatch for
   applications that mishandle them, and it restores whatever you had copied.
 - `[[bindings]]` — a key, the language its words are expected in, and the vocabulary they should
-  be spelled by. List several; they are all live at once, and which key you held is the whole
-  choice.
+  be spelled by. Two ship: F13 for Spanish and F14 for English. They are all live at once, and
+  which key you held is the whole choice — there is no mode. Note that both go to the one loaded
+  model, so a Spanish fine-tune will transcribe English poorly whatever `language` says.
 
 ## The tray
 

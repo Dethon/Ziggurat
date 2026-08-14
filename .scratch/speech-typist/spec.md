@@ -148,6 +148,11 @@ the vocabulary they should be spelled by. Several exist at once; there is no act
 mode. Config ships one Spanish binding, matching the `"Language": "es"` every other STT caller in
 this repo pins. Pressing a second binding while a dictation is live is ignored.
 
+_Changed 2026-08-14 at the author's request._ Config now ships **two** bindings out of the box —
+F13 for Spanish and F14 for English — rather than the one this asked for. User story 9 wanted a
+key per language, and shipping only the Spanish half left the English key as something every
+install had to add by hand.
+
 **Microphone lifetime.** The capture device is opened when the binding goes down and closed when
 it comes up. There is no pre-roll ring, unlike the satellite: this is a deliberate trade of the
 first 50–200 ms of audio for not holding the device and not showing Windows' permanent microphone
@@ -313,9 +318,14 @@ oddly at the join. The energy detector will cut on a long deliberate pause mid-s
 chaining is what limits the damage.
 
 **Model name agreement.** `DockerCompose/docker-compose.yml` keeps four sides in lockstep with its
-`&stt-model` anchor and explains why. The speech typist is a fifth, and it is outside compose. A
-mismatch is not an error — Lemonade lazily pulls whatever it was asked for — so the symptom is a
-slow first dictation rather than a failure.
+`&stt-model` anchor and explains why. The speech typist is a fifth, and it is outside compose.
+
+_Corrected 2026-08-14 against the running instance._ This assumed a mismatch was not an error —
+"Lemonade lazily pulls whatever it was asked for" — and that the symptom was a slow first
+dictation. It is not. Lemonade holds one transcription model at a time and the deployed one is
+pinned, so a request naming a different model is refused with `409 slots_pinned_error` and nothing
+is typed. The name must match what the server has loaded, which prod reports as
+`Whisper-Large-v3-Turbo-ES` and not compose's `Whisper-Large-v3-Turbo` fallback.
 
 **Vocabulary.** `CONTEXT.md`'s `## Speech typing` section defines speech typist, binding, segment,
 injection and target window, and its `## Dictation` section already defines dictation and
