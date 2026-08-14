@@ -271,12 +271,13 @@ impl Core {
 
     fn accept(&mut self, transcript: Transcript) {
         let text = transcript.text.trim().to_string();
+        // Dropping a segment is not an error and raises nothing: it is the gate working.
+        if text.is_empty() || self.hallucinated(&transcript) {
+            return;
+        }
         let Some(live) = self.live.as_mut() else {
             return;
         };
-        if text.is_empty() {
-            return;
-        }
 
         // Words in the wrong window are worse than missing words, so the target is checked
         // immediately before typing rather than when the segment was cut.
@@ -302,6 +303,19 @@ impl Core {
         let live = self.live.as_mut().expect("a live dictation cannot end during injection");
         live.injected_any = true;
         live.previous = Some(text);
+    }
+
+    /// Whisper hallucinates on quiet audio — a stock "Thank you.", subtitle credits — and without
+    /// this the fan, the air conditioning and a mechanical keyboard put words nobody said into a
+    /// person's document.
+    ///
+    /// A signal that is absent or malformed means no signal, and the transcript is typed anyway.
+    /// Failing open is the same choice the .NET client makes and for the same reason: a
+    /// shortcoming in the response must never silently swallow words that were actually said.
+    fn hallucinated(&self, transcript: &Transcript) -> bool {
+        let gate = &self.config.gate;
+        transcript.no_speech_prob.is_some_and(|p| p > gate.max_no_speech_prob)
+            || transcript.avg_logprob.is_some_and(|p| p < gate.min_avg_logprob)
     }
 
     fn fail(&mut self, error: TranscribeError) {

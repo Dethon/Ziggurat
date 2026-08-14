@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::config::{Binding, Config, DEFAULT_BINDING_KEY};
-use crate::host::{Cue, HostEvent, KeyCode, TranscribeError, TrayState};
+use crate::host::{Cue, HostEvent, KeyCode, TranscribeError, Transcript, TrayState};
 use crate::testing::{Action, FakeHost};
 
 const SPANISH: KeyCode = DEFAULT_BINDING_KEY;
@@ -356,6 +356,127 @@ async fn a_binding_with_no_vocabulary_sends_no_prompt_on_its_first_segment() {
     host.wait_for_idle().await;
 
     assert_eq!(host.sent()[0].prompt, None);
+    driver.stop().await;
+}
+
+// ── Ticket 08: the hallucination gate ─────────────────────────────────────────────────────────
+
+/// Whisper's stock hallucination on near-silence, with the signals that give it away.
+fn hallucination(text: &str) -> Transcript {
+    Transcript { text: text.into(), avg_logprob: Some(-0.4), no_speech_prob: Some(0.95) }
+}
+
+fn confident(text: &str) -> Transcript {
+    Transcript { text: text.into(), avg_logprob: Some(-0.3), no_speech_prob: Some(0.05) }
+}
+
+#[tokio::test]
+async fn a_transcript_whisper_itself_calls_silence_is_dropped_rather_than_typed() {
+    // The fan, the air conditioning and a mechanical keyboard otherwise put "Thank you." and
+    // subtitle credits into the document.
+    let host = FakeHost::new();
+    host.will_answer(Ok(hallucination(" Gracias por ver el vídeo.")));
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert!(host.injected().is_empty(), "typed: {:?}", host.injected());
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_transcript_whisper_was_only_guessing_at_is_dropped() {
+    let host = FakeHost::new();
+    host.will_answer(Ok(Transcript {
+        text: "algo".into(),
+        avg_logprob: Some(-2.5),
+        no_speech_prob: Some(0.1),
+    }));
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert!(host.injected().is_empty(), "typed: {:?}", host.injected());
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_signal_whisper_did_not_send_is_permission_rather_than_refusal() {
+    // A shortcoming in the response must never silently swallow words that were actually said,
+    // which is the same reason the .NET client fails open.
+    let host = FakeHost::new();
+    host.will_answer(Ok(Transcript::words("esto sí lo dije")));
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.injected(), ["esto sí lo dije"]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn only_the_signal_that_is_there_is_read() {
+    let host = FakeHost::new();
+    host.will_answer(Ok(Transcript {
+        text: "hola".into(),
+        avg_logprob: None,
+        no_speech_prob: Some(0.95),
+    }));
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert!(host.injected().is_empty(), "one damning signal is enough");
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_dropped_segment_is_the_gate_working_and_reports_nothing() {
+    let host = FakeHost::new();
+    host.will_answer(Ok(hallucination(" Thank you.")));
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert!(host.notifications().is_empty());
+    assert!(!host.tray_states().contains(&TrayState::Error));
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_drop_in_the_middle_does_not_disturb_the_joining_around_it() {
+    let host = FakeHost::new();
+    host.will_answer(Ok(confident("uno")))
+        .will_answer(Ok(hallucination(" Thank you.")))
+        .will_answer(Ok(confident("tres")));
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver
+        .hold(SPANISH, &[speech(800), silence(600), speech(800), silence(600), speech(800)])
+        .await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.injected(), ["uno", " tres"]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn both_thresholds_are_config_keys_and_not_constants() {
+    let host = FakeHost::new();
+    host.will_answer(Ok(hallucination("lo dije en una habitación ruidosa")));
+    let mut config = one_spanish_binding();
+    config.gate.max_no_speech_prob = 0.99;
+    let driver = Driver::start_with(host.clone(), config);
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.injected(), ["lo dije en una habitación ruidosa"]);
     driver.stop().await;
 }
 
