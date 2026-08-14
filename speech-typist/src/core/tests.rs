@@ -17,24 +17,19 @@ const RATE: u32 = 16_000;
 /// Drives the core the way a real host would: events in, and everything observable recorded by
 /// the fake host on the way out.
 struct Driver {
-    host: Arc<FakeHost>,
     events: mpsc::Sender<HostEvent>,
     running: Option<JoinHandle<()>>,
 }
 
 impl Driver {
-    fn start(config: Config) -> Self {
-        Self::start_with(FakeHost::new(), config)
-    }
-
     fn start_with(host: Arc<FakeHost>, config: Config) -> Self {
         Self::start_session(host, Session::transient(config))
     }
 
     fn start_session(host: Arc<FakeHost>, session: Session) -> Self {
         let (events, rx) = mpsc::channel(256);
-        let running = tokio::spawn(super::run(host.clone(), rx, session));
-        Self { host, events, running: Some(running) }
+        let running = tokio::spawn(super::run(host, rx, session));
+        Self { events, running: Some(running) }
     }
 
     async fn send(&self, event: HostEvent) {
@@ -894,6 +889,47 @@ async fn the_config_switch_is_the_only_thing_that_chooses_clipboard_paste() {
         [InjectionMethod::ClipboardPaste, InjectionMethod::ClipboardPaste],
         "the method must not vary between segments or windows"
     );
+    driver.stop().await;
+}
+
+// ── The two outward failures that are not Lemonade's ──────────────────────────────────────────
+
+#[tokio::test]
+async fn a_microphone_that_will_not_open_says_so_and_starts_no_dictation() {
+    // Another application holding the device exclusively, or a revoked microphone permission.
+    // Silently doing nothing would leave a person talking to a key that stopped working.
+    let host = FakeHost::new();
+    host.fail_capture_open("the device is in use");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_until("the failure to be reported", |a| {
+        a.iter().any(|x| matches!(x, Action::Notified(_)))
+    })
+    .await;
+
+    assert!(host.notifications()[0].contains("the device is in use"), "{:?}", host.notifications());
+    assert!(host.sent().is_empty(), "nothing was captured, so nothing should have been sent");
+    assert!(host.tray_states().contains(&TrayState::Error));
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn words_that_could_not_be_typed_are_reported_rather_than_lost_in_silence() {
+    let host = FakeHost::new();
+    host.will_say("esto no se pudo escribir");
+    host.fail_injection("the window refused the input");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_until("the failure to be reported", |a| {
+        a.iter().any(|x| matches!(x, Action::Notified(_)))
+    })
+    .await;
+
+    assert!(host.injected().is_empty());
+    assert_eq!(host.notifications().len(), 1);
+    assert!(host.tray_states().contains(&TrayState::Error));
     driver.stop().await;
 }
 

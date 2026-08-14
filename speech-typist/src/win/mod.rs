@@ -288,7 +288,7 @@ extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam:
             LRESULT(0)
         }
         WM_COMMAND => {
-            on_command((wparam.0 & 0xFFFF) as usize);
+            on_command(wparam.0 & 0xFFFF);
             LRESULT(0)
         }
         WM_DESTROY => {

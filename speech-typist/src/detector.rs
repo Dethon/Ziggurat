@@ -280,9 +280,11 @@ mod tests {
     fn the_forced_cut_lands_at_the_quietest_point_it_could_find() {
         // A split mid-syllable is what makes a forced cut read badly, so it is placed in the gap
         // between words: the quietest window in the second before the limit.
-        let mut config = DetectorConfig::default();
-        config.max_segment_ms = 2_000;
-        config.force_cut_search_ms = 1_000;
+        let config = DetectorConfig {
+            max_segment_ms: 2_000,
+            force_cut_search_ms: 1_000,
+            ..DetectorConfig::default()
+        };
         let mut detector = EnergyDetector::new(&config, RATE);
 
         detector.push(&speech(1_200));
@@ -299,8 +301,7 @@ mod tests {
 
     #[test]
     fn the_audio_after_a_forced_cut_is_kept_rather_than_thrown_away() {
-        let mut config = DetectorConfig::default();
-        config.max_segment_ms = 2_000;
+        let config = DetectorConfig { max_segment_ms: 2_000, ..DetectorConfig::default() };
         let mut detector = EnergyDetector::new(&config, RATE);
 
         detector.push(&speech(1_200));
