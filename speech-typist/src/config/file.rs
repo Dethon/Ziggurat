@@ -170,6 +170,15 @@ request_timeout_secs = 30
 # This is characters, deliberately under that token budget rather than tuned to it.
 max_prompt_chars = 700
 
+[dictation]
+# "hold"  — hold the key for as long as you speak; letting go ends the dictation.
+# "latch" — press once to begin and again to end, with nothing held in between. Useful for a long
+#           dictation, and for a keyboard whose binding key is awkward to hold. The same key that
+#           began it is the only one that ends it, and the watchdog below still closes a latched
+#           dictation nobody ended — with nothing held there is no physical reminder that the
+#           microphone is open.
+mode = "hold"
+
 [audio]
 # A case-insensitive fragment of the capture device's name. Empty means the system default, so
 # one microphone needs no configuration. The tray lists the devices it can see.
@@ -237,7 +246,7 @@ vocabulary = ""
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Binding, InjectionMethod};
+    use crate::config::{Binding, DictationMode, InjectionMethod};
     use crate::host::KeyCode;
 
     /// A directory that cleans itself up, so these tests need nothing but a filesystem.
@@ -482,6 +491,18 @@ vocabulary = "nabu, WASAPI"
         assert_eq!(config.bindings.len(), 2);
         assert_eq!(config.binding_for(KeyCode(125)).map(|i| &config.bindings[i].language), Some(&"en".to_string()));
         assert_eq!(config.bindings[0].vocabulary, "Ziggurat, Lemonade");
+    }
+
+    #[test]
+    fn latching_is_off_until_it_is_asked_for_and_is_spelled_the_way_a_person_would_write_it() {
+        let scratch = Scratch::new("dictation-mode");
+
+        let default = load(&scratch.at("absent.toml"), &scratch.at("made/up.toml")).unwrap();
+        assert_eq!(default.config.dictation.mode, DictationMode::Hold);
+
+        let beside = scratch.write("beside.toml", "[dictation]\nmode = \"latch\"\n");
+        let latched = load(&beside, &scratch.at("absent.toml")).unwrap();
+        assert_eq!(latched.config.dictation.mode, DictationMode::Latch);
     }
 
     #[test]

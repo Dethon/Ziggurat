@@ -122,6 +122,11 @@ impl Core {
         }
     }
 
+    /// One press to begin and another to end, rather than holding throughout.
+    fn latched(&self) -> bool {
+        self.config.dictation.mode == crate::config::DictationMode::Latch
+    }
+
     fn announce_bindings(&self) {
         let keys: Vec<KeyCode> = self.config.bindings.iter().map(|b| b.key).collect();
         self.host.set_bindings(&keys);
@@ -137,10 +142,12 @@ impl Core {
             .iter()
             .any(|binding| binding.key == crate::config::DEFAULT_BINDING_KEY);
         if default {
-            self.host.notify(
-                "Hold F13 to dictate. If your keyboard has no F13, use the tray's \"set binding\" \
-                 menu and press the key you want instead.",
-            );
+            let how = if self.latched() { "Press F13 to start dictating and again to stop" }
+            else { "Hold F13 to dictate" };
+            self.host.notify(&format!(
+                "{how}. If your keyboard has no F13, use the tray's \"set binding\" menu and \
+                 press the key you want instead."
+            ));
         }
     }
 
@@ -171,10 +178,15 @@ impl Core {
         }
     }
 
-    fn on_down(&mut self, key: KeyCode, _done: &mpsc::Sender<Done>) {
-        // A second binding pressed while one is live is ignored: two languages must never
-        // interleave into the same window, and the first dictation carries on undisturbed.
+    fn on_down(&mut self, key: KeyCode, done: &mpsc::Sender<Done>) {
         if self.live.is_some() {
+            // Latched, the same key pressed again is how the dictation ends. Any other binding is
+            // ignored either way: two languages must never interleave into the same window, and
+            // the first dictation carries on undisturbed.
+            if self.latched() && self.live.as_ref().is_some_and(|live| live.key == key) {
+                self.stop_listening();
+                self.pump(done);
+            }
             return;
         }
         let Some(binding) = self.config.binding_for(key) else {
@@ -214,6 +226,11 @@ impl Core {
     }
 
     fn on_up(&mut self, key: KeyCode, done: &mpsc::Sender<Done>) {
+        // Latched, nothing is being held: the key coming up is the person taking their finger off
+        // the press that began the dictation, and the next press is what ends it.
+        if self.latched() {
+            return;
+        }
         if self.live.as_ref().is_none_or(|live| live.key != key) {
             return;
         }
@@ -337,6 +354,7 @@ impl Core {
     }
 
     fn accept(&mut self, transcript: Transcript) {
+        let latched = self.latched();
         let text = transcript.text.trim().to_string();
         // Dropping a segment is not an error and raises nothing: it is the gate working.
         if text.is_empty() || self.hallucinated(&transcript) {
@@ -362,7 +380,9 @@ impl Core {
 
         let joined = if live.injected_any { format!(" {text}") } else { text.clone() };
         // Still held means the binding's key is logically down while these characters are sent.
-        let held = (!live.ended).then_some(live.key);
+        // Latched, it never is — asking the host to release a modifier the person is not pressing
+        // would leave the keyboard in a state nobody chose.
+        let held = (!latched && !live.ended).then_some(live.key);
         let injection = Injection {
             text: &joined,
             held,

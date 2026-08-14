@@ -285,8 +285,14 @@ must pass with no part of the .NET solution built and no Lemonade reachable.
   instruction rather than words is a genuinely hard problem.
 - **Linux and macOS.** The port trait is where they would go. No implementation, no
   conditional compilation for them, no speculative abstraction beyond the one trait.
-- **Latched dictation.** The chat client can carry a dictation on with nothing held down; the
-  speech typist cannot. Holding the key is the whole interaction.
+- ~~**Latched dictation.** The chat client can carry a dictation on with nothing held down; the
+  speech typist cannot. Holding the key is the whole interaction.~~
+  _Brought into scope 2026-08-14 at the author's request, after the first real use._ It is a
+  setting — `dictation.mode = "hold" | "latch"` — and holding stays the default, so this changes
+  nothing for anyone who does not ask for it. A latched dictation is the same dictation the
+  glossary already described: one press begins it, the next press of the same key ends it, and
+  only the way it can end changes. The watchdog carries more weight under it, not less, because
+  with nothing held there is no physical reminder that the microphone is open.
 - **Streaming or partial transcripts.** A segment is transcribed once, whole. No interim results,
   no revision of text already injected.
 - **Any local model.** Nothing is bundled and there is no offline fallback. With Lemonade

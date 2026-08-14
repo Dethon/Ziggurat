@@ -254,10 +254,12 @@ downstream ever sees. It carries no trace of the audio — not how long it was, 
 it was, or that there was audio at all.
 _Avoid_: transcription, recognition result, speech text
 
-**Latched dictation** (chat client only):
+**Latched dictation**:
 A dictation carrying on with nothing held down. It is the same dictation and not a new
 one: the same audio keeps accumulating under the same clock, and only the way it can end
-changes, from letting go to pressing.
+changes, from letting go to pressing. The chat client and the speech typist both have it;
+in the speech typist it is a setting rather than something reached mid-dictation, so a
+binding either latches or is held and never both in one press.
 _Avoid_: locked recording, hands-free, toggle mode
 
 ## Speech typing

@@ -59,7 +59,13 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
 - **The watchdog is a correctness requirement, not a nicety.** A key-up lost to a remote desktop
   session, fast user switching or a hook that lost its window would otherwise hold the microphone
   for as long as the process lives. It is also the backstop if the event queue ever drops a
-  key-up under load.
+  key-up under load, and it carries more weight under `dictation.mode = "latch"`, where nothing
+  is held and so nothing physically reminds a person the microphone is open.
+- **Latched and held are one dictation with two endings, not two features.** `latch` changes
+  which event ends a dictation and nothing else: the hook is unaware of the mode, the same
+  `Live` state runs either way, and only the key that began a dictation can end it. Injection is
+  told no key is held while latched, because releasing a modifier the person is not pressing
+  would leave the keyboard in a state nobody chose.
 - **The gate fails open.** A quality signal that is absent or malformed means no signal and the
   words are typed, for the same reason the .NET client fails open: a shortcoming in the response
   must never silently swallow words that were actually said.

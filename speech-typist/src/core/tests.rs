@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use crate::config::{Binding, Config, DEFAULT_BINDING_KEY};
+use crate::config::{Binding, Config, DictationConfig, DictationMode, DEFAULT_BINDING_KEY};
 use crate::host::{
     Cue, HostEvent, InjectionMethod, KeyCode, TranscribeError, Transcript, TrayState,
 };
@@ -878,6 +878,133 @@ async fn a_later_run_says_nothing_at_all() {
     driver.stop().await;
 
     assert!(host.notifications().is_empty());
+}
+
+// ── Latched dictation ─────────────────────────────────────────────────────────────────────────
+
+fn latched() -> Config {
+    Config {
+        dictation: DictationConfig { mode: DictationMode::Latch },
+        ..one_spanish_binding()
+    }
+}
+
+#[tokio::test]
+async fn latched_a_press_begins_and_the_next_press_of_the_same_key_ends_it() {
+    let host = FakeHost::new();
+    host.will_say("sin sujetar nada");
+    let driver = Driver::start_with(host.clone(), latched());
+
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::BindingUp(SPANISH)).await; // the finger comes off; nothing ends
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::BindingDown(SPANISH)).await; // and this is what ends it
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.injected(), ["sin sujetar nada"]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn latched_letting_go_of_the_key_ends_nothing_and_keeps_the_microphone_open() {
+    // It is the same dictation and not a new one: only the way it can end changes.
+    let host = FakeHost::new();
+    host.will_say("sigo hablando");
+    let driver = Driver::start_with(host.clone(), latched());
+
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::Frame(silence(600))).await;
+    host.wait_until("the first phrase to be typed", |a| typed_yet(a) == 1).await;
+
+    assert!(
+        !host.actions().contains(&Action::CaptureClosed),
+        "the key came up, but a latched dictation does not end there"
+    );
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    host.wait_for_idle().await;
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn latched_another_binding_pressed_mid_dictation_is_still_ignored() {
+    // Only the key that began it can end it — two languages must not interleave, latched or not.
+    let host = FakeHost::new();
+    host.will_say("en español");
+    let mut config = latched();
+    config.bindings = two_bindings().bindings;
+    let driver = Driver::start_with(host.clone(), config);
+
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::BindingDown(ENGLISH)).await; // must not end the Spanish dictation
+    driver.send(HostEvent::BindingUp(ENGLISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    host.wait_for_idle().await;
+
+    let opens = host.actions().iter().filter(|a| **a == Action::CaptureOpened).count();
+    assert_eq!(opens, 1);
+    assert_eq!(host.sent()[0].language, "es");
+    assert_eq!(host.injected(), ["en español"]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn latched_injection_is_never_told_a_key_is_being_held() {
+    // Nothing is held between the two presses, so asking the host to release a modifier for the
+    // duration of the call would release one the person is not pressing.
+    let host = FakeHost::new();
+    host.will_say("uno").will_say("dos");
+    let driver = Driver::start_with(host.clone(), latched());
+
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    for frame in two_phrases() {
+        driver.send(HostEvent::Frame(frame)).await;
+    }
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.held_during_injection(), [None, None]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn latched_a_dictation_nobody_ever_ended_still_ends_by_itself() {
+    // The watchdog matters more here, not less: with nothing held there is no physical reminder
+    // that the microphone is open.
+    let host = FakeHost::new();
+    host.will_say("me fui a comer");
+    let driver = Driver::start_with(host.clone(), latched());
+
+    driver.send(HostEvent::Tick { at_ms: 0 }).await;
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::Tick { at_ms: 120_000 }).await;
+    host.wait_for_idle().await;
+
+    assert!(host.actions().contains(&Action::CaptureClosed));
+    assert_eq!(host.injected(), ["me fui a comer"]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn holding_is_still_the_default_and_still_ends_on_release() {
+    let host = FakeHost::new();
+    host.will_say("sujetando");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    assert_eq!(Config::default().dictation.mode, DictationMode::Hold);
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.injected(), ["sujetando"]);
+    driver.stop().await;
 }
 
 // ── Ticket 11: how the text arrives ───────────────────────────────────────────────────────────

@@ -22,6 +22,7 @@ pub const DEFAULT_ENGLISH_BINDING_KEY: KeyCode = KeyCode(0x7D);
 #[serde(deny_unknown_fields, default)]
 pub struct Config {
     pub lemonade: LemonadeConfig,
+    pub dictation: DictationConfig,
     pub audio: AudioConfig,
     pub detector: DetectorConfig,
     pub gate: GateConfig,
@@ -33,6 +34,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             lemonade: LemonadeConfig::default(),
+            dictation: DictationConfig::default(),
             audio: AudioConfig::default(),
             detector: DetectorConfig::default(),
             gate: GateConfig::default(),
@@ -40,6 +42,25 @@ impl Default for Config {
             bindings: vec![Binding::default(), Binding::english()],
         }
     }
+}
+
+/// How a dictation begins and ends.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DictationMode {
+    /// The key is held for as long as the person speaks, and letting go ends it.
+    #[default]
+    Hold,
+    /// A latched dictation: one press begins it, the next press of the same key ends it, and
+    /// nothing is held in between. It is the same dictation either way — only the way it can end
+    /// changes, which is why this is a mode and not a second kind of thing.
+    Latch,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct DictationConfig {
+    pub mode: DictationMode,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

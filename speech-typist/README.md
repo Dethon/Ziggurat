@@ -35,6 +35,10 @@ settings travel if you carry the executable on a stick.
 - `detector.*` — where a dictation is cut into segments. Raise the thresholds in a loud room.
 - `gate.*` — what a transcript has to look like to be typed at all. This is what stops the fan and
   the keyboard putting a stock "Thank you." into your document.
+- `dictation.mode` — `hold` (the default) holds the key for as long as you speak. `latch` makes
+  one press begin the dictation and the next press of the same key end it, with nothing held in
+  between. Only the key that began it can end it, and a latched dictation you forget about still
+  closes itself on the watchdog.
 - `injection.method` — `keys` types Unicode key events; `clipboard-paste` is the escape hatch for
   applications that mishandle them, and it restores whatever you had copied.
 - `[[bindings]]` — a key, the language its words are expected in, and the vocabulary they should
