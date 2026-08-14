@@ -4,7 +4,9 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::config::{Binding, Config, DEFAULT_BINDING_KEY};
-use crate::host::{Cue, HostEvent, KeyCode, TranscribeError, Transcript, TrayState};
+use crate::host::{
+    Cue, HostEvent, InjectionMethod, KeyCode, TranscribeError, Transcript, TrayState,
+};
 use crate::testing::{Action, FakeHost};
 
 use super::Session;
@@ -857,6 +859,42 @@ async fn a_later_run_says_nothing_at_all() {
     driver.stop().await;
 
     assert!(host.notifications().is_empty());
+}
+
+// ── Ticket 11: how the text arrives ───────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn synthetic_key_events_are_what_a_transcript_arrives_as_unless_told_otherwise() {
+    let host = FakeHost::new();
+    host.will_say("hola");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.injection_methods(), [InjectionMethod::Keys]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn the_config_switch_is_the_only_thing_that_chooses_clipboard_paste() {
+    // Never auto-detection. An application deciding for itself which method it gets is a source
+    // of surprise, and the escape hatch only helps if a person knows when it is in use.
+    let host = FakeHost::new();
+    host.will_say("uno").will_say("dos");
+    let mut config = one_spanish_binding();
+    config.injection.method = InjectionMethod::ClipboardPaste;
+    let driver = Driver::start_with(host.clone(), config);
+
+    driver.hold(SPANISH, &two_phrases()).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(
+        host.injection_methods(),
+        [InjectionMethod::ClipboardPaste, InjectionMethod::ClipboardPaste],
+        "the method must not vary between segments or windows"
+    );
+    driver.stop().await;
 }
 
 fn tone_at(rate: u32, ms: u32, amplitude: i16) -> Vec<i16> {

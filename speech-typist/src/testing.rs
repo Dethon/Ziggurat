@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use tokio::sync::Notify;
 
 use crate::host::{
-    CaptureFormat, Cue, Host, HostError, KeyCode, TranscribeError, Transcript,
-    TranscriptionRequest, TrayState, WindowId,
+    CaptureFormat, Cue, Host, HostError, Injection, InjectionMethod, KeyCode, TranscribeError,
+    Transcript, TranscriptionRequest, TrayState, WindowId,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -23,7 +23,7 @@ pub enum Action {
     Tray(TrayState),
     Bindings(Vec<KeyCode>),
     Sent(TranscriptionRequest),
-    Injected { text: String, held: Option<KeyCode> },
+    Injected { text: String, held: Option<KeyCode>, method: InjectionMethod },
     Notified(String),
 }
 
@@ -151,6 +151,17 @@ impl FakeHost {
         }
     }
 
+    /// How each injection was asked to make the words arrive, in order.
+    pub fn injection_methods(&self) -> Vec<InjectionMethod> {
+        self.actions()
+            .into_iter()
+            .filter_map(|a| match a {
+                Action::Injected { method, .. } => Some(method),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// The keys the core last told the host to watch and swallow.
     pub fn watched_keys(&self) -> Vec<KeyCode> {
         self.actions()
@@ -199,11 +210,15 @@ impl Host for FakeHost {
         WindowId(self.state.lock().unwrap().foreground)
     }
 
-    fn inject(&self, text: &str, held: Option<KeyCode>) -> Result<(), HostError> {
+    fn inject(&self, injection: Injection<'_>) -> Result<(), HostError> {
         if let Some(why) = self.state.lock().unwrap().inject_failure.clone() {
             return Err(HostError(why));
         }
-        self.record(Action::Injected { text: text.to_string(), held });
+        self.record(Action::Injected {
+            text: injection.text.to_string(),
+            held: injection.held,
+            method: injection.method,
+        });
         Ok(())
     }
 

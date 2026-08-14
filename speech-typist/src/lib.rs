@@ -5,6 +5,7 @@
 //! posts at Lemonade directly rather than routing through the .NET stack, and `CLAUDE.md` holds
 //! the invariants.
 
+pub mod audio;
 pub mod config;
 pub mod core;
 pub mod detector;

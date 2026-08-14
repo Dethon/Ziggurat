@@ -13,6 +13,33 @@ use async_trait::async_trait;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct KeyCode(pub u32);
 
+/// How the words are made to arrive. A switch a person flips, never auto-detection: an
+/// application deciding for itself which method it gets is a source of surprise, and the whole
+/// point of the escape hatch is knowing when it is in use.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InjectionMethod {
+    /// Synthetic Unicode key events, batched into as few calls as possible.
+    #[default]
+    Keys,
+    /// Set the clipboard, paste, restore the previous contents. For the applications that
+    /// mishandle synthetic input.
+    ClipboardPaste,
+}
+
+/// One transcript on its way into the window in front.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Injection<'a> {
+    pub text: &'a str,
+    /// The binding's key if it is still being held, because segments are typed while the person
+    /// is still speaking. If that key is a modifier, the host must release it for the duration of
+    /// the call and restore it afterwards, or every character arrives chorded. Which keys are
+    /// modifiers is platform knowledge, so the core hands over the key rather than the answer.
+    /// The shipped default binding has no modifier precisely so this is rarely exercised.
+    pub held: Option<KeyCode>,
+    pub method: InjectionMethod,
+}
+
 /// Which window is in front, as the platform identifies it. The core only ever compares two.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WindowId(pub u64);
@@ -141,13 +168,7 @@ pub trait Host: Send + Sync {
     fn foreground_window(&self) -> WindowId;
 
     /// Types the text into whatever is in front, as though a person had typed it.
-    ///
-    /// `held` is the binding's key if it is still being held, because segments are typed while
-    /// the person is still speaking. If that key is a modifier, the host must release it for the
-    /// duration of the call and restore it afterwards, or every character arrives chorded. Which
-    /// keys are modifiers is platform knowledge, so the core hands over the key rather than the
-    /// answer. The shipped default binding has no modifier precisely so this is rarely exercised.
-    fn inject(&self, text: &str, held: Option<KeyCode>) -> Result<(), HostError>;
+    fn inject(&self, injection: Injection<'_>) -> Result<(), HostError>;
 
     /// Which keys start a dictation, and are therefore swallowed for as long as they are held.
     /// The hook has to answer that synchronously in its callback, so the set lives on the host

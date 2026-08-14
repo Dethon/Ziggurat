@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::host::KeyCode;
+use crate::host::{InjectionMethod, KeyCode};
 
 mod file;
 
@@ -134,17 +134,6 @@ impl Default for GateConfig {
     fn default() -> Self {
         Self { max_no_speech_prob: 0.6, min_avg_logprob: -1.0 }
     }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum InjectionMethod {
-    /// Synthetic Unicode key events, batched into as few calls as possible.
-    #[default]
-    Keys,
-    /// Set the clipboard, paste, restore the previous contents. For the applications that
-    /// mishandle synthetic input. Never chosen automatically.
-    ClipboardPaste,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

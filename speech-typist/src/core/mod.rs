@@ -12,8 +12,8 @@ use tokio::sync::mpsc;
 use crate::config::Config;
 use crate::detector::{EnergyDetector, SegmentDetector};
 use crate::host::{
-    Cue, Host, HostEvent, KeyCode, TranscribeError, Transcript, TranscriptionRequest, TrayState,
-    WindowId,
+    Cue, Host, HostEvent, Injection, KeyCode, TranscribeError, Transcript, TranscriptionRequest,
+    TrayState, WindowId,
 };
 use crate::prompt;
 use crate::wav;
@@ -367,7 +367,15 @@ impl Core {
         let joined = if live.injected_any { format!(" {text}") } else { text.clone() };
         // Still held means the binding's key is logically down while these characters are sent.
         let held = (!live.ended).then_some(live.key);
-        if let Err(error) = self.host.inject(&joined, held) {
+        let injection = Injection {
+            text: &joined,
+            held,
+            // The configured method, unconditionally: never a decision about which application is
+            // in front, because that is a source of surprise and the escape hatch only helps if
+            // a person knows when it is in use.
+            method: self.config.injection.method,
+        };
+        if let Err(error) = self.host.inject(injection) {
             self.tell_once(&format!("Could not type the transcript: {error}"));
             self.failing = true;
             return;
