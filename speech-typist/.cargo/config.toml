@@ -1,0 +1,4 @@
+# Statically link the CRT so the executable really is one file: the UCRT ships with Windows 10,
+# but vcruntime140.dll comes from the VC++ redistributable and is not on a clean machine.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

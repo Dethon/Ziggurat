@@ -1,0 +1,104 @@
+# speech-typist
+
+Standalone Rust crate (NOT in the .NET solution, and sharing no build with `satellite/`): a
+Windows tray program that turns a held key into typing in whatever window was already in front.
+It reaches no agent, sends no message and keeps no history. `README.md` covers building and
+running; this file holds the invariants that must not be broken.
+
+Nothing in `Ziggurat.sln` is referenced, built or required. `cargo test` in this directory is the
+whole suite and must pass with no .NET project built and no Lemonade reachable.
+
+## Invariants
+
+- **One host port, and only one.** `src/host.rs`'s `Host` trait plus its inward `HostEvent`
+  channel is the entire boundary between the core and the outside world. Everything else —
+  segmenting, ordering, prompt chaining, the gate, retries, the window guard, the watchdog, the
+  tray states — is platform-free and driven in tests through one fake host that records what it
+  was asked to do. Do not add a second seam. A Linux implementation would be a second
+  implementation of this trait and no other change; none is written, and Wayland forbids both
+  global key capture and synthetic input without portals or `/dev/uinput`, so it may never be
+  possible there.
+- **It posts at Lemonade directly.** `docs/adr/0026-the-speech-typist-talks-to-lemonade-directly.md`
+  records why, and what duplication was accepted in exchange. Read it before proposing that this
+  call into Ziggurat. The consequence that matters: the speech typist works with the whole rest of
+  the stack down, and does not work with Lemonade down, and there is no fallback.
+- **Only WAV is ever sent.** The speech typist captures its own audio, so there is no
+  sender-supplied media type to distrust, nothing to sniff and no Opus to decode — the three
+  problems the .NET side's `AudioContainer` exists to solve are problems this does not have. No
+  resampler either: the WAV declares whatever rate the device opened at, exactly as
+  `WavAudio.FromPcm` does by taking whatever rate it was handed.
+- **The model name agrees with `STT_MODEL` by hand.** `DockerCompose/docker-compose.yml` keeps
+  four sides in lockstep with its `&stt-model` anchor; this config is outside compose and beyond
+  the anchor's reach, so it is a fifth that has to be repeated. A mismatch is **not** an error —
+  Lemonade lazily pulls whatever it was asked for — so the symptom is a slow first dictation, not
+  a failure, which is exactly why it needs writing down.
+- **The base URL is `/v1`, not `/api/v1`.** Lemonade serves both; health lives under `/api/v1`
+  and the OpenAI-compatible routes under `/v1`. The wrong one parses fine and 404s only when
+  somebody is mid-sentence. A test pins it.
+- **The capture opens on key-down with no pre-roll, and the cue plays after it opens.** Unlike the
+  satellite, this trades the first 50-200 ms of audio for not holding the device and not showing
+  Windows' permanent microphone indicator. The cue ordering is the whole mitigation, which is why
+  it means "speak now" rather than "key received". This is the choice most likely to want
+  revisiting after real use.
+- **No visible window is ever created.** A window that can take focus can break injection into the
+  window underneath, which is why the tray is the entire interface and the binary is built for the
+  windows subsystem. The one `HWND_MESSAGE` window the tray icon and the hook need is never shown,
+  never painted and cannot be focused.
+- **The keyboard hook must return promptly.** Windows silently removes a hook that takes too long,
+  so the callback locks a mutex, decides, and posts to a channel with `try_send`. It never blocks
+  and never awaits. For the same reason the core runs on its own thread: a message loop that stops
+  pumping is a hook that stops existing.
+- **The binding key is swallowed for the whole time it is held**, key-up included, and its own
+  auto-repeat is not a second dictation. Everything else the person types mid-dictation still
+  reaches the window — this is a dictation key, not a keyboard blocker.
+- **The watchdog is a correctness requirement, not a nicety.** A key-up lost to a remote desktop
+  session, fast user switching or a hook that lost its window would otherwise hold the microphone
+  for as long as the process lives. It is also the backstop if the event queue ever drops a
+  key-up under load.
+- **The gate fails open.** A quality signal that is absent or malformed means no signal and the
+  words are typed, for the same reason the .NET client fails open: a shortcoming in the response
+  must never silently swallow words that were actually said.
+- **The prompt cap is applied here, not left to whisper.** whisper.cpp caps at 224 tokens and
+  keeps the *tail*, which would eat the vocabulary — the one part a person actually wrote. So the
+  chained text loses its oldest words instead. Same rule as
+  `McpChannelVoice/Services/Stt/WhisperPromptBuilder.cs`.
+- **Learn mode edits the config, it does not rewrite it.** `toml_edit` changes one key in place,
+  because re-serializing would delete the commented defaults the file exists to show.
+
+## Building
+
+```sh
+scripts/build-release.sh          # one .exe, ~1.7 MB, cross-compiled from WSL
+cargo test                        # the whole suite, no Windows and no network needed
+cargo xwin check --target x86_64-pc-windows-msvc   # type-check the Windows half from WSL
+```
+
+Prerequisites: `cargo install cargo-xwin --locked` and `rustup target add x86_64-pc-windows-msvc`.
+cargo-xwin downloads the MSVC headers and import libraries on first use and caches them.
+
+`.cargo/config.toml` statically links the CRT. Without it the executable needs `vcruntime140.dll`,
+which ships with the VC++ redistributable and is not on a clean machine — and one file that needs
+a redistributable is not one file. The release script prints the imported DLLs for that reason;
+every one of them must be a Windows system DLL.
+
+Crates that were established to cross-compile this way: `cpal` (WASAPI capture and device
+enumeration), `windows` 0.58 (hook, tray, injection, registry, cue playback), `reqwest` with **no
+TLS features at all** (Lemonade is plain HTTP on the LAN, and dropping the TLS stack is most of
+why the executable is this small — a config naming an `https://` base URL will fail to connect, by
+design). The tray is `Shell_NotifyIconW` directly rather than a tray crate: a message loop already
+exists for the hook, the same call carries the balloon notifications, and it is one fewer thing
+that has to cross-compile.
+
+## Rough edges accepted on purpose
+
+- The first 50-200 ms of a dictation is lost to opening the device, so speaking instantly clips a
+  leading plosive.
+- Whisper capitalises the start of every segment it is given, so a sentence cut mid-way can read
+  slightly oddly at the join. Prompt chaining is what limits the damage, not a fix for it.
+- The energy detector will cut on a long deliberate pause mid-sentence.
+
+## Glossary
+
+`CONTEXT.md` at the repository root is the authority. The words are **dictation**, **segment**,
+**binding**, **injection** and **target window**. A segment is never a "chunk", a dictation is
+never an "utterance" or a "recording", and injection is never "paste" or "send keys".

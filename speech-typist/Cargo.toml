@@ -29,19 +29,22 @@ reqwest = { version = "0.12", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 cpal = "0.15"          # WASAPI capture and device enumeration; pure Rust over the windows crate
-tray-icon = "0.19"     # tray icon and menu, no window
-image = { version = "0.25", default-features = false, features = ["png"] }
+# The tray is Shell_NotifyIconW directly rather than a tray crate: one message loop already exists
+# for the keyboard hook, the same call carries the balloon notifications, and it is one fewer
+# thing that has to cross-compile.
 windows = { version = "0.58", features = [
     "Win32_Foundation",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_UI_Input_KeyboardAndMouse",
-    "Win32_System_LibraryLoader",
-    "Win32_System_Threading",
-    "Win32_System_Registry",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
     "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
     "Win32_System_Memory",
     "Win32_System_Ole",
-    "Win32_Media_Audio",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 [dev-dependencies]

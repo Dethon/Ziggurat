@@ -10,6 +10,7 @@ pub mod config;
 pub mod core;
 pub mod detector;
 pub mod host;
+pub mod keys;
 pub mod lemonade;
 pub mod prompt;
 pub mod wav;
