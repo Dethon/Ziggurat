@@ -4,6 +4,10 @@ namespace Domain.Contracts;
 
 // The hub's side of an outpost's lifecycle: a machine announces itself, keeps announcing while it
 // runs, takes the announcement back when it stops, and lapses on its own when it cannot.
+//
+// An interface rather than the concrete OutpostRegistry beside it because Infrastructure consumes
+// it — the session build asks which machines are live — and Infrastructure cannot reference the
+// host that composes them. Domain is the only place both can see.
 public interface IOutpostRegistry
 {
     Task RegisterAsync(OutpostRegistration registration, CancellationToken ct = default);

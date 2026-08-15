@@ -32,8 +32,9 @@ internal sealed class HttpOutpostAnnouncer(HttpClient client, string sharedSecre
                 : KeepAliveAnswer.Unreachable;
         }
 
-        // A hub that predates the verdict answers a refreshed keepalive with no body at all, which
-        // reads as "not yet known" — the same thing it means before any session has been built.
+        // A body that is absent or unreadable reads as "not yet known", which is what the machine
+        // does about it anyway: the verdict is feedback, and a keepalive that refreshed the
+        // registration did its job whether or not the answer could be understood.
         var body = await response.Content.ReadFromJsonAsync<VerdictBody>(ct);
         return new KeepAliveAnswer(KeepAliveOutcome.Refreshed, body?.Verdict ?? OutpostVerdict.Unknown);
     }
