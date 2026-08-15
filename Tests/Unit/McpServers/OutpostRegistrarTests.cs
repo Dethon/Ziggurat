@@ -50,6 +50,48 @@ public class OutpostRegistrarTests
         hub.Registrations.Count.ShouldBeGreaterThan(1);
     }
 
+    // A hub that takes the connection and then says nothing times the HttpClient out, and that
+    // arrives as a TaskCanceledException — the type a real shutdown also throws. Read as a shutdown
+    // it ended the process: the registrar faulted, the host stopped with it, and a machine that was
+    // serving its files stopped serving them because the hub was slow to answer. A hub that is
+    // reachable but not answering is the VPN case, where the listener has to stay up.
+    [Fact]
+    public async Task AHubThatTimesOutWhileRegistering_KeepsServingAndTriesAgain()
+    {
+        var (registrar, hub, clock) = Registrar();
+        hub.TimeOutRequests = true;
+        await registrar.StartAsync(CancellationToken.None);
+        await Eventually.Until(() => hub.Registrations.Count == 1, "the attempt that times out");
+
+        hub.TimeOutRequests = false;
+        await clock.AdvancePastAsync(TimeSpan.FromSeconds(1));
+
+        await Eventually.Until(() => hub.Registrations.Count > 1, "the machine tries again");
+        registrar.ExecuteTask?.IsFaulted.ShouldBe(false);
+        await registrar.StopAsync(CancellationToken.None);
+    }
+
+    // The same timeout on the other call, where the machine is registered and the hub stops
+    // answering. Dropping back to announcing itself is the recovery; ending the process is not one.
+    [Fact]
+    public async Task AHubThatTimesOutWhileKeepingAlive_DropsBackToAnnouncingItself()
+    {
+        var (registrar, hub, clock) = Registrar();
+        await registrar.StartAsync(CancellationToken.None);
+        await Eventually.Until(() => hub.Registrations.Count == 1, "the machine announces itself");
+
+        hub.TimeOutRequests = true;
+        await clock.AdvancePastAsync(OutpostLifetime.KeepAliveInterval);
+        await Eventually.Until(() => hub.KeepAlives.Count == 1, "the keepalive that times out");
+
+        hub.TimeOutRequests = false;
+        await clock.AdvancePastAsync(TimeSpan.FromSeconds(1));
+
+        await Eventually.Until(() => hub.Registrations.Count == 2, "the machine announces itself again");
+        registrar.ExecuteTask?.IsFaulted.ShouldBe(false);
+        await registrar.StopAsync(CancellationToken.None);
+    }
+
     [Fact]
     public async Task OnceRegistered_ItKeepsItselfAliveEveryInterval()
     {
@@ -199,6 +241,11 @@ public class OutpostRegistrarTests
 
         public bool RefuseRegistrations { get; set; }
         public bool ThrowOnDeregister { get; set; }
+
+        // What an HttpClient whose timeout elapsed throws, down to the inner exception: a
+        // cancellation nobody asked for, which is the whole reason it can be mistaken for one
+        // somebody did.
+        public bool TimeOutRequests { get; set; }
         public KeepAliveAnswer Answer { get; set; } =
             new(KeepAliveOutcome.Refreshed, OutpostVerdict.Unknown);
 
@@ -213,6 +260,7 @@ public class OutpostRegistrarTests
                 _registrations.Add(registration);
             }
 
+            TimeOutIfAsked();
             return Task.FromResult(!RefuseRegistrations);
         }
 
@@ -223,6 +271,7 @@ public class OutpostRegistrarTests
                 _keepAlives.Add(name);
             }
 
+            TimeOutIfAsked();
             return Task.FromResult(Answer);
         }
 
@@ -239,6 +288,16 @@ public class OutpostRegistrarTests
             }
 
             return Task.CompletedTask;
+        }
+
+        private void TimeOutIfAsked()
+        {
+            if (TimeOutRequests)
+            {
+                throw new TaskCanceledException(
+                    "The request was canceled due to the configured HttpClient.Timeout of 10 seconds "
+                    + "elapsing.", new TimeoutException());
+            }
         }
 
         private IReadOnlyList<T> Snapshot<T>(List<T> source)

@@ -75,6 +75,12 @@ internal sealed class OutpostRegistrar(
         }
     }
 
+    // Whether this was a shutdown is a question about the token, never about the exception's type.
+    // An HttpClient whose timeout elapses throws TaskCanceledException — a cancellation nobody
+    // asked for — so a filter reading the type let a slow hub out of here, faulted the background
+    // service and stopped the host with it: the machine stopped serving its files because the hub
+    // was slow, which is the one thing the retry loop exists to prevent. A genuine cancellation
+    // still propagates, because the token says so.
     private async Task<bool> RegisterAsync(CancellationToken ct)
     {
         try
@@ -89,7 +95,7 @@ internal sealed class OutpostRegistrar(
             logger.LogWarning(
                 "The hub refused outpost {Name}'s registration; retrying", registration.Name);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             logger.LogWarning(ex,
                 "Outpost {Name} could not reach the hub to register; it keeps serving and keeps trying",
@@ -99,6 +105,7 @@ internal sealed class OutpostRegistrar(
         return false;
     }
 
+    // The token, not the type, for the reason RegisterAsync gives.
     private async Task<bool> KeepAliveAsync(CancellationToken ct)
     {
         try
@@ -123,7 +130,7 @@ internal sealed class OutpostRegistrar(
                     return false;
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             logger.LogWarning(ex,
                 "Outpost {Name} could not reach the hub to keep its registration alive", registration.Name);
