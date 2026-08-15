@@ -43,6 +43,10 @@
   </Target>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.1.0" />
   </ItemGroup>

@@ -34,4 +34,17 @@ public record OutpostSettings
     // Comma-separated, replacing the shared list wholesale for this machine — a computer full of
     // unusual source files is still readable. Absent leaves the shared list alone.
     public string? Ext { get; init; }
+
+    // The agent's own HTTP API. Absent means this outpost registers with nobody: it still serves,
+    // and its address goes into an agent's configured endpoints by hand, which is how it was
+    // reached before it could announce itself.
+    public string? Hub { get; init; }
+
+    // The address the hub is told to dial. Worked out from the route toward the hub when absent,
+    // which is right on a flat network and wrong on a multi-homed one.
+    public string? Advertise { get; init; }
+
+    // The one value that is a secret, so the one that arrives as an environment variable rather
+    // than as a flag: a command line is visible to every process on the machine.
+    public string SharedSecret { get; init; } = "";
 }
