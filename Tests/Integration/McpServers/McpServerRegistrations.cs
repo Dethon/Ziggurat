@@ -182,8 +182,7 @@ public static class McpServerRegistrations
                 HomeDir = "/srv/jail/home/sandbox_user",
                 DefaultTimeoutSeconds = 30,
                 MaxTimeoutSeconds = 300,
-                OutputCapBytes = 65536,
-                AllowedExtensions = [".txt", ".py"]
+                OutputCapBytes = 65536
             },
             (services, settings) => services.ConfigureMcp(settings)),
 

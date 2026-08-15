@@ -52,8 +52,7 @@ public class StatelessProtocolContractTests
                 HomeDir = "/tmp/home",
                 DefaultTimeoutSeconds = 5,
                 MaxTimeoutSeconds = 10,
-                OutputCapBytes = 1024,
-                AllowedExtensions = []
+                OutputCapBytes = 1024
             })
         },
         {

@@ -38,8 +38,7 @@ public class McpSandboxServerFixture : IAsyncLifetime
             HomeDir = HomeDir,
             DefaultTimeoutSeconds = 30,
             MaxTimeoutSeconds = 120,
-            OutputCapBytes = 65536,
-            AllowedExtensions = [".md", ".txt", ".py", ".sh", ".json"]
+            OutputCapBytes = 65536
         };
 
         var builder = WebApplication.CreateBuilder();
@@ -64,7 +63,7 @@ public class McpSandboxServerFixture : IAsyncLifetime
                 "Linux sandbox container.",
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.ContainerRoot),
-                settings.AllowedExtensions,
+                TextFileExtensions.Default,
                 sp.GetRequiredService<ICommandRunner>(),
                 settings.HomeDir))
             .AddToolServer(settings, ToolResponse.Create)
