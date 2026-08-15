@@ -4,6 +4,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
 
+// Everything an agent needs to reach the machines that registered themselves: where to ask which
+// ones are live, and what to present when dialling one. They travel together because neither is
+// any use without the other — a registration nobody may dial is a mount that cannot be reached.
+public sealed record OutpostAccess(IOutpostRegistry Registry, string SharedSecret);
+
 // What one session build was given, and which of those endpoints were machines. The names are kept
 // because the verdict written back afterwards is per outpost, and a mount name that belongs to the
 // deployment's own filesystem is nobody's registration to write on.
@@ -25,11 +30,12 @@ internal static class OutpostEndpoints
 {
     public static async Task<ComposedEndpoints> ComposeAsync(
         IReadOnlyList<McpServerEndpoint> configured,
-        IOutpostRegistry? registry,
+        OutpostAccess? outposts,
         bool usesOutposts,
         ILogger? logger,
         CancellationToken ct)
     {
+        var registry = outposts?.Registry;
         // Nothing is opted in by default. An agent that exists to search for downloads has no
         // business reaching somebody's laptop, and a new machine appearing on the network must not
         // silently widen what any agent can touch.
@@ -44,7 +50,11 @@ internal static class OutpostEndpoints
             return live.Count == 0
                 ? new ComposedEndpoints(configured, [])
                 : new ComposedEndpoints(
-                    [.. configured, .. live.Select(outpost => McpServerEndpoint.Dynamic(outpost.Endpoint))],
+                    [
+                        .. configured,
+                        .. live.Select(outpost =>
+                            McpServerEndpoint.Dynamic(outpost.Endpoint, outposts!.SharedSecret))
+                    ],
                     [.. live.Select(outpost => outpost.Name)]);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -68,14 +78,14 @@ internal static class OutpostEndpoints
     // could not reach you" is not a verdict on a mount and calling it shadowed would name the
     // wrong problem.
     public static async Task RecordVerdictsAsync(
-        IOutpostRegistry? registry,
+        OutpostAccess? access,
         IReadOnlyList<string> outposts,
         IReadOnlyList<string> mounted,
         IReadOnlyList<string> shadowed,
         ILogger? logger,
         CancellationToken ct)
     {
-        if (registry is null || outposts.Count == 0)
+        if (access?.Registry is not { } registry || outposts.Count == 0)
         {
             return;
         }

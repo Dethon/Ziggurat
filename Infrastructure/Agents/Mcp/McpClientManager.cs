@@ -1,3 +1,4 @@
+using Domain.Outposts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
@@ -94,8 +95,17 @@ internal sealed class McpClientManager : IAsyncDisposable
 
         var clients = await Task.WhenAll(endpoints.Select(async endpoint =>
         {
-            Task<McpClient> Dial() => McpClient.CreateAsync(
-                new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint.Address) }),
+            Task<McpClient> dial() => McpClient.CreateAsync(
+                new HttpClientTransport(new HttpClientTransportOptions
+                {
+                    Endpoint = new Uri(endpoint.Address),
+                    // Presented on every request to a server that asked for one. Both directions
+                    // present the same shared secret: the machine when it registers, and this when
+                    // it dials the machine back.
+                    AdditionalHeaders = endpoint.Secret is { } secret
+                        ? new Dictionary<string, string> { ["Authorization"] = OutpostSecret.Header(secret) }
+                        : null
+                }),
                 new McpClientOptions
                 {
                     ClientInfo = new Implementation { Name = name, Description = description, Version = "1.0.0" },
@@ -107,13 +117,13 @@ internal sealed class McpClientManager : IAsyncDisposable
             if (endpoint.Origin is McpEndpointOrigin.Configured)
             {
                 return ((McpClient Client, string ServerName)?)
-                    (await retryPolicy.ExecuteAsync(Dial), ExtractServerName(endpoint.Address));
+                    (await retryPolicy.ExecuteAsync(dial), ExtractServerName(endpoint.Address));
             }
 
             try
             {
                 return ((McpClient Client, string ServerName)?)
-                    (await Dial(), ExtractServerName(endpoint.Address));
+                    (await dial(), ExtractServerName(endpoint.Address));
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

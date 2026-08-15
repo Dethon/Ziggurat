@@ -11,6 +11,8 @@ namespace Tests.Unit.Infrastructure.Agents;
 // the network must not silently widen what any agent can touch.
 public class OutpostEndpointsTests
 {
+    private const string Secret = "s3cret";
+
     private static readonly McpServerEndpoint _vault =
         McpServerEndpoint.Configured("http://mcp-vault:8080/mcp");
 
@@ -37,7 +39,7 @@ public class OutpostEndpointsTests
     {
         var endpoints = await ComposeAsync(new RecordingRegistry(_laptop), usesOutposts: true);
 
-        endpoints.Endpoints.ShouldBe([_vault, McpServerEndpoint.Dynamic(_laptop.Endpoint)]);
+        endpoints.Endpoints.ShouldBe([_vault, McpServerEndpoint.Dynamic(_laptop.Endpoint, Secret)]);
         endpoints.Outposts.ShouldBe(["laptop"]);
     }
 
@@ -83,7 +85,7 @@ public class OutpostEndpointsTests
         var registry = new RecordingRegistry(_laptop, _laptop with { Name = "desktop" });
 
         await OutpostEndpoints.RecordVerdictsAsync(
-            registry,
+            Access(registry),
             outposts: ["laptop", "desktop"],
             mounted: ["vault", "sandbox", "laptop", "desktop"],
             shadowed: ["desktop"],
@@ -106,7 +108,7 @@ public class OutpostEndpointsTests
         var registry = new RecordingRegistry(_laptop);
 
         await OutpostEndpoints.RecordVerdictsAsync(
-            registry, outposts: ["laptop"], mounted: ["vault"], shadowed: [],
+            Access(registry), outposts: ["laptop"], mounted: ["vault"], shadowed: [],
             NullLogger.Instance, CancellationToken.None);
 
         registry.Verdicts.ShouldBeEmpty();
@@ -117,14 +119,17 @@ public class OutpostEndpointsTests
     public async Task ARegistryThatCannotBeWritten_DoesNotFailTheSession()
     {
         await Should.NotThrowAsync(() => OutpostEndpoints.RecordVerdictsAsync(
-            new UnreachableRegistry(), outposts: ["laptop"], mounted: ["laptop"], shadowed: [],
+            Access(new UnreachableRegistry()), outposts: ["laptop"], mounted: ["laptop"], shadowed: [],
             NullLogger.Instance, CancellationToken.None));
     }
 
     private static Task<ComposedEndpoints> ComposeAsync(
         IOutpostRegistry? registry, bool usesOutposts) =>
         OutpostEndpoints.ComposeAsync(
-            [_vault], registry, usesOutposts, NullLogger.Instance, CancellationToken.None);
+            [_vault], Access(registry), usesOutposts, NullLogger.Instance, CancellationToken.None);
+
+    private static OutpostAccess? Access(IOutpostRegistry? registry) =>
+        registry is null ? null : new OutpostAccess(registry, Secret);
 
     private sealed class RecordingRegistry(params OutpostRegistration[] live) : IOutpostRegistry
     {

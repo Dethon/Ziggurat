@@ -60,7 +60,11 @@ public sealed class OutpostRegistry(
         // learned it rather than with a guess at when the machine went, because the machine went
         // silently and there is nothing to guess from.
         var snapshot = await store.ReadAsync(ct);
-        snapshot.Lapsed.ToList().ForEach(name => Publish(OutpostLifecycle.Expired, name));
+        foreach (var name in snapshot.Lapsed)
+        {
+            Publish(OutpostLifecycle.Expired, name);
+        }
+
         return snapshot.Live;
     }
 

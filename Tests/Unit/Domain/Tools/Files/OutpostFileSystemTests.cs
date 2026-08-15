@@ -54,16 +54,28 @@ public class OutpostFileSystemTests
     }
 
     // A working directory is a path on somebody's machine, so a relative one has nothing to be
-    // relative to; the machine root is a jail that jails nothing and a workspace that is the mount
-    // root. Both are configuration mistakes, refused before the server can serve anything.
+    // relative to when the binary is started from anywhere. A configuration mistake, refused before
+    // the server can serve anything.
     [Theory]
     [InlineData("project")]
     [InlineData("./project")]
     [InlineData("")]
-    [InlineData("/")]
-    public void AWorkingDirectoryThatIsNotAnAbsolutePathBelowTheRoot_FailsAtConstruction(string dir)
+    [InlineData("   ")]
+    public void AWorkingDirectoryThatIsNotAnAbsolutePath_FailsAtConstruction(string dir)
     {
         Should.Throw<ArgumentException>(() => Outpost("laptop", dir));
+    }
+
+    // The machine root means the whole machine, which is what somebody serving their computer
+    // wants. It is kept as "/" rather than trimmed away, so the jail and the prose have a path to
+    // name.
+    [Fact]
+    public void TheMachineRootAsAWorkingDirectory_IsTheWholeMachine()
+    {
+        var outpost = Outpost("laptop", "/");
+
+        outpost.Workspace.ShouldBe("");
+        outpost.DescribeMount.ShouldContain("/laptop/");
     }
 
     private static OutpostFileSystem Outpost(string name, string workingDirectory) =>

@@ -73,7 +73,8 @@ public static class InjectorModule
                     sp.GetRequiredService<ILogger<OpenRouterModelCapabilities>>()))
                 .AddSingleton<IModelCapabilityCatalog>(sp =>
                     sp.GetRequiredService<OpenRouterModelCapabilities>())
-                .AddHostedService<ModelCapabilityRefresher>();
+                .AddHostedService<ModelCapabilityRefresher>()
+                .AddOutposts(settings.Outposts);
         }
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
@@ -106,6 +107,12 @@ public static class InjectorModule
                             sp.GetRequiredService<IModelCapabilityCatalog>()),
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>()));
         }
+
+        private IServiceCollection AddOutposts(OutpostConfiguration outposts) =>
+            // The registry and the secret travel together, because neither is any use without the
+            // other: a registration nobody may dial is a mount that cannot be reached.
+            services.AddSingleton(sp => new OutpostAccess(
+                sp.GetRequiredService<IOutpostRegistry>(), outposts.SharedSecret));
 
         private IServiceCollection AddRedis(RedisConfiguration config, RetentionSettings retention)
         {

@@ -27,7 +27,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IReadOnlyList<string> _domainPrompts;
     private readonly IReadOnlyList<McpServerEndpoint> _endpoints;
     private readonly bool _usesOutposts;
-    private readonly IOutpostRegistry? _outposts;
+    private readonly OutpostAccess? _outposts;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger<McpAgent>? _logger;
@@ -68,7 +68,7 @@ public sealed class McpAgent : DisposableAgent
         IReadOnlyList<string> domainPrompts,
         ILoggerFactory? loggerFactory = null,
         McpPromptCache? promptCache = null,
-        IOutpostRegistry? outposts = null)
+        OutpostAccess? outposts = null)
     {
         _endpoints = spec.McpServerEndpoints;
         _usesOutposts = spec.UsesOutposts;

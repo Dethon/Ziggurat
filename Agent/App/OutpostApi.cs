@@ -1,39 +1,16 @@
-using System.Security.Cryptography;
-using System.Text;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Outposts;
 
 namespace Agent.App;
-
-// The one gate on registration: anyone who can reach this port could otherwise attach a machine to
-// somebody else's assistant. Both directions present the same shared secret — the outpost when it
-// registers and keeps alive, the agent when it dials the machine back.
-public static class OutpostSecret
-{
-    private const string Scheme = "Bearer ";
-
-    // An unset secret refuses everything. The alternative reading — no secret configured meaning no
-    // gate — turns a forgotten environment variable into an open door onto whatever filesystems
-    // happen to be on the network.
-    public static bool Matches(string? presented, string configured)
-    {
-        if (string.IsNullOrEmpty(configured)
-            || presented is null
-            || !presented.StartsWith(Scheme, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(presented[Scheme.Length..]),
-            Encoding.UTF8.GetBytes(configured));
-    }
-}
 
 // Three endpoints over the registry and nothing else: announce, keep alive, take back. The
 // registry owns every decision — how long an entry lives, what is published when — so these stay
 // one-liners, exactly as the custom-agent registration endpoint beside them is.
-public static class OutpostEndpoints
+//
+// The gate is OutpostSecret's, shared with the machine's own: anyone who can reach this port could
+// otherwise attach a machine to somebody else's assistant.
+public static class OutpostApi
 {
     public static void MapOutposts(this WebApplication app, string sharedSecret)
     {

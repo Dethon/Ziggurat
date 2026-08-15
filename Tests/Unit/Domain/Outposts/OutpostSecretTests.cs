@@ -1,11 +1,12 @@
-using global::Agent.App;
+using Domain.Outposts;
 using Shouldly;
 
-namespace Tests.Unit.Agent;
+namespace Tests.Unit.Domain.Outposts;
 
-// The one gate on registration. Anyone who can reach the agent's port can otherwise attach a
-// machine to somebody else's assistant, so this is what the secret is for — and an unset secret
-// has to mean "nobody", not "everybody".
+// The one gate, presented in both directions and compared in one place. Anyone who can reach the
+// agent's port could otherwise attach a machine to somebody else's assistant; anyone who can reach
+// the machine's port could otherwise use it through an assistant that never invited it. An unset
+// secret has to mean "nobody", not "everybody".
 public class OutpostSecretTests
 {
     [Fact]

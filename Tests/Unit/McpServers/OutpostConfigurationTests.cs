@@ -99,6 +99,26 @@ public class OutpostConfigurationTests
             .Message.ShouldContain("WorkingDirectory");
     }
 
+    // The one value that is not a flag, and the reason is the reason it is a secret: a command
+    // line is visible to every process on the machine. The flags sit above everything else, so
+    // without taking this from underneath them --sharedSecret would quietly work.
+    [Theory]
+    [InlineData("--sharedSecret", "typed-in-the-open")]
+    [InlineData("--shared-secret", "typed-in-the-open")]
+    [InlineData("--sharedSecret=typed-in-the-open", "--exec")]
+    public void TheSharedSecret_TypedAsAFlag_IsRefusedRatherThanIgnored(string first, string second)
+    {
+        Should.Throw<InvalidOperationException>(() => Bind([.. _minimal, first, second]))
+            .Message.ShouldContain("SHAREDSECRET");
+    }
+
+    [Fact]
+    public void TheSharedSecret_ComesFromTheEnvironment()
+    {
+        Bind(_minimal, new Dictionary<string, string?> { ["SharedSecret"] = "from-the-environment" })
+            .SharedSecret.ShouldBe("from-the-environment");
+    }
+
     private static OutpostSettings Bind(string[] args, Dictionary<string, string?>? environment = null) =>
         new ConfigurationBuilder()
             // Stands in for the process environment, which BindSettings reads for real and no test

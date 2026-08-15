@@ -20,9 +20,15 @@ public enum McpEndpointOrigin
 // which is also where live outposts are merged in as dynamic ones.
 public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
 {
+    // What this endpoint has to present to be allowed to talk, or null where the endpoint is on
+    // the deployment's own network and the network is the boundary. An outpost is a port on
+    // somebody's own computer, so it asks: without this, anyone who could reach that port would get
+    // the machine's whole filesystem, fs_exec included, through nothing but a URL.
+    public string? Secret { get; init; }
+
     public static McpServerEndpoint Configured(string address) =>
         new(address, McpEndpointOrigin.Configured);
 
-    public static McpServerEndpoint Dynamic(string address) =>
-        new(address, McpEndpointOrigin.Dynamic);
+    public static McpServerEndpoint Dynamic(string address, string? secret = null) =>
+        new(address, McpEndpointOrigin.Dynamic) { Secret = secret };
 }

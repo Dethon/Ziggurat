@@ -68,13 +68,14 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
         var registry = new StubRegistry([
             Registered(name, name == "vault" ? vault.McpEndpoint : machines.NotesEndpoint)
         ]);
+        var access = new OutpostAccess(registry, "s3cret");
         var composed = await OutpostEndpoints.ComposeAsync(
-            [McpServerEndpoint.Configured(vault.McpEndpoint)], registry, usesOutposts: true,
+            [McpServerEndpoint.Configured(vault.McpEndpoint)], access, usesOutposts: true,
             logger: null, CancellationToken.None);
 
         await using var session = await BuildAsync(composed);
         await OutpostEndpoints.RecordVerdictsAsync(
-            registry, composed.Outposts, session.MountedNames, session.ShadowedNames,
+            access, composed.Outposts, session.MountedNames, session.ShadowedNames,
             logger: null, CancellationToken.None);
 
         registry.Verdicts[name].ShouldBe(expected);
@@ -87,7 +88,7 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
         bool usesOutposts, params OutpostRegistration[] live) =>
         OutpostEndpoints.ComposeAsync(
             [McpServerEndpoint.Configured(vault.McpEndpoint)],
-            new StubRegistry(live),
+            new OutpostAccess(new StubRegistry(live), "s3cret"),
             usesOutposts,
             logger: null,
             CancellationToken.None);

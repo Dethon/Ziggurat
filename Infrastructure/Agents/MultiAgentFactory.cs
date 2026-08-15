@@ -103,10 +103,10 @@ public sealed class MultiAgentFactory(
             domainPrompts,
             loggerFactory,
             _promptCache,
-            // Optional: a host with no outpost registry — every test host, and any deployment
-            // that never turned them on — simply has no outposts to offer, which is the same
-            // answer as an agent that did not opt in.
-            serviceProvider?.GetService<IOutpostRegistry>());
+            // Optional: a host with no outpost access — every test host, and any deployment that
+            // never turned them on — simply has no outposts to offer, which is the same answer as
+            // an agent that did not opt in.
+            serviceProvider?.GetService<OutpostAccess>());
     }
 
     internal IChatClient CreateChatClient(

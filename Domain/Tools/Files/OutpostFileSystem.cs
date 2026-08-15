@@ -42,6 +42,9 @@ public class OutpostFileSystem(
     // type is named for containment against a mount root, and this is a second, narrower
     // containment on top of a mount root that has not moved; reusing the decision is what keeps a
     // jailed outpost from growing a third answer to "is this path inside that directory".
+    //
+    // Rooted() runs twice — a field initializer cannot read another field, and it is a pure static
+    // over a string, so the second call costs a comparison at startup.
     private readonly PathJail _mount = new(MountRoot);
     private readonly PathJail _confinement = new(Rooted(workingDirectory));
 
@@ -203,19 +206,23 @@ public class OutpostFileSystem(
         jailed && string.IsNullOrEmpty(basePath?.TrimStart('/')) ? _workingDirectory : basePath ?? "";
 
     // A working directory is a path on somebody's machine, so it is absolute — a relative one has
-    // nothing to be relative to when the binary is started from anywhere. The machine root itself
-    // is refused because it is a jail that jails nothing and a workspace that is the mount root,
-    // which is the silent nothing ADR 0025 exists to remove; an outpost meant to reach the whole
-    // machine is simply left unjailed.
+    // nothing to be relative to when the binary is started from anywhere.
+    //
+    // The machine root is allowed, and means the whole machine: an outpost mounted at `/` with
+    // `--dir /` is somebody serving their computer, which is exactly what leaving it unjailed is
+    // for. It is kept as "/" rather than trimmed to the empty string so the jail and the prose have
+    // a path to name. (ADR 0025's objection to a workspace that is the mount root is about landing,
+    // and an outpost is never a landing target — so it does not apply here.)
     private static string Rooted(string workingDirectory)
     {
-        var trimmed = workingDirectory?.TrimEnd('/');
-        return string.IsNullOrEmpty(trimmed) || !Path.IsPathRooted(workingDirectory)
-            ? throw new ArgumentException(
-                $"The working directory '{workingDirectory}' must be an absolute path on this "
-                + "machine, and cannot be the machine root: leave the outpost unjailed to reach "
-                + "the whole machine.",
-                nameof(workingDirectory))
-            : trimmed;
+        if (string.IsNullOrWhiteSpace(workingDirectory) || !Path.IsPathRooted(workingDirectory))
+        {
+            throw new ArgumentException(
+                $"The working directory '{workingDirectory}' must be an absolute path on this machine.",
+                nameof(workingDirectory));
+        }
+
+        var trimmed = workingDirectory.TrimEnd('/');
+        return trimmed.Length == 0 ? MountRoot : trimmed;
     }
 }

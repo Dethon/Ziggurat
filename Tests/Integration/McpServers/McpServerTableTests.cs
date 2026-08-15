@@ -44,7 +44,7 @@ public class McpServerTableTests
     // The one server allowed to state its own precedence, and the file it may state it in. Anything
     // else copying the trick fails here, which is the point of naming it.
     private static readonly (string Server, string File) _commandLineException =
-        ("outpost", Path.Combine("Modules", "OutpostConfiguration.cs"));
+        ("outpost", Path.Combine("Modules", "OutpostFlags.cs"));
 
     [Fact]
     public void EveryServerProjectInTheSolution_HasARow() =>
