@@ -466,13 +466,20 @@ public sealed class McpAgent : DisposableAgent
             // Asked here rather than at construction: an agent outlives many sessions and an
             // outpost outlives none, so a machine that appeared since the last session is picked
             // up by the next one and nothing mutates a session already built.
-            var endpoints = await OutpostEndpoints.ComposeAsync(
+            var composed = await OutpostEndpoints.ComposeAsync(
                 _endpoints, _outposts, _usesOutposts, _logger, ct);
 
             var newSession = await ThreadSession
-                .CreateAsync(endpoints, _name, _userId, _description,
+                .CreateAsync(composed.Endpoints, _name, _userId, _description,
                              _domainTools, _filesystemEnabledTools, _loggerFactory,
                              ct, _promptCache);
+
+            // The one moment a shadowed outpost is knowable, and the machine serving it has no way
+            // to find out for itself — the next keepalive carries the answer home.
+            await OutpostEndpoints.RecordVerdictsAsync(
+                _outposts, composed.Outposts, newSession.MountedNames, newSession.ShadowedNames,
+                _logger, ct);
+
             _threadSessions[thread] = newSession;
             return newSession;
         }, ct);

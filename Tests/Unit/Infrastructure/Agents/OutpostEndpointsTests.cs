@@ -27,7 +27,8 @@ public class OutpostEndpointsTests
 
         var endpoints = await ComposeAsync(registry, usesOutposts: false);
 
-        endpoints.ShouldBe([_vault]);
+        endpoints.Endpoints.ShouldBe([_vault]);
+        endpoints.Outposts.ShouldBeEmpty();
         registry.Asked.ShouldBe(0);
     }
 
@@ -36,7 +37,8 @@ public class OutpostEndpointsTests
     {
         var endpoints = await ComposeAsync(new RecordingRegistry(_laptop), usesOutposts: true);
 
-        endpoints.ShouldBe([_vault, McpServerEndpoint.Dynamic(_laptop.Endpoint)]);
+        endpoints.Endpoints.ShouldBe([_vault, McpServerEndpoint.Dynamic(_laptop.Endpoint)]);
+        endpoints.Outposts.ShouldBe(["laptop"]);
     }
 
     // Mount order decides a name collision, and the configured filesystems have to be mounted
@@ -47,14 +49,14 @@ public class OutpostEndpointsTests
         var endpoints = await ComposeAsync(
             new RecordingRegistry(_laptop, _laptop with { Name = "desktop" }), usesOutposts: true);
 
-        endpoints.Take(1).ShouldAllBe(e => e.Origin == McpEndpointOrigin.Configured);
-        endpoints.Skip(1).ShouldAllBe(e => e.Origin == McpEndpointOrigin.Dynamic);
+        endpoints.Endpoints.Take(1).ShouldAllBe(e => e.Origin == McpEndpointOrigin.Configured);
+        endpoints.Endpoints.Skip(1).ShouldAllBe(e => e.Origin == McpEndpointOrigin.Dynamic);
     }
 
     [Fact]
     public async Task WithNoMachinesRegistered_TheListIsUnchanged()
     {
-        (await ComposeAsync(new RecordingRegistry(), usesOutposts: true)).ShouldBe([_vault]);
+        (await ComposeAsync(new RecordingRegistry(), usesOutposts: true)).Endpoints.ShouldBe([_vault]);
     }
 
     // A host with no registry at all — every test host, and any deployment that never turned
@@ -62,7 +64,7 @@ public class OutpostEndpointsTests
     [Fact]
     public async Task WithNoRegistryAtAll_TheListIsUnchanged()
     {
-        (await ComposeAsync(registry: null, usesOutposts: true)).ShouldBe([_vault]);
+        (await ComposeAsync(registry: null, usesOutposts: true)).Endpoints.ShouldBe([_vault]);
     }
 
     // A turn that could still be answered from the deployment's own filesystems must not fail
@@ -70,10 +72,56 @@ public class OutpostEndpointsTests
     [Fact]
     public async Task ARegistryThatCannotBeRead_CostsTheSessionItsOutpostsAndNothingElse()
     {
-        (await ComposeAsync(new UnreachableRegistry(), usesOutposts: true)).ShouldBe([_vault]);
+        (await ComposeAsync(new UnreachableRegistry(), usesOutposts: true)).Endpoints.ShouldBe([_vault]);
     }
 
-    private static Task<IReadOnlyList<McpServerEndpoint>> ComposeAsync(
+    // The verdict is per outpost, and a mount belonging to the deployment's own filesystem is
+    // nobody's registration to write on.
+    [Fact]
+    public async Task ASessionBuild_WritesEachOutpostsVerdictAndNobodyElses()
+    {
+        var registry = new RecordingRegistry(_laptop, _laptop with { Name = "desktop" });
+
+        await OutpostEndpoints.RecordVerdictsAsync(
+            registry,
+            outposts: ["laptop", "desktop"],
+            mounted: ["vault", "sandbox", "laptop", "desktop"],
+            shadowed: ["desktop"],
+            NullLogger.Instance,
+            CancellationToken.None);
+
+        registry.Verdicts.ShouldBe(new Dictionary<string, OutpostVerdict>
+        {
+            ["laptop"] = OutpostVerdict.Mounted,
+            ["desktop"] = OutpostVerdict.Shadowed
+        });
+    }
+
+    // "The hub could not reach you" is not a verdict on a mount, and calling it shadowed would
+    // name the wrong problem — so an outpost the build never reached a decision about is left as
+    // it was.
+    [Fact]
+    public async Task AnOutpostThatCouldNotBeDialled_KeepsWhateverVerdictItHad()
+    {
+        var registry = new RecordingRegistry(_laptop);
+
+        await OutpostEndpoints.RecordVerdictsAsync(
+            registry, outposts: ["laptop"], mounted: ["vault"], shadowed: [],
+            NullLogger.Instance, CancellationToken.None);
+
+        registry.Verdicts.ShouldBeEmpty();
+    }
+
+    // A session that built must not fail because the machine it built from cannot be told about it.
+    [Fact]
+    public async Task ARegistryThatCannotBeWritten_DoesNotFailTheSession()
+    {
+        await Should.NotThrowAsync(() => OutpostEndpoints.RecordVerdictsAsync(
+            new UnreachableRegistry(), outposts: ["laptop"], mounted: ["laptop"], shadowed: [],
+            NullLogger.Instance, CancellationToken.None));
+    }
+
+    private static Task<ComposedEndpoints> ComposeAsync(
         IOutpostRegistry? registry, bool usesOutposts) =>
         OutpostEndpoints.ComposeAsync(
             [_vault], registry, usesOutposts, NullLogger.Instance, CancellationToken.None);
@@ -81,6 +129,8 @@ public class OutpostEndpointsTests
     private sealed class RecordingRegistry(params OutpostRegistration[] live) : IOutpostRegistry
     {
         public int Asked { get; private set; }
+
+        public Dictionary<string, OutpostVerdict> Verdicts { get; } = new(StringComparer.Ordinal);
 
         public Task<IReadOnlyList<OutpostRegistration>> ListAsync(CancellationToken ct = default)
         {
@@ -91,8 +141,14 @@ public class OutpostEndpointsTests
         public Task RegisterAsync(OutpostRegistration registration, CancellationToken ct = default) =>
             Task.CompletedTask;
 
-        public Task<bool> KeepAliveAsync(string name, CancellationToken ct = default) =>
-            Task.FromResult(true);
+        public Task<OutpostVerdict?> KeepAliveAsync(string name, CancellationToken ct = default) =>
+            Task.FromResult<OutpostVerdict?>(OutpostVerdict.Unknown);
+
+        public Task RecordVerdictAsync(string name, OutpostVerdict verdict, CancellationToken ct = default)
+        {
+            Verdicts[name] = verdict;
+            return Task.CompletedTask;
+        }
 
         public Task<bool> DeregisterAsync(string name, CancellationToken ct = default) =>
             Task.FromResult(true);
@@ -106,8 +162,11 @@ public class OutpostEndpointsTests
         public Task RegisterAsync(OutpostRegistration registration, CancellationToken ct = default) =>
             Task.CompletedTask;
 
-        public Task<bool> KeepAliveAsync(string name, CancellationToken ct = default) =>
-            Task.FromResult(true);
+        public Task<OutpostVerdict?> KeepAliveAsync(string name, CancellationToken ct = default) =>
+            Task.FromResult<OutpostVerdict?>(OutpostVerdict.Unknown);
+
+        public Task RecordVerdictAsync(string name, OutpostVerdict verdict, CancellationToken ct = default) =>
+            throw new InvalidOperationException("the registry's store is not there");
 
         public Task<bool> DeregisterAsync(string name, CancellationToken ct = default) =>
             Task.FromResult(true);

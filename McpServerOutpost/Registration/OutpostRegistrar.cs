@@ -23,6 +23,10 @@ internal sealed class OutpostRegistrar(
     // doubled up to the keepalive interval, which is the longest anything here ever waits.
     private static readonly TimeSpan _firstRetry = TimeSpan.FromSeconds(1);
 
+    // The last verdict reported, so a machine left running says it once rather than every thirty
+    // seconds. Only the registrar's own loop touches it.
+    private OutpostVerdict _reported = OutpostVerdict.Unknown;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var live = false;
@@ -99,9 +103,11 @@ internal sealed class OutpostRegistrar(
     {
         try
         {
-            switch (await announcer.KeepAliveAsync(registration.Name, ct))
+            var answer = await announcer.KeepAliveAsync(registration.Name, ct);
+            switch (answer.Outcome)
             {
                 case KeepAliveOutcome.Refreshed:
+                    Report(answer.Verdict);
                     return true;
                 case KeepAliveOutcome.Lapsed:
                     // The hub forgot this machine while it was quiet. Dropping back to registering
@@ -122,6 +128,39 @@ internal sealed class OutpostRegistrar(
             logger.LogWarning(ex,
                 "Outpost {Name} could not reach the hub to keep its registration alive", registration.Name);
             return false;
+        }
+    }
+
+    // Somebody who runs an outpost and finds it never shows up can see why here, on the computer
+    // they are sitting at, instead of needing the hub's logs. Logged when it changes, so a machine
+    // left running does not repeat itself every thirty seconds.
+    //
+    // Unknown is not a problem and is not reported as one: it is what every registration reads as
+    // until an opted-in agent has built a session, which may be a while on a hub nobody is talking
+    // to. Shadowed is an error, because the machine is doing everything right and is still not
+    // there, and only its operator can fix it — by starting it under a different name.
+    private void Report(OutpostVerdict verdict)
+    {
+        if (verdict == _reported)
+        {
+            return;
+        }
+
+        _reported = verdict;
+        switch (verdict)
+        {
+            case OutpostVerdict.Mounted:
+                logger.LogInformation(
+                    "Outpost {Name} is mounted: the agent can reach this machine's files",
+                    registration.Name);
+                break;
+            case OutpostVerdict.Shadowed:
+                logger.LogError(
+                    "Outpost {Name} is SHADOWED: the agent already has a mount called '{Name}', so "
+                    + "this machine is registered and not mounted. Stop it and start it again under "
+                    + "a different --name",
+                    registration.Name, registration.Name);
+                break;
         }
     }
 

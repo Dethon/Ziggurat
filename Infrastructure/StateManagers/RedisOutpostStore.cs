@@ -32,8 +32,42 @@ public sealed class RedisOutpostStore(IConnectionMultiplexer redis) : IOutpostSt
 
     // KeyExpire against a key that is not there answers false, which is exactly the question the
     // caller is asking: a machine quiet long enough to lapse is re-registering, not refreshing.
-    public async Task<bool> RefreshAsync(string name, TimeSpan expiry, CancellationToken ct = default) =>
-        await _db.KeyExpireAsync(EntryKey(name), expiry);
+    // The entry comes back with it because the keepalive's answer carries the verdict written onto
+    // it, and asking twice would let a registration expire between the two calls.
+    public async Task<OutpostRegistration?> RefreshAsync(
+        string name, TimeSpan expiry, CancellationToken ct = default)
+    {
+        var transaction = _db.CreateTransaction();
+        var refreshed = transaction.KeyExpireAsync(EntryKey(name), expiry);
+        var entry = transaction.StringGetAsync(EntryKey(name));
+        await transaction.ExecuteAsync();
+
+        return await refreshed && !(await entry).IsNullOrEmpty
+            ? JsonSerializer.Deserialize<OutpostRegistration>((await entry).ToString())
+            : null;
+    }
+
+    // keepTtl, so a verdict landing does not extend a registration the machine is keeping alive on
+    // its own schedule. A registration that lapsed between the read and the write is simply not
+    // written back: the machine is gone, and reviving it here would resurrect a mount nobody holds.
+    public async Task RecordVerdictAsync(
+        string name, OutpostVerdict verdict, CancellationToken ct = default)
+    {
+        var json = await _db.StringGetAsync(EntryKey(name));
+        if (json.IsNullOrEmpty
+            || JsonSerializer.Deserialize<OutpostRegistration>(json.ToString()) is not { } registration
+            || registration.Verdict == verdict)
+        {
+            return;
+        }
+
+        await _db.StringSetAsync(
+            EntryKey(name),
+            JsonSerializer.Serialize(registration with { Verdict = verdict }),
+            expiry: null,
+            keepTtl: true,
+            when: When.Exists);
+    }
 
     public async Task<bool> RemoveAsync(string name, CancellationToken ct = default)
     {

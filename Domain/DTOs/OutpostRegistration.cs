@@ -14,4 +14,8 @@ public sealed record OutpostRegistration
     // toward the hub, or is told it outright, because nothing here can guess which interface will
     // answer.
     public required string Endpoint { get; init; }
+
+    // The hub's answer to "did my mount actually happen", written when a session is built and read
+    // back by the next keepalive. Unknown until an opted-in agent has built one.
+    public OutpostVerdict Verdict { get; init; } = OutpostVerdict.Unknown;
 }

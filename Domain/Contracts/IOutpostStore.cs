@@ -17,9 +17,16 @@ public interface IOutpostStore
 {
     Task SetAsync(OutpostRegistration registration, TimeSpan expiry, CancellationToken ct = default);
 
-    // False where there was nothing to refresh: the machine went quiet long enough to lapse and is
-    // only now asking again, which is a re-registration rather than a keepalive.
-    Task<bool> RefreshAsync(string name, TimeSpan expiry, CancellationToken ct = default);
+    // The refreshed registration, or null where there was nothing to refresh: the machine went
+    // quiet long enough to lapse and is only now asking again, which is a re-registration rather
+    // than a keepalive. It comes back whole because the keepalive's answer carries the verdict the
+    // hub wrote onto it, which is the only channel back to the machine.
+    Task<OutpostRegistration?> RefreshAsync(string name, TimeSpan expiry, CancellationToken ct = default);
+
+    // Writes the verdict onto a live registration without touching its lifetime: the machine is
+    // keeping itself alive on its own schedule, and the hub learning something about it is not a
+    // reason to extend it.
+    Task RecordVerdictAsync(string name, OutpostVerdict verdict, CancellationToken ct = default);
 
     Task<bool> RemoveAsync(string name, CancellationToken ct = default);
 

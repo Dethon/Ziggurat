@@ -50,7 +50,7 @@ public class OutpostRegistryTests
         await registry.RegisterAsync(_laptop);
 
         clock.Advance(OutpostLifetime.KeepAliveInterval);
-        (await registry.KeepAliveAsync(_laptop.Name)).ShouldBeTrue();
+        (await registry.KeepAliveAsync(_laptop.Name)).ShouldNotBeNull();
         clock.Advance(OutpostLifetime.Expiry - TimeSpan.FromSeconds(1));
 
         (await registry.ListAsync()).ShouldBe([_laptop]);
@@ -65,7 +65,7 @@ public class OutpostRegistryTests
         await registry.RegisterAsync(_laptop);
         clock.Advance(OutpostLifetime.Expiry + TimeSpan.FromSeconds(1));
 
-        (await registry.KeepAliveAsync(_laptop.Name)).ShouldBeFalse();
+        (await registry.KeepAliveAsync(_laptop.Name)).ShouldBeNull();
     }
 
     // The name is the identity and the last write wins, so a machine that restarts — or moves to a
@@ -154,6 +154,45 @@ public class OutpostRegistryTests
         metrics.Outposts().ShouldNotContain(e => e.Lifecycle == OutpostLifecycle.Expired);
     }
 
+    // The only channel back to a machine. A shadowed outpost registered perfectly and simply is
+    // not there, and nothing at the machine can detect that — the collision is discovered on the
+    // hub when a session is built, long after the registration succeeded.
+    [Fact]
+    public async Task AVerdictWrittenByASessionBuild_ComesBackWithTheNextKeepAlive()
+    {
+        var (registry, _, _) = Registry();
+        await registry.RegisterAsync(_laptop);
+
+        await registry.RecordVerdictAsync(_laptop.Name, OutpostVerdict.Shadowed);
+
+        (await registry.KeepAliveAsync(_laptop.Name)).ShouldBe(OutpostVerdict.Shadowed);
+    }
+
+    // Not yet known is distinguishable from both, and is what every registration reads as until an
+    // opted-in agent has built a session. It is not a problem and must not read as one.
+    [Fact]
+    public async Task BeforeAnySessionHasBeenBuilt_TheVerdictIsNotYetKnown()
+    {
+        var (registry, _, _) = Registry();
+        await registry.RegisterAsync(_laptop);
+
+        (await registry.KeepAliveAsync(_laptop.Name)).ShouldBe(OutpostVerdict.Unknown);
+    }
+
+    // A machine that restarts has not been through a session build yet, so a verdict from the
+    // previous run would be a claim about a mount that no longer exists.
+    [Fact]
+    public async Task ReRegistering_ForgetsTheOldVerdict()
+    {
+        var (registry, _, _) = Registry();
+        await registry.RegisterAsync(_laptop);
+        await registry.RecordVerdictAsync(_laptop.Name, OutpostVerdict.Mounted);
+
+        await registry.RegisterAsync(_laptop);
+
+        (await registry.KeepAliveAsync(_laptop.Name)).ShouldBe(OutpostVerdict.Unknown);
+    }
+
     private static (OutpostRegistry Registry, RecordingMetricsPublisher Metrics, FakeTimeProvider Clock) Registry()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-08-15T14:00:00Z"));
@@ -177,15 +216,26 @@ public class OutpostRegistryTests
             return Task.CompletedTask;
         }
 
-        public Task<bool> RefreshAsync(string name, TimeSpan expiry, CancellationToken ct = default)
+        public Task<OutpostRegistration?> RefreshAsync(string name, TimeSpan expiry, CancellationToken ct = default)
         {
             if (!Live(name, out var entry))
             {
-                return Task.FromResult(false);
+                return Task.FromResult<OutpostRegistration?>(null);
             }
 
             _entries[name] = (entry.Registration, clock.GetUtcNow() + expiry);
-            return Task.FromResult(true);
+            return Task.FromResult<OutpostRegistration?>(entry.Registration);
+        }
+
+        // Never touches the entry's expiry, exactly as the real store's keepTtl write does not.
+        public Task RecordVerdictAsync(string name, OutpostVerdict verdict, CancellationToken ct = default)
+        {
+            if (Live(name, out var entry))
+            {
+                _entries[name] = (entry.Registration with { Verdict = verdict }, entry.ExpiresAt);
+            }
+
+            return Task.CompletedTask;
         }
 
         public Task<bool> RemoveAsync(string name, CancellationToken ct = default)

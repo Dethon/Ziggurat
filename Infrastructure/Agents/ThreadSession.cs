@@ -13,7 +13,9 @@ internal sealed record ThreadSessionData(
     McpClientManager ClientManager,
     IReadOnlyList<AITool> Tools,
     IVirtualFileSystemRegistry? FileSystemRegistry,
-    IReadOnlyList<string> FileSystemPrompts);
+    IReadOnlyList<string> FileSystemPrompts,
+    IReadOnlyList<string> MountedNames,
+    IReadOnlyList<string> ShadowedNames);
 
 internal sealed class ThreadSession : IAsyncDisposable
 {
@@ -24,6 +26,11 @@ internal sealed class ThreadSession : IAsyncDisposable
     public McpClientManager ClientManager => _data.ClientManager;
     public IReadOnlyList<string> FileSystemPrompts => _data.FileSystemPrompts;
     public IVirtualFileSystemRegistry? FileSystemRegistry => _data.FileSystemRegistry;
+
+    // What this build made of the filesystems it found. Read once, by the step that writes each
+    // outpost's verdict back onto its registration — the collision is only knowable here.
+    public IReadOnlyList<string> MountedNames => _data.MountedNames;
+    public IReadOnlyList<string> ShadowedNames => _data.ShadowedNames;
 
     private ThreadSession(ThreadSessionData data)
     {
@@ -95,7 +102,8 @@ internal sealed class ThreadSessionBuilder(
         var fsLogger = loggerFactory?.CreateLogger(typeof(McpFileSystemDiscovery).FullName!)
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         var fsRegistry = new VirtualFileSystemRegistry();
-        await McpFileSystemDiscovery.DiscoverAndMountAsync(clientManager.Clients, fsRegistry, fsLogger, ct);
+        var shadowed = await McpFileSystemDiscovery.DiscoverAndMountAsync(
+            clientManager.Clients, fsRegistry, fsLogger, ct);
 
         if (fsRegistry.GetMounts().Count > 0)
         {
@@ -122,7 +130,9 @@ internal sealed class ThreadSessionBuilder(
         var mcpTools = FilterMcpTools(clientManager.Tools, fileSystemTools.Count > 0);
         var tools = mcpTools.Concat(domainTools).Concat(fileSystemTools).ToList();
 
-        return new ThreadSessionData(clientManager, tools, registry, fileSystemPrompts);
+        return new ThreadSessionData(
+            clientManager, tools, registry, fileSystemPrompts,
+            [.. fsRegistry.GetMounts().Select(m => m.Name)], shadowed);
     }
 
     internal static IReadOnlyList<AITool> FilterMcpTools(IReadOnlyList<AITool> mcpTools, bool filesystemToolsActive)

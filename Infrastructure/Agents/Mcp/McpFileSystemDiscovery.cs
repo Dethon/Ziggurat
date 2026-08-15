@@ -11,7 +11,10 @@ internal static class McpFileSystemDiscovery
 {
     private const string ResourcePrefix = "filesystem://";
 
-    public static async Task DiscoverAndMountAsync(
+    // Answers the mount names it refused, because a shadowed mount is the one way a filesystem can
+    // be perfectly valid and simply not there — and the machine serving it has no way to find that
+    // out for itself.
+    public static async Task<IReadOnlyList<string>> DiscoverAndMountAsync(
         IReadOnlyList<McpClient> clients,
         VirtualFileSystemRegistry registry,
         ILogger logger,
@@ -25,6 +28,7 @@ internal static class McpFileSystemDiscovery
         // before any outpost. A mount point already taken is a collision the newcomer loses: it is
         // shadowed, the existing mount is untouched, and the fact is logged, because at the machine
         // this looks exactly like a registration that worked and a mount that never appeared.
+        var shadowed = new List<string>();
         foreach (var (mount, backend) in perClient.SelectMany(m => m))
         {
             if (registry.TryMount(mount, backend))
@@ -34,11 +38,14 @@ internal static class McpFileSystemDiscovery
                 continue;
             }
 
+            shadowed.Add(mount.Name);
             logger.LogWarning(
                 "Filesystem '{Name}' is shadowed: mount point '{MountPoint}' is already another "
                 + "mount's, so it was not mounted and the existing one is untouched",
                 mount.Name, mount.MountPoint);
         }
+
+        return shadowed;
     }
 
     private static async Task<IReadOnlyList<(FileSystemMount Mount, McpFileSystemBackend Backend)>> GatherMountsAsync(

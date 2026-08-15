@@ -24,16 +24,23 @@ public sealed class OutpostRegistry(
         Publish(OutpostLifecycle.Registered, registration.Name, registration.Endpoint);
     }
 
-    public async Task<bool> KeepAliveAsync(string name, CancellationToken ct = default)
+    public async Task<OutpostVerdict?> KeepAliveAsync(string name, CancellationToken ct = default)
     {
         var refreshed = await store.RefreshAsync(name, OutpostLifetime.Expiry, ct);
-        if (refreshed)
+        if (refreshed is null)
         {
-            Publish(OutpostLifecycle.Refreshed, name);
+            return null;
         }
 
-        return refreshed;
+        Publish(OutpostLifecycle.Refreshed, name);
+        return refreshed.Verdict;
     }
+
+    // Written by the session build that learned it, read by the next keepalive. It never touches
+    // the registration's lifetime: the machine is keeping itself alive on its own schedule, and
+    // the hub learning something about it is not a reason to extend it.
+    public Task RecordVerdictAsync(string name, OutpostVerdict verdict, CancellationToken ct = default) =>
+        store.RecordVerdictAsync(name, verdict, ct);
 
     public async Task<bool> DeregisterAsync(string name, CancellationToken ct = default)
     {

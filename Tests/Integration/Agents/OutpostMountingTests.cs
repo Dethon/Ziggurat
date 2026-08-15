@@ -54,12 +54,36 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
         session.ClientManager.Clients.Count.ShouldBe(2);
         session.FileSystemRegistry.ShouldNotBeNull()
             .GetMounts().Select(m => m.Name).ShouldBe(["vault"]);
+        session.ShadowedNames.ShouldBe(["vault"]);
+    }
+
+    // The verdict a session build produces, written back onto the registration so the next
+    // keepalive can carry it to the machine. This is the only moment it is knowable.
+    [Theory]
+    [InlineData("notes", OutpostVerdict.Mounted)]
+    [InlineData("vault", OutpostVerdict.Shadowed)]
+    public async Task TheBuild_WritesEachOutpostsVerdictOntoItsRegistration(
+        string name, OutpostVerdict expected)
+    {
+        var registry = new StubRegistry([
+            Registered(name, name == "vault" ? vault.McpEndpoint : machines.NotesEndpoint)
+        ]);
+        var composed = await OutpostEndpoints.ComposeAsync(
+            [McpServerEndpoint.Configured(vault.McpEndpoint)], registry, usesOutposts: true,
+            logger: null, CancellationToken.None);
+
+        await using var session = await BuildAsync(composed);
+        await OutpostEndpoints.RecordVerdictsAsync(
+            registry, composed.Outposts, session.MountedNames, session.ShadowedNames,
+            logger: null, CancellationToken.None);
+
+        registry.Verdicts[name].ShouldBe(expected);
     }
 
     private static OutpostRegistration Registered(string name, string endpoint) =>
         new() { Name = name, Endpoint = endpoint };
 
-    private Task<IReadOnlyList<McpServerEndpoint>> ComposeAsync(
+    private Task<ComposedEndpoints> ComposeAsync(
         bool usesOutposts, params OutpostRegistration[] live) =>
         OutpostEndpoints.ComposeAsync(
             [McpServerEndpoint.Configured(vault.McpEndpoint)],
@@ -68,9 +92,9 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
             logger: null,
             CancellationToken.None);
 
-    private static Task<ThreadSession> BuildAsync(IReadOnlyList<McpServerEndpoint> endpoints) =>
+    private static Task<ThreadSession> BuildAsync(ComposedEndpoints composed) =>
         ThreadSession.CreateAsync(
-            endpoints,
+            composed.Endpoints,
             "outpost-mounting-test",
             "test-user",
             "the agent under test",
@@ -81,14 +105,22 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
 
     private sealed class StubRegistry(OutpostRegistration[] live) : IOutpostRegistry
     {
+        public Dictionary<string, OutpostVerdict> Verdicts { get; } = new(StringComparer.Ordinal);
+
         public Task<IReadOnlyList<OutpostRegistration>> ListAsync(CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<OutpostRegistration>>(live);
 
         public Task RegisterAsync(OutpostRegistration registration, CancellationToken ct = default) =>
             Task.CompletedTask;
 
-        public Task<bool> KeepAliveAsync(string name, CancellationToken ct = default) =>
-            Task.FromResult(true);
+        public Task<OutpostVerdict?> KeepAliveAsync(string name, CancellationToken ct = default) =>
+            Task.FromResult<OutpostVerdict?>(OutpostVerdict.Unknown);
+
+        public Task RecordVerdictAsync(string name, OutpostVerdict verdict, CancellationToken ct = default)
+        {
+            Verdicts[name] = verdict;
+            return Task.CompletedTask;
+        }
 
         public Task<bool> DeregisterAsync(string name, CancellationToken ct = default) =>
             Task.FromResult(true);

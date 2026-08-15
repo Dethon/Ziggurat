@@ -47,12 +47,21 @@ public static class OutpostEndpoints
         outposts.MapPost("/", (IOutpostRegistry registry, OutpostRegistration registration, CancellationToken ct) =>
             registry.RegisterAsync(registration, ct));
 
-        // False means the registration had already lapsed, which the machine reads as "announce
-        // yourself again" rather than as an error it should back off from.
+        // The answer carries the hub's verdict on this outpost's mount, which is the only channel
+        // back to a machine: a shadowed outpost registered perfectly and simply is not there, and
+        // nothing at the machine can detect that. A not-found means the registration had already
+        // lapsed, which the machine reads as "announce yourself again" rather than as an error it
+        // should back off from.
         outposts.MapPut("/{name}", async (IOutpostRegistry registry, string name, CancellationToken ct) =>
-            await registry.KeepAliveAsync(name, ct) ? Results.Ok() : Results.NotFound());
+            await registry.KeepAliveAsync(name, ct) is { } verdict
+                ? Results.Ok(new OutpostKeepAliveResponse(verdict))
+                : Results.NotFound());
 
         outposts.MapDelete("/{name}", async (IOutpostRegistry registry, string name, CancellationToken ct) =>
             await registry.DeregisterAsync(name, ct) ? Results.Ok() : Results.NotFound());
     }
 }
+
+// One verdict, and deliberately nothing else. The keepalive stays a liveness ping: an outpost
+// reports no telemetry of its own, and this is not the place to start.
+public sealed record OutpostKeepAliveResponse(OutpostVerdict Verdict);

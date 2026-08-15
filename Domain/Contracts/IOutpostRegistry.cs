@@ -8,9 +8,16 @@ public interface IOutpostRegistry
 {
     Task RegisterAsync(OutpostRegistration registration, CancellationToken ct = default);
 
-    // False where the registration had already lapsed, so the machine learns it must announce
-    // itself again rather than keep pinging an entry nobody holds.
-    Task<bool> KeepAliveAsync(string name, CancellationToken ct = default);
+    // The hub's verdict on this outpost's mount, or null where the registration had already lapsed
+    // — so the machine learns it must announce itself again rather than keep pinging an entry
+    // nobody holds. The verdict rides the keepalive because it is the only channel back to a
+    // machine, and the keepalive stays a liveness ping carrying one verdict rather than growing
+    // into a reporting channel.
+    Task<OutpostVerdict?> KeepAliveAsync(string name, CancellationToken ct = default);
+
+    // What a session build learned about one outpost. Nothing else can learn it: a mount name
+    // lives inside each server's filesystem resource and is only read when a session is built.
+    Task RecordVerdictAsync(string name, OutpostVerdict verdict, CancellationToken ct = default);
 
     Task<bool> DeregisterAsync(string name, CancellationToken ct = default);
 

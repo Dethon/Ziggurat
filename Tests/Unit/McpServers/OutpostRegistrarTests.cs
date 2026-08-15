@@ -1,8 +1,10 @@
 using Domain.DTOs;
 using Domain.Outposts;
 using McpServerOutpost.Registration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
+using Tests.Unit;
 
 namespace Tests.Unit.McpServers;
 
@@ -70,7 +72,7 @@ public class OutpostRegistrarTests
     public async Task AKeepAliveTheHubHasForgotten_MakesTheMachineAnnounceItselfAgain()
     {
         var (registrar, hub, clock) = Registrar();
-        hub.KeepAliveAnswer = KeepAliveOutcome.Lapsed;
+        hub.Answer = KeepAliveAnswer.Lapsed;
         await registrar.StartAsync(CancellationToken.None);
         await Eventually.Until(() => hub.Registrations.Count == 1, "the machine announces itself");
 
@@ -108,11 +110,82 @@ public class OutpostRegistrarTests
         await Should.NotThrowAsync(() => registrar.StopAsync(CancellationToken.None));
     }
 
+    // Somebody who runs an outpost and finds it never shows up can see why on the computer they
+    // are sitting at, instead of needing access to the hub's logs. Prominently enough that
+    // somebody watching the process sees it: there is nothing they can do about it from the hub.
+    [Fact]
+    public async Task AShadowedVerdict_IsReportedAtTheMachineAsAnError()
+    {
+        var (registrar, hub, clock, logs) = ReportingRegistrar();
+        hub.Answer = new KeepAliveAnswer(KeepAliveOutcome.Refreshed, OutpostVerdict.Shadowed);
+        await registrar.StartAsync(CancellationToken.None);
+        await Eventually.Until(() => hub.Registrations.Count == 1, "the machine announces itself");
+
+        await clock.AdvancePastAsync(OutpostLifetime.KeepAliveInterval);
+
+        await Eventually.Until(
+            () => logs.Messages.Any(m => m.Contains("SHADOWED", StringComparison.Ordinal)),
+            "the machine says why it is not there");
+        await registrar.StopAsync(CancellationToken.None);
+    }
+
+    // Not yet known is what every registration reads as until an opted-in agent has built a
+    // session, which on a hub nobody is talking to may be a long time. It is not a problem and
+    // must not be reported as one.
+    [Fact]
+    public async Task AVerdictThatIsNotYetKnown_IsReportedAsNothingAtAll()
+    {
+        var (registrar, hub, clock, logs) = ReportingRegistrar();
+        await registrar.StartAsync(CancellationToken.None);
+        await Eventually.Until(() => hub.Registrations.Count == 1, "the machine announces itself");
+
+        await clock.AdvancePastAsync(OutpostLifetime.KeepAliveInterval);
+        await Eventually.Until(() => hub.KeepAlives.Count == 1, "the keepalive");
+        await Eventually.Settle();
+
+        logs.Messages.ShouldNotContain(m => m.Contains("mounted", StringComparison.OrdinalIgnoreCase));
+        logs.Messages.ShouldNotContain(m => m.Contains("shadow", StringComparison.OrdinalIgnoreCase));
+        await registrar.StopAsync(CancellationToken.None);
+    }
+
+    // A machine left running says it once rather than every thirty seconds.
+    [Fact]
+    public async Task AVerdictThatHasNotChanged_IsSaidOnce()
+    {
+        var (registrar, hub, clock, logs) = ReportingRegistrar();
+        hub.Answer = new KeepAliveAnswer(KeepAliveOutcome.Refreshed, OutpostVerdict.Mounted);
+        await registrar.StartAsync(CancellationToken.None);
+        await Eventually.Until(() => hub.Registrations.Count == 1, "the machine announces itself");
+
+        await clock.AdvancePastAsync(OutpostLifetime.KeepAliveInterval);
+        await Eventually.Until(() => hub.KeepAlives.Count == 1, "the first keepalive");
+        await clock.AdvancePastAsync(OutpostLifetime.KeepAliveInterval, previously: 1);
+        await Eventually.Until(() => hub.KeepAlives.Count == 2, "the second keepalive");
+        await Eventually.Settle();
+
+        logs.Messages.Count(m => m.Contains("is mounted", StringComparison.Ordinal)).ShouldBe(1);
+        await registrar.StopAsync(CancellationToken.None);
+    }
+
     private static (OutpostRegistrar Registrar, RecordingHub Hub, ArmedClock Clock) Registrar()
     {
         var clock = new ArmedClock(DateTimeOffset.Parse("2026-08-15T14:00:00Z"));
         var hub = new RecordingHub();
         return (new OutpostRegistrar(hub, _laptop, clock, NullLogger<OutpostRegistrar>.Instance), hub, clock);
+    }
+
+    // Captures every level, so a test asserting that nothing was reported as a problem would see
+    // an error if one were.
+    private static (OutpostRegistrar Registrar, RecordingHub Hub, ArmedClock Clock, CapturingLoggerProvider Logs)
+        ReportingRegistrar()
+    {
+        var clock = new ArmedClock(DateTimeOffset.Parse("2026-08-15T14:00:00Z"));
+        var hub = new RecordingHub();
+        var logs = new CapturingLoggerProvider(LogLevel.Trace);
+        var factory = new LoggerFactory([logs]);
+        return (
+            new OutpostRegistrar(hub, _laptop, clock, factory.CreateLogger<OutpostRegistrar>()),
+            hub, clock, logs);
     }
 
     // Written from the registrar's loop and read from the test thread, so every reader takes a
@@ -126,7 +199,8 @@ public class OutpostRegistrarTests
 
         public bool RefuseRegistrations { get; set; }
         public bool ThrowOnDeregister { get; set; }
-        public KeepAliveOutcome KeepAliveAnswer { get; set; } = KeepAliveOutcome.Refreshed;
+        public KeepAliveAnswer Answer { get; set; } =
+            new(KeepAliveOutcome.Refreshed, OutpostVerdict.Unknown);
 
         public IReadOnlyList<OutpostRegistration> Registrations => Snapshot(_registrations);
         public IReadOnlyList<string> KeepAlives => Snapshot(_keepAlives);
@@ -142,14 +216,14 @@ public class OutpostRegistrarTests
             return Task.FromResult(!RefuseRegistrations);
         }
 
-        public Task<KeepAliveOutcome> KeepAliveAsync(string name, CancellationToken ct)
+        public Task<KeepAliveAnswer> KeepAliveAsync(string name, CancellationToken ct)
         {
             lock (_gate)
             {
                 _keepAlives.Add(name);
             }
 
-            return Task.FromResult(KeepAliveAnswer);
+            return Task.FromResult(Answer);
         }
 
         public Task DeregisterAsync(string name, CancellationToken ct)

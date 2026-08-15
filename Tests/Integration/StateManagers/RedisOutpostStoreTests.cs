@@ -56,7 +56,7 @@ public sealed class RedisOutpostStoreTests(RedisFixture fixture) : IClassFixture
         await _store.SetAsync(Registration(refreshed), _shortExpiry);
         await _store.SetAsync(Registration(control), _shortExpiry);
 
-        (await _store.RefreshAsync(refreshed, _longExpiry)).ShouldBeTrue();
+        (await _store.RefreshAsync(refreshed, _longExpiry)).ShouldNotBeNull().Name.ShouldBe(refreshed);
 
         await Eventually.Until(
             async ValueTask<bool> () => !(await _store.ReadAsync()).Live.Any(r => r.Name == control),
@@ -69,7 +69,7 @@ public sealed class RedisOutpostStoreTests(RedisFixture fixture) : IClassFixture
     [Fact]
     public async Task RefreshingAnEntryThatHasGone_SaysSo()
     {
-        (await _store.RefreshAsync(Unique(), _longExpiry)).ShouldBeFalse();
+        (await _store.RefreshAsync(Unique(), _longExpiry)).ShouldBeNull();
     }
 
     [Fact]
@@ -83,6 +83,40 @@ public sealed class RedisOutpostStoreTests(RedisFixture fixture) : IClassFixture
         var snapshot = await _store.ReadAsync();
         snapshot.Live.Select(r => r.Name).ShouldNotContain(name);
         snapshot.Lapsed.ShouldNotContain(name);
+    }
+
+    // The verdict rides the keepalive home, so it has to survive a refresh — and recording one
+    // must not extend the lifetime the machine is managing on its own schedule.
+    [Fact]
+    public async Task ARecordedVerdict_ComesBackWithTheNextRefreshAndDoesNotExtendTheEntry()
+    {
+        var name = Unique();
+        var control = Unique();
+        await _store.SetAsync(Registration(name), _shortExpiry);
+        await _store.SetAsync(Registration(control), _shortExpiry);
+
+        await _store.RecordVerdictAsync(name, OutpostVerdict.Shadowed);
+
+        (await _store.ReadAsync()).Live.Single(r => r.Name == name).Verdict
+            .ShouldBe(OutpostVerdict.Shadowed);
+
+        // Written with keepTtl, so this entry lapses alongside the one nobody touched.
+        await Eventually.Until(
+            async ValueTask<bool> () => !(await _store.ReadAsync()).Live.Any(r => r.Name == control),
+            "the untouched entry expires");
+        (await _store.ReadAsync()).Live.ShouldNotContain(r => r.Name == name);
+    }
+
+    // A machine that went away between the session build and the write is not resurrected: the
+    // verdict is about a mount nobody holds any more.
+    [Fact]
+    public async Task RecordingAVerdictForARegistrationThatHasGone_WritesNothing()
+    {
+        var name = Unique();
+
+        await _store.RecordVerdictAsync(name, OutpostVerdict.Mounted);
+
+        (await _store.ReadAsync()).Live.ShouldNotContain(r => r.Name == name);
     }
 
     // The database is shared with whatever else this run is doing, so each test names its own
