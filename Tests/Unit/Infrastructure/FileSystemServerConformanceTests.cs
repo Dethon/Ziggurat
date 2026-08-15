@@ -38,7 +38,8 @@ public class FileSystemServerConformanceTests
         { "ha", "homeassistant", typeof(HaFileSystem) },
         { "media", "library", typeof(MediaLibraryDiskFileSystem) },
         { "vault", "vault", typeof(TextDiskFileSystem) },
-        { "sandbox", "sandbox", typeof(SandboxFileSystem) }
+        { "sandbox", "sandbox", typeof(SandboxFileSystem) },
+        { "outpost", "outpost", typeof(OutpostFileSystem) }
     };
 
     // What each mount is expected to advertise, written out rather than derived. Everything else in
@@ -77,6 +78,15 @@ public class FileSystemServerConformanceTests
             [
                 "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
                 "fs_delete", "fs_copy", "fs_exec", "fs_blob_read", "fs_blob_write"
+            ],
+            // The same surface as the vault, deliberately: an outpost behaves exactly as a text
+            // disk root already does, which is what makes there be nothing new to learn per
+            // machine. Exec is absent because it is off unless the operator asked for it, and the
+            // row here is a plain outpost.
+            ["outpost"] =
+            [
+                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
+                "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
             ]
         };
 
@@ -93,7 +103,9 @@ public class FileSystemServerConformanceTests
             ["ha"] = null,
             ["media"] = null,
             ["vault"] = null,
-            ["sandbox"] = "home/sandbox_user"
+            ["sandbox"] = "home/sandbox_user",
+            // The working directory it was started with: where files land and commands run.
+            ["outpost"] = "home/someone/project"
         };
 
     // Which mounts accept a person's attachments. The sandbox alone, and deliberately not by way of
@@ -109,7 +121,10 @@ public class FileSystemServerConformanceTests
             ["ha"] = false,
             ["media"] = false,
             ["vault"] = false,
-            ["sandbox"] = true
+            ["sandbox"] = true,
+            // Never, exec or not. A person's attachments belong in the deployment's own container,
+            // not on whichever of their machines happens to be switched on.
+            ["outpost"] = false
         };
 
     // The shipped server, not a re-registration of it: each row drives the ConfigModule that runs in
@@ -193,7 +208,9 @@ public class FileSystemServerConformanceTests
             ["sandbox"] = new SandboxFileSystem(
                 "sandbox", "A sandbox container.", Mock.Of<IFileSystemClient>(),
                 new LibraryPathConfig("/sandbox"), [".py"], Mock.Of<ICommandRunner>(),
-                "/sandbox/home/sandbox_user")
+                "/sandbox/home/sandbox_user"),
+            ["outpost"] = new OutpostFileSystem(
+                "outpost", Mock.Of<IFileSystemClient>(), "/home/someone/project", [".py"])
         };
 
     // The other half of the same idea. A mount's identity used to be written three times per server

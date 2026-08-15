@@ -34,9 +34,17 @@ public class McpServerTableTests
         new(@"[Cc]onfig(?:uration|Builder)?\s*\.\s*(?:Get|GetSection|GetValue|Bind)\s*[<(]");
 
     // A server that adds its own configuration source is stating the precedence itself, which is
-    // the one decision BindSettings owns.
+    // the one decision BindSettings owns. The command line is here for the same reason, and with a
+    // named exception: the outpost is configured by what its operator types, and a flag has to beat
+    // an environment variable of the same name — which the default order does not give you.
     private static readonly Regex _ownConfigurationSource =
-        new(@"\.\s*Add(?:UserSecrets|EnvironmentVariables|JsonFile)\s*[<(]");
+        new(@"\.\s*Add(?:UserSecrets|EnvironmentVariables|JsonFile|CommandLine)\s*[<(]"
+            + @"|CommandLineConfigurationSource");
+
+    // The one server allowed to state its own precedence, and the file it may state it in. Anything
+    // else copying the trick fails here, which is the point of naming it.
+    private static readonly (string Server, string File) _commandLineException =
+        ("outpost", Path.Combine("Modules", "OutpostConfiguration.cs"));
 
     [Fact]
     public void EveryServerProjectInTheSolution_HasARow() =>
@@ -58,6 +66,7 @@ public class McpServerTableTests
             .Where(file => _directConfigurationRead.IsMatch(file.Value)
                            || _ownConfigurationSource.IsMatch(file.Value))
             .Select(file => file.Key)
+            .Where(file => (id, file) != _commandLineException)
             .ShouldBeEmpty(
                 $"{id} must leave binding and configuration sources to BindSettings<T>; these files "
                 + "read configuration or add a source of their own");

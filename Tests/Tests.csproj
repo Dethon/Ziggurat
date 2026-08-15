@@ -39,6 +39,7 @@
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
     <ProjectReference Include="..\McpServerLibrary\McpServerLibrary.csproj" />
     <ProjectReference Include="..\McpServerVault\McpServerVault.csproj" />
+    <ProjectReference Include="..\McpServerOutpost\McpServerOutpost.csproj" />
     <ProjectReference Include="..\McpServerSandbox\McpServerSandbox.csproj" />
     <ProjectReference Include="..\McpServerWebSearch\McpServerWebSearch.csproj" />
     <ProjectReference Include="..\McpServerIdealista\McpServerIdealista.csproj" />

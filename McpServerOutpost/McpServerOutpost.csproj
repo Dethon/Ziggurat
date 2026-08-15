@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>14</LangVersion>
+  </PropertyGroup>
+
+  <!--
+    The only server with no Dockerfile and no compose service: it is a file somebody copies onto
+    their own machine and runs. One self-contained file so installing it needs no .NET, and
+    deliberately neither trimmed nor NativeAOT — AddFileSystemTools<T> decides the server's tool
+    set by reflecting over what the backend overrides, and the MCP SDK generates every tool schema
+    reflectively. The binary size is what it costs for an outpost to behave exactly as the sandbox
+    does.
+  -->
+  <PropertyGroup>
+    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishAot>false</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!--
+    Infrastructure carries the web browser, so Playwright's node driver rides along: a third of a
+    gigabyte of browser plumbing an outpost never touches, in a file whose whole installation
+    story is copying it onto somebody's laptop. Dropping it is not the trimming ruled out above —
+    no code is removed and no reflection is put at risk, one package's content copy is simply left
+    out of this one server's publish. PlaywrightPlatform cannot do it from here: the package's
+    targets run in Infrastructure, where the driver is wanted.
+  -->
+  <Target Name="DropPlaywrightDriverFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish
+        Remove="@(ResolvedFileToPublish)"
+        Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').StartsWith('.playwright'))" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
+    <ProjectReference Include="..\Mcp.Hosting\Mcp.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>
