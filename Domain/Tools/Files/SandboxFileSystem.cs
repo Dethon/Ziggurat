@@ -26,6 +26,10 @@ public class SandboxFileSystem(
 
     public override string Workspace => _workspace;
 
+    // The sandbox is where a person's attachments belong: a container that is part of the
+    // deployment, whose volume nobody else owns. Every other mount declares the default.
+    public override bool IsLandingTarget => true;
+
     private static string WorkspaceUnder(string containerRoot, string homeDirectory)
     {
         var relative = Path.GetRelativePath(containerRoot, homeDirectory).Replace('\\', '/');

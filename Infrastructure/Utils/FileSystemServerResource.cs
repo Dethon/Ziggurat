@@ -40,15 +40,16 @@ public static class FileSystemServerResource
     public static string Address(string filesystemName) => Scheme + filesystemName;
 
     // What McpFileSystemDiscovery reads to mount this filesystem: the name it will be addressed by,
-    // the path it goes under, the prose the model gets about it, and where under it a file can be
-    // written and will stay written. All four come off the backend, the last one null for a mount
-    // that declares no workspace.
+    // the path it goes under, the prose the model gets about it, where under it a file can be
+    // written and will stay written, and whether a person's attachments may be put there. All of it
+    // comes off the backend, the workspace null for a mount that declares none.
     public static string Describe(FileSystemBackendBase backend) =>
         JsonSerializer.Serialize(new
         {
             name = backend.FilesystemName,
             mountPoint = backend.MountPoint,
             description = backend.DescribeMount,
-            workspace = backend.Workspace
+            workspace = backend.Workspace,
+            landingTarget = backend.IsLandingTarget
         });
 }

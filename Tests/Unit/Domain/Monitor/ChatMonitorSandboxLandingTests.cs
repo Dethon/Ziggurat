@@ -328,7 +328,8 @@ public class ChatMonitorSandboxLandingTests
             new FileSystemMount("sandbox", "/sandbox", "a sandbox")
             {
                 Capabilities = [VfsExecTool.Name],
-                Workspace = workspace
+                Workspace = workspace,
+                IsLandingTarget = true
             }
         ];
     }

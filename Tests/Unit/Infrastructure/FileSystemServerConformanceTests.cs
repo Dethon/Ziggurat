@@ -96,6 +96,22 @@ public class FileSystemServerConformanceTests
             ["sandbox"] = "home/sandbox_user"
         };
 
+    // Which mounts accept a person's attachments. The sandbox alone, and deliberately not by way of
+    // being the mount that can execute: an outpost is a filesystem on somebody's own machine and may
+    // well run commands, so the two claims came apart (ADR 0025, refined). Written out here for the
+    // same reason the workspaces are — a claim derived from the code it checks proves nothing.
+    private static readonly IReadOnlyDictionary<string, bool> _landingTargets =
+        new Dictionary<string, bool>(StringComparer.Ordinal)
+        {
+            ["timers"] = false,
+            ["schedules"] = false,
+            ["print-queue"] = false,
+            ["ha"] = false,
+            ["media"] = false,
+            ["vault"] = false,
+            ["sandbox"] = true
+        };
+
     // The shipped server, not a re-registration of it: each row drives the ConfigModule that runs in
     // production, so a module that never called AddFileSystemTools<T>() or AddFileSystemResource<T>()
     // fails here. Hand-registering the registrar instead — which this test used to do — can only
@@ -124,8 +140,10 @@ public class FileSystemServerConformanceTests
         // setting, the declaration and the landing target cannot disagree.
         var configured = (FileSystemBackendBase)provider.GetRequiredService(backendType);
         configured.Workspace.ShouldBe(_workspaces[name], serverId);
-        Published(FileSystemServerResource.Describe(configured)).Workspace
-            .ShouldBe(_workspaces[name], serverId);
+        configured.IsLandingTarget.ShouldBe(_landingTargets[name], serverId);
+        var describedMount = Published(FileSystemServerResource.Describe(configured));
+        describedMount.Workspace.ShouldBe(_workspaces[name], serverId);
+        describedMount.LandingTarget.ShouldBe(_landingTargets[name], serverId);
 
         // The backend's own declaration of the same set: what it overrides is what the server
         // registers is what the mount publishes.
@@ -260,7 +278,8 @@ public class FileSystemServerConformanceTests
         JsonSerializer.Deserialize<PublishedMount>(
             json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
 
-    private record PublishedMount(string Name, string MountPoint, string Description, string? Workspace);
+    private record PublishedMount(
+        string Name, string MountPoint, string Description, string? Workspace, bool LandingTarget);
 
     // The move-out check inverts what an override means: elsewhere overriding declares "I can do
     // this", here it declares "I have something to refuse". So a backend with no rule registers no

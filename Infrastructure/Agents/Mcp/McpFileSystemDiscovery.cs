@@ -71,7 +71,8 @@ internal static class McpFileSystemDiscovery
                 var mount = new FileSystemMount(metadata.Name, metadata.MountPoint, metadata.Description ?? "")
                 {
                     Capabilities = capabilities,
-                    Workspace = metadata.Workspace
+                    Workspace = metadata.Workspace,
+                    IsLandingTarget = metadata.LandingTarget
                 };
                 var backend = new McpFileSystemBackend(client, metadata.Name, advertised, logger);
                 return (mount, backend);
@@ -110,6 +111,8 @@ internal static class McpFileSystemDiscovery
             .Select(o => o.Capability!)
             .ToList();
 
+    // LandingTarget is not nullable: a server that predates the claim publishes no field, which
+    // binds to false, and false is what a mount that never said so must mean.
     private record FileSystemResourceMetadata(
-        string Name, string MountPoint, string? Description, string? Workspace);
+        string Name, string MountPoint, string? Description, string? Workspace, bool LandingTarget);
 }
