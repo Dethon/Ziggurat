@@ -519,6 +519,37 @@ makes about itself rather than something a caller finds by trying, and most moun
 having one says the mount is somewhere work can be done, not merely read.
 _Avoid_: home directory, writable root, scratch space
 
+**Landing target**:
+A mount's claim that attachments may be put into it. It is a separate claim from being able to
+run commands: a mount can be somewhere work is done without being somewhere a person's files
+belong.
+_Avoid_: landing mount, attachment destination, sandbox mount
+
+## Outposts
+
+**Outpost**:
+A filesystem on a real machine that announces itself to the hub, rather than being configured
+into it. It is the only mount whose existence is decided by the machine it lives on, so it can
+be absent for reasons that are nobody's fault.
+_Avoid_: remote filesystem, host filesystem, satellite, node
+
+**Outpost registration**:
+The hub's record that one outpost is live, named by the outpost and expiring on its own. It is
+a claim with a lifetime rather than a piece of configuration: nothing deletes it when a machine
+dies, it simply stops being renewed.
+_Avoid_: registration entry, lease, session, connection
+
+**Jailed outpost**:
+An outpost that refuses every path outside its working directory. It is still mounted at the
+machine's root, so jailing changes what an operation will do and never what a path is called.
+_Avoid_: chrooted, restricted mount, sandboxed outpost
+
+**Shadowed outpost**:
+An outpost whose name is already some other mount's, and which is therefore not mounted at all.
+The existing mount always wins, so a name collision costs the outpost rather than quietly
+replacing what was there.
+_Avoid_: duplicate mount, conflicting outpost, rejected registration
+
 ## Media library
 
 **Live download**:
