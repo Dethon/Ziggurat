@@ -79,7 +79,13 @@ public sealed class AgentSpecProjectionTests
             new[] { "allow-*" }, new[] { "allow-*" }),
         // The agent declares its own routing wholesale; the subagent declares none and inherits
         // the global default. Both arrive on the spec already resolved.
-        Row("provider routing", s => s.ProviderRouting, _declaredRouting, _globalRouting)
+        Row("provider routing", s => s.ProviderRouting, _declaredRouting, _globalRouting),
+        // An endpoint stops being a bare string here. Everything the projection reads came out of
+        // appsettings.json, so everything it composes is marked configured; a dynamic one is
+        // contributed later, by the registry of live outposts, and never by a definition.
+        Row("mcp server endpoints", s => s.McpServerEndpoints,
+            new[] { McpServerEndpoint.Configured("http://tools") },
+            new[] { McpServerEndpoint.Configured("http://tools") })
     ];
 
     [Theory]

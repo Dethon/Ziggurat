@@ -36,7 +36,7 @@ internal sealed class McpClientManager : IAsyncDisposable
         string name,
         string userId,
         string description,
-        string[] endpoints,
+        IReadOnlyList<McpServerEndpoint> endpoints,
         McpClientHandlers handlers,
         McpPromptCache? promptCache = null,
         CancellationToken ct = default)
@@ -66,7 +66,7 @@ internal sealed class McpClientManager : IAsyncDisposable
     private static async Task<(McpClient Client, string ServerName)[]> CreateClientsWithRetry(
         string name,
         string description,
-        string[] endpoints,
+        IReadOnlyList<McpServerEndpoint> endpoints,
         McpClientHandlers handlers,
         CancellationToken ct)
     {
@@ -77,7 +77,7 @@ internal sealed class McpClientManager : IAsyncDisposable
         var clients = await Task.WhenAll(endpoints.Select(async endpoint =>
         {
             var client = await retryPolicy.ExecuteAsync(() => McpClient.CreateAsync(
-                new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }),
+                new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint.Address) }),
                 new McpClientOptions
                 {
                     ClientInfo = new Implementation { Name = name, Description = description, Version = "1.0.0" },
@@ -86,7 +86,7 @@ internal sealed class McpClientManager : IAsyncDisposable
                 },
                 cancellationToken: ct));
 
-            var serverName = ExtractServerName(endpoint);
+            var serverName = ExtractServerName(endpoint.Address);
             return (client, serverName);
         }));
 

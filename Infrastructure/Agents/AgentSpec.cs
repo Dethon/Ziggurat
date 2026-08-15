@@ -18,7 +18,7 @@ public sealed record AgentSpec
     public int? MaxContextTokens { get; init; }
     public string? ReasoningEffort { get; init; }
     public ProviderRouting? ProviderRouting { get; init; }
-    public required string[] McpServerEndpoints { get; init; }
+    public required IReadOnlyList<McpServerEndpoint> McpServerEndpoints { get; init; }
     public required IReadOnlyList<string> EnabledFeatures { get; init; }
 
     // Derived from the enabled features by the projection rather than handed to the agent

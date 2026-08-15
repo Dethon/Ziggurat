@@ -25,7 +25,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly string _description;
     private readonly IReadOnlyList<AIFunction> _domainTools;
     private readonly IReadOnlyList<string> _domainPrompts;
-    private readonly string[] _endpoints;
+    private readonly IReadOnlyList<McpServerEndpoint> _endpoints;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger<McpAgent>? _logger;

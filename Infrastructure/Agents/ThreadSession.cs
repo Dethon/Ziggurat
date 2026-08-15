@@ -31,7 +31,7 @@ internal sealed class ThreadSession : IAsyncDisposable
     }
 
     public static async Task<ThreadSession> CreateAsync(
-        string[] endpoints,
+        IReadOnlyList<McpServerEndpoint> endpoints,
         string name,
         string userId,
         string description,
@@ -59,7 +59,7 @@ internal sealed class ThreadSession : IAsyncDisposable
 }
 
 internal sealed class ThreadSessionBuilder(
-    string[] endpoints,
+    IReadOnlyList<McpServerEndpoint> endpoints,
     string name,
     string description,
     string userId,

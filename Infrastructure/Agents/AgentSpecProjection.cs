@@ -29,7 +29,10 @@ internal static class AgentSpecProjection
             ProviderRouting = ProviderRoutingResolver.Resolve(
                 definition.ProviderRouting, openRouterConfig.ProviderRouting,
                 definition.Model, definition.Id, logger),
-            McpServerEndpoints = definition.McpServerEndpoints,
+            // Everything a definition names came out of the deployment's own settings, so
+            // everything composed here is configured. Dynamic endpoints — live outposts — are
+            // merged in downstream, where the registry of them is reachable.
+            McpServerEndpoints = [.. definition.McpServerEndpoints.Select(McpServerEndpoint.Configured)],
             EnabledFeatures = definition.EnabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(definition.EnabledFeatures),
             WhitelistPatterns = definition.WhitelistPatterns,
@@ -71,7 +74,7 @@ internal static class AgentSpecProjection
             ProviderRouting = ProviderRoutingResolver.Resolve(
                 definition.ProviderRouting, openRouterConfig.ProviderRouting,
                 definition.Model, identity, logger),
-            McpServerEndpoints = definition.McpServerEndpoints,
+            McpServerEndpoints = [.. definition.McpServerEndpoints.Select(McpServerEndpoint.Configured)],
             EnabledFeatures = enabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures),
             WhitelistPatterns = whitelistPatterns,

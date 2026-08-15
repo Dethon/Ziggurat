@@ -32,7 +32,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
     {
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(10) }, TimeProvider.System);
         return new McpAgent(
-            TestAgentSpec.Default with { McpServerEndpoints = [mcpFixture.McpEndpoint] },
+            TestAgentSpec.Default with { McpServerEndpoints = [McpServerEndpoint.Configured(mcpFixture.McpEndpoint)] },
             approvalClient,
             stateStore,
             NoOpMetricsPublisher.Instance,
