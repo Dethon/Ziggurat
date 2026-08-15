@@ -85,8 +85,9 @@ internal sealed class ThreadSessionBuilder(
 
     public async Task<ThreadSessionData> BuildAsync(CancellationToken ct)
     {
+        var dialLogger = loggerFactory?.CreateLogger(typeof(McpClientManager).FullName!);
         var clientManager = await McpClientManager.CreateAsync(
-            name, userId, description, endpoints, new McpClientHandlers(), promptCache, ct);
+            name, userId, description, endpoints, new McpClientHandlers(), promptCache, dialLogger, ct);
 
         IVirtualFileSystemRegistry? registry = null;
         IReadOnlyList<AIFunction> fileSystemTools = [];

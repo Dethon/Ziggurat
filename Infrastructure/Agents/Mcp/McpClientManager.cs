@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -39,9 +40,11 @@ internal sealed class McpClientManager : IAsyncDisposable
         IReadOnlyList<McpServerEndpoint> endpoints,
         McpClientHandlers handlers,
         McpPromptCache? promptCache = null,
+        ILogger? logger = null,
         CancellationToken ct = default)
     {
-        var clientsWithEndpoints = await CreateClientsWithRetry(name, description, endpoints, handlers, ct);
+        var clientsWithEndpoints = await CreateClientsWithRetry(
+            name, description, endpoints, handlers, logger, ct);
         var toolsTask = LoadTools(clientsWithEndpoints, ct);
         var promptsTask = LoadPrompts(clientsWithEndpoints, userId, promptCache, ct);
         await Task.WhenAll(toolsTask, promptsTask);
@@ -63,11 +66,26 @@ internal sealed class McpClientManager : IAsyncDisposable
         }
     }
 
+    // Two rules, decided by the endpoint's origin and by nothing else. A configured endpoint is a
+    // container in the deployment: it is retried and then, if it will not answer, it fails the
+    // session. A dynamic one is a machine that registered itself, and its being unreachable is
+    // normal — it is dialled once, logged and dropped, and its mount is simply absent for this
+    // session. The temptation to unify these will recur; they are one implementation of two
+    // different meanings of "not reachable", and the reasoning is recorded in
+    // docs/adr/0027-static-endpoints-fail-dynamic-ones-are-dropped.md.
+    //
+    // A dynamic endpoint is dialled once rather than retried because the retry sleeps two, four and
+    // eight seconds before giving up, and a laptop with its lid shut would charge that to every
+    // session build, on the path a person is waiting on.
+    //
+    // The surviving clients keep the order they were given, which is what lets the caller put
+    // configured endpoints first and have their mounts claim their names before any outpost does.
     private static async Task<(McpClient Client, string ServerName)[]> CreateClientsWithRetry(
         string name,
         string description,
         IReadOnlyList<McpServerEndpoint> endpoints,
         McpClientHandlers handlers,
+        ILogger? logger,
         CancellationToken ct)
     {
         var retryPolicy = Policy
@@ -76,7 +94,7 @@ internal sealed class McpClientManager : IAsyncDisposable
 
         var clients = await Task.WhenAll(endpoints.Select(async endpoint =>
         {
-            var client = await retryPolicy.ExecuteAsync(() => McpClient.CreateAsync(
+            Task<McpClient> Dial() => McpClient.CreateAsync(
                 new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint.Address) }),
                 new McpClientOptions
                 {
@@ -84,13 +102,36 @@ internal sealed class McpClientManager : IAsyncDisposable
                     Handlers = handlers,
                     InitializationTimeout = _initializationTimeout
                 },
-                cancellationToken: ct));
+                cancellationToken: ct);
 
-            var serverName = ExtractServerName(endpoint.Address);
-            return (client, serverName);
+            if (endpoint.Origin is McpEndpointOrigin.Configured)
+            {
+                return ((McpClient Client, string ServerName)?)
+                    (await retryPolicy.ExecuteAsync(Dial), ExtractServerName(endpoint.Address));
+            }
+
+            try
+            {
+                return ((McpClient Client, string ServerName)?)
+                    (await Dial(), ExtractServerName(endpoint.Address));
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // The address is what names the machine: it is what the outpost registered and
+                // the only thing here that identifies which one went away.
+                logger?.LogWarning(ex,
+                    "The dynamically registered MCP endpoint {Endpoint} could not be dialled, so its "
+                    + "mount is absent for this session; the next session build asks the registry again",
+                    endpoint.Address);
+                return null;
+            }
         }));
 
-        return clients;
+        return [.. clients.Where(c => c is not null).Select(c => c!.Value)];
     }
 
     private static async Task<AITool[]> LoadTools(
