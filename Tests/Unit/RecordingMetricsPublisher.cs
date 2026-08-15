@@ -20,6 +20,8 @@ internal sealed class RecordingMetricsPublisher : IMetricsPublisher
         }
     }
 
+    public IReadOnlyList<OutpostEvent> Outposts() => [.. Published.OfType<OutpostEvent>()];
+
     public void Publish(MetricEvent metricEvent)
     {
         lock (_published)

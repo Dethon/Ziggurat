@@ -5,6 +5,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
+using Domain.Outposts;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
@@ -116,7 +117,16 @@ public static class InjectorModule
                     retention,
                     sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>()));
+                    sp.GetRequiredService<IConnectionMultiplexer>()))
+                // An outpost registration survives the agent recycling because it lives here
+                // rather than in this process: a container restart must not silently drop every
+                // machine that had announced itself.
+                .AddSingleton<IOutpostStore>(sp => new RedisOutpostStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>()))
+                .AddSingleton<IOutpostRegistry>(sp => new OutpostRegistry(
+                    sp.GetRequiredService<IOutpostStore>(),
+                    sp.GetRequiredService<IMetricsPublisher>(),
+                    sp.GetRequiredService<TimeProvider>()));
         }
     }
 }

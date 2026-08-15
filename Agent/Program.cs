@@ -1,3 +1,4 @@
+using Agent.App;
 using Agent.Modules;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -33,5 +34,7 @@ app.MapPost("/api/agents", (IAgentDefinitionProvider provider, string userId, Cu
 
 app.MapDelete("/api/agents/{agentId}", (IAgentDefinitionProvider provider, string userId, string agentId) =>
     provider.UnregisterCustomAgent(userId, agentId));
+
+app.MapOutposts(settings.Outposts.SharedSecret);
 
 await app.RunAsync();
