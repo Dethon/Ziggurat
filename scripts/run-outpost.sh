@@ -12,7 +12,7 @@
 #   scripts/run-outpost.sh                                  this machine, this directory
 #   scripts/run-outpost.sh --jailed                          confined to it
 #   scripts/run-outpost.sh --name laptop --dir ~/project --jailed --exec
-#   scripts/run-outpost.sh --hub http://192.168.1.43:5000 --port 8100
+#   scripts/run-outpost.sh --hub http://192.168.5.43:5000 --port 8100
 #
 # Every flag the binary takes is passed straight through. The script only fills in
 # --name, --dir and --hub when you did not type them, so anything you type wins.
@@ -39,7 +39,7 @@ OUT="$PROJECT/bin/outpost"
 BIN="$OUT/McpServerOutpost"
 ENV_FILE="$ROOT/DockerCompose/.env"
 CONFIG="${CONFIG:-Release}"
-DEFAULT_HUB="${DEFAULT_HUB:-http://192.168.1.45:5000}"
+DEFAULT_HUB="${DEFAULT_HUB:-http://192.168.5.45:5000}"
 
 usage() {
   # The header comment above, to its end: one description, not two that can disagree.
