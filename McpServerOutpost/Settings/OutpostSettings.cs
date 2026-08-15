@@ -23,6 +23,14 @@ public record OutpostSettings
 
     public int Port { get; init; } = DefaultPort;
 
+    // The command runner's bounds. Not flags: nobody starting a binary on their laptop has an
+    // opinion about an output cap, and these are the sandbox's own numbers so a command behaves
+    // the same wherever the agent runs it. They bind from the environment like anything else if a
+    // deployment ever needs to differ.
+    public int DefaultTimeoutSeconds { get; init; } = 60;
+    public int MaxTimeoutSeconds { get; init; } = 1800;
+    public int OutputCapBytes { get; init; } = 65536;
+
     // Comma-separated, replacing the shared list wholesale for this machine — a computer full of
     // unusual source files is still readable. Absent leaves the shared list alone.
     public string? Ext { get; init; }

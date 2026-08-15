@@ -96,7 +96,7 @@ public class OutpostFileSystem(
                 Hint = $"Work under {VirtualWorkingDirectory}."
             };
 
-    private FsResult<T>? Refused<T>(string path) where T : class =>
+    protected FsResult<T>? Refused<T>(string path) where T : class =>
         Refuse(path) is { } error ? new FsResult<T>.Err(error) : null;
 
     public override async Task<FsResult<FsReadResult>> ReadAsync(
