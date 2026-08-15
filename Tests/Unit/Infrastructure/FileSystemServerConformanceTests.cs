@@ -79,14 +79,15 @@ public class FileSystemServerConformanceTests
                 "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
                 "fs_delete", "fs_copy", "fs_exec", "fs_blob_read", "fs_blob_write"
             ],
-            // The same surface as the vault, deliberately: an outpost behaves exactly as a text
-            // disk root already does, which is what makes there be nothing new to learn per
-            // machine. Exec is absent because it is off unless the operator asked for it, and the
-            // row here is a plain outpost.
+            // The vault's surface plus the move-out check, and no exec. Exec is off unless the
+            // operator asked for it, and the row here is a plain outpost. The check is the second
+            // mount in the repo to have a rule about what may leave it: a jailed outpost refuses a
+            // transfer out of a path it refuses everything else on, and a transfer never reaches
+            // fs_move to be refused there.
             ["outpost"] =
             [
                 "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
-                "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
+                "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write", "fs_move_out_check"
             ]
         };
 

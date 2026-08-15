@@ -23,7 +23,8 @@ public static class ConfigModule
                 settings.Name,
                 sp.GetRequiredService<IFileSystemClient>(),
                 settings.WorkingDirectory,
-                settings.AllowedExtensions()))
+                settings.AllowedExtensions(),
+                settings.Jailed))
             .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<OutpostFileSystem>()
             .AddFileSystemResource<OutpostFileSystem>();
