@@ -26,6 +26,8 @@ public sealed class McpAgent : DisposableAgent
     private readonly IReadOnlyList<AIFunction> _domainTools;
     private readonly IReadOnlyList<string> _domainPrompts;
     private readonly IReadOnlyList<McpServerEndpoint> _endpoints;
+    private readonly bool _usesOutposts;
+    private readonly IOutpostRegistry? _outposts;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger<McpAgent>? _logger;
@@ -65,9 +67,12 @@ public sealed class McpAgent : DisposableAgent
         IReadOnlyList<AIFunction> domainTools,
         IReadOnlyList<string> domainPrompts,
         ILoggerFactory? loggerFactory = null,
-        McpPromptCache? promptCache = null)
+        McpPromptCache? promptCache = null,
+        IOutpostRegistry? outposts = null)
     {
         _endpoints = spec.McpServerEndpoints;
+        _usesOutposts = spec.UsesOutposts;
+        _outposts = outposts;
         _filesystemEnabledTools = spec.FilesystemEnabledTools;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger<McpAgent>();
@@ -458,8 +463,14 @@ public sealed class McpAgent : DisposableAgent
                 return existing;
             }
 
+            // Asked here rather than at construction: an agent outlives many sessions and an
+            // outpost outlives none, so a machine that appeared since the last session is picked
+            // up by the next one and nothing mutates a session already built.
+            var endpoints = await OutpostEndpoints.ComposeAsync(
+                _endpoints, _outposts, _usesOutposts, _logger, ct);
+
             var newSession = await ThreadSession
-                .CreateAsync(_endpoints, _name, _userId, _description,
+                .CreateAsync(endpoints, _name, _userId, _description,
                              _domainTools, _filesystemEnabledTools, _loggerFactory,
                              ct, _promptCache);
             _threadSessions[thread] = newSession;

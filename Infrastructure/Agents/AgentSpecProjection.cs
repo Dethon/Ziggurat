@@ -33,6 +33,7 @@ internal static class AgentSpecProjection
             // everything composed here is configured. Dynamic endpoints — live outposts — are
             // merged in downstream, where the registry of them is reachable.
             McpServerEndpoints = [.. definition.McpServerEndpoints.Select(McpServerEndpoint.Configured)],
+            UsesOutposts = definition.UsesOutposts,
             EnabledFeatures = definition.EnabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(definition.EnabledFeatures),
             WhitelistPatterns = definition.WhitelistPatterns,
@@ -75,6 +76,10 @@ internal static class AgentSpecProjection
                 definition.ProviderRouting, openRouterConfig.ProviderRouting,
                 definition.Model, identity, logger),
             McpServerEndpoints = [.. definition.McpServerEndpoints.Select(McpServerEndpoint.Configured)],
+            // A subagent reaches the servers its own definition names and nothing else. Outposts
+            // are a top-level agent's opt-in; inheriting one down here would widen what a
+            // subagent can touch without anybody having said so.
+            UsesOutposts = false,
             EnabledFeatures = enabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures),
             WhitelistPatterns = whitelistPatterns,

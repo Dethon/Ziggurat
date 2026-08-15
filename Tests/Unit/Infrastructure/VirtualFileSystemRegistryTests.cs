@@ -23,6 +23,36 @@ public class VirtualFileSystemRegistryTests
         mounts[0].MountPoint.ShouldBe("/library");
     }
 
+    // A mount point is a name the model addresses, so two mounts claiming one is a collision
+    // somebody has to lose. The one already there wins: it was configured, and the challenger is a
+    // machine that named itself. Outposts are mounted after the configured filesystems for exactly
+    // this reason, so which one loses is decided by mount order rather than by timing.
+    [Fact]
+    public void Mount_AMountPointAlreadyTaken_IsShadowedAndTheExistingMountIsUntouched()
+    {
+        var vault = CreateMockBackend("vault");
+        _registry.Mount(new FileSystemMount("vault", "/vault", "The real vault"), vault);
+
+        _registry.TryMount(
+                new FileSystemMount("vault", "/vault", "Somebody's laptop calling itself the vault"),
+                CreateMockBackend("impostor"))
+            .ShouldBeFalse();
+
+        var mounts = _registry.GetMounts();
+        mounts.Count.ShouldBe(1);
+        mounts[0].Description.ShouldBe("The real vault");
+        Resolve("/vault/notes.md").Backend.ShouldBe(vault);
+    }
+
+    [Fact]
+    public void Mount_AFreeMountPoint_IsTaken()
+    {
+        _registry.TryMount(new FileSystemMount("laptop", "/laptop", "A laptop"), CreateMockBackend("laptop"))
+            .ShouldBeTrue();
+
+        _registry.GetMounts().Select(m => m.Name).ShouldBe(["laptop"]);
+    }
+
     [Fact]
     public void Resolve_MatchingMount_ReturnsBackendAndRelativePath()
     {
@@ -74,8 +104,11 @@ public class VirtualFileSystemRegistryTests
         error.Message.ShouldContain("/library");
     }
 
+    // The plain Mount obeys the same rule as TryMount above — this used to be last-write-wins, and
+    // outposts are why it is not: a machine that named itself after an existing mount would
+    // otherwise replace it, and a stranger's laptop could shadow the vault.
     [Fact]
-    public void Mount_DuplicateMountPoint_LastWriteWins()
+    public void Mount_DuplicateMountPoint_LeavesTheFirstOneInPlace()
     {
         var backend1 = CreateMockBackend("lib1");
         var backend2 = CreateMockBackend("lib2");
@@ -83,8 +116,7 @@ public class VirtualFileSystemRegistryTests
         _registry.Mount(new FileSystemMount("lib1", "/library", "First"), backend1);
         _registry.Mount(new FileSystemMount("lib2", "/library", "Second"), backend2);
 
-        var resolution = Resolve("/library/file.md");
-        resolution.Backend.ShouldBe(backend2);
+        Resolve("/library/file.md").Backend.ShouldBe(backend1);
     }
 
     [Fact]

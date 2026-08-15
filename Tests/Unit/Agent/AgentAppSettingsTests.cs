@@ -26,6 +26,17 @@ public class AgentAppSettingsTests
             .ShouldNotContain("the language the user spoke");
     }
 
+    // One of the few values worth reading back off the file, because it is a rule rather than a
+    // setting: an agent that exists to search for downloads has no business reaching a person's
+    // laptop, and the opt-in is what keeps a machine appearing on the network from widening what
+    // any agent can touch. Turning it on for the download assistant would be a decision, and a
+    // decision is what this is here to make somebody state.
+    [Fact]
+    public void Outposts_TheDownloadAssistant_IsNotOptedIn()
+    {
+        BoundAgents().Single(a => a.Id == "jack").UsesOutposts.ShouldBeFalse();
+    }
+
     // The rest of the chain: appsettings -> AgentDefinition -> system prompt. Every hop binds by
     // convention, so a renamed or dropped key fails nothing at build time -- the agent just
     // quietly goes back to inferring its language from an all-English request.

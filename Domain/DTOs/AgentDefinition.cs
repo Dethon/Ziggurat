@@ -17,6 +17,12 @@ public record AgentDefinition
     public string? Language { get; init; }
     public string? TelegramBotToken { get; init; }
     public string[] EnabledFeatures { get; init; } = [];
+
+    // Whether this agent may see outposts — filesystems on real machines that announce themselves.
+    // Nothing is opted in by default: an agent that exists to search for downloads has no business
+    // reaching somebody's laptop, and a new machine appearing on the network must not silently
+    // widen what any agent can touch.
+    public bool UsesOutposts { get; init; }
     public int? MaxContextTokens { get; init; }
     public string? ReasoningEffort { get; init; }
     public ProviderRouting? ProviderRouting { get; init; }

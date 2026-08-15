@@ -10,9 +10,19 @@ internal sealed class VirtualFileSystemRegistry : IVirtualFileSystemRegistry
     private readonly Dictionary<string, (FileSystemMount Mount, IFileSystemBackend Backend)> _mounts =
         new(StringComparer.OrdinalIgnoreCase);
 
-    public void Mount(FileSystemMount mount, IFileSystemBackend backend)
+    public void Mount(FileSystemMount mount, IFileSystemBackend backend) => TryMount(mount, backend);
+
+    // First wins. A mount point is a name the model addresses, so two mounts claiming one is not a
+    // merge to resolve but a collision somebody has to lose — and the one already there is the one
+    // that was configured, while the challenger is a machine that named itself. Outposts are
+    // mounted after the configured filesystems for exactly this reason, so which one loses is
+    // decided by mount order rather than by whichever dial happened to finish first.
+    //
+    // False means the mount was shadowed: perfectly valid, simply not there.
+    public bool TryMount(FileSystemMount mount, IFileSystemBackend backend)
     {
-        _mounts[mount.MountPoint] = (mount, backend);
+        ArgumentNullException.ThrowIfNull(mount);
+        return _mounts.TryAdd(mount.MountPoint, (mount, backend));
     }
 
     public FsResult<FileSystemResolution> Resolve(string virtualPath)

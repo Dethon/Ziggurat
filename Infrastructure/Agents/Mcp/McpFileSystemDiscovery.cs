@@ -21,10 +21,22 @@ internal static class McpFileSystemDiscovery
             .Where(c => c.ServerCapabilities.Resources is not null)
             .Select(client => GatherMountsAsync(client, logger, ct)));
 
+        // In the order the endpoints were dialled, which puts the deployment's own filesystems
+        // before any outpost. A mount point already taken is a collision the newcomer loses: it is
+        // shadowed, the existing mount is untouched, and the fact is logged, because at the machine
+        // this looks exactly like a registration that worked and a mount that never appeared.
         foreach (var (mount, backend) in perClient.SelectMany(m => m))
         {
-            registry.Mount(mount, backend);
-            logger.LogInformation("Discovered filesystem '{Name}' at mount point '{MountPoint}'",
+            if (registry.TryMount(mount, backend))
+            {
+                logger.LogInformation("Discovered filesystem '{Name}' at mount point '{MountPoint}'",
+                    mount.Name, mount.MountPoint);
+                continue;
+            }
+
+            logger.LogWarning(
+                "Filesystem '{Name}' is shadowed: mount point '{MountPoint}' is already another "
+                + "mount's, so it was not mounted and the existing one is untouched",
                 mount.Name, mount.MountPoint);
         }
     }

@@ -19,6 +19,10 @@ public sealed record AgentSpec
     public string? ReasoningEffort { get; init; }
     public ProviderRouting? ProviderRouting { get; init; }
     public required IReadOnlyList<McpServerEndpoint> McpServerEndpoints { get; init; }
+
+    // Whether live outposts join the endpoint list above when a session is built. A deliberate
+    // choice per agent, never a default.
+    public bool UsesOutposts { get; init; }
     public required IReadOnlyList<string> EnabledFeatures { get; init; }
 
     // Derived from the enabled features by the projection rather than handed to the agent
