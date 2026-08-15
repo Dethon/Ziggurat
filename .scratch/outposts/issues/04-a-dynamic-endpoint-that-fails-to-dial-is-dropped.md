@@ -15,16 +15,16 @@ cannot be dialled still fails the session, loudly, as it does now.
 
 **Blocked by:** 03 — An endpoint carries its origin.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The dial policy reads the endpoint's origin, and nothing else, to decide which rule applies.
-- [ ] A session containing one live and one dead dynamic endpoint builds, exposing the live one's
+- [x] The dial policy reads the endpoint's origin, and nothing else, to decide which rule applies.
+- [x] A session containing one live and one dead dynamic endpoint builds, exposing the live one's
       tools and mount and neither of the dead one's.
-- [ ] A session containing one live and one dead configured endpoint fails.
-- [ ] A dropped dynamic endpoint is logged with enough to identify which machine it was.
-- [ ] The dead endpoint does not delay the mounts that did come up beyond what it costs to give up
+- [x] A session containing one live and one dead configured endpoint fails.
+- [x] A dropped dynamic endpoint is logged with enough to identify which machine it was.
+- [x] The dead endpoint does not delay the mounts that did come up beyond what it costs to give up
       on it.
-- [ ] Tests drive thread session construction, using the existing MCP server fixture for the live
+- [x] Tests drive thread session construction, using the existing MCP server fixture for the live
       endpoint and an unused port for the dead one, covering both roles.
-- [ ] The reasoning is already recorded in ADR-0027; the code does not restate it, it points at
+- [x] The reasoning is already recorded in ADR-0027; the code does not restate it, it points at
       it.

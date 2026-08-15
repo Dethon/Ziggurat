@@ -12,20 +12,20 @@ not be permanently absent for that reason.
 **Blocked by:** 05 — The outpost serves a machine's filesystem. 08 — The hub records a
 registration and lets it expire.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Flags for the hub's address and for overriding the advertised address. The advertised
+- [x] Flags for the hub's address and for overriding the advertised address. The advertised
       address is otherwise worked out from the route toward the hub, which is right on a flat
       network and wrong on a multi-homed one, which is what the override is for.
-- [ ] Neither autodetection nor the override yielding a usable address is a startup failure with
+- [x] Neither autodetection nor the override yielding a usable address is a startup failure with
       a message that says so, rather than a registration of something nothing can reach.
-- [ ] The listener comes up regardless of whether the hub answers.
-- [ ] Registration retries with backoff, forever. A hub that comes back finds the machine already
+- [x] The listener comes up regardless of whether the hub answers.
+- [x] Registration retries with backoff, forever. A hub that comes back finds the machine already
       there. A failed keepalive is just the next retry.
-- [ ] A keepalive every thirty seconds, against the hub's ninety second expiry.
-- [ ] Stopping the binary takes the registration back, so a machine turned off deliberately
+- [x] A keepalive every thirty seconds, against the hub's ninety second expiry.
+- [x] Stopping the binary takes the registration back, so a machine turned off deliberately
       disappears at once instead of ninety seconds later.
-- [ ] The shared secret is presented on every call, and is the one value that arrives as an
+- [x] The shared secret is presented on every call, and is the one value that arrives as an
       environment variable rather than a flag.
-- [ ] Verified by hand: start it, watch the registration appear; stop it, watch it go; kill it
+- [x] Verified by hand: start it, watch the registration appear; stop it, watch it go; kill it
       without warning, watch it lapse.

@@ -15,16 +15,16 @@ was handed. The outpost has to register one of two backend types depending on th
 **Blocked by:** 02 — A mount declares whether it accepts landings. 05 — The outpost serves a
 machine's filesystem.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] An exec flag, off by default.
-- [ ] With it off, the mount advertises no exec capability at all, and the model is not offered
+- [x] An exec flag, off by default.
+- [x] With it off, the mount advertises no exec capability at all, and the model is not offered
       the tool for that mount.
-- [ ] With it on, commands run in the outpost's working directory, and the working directory is
+- [x] With it on, commands run in the outpost's working directory, and the working directory is
       answered in virtual coordinates like any other path the caller did not name.
-- [ ] An exec-enabled outpost that is jailed refuses to run anything outside its working
+- [x] An exec-enabled outpost that is jailed refuses to run anything outside its working
       directory, on the same rule as every other operation.
-- [ ] An outpost declares that it is not a landing target, whether or not it can execute, so
+- [x] An outpost declares that it is not a landing target, whether or not it can execute, so
       attachments keep going to the sandbox. Verified with a registry holding both.
-- [ ] The generated mount description says whether commands can be run, because it is generated
+- [x] The generated mount description says whether commands can be run, because it is generated
       from the same flag.

@@ -1,6 +1,6 @@
 # Outposts: filesystems that register themselves
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 

@@ -10,14 +10,14 @@ into an agent's endpoint list has somewhere to put them.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] An endpoint value carries its address and its origin.
-- [ ] The agent spec and the thread session take the typed value; the agent and subagent
+- [x] An endpoint value carries its address and its origin.
+- [x] The agent spec and the thread session take the typed value; the agent and subagent
       definitions and the custom-agent registration keep plain strings, so `appsettings.json` is
       untouched and `mcpServerEndpoints` stays an array of strings.
-- [ ] The spec projection composes the typed values and marks everything it reads from
+- [x] The spec projection composes the typed values and marks everything it reads from
       configuration as configured.
-- [ ] No behaviour changes: sessions build from the same endpoints, in the same way, with the
+- [x] No behaviour changes: sessions build from the same endpoints, in the same way, with the
       same failure modes.
-- [ ] The agent settings tests still pin the configuration file's shape unchanged.
+- [x] The agent settings tests still pin the configuration file's shape unchanged.

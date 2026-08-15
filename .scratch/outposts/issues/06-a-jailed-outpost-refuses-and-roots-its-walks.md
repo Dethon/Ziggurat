@@ -10,19 +10,19 @@ empty result, so the model can tell a jail from an empty directory and say which
 
 **Blocked by:** 05 — The outpost serves a machine's filesystem.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A jailed flag, and one refusal rule that every operation asks before it acts, in the shape
+- [x] A jailed flag, and one refusal rule that every operation asks before it acts, in the shape
       the media library already uses for live downloads.
-- [ ] Every path argument outside the working directory is refused: above it, elsewhere on the
+- [x] Every path argument outside the working directory is refused: above it, elsewhere on the
       machine by absolute path, and by any spelling that resolves outside it.
-- [ ] Glob and text search start their walk at the working directory rather than at `/`. Walking
+- [x] Glob and text search start their walk at the working directory rather than at `/`. Walking
       the whole disk and filtering afterwards would spend the scan budget on entries it is going
       to discard and report that the budget was reached for a reason the model cannot see.
-- [ ] An unjailed outpost allows every one of the above.
-- [ ] A transfer out of a jailed outpost obeys the same rule as any other operation on it.
-- [ ] Tests drive the domain filesystem tools against an outpost backend pointed at a temporary
+- [x] An unjailed outpost allows every one of the above.
+- [x] A transfer out of a jailed outpost obeys the same rule as any other operation on it.
+- [x] Tests drive the domain filesystem tools against an outpost backend pointed at a temporary
       directory, asserting refusal envelopes with the shared assertion helper. The tool boundary
       is the seam, not the backend, because that is where the rule about which coordinates a
       response may use lives.
-- [ ] A refusal names the path in virtual coordinates, never the machine's own spelling.
+- [x] A refusal names the path in virtual coordinates, never the machine's own spelling.

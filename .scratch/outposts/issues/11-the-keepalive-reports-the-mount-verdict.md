@@ -11,15 +11,15 @@ The keepalive is the only channel back.
 
 **Blocked by:** 10 — An opted-in agent mounts live outposts.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] When a session is built, each outpost's verdict — mounted, or shadowed — is written onto its
+- [x] When a session is built, each outpost's verdict — mounted, or shadowed — is written onto its
       registration.
-- [ ] The keepalive's answer carries the verdict, so the machine learns it within one interval of
+- [x] The keepalive's answer carries the verdict, so the machine learns it within one interval of
       the hub knowing it.
-- [ ] The outpost logs the verdict locally, and logs a shadowed verdict prominently enough that
+- [x] The outpost logs the verdict locally, and logs a shadowed verdict prominently enough that
       somebody watching the process sees it.
-- [ ] A verdict of "not yet known", before any opted-in agent has built a session, is
+- [x] A verdict of "not yet known", before any opted-in agent has built a session, is
       distinguishable from "mounted" and from "shadowed", and does not read as a problem.
-- [ ] The keepalive stays a liveness ping carrying one verdict. It does not grow into a reporting
+- [x] The keepalive stays a liveness ping carrying one verdict. It does not grow into a reporting
       channel: the outpost still sends no telemetry of its own.

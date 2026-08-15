@@ -13,22 +13,22 @@ commands. Both of those arrive next.
 
 **Blocked by:** 01 — One allowed-extensions list.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A new project in the solution, and a new row in the one server table, so it inherits the
+- [x] A new project in the solution, and a new row in the one server table, so it inherits the
       server contract tests, the filesystem conformance tests and the virtual-path conformance
       tests with no new test code.
-- [ ] The mount root is the machine's root, `/`, and the mount point is the name it was given.
-- [ ] Flags: name, working directory, listening port, and an extensions override. A flag the
+- [x] The mount root is the machine's root, `/`, and the mount point is the name it was given.
+- [x] Flags: name, working directory, listening port, and an extensions override. A flag the
       operator typed beats an environment variable of the same name, which the default
       configuration order does not give you for free.
-- [ ] The mount's description is generated from the values it was started with — the machine's
+- [x] The mount's description is generated from the values it was started with — the machine's
       name, the working directory, whether it is jailed, whether it can execute — so the prose
       cannot disagree with the behaviour. No separate prompt.
-- [ ] The working directory is the mount's declared workspace.
-- [ ] It builds as a self-contained single-file linux-x64 binary, not trimmed and not NativeAOT,
+- [x] The working directory is the mount's declared workspace.
+- [x] It builds as a self-contained single-file linux-x64 binary, not trimmed and not NativeAOT,
       and the published binary runs on a machine with no .NET installed.
-- [ ] It is the first server with no Dockerfile and no compose service. `CLAUDE.md` says so,
+- [x] It is the first server with no Dockerfile and no compose service. `CLAUDE.md` says so,
       because "every server is a container" is currently a safe assumption a reader would make.
-- [ ] Verified by hand: run the binary, add its URL to an agent's configured endpoints, ask the
+- [x] Verified by hand: run the binary, add its URL to an agent's configured endpoints, ask the
       agent to read a file on that machine.

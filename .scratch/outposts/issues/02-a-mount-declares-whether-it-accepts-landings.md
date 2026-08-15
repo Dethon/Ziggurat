@@ -13,16 +13,16 @@ conversation is identical.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A backend declares whether it is a landing target, the filesystem resource publishes the
+- [x] A backend declares whether it is a landing target, the filesystem resource publishes the
       claim beside the workspace, discovery reads it and the mount carries it.
-- [ ] `AttachmentLanding` selects its mount by the landing-target claim, not by the exec
+- [x] `AttachmentLanding` selects its mount by the landing-target claim, not by the exec
       capability.
-- [ ] An attachment sent to an agent with the sandbox mounted lands exactly where it lands today.
-- [ ] With only an exec-capable mount that declares no landing target present, nothing lands and
+- [x] An attachment sent to an agent with the sandbox mounted lands exactly where it lands today.
+- [x] With only an exec-capable mount that declares no landing target present, nothing lands and
       the attachment is named to the model as one it cannot act on — the same behaviour ADR-0025
       established for a mount with no workspace.
-- [ ] The landing tests drive `AttachmentLanding` through a registry, asserting on the outcome,
+- [x] The landing tests drive `AttachmentLanding` through a registry, asserting on the outcome,
       and cover both directions above.
-- [ ] `CONTEXT.md`'s **Landing target** term is used in the code and the prose.
+- [x] `CONTEXT.md`'s **Landing target** term is used in the code and the prose.

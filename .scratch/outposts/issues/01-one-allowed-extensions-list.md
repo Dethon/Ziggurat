@@ -9,12 +9,12 @@ reason anybody can find.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The extension list lives in `Domain` as a single definition, in the same place a second
+- [x] The extension list lives in `Domain` as a single definition, in the same place a second
       filesystem server would naturally reach for it.
-- [ ] The sandbox server's settings no longer contain the list, and the sandbox mount still
+- [x] The sandbox server's settings no longer contain the list, and the sandbox mount still
       reads and writes exactly the file types it did before.
-- [ ] A server can still override the list for itself, because the outpost will need to.
-- [ ] Existing sandbox filesystem tests pass unchanged. If any of them assert the list's contents
+- [x] A server can still override the list for itself, because the outpost will need to.
+- [x] Existing sandbox filesystem tests pass unchanged. If any of them assert the list's contents
       by literal, they now assert against the shared definition.
