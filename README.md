@@ -145,6 +145,8 @@ A user unit rather than a system one because an outpost publishes a person's own
 
 An agent sees outposts only if `usesOutposts` is set on it; nothing is opted in by default. Live registrations join its endpoint list when a session is built, so a machine that appeared mid-conversation is there from the next session. A machine that is asleep costs only its own mount — a dynamically registered endpoint that will not answer is logged and dropped, while a configured one still fails the session loudly ([ADR 0027](docs/adr/0027-static-endpoints-fail-dynamic-ones-are-dropped.md)). An outpost whose name is already another mount's is *shadowed*: the existing mount wins, and the next keepalive tells the machine why it never appeared.
 
+A subagent sees outposts only when its parent has `usesOutposts` and its own definition sets it too — both default to false, so delegation reaches a machine only when somebody said so twice ([ADR 0028](docs/adr/0028-a-subagent-inherits-outposts-only-if-it-also-asks.md)). What it inherits is the opt-in rather than the parent's machines: its own session build asks the registry, so it mounts whatever is live when it is spawned, `fs_exec` included where the machine allows it. It never writes a mount verdict, which stays the answer to "did the agent you registered with mount you".
+
 ### Scheduled Tasks
 
 Scheduling is a dual-role MCP server (`mcp-scheduling`) rather than an in-process agent feature. The agent connects to it both as a tool/filesystem server and as a channel:

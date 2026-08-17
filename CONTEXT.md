@@ -585,5 +585,7 @@ _Avoid_: agent options, agent config, agent definition
 
 **Subagent**:
 An agent that another agent spawns for one task. It keeps no history, and it runs
-under the parent's conversation because it acts on the parent's behalf.
+under the parent's conversation because it acts on the parent's behalf. It reaches
+outposts only when its parent and its own definition both allow it, so it is never
+more privileged than the agent that spawned it.
 _Avoid_: child agent, worker, nested agent
