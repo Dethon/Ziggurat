@@ -34,6 +34,10 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
         "This read did not run as a tool call, so there was nowhere to key the image and it was not "
         + "shown. Say so rather than describing what the file might contain.";
 
+    private const string EmptyFileNote =
+        "The file is empty — zero bytes — so there is no image to show. "
+        + "Say so rather than describing what it might contain.";
+
     [Description(ToolDescription)]
     public async Task<JsonNode> RunAsync(
         [Description("Virtual path to file (e.g., /library/notes/todo.md)")]
@@ -84,6 +88,8 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
         var callId = support.CurrentCallId();
         var refusal = (bounded.Bytes, support.Store, support.ModelAcceptsImages(), callId) switch
         {
+            // A zero-byte file has no picture in it, and a provider rejects an empty image block.
+            _ when bounded.TotalBytes == 0 => EmptyFileNote,
             (null, _, _, _) =>
                 $"The image is {bounded.TotalBytes} bytes, over this host's {ceiling}-byte limit for "
                 + "showing an image. Resize it below the limit, or tell the person it is too large to look at.",
@@ -165,6 +171,14 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
             return FsError.Fail<BoundedBytes>(
                 ToolError.Codes.UnsupportedOperation,
                 $"{resolution.RelativePath} cannot be read as an image: {ex.Message}");
+        }
+        catch (FileSystemOperationException ex)
+        {
+            // The wire backend has no NotSupportedException to throw: every refusal a server
+            // answers — a missing file, a jailed path, a mount with no bytes behind it — arrives as
+            // this exception carrying the backend's own envelope. That envelope reaches the model,
+            // as it does for a transfer, rather than escaping as a generic function failure.
+            return new FsResult<BoundedBytes>.Err(ex.Error);
         }
 
         return new FsResult<BoundedBytes>.Ok(

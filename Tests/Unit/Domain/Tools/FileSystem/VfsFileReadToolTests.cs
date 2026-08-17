@@ -285,6 +285,45 @@ public class VfsFileReadToolTests
         result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
     }
 
+    // The wire backend never throws NotSupportedException: every refusal a server answers — a
+    // missing file, a jailed path, a mount with no bytes behind it — travels as the typed exception
+    // carrying the backend's own envelope. That envelope reaches the model, as it does for a
+    // transfer, rather than escaping the tool as a generic function failure.
+    [Fact]
+    public async Task ABackendsTypedRefusal_ReachesTheModelAsItsOwnEnvelope()
+    {
+        _registry.Setup(r => r.Resolve(ImagePath)).Returns(Resolved(_backend.Object, ImageRelative));
+        _backend.Setup(b => b.ReadChunksAsync(ImageRelative, It.IsAny<CancellationToken>()))
+            .Throws(new FileSystemOperationException(new ToolErrorResult
+            {
+                ErrorCode = ToolError.Codes.NotFound,
+                Message = "fs_blob_read failed: Path not found: shots/error.png",
+                Retryable = false
+            }));
+        var tool = new VfsFileReadTool(_registry.Object, Support(new RecordingReadImageStore()));
+
+        var result = await tool.RunAsync(ImagePath);
+
+        result!["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.NotFound);
+        result["message"]!.GetValue<string>().ShouldContain("Path not found");
+    }
+
+    // A zero-byte file has no picture in it. Showing the provider an empty image block is a request
+    // it rejects, so the honest envelope says the file is empty and stores nothing.
+    [Fact]
+    public async Task AnEmptyFile_IsNotShownAndSaysThereIsNoImageInIt()
+    {
+        var tool = ImageTool([], out var store);
+
+        var result = await tool.RunAsync(ImagePath);
+
+        result!["shown"]!.GetValue<bool>().ShouldBeFalse();
+        result["sizeBytes"]!.GetValue<long>().ShouldBe(0);
+        result["note"]!.GetValue<string>().ShouldContain("empty");
+        store.Written.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task AnUnmountedImagePath_AnswersTheRegistrysOwnEnvelope()
     {
