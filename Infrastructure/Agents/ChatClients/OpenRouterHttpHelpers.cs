@@ -9,8 +9,6 @@ namespace Infrastructure.Agents.ChatClients;
 
 internal static class OpenRouterHttpHelpers
 {
-    private static readonly string[] _reasoningPropertyNames = ["reasoning", "reasoning_content", "thinking"];
-
     public static async Task PrepareRequestBodyAsync(
         HttpRequestMessage request, string? sessionId, ProviderRouting? providerRouting,
         CancellationToken ct)
@@ -27,11 +25,6 @@ internal static class OpenRouterHttpHelpers
         if (JsonNode.Parse(body) is not JsonObject obj)
         {
             return;
-        }
-
-        if (obj["messages"] is JsonArray messages)
-        {
-            RemoveEmptyAssistantContent(messages);
         }
 
         // Pin the conversation to one provider so its prompt cache stays warm. Without this,
@@ -152,41 +145,32 @@ internal static class OpenRouterHttpHelpers
         }
     }
 
-    // Some OpenRouter providers (e.g., Z.AI / GLM) reject assistant messages with tool_calls when content is empty
-    private static void RemoveEmptyAssistantContent(JsonArray messages)
+    public static HttpContent WrapWithUsageTee(
+        HttpContent inner, ConcurrentQueue<decimal> costQueue, ConcurrentQueue<long> cachedQueue)
     {
-        foreach (var msg in messages.OfType<JsonObject>())
-        {
-            var content = msg["content"];
-            switch (content)
-            {
-                case null:
-                    continue;
-                case JsonValue val when val.TryGetValue<string>(out var s) && string.IsNullOrEmpty(s):
-                    msg.Remove("content");
-                    break;
-                case JsonArray arr:
-                    {
-                        arr.RemoveAll(x => x is JsonObject itemObj &&
-                                           itemObj["type"]?.GetValue<string>() == "text" &&
-                                           string.IsNullOrEmpty(itemObj["text"]?.GetValue<string>()));
-
-                        if (arr.Count == 0)
-                        {
-                            msg.Remove("content");
-                        }
-
-                        break;
-                    }
-            }
-        }
+        return new TeeHttpContent(inner, costQueue, cachedQueue);
     }
 
-    public static HttpContent WrapWithReasoningTee(
-        HttpContent inner, ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
-        ConcurrentQueue<long> cachedQueue)
+    // Where this provider puts the usage block: at the root of a Chat Completions chunk, and under
+    // `response` in the Responses wire's `response.completed` event. One resolver, so the two
+    // extractors below cannot disagree about which wire they are reading.
+    private static bool TryGetUsage(JsonElement root, out JsonElement usage)
     {
-        return new TeeHttpContent(inner, reasoningQueue, costQueue, cachedQueue);
+        if (root.TryGetProperty("usage", out usage) && usage.ValueKind == JsonValueKind.Object)
+        {
+            return true;
+        }
+
+        if (root.TryGetProperty("response", out var response) &&
+            response.ValueKind == JsonValueKind.Object &&
+            response.TryGetProperty("usage", out usage) &&
+            usage.ValueKind == JsonValueKind.Object)
+        {
+            return true;
+        }
+
+        usage = default;
+        return false;
     }
 
     internal static long? ExtractCachedTokensFromSseData(string data)
@@ -194,22 +178,26 @@ internal static class OpenRouterHttpHelpers
         try
         {
             using var doc = JsonDocument.Parse(data);
-            if (!doc.RootElement.TryGetProperty("usage", out var usage) ||
-                usage.ValueKind != JsonValueKind.Object)
+            if (!TryGetUsage(doc.RootElement, out var usage))
             {
                 return null;
             }
 
-            if (!usage.TryGetProperty("prompt_tokens_details", out var details) ||
-                details.ValueKind != JsonValueKind.Object)
+            // The counter moved names with the wire: prompt_tokens_details on Chat Completions,
+            // input_tokens_details on Responses. Either way it is the only direct measure of
+            // whether the static prefix is served from the provider's prompt cache.
+            foreach (var name in (string[])["prompt_tokens_details", "input_tokens_details"])
             {
-                return null;
+                if (usage.TryGetProperty(name, out var details) &&
+                    details.ValueKind == JsonValueKind.Object &&
+                    details.TryGetProperty("cached_tokens", out var cached) &&
+                    cached.ValueKind == JsonValueKind.Number)
+                {
+                    return cached.GetInt64();
+                }
             }
 
-            return details.TryGetProperty("cached_tokens", out var cached) &&
-                   cached.ValueKind == JsonValueKind.Number
-                ? cached.GetInt64()
-                : null;
+            return null;
         }
         catch (JsonException)
         {
@@ -222,8 +210,7 @@ internal static class OpenRouterHttpHelpers
         try
         {
             using var doc = JsonDocument.Parse(data);
-            if (!doc.RootElement.TryGetProperty("usage", out var usage) ||
-                usage.ValueKind != JsonValueKind.Object)
+            if (!TryGetUsage(doc.RootElement, out var usage))
             {
                 return null;
             }
@@ -239,39 +226,8 @@ internal static class OpenRouterHttpHelpers
         catch { return null; }
     }
 
-    private static string? ExtractReasoningFromSseData(string data)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(data);
-            if (!doc.RootElement.TryGetProperty("choices", out var choices) ||
-                choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
-            {
-                return null;
-            }
-
-            var choice0 = choices[0];
-            return GetReasoningFromElement(choice0, "delta") ?? GetReasoningFromElement(choice0, "message");
-        }
-        catch { return null; }
-    }
-
-    private static string? GetReasoningFromElement(JsonElement parent, string propertyName)
-    {
-        if (!parent.TryGetProperty(propertyName, out var el) || el.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        return _reasoningPropertyNames
-            .Select(name => el.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String
-                ? prop.GetString()
-                : null)
-            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-    }
-
     private sealed class TeeHttpContent(
-        HttpContent inner, ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
+        HttpContent inner, ConcurrentQueue<decimal> costQueue,
         ConcurrentQueue<long> cachedQueue) : HttpContent
     {
         protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
@@ -282,7 +238,7 @@ internal static class OpenRouterHttpHelpers
 
         protected override async Task<Stream> CreateContentReadStreamAsync()
         {
-            return new ReasoningTeeStream(await inner.ReadAsStreamAsync(), reasoningQueue, costQueue, cachedQueue);
+            return new UsageTeeStream(await inner.ReadAsStreamAsync(), costQueue, cachedQueue);
         }
 
         protected override bool TryComputeLength(out long length)
@@ -302,8 +258,11 @@ internal static class OpenRouterHttpHelpers
         }
     }
 
-    private sealed class ReasoningTeeStream(
-        Stream inner, ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
+    // Reasoning needs no tap on this wire: the Responses adapter surfaces reasoning deltas as
+    // TextReasoningContent itself. Cost and the cache counter are OpenRouter extensions the typed
+    // usage drops, so they are still read off the stream on the way past.
+    private sealed class UsageTeeStream(
+        Stream inner, ConcurrentQueue<decimal> costQueue,
         ConcurrentQueue<long> cachedQueue) : Stream
     {
         private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
@@ -366,13 +325,6 @@ internal static class OpenRouterHttpHelpers
                     .Select(l => l[5..].Trim())
                     .Where(d => d.Length > 0 && d != "[DONE]")
                     .ToArray();
-
-                foreach (var reasoning in dataPayloads
-                    .Select(ExtractReasoningFromSseData)
-                    .Where(r => r is not null))
-                {
-                    reasoningQueue.Enqueue(reasoning!);
-                }
 
                 foreach (var cost in dataPayloads
                     .Select(ExtractCostFromSseData)

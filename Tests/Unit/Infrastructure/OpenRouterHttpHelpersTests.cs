@@ -9,81 +9,21 @@ namespace Tests.Unit.Infrastructure;
 
 public class OpenRouterHttpHelpersTests
 {
+    // The Responses wire has no `messages` array to massage: the empty-assistant-content quirk was
+    // a Chat Completions shape, and the input items pass through untouched. The stamps ride
+    // alongside: usage:{include:true} is what makes OpenRouter report cached_tokens.
     [Fact]
-    public async Task FixEmptyAssistantContent_WithEmptyString_RemovesContent()
+    public async Task PrepareRequestBody_LeavesTheInputItemsUntouched()
     {
-        // Arrange
-        var json = "{\"messages\":[{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[]}]}";
+        var json = "{\"model\":\"m\",\"input\":[{\"type\":\"message\",\"role\":\"user\"," +
+                   "\"content\":[{\"type\":\"input_text\",\"text\":\"hi\"}]}]}";
         var request = CreateRequest(json);
 
-        // Act
         await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
 
-        // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
-        var obj = JsonNode.Parse(resultJson);
-        var msg = obj!["messages"]![0]!;
-
-        msg["content"].ShouldBeNull();
-        msg["tool_calls"].ShouldNotBeNull();
-    }
-
-    [Fact]
-    public async Task FixEmptyAssistantContent_WithArrayAndEmptyText_RemovesEmptyText()
-    {
-        // Arrange
-        var json =
-            "{\"messages\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"},{\"type\":\"text\",\"text\":\"valid\"}],\"tool_calls\":[]}]}";
-        var request = CreateRequest(json);
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
-
-        // Assert
-        var resultJson = await request.Content!.ReadAsStringAsync();
-        var obj = JsonNode.Parse(resultJson);
-        var content = obj!["messages"]![0]!["content"]!.AsArray();
-
-        content.Count.ShouldBe(1);
-        content[0]!["text"]!.GetValue<string>().ShouldBe("valid");
-    }
-
-    [Fact]
-    public async Task FixEmptyAssistantContent_WithArrayOnlyEmptyText_RemovesContent()
-    {
-        // Arrange
-        var json =
-            "{\"messages\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"tool_calls\":[]}]}";
-        var request = CreateRequest(json);
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
-
-        // Assert
-        var resultJson = await request.Content!.ReadAsStringAsync();
-        var obj = JsonNode.Parse(resultJson);
-        var msg = obj!["messages"]![0]!;
-
-        msg["content"].ShouldBeNull();
-    }
-
-    [Fact]
-    public async Task FixEmptyAssistantContent_WithValidContent_DoesNothing()
-    {
-        // Arrange
-        var json = "{\"messages\":[{\"role\":\"assistant\",\"content\":\"valid content\",\"tool_calls\":[]}]}";
-        var request = CreateRequest(json);
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
-
-        // Assert
-        // The messages array is untouched; the request now also carries usage:{include:true},
-        // which is what makes OpenRouter report prompt_tokens_details.cached_tokens.
-        var resultJson = await request.Content!.ReadAsStringAsync();
-        var obj = System.Text.Json.Nodes.JsonNode.Parse(resultJson)!.AsObject();
-        obj["messages"]!.ToJsonString().ShouldBe(
-            System.Text.Json.Nodes.JsonNode.Parse(json)!["messages"]!.ToJsonString());
+        var obj = JsonNode.Parse(resultJson)!.AsObject();
+        obj["input"]!.ToJsonString().ShouldBe(JsonNode.Parse(json)!["input"]!.ToJsonString());
         obj["usage"]!["include"]!.GetValue<bool>().ShouldBeTrue();
     }
 
