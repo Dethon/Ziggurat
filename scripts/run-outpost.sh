@@ -143,19 +143,38 @@ drop_flag() {
 }
 
 # One key out of the env file, read rather than sourced: the file is the compose stack's
-# and holds every secret the deployment has, none of which this needs.
+# and holds every secret the deployment has, none of which this needs. Trimmed at the edges
+# only — a secret is allowed to contain a space, and mangling one here would start an outpost
+# the hub silently refuses.
 secret_from_env_file() {
   [[ -f $ENV_FILE ]] || return 0
   local value
   value="$(grep -m1 -E '^[[:space:]]*OUTPOSTS__SHAREDSECRET=' "$ENV_FILE" || true)"
   value="${value#*=}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
   value="${value%\"}"
   value="${value#\"}"
-  printf '%s' "${value//[[:space:]]/}"
+  printf '%s' "$value"
 }
 
 is_wsl() {
   [[ -n ${WSL_DISTRO_NAME:-} ]] || grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null
+}
+
+# Said on every start under WSL NAT, not only when installing the service: the registration
+# succeeds and the mount simply never answers, so the run that looks fine is exactly the one
+# that needs the warning.
+warn_wsl_nat() {
+  if is_wsl && ! typed --advertise; then
+    local port
+    port="$(flag_value --port || true)"
+    echo >&2
+    echo "WSL: this outpost will register whatever address WSL's NAT gives it (172.x), which the" >&2
+    echo "hub cannot dial back — the registration succeeds and the mount never answers. Start it" >&2
+    echo "again with --advertise <an address the hub can reach> and forward port ${port:-8099} to" >&2
+    echo "this distro, or turn on mirrored networking." >&2
+  fi
 }
 
 # The canonical question, and the only one worth asking: not whether systemd is installed but
@@ -377,15 +396,7 @@ UNITEOF
     echo "Run 'wsl --shutdown' in Windows, then reopen this distro — it starts there."
   fi
 
-  if is_wsl && ! typed --advertise; then
-    local port
-    port="$(flag_value --port || true)"
-    echo >&2
-    echo "WSL: this outpost will register whatever address WSL's NAT gives it (172.x), which the" >&2
-    echo "hub cannot dial back — the registration succeeds and the mount never answers. Reinstall" >&2
-    echo "with --advertise <an address the hub can reach> and forward port ${port:-8099} to this" >&2
-    echo "distro, or turn on mirrored networking." >&2
-  fi
+  warn_wsl_nat
 }
 
 if [[ $ACTION == uninstall ]]; then
@@ -440,6 +451,8 @@ if [[ $ACTION == install ]]; then
   install_service "$secret"
   exit 0
 fi
+
+warn_wsl_nat
 
 echo "running: McpServerOutpost ${flags[*]}"
 
