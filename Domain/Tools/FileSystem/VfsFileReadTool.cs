@@ -84,7 +84,7 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
         var support = images ?? ReadImageSupport.None;
         var ceiling = support.MaxBytes;
 
-        JsonNode Envelope(long? sizeBytes, string? refusal) => FsResultContract.ToNode(
+        JsonNode envelope(long? sizeBytes, string? refusal) => FsResultContract.ToNode(
             new FsImageReadResult
             {
                 FilePath = filePath,
@@ -103,12 +103,12 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
         if (stated == 0)
         {
             // A zero-byte file has no picture in it, and a provider rejects an empty image block.
-            return Envelope(0, EmptyFileNote);
+            return envelope(0, EmptyFileNote);
         }
 
         if (stated > ceiling)
         {
-            return Envelope(stated, OverCeilingNote(stated.Value, exact: true, ceiling));
+            return envelope(stated, OverCeilingNote(stated.Value, exact: true, ceiling));
         }
 
         var callId = support.CurrentCallId();
@@ -123,7 +123,7 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
         };
         if (refusal is not null)
         {
-            return Envelope(stated, refusal);
+            return envelope(stated, refusal);
         }
 
         var read = await ReadCappedAsync(resolution, ceiling, ct);
@@ -134,14 +134,14 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
 
         if (capped.TotalBytes == 0)
         {
-            return Envelope(0, EmptyFileNote);
+            return envelope(0, EmptyFileNote);
         }
 
         if (capped.Bytes is null)
         {
             // Only a mount that could not stat lands here — or one whose file grew between the
             // stat and the read — so the count is a floor, and the note says so.
-            return Envelope(capped.TotalBytes, OverCeilingNote(capped.TotalBytes, exact: false, ceiling));
+            return envelope(capped.TotalBytes, OverCeilingNote(capped.TotalBytes, exact: false, ceiling));
         }
 
         await support.Store!.PutAsync(
@@ -153,7 +153,7 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
             },
             ct);
 
-        return Envelope(capped.TotalBytes, refusal: null);
+        return envelope(capped.TotalBytes, refusal: null);
     }
 
     private static string OverCeilingNote(long size, bool exact, long ceiling) =>
