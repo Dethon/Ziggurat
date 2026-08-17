@@ -74,10 +74,14 @@ internal static class AgentSpecProjection
                 definition.ProviderRouting, openRouterConfig.ProviderRouting,
                 definition.Model, identity, logger),
             McpServerEndpoints = [.. definition.McpServerEndpoints.Select(McpServerEndpoint.Configured)],
-            // A subagent reaches the servers its own definition names and nothing else. Outposts
-            // are a top-level agent's opt-in; inheriting one down here would widen what a
-            // subagent can touch without anybody having said so.
-            UsesOutposts = false,
+            // Two yeses, and neither alone is enough. The parent's is the ceiling — a subagent
+            // acts on its behalf and cannot reach a machine it could not — and the definition's
+            // is what keeps a narrow worker off the machines: the list of subagents is shared by
+            // every agent that enables the feature, so inheriting the parent's flag alone would
+            // hand a newly added profile every registered laptop. What is inherited is the flag
+            // and never a set of machines: the session build below asks the registry itself, so
+            // a subagent mounts whatever is live when it is spawned. See docs/adr/0028.
+            UsesOutposts = spawn.UsesOutposts && definition.UsesOutposts,
             EnabledFeatures = enabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures),
             WhitelistPatterns = spawn.WhitelistPatterns,

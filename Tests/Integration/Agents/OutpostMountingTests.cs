@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Agents;
@@ -35,6 +36,35 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
         var endpoints = await ComposeAsync(usesOutposts: false, Registered("notes", machines.NotesEndpoint));
 
         await using var session = await BuildAsync(endpoints);
+
+        session.FileSystemRegistry.ShouldNotBeNull()
+            .GetMounts().Select(m => m.Name).ShouldBe(["vault"]);
+    }
+
+    // Delegation reaches the machine. The spec is the subagent's own, built by the projection from
+    // an opted-in parent and an opted-in definition, and what it composes against is the registry
+    // rather than anything its parent resolved — so the mount is whatever is live at spawn time.
+    [Fact]
+    public async Task ASubAgentSpawnedFromAnOptedInParent_MountsALiveOutpost()
+    {
+        var spec = SubAgentSpec(parentUsesOutposts: true, ownDefinitionUsesOutposts: true);
+
+        await using var session = await BuildAsync(
+            await ComposeAsync(spec, Registered("notes", machines.NotesEndpoint)));
+
+        session.FileSystemRegistry.ShouldNotBeNull()
+            .GetMounts().Select(m => m.Name).ShouldBe(["vault", "notes"], ignoreOrder: true);
+    }
+
+    // The parent is the ceiling: a worker that asks for machines its parent cannot see gets none,
+    // so delegating never reaches somewhere asking directly could not.
+    [Fact]
+    public async Task ASubAgentWhoseParentIsNotOptedIn_MountsNoneOfThem()
+    {
+        var spec = SubAgentSpec(parentUsesOutposts: false, ownDefinitionUsesOutposts: true);
+
+        await using var session = await BuildAsync(
+            await ComposeAsync(spec, Registered("notes", machines.NotesEndpoint)));
 
         session.FileSystemRegistry.ShouldNotBeNull()
             .GetMounts().Select(m => m.Name).ShouldBe(["vault"]);
@@ -84,12 +114,37 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
     private static OutpostRegistration Registered(string name, string endpoint) =>
         new() { Name = name, Endpoint = endpoint };
 
+    private AgentSpec SubAgentSpec(bool parentUsesOutposts, bool ownDefinitionUsesOutposts) =>
+        AgentSpecProjection.ForSubAgent(
+            new SubAgentDefinition
+            {
+                Id = "worker",
+                Name = "Worker",
+                Model = "test-model",
+                McpServerEndpoints = [vault.McpEndpoint],
+                UsesOutposts = ownDefinitionUsesOutposts
+            },
+            new SpawnContext("conv-1", "test-user", [], parentUsesOutposts),
+            new OpenRouterConfig { ApiUrl = "http://test", ApiKey = "test-key" },
+            logger: null);
+
     private Task<ComposedEndpoints> ComposeAsync(
         bool usesOutposts, params OutpostRegistration[] live) =>
         OutpostEndpoints.ComposeAsync(
             [McpServerEndpoint.Configured(vault.McpEndpoint)],
             new OutpostAccess(new StubRegistry(live), "s3cret"),
             usesOutposts,
+            logger: null,
+            CancellationToken.None);
+
+    // The spec's own endpoints and its own opt-in, so what a subagent mounts is decided by what
+    // the projection put on it rather than by anything this test restates.
+    private static Task<ComposedEndpoints> ComposeAsync(
+        AgentSpec spec, params OutpostRegistration[] live) =>
+        OutpostEndpoints.ComposeAsync(
+            spec.McpServerEndpoints,
+            new OutpostAccess(new StubRegistry(live), "s3cret"),
+            spec.UsesOutposts,
             logger: null,
             CancellationToken.None);
 

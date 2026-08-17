@@ -98,6 +98,25 @@ public sealed class AgentSpecProjectionTests
         read(SubAgentSpec()).ShouldBe(expectedForSubAgent);
     }
 
+    // Two flags rather than one, and the whole table is the argument for it: the parent is the
+    // ceiling, so a worker cannot reach a machine its parent cannot, and the worker's own
+    // definition is the second yes, so adding a narrow profile to the shipped settings does not
+    // hand it every registered laptop. ADR-0028 has the alternatives and why they lose.
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, false)]
+    public void ForSubAgent_TheOutpostsOptIn_IsTheParentsAndItsOwn(
+        bool parent, bool ownDefinition, bool expected)
+    {
+        AgentSpecProjection.ForSubAgent(
+                _subAgentDefinition with { UsesOutposts = ownDefinition },
+                new SpawnContext("conv-1", "fran", ["allow-*"], UsesOutposts: parent),
+                _openRouter, null)
+            .UsesOutposts.ShouldBe(expected);
+    }
+
     // The session id is what OpenRouter sticks a prompt cache to, so two spawns of the same
     // subagent definition must not land on one.
     [Fact]
