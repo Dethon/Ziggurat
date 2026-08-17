@@ -23,16 +23,19 @@ public sealed class RedisReadImageStore(IConnectionMultiplexer redis) : IReadIma
 
     public async Task PutAsync(string conversationId, string callId, ReadImage image, CancellationToken ct)
     {
-        var db = redis.GetDatabase();
         var key = KeyFor(conversationId, callId);
 
-        await db.HashSetAsync(key,
+        // The hash and its horizon land in one MULTI/EXEC: a crash between two separate round
+        // trips would leave a key with no expiry at all — the one leak the horizon exists to stop.
+        var tran = redis.GetDatabase().CreateTransaction();
+        _ = tran.HashSetAsync(key,
         [
             new HashEntry(PathField, image.VirtualPath),
             new HashEntry(MediaTypeField, image.MediaType),
             new HashEntry(BytesField, image.Bytes)
         ]);
-        await db.KeyExpireAsync(key, Horizon);
+        _ = tran.KeyExpireAsync(key, Horizon);
+        await tran.ExecuteAsync();
     }
 
     public async Task<ReadImage?> GetAsync(string conversationId, string callId, CancellationToken ct)
