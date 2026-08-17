@@ -17,7 +17,7 @@ public class McpFileSystemCapabilitiesTests
         // Home Assistant advertises only read/info/glob/search/exec.
         var caps = Derive("fs_glob", "fs_info", "fs_read", "fs_search", "fs_exec");
 
-        caps.ShouldBe(["text_read", "glob", "text_search", "file_info", "exec"]);
+        caps.ShouldBe(["file_read", "glob", "text_search", "file_info", "exec"]);
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public class McpFileSystemCapabilitiesTests
     {
         var caps = Derive("fs_read", "fs_blob_read", "fs_blob_write", "send_reply", "some_other_tool");
 
-        caps.ShouldBe(["text_read"]);
+        caps.ShouldBe(["file_read"]);
     }
 
     [Fact]

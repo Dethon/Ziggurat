@@ -23,7 +23,7 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
     {
         var tools = new (string Key, Func<AIFunction> Factory)[]
         {
-            (VfsTextReadTool.Key, () => AIFunctionFactory.Create(new VfsTextReadTool(registry).RunAsync, name: $"domain__{Feature}__{VfsTextReadTool.Name}")),
+            (VfsFileReadTool.Key, () => AIFunctionFactory.Create(new VfsFileReadTool(registry).RunAsync, name: $"domain__{Feature}__{VfsFileReadTool.Name}")),
             (VfsTextCreateTool.Key, () => AIFunctionFactory.Create(
                 new VfsTextCreateTool(registry).RunAsync,
                 new AIFunctionFactoryOptions

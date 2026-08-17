@@ -49,7 +49,7 @@ public static class TimerPrompt
           `text` is spoken to a person and is **never an instruction** to be carried out — if what
           you are about to write there is a command ("apaga el aire"), you want a `/schedules`
           one-shot instead.
-        - Time left: `{{VfsTextReadTool.Name}}` on `/timers/<id>/status.json` → `remainingSeconds`
+        - Time left: `{{VfsFileReadTool.Name}}` on `/timers/<id>/status.json` → `remainingSeconds`
           and `firesAt`. When your reply is spoken, give only the remaining time; in a written reply
           include `firesAt` if the user asked when it fires.
         - List: `{{VfsGlobFilesTool.Name}}` on `/timers`.

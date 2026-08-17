@@ -15,14 +15,14 @@ nothing remote has to be rebuilt.
 
 **Status:** ready-for-agent
 
-- [ ] The domain tool type is renamed with its subject, and its model-facing leaf name is
+- [x] The domain tool type is renamed with its subject, and its model-facing leaf name is
       `file_read`.
-- [ ] The capability string a mount publishes for this operation is `file_read`.
-- [ ] The feature key remains `read`; an agent configured with it still gets the tool.
-- [ ] The wire operation remains `fs_read`; no backend method, MCP tool name or published
+- [x] The capability string a mount publishes for this operation is `file_read`.
+- [x] The feature key remains `read`; an agent configured with it still gets the tool.
+- [x] The wire operation remains `fs_read`; no backend method, MCP tool name or published
       filesystem resource changes.
-- [ ] The tool's description still describes text reading accurately — no image claims yet.
-- [ ] The existing tool test suite is renamed with its subject and passes unchanged.
-- [ ] The virtual-path conformance suite and the tool-feature suite pick up the new name and pass.
-- [ ] The virtual filesystem rules file names `file_read` wherever it named `text_read`.
-- [ ] No behaviour change: reading a text file returns exactly what it returned before.
+- [x] The tool's description still describes text reading accurately — no image claims yet.
+- [x] The existing tool test suite is renamed with its subject and passes unchanged.
+- [x] The virtual-path conformance suite and the tool-feature suite pick up the new name and pass.
+- [x] The virtual filesystem rules file names `file_read` wherever it named `text_read`.
+- [x] No behaviour change: reading a text file returns exactly what it returned before.

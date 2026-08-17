@@ -78,7 +78,7 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
 
     // Both halves of the invariant in one place. The caller named the scope, so it is echoed; the
     // hits are the backend's own and are translated. Without this the obvious next call, feeding a
-    // hit to text_read, came back "No filesystem mounted".
+    // hit to file_read, came back "No filesystem mounted".
     private static FsResult<FsSearchResult> Normalize(
         FsResult<FsSearchResult> result, string virtualPath, FileSystemResolution resolution) =>
         result.Map(search => search with

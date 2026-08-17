@@ -221,7 +221,7 @@ public sealed partial class HaFileSystem(
         _ => (false, false)
     };
 
-    // Line-numbered read result matching the Sandbox/Vault text_read shape.
+    // Line-numbered read result matching the Sandbox/Vault file_read shape.
     private static FsResult<FsReadResult> BuildReadResult(string filePath, string text, int? offset, int? limit)
     {
         var allLines = text.Split('\n');

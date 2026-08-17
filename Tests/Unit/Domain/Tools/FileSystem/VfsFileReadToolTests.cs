@@ -7,15 +7,15 @@ using Shouldly;
 
 namespace Tests.Unit.Domain.Tools.FileSystem;
 
-public class VfsTextReadToolTests
+public class VfsFileReadToolTests
 {
     private readonly Mock<IVirtualFileSystemRegistry> _registry = new();
     private readonly Mock<IFileSystemBackend> _backend = new();
-    private readonly VfsTextReadTool _tool;
+    private readonly VfsFileReadTool _tool;
 
-    public VfsTextReadToolTests()
+    public VfsFileReadToolTests()
     {
-        _tool = new VfsTextReadTool(_registry.Object);
+        _tool = new VfsFileReadTool(_registry.Object);
     }
 
     [Fact]

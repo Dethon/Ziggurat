@@ -36,7 +36,7 @@ public static class FileSystemOperations
     public static readonly IReadOnlyList<FileSystemOperation> All =
     [
         Op("fs_read", nameof(IFileSystemBackend.ReadAsync), typeof(FsReadResult),
-            VfsTextReadTool.Key, VfsTextReadTool.Name),
+            VfsFileReadTool.Key, VfsFileReadTool.Name),
         Op("fs_create", nameof(IFileSystemBackend.CreateAsync), typeof(FsCreateResult),
             VfsTextCreateTool.Key, VfsTextCreateTool.Name),
         Op("fs_edit", nameof(IFileSystemBackend.EditAsync), typeof(FsEditResult),

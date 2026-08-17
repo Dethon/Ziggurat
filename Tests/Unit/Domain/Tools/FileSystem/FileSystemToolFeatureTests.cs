@@ -46,7 +46,7 @@ public class FileSystemToolFeatureTests
         var tools = _feature.GetTools(config).ToList();
 
         tools.Count.ShouldBe(2);
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_read");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__file_read");
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__move");
     }
 
@@ -75,13 +75,13 @@ public class FileSystemToolFeatureTests
         registry.Setup(r => r.GetMounts()).Returns([
             new FileSystemMount("ha", "/ha", "Home Assistant")
             {
-                Capabilities = ["text_read", "glob", "text_search", "file_info", "exec"]
+                Capabilities = ["file_read", "glob", "text_search", "file_info", "exec"]
             }
         ]);
         var feature = new FileSystemToolFeature(registry.Object);
 
         feature.Prompt.ShouldNotBeNull();
-        feature.Prompt.ShouldContain("operations: text_read, glob, text_search, file_info, exec");
+        feature.Prompt.ShouldContain("operations: file_read, glob, text_search, file_info, exec");
     }
 
     // This is the one prompt built per agent from its actual mount set, so its fixed text must
@@ -94,8 +94,8 @@ public class FileSystemToolFeatureTests
     {
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.GetMounts()).Returns([
-            new FileSystemMount("notes", "/notes", "Notes") { Capabilities = ["text_read", "text_edit"] },
-            new FileSystemMount("box", "/box", "Box") { Capabilities = ["text_read", "exec"] }
+            new FileSystemMount("notes", "/notes", "Notes") { Capabilities = ["file_read", "text_edit"] },
+            new FileSystemMount("box", "/box", "Box") { Capabilities = ["file_read", "exec"] }
         ]);
         var feature = new FileSystemToolFeature(registry.Object);
 
@@ -116,7 +116,7 @@ public class FileSystemToolFeatureTests
     // at every tool site at once. Every tool the feature produces is checked here.
     public static TheoryData<string, Dictionary<string, object?>> UnmountedPathCalls() => new()
     {
-        { "text_read", new() { ["filePath"] = "/notes/x.md" } },
+        { "file_read", new() { ["filePath"] = "/notes/x.md" } },
         { "text_create", new() { ["filePath"] = "/notes/x.md", ["content"] = "hi" } },
         {
             "text_edit",

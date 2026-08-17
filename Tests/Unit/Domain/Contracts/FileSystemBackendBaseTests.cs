@@ -34,7 +34,7 @@ public class FileSystemBackendBaseTests
 
     public static TheoryData<string, Func<FileSystemBackendBase, Task<ToolErrorResult?>>> Operations() => new()
     {
-        { VfsTextReadTool.Name, async b => ErrorOf(await b.ReadAsync("/x", null, null, default)) },
+        { VfsFileReadTool.Name, async b => ErrorOf(await b.ReadAsync("/x", null, null, default)) },
         { VfsFileInfoTool.Name, async b => ErrorOf(await b.InfoAsync("/x", default)) },
         { VfsTextCreateTool.Name, async b => ErrorOf(await b.CreateAsync("/x", "c", false, true, default)) },
         { VfsTextEditTool.Name, async b => ErrorOf(await b.EditAsync("/x", [], default)) },

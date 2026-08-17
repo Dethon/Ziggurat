@@ -107,7 +107,7 @@ public class VfsVirtualPathConformanceTests
         var vfs = registry.Object;
         return toolKey switch
         {
-            "read" => await new VfsTextReadTool(vfs).RunAsync($"{Mount}/docs/note.md"),
+            "read" => await new VfsFileReadTool(vfs).RunAsync($"{Mount}/docs/note.md"),
             "create" => await new VfsTextCreateTool(vfs).RunAsync($"{Mount}/docs/note.md", "hello"),
             "edit" => await new VfsTextEditTool(vfs).RunAsync(
                 $"{Mount}/docs/note.md", [new TextEdit("a", "b")]),

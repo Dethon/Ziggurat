@@ -4,10 +4,10 @@ using Domain.Contracts;
 
 namespace Domain.Tools.FileSystem;
 
-public class VfsTextReadTool(IVirtualFileSystemRegistry registry)
+public class VfsFileReadTool(IVirtualFileSystemRegistry registry)
 {
     public const string Key = "read";
-    public const string Name = "text_read";
+    public const string Name = "file_read";
 
     public const string ToolDescription = """
         Reads a text file and returns its content with line numbers.
