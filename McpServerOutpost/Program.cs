@@ -11,8 +11,10 @@ builder.Services.ConfigureMcp(settings);
 
 // Every interface, because the outpost cannot know which one the hub will reach it on — that is
 // exactly what --advertise exists to settle, and it settles the address the hub is told, not the
-// socket this listens on.
-builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Any, settings.Port));
+// socket this listens on. IPv6Any rather than Any: the dual-mode socket takes IPv4 as well, and
+// Any alone would let --advertise name an IPv6 address nothing here listens on — a registration
+// that looks exactly like a machine that is asleep, forever.
+builder.WebHost.UseKestrel(options => options.Listen(IPAddress.IPv6Any, settings.Port));
 
 var app = builder.Build();
 
