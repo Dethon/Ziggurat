@@ -114,6 +114,7 @@ public class VfsFileReadToolTests
     {
         var relative = path["/vault/".Length..];
         _registry.Setup(r => r.Resolve(path)).Returns(Resolved(_backend.Object, relative));
+        StatsAt(relative, 1);
         _backend.Setup(b => b.ReadChunksAsync(relative, It.IsAny<CancellationToken>()))
             .Returns(Chunks([9]));
         var tool = new VfsFileReadTool(_registry.Object, Support(new RecordingReadImageStore()));
@@ -144,8 +145,12 @@ public class VfsFileReadToolTests
         result["message"]!.GetValue<string>().ShouldContain(".zip");
     }
 
+    // The refusal costs a stat, never the transfer: on a mount that can answer a size, an
+    // over-the-ceiling file is refused before the first byte crosses the wire — the ceiling
+    // exists so an enormous file cannot make one turn enormous, and pulling it in full just to
+    // name its size is the cost it exists to prevent.
     [Fact]
-    public async Task AnImageOverTheCeiling_IsNotShownAndNamesTheSizeAndTheLimit()
+    public async Task AnImageOverTheCeiling_IsRefusedByTheStatAloneAndNamesTheSizeAndTheLimit()
     {
         var tool = ImageTool(new byte[64], out var store, maxBytes: 32);
 
@@ -157,6 +162,46 @@ public class VfsFileReadToolTests
         note.ShouldContain("64");
         note.ShouldContain("32");
         store.Written.ShouldBeEmpty();
+        _backend.Verify(
+            b => b.ReadChunksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // Every refusal decidable without the bytes — no vision, no store, no call id, no conversation
+    // — is decided without them, and the envelope still names the size the mount reported.
+    [Fact]
+    public async Task ARefusalThatNeedsNoBytes_DoesNotTransferThem()
+    {
+        var tool = ImageTool([1, 2, 3, 4], out _, acceptsImages: false);
+
+        var result = await tool.RunAsync(ImagePath);
+
+        result!["shown"]!.GetValue<bool>().ShouldBeFalse();
+        result["sizeBytes"]!.GetValue<long>().ShouldBe(4);
+        _backend.Verify(
+            b => b.ReadChunksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // A mount that cannot stat is read — but the pull stops the moment the ceiling is passed,
+    // so an oversized file costs one ceiling's worth of transfer, not the whole file. The
+    // saving is paid for with the exact size: the envelope names the count as a floor.
+    [Fact]
+    public async Task AMountThatCannotStat_StopsPullingAtTheCeiling()
+    {
+        _registry.Setup(r => r.Resolve(ImagePath)).Returns(Resolved(_backend.Object, ImageRelative));
+        _backend.Setup(b => b.InfoAsync(ImageRelative, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(FsError.Fail<FsInfoResult>(
+                ToolError.Codes.UnsupportedOperation, "fs_info is not supported"));
+        var pulled = 0;
+        _backend.Setup(b => b.ReadChunksAsync(ImageRelative, It.IsAny<CancellationToken>()))
+            .Returns(CountingChunks(chunkSize: 8, chunks: 1000, () => pulled++));
+        var tool = new VfsFileReadTool(_registry.Object, Support(new RecordingReadImageStore(), maxBytes: 32));
+
+        var result = await tool.RunAsync(ImagePath);
+
+        result!["shown"]!.GetValue<bool>().ShouldBeFalse();
+        result["sizeBytes"]!.GetValue<long>().ShouldBe(40);
+        result["note"]!.GetValue<string>().ShouldContain("at least 40");
+        pulled.ShouldBe(5);
     }
 
     [Fact]
@@ -175,6 +220,7 @@ public class VfsFileReadToolTests
     public async Task AHostWithNoStore_SaysImagesCannotBeShownHere()
     {
         _registry.Setup(r => r.Resolve(ImagePath)).Returns(Resolved(_backend.Object, ImageRelative));
+        StatsAt(ImageRelative, 4);
         _backend.Setup(b => b.ReadChunksAsync(ImageRelative, It.IsAny<CancellationToken>()))
             .Returns(Chunks([1, 2, 3, 4]));
         var tool = new VfsFileReadTool(_registry.Object, Support(store: null));
@@ -192,6 +238,7 @@ public class VfsFileReadToolTests
     public async Task AToolBuiltWithNoImageSupport_StillAnswersTheEnvelopeHonestly()
     {
         _registry.Setup(r => r.Resolve(ImagePath)).Returns(Resolved(_backend.Object, ImageRelative));
+        StatsAt(ImageRelative, 4);
         _backend.Setup(b => b.ReadChunksAsync(ImageRelative, It.IsAny<CancellationToken>()))
             .Returns(Chunks([1, 2, 3, 4]));
 
@@ -293,6 +340,8 @@ public class VfsFileReadToolTests
     public async Task AMountThatHoldsNoBytes_RefusesRatherThanRenderingGarbage()
     {
         _registry.Setup(r => r.Resolve(ImagePath)).Returns(Resolved(_backend.Object, ImageRelative));
+        // A rendered mount stats what it renders, so the refusal comes from the pull, not the stat.
+        StatsAt(ImageRelative, 9);
         _backend.Setup(b => b.ReadChunksAsync(ImageRelative, It.IsAny<CancellationToken>()))
             .Throws(new NotSupportedException("blob_read is not supported by this filesystem"));
         var tool = new VfsFileReadTool(_registry.Object, Support(new RecordingReadImageStore()));
@@ -311,6 +360,15 @@ public class VfsFileReadToolTests
     public async Task ABackendsTypedRefusal_ReachesTheModelAsItsOwnEnvelope()
     {
         _registry.Setup(r => r.Resolve(ImagePath)).Returns(Resolved(_backend.Object, ImageRelative));
+        // The wire server refuses the stat the same way it refuses the read; only the read's
+        // refusal is the one the model sees.
+        _backend.Setup(b => b.InfoAsync(ImageRelative, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new FileSystemOperationException(new ToolErrorResult
+            {
+                ErrorCode = ToolError.Codes.NotFound,
+                Message = "fs_info failed: Path not found: shots/error.png",
+                Retryable = false
+            }));
         _backend.Setup(b => b.ReadChunksAsync(ImageRelative, It.IsAny<CancellationToken>()))
             .Throws(new FileSystemOperationException(new ToolErrorResult
             {
@@ -370,11 +428,20 @@ public class VfsFileReadToolTests
     {
         store = new RecordingReadImageStore();
         _registry.Setup(r => r.Resolve(ImagePath)).Returns(Resolved(_backend.Object, ImageRelative));
+        StatsAt(ImageRelative, bytes.Length);
         _backend.Setup(b => b.ReadChunksAsync(ImageRelative, It.IsAny<CancellationToken>()))
             .Returns(Chunks(bytes));
         return new VfsFileReadTool(
             _registry.Object, Support(store, maxBytes, acceptsImages, callId, conversationId));
     }
+
+    // Every disk root that can serve an image can stat it; the statless mount is its own test.
+    private void StatsAt(string relativePath, long size) =>
+        _backend.Setup(b => b.InfoAsync(relativePath, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult
+            {
+                Exists = true, Path = relativePath, Size = size
+            }));
 
     private static ReadImageSupport Support(
         IReadImageStore? store,
@@ -404,6 +471,19 @@ public class VfsFileReadToolTests
 
         ct.ThrowIfCancellationRequested();
         yield return bytes[split..];
+    }
+
+    // A stream long enough that finishing it would be visible: the pull counter says exactly how
+    // far the tool read before it stopped asking.
+    private static async IAsyncEnumerable<ReadOnlyMemory<byte>> CountingChunks(
+        int chunkSize, int chunks, Action onPull, [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await Task.Yield();
+        for (var i = 0; i < chunks && !ct.IsCancellationRequested; i++)
+        {
+            onPull();
+            yield return new byte[chunkSize];
+        }
     }
 
     private static FsResult<FileSystemResolution> Resolved(IFileSystemBackend backend, string relativePath) =>

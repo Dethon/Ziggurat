@@ -84,51 +84,101 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
         var support = images ?? ReadImageSupport.None;
         var ceiling = support.MaxBytes;
 
-        // Read before deciding, so the envelope names the real size whatever the verdict is: a model
-        // told an image is too large has to know by how much, and one told it cannot be shown at all
-        // still learns what the file is.
-        var read = await ReadBoundedAsync(resolution, ceiling, ct);
-        if (!read.TryGetValue(out var bounded, out var unreadable))
+        JsonNode Envelope(long? sizeBytes, string? refusal) => FsResultContract.ToNode(
+            new FsImageReadResult
+            {
+                FilePath = filePath,
+                MediaType = mediaType,
+                SizeBytes = sizeBytes,
+                Shown = refusal is null,
+                Note = Note(refusal, windowIgnored)
+            });
+
+        // A refusal must never cost the transfer: a 15 MB ceiling exists so one turn cannot become
+        // enormous, and pulling a file off somebody's laptop in full just to name its size in the
+        // refusal is the same cost wearing a different envelope. So the mount is statted first, and
+        // everything decidable without the bytes is decided before the first one crosses the wire.
+        var stated = await TryStatSizeAsync(resolution, ct);
+
+        if (stated == 0)
         {
-            return unreadable.ToNode();
+            // A zero-byte file has no picture in it, and a provider rejects an empty image block.
+            return Envelope(0, EmptyFileNote);
+        }
+
+        if (stated > ceiling)
+        {
+            return Envelope(stated, OverCeilingNote(stated.Value, exact: true, ceiling));
         }
 
         var callId = support.CurrentCallId();
         var conversationId = support.CurrentConversationId();
-        var refusal = (bounded.Bytes, support.Store, support.ModelAcceptsImages(), callId, conversationId) switch
+        var refusal = (support.ModelAcceptsImages(), support.Store, callId, conversationId) switch
         {
-            // A zero-byte file has no picture in it, and a provider rejects an empty image block.
-            _ when bounded.TotalBytes == 0 => EmptyFileNote,
-            (null, _, _, _, _) =>
-                $"The image is {bounded.TotalBytes} bytes, over this host's {ceiling}-byte limit for "
-                + "showing an image. Resize it below the limit, or tell the person it is too large to look at.",
-            (_, _, false, _, _) => NoCapabilityNote,
-            (_, null, _, _, _) => NoStoreNote,
-            (_, _, _, null, _) => NoCallIdNote,
-            (_, _, _, _, null) => NoConversationNote,
+            (false, _, _, _) => NoCapabilityNote,
+            (_, null, _, _) => NoStoreNote,
+            (_, _, null, _) => NoCallIdNote,
+            (_, _, _, null) => NoConversationNote,
             _ => null
         };
-
-        if (refusal is null)
+        if (refusal is not null)
         {
-            await support.Store!.PutAsync(
-                conversationId!,
-                callId!,
-                new ReadImage
-                {
-                    VirtualPath = filePath, MediaType = mediaType, Bytes = bounded.Bytes!
-                },
-                ct);
+            return Envelope(stated, refusal);
         }
 
-        return FsResultContract.ToNode(new FsImageReadResult
+        var read = await ReadCappedAsync(resolution, ceiling, ct);
+        if (!read.TryGetValue(out var capped, out var unreadable))
         {
-            FilePath = filePath,
-            MediaType = mediaType,
-            SizeBytes = bounded.TotalBytes,
-            Shown = refusal is null,
-            Note = Note(refusal, windowIgnored)
-        });
+            return unreadable.ToNode();
+        }
+
+        if (capped.TotalBytes == 0)
+        {
+            return Envelope(0, EmptyFileNote);
+        }
+
+        if (capped.Bytes is null)
+        {
+            // Only a mount that could not stat lands here — or one whose file grew between the
+            // stat and the read — so the count is a floor, and the note says so.
+            return Envelope(capped.TotalBytes, OverCeilingNote(capped.TotalBytes, exact: false, ceiling));
+        }
+
+        await support.Store!.PutAsync(
+            conversationId!,
+            callId!,
+            new ReadImage
+            {
+                VirtualPath = filePath, MediaType = mediaType, Bytes = capped.Bytes
+            },
+            ct);
+
+        return Envelope(capped.TotalBytes, refusal: null);
+    }
+
+    private static string OverCeilingNote(long size, bool exact, long ceiling) =>
+        $"The image is {(exact ? "" : "at least ")}{size} bytes, over this host's {ceiling}-byte "
+        + "limit for showing an image. Resize it below the limit, or tell the person it is too "
+        + "large to look at.";
+
+    // The stat is a courtesy asked before the transfer. Any way it cannot answer — an unsupported
+    // operation, a wire refusal, a file it does not see, a size it does not report — falls through
+    // to the read, whose own errors are the ones that reach the model.
+    private static async Task<long?> TryStatSizeAsync(FileSystemResolution resolution, CancellationToken ct)
+    {
+        try
+        {
+            var info = await resolution.Backend.InfoAsync(resolution.RelativePath, ct);
+            return info.TryGetValue(out var stat, out _) && stat.Exists ? stat.Size : null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+        catch (FileSystemOperationException)
+        {
+            return null;
+        }
     }
 
     private static string? Note(string? refusal, bool windowIgnored) =>
@@ -140,15 +190,15 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
             _ => $"{refusal} {IgnoredWindowNote}"
         };
 
-    // Counted in full and held only up to the ceiling. The envelope has to name the real size, and
-    // buffering an enormous file in order to measure it is the thing the ceiling exists to prevent —
-    // so past the ceiling the bytes are dropped and only the count keeps going.
-    private static async Task<FsResult<BoundedBytes>> ReadBoundedAsync(
+    // The pull stops the moment the ceiling is passed — leaving the loop disposes the enumerator,
+    // which stops a wire backend requesting further chunks — so an oversized file on a mount that
+    // could not be statted costs one ceiling's worth of transfer, never the whole file. Null bytes
+    // mean the cap was hit, and TotalBytes is then a floor rather than the size.
+    private static async Task<FsResult<CappedBytes>> ReadCappedAsync(
         FileSystemResolution resolution, long ceiling, CancellationToken ct)
     {
         var held = new MemoryStream();
         long total = 0;
-        var over = false;
 
         try
         {
@@ -157,17 +207,9 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
                                .WithCancellation(ct))
             {
                 total += chunk.Length;
-                if (over)
-                {
-                    continue;
-                }
-
                 if (total > ceiling)
                 {
-                    over = true;
-                    held.Dispose();
-                    held = new MemoryStream();
-                    continue;
+                    return new FsResult<CappedBytes>.Ok(new CappedBytes(null, total));
                 }
 
                 held.Write(chunk.Span);
@@ -178,7 +220,7 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
             // The three mounts with no bytes behind them render JSON and markdown. A path spelled
             // with an image extension still reaches them, and the honest answer is that this mount
             // cannot serve bytes — not a picture decoded from a rendered document.
-            return FsError.Fail<BoundedBytes>(
+            return FsError.Fail<CappedBytes>(
                 ToolError.Codes.UnsupportedOperation,
                 $"{resolution.RelativePath} cannot be read as an image: {ex.Message}");
         }
@@ -188,12 +230,11 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
             // answers — a missing file, a jailed path, a mount with no bytes behind it — arrives as
             // this exception carrying the backend's own envelope. That envelope reaches the model,
             // as it does for a transfer, rather than escaping as a generic function failure.
-            return new FsResult<BoundedBytes>.Err(ex.Error);
+            return new FsResult<CappedBytes>.Err(ex.Error);
         }
 
-        return new FsResult<BoundedBytes>.Ok(
-            new BoundedBytes(over ? null : held.ToArray(), total));
+        return new FsResult<CappedBytes>.Ok(new CappedBytes(held.ToArray(), total));
     }
 
-    private sealed record BoundedBytes(byte[]? Bytes, long TotalBytes);
+    private sealed record CappedBytes(byte[]? Bytes, long TotalBytes);
 }

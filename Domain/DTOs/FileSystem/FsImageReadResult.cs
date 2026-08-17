@@ -15,7 +15,12 @@ public sealed record FsImageReadResult
 {
     public required string FilePath { get; init; }
     public required string MediaType { get; init; }
-    public required long SizeBytes { get; init; }
+
+    // The size the tool actually knows: the mount's own stat, or the bytes it pulled. Absent on
+    // a refusal decided before the read on a mount that cannot stat — a refusal never costs the
+    // transfer, and naming a size the tool never measured would be a guess.
+    public long? SizeBytes { get; init; }
+
     public required bool Shown { get; init; }
     public string? Note { get; init; }
 
