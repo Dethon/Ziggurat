@@ -52,7 +52,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
-        _readImageStore = readImageStore;
+        _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
         _hydrationDepthMessages = hydrationDepthMessages;
         _httpClient = CreateHttpClient(
             _reasoningQueue, _costQueue, _cachedTokenQueue, sessionId, providerRouting, transportHandler);
@@ -75,7 +75,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
-        _readImageStore = readImageStore;
+        _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
         _hydrationDepthMessages = hydrationDepthMessages;
         _client = innerClient;
     }

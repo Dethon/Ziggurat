@@ -211,6 +211,32 @@ public class OpenRouterChatClientReadImageTests
         _store.Deleted.ShouldContain($"{Conversation}:call-1");
     }
 
+    // The envelope of a dropped image stays in the history for the rest of the conversation, so
+    // without a memo every later send would re-issue the same delete forever.
+    [Fact]
+    public async Task TheSendsAfterAnImageDropped_DoNotDeleteItAgain()
+    {
+        _store.Put(Conversation, "call-1", ScreenshotPath);
+        var messages = ConversationOfLength(6, readAt: 0);
+        _innerClient
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerable.Empty<ChatResponseUpdate>());
+        var sut = new OpenRouterChatClient(
+            _innerClient.Object, "test-model", readImageStore: _store, hydrationDepthMessages: 3);
+
+        foreach (var _ in Enumerable.Range(0, 2))
+        {
+            await foreach (var __ in sut.GetStreamingResponseAsync(messages, Options(withContext: true)))
+            {
+            }
+        }
+
+        _store.Deleted.ShouldHaveSingleItem();
+    }
+
     [Fact]
     public async Task AnImageStillInView_KeepsItsStoredBytes()
     {
