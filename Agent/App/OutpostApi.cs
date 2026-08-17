@@ -21,8 +21,20 @@ public static class OutpostApi
                 ? await next(context)
                 : Results.Unauthorized());
 
-        outposts.MapPost("/", (IOutpostRegistry registry, OutpostRegistration registration, CancellationToken ct) =>
-            registry.RegisterAsync(registration, ct));
+        // Refused rather than stored where the registration is one nobody could ever act on — a
+        // blank name, an endpoint that is not an absolute URL. The shipped binary cannot produce
+        // one, but this takes JSON from anything holding the secret.
+        outposts.MapPost("/", async (IOutpostRegistry registry, OutpostRegistration registration, CancellationToken ct) =>
+        {
+            if (!registration.Registrable)
+            {
+                return Results.BadRequest(
+                    "An outpost registration needs a non-empty name and an absolute endpoint URL.");
+            }
+
+            await registry.RegisterAsync(registration, ct);
+            return Results.Ok();
+        });
 
         // The answer carries the hub's verdict on this outpost's mount, which is the only channel
         // back to a machine: a shadowed outpost registered perfectly and simply is not there, and
