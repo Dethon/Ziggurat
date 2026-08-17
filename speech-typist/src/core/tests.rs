@@ -1016,22 +1016,55 @@ async fn latched_a_changed_window_ends_nothing_and_the_words_follow_the_focus() 
 }
 
 #[tokio::test]
-async fn latched_a_dictation_nobody_ever_ended_still_ends_by_itself() {
-    // The watchdog matters more here, not less: with nothing held there is no physical reminder
-    // that the microphone is open.
+async fn latched_a_dictation_runs_as_long_as_the_person_wants_and_only_a_press_ends_it() {
+    // The watchdog is there for a key-up that never arrived. Latched no key-up ends anything, so
+    // there is no lost event to recover from and the clock would only be a cap on how long a
+    // person may speak. It never fires here, however long it has been.
     let host = FakeHost::new();
-    host.will_say("me fui a comer");
+    host.will_say("sigo aquí").will_say("y sigo");
     let driver = Driver::start_with(host.clone(), latched());
 
     driver.send(HostEvent::Tick { at_ms: 0 }).await;
     driver.send(HostEvent::BindingDown(SPANISH)).await;
     driver.send(HostEvent::BindingUp(SPANISH)).await;
     driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::Frame(silence(600))).await;
+    host.wait_until("the first phrase to be typed", |a| typed_yet(a) == 1).await;
+
+    driver.send(HostEvent::Tick { at_ms: 3_600_000 }).await; // an hour in, still dictating
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::Frame(silence(600))).await;
+    host.wait_until("the phrase spoken after it", |a| typed_yet(a) == 2).await;
+    assert!(
+        !host.actions().contains(&Action::CaptureClosed),
+        "no key-up can be lost latched, so the watchdog has nothing to recover from"
+    );
+
+    driver.send(HostEvent::BindingDown(SPANISH)).await; // the press is the only thing that ends it
+    host.wait_for_idle().await;
+    assert!(host.actions().contains(&Action::CaptureClosed));
+    assert_eq!(host.injected(), ["sigo aquí", " y sigo"]);
+    driver.stop().await;
+}
+
+#[tokio::test]
+async fn a_held_dictation_keeps_its_watchdog_when_the_tray_latches_mid_dictation() {
+    // A dictation keeps the mode it began under. Otherwise the tick that switches to latch would
+    // strip the watchdog off a held dictation whose key-up is exactly what went missing, and the
+    // microphone would stay open for the life of the process.
+    let host = FakeHost::new();
+    host.will_say("se perdió el key-up");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.send(HostEvent::Tick { at_ms: 0 }).await;
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::DictationModeSet(DictationMode::Latch)).await;
     driver.send(HostEvent::Tick { at_ms: 120_000 }).await;
     host.wait_for_idle().await;
 
     assert!(host.actions().contains(&Action::CaptureClosed));
-    assert_eq!(host.injected(), ["me fui a comer"]);
+    assert_eq!(host.injected(), ["se perdió el key-up"]);
     driver.stop().await;
 }
 

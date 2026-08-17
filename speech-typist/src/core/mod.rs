@@ -31,6 +31,9 @@ struct Attempt {
 struct Live {
     key: KeyCode,
     binding: usize,
+    /// The mode this dictation began under, so the tray switching mid-dictation cannot change
+    /// how a dictation already running ends — or strip the watchdog off a held one.
+    latched: bool,
     target: WindowId,
     sample_rate: u32,
     started_ms: u64,
@@ -231,7 +234,7 @@ impl Core {
             // Latched, the same key pressed again is how the dictation ends. Any other binding is
             // ignored either way: two languages must never interleave into the same window, and
             // the first dictation carries on undisturbed.
-            if self.latched() && self.live.as_ref().is_some_and(|live| live.key == key) {
+            if self.live.as_ref().is_some_and(|live| live.latched && live.key == key) {
                 self.stop_listening();
                 self.pump(done);
             }
@@ -258,6 +261,7 @@ impl Core {
         self.live = Some(Live {
             key,
             binding,
+            latched: self.latched(),
             target: self.host.window_in_front(),
             sample_rate: format.sample_rate,
             started_ms: self.now_ms,
@@ -276,10 +280,7 @@ impl Core {
     fn on_up(&mut self, key: KeyCode, done: &mpsc::Sender<Done>) {
         // Latched, nothing is being held: the key coming up is the person taking their finger off
         // the press that began the dictation, and the next press is what ends it.
-        if self.latched() {
-            return;
-        }
-        if self.live.as_ref().is_none_or(|live| live.key != key) {
+        if self.live.as_ref().is_none_or(|live| live.latched || live.key != key) {
             return;
         }
         self.stop_listening();
@@ -300,13 +301,15 @@ impl Core {
     fn on_tick(&mut self, at_ms: u64, done: &mpsc::Sender<Done>) {
         self.now_ms = at_ms;
         let watchdog_ms = self.config.injection.watchdog_secs * 1_000;
-        let expired = self
-            .live
-            .as_ref()
-            .is_some_and(|live| !live.ended && at_ms.saturating_sub(live.started_ms) >= watchdog_ms);
+        // Held only. The watchdog recovers a key-up that never arrived — lost to a remote desktop
+        // session, fast user switching or a hook that lost its window — which would otherwise
+        // hold the microphone for as long as the process lives. Latched, no key-up ends anything,
+        // so there is no lost event to recover from and a clock here would only be a cap on how
+        // long a person may speak. A latched dictation ends when they press, and not before.
+        let expired = self.live.as_ref().is_some_and(|live| {
+            !live.latched && !live.ended && at_ms.saturating_sub(live.started_ms) >= watchdog_ms
+        });
         if expired {
-            // A key-up lost to a remote desktop session, fast user switching or a hook that lost
-            // its window would otherwise hold the microphone for as long as the process lives.
             self.stop_listening();
             self.pump(done);
         }
@@ -402,7 +405,7 @@ impl Core {
     }
 
     fn accept(&mut self, transcript: Transcript) {
-        let latched = self.latched();
+        let latched = self.live.as_ref().is_some_and(|live| live.latched);
         let text = sanitize(&transcript.text);
         // Dropping a segment is not an error and raises nothing: it is the gate working.
         if text.is_empty() || self.hallucinated(&transcript) {
