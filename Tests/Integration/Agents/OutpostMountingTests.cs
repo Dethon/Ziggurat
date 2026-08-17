@@ -98,29 +98,44 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
         var registry = new StubRegistry([
             Registered(name, name == "vault" ? vault.McpEndpoint : machines.NotesEndpoint)
         ]);
-        var access = new OutpostAccess(registry, "s3cret");
+        var access = Access(registry);
         var composed = await OutpostEndpoints.ComposeAsync(
             [McpServerEndpoint.Configured(vault.McpEndpoint)], access, usesOutposts: true,
             logger: null, CancellationToken.None);
 
         await using var session = await BuildAsync(composed);
         await OutpostEndpoints.RecordVerdictsAsync(
-            access, records: true, composed.Outposts, session.MountedNames, session.ShadowedNames,
+            access, recordsVerdicts: true, composed.Outposts, session.MountedNames, session.ShadowedNames,
             logger: null, CancellationToken.None);
 
         registry.Verdicts[name].ShouldBe(expected);
     }
 
-    // A subagent mounts the machine and writes nothing back. Its endpoint list is not its
-    // parent's, so it can reach a different verdict for the same machine — and the person at that
-    // machine is owed the answer from the agent they registered with, not from whichever session
-    // happened to build last inside somebody's delegated task.
+    // The two sessions the ADR is about, in the order they happen. The parent already mounts a
+    // filesystem called "notes", so the machine is shadowed in its session and its keepalive is
+    // owed exactly that. The subagent's endpoint list is not its parent's, so the same machine
+    // mounts there — and it writes nothing back, because "did the agent you registered with mount
+    // you" is not a question a delegated task gets to answer. Both verdicts are put in and read
+    // out through the recording seam; nothing here seeds the registration behind it.
     [Fact]
     public async Task ASubAgentsBuild_LeavesTheVerdictItsParentRecorded()
     {
         var registry = new StubRegistry([Registered("notes", machines.NotesEndpoint)]);
-        registry.Verdicts["notes"] = OutpostVerdict.Shadowed;
-        var access = new OutpostAccess(registry, "s3cret");
+        var access = Access(registry);
+
+        var parent = await OutpostEndpoints.ComposeAsync(
+            [McpServerEndpoint.Configured(machines.NotesEndpoint)], access, usesOutposts: true,
+            logger: null, CancellationToken.None);
+        await using (var parentSession = await BuildAsync(parent))
+        {
+            await OutpostEndpoints.RecordVerdictsAsync(
+                access, recordsVerdicts: true, parent.Outposts,
+                parentSession.MountedNames, parentSession.ShadowedNames,
+                logger: null, CancellationToken.None);
+        }
+
+        registry.Verdicts["notes"].ShouldBe(OutpostVerdict.Shadowed);
+
         var spec = SubAgentSpec(parentUsesOutposts: true, ownDefinitionUsesOutposts: true);
         var composed = await OutpostEndpoints.ComposeAsync(
             spec.McpServerEndpoints, access, spec.UsesOutposts, logger: null, CancellationToken.None);
@@ -137,6 +152,8 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
 
     private static OutpostRegistration Registered(string name, string endpoint) =>
         new() { Name = name, Endpoint = endpoint };
+
+    private static OutpostAccess Access(StubRegistry registry) => new(registry, "s3cret");
 
     private AgentSpec SubAgentSpec(bool parentUsesOutposts, bool ownDefinitionUsesOutposts) =>
         AgentSpecProjection.ForSubAgent(
@@ -156,7 +173,7 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
         bool usesOutposts, params OutpostRegistration[] live) =>
         OutpostEndpoints.ComposeAsync(
             [McpServerEndpoint.Configured(vault.McpEndpoint)],
-            new OutpostAccess(new StubRegistry(live), "s3cret"),
+            Access(new StubRegistry(live)),
             usesOutposts,
             logger: null,
             CancellationToken.None);
@@ -167,7 +184,7 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
         AgentSpec spec, params OutpostRegistration[] live) =>
         OutpostEndpoints.ComposeAsync(
             spec.McpServerEndpoints,
-            new OutpostAccess(new StubRegistry(live), "s3cret"),
+            Access(new StubRegistry(live)),
             spec.UsesOutposts,
             logger: null,
             CancellationToken.None);

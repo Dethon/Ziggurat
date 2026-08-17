@@ -83,14 +83,14 @@ internal static class OutpostEndpoints
     // with mount you", and a delegated task is not that agent.
     public static async Task RecordVerdictsAsync(
         OutpostAccess? access,
-        bool records,
+        bool recordsVerdicts,
         IReadOnlyList<string> outposts,
         IReadOnlyList<string> mounted,
         IReadOnlyList<string> shadowed,
         ILogger? logger,
         CancellationToken ct)
     {
-        if (!records || access?.Registry is not { } registry || outposts.Count == 0)
+        if (!recordsVerdicts || access?.Registry is not { } registry || outposts.Count == 0)
         {
             return;
         }
