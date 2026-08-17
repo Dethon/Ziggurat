@@ -40,6 +40,7 @@ internal static class AgentSpecProjection
             CustomInstructions = definition.CustomInstructions,
             Language = definition.Language,
             KeepsHistory = true,
+            RecordsOutpostVerdicts = true,
             PatchableModelIds = openRouterConfig.PatchableModelIds ?? []
         };
 
@@ -88,6 +89,12 @@ internal static class AgentSpecProjection
             CustomInstructions = definition.CustomInstructions,
             Language = definition.Language,
             KeepsHistory = false,
+            // A subagent mounts the machines it was given and judges none of them. The verdict is
+            // the answer to "did the agent you registered with mount you", and a subagent is not
+            // that agent: its endpoint list is its own, so it can reach a different verdict for
+            // the same machine, and writing it would report a collision inside somebody's
+            // delegated task as the operator's name being taken.
+            RecordsOutpostVerdicts = false,
             // A config patch names a model from the parent's whitelist and an effort chosen for
             // the parent's job; a subagent runs the model its own definition configures, which
             // is the point of having one. No patch reaches a subagent today, so this is the

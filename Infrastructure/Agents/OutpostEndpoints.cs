@@ -77,15 +77,20 @@ internal static class OutpostEndpoints
     // decision about one. An outpost that could not be dialled is left as it was, because "the hub
     // could not reach you" is not a verdict on a mount and calling it shadowed would name the
     // wrong problem.
+    //
+    // A build that does not record — a subagent's — mounts the same machines and leaves their
+    // registrations exactly as it found them. The verdict answers "did the agent you registered
+    // with mount you", and a delegated task is not that agent.
     public static async Task RecordVerdictsAsync(
         OutpostAccess? access,
+        bool records,
         IReadOnlyList<string> outposts,
         IReadOnlyList<string> mounted,
         IReadOnlyList<string> shadowed,
         ILogger? logger,
         CancellationToken ct)
     {
-        if (access?.Registry is not { } registry || outposts.Count == 0)
+        if (!records || access?.Registry is not { } registry || outposts.Count == 0)
         {
             return;
         }

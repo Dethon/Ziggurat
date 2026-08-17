@@ -27,6 +27,7 @@ internal static class TestAgentSpec
         FilesystemEnabledTools = new HashSet<string>(),
         WhitelistPatterns = [],
         KeepsHistory = true,
+        RecordsOutpostVerdicts = true,
         PatchableModelIds = []
     };
 }

@@ -105,10 +105,34 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
 
         await using var session = await BuildAsync(composed);
         await OutpostEndpoints.RecordVerdictsAsync(
-            access, composed.Outposts, session.MountedNames, session.ShadowedNames,
+            access, records: true, composed.Outposts, session.MountedNames, session.ShadowedNames,
             logger: null, CancellationToken.None);
 
         registry.Verdicts[name].ShouldBe(expected);
+    }
+
+    // A subagent mounts the machine and writes nothing back. Its endpoint list is not its
+    // parent's, so it can reach a different verdict for the same machine — and the person at that
+    // machine is owed the answer from the agent they registered with, not from whichever session
+    // happened to build last inside somebody's delegated task.
+    [Fact]
+    public async Task ASubAgentsBuild_LeavesTheVerdictItsParentRecorded()
+    {
+        var registry = new StubRegistry([Registered("notes", machines.NotesEndpoint)]);
+        registry.Verdicts["notes"] = OutpostVerdict.Shadowed;
+        var access = new OutpostAccess(registry, "s3cret");
+        var spec = SubAgentSpec(parentUsesOutposts: true, ownDefinitionUsesOutposts: true);
+        var composed = await OutpostEndpoints.ComposeAsync(
+            spec.McpServerEndpoints, access, spec.UsesOutposts, logger: null, CancellationToken.None);
+
+        await using var session = await BuildAsync(composed);
+        await OutpostEndpoints.RecordVerdictsAsync(
+            access, spec.RecordsOutpostVerdicts, composed.Outposts,
+            session.MountedNames, session.ShadowedNames, logger: null, CancellationToken.None);
+
+        session.FileSystemRegistry.ShouldNotBeNull()
+            .GetMounts().Select(m => m.Name).ShouldContain("notes");
+        registry.Verdicts["notes"].ShouldBe(OutpostVerdict.Shadowed);
     }
 
     private static OutpostRegistration Registered(string name, string endpoint) =>

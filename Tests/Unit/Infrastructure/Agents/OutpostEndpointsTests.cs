@@ -86,6 +86,7 @@ public class OutpostEndpointsTests
 
         await OutpostEndpoints.RecordVerdictsAsync(
             Access(registry),
+            records: true,
             outposts: ["laptop", "desktop"],
             mounted: ["vault", "sandbox", "laptop", "desktop"],
             shadowed: ["desktop"],
@@ -108,7 +109,7 @@ public class OutpostEndpointsTests
         var registry = new RecordingRegistry(_laptop);
 
         await OutpostEndpoints.RecordVerdictsAsync(
-            Access(registry), outposts: ["laptop"], mounted: ["vault"], shadowed: [],
+            Access(registry), records: true, outposts: ["laptop"], mounted: ["vault"], shadowed: [],
             NullLogger.Instance, CancellationToken.None);
 
         registry.Verdicts.ShouldBeEmpty();
@@ -119,7 +120,8 @@ public class OutpostEndpointsTests
     public async Task ARegistryThatCannotBeWritten_DoesNotFailTheSession()
     {
         await Should.NotThrowAsync(() => OutpostEndpoints.RecordVerdictsAsync(
-            Access(new UnreachableRegistry()), outposts: ["laptop"], mounted: ["laptop"], shadowed: [],
+            Access(new UnreachableRegistry()), records: true, outposts: ["laptop"], mounted: ["laptop"],
+            shadowed: [],
             NullLogger.Instance, CancellationToken.None));
     }
 

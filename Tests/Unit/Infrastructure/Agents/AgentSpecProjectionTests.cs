@@ -69,6 +69,9 @@ public sealed class AgentSpecProjectionTests
         Row("conversation id", s => s.ConversationId, "conv-1", "conv-1"),
         Row("metrics identity", s => s.MetricsAgentId, "Jack", "Worker"),
         Row("keeps history", s => s.KeepsHistory, true, false),
+        // A mount verdict answers "did the agent you registered with mount you", so a delegated
+        // task's collision set is nobody's business at the machine.
+        Row("records outpost verdicts", s => s.RecordsOutpostVerdicts, true, false),
         Row("patchable model ids", s => s.PatchableModelIds,
             new[] { "model-a", "model-b" }, Array.Empty<string>()),
         Row("enabled features", s => s.EnabledFeatures,

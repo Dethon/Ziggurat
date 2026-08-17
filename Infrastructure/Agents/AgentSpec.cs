@@ -32,5 +32,12 @@ public sealed record AgentSpec
     public string? CustomInstructions { get; init; }
     public string? Language { get; init; }
     public required bool KeepsHistory { get; init; }
+
+    // Whether this build writes each outpost's mount verdict back onto its registration. True for
+    // an agent and false for a subagent: the verdict is a machine's one feedback channel and it
+    // answers "did the agent you registered with mount you", so a collision reached inside a
+    // delegated task is not the operator's to be told about. Its own field rather than a second
+    // meaning for KeepsHistory, which is about thread state and would answer this by coincidence.
+    public required bool RecordsOutpostVerdicts { get; init; }
     public required IReadOnlyList<string> PatchableModelIds { get; init; }
 }

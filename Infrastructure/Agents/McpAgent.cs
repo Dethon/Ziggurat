@@ -27,6 +27,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IReadOnlyList<string> _domainPrompts;
     private readonly IReadOnlyList<McpServerEndpoint> _endpoints;
     private readonly bool _usesOutposts;
+    private readonly bool _recordsOutpostVerdicts;
     private readonly OutpostAccess? _outposts;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
@@ -72,6 +73,7 @@ public sealed class McpAgent : DisposableAgent
     {
         _endpoints = spec.McpServerEndpoints;
         _usesOutposts = spec.UsesOutposts;
+        _recordsOutpostVerdicts = spec.RecordsOutpostVerdicts;
         _outposts = outposts;
         _filesystemEnabledTools = spec.FilesystemEnabledTools;
         _loggerFactory = loggerFactory;
@@ -475,10 +477,12 @@ public sealed class McpAgent : DisposableAgent
                              ct, _promptCache);
 
             // The one moment a shadowed outpost is knowable, and the machine serving it has no way
-            // to find out for itself — the next keepalive carries the answer home.
+            // to find out for itself — the next keepalive carries the answer home. Whether this
+            // build is one that answers is a field on the spec, like everything else that differs
+            // between an agent and a subagent.
             await OutpostEndpoints.RecordVerdictsAsync(
-                _outposts, composed.Outposts, newSession.MountedNames, newSession.ShadowedNames,
-                _logger, ct);
+                _outposts, _recordsOutpostVerdicts, composed.Outposts,
+                newSession.MountedNames, newSession.ShadowedNames, _logger, ct);
 
             _threadSessions[thread] = newSession;
             return newSession;
