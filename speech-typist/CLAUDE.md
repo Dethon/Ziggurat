@@ -62,10 +62,16 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
   key-up under load, and it carries more weight under `dictation.mode = "latch"`, where nothing
   is held and so nothing physically reminds a person the microphone is open.
 - **Latched and held are one dictation with two endings, not two features.** `latch` changes
-  which event ends a dictation and nothing else: the hook is unaware of the mode, the same
-  `Live` state runs either way, and only the key that began a dictation can end it. Injection is
-  told no key is held while latched, because releasing a modifier the person is not pressing
-  would leave the keyboard in a state nobody chose.
+  which event ends a dictation: the hook is unaware of the mode, the same `Live` state runs
+  either way, and only the key that began a dictation can end it. Injection is told no key is
+  held while latched, because releasing a modifier the person is not pressing would leave the
+  keyboard in a state nobody chose.
+- **The window guard is a held-mode protection, and latched words follow the focus.** Held, a
+  changed window abandons the rest of the dictation — the key was let go and the person moved
+  on, and words in the wrong window are worse than missing words. Latched there is no key whose
+  release marks the dictation over: moving between windows is part of dictating hands-free, so
+  each transcript is typed into the window in front when it arrives, and a segment joins the
+  previous one with a space only when that previous text is in the same window.
 - **The gate fails open.** A quality signal that is absent or malformed means no signal and the
   words are typed, for the same reason the .NET client fails open: a shortcoming in the response
   must never silently swallow words that were actually said.

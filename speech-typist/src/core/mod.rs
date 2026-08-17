@@ -1,6 +1,6 @@
 //! The dictation itself: a binding goes down, frames accumulate, segments are cut where the
-//! person paused, each becomes a transcript, and each transcript is typed into the window the
-//! dictation began in front of.
+//! person paused, each becomes a transcript, and each transcript is typed — held, into the
+//! window the dictation began in front of; latched, into the window in front when it arrives.
 //!
 //! Everything outward goes through [`Host`], which is what makes all of this testable in WSL.
 
@@ -39,14 +39,17 @@ struct Live {
     inflight: Option<Attempt>,
     /// The key came up (or the watchdog fired): no more audio, but the queue still drains.
     ended: bool,
-    /// The window in front stopped being the target: nothing more from this dictation is typed.
+    /// Held only: the window in front stopped being the target, so nothing more from this
+    /// dictation is typed. A latched dictation is never abandoned — its words follow the focus.
     abandoned: bool,
     /// One notification per dictation, not one per segment.
     told: bool,
     /// The previous segment's transcript, for the prompt chain. A segment that produced nothing
     /// leaves it alone rather than clearing it.
     previous: Option<String>,
-    injected_any: bool,
+    /// The window the previous transcript was typed into, so a segment joins with a space only
+    /// when the text it would join is actually in front of it.
+    typed_in: Option<WindowId>,
     /// Where the audio is cut into segments. Held by the dictation rather than by the core, so a
     /// detector never carries state from one dictation into the next.
     detector: Box<dyn SegmentDetector>,
@@ -243,7 +246,7 @@ impl Core {
             abandoned: false,
             told: false,
             previous: None,
-            injected_any: false,
+            typed_in: None,
             detector: Box::new(EnergyDetector::new(&self.config.detector, format.sample_rate)),
         });
         self.refresh_tray();
@@ -388,9 +391,13 @@ impl Core {
             return;
         };
 
-        // Words in the wrong window are worse than missing words, so the target is checked
-        // immediately before typing rather than when the segment was cut.
-        if self.host.window_in_front() != live.target {
+        // Held, words in the wrong window are worse than missing words: a changed window means
+        // the key was let go and the person moved on, so the target is checked immediately
+        // before typing rather than when the segment was cut. Latched there is no key whose
+        // release marks the dictation over — moving between windows is part of dictating
+        // hands-free, and the words follow the focus.
+        let window = self.host.window_in_front();
+        if !latched && window != live.target {
             live.abandoned = true;
             live.waiting.clear();
             live.ended = true;
@@ -402,7 +409,7 @@ impl Core {
             return;
         }
 
-        let joined = if live.injected_any { format!(" {text}") } else { text.clone() };
+        let joined = if live.typed_in == Some(window) { format!(" {text}") } else { text.clone() };
         // Still held means the binding's key is logically down while these characters are sent.
         // Latched, it never is — asking the host to release a modifier the person is not pressing
         // would leave the keyboard in a state nobody chose.
@@ -421,7 +428,7 @@ impl Core {
             return;
         }
         let live = self.live.as_mut().expect("a live dictation cannot end during injection");
-        live.injected_any = true;
+        live.typed_in = Some(window);
         live.previous = Some(text);
     }
 

@@ -975,6 +975,32 @@ async fn latched_injection_is_never_told_a_key_is_being_held() {
 }
 
 #[tokio::test]
+async fn latched_a_changed_window_ends_nothing_and_the_words_follow_the_focus() {
+    // Hands-free, moving between windows is part of dictating, not a sign the dictation is over
+    // — that sign is a held key that was let go, and latched there is none. Each transcript is
+    // typed into the window in front when it arrives, and a window it is the first text in gets
+    // no joining space: the segment it would join is in the previous window.
+    let host = FakeHost::new();
+    host.will_say("primera").will_say("segunda");
+    let driver = Driver::start_with(host.clone(), latched());
+
+    driver.send(HostEvent::BindingDown(SPANISH)).await;
+    driver.send(HostEvent::BindingUp(SPANISH)).await;
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::Frame(silence(600))).await;
+    host.wait_until("the first phrase to be typed", |a| typed_yet(a) == 1).await;
+
+    host.move_to_window(2); // the person clicks into another window and keeps talking
+    driver.send(HostEvent::Frame(speech(800))).await;
+    driver.send(HostEvent::BindingDown(SPANISH)).await; // and ends the dictation there
+    host.wait_for_idle().await;
+
+    assert_eq!(host.injected(), ["primera", "segunda"]);
+    assert!(host.notifications().is_empty(), "nothing was dropped, so nothing is announced");
+    driver.stop().await;
+}
+
+#[tokio::test]
 async fn latched_a_dictation_nobody_ever_ended_still_ends_by_itself() {
     // The watchdog matters more here, not less: with nothing held there is no physical reminder
     // that the microphone is open.

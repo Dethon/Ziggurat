@@ -259,7 +259,9 @@ A dictation carrying on with nothing held down. It is the same dictation and not
 one: the same audio keeps accumulating under the same clock, and only the way it can end
 changes, from letting go to pressing. The chat client and the speech typist both have it;
 in the speech typist it is a setting rather than something reached mid-dictation, so a
-binding either latches or is held and never both in one press.
+binding either latches or is held and never both in one press. There the target window
+also stops being pinned: a latched dictation survives a window change, and its words
+follow the focus.
 _Avoid_: locked recording, hands-free, toggle mode
 
 ## Speech typing
@@ -297,10 +299,10 @@ delivery.
 _Avoid_: paste, output, send keys, emit
 
 **Target window**:
-The window a dictation was begun in front of, and the only one its words are allowed
-to arrive in. A dictation whose target stops being the one in front ends where it is,
-with the rest of its words unsaid — words in the wrong window are worse than missing
-ones.
+The window a held dictation was begun in front of, and the only one its words are
+allowed to arrive in. A held dictation whose target stops being the one in front ends
+where it is, with the rest of its words unsaid — words in the wrong window are worse
+than missing ones. A latched dictation has no target: its words follow the focus.
 _Avoid_: focused window, active window, foreground
 
 ## Channel connection
