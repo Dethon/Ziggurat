@@ -166,6 +166,132 @@ public class OpenRouterChatClientReadImageTests
         captured.Count.ShouldBe(3);
     }
 
+    // An image stays in front of the model for the rest of the exchange about it, on the same
+    // distance an attachment lives for, and then gets out of the way.
+    [Fact]
+    public async Task AnImageWithinTheDistance_IsStillShown()
+    {
+        _store.Put(Conversation, "call-1", ScreenshotPath);
+
+        var captured = await SendAsync(ConversationOfLength(6, readAt: 4), depth: 3);
+
+        captured.Any(m => m.Contents.OfType<DataContent>().Any()).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task AnImagePastTheDistance_BecomesAPlaceholderNamingThePathAndInvitingAReread()
+    {
+        _store.Put(Conversation, "call-1", ScreenshotPath);
+
+        var captured = await SendAsync(ConversationOfLength(6, readAt: 0), depth: 3);
+
+        captured.Any(m => m.Contents.OfType<DataContent>().Any()).ShouldBeFalse();
+        var placeholder = InjectedText(captured);
+        placeholder.ShouldContain(ScreenshotPath);
+        placeholder.ShouldContain("Read the file again");
+    }
+
+    // The message window is the real bound, so the bytes go on the send the image drops out of view
+    // rather than waiting out the store's own horizon.
+    [Fact]
+    public async Task TheSendAnImageDropsOutOfView_DeletesItsStoredBytes()
+    {
+        _store.Put(Conversation, "call-1", ScreenshotPath);
+
+        await SendAsync(ConversationOfLength(6, readAt: 0), depth: 3);
+
+        _store.Deleted.ShouldContain($"{Conversation}:call-1");
+    }
+
+    [Fact]
+    public async Task AnImageStillInView_KeepsItsStoredBytes()
+    {
+        _store.Put(Conversation, "call-1", ScreenshotPath);
+
+        await SendAsync(ConversationOfLength(6, readAt: 4), depth: 3);
+
+        _store.Deleted.ShouldBeEmpty();
+    }
+
+    // Expired, evicted, or never written at all: the model is told which image it lost rather than
+    // left to invent what was in it.
+    [Fact]
+    public async Task AStoreMissWithinTheDistance_BecomesTheSamePlaceholder()
+    {
+        var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath)));
+
+        captured.Count.ShouldBe(4);
+        var placeholder = InjectedText(captured);
+        placeholder.ShouldContain(ScreenshotPath);
+        placeholder.ShouldContain("Read the file again");
+    }
+
+    // Protecting the person: a picture the model went looking for must never push out a photo they
+    // actually sent. Injected messages are excluded from the distance count, the same way tool calls
+    // and results already are.
+    [Fact]
+    public async Task ImagesTheModelRead_DoNotShortenHowLongAPersonsAttachmentIsHydrated()
+    {
+        var messages = new List<ChatMessage> { UserTurnWithPhoto() };
+        foreach (var callId in new[] { "call-1", "call-2", "call-3" })
+        {
+            _store.Put(Conversation, callId, ScreenshotPath);
+            messages.Add(new ChatMessage(ChatRole.Assistant,
+                [new FunctionCallContent(callId, "domain__filesystem__file_read", null)]));
+            messages.Add(new ChatMessage(ChatRole.Tool,
+                [new FunctionResultContent(callId, Envelope(ScreenshotPath, shown: true))]));
+        }
+
+        var captured = await SendAsync(
+            messages, _store, depth: 2, attachments: new StubAttachmentSource());
+
+        captured.Count(m => m.IsInjected).ShouldBe(3);
+        captured[0].Contents.OfType<DataContent>().ShouldHaveSingleItem()
+            .MediaType.ShouldBe("image/png");
+    }
+
+    private static ChatMessage UserTurnWithPhoto()
+    {
+        var message = new ChatMessage(ChatRole.User, "what is in this photo?");
+        message.SetAttachments([
+            new AttachmentReference
+            {
+                Id = "7-42/abc", FileName = "photo.png", MediaType = "image/png", SizeBytes = 4
+            }
+        ]);
+        message.SetAttachmentChannelId("signalr");
+        return message;
+    }
+
+    // A conversation long enough for the distance to bite, with the read happening at a chosen point
+    // in it. Only the plain user and assistant turns move anything further away.
+    private List<ChatMessage> ConversationOfLength(int length, int readAt)
+    {
+        var messages = new List<ChatMessage>();
+        for (var index = 0; index < length; index++)
+        {
+            if (index == readAt)
+            {
+                messages.Add(new ChatMessage(ChatRole.Assistant,
+                    [new FunctionCallContent("call-1", "domain__filesystem__file_read", null)]));
+                messages.Add(new ChatMessage(ChatRole.Tool,
+                    [new FunctionResultContent("call-1", Envelope(ScreenshotPath, shown: true))]));
+                continue;
+            }
+
+            messages.Add(new ChatMessage(
+                index % 2 == 0 ? ChatRole.User : ChatRole.Assistant, $"message {index}"));
+        }
+
+        return messages;
+    }
+
+    private static string InjectedText(IReadOnlyList<ChatMessage> captured) =>
+        string.Join(
+            "",
+            captured.Where(m => m.IsInjected).SelectMany(m => m.Contents.OfType<TextContent>())
+                .Select(t => t.Text));
+
     // The truncation metric reports whose turn overflowed. An injected message is a user message
     // carrying the system as its sender, so picking the last user message naively would start
     // reporting the system for every turn in which the model looked at a file.
@@ -224,7 +350,8 @@ public class OpenRouterChatClientReadImageTests
         bool withContext = true,
         int? depth = null,
         IMetricsPublisher? publisher = null,
-        int? maxContextTokens = null)
+        int? maxContextTokens = null,
+        IAttachmentSource? attachments = null)
     {
         // Filled in here rather than in the builder so one harness serves the shown and not-shown
         // cases without two nearly identical conversation builders.
@@ -255,6 +382,7 @@ public class OpenRouterChatClientReadImageTests
             "test-model",
             maxContextTokens: maxContextTokens,
             metricsPublisher: publisher,
+            attachmentSource: attachments,
             readImageStore: store,
             hydrationDepthMessages: depth ?? 20);
 
@@ -278,6 +406,12 @@ public class OpenRouterChatClientReadImageTests
                 }
                 : null
         };
+
+    private sealed class StubAttachmentSource : IAttachmentSource
+    {
+        public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct) =>
+            Task.FromResult<byte[]?>(_bytes);
+    }
 
     private sealed class FakeReadImageStore : IReadImageStore
     {

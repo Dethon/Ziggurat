@@ -18,17 +18,17 @@ gains the image-reading rule now that the code does it.
 
 **Status:** ready-for-agent
 
-- [ ] A read image is expanded while it is within the same message distance as an attachment, and
+- [x] A read image is expanded while it is within the same message distance as an attachment, and
       becomes a placeholder past it.
-- [ ] The placeholder names the virtual path and tells the model it can read the file again.
-- [ ] A store miss at any distance — expired, evicted, or never written — produces the same
+- [x] The placeholder names the virtual path and tells the model it can read the file again.
+- [x] A store miss at any distance — expired, evicted, or never written — produces the same
       placeholder rather than silence.
-- [ ] Stored bytes are deleted on the send where the image drops past the distance.
-- [ ] Injected messages do not count toward the distance: a turn in which the model reads many
+- [x] Stored bytes are deleted on the send where the image drops past the distance.
+- [x] Injected messages do not count toward the distance: a turn in which the model reads many
       images leaves a person's attachment hydrated exactly as long as it would have been.
-- [ ] Nothing is injected for a tool-result message that produced no images.
-- [ ] Covered at the chat-client seam by cases asserting the placeholder, the deletion and the
+- [x] Nothing is injected for a tool-result message that produced no images.
+- [x] Covered at the chat-client seam by cases asserting the placeholder, the deletion and the
       unchanged attachment distance, written failing first.
-- [ ] The virtual filesystem rules file describes reading an image through `file_read`: bytes come
+- [x] The virtual filesystem rules file describes reading an image through `file_read`: bytes come
       from the raw-byte read, no new operation exists, and the image arrives as its own
       system-attributed message after the tool result.
