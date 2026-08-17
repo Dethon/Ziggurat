@@ -16,7 +16,7 @@ namespace Domain.Agents;
 //
 // It widened rather than splitting when the model learned to read images: an image the model asked
 // for is a reference whose bytes have to be put back too, so it obeys the same distance and takes
-// the same shape of placeholder. Where the bytes go differs, and that is ReadImageExpansion's half.
+// the same shape of placeholder. Where the bytes go differs, and that is ReadImageHydration's half.
 public static class AttachmentHydration
 {
     public const int DefaultDepthMessages = 20;
@@ -24,16 +24,17 @@ public static class AttachmentHydration
     public static async Task<IReadOnlyList<ChatMessage>> ApplyAsync(
         IReadOnlyList<ChatMessage> messages,
         IAttachmentSource? source,
-        IReadImageStore? readImages,
-        string? conversationId,
+        ReadImageContext readImages,
         int depthMessages,
-        TimeZoneInfo localTimeZone,
         CancellationToken ct)
     {
+        // Parsed once for the whole send. Recognising an image read means serializing every tool
+        // result in a message, so asking twice would make every send pay it again for every tool
+        // call in the history — reads, searches and everything else included.
+        var imageReads = messages.Select(ReadImageHydration.Reads).ToList();
+
         var hydratesAttachments = source is not null && messages.Any(NeedsHydrating);
-        var expandsImages = readImages is not null
-                            && !string.IsNullOrWhiteSpace(conversationId)
-                            && messages.Any(ReadImageExpansion.Produced);
+        var expandsImages = imageReads.Any(reads => reads.Count > 0);
 
         if (!hydratesAttachments && !expandsImages)
         {
@@ -59,14 +60,11 @@ public static class AttachmentHydration
             // Appended after the message it belongs to rather than woven into it, and measured at
             // that message's own distance — so the images a tool call produced age out with the
             // call, not with wherever the injected message happens to sit.
-            if (expandsImages && ReadImageExpansion.Produced(message))
+            var injected = await ReadImageHydration.ExpandAsync(
+                imageReads[index], readImages, withinDepth, ct);
+            if (injected is not null)
             {
-                var injected = await ReadImageExpansion.ExpandAsync(
-                    message, readImages!, conversationId!, withinDepth, localTimeZone, ct);
-                if (injected is not null)
-                {
-                    hydrated.Add(injected);
-                }
+                hydrated.Add(injected);
             }
         }
 

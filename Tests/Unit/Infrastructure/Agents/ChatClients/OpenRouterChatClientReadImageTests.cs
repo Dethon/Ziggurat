@@ -146,24 +146,32 @@ public class OpenRouterChatClientReadImageTests
         captured.Count.ShouldBe(3);
     }
 
+    // "Out of depth, expired, evicted, or no store at all" is one answer, not three plus a silence:
+    // the envelope already promised the model a picture, so a send that cannot produce one has to
+    // say which image it cannot show rather than quietly dropping it.
     [Fact]
-    public async Task AClientWithNoReadImageStore_SendsTheTurnUnchanged()
+    public async Task AClientWithNoReadImageStore_StillNamesTheImageItCannotShow()
     {
         var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath)), store: null);
 
-        captured.Count.ShouldBe(3);
+        captured.Count.ShouldBe(4);
+        InjectedText(captured).ShouldContain(ScreenshotPath);
     }
 
     // The conversation reaches the send the same way MCP tool metadata does — on the turn's own
     // options — so a client built per model needs nothing per conversation.
+    // The tool keys its write on the agent's own conversation id and the send keys its read on the
+    // turn's options, so a turn that carries no context cannot find bytes that really were written.
+    // The model is told which image it lost rather than being left waiting for one.
     [Fact]
-    public async Task ATurnCarryingNoConversationContext_InjectsNothing()
+    public async Task ATurnCarryingNoConversationContext_NamesTheImageItCannotShow()
     {
         _store.Put(Conversation, "call-1", ScreenshotPath);
 
         var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath)), withContext: false);
 
-        captured.Count.ShouldBe(3);
+        captured.Count.ShouldBe(4);
+        InjectedText(captured).ShouldContain(ScreenshotPath);
     }
 
     // An image stays in front of the model for the rest of the exchange about it, on the same

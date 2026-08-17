@@ -124,7 +124,7 @@ public sealed class MultiAgentFactory(
             // Optional exactly as the attachment source is: a host with no state store keeps reading
             // text and answers honestly that it cannot show an image.
             Store = serviceProvider?.GetService<IReadImageStore>(),
-            CallId = () => FunctionInvokingChatClient.CurrentContext?.CallContent.CallId,
+            CurrentCallId = () => FunctionInvokingChatClient.CurrentContext?.CallContent.CallId,
             ModelAcceptsImages = () => AcceptsImages(
                 FunctionInvokingChatClient.CurrentContext?.Options?.ModelId ?? spec.Model),
             MaxBytes = openRouterConfig.MaxInlineImageBytes

@@ -107,9 +107,14 @@ public sealed class OpenRouterChatClient : IChatClient
         // already does: a chat client is built per model from DI, so there is nothing per
         // conversation for it to have been constructed with.
         var transformedMessages = await AttachmentHydration.ApplyAsync(
-            decorated, _attachmentSource, _readImageStore,
-            ConversationContextMeta.TryRead(options)?.ConversationId,
-            _hydrationDepthMessages, _timeProvider.LocalTimeZone, ct);
+            decorated,
+            _attachmentSource,
+            new ReadImageContext(
+                _readImageStore,
+                ConversationContextMeta.TryRead(options)?.ConversationId,
+                _timeProvider.LocalTimeZone),
+            _hydrationDepthMessages,
+            ct);
 
         // The model a per-message config patch resolved to rides this request's own options
         // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on

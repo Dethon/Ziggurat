@@ -16,11 +16,14 @@ public sealed record ReadImageSupport
 {
     public const long DefaultMaxBytes = 15L * 1024 * 1024;
 
+    // The one way to say "this host shows no images", so a caller cannot express it twice.
+    public static ReadImageSupport None { get; } = new() { ConversationId = "" };
+
     public required string ConversationId { get; init; }
 
     public IReadImageStore? Store { get; init; }
 
-    public Func<string?> CallId { get; init; } = () => null;
+    public Func<string?> CurrentCallId { get; init; } = () => null;
 
     public Func<bool> ModelAcceptsImages { get; init; } = () => true;
 

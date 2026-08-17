@@ -27,7 +27,7 @@ public class VfsFileReadToolTests
     }
 
     [Fact]
-    public async Task RunAsync_ResolvesPathAndReturnsContent()
+    public async Task ATextFile_ComesBackWithItsContentAndLineCount()
     {
         _registry.Setup(r => r.Resolve("/vault/notes/todo.md"))
             .Returns(Resolved(_backend.Object, "notes/todo.md"));
@@ -44,7 +44,7 @@ public class VfsFileReadToolTests
     }
 
     [Fact]
-    public async Task RunAsync_PassesOffsetAndLimitThrough()
+    public async Task OffsetAndLimitOnAText_ReachTheBackendUntouched()
     {
         _registry.Setup(r => r.Resolve("/vault/big.md"))
             .Returns(Resolved(_backend.Object, "big.md"));
@@ -61,7 +61,7 @@ public class VfsFileReadToolTests
     }
 
     [Fact]
-    public async Task RunAsync_MissingFile_ReturnsTheBackendsErrorEnvelope()
+    public async Task AMissingFile_ComesBackAsTheBackendsOwnErrorEnvelope()
     {
         _registry.Setup(r => r.Resolve("/vault/missing.md"))
             .Returns(Resolved(_backend.Object, "missing.md"));
@@ -233,6 +233,23 @@ public class VfsFileReadToolTests
 
     // Nothing is stored in any case the envelope reports as not shown, so there are never bytes
     // waiting for a send that will not look for them.
+    // A tool running outside a function-invocation context has nowhere to key the bytes. That is a
+    // fourth reason, and wearing the host-limitation words told the model something false about the
+    // deployment.
+    [Fact]
+    public async Task AnImageReadOutsideAToolCall_SaysThatRatherThanBlamingTheHost()
+    {
+        var tool = ImageTool([1, 2, 3, 4], out var store, callId: null);
+
+        var result = await tool.RunAsync(ImagePath);
+
+        result!["shown"]!.GetValue<bool>().ShouldBeFalse();
+        var note = result["note"]!.GetValue<string>();
+        note.ShouldNotContain("cannot show images");
+        note.ShouldContain("tool call");
+        store.Written.ShouldBeEmpty();
+    }
+
     [Theory]
     [InlineData("over the ceiling")]
     [InlineData("no image capability")]
@@ -310,7 +327,7 @@ public class VfsFileReadToolTests
         {
             ConversationId = "conv-1",
             Store = store,
-            CallId = () => callId,
+            CurrentCallId = () => callId,
             ModelAcceptsImages = () => acceptsImages,
             MaxBytes = maxBytes
         };

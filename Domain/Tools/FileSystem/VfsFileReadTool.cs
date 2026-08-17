@@ -27,6 +27,13 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
         "This host cannot show images read from a file, so this one was not shown. "
         + "Say so rather than describing what the file might contain.";
 
+    // A fourth reason, and it gets its own words: wearing the host-limitation note told the model
+    // something false about the deployment. It means the tool ran outside a tool call — a harness or
+    // a direct invocation — so there is no call id to key the bytes under.
+    private const string NoCallIdNote =
+        "This read did not run as a tool call, so there was nowhere to key the image and it was not "
+        + "shown. Say so rather than describing what the file might contain.";
+
     [Description(ToolDescription)]
     public async Task<JsonNode> RunAsync(
         [Description("Virtual path to file (e.g., /library/notes/todo.md)")]
@@ -60,7 +67,10 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
     private async Task<JsonNode> ReadImageAsync(
         FileSystemResolution resolution, string filePath, string mediaType, bool windowIgnored, CancellationToken ct)
     {
-        var ceiling = images?.MaxBytes ?? ReadImageSupport.DefaultMaxBytes;
+        // Resolved once, so "this host cannot show images" has a single representation rather than
+        // being expressible both as a missing record and as a record with a missing store.
+        var support = images ?? ReadImageSupport.None;
+        var ceiling = support.MaxBytes;
 
         // Read before deciding, so the envelope names the real size whatever the verdict is: a model
         // told an image is too large has to know by how much, and one told it cannot be shown at all
@@ -71,22 +81,22 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
             return unreadable.ToNode();
         }
 
-        var callId = images?.CallId();
-        var refusal = (bounded.Bytes, images?.Store, images?.ModelAcceptsImages() ?? true, callId) switch
+        var callId = support.CurrentCallId();
+        var refusal = (bounded.Bytes, support.Store, support.ModelAcceptsImages(), callId) switch
         {
             (null, _, _, _) =>
                 $"The image is {bounded.TotalBytes} bytes, over this host's {ceiling}-byte limit for "
                 + "showing an image. Resize it below the limit, or tell the person it is too large to look at.",
             (_, _, false, _) => NoCapabilityNote,
             (_, null, _, _) => NoStoreNote,
-            (_, _, _, null) => NoStoreNote,
+            (_, _, _, null) => NoCallIdNote,
             _ => null
         };
 
         if (refusal is null)
         {
-            await images!.Store!.PutAsync(
-                images.ConversationId,
+            await support.Store!.PutAsync(
+                support.ConversationId,
                 callId!,
                 new ReadImage
                 {
