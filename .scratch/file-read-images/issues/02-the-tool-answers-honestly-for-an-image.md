@@ -19,20 +19,20 @@ Images are never downscaled or re-encoded.
 
 **Status:** ready-for-agent
 
-- [ ] A path whose extension is png, jpg, jpeg, gif or webp takes the image path; kind is decided by
+- [x] A path whose extension is png, jpg, jpeg, gif or webp takes the image path; kind is decided by
       extension alone, consistent with how attachment media types are already classified.
-- [ ] An image answers an envelope with the echoed virtual path, media type, byte size and a `shown`
+- [x] An image answers an envelope with the echoed virtual path, media type, byte size and a `shown`
       flag — a distinct result shape, not the text read's fields repurposed.
-- [ ] Every path that is neither text nor a viewable image is refused with an envelope naming why.
-- [ ] Text reading behaves exactly as before, including line numbering, windowing and truncation.
-- [ ] An image over the configured ceiling answers `shown: false` and names the size and the limit.
-- [ ] A turn whose model does not accept images answers `shown: false` and says so; the check is
+- [x] Every path that is neither text nor a viewable image is refused with an envelope naming why.
+- [x] Text reading behaves exactly as before, including line numbering, windowing and truncation.
+- [x] An image over the configured ceiling answers `shown: false` and names the size and the limit.
+- [x] A turn whose model does not accept images answers `shown: false` and says so; the check is
       made when the tool runs, not when the tool set is built, so a model override is respected.
-- [ ] A host with no read-image store answers `shown: false` and says images cannot be shown here.
-- [ ] `offset` or `limit` passed on an image are ignored and the envelope notes it.
-- [ ] The ceiling is configurable in the agent host's own settings, default 15 MB, with no compose
+- [x] A host with no read-image store answers `shown: false` and says images cannot be shown here.
+- [x] `offset` or `limit` passed on an image are ignored and the envelope notes it.
+- [x] The ceiling is configurable in the agent host's own settings, default 15 MB, with no compose
       or shared-policy entry.
-- [ ] The tool's description tells the model it reads text and images.
-- [ ] No new filesystem operation: the operation list, the capability map and the wire tool set are
+- [x] The tool's description tells the model it reads text and images.
+- [x] No new filesystem operation: the operation list, the capability map and the wire tool set are
       unchanged, and image bytes are read through the raw-byte read every disk root already has.
-- [ ] Every case above is covered by the tool test suite, written failing first.
+- [x] Every case above is covered by the tool test suite, written failing first.

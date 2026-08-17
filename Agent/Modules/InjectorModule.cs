@@ -31,7 +31,8 @@ public static class InjectorModule
                 MaxContextTokens = settings.OpenRouter.MaxContextTokens,
                 ProviderRouting = settings.OpenRouter.ProviderRouting,
                 PatchableModelIds = settings.PatchableModels.Select(m => m.Id).ToList(),
-                HydrationDepthMessages = settings.Attachments.HydrationDepthMessages
+                HydrationDepthMessages = settings.Attachments.HydrationDepthMessages,
+                MaxInlineImageBytes = settings.ReadImages.MaxInlineBytes
             };
 
             services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);

@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Tools.FileSystem;
 using JetBrains.Annotations;
 
 namespace Agent.Settings;
@@ -14,6 +15,7 @@ public record AgentSettings
     public SubAgentDefinition[] SubAgents { get; init; } = [];
     public PatchableModel[] PatchableModels { get; init; } = [];
     public AttachmentConfiguration Attachments { get; init; } = new();
+    public ReadImageConfiguration ReadImages { get; init; } = new();
     public RetentionSettings Retention { get; init; } = new();
     public OutpostConfiguration Outposts { get; init; } = new();
 }
@@ -32,6 +34,16 @@ public record AttachmentConfiguration
     // How far back an attachment stays visible to the model, counted in messages. Trading token
     // cost against how long follow-up questions about a photo keep working.
     public int HydrationDepthMessages { get; [UsedImplicitly] init; } = AttachmentHydration.DefaultDepthMessages;
+}
+
+// A single-host tunable, so it lives here alone: no compose entry and no shared policy file, because
+// nothing outside this process has to agree about how large an image the agent will look at.
+public record ReadImageConfiguration
+{
+    // How large one image the model reads may be before it is refused rather than shown. Images are
+    // never downscaled or re-encoded — re-encoding would silently change what the model is looking
+    // at — so the only thing this bounds is whether one turn carries the file at all.
+    public long MaxInlineBytes { get; [UsedImplicitly] init; } = ReadImageSupport.DefaultMaxBytes;
 }
 
 public record OpenRouterConfiguration

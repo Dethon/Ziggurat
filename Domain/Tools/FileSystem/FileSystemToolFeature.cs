@@ -4,7 +4,8 @@ using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
 
-public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomainToolFeature
+public class FileSystemToolFeature(
+    IVirtualFileSystemRegistry registry, ReadImageSupport? readImages = null) : IDomainToolFeature
 {
     private const string Feature = "filesystem";
 
@@ -23,7 +24,7 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
     {
         var tools = new (string Key, Func<AIFunction> Factory)[]
         {
-            (VfsFileReadTool.Key, () => AIFunctionFactory.Create(new VfsFileReadTool(registry).RunAsync, name: $"domain__{Feature}__{VfsFileReadTool.Name}")),
+            (VfsFileReadTool.Key, () => AIFunctionFactory.Create(new VfsFileReadTool(registry, readImages).RunAsync, name: $"domain__{Feature}__{VfsFileReadTool.Name}")),
             (VfsTextCreateTool.Key, () => AIFunctionFactory.Create(
                 new VfsTextCreateTool(registry).RunAsync,
                 new AIFunctionFactoryOptions

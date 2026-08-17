@@ -10,6 +10,7 @@ using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Metrics;
 using Domain.Prompts;
+using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Agents.AI;
@@ -43,6 +44,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IReadOnlyList<string> _patchableModelIds;
     private readonly string _conversationId;
     private readonly McpPromptCache? _promptCache;
+    private readonly ReadImageSupport? _readImages;
 
     private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
     private int _isDisposed;
@@ -69,7 +71,8 @@ public sealed class McpAgent : DisposableAgent
         IReadOnlyList<string> domainPrompts,
         ILoggerFactory? loggerFactory = null,
         McpPromptCache? promptCache = null,
-        OutpostAccess? outposts = null)
+        OutpostAccess? outposts = null,
+        ReadImageSupport? readImages = null)
     {
         _endpoints = spec.McpServerEndpoints;
         _usesOutposts = spec.UsesOutposts;
@@ -92,6 +95,7 @@ public sealed class McpAgent : DisposableAgent
         _patchableModelIds = spec.PatchableModelIds;
         _conversationId = spec.ConversationId;
         _promptCache = promptCache;
+        _readImages = readImages;
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = spec.DisplayName,
@@ -474,7 +478,7 @@ public sealed class McpAgent : DisposableAgent
             var newSession = await ThreadSession
                 .CreateAsync(composed.Endpoints, _name, _userId, _description,
                              _domainTools, _filesystemEnabledTools, _loggerFactory,
-                             ct, _promptCache);
+                             ct, _promptCache, _readImages);
 
             // The one moment a shadowed outpost is knowable, and the machine serving it has no way
             // to find out for itself — the next keepalive carries the answer home. Whether this
