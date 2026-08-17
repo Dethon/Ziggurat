@@ -250,17 +250,35 @@ public class VfsFileReadToolTests
         store.Written.ShouldBeEmpty();
     }
 
+    // The send looks the bytes up under the conversation id the turn's own context carries. A run
+    // with no context — a harness, a benchmark — has no key any send will ever ask for, so storing
+    // would strand the bytes and the envelope's "shown" would invite the model to wait for a
+    // picture that cannot arrive, then re-read forever when it is told to try again.
+    [Fact]
+    public async Task ATurnCarryingNoConversationContext_RefusesRatherThanStrandingTheBytes()
+    {
+        var tool = ImageTool([1, 2, 3, 4], out var store, conversationId: null);
+
+        var result = await tool.RunAsync(ImagePath);
+
+        result!["shown"]!.GetValue<bool>().ShouldBeFalse();
+        result["note"]!.GetValue<string>().ShouldContain("conversation");
+        store.Written.ShouldBeEmpty();
+    }
+
     [Theory]
     [InlineData("over the ceiling")]
     [InlineData("no image capability")]
     [InlineData("no call id")]
+    [InlineData("no conversation context")]
     public async Task AnImageThatCannotBeShown_WritesNothing(string reason)
     {
         var tool = ImageTool(
             new byte[64], out var store,
             maxBytes: reason == "over the ceiling" ? 32 : ReadImageSupport.DefaultMaxBytes,
             acceptsImages: reason != "no image capability",
-            callId: reason == "no call id" ? null : "call-1");
+            callId: reason == "no call id" ? null : "call-1",
+            conversationId: reason == "no conversation context" ? null : "conv-1");
 
         var result = await tool.RunAsync(ImagePath);
 
@@ -347,26 +365,28 @@ public class VfsFileReadToolTests
         out RecordingReadImageStore store,
         long maxBytes = ReadImageSupport.DefaultMaxBytes,
         bool acceptsImages = true,
-        string? callId = "call-1")
+        string? callId = "call-1",
+        string? conversationId = "conv-1")
     {
         store = new RecordingReadImageStore();
         _registry.Setup(r => r.Resolve(ImagePath)).Returns(Resolved(_backend.Object, ImageRelative));
         _backend.Setup(b => b.ReadChunksAsync(ImageRelative, It.IsAny<CancellationToken>()))
             .Returns(Chunks(bytes));
         return new VfsFileReadTool(
-            _registry.Object, Support(store, maxBytes, acceptsImages, callId));
+            _registry.Object, Support(store, maxBytes, acceptsImages, callId, conversationId));
     }
 
     private static ReadImageSupport Support(
         IReadImageStore? store,
         long maxBytes = ReadImageSupport.DefaultMaxBytes,
         bool acceptsImages = true,
-        string? callId = "call-1") =>
+        string? callId = "call-1",
+        string? conversationId = "conv-1") =>
         new()
         {
-            ConversationId = "conv-1",
             Store = store,
             CurrentCallId = () => callId,
+            CurrentConversationId = () => conversationId,
             ModelAcceptsImages = () => acceptsImages,
             MaxBytes = maxBytes
         };

@@ -34,6 +34,14 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
         "This read did not run as a tool call, so there was nowhere to key the image and it was not "
         + "shown. Say so rather than describing what the file might contain.";
 
+    // A fifth reason: the bytes are keyed by the conversation id the turn's own context carries,
+    // because that is the id the send looks them up under. A run with no context (a harness, a
+    // benchmark) would store bytes no send can ever fetch — and the model, told the image was
+    // shown, would wait for a picture that cannot arrive.
+    private const string NoConversationNote =
+        "This run carries no conversation context, so there was nowhere to key the image and it "
+        + "was not shown. Say so rather than describing what the file might contain.";
+
     private const string EmptyFileNote =
         "The file is empty — zero bytes — so there is no image to show. "
         + "Say so rather than describing what it might contain.";
@@ -86,23 +94,25 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
         }
 
         var callId = support.CurrentCallId();
-        var refusal = (bounded.Bytes, support.Store, support.ModelAcceptsImages(), callId) switch
+        var conversationId = support.CurrentConversationId();
+        var refusal = (bounded.Bytes, support.Store, support.ModelAcceptsImages(), callId, conversationId) switch
         {
             // A zero-byte file has no picture in it, and a provider rejects an empty image block.
             _ when bounded.TotalBytes == 0 => EmptyFileNote,
-            (null, _, _, _) =>
+            (null, _, _, _, _) =>
                 $"The image is {bounded.TotalBytes} bytes, over this host's {ceiling}-byte limit for "
                 + "showing an image. Resize it below the limit, or tell the person it is too large to look at.",
-            (_, _, false, _) => NoCapabilityNote,
-            (_, null, _, _) => NoStoreNote,
-            (_, _, _, null) => NoCallIdNote,
+            (_, _, false, _, _) => NoCapabilityNote,
+            (_, null, _, _, _) => NoStoreNote,
+            (_, _, _, null, _) => NoCallIdNote,
+            (_, _, _, _, null) => NoConversationNote,
             _ => null
         };
 
         if (refusal is null)
         {
             await support.Store!.PutAsync(
-                support.ConversationId,
+                conversationId!,
                 callId!,
                 new ReadImage
                 {

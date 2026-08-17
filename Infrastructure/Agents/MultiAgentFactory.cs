@@ -120,11 +120,15 @@ public sealed class MultiAgentFactory(
     private ReadImageSupport BuildReadImageSupport(AgentSpec spec) =>
         new()
         {
-            ConversationId = spec.ConversationId,
             // Optional exactly as the attachment source is: a host with no state store keeps reading
             // text and answers honestly that it cannot show an image.
             Store = serviceProvider?.GetService<IReadImageStore>(),
             CurrentCallId = () => FunctionInvokingChatClient.CurrentContext?.CallContent.CallId,
+            // The id the send will look the bytes up under: hydration reads it off the turn's own
+            // options, so the write reads it off the same turn rather than off the spec — a run
+            // that carries no context (a harness, a benchmark) then refuses instead of storing
+            // bytes under a key no send will ever ask for.
+            CurrentConversationId = () => ConversationContextMeta.Current?.ConversationId,
             ModelAcceptsImages = () => AcceptsImages(
                 FunctionInvokingChatClient.CurrentContext?.Options?.ModelId ?? spec.Model),
             MaxBytes = openRouterConfig.MaxInlineImageBytes
