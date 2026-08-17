@@ -45,9 +45,7 @@ internal static class AgentSpecProjection
 
     public static AgentSpec ForSubAgent(
         SubAgentDefinition definition,
-        string conversationId,
-        string[] whitelistPatterns,
-        string userId,
+        SpawnContext spawn,
         OpenRouterConfig openRouterConfig,
         ILogger? logger)
     {
@@ -67,8 +65,8 @@ internal static class AgentSpecProjection
             RoutingSessionId = $"{identity}:{Guid.NewGuid():N}",
             // The parent's conversation, deliberately: a subagent acts on the parent's behalf,
             // so its metrics answer "which conversation was this slow subagent running in".
-            ConversationId = conversationId,
-            UserId = userId,
+            ConversationId = spawn.ConversationId,
+            UserId = spawn.UserId,
             Model = definition.Model,
             MaxContextTokens = definition.MaxContextTokens ?? openRouterConfig.MaxContextTokens,
             ReasoningEffort = definition.ReasoningEffort,
@@ -82,7 +80,7 @@ internal static class AgentSpecProjection
             UsesOutposts = false,
             EnabledFeatures = enabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures),
-            WhitelistPatterns = whitelistPatterns,
+            WhitelistPatterns = spawn.WhitelistPatterns,
             CustomInstructions = definition.CustomInstructions,
             Language = definition.Language,
             KeepsHistory = false,

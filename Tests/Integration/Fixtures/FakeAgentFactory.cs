@@ -51,7 +51,8 @@ public sealed class FakeAgentFactory : IAgentFactory
         return new FakeDisposableAgent(responses, ResponseDelayMs);
     }
 
-    public DisposableAgent CreateSubAgent(SubAgentDefinition definition, IToolApprovalHandler approvalHandler, string conversationId, string[] whitelistPatterns, string userId)
+    public DisposableAgent CreateSubAgent(
+        SubAgentDefinition definition, IToolApprovalHandler approvalHandler, SpawnContext spawn)
     {
         var responses = new List<QueuedResponse>();
         while (_responseQueue.TryDequeue(out var response))

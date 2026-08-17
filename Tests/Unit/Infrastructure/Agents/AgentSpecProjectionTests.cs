@@ -55,7 +55,8 @@ public sealed class AgentSpecProjectionTests
         _agentDefinition, new AgentKey("conv-1", "jack"), "fran", _openRouter, null);
 
     private static AgentSpec SubAgentSpec() => AgentSpecProjection.ForSubAgent(
-        _subAgentDefinition, "conv-1", ["allow-*"], "fran", _openRouter, null);
+        _subAgentDefinition, new SpawnContext("conv-1", "fran", ["allow-*"], UsesOutposts: false),
+        _openRouter, null);
 
     // One row per field the two paths resolve, so a new difference is a new row rather than a
     // new test. A row whose two expectations are equal is a difference this change removed on

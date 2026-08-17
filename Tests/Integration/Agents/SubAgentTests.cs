@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
@@ -64,7 +65,9 @@ public class SubAgentTests(RedisFixture redisFixture)
 
         var approvalHandler = new AutoApproveHandler();
         var featureConfig = new FeatureConfig(
-            SubAgentFactory: def => factory.CreateSubAgent(def, approvalHandler, "conv-1", ["domain__subagents__*"], "test-user"));
+            SubAgentFactory: def => factory.CreateSubAgent(
+                def, approvalHandler,
+                new SpawnContext("conv-1", "test-user", ["domain__subagents__*"], UsesOutposts: false)));
 
         var toolFeature = new SubAgentToolFeature(registryOptions);
 
@@ -125,7 +128,9 @@ public class SubAgentTests(RedisFixture redisFixture)
         var server = redisFixture.Connection.GetServer(redisFixture.Connection.GetEndPoints()[0]);
         var keysBefore = server.Keys(pattern: "*").ToList();
 
-        await using var agent = factory.CreateSubAgent(subAgentDef, approvalHandler, "conv-1", [], "test-user");
+        await using var agent = factory.CreateSubAgent(
+            subAgentDef, approvalHandler,
+            new SpawnContext("conv-1", "test-user", [], UsesOutposts: false));
         var userMessage = new ChatMessage(ChatRole.User, "Say done");
         var response = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => agent
             .RunStreamingAsync([userMessage], cancellationToken: ct)
