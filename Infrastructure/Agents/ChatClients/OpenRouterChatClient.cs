@@ -153,6 +153,10 @@ public sealed class OpenRouterChatClient : IChatClient
 
         await foreach (var update in _client.GetStreamingResponseAsync(truncated, options, ct))
         {
+            // The Responses adapter leaves MessageId empty where the chat wire stamped the
+            // completion id, and everything that reassembles a streamed turn keys on it. The
+            // response id is one id per model turn — the aggregation the consumers want.
+            update.MessageId ??= update.ResponseId;
             update.SetTimestamp(_timeProvider.GetUtcNow());
 
             var updateUsage = update.Contents.OfType<UsageContent>().FirstOrDefault();
