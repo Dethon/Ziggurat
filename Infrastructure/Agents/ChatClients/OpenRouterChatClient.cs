@@ -29,6 +29,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly TimeProvider _timeProvider;
     private readonly IAttachmentSource? _attachmentSource;
     private readonly IReadImageStore? _readImageStore;
+    private readonly Func<string, bool> _modelAcceptsImages;
     private readonly int _hydrationDepthMessages;
 
     public OpenRouterChatClient(
@@ -43,7 +44,8 @@ public sealed class OpenRouterChatClient : IChatClient
         HttpMessageHandler? transportHandler = null,
         IAttachmentSource? attachmentSource = null,
         int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
-        IReadImageStore? readImageStore = null)
+        IReadImageStore? readImageStore = null,
+        Func<string, bool>? modelAcceptsImages = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
@@ -51,6 +53,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
         _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
+        _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
         _hydrationDepthMessages = hydrationDepthMessages;
         _httpClient = CreateHttpClient(
             _costQueue, _cachedTokenQueue, sessionId, providerRouting, transportHandler);
@@ -66,7 +69,8 @@ public sealed class OpenRouterChatClient : IChatClient
         TimeProvider? timeProvider = null,
         IAttachmentSource? attachmentSource = null,
         int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
-        IReadImageStore? readImageStore = null)
+        IReadImageStore? readImageStore = null,
+        Func<string, bool>? modelAcceptsImages = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
@@ -74,6 +78,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
         _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
+        _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
         _hydrationDepthMessages = hydrationDepthMessages;
         _client = innerClient;
     }
@@ -101,6 +106,13 @@ public sealed class OpenRouterChatClient : IChatClient
         var decorated = messages
             .Select(x => TurnDecoration.Apply(x, _timeProvider.LocalTimeZone))
             .ToList();
+        // The model a per-message config patch resolved to rides this request's own options
+        // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on
+        // and a concurrent turn has nothing shared to overwrite. Resolved before hydration,
+        // because whether an image part may travel at all depends on it: the wire rejects a
+        // request carrying an image the model cannot take rather than stripping it.
+        var effectiveModel = options?.ModelId ?? _model;
+
         // The conversation reaches this send on the turn's own options, the way MCP tool metadata
         // already does: a chat client is built per model from DI, so there is nothing per
         // conversation for it to have been constructed with.
@@ -110,19 +122,12 @@ public sealed class OpenRouterChatClient : IChatClient
             new ReadImageContext(
                 _readImageStore,
                 ConversationContextMeta.TryRead(options)?.ConversationId,
-                _timeProvider.LocalTimeZone),
+                _modelAcceptsImages(effectiveModel)),
             _hydrationDepthMessages,
             ct);
 
-        // The model a per-message config patch resolved to rides this request's own options
-        // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on
-        // and a concurrent turn has nothing shared to overwrite.
-        var effectiveModel = options?.ModelId ?? _model;
-
-        // Skipping the messages this send injected: an image the model went looking for arrives on a
-        // user message attributed to the system, and the metric answers "whose turn overflowed".
         var sender = transformedMessages
-            .LastOrDefault(m => m.Role == ChatRole.User && !m.IsInjected)
+            .LastOrDefault(m => m.Role == ChatRole.User)
             ?.GetSenderId();
 
         var fixedOverhead = MessageTruncator.EstimateOptionsOverheadTokens(options);

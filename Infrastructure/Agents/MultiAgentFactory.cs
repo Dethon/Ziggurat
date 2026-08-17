@@ -160,8 +160,11 @@ public sealed class MultiAgentFactory(
             attachmentSource: serviceProvider?.GetService<IAttachmentSource>(),
             hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
             // The other half of the same pass: the tool writes the bytes here and this send reads
-            // them back, so both ends have to be handed the one store or neither works.
-            readImageStore: serviceProvider?.GetService<IReadImageStore>());
+            // them back, so both ends have to be handed the one store or neither works. The
+            // capability lookup rides along, because the send must not put an image part in front
+            // of a patched model that cannot take it — the wire rejects the whole request.
+            readImageStore: serviceProvider?.GetService<IReadImageStore>(),
+            modelAcceptsImages: AcceptsImages);
     }
 }
 

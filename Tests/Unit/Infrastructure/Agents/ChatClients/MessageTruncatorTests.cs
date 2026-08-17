@@ -41,6 +41,25 @@ public class MessageTruncatorTests
         MessageTruncator.EstimateMessageTokens(msg).ShouldBe(7);
     }
 
+    // A hydrated image read is a tool result whose Result is a list of contents ending in the
+    // picture. Serializing that list would count the image's base64 as text — a 15 MB file as
+    // millions of tokens — and one read would trip truncation on every send.
+    [Fact]
+    public void EstimateMessageTokens_AResultCarryingAnImage_CountsItAsAnImage()
+    {
+        var result = new FunctionResultContent("call-1", new List<AIContent>
+        {
+            new TextContent(new string('e', 400)),
+            new DataContent(new byte[1_000_000], "image/png")
+        });
+        var msg = new ChatMessage(ChatRole.Tool, [result]);
+
+        // 100 text tokens + the flat per-image estimate + per-message overhead; nowhere near the
+        // ~350k a base64 serialization of the megabyte would count.
+        MessageTruncator.EstimateMessageTokens(msg).ShouldBeLessThan(3_000);
+        MessageTruncator.EstimateMessageTokens(msg).ShouldBeGreaterThan(1_000);
+    }
+
     [Fact]
     public void EstimateMessageTokens_MultipleContents_SumsAllPlusSingleOverhead()
     {

@@ -20,7 +20,6 @@ public static class ChatMessageExtensions
     private const string AttachmentChannelIdKey = "AttachmentChannelId";
     private const string SandboxPathsKey = "SandboxPaths";
     private const string LandingFailuresKey = "LandingFailures";
-    private const string InjectedKey = "Injected";
 
     extension(ChatMessage message)
     {
@@ -244,25 +243,6 @@ public static class ChatMessageExtensions
 
         public void SetLandingFailures(IReadOnlyList<string>? fileNames) =>
             SetList(message, LandingFailuresKey, fileNames);
-
-        // Put here on the way to the model and never persisted: a message carrying bytes the model
-        // asked to see, which nobody said. Two rules read it — it does not count toward hydration's
-        // distance, for the same reason a tool call does not, and it is not the turn's sender, so a
-        // model that read twenty images neither ages out a person's photo nor takes their name off
-        // the metric.
-        public bool IsInjected =>
-            message.AdditionalProperties?.GetValueOrDefault(InjectedKey) switch
-            {
-                bool flag => flag,
-                JsonElement { ValueKind: JsonValueKind.True } => true,
-                _ => false
-            };
-
-        public void MarkInjected()
-        {
-            message.AdditionalProperties ??= [];
-            message.AdditionalProperties[InjectedKey] = true;
-        }
     }
 
     // The three list-valued properties are read and written the same way: the list itself on the

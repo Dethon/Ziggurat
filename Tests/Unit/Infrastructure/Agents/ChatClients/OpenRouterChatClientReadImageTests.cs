@@ -12,9 +12,9 @@ using Shouldly;
 
 namespace Tests.Unit.Infrastructure.Agents.ChatClients;
 
-// An image the model read cannot travel on the tool message that answered the read — that role's
-// content is a plain string on this provider — so it arrives as its own user message straight after
-// the whole tool-result message, attributed to the system because nobody sent it (ADR 0029).
+// An image the model read travels inside the tool result that answered the read: the Responses
+// wire accepts content parts in a function call output, so the envelope is followed by the picture
+// itself, in the one place the model already looks for the answer (ADR 0029).
 //
 // This is the seam hydration is tested at, which is why the widened pass has no suite of its own.
 public class OpenRouterChatClientReadImageTests
@@ -29,86 +29,50 @@ public class OpenRouterChatClientReadImageTests
     private readonly FakeReadImageStore _store = new();
 
     [Fact]
-    public async Task AnImageReadInATurn_ArrivesAsItsOwnUserMessageAfterTheWholeToolMessage()
+    public async Task AnImageReadInATurn_ArrivesInsideItsOwnToolResult()
     {
         _store.Put(Conversation, "call-1", ScreenshotPath);
 
         var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath)));
 
-        captured.Count.ShouldBe(4);
-        captured[2].Role.ShouldBe(ChatRole.Tool);
-        captured[3].Role.ShouldBe(ChatRole.User);
-        captured[3].Contents.OfType<DataContent>().ShouldHaveSingleItem()
-            .Data.ToArray().ShouldBe(_bytes);
+        captured.Count.ShouldBe(3);
+        var contents = ResultContents(captured, "call-1");
+        contents.OfType<DataContent>().ShouldHaveSingleItem().Data.ToArray().ShouldBe(_bytes);
     }
 
-    // Never between the results of one tool message: the function-invoking client puts every result
-    // of an iteration in a single message, and some providers reject a conversation in which a tool
-    // call was not answered before anything else appeared.
+    // The envelope the tool answered still reaches the model ahead of the picture, so the path,
+    // media type and size stay quotable into the next tool call.
     [Fact]
-    public async Task TheToolMessagesOwnResults_AreNeverSplitApart()
-    {
-        _store.Put(Conversation, "call-1", ScreenshotPath);
-        _store.Put(Conversation, "call-2", CoverPath);
-
-        var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath), ("call-2", CoverPath)));
-
-        captured[2].Contents.OfType<FunctionResultContent>().Count().ShouldBe(2);
-        captured.Count(m => m.Role == ChatRole.Tool).ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task EachImage_IsPrecededByALabelNamingTheVirtualPathItCameFrom()
+    public async Task TheEnvelope_PrecedesTheImageInsideTheResult()
     {
         _store.Put(Conversation, "call-1", ScreenshotPath);
 
         var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath)));
 
-        var contents = captured[3].Contents;
+        var contents = ResultContents(captured, "call-1");
         var imageAt = contents.Select((c, i) => (c, i)).Single(x => x.c is DataContent).i;
         imageAt.ShouldBeGreaterThan(0);
-        contents[imageAt - 1].ShouldBeOfType<TextContent>().Text.ShouldContain(ScreenshotPath);
+        contents.Take(imageAt).OfType<TextContent>()
+            .ShouldContain(t => t.Text.Contains(ScreenshotPath));
     }
 
     [Fact]
-    public async Task SeveralImagesReadInOneBatch_LandInOneMessageInCallOrder()
+    public async Task SeveralImagesReadInOneBatch_EachRideTheirOwnResult()
     {
         _store.Put(Conversation, "call-1", ScreenshotPath);
         _store.Put(Conversation, "call-2", CoverPath);
 
         var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath), ("call-2", CoverPath)));
 
-        captured.Count(m => m.Role == ChatRole.User && m.IsInjected).ShouldBe(1);
-
-        var contents = captured[3].Contents;
-        var labelled = contents
-            .Select((content, index) => (content, index))
-            .Where(x => x.content is DataContent)
-            .Select(x => ((TextContent)contents[x.index - 1]).Text)
-            .ToList();
-
-        labelled.Count.ShouldBe(2);
-        labelled[0].ShouldContain(ScreenshotPath);
-        labelled[1].ShouldContain(CoverPath);
-    }
-
-    // Attributed to the system and decorated like any other turn, so the model never reads a picture
-    // it went looking for as something a person said to it.
-    [Fact]
-    public async Task TheInjectedMessage_IsAttributedToTheSystem()
-    {
-        _store.Put(Conversation, "call-1", ScreenshotPath);
-
-        var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath)));
-
-        captured[3].GetSenderId().ShouldBe("system");
-        captured[3].IsInjected.ShouldBeTrue();
-        string.Join("", captured[3].Contents.OfType<TextContent>().Select(t => t.Text))
-            .ShouldContain("Message from system");
+        captured.Count.ShouldBe(3);
+        ResultContents(captured, "call-1").OfType<DataContent>().ShouldHaveSingleItem();
+        ResultContents(captured, "call-2").OfType<DataContent>().ShouldHaveSingleItem();
+        ResultText(captured, "call-1").ShouldContain(ScreenshotPath);
+        ResultText(captured, "call-2").ShouldContain(CoverPath);
     }
 
     [Fact]
-    public async Task TheMessagesTheClientWasHanded_NeverGrowTheInjectedMessage()
+    public async Task TheMessagesTheClientWasHanded_AreNeverMutated()
     {
         _store.Put(Conversation, "call-1", ScreenshotPath);
         var turn = TurnThatRead(("call-1", ScreenshotPath));
@@ -116,11 +80,12 @@ public class OpenRouterChatClientReadImageTests
         await SendAsync(turn);
 
         turn.Count.ShouldBe(3);
-        turn.Any(m => m.IsInjected).ShouldBeFalse();
+        turn[2].Contents.OfType<FunctionResultContent>().Single().Result
+            .ShouldBeOfType<JsonObject>();
     }
 
     [Fact]
-    public async Task AToolMessageThatReadNoImages_HasNothingInjectedAfterIt()
+    public async Task AToolMessageThatReadNoImages_IsLeftAlone()
     {
         var messages = new List<ChatMessage>
         {
@@ -132,18 +97,20 @@ public class OpenRouterChatClientReadImageTests
         var captured = await SendAsync(messages);
 
         captured.Count.ShouldBe(3);
+        captured[2].Contents.OfType<FunctionResultContent>().Single().Result.ShouldBe("three hits");
     }
 
     // An envelope that already told the model the picture was not shown must not sprout one later:
     // the tool refused for a reason that has not changed.
     [Fact]
-    public async Task AnImageTheToolCouldNotShow_HasNothingInjectedForIt()
+    public async Task AnImageTheToolCouldNotShow_KeepsItsEnvelopeUntouched()
     {
         _store.Put(Conversation, "call-1", ScreenshotPath);
 
         var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath)), shown: false);
 
-        captured.Count.ShouldBe(3);
+        captured[2].Contents.OfType<FunctionResultContent>().Single().Result
+            .ShouldBeOfType<JsonObject>();
     }
 
     // "Out of depth, expired, evicted, or no store at all" is one answer, not three plus a silence:
@@ -154,15 +121,13 @@ public class OpenRouterChatClientReadImageTests
     {
         var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath)), store: null);
 
-        captured.Count.ShouldBe(4);
-        InjectedText(captured).ShouldContain(ScreenshotPath);
+        var result = ResultText(captured, "call-1");
+        result.ShouldContain(ScreenshotPath);
+        result.ShouldContain("Read the file again");
     }
 
-    // The conversation reaches the send the same way MCP tool metadata does — on the turn's own
-    // options — so a client built per model needs nothing per conversation.
     // The tool keys its write on the agent's own conversation id and the send keys its read on the
     // turn's options, so a turn that carries no context cannot find bytes that really were written.
-    // The model is told which image it lost rather than being left waiting for one.
     [Fact]
     public async Task ATurnCarryingNoConversationContext_NamesTheImageItCannotShow()
     {
@@ -170,8 +135,8 @@ public class OpenRouterChatClientReadImageTests
 
         var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath)), withContext: false);
 
-        captured.Count.ShouldBe(4);
-        InjectedText(captured).ShouldContain(ScreenshotPath);
+        ResultText(captured, "call-1").ShouldContain(ScreenshotPath);
+        AllDataContents(captured).ShouldBeEmpty();
     }
 
     // An image stays in front of the model for the rest of the exchange about it, on the same
@@ -183,7 +148,7 @@ public class OpenRouterChatClientReadImageTests
 
         var captured = await SendAsync(ConversationOfLength(6, readAt: 4), depth: 3);
 
-        captured.Any(m => m.Contents.OfType<DataContent>().Any()).ShouldBeTrue();
+        AllDataContents(captured).ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -193,8 +158,8 @@ public class OpenRouterChatClientReadImageTests
 
         var captured = await SendAsync(ConversationOfLength(6, readAt: 0), depth: 3);
 
-        captured.Any(m => m.Contents.OfType<DataContent>().Any()).ShouldBeFalse();
-        var placeholder = InjectedText(captured);
+        AllDataContents(captured).ShouldBeEmpty();
+        var placeholder = ResultText(captured, "call-1");
         placeholder.ShouldContain(ScreenshotPath);
         placeholder.ShouldContain("Read the file again");
     }
@@ -247,6 +212,23 @@ public class OpenRouterChatClientReadImageTests
         _store.Deleted.ShouldBeEmpty();
     }
 
+    // A turn patched onto a model without vision must not carry image parts — the wire rejects the
+    // whole request rather than stripping them — and must not burn the bytes either, because the
+    // next turn may be back on a model that sees.
+    [Fact]
+    public async Task ATurnOnAModelWithoutVision_GetsAPlaceholderAndKeepsTheBytes()
+    {
+        _store.Put(Conversation, "call-1", ScreenshotPath);
+
+        var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath)), acceptsImages: false);
+
+        AllDataContents(captured).ShouldBeEmpty();
+        var placeholder = ResultText(captured, "call-1");
+        placeholder.ShouldContain(ScreenshotPath);
+        placeholder.ShouldContain("does not accept images");
+        _store.Deleted.ShouldBeEmpty();
+    }
+
     // Expired, evicted, or never written at all: the model is told which image it lost rather than
     // left to invent what was in it.
     [Fact]
@@ -254,15 +236,14 @@ public class OpenRouterChatClientReadImageTests
     {
         var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath)));
 
-        captured.Count.ShouldBe(4);
-        var placeholder = InjectedText(captured);
+        var placeholder = ResultText(captured, "call-1");
         placeholder.ShouldContain(ScreenshotPath);
         placeholder.ShouldContain("Read the file again");
     }
 
     // Protecting the person: a picture the model went looking for must never push out a photo they
-    // actually sent. Injected messages are excluded from the distance count, the same way tool calls
-    // and results already are.
+    // actually sent. Tool messages are excluded from the distance count, so twenty reads move an
+    // attachment no further away.
     [Fact]
     public async Task ImagesTheModelRead_DoNotShortenHowLongAPersonsAttachmentIsHydrated()
     {
@@ -279,9 +260,36 @@ public class OpenRouterChatClientReadImageTests
         var captured = await SendAsync(
             messages, _store, depth: 2, attachments: new StubAttachmentSource());
 
-        captured.Count(m => m.IsInjected).ShouldBe(3);
         captured[0].Contents.OfType<DataContent>().ShouldHaveSingleItem()
             .MediaType.ShouldBe("image/png");
+    }
+
+    // The truncation metric reports whose turn overflowed, and nothing this pass adds is a user
+    // message, so the last user message stays the person's.
+    [Fact]
+    public async Task TheContextTruncationEvent_StillNamesThePersonAfterAnImageWasShown()
+    {
+        _store.Put(Conversation, "call-1", ScreenshotPath);
+        var messages = TurnThatRead(("call-1", ScreenshotPath));
+        messages[0] = new ChatMessage(ChatRole.User, new string('a', 4000));
+        messages[0].SetSenderId("alice");
+
+        ContextTruncationEvent? published = null;
+        var publisher = new Mock<IMetricsPublisher>();
+        publisher
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e =>
+            {
+                if (e is ContextTruncationEvent t)
+                {
+                    published = t;
+                }
+            });
+
+        await SendAsync(messages, _store, publisher: publisher.Object, maxContextTokens: 80);
+
+        published.ShouldNotBeNull();
+        published.Sender.ShouldBe("alice");
     }
 
     private static ChatMessage UserTurnWithPhoto()
@@ -320,40 +328,37 @@ public class OpenRouterChatClientReadImageTests
         return messages;
     }
 
-    private static string InjectedText(IReadOnlyList<ChatMessage> captured) =>
-        string.Join(
-            "",
-            captured.Where(m => m.IsInjected).SelectMany(m => m.Contents.OfType<TextContent>())
-                .Select(t => t.Text));
+    private static FunctionResultContent Result(IReadOnlyList<ChatMessage> captured, string callId) =>
+        captured
+            .Where(m => m.Role == ChatRole.Tool)
+            .SelectMany(m => m.Contents.OfType<FunctionResultContent>())
+            .Single(r => r.CallId == callId);
 
-    // The truncation metric reports whose turn overflowed. An injected message is a user message
-    // carrying the system as its sender, so picking the last user message naively would start
-    // reporting the system for every turn in which the model looked at a file.
-    [Fact]
-    public async Task TheContextTruncationEvent_StillNamesThePersonAfterAnImageWasInjected()
-    {
-        _store.Put(Conversation, "call-1", ScreenshotPath);
-        var messages = TurnThatRead(("call-1", ScreenshotPath));
-        messages[0] = new ChatMessage(ChatRole.User, new string('a', 4000));
-        messages[0].SetSenderId("alice");
+    private static IReadOnlyList<AIContent> ResultContents(
+        IReadOnlyList<ChatMessage> captured, string callId) =>
+        Result(captured, callId).Result.ShouldBeAssignableTo<IEnumerable<AIContent>>()!.ToList();
 
-        ContextTruncationEvent? published = null;
-        var publisher = new Mock<IMetricsPublisher>();
-        publisher
-            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
-            .Callback<MetricEvent>(e =>
+    // The result's readable text, whatever shape the rewrite chose for it.
+    private static string ResultText(IReadOnlyList<ChatMessage> captured, string callId) =>
+        Result(captured, callId).Result switch
+        {
+            string s => s,
+            IEnumerable<AIContent> contents => string.Join(
+                "", contents.OfType<TextContent>().Select(t => t.Text)),
+            var other => other?.ToString() ?? ""
+        };
+
+    private static IReadOnlyList<DataContent> AllDataContents(IReadOnlyList<ChatMessage> captured) =>
+        captured
+            .SelectMany(m => m.Contents)
+            .SelectMany(c => c switch
             {
-                if (e is ContextTruncationEvent t)
-                {
-                    published = t;
-                }
-            });
-
-        await SendAsync(messages, _store, publisher: publisher.Object, maxContextTokens: 80);
-
-        published.ShouldNotBeNull();
-        published.Sender.ShouldBe("alice");
-    }
+                DataContent d => [d],
+                FunctionResultContent { Result: IEnumerable<AIContent> inner } =>
+                    inner.OfType<DataContent>(),
+                _ => Enumerable.Empty<DataContent>()
+            })
+            .ToList();
 
     private List<ChatMessage> TurnThatRead(params (string CallId, string Path)[] reads) =>
     [
@@ -374,8 +379,12 @@ public class OpenRouterChatClientReadImageTests
         });
 
     private Task<IReadOnlyList<ChatMessage>> SendAsync(
-        List<ChatMessage> messages, bool shown = true, bool withContext = true, int? depth = null) =>
-        SendAsync(messages, _store, shown, withContext, depth);
+        List<ChatMessage> messages,
+        bool shown = true,
+        bool withContext = true,
+        int? depth = null,
+        bool acceptsImages = true) =>
+        SendAsync(messages, _store, shown, withContext, depth, acceptsImages: acceptsImages);
 
     private async Task<IReadOnlyList<ChatMessage>> SendAsync(
         List<ChatMessage> messages,
@@ -383,6 +392,7 @@ public class OpenRouterChatClientReadImageTests
         bool shown = true,
         bool withContext = true,
         int? depth = null,
+        bool acceptsImages = true,
         IMetricsPublisher? publisher = null,
         int? maxContextTokens = null,
         IAttachmentSource? attachments = null)
@@ -418,7 +428,8 @@ public class OpenRouterChatClientReadImageTests
             metricsPublisher: publisher,
             attachmentSource: attachments,
             readImageStore: store,
-            hydrationDepthMessages: depth ?? 20);
+            hydrationDepthMessages: depth ?? 20,
+            modelAcceptsImages: _ => acceptsImages);
 
         await foreach (var _ in sut.GetStreamingResponseAsync(messages, Options(withContext)))
         {

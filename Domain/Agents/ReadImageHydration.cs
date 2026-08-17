@@ -1,5 +1,5 @@
+using System.Text.Json;
 using Domain.DTOs.FileSystem;
-using Domain.Extensions;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Agents;
@@ -8,16 +8,12 @@ namespace Domain.Agents;
 // there by the model rather than by a person. It runs in the same pass, on the same message list, for
 // the same reason — one distance rule, one placeholder shape.
 //
-// An image cannot travel on the tool message that answered the read: that role's content is a plain
-// string on this provider, and content parts are accepted only on a user message. So the bytes arrive
-// as their own user message straight after the *whole* tool-result message — never between its
-// results, because the function-invoking client puts every result of an iteration in one message and
-// some providers reject a conversation in which a tool call was not answered before anything else
-// appeared. See docs/adr/0029.
+// The bytes travel inside the tool result that answered the read: the Responses wire accepts content
+// parts in a function call output, so the envelope is followed by the picture itself, in the one
+// place the model already looks for the answer. Nothing else is added to the conversation, so there
+// is no injected message to attribute, place, or exclude from anything. See docs/adr/0029.
 internal static class ReadImageHydration
 {
-    private const string SystemSender = "system";
-
     // Which tool results in this message promised the model a picture. Recognised by the envelope's
     // own shape, which parses strictly, so no other tool's result can be mistaken for an image read
     // and no second message has to be consulted to identify one. An envelope that already said the
@@ -35,49 +31,75 @@ internal static class ReadImageHydration
                 .Select(read => new ReadImageReference(read.CallId, read.Envelope!.FilePath))
                 .ToList();
 
-    public static async Task<ChatMessage?> ExpandAsync(
+    // A copy of the tool message whose promised results carry their bytes — or, where the bytes
+    // cannot or must not travel, a placeholder appended to the envelope. The original message is
+    // never touched: the copy is thrown away with the request, like everything hydration builds.
+    public static async Task<ChatMessage> ExpandAsync(
+        ChatMessage message,
         IReadOnlyList<ReadImageReference> reads,
         ReadImageContext context,
         bool withinDepth,
         CancellationToken ct)
     {
-        if (reads.Count == 0)
-        {
-            return null;
-        }
+        var byCallId = reads.ToDictionary(r => r.CallId);
 
-        var contents = new List<AIContent>();
-        foreach (var read in reads)
+        var contents = new List<AIContent>(message.Contents.Count);
+        foreach (var content in message.Contents)
         {
-            var image = withinDepth ? await context.FetchAsync(read.CallId, ct) : null;
-
-            if (image is null)
+            if (content is not FunctionResultContent result ||
+                !byCallId.TryGetValue(result.CallId, out var read))
             {
-                // The send an image drops out of view is the send its bytes go. That makes the
-                // message window the real bound and the store's own horizon only a backstop for a
-                // conversation that went quiet.
-                if (!withinDepth)
-                {
-                    await context.ForgetAsync(read.CallId, ct);
-                }
-
-                contents.Add(new TextContent(Placeholder(read.VirtualPath)));
+                contents.Add(content);
                 continue;
             }
 
-            contents.Add(new TextContent(Label(image.VirtualPath)));
-            contents.Add(new DataContent(image.Bytes, image.MediaType));
+            contents.Add(new FunctionResultContent(
+                result.CallId, await RewriteAsync(result.Result, read, context, withinDepth, ct)));
         }
 
-        var injected = new ChatMessage(ChatRole.User, contents);
-        injected.SetSenderId(SystemSender);
-        var decorated = TurnDecoration.Apply(injected, context.LocalTimeZone);
-        decorated.MarkInjected();
-        return decorated;
+        var copy = message.Clone();
+        copy.Contents = contents;
+        return copy;
     }
 
-    private static string Label(string virtualPath) =>
-        $"[The image you read from {virtualPath}:]";
+    private static async Task<object?> RewriteAsync(
+        object? envelope,
+        ReadImageReference read,
+        ReadImageContext context,
+        bool withinDepth,
+        CancellationToken ct)
+    {
+        if (!withinDepth)
+        {
+            // The send an image drops out of view is the send its bytes go. That makes the
+            // message window the real bound and the store's own horizon only a backstop for a
+            // conversation that went quiet.
+            await context.ForgetAsync(read.CallId, ct);
+            return $"{EnvelopeText(envelope)}\n{Placeholder(read.VirtualPath)}";
+        }
+
+        // The wire rejects a whole request carrying an image the model cannot take, rather than
+        // stripping it — and a later turn may be back on a model that sees, so the bytes stay.
+        if (!context.ModelAcceptsImages)
+        {
+            return $"{EnvelopeText(envelope)}\n{NoVisionPlaceholder(read.VirtualPath)}";
+        }
+
+        var image = await context.FetchAsync(read.CallId, ct);
+        if (image is null)
+        {
+            return $"{EnvelopeText(envelope)}\n{Placeholder(read.VirtualPath)}";
+        }
+
+        return new List<AIContent>
+        {
+            new TextContent(EnvelopeText(envelope)),
+            new DataContent(image.Bytes, image.MediaType)
+        };
+    }
+
+    private static string EnvelopeText(object? envelope) =>
+        envelope as string ?? JsonSerializer.Serialize(envelope);
 
     // Honest in a way a lost attachment's placeholder cannot be: the file never left the mount, so
     // reading it again really does bring it back. One answer for every way the bytes can be missing —
@@ -86,6 +108,10 @@ internal static class ReadImageHydration
         $"[The image you read from {virtualPath} is no longer in view. Read the file again if you "
         + "still need to look at it — it is still on the mount. Don't describe what it contained "
         + "from memory.]";
+
+    private static string NoVisionPlaceholder(string virtualPath) =>
+        $"[The image you read from {virtualPath} was not shown: the model running this turn does "
+        + "not accept images. Don't describe what it contained from memory.]";
 }
 
 // One image a tool result promised the model, and the path to name if the bytes cannot be found.

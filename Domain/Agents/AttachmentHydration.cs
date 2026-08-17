@@ -53,19 +53,17 @@ public static class AttachmentHydration
             var message = messages[index];
             var withinDepth = distances[index] < depthMessages;
 
-            hydrated.Add(source is not null && NeedsHydrating(message)
-                ? await HydrateAsync(message, source, withinDepth, ct)
-                : message);
-
-            // Appended after the message it belongs to rather than woven into it, and measured at
-            // that message's own distance — so the images a tool call produced age out with the
-            // call, not with wherever the injected message happens to sit.
-            var injected = await ReadImageHydration.ExpandAsync(
-                imageReads[index], readImages, withinDepth, ct);
-            if (injected is not null)
+            // The two rewrites touch different kinds of message — attachments sit on a person's
+            // turn, read images on a tool message — so each message takes at most one of them.
+            hydrated.Add(message switch
             {
-                hydrated.Add(injected);
-            }
+                _ when source is not null && NeedsHydrating(message) =>
+                    await HydrateAsync(message, source, withinDepth, ct),
+                _ when imageReads[index].Count > 0 =>
+                    await ReadImageHydration.ExpandAsync(
+                        message, imageReads[index], readImages, withinDepth, ct),
+                _ => message
+            });
         }
 
         return hydrated;
@@ -90,12 +88,8 @@ public static class AttachmentHydration
         return distances;
     }
 
-    // An injected message is excluded for the same reason a tool call is: it belongs to the turn
-    // being run rather than to the conversation. A model that reads twenty images would otherwise
-    // age out the photo a person actually sent.
     private static bool IsConversational(ChatMessage message) =>
-        !message.IsInjected
-        && !message.Contents.Any(c => c is FunctionCallContent or FunctionResultContent);
+        !message.Contents.Any(c => c is FunctionCallContent or FunctionResultContent);
 
     private static bool NeedsHydrating(ChatMessage message) =>
         message.GetAttachments() is { Count: > 0 }

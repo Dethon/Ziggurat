@@ -170,6 +170,9 @@ internal static class MessageTruncator
         TextReasoningContent r => EstimateTokens(r.Text),
         FunctionCallContent fc => EstimateTokens(JsonSerializer.Serialize(
             new { name = fc.Name, arguments = fc.Arguments })),
+        // A hydrated image read answers a list of contents ending in the picture; serializing it
+        // would count the image's base64 as text, so each part is estimated as what it is.
+        FunctionResultContent { Result: IEnumerable<AIContent> parts } => parts.Sum(EstimateContentTokens),
         FunctionResultContent fr => EstimateTokens(JsonSerializer.Serialize(fr.Result)),
         DataContent d => EstimateAttachmentTokens(d),
         _ => OtherContentOverhead

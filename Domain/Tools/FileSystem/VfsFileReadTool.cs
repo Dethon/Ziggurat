@@ -13,7 +13,7 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
     public const string ToolDescription = """
         Reads a file — text or an image.
         A text file returns its content with line numbers, formatted as "1: first line\n2: second line\n..." with trailing metadata. Large files are truncated — use offset and limit for pagination.
-        An image (png, jpg, jpeg, gif, webp) returns its path, media type and size, and the picture itself is shown to you in the message straight after the tool results. offset and limit do not apply to an image and are ignored.
+        An image (png, jpg, jpeg, gif, webp) returns its path, media type and size, and the picture itself arrives inside the tool result, straight after this envelope. offset and limit do not apply to an image and are ignored.
         """;
 
     private const string IgnoredWindowNote =
