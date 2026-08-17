@@ -85,6 +85,27 @@ struct Core {
 /// What a finished request carries back to the loop.
 struct Done(Result<Transcript, TranscribeError>);
 
+/// Injected characters must never act as keys: Enter in a chat box sends a half-finished
+/// message, and submitting is the person's own act, not the typist's. Line breaks and tabs
+/// become spaces (never doubled), every other control character is dropped, and the
+/// surrounding whitespace goes with it. Nothing else is rewritten — whisper already
+/// punctuates, and a rewrite layer would fight it.
+fn sanitize(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\r' | '\n' | '\t' => {
+                if !out.ends_with(' ') {
+                    out.push(' ');
+                }
+            }
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out.trim().to_string()
+}
+
 pub async fn run(host: Arc<dyn Host>, mut events: mpsc::Receiver<HostEvent>, session: Session) {
     let mut core = Core {
         host,
@@ -382,7 +403,7 @@ impl Core {
 
     fn accept(&mut self, transcript: Transcript) {
         let latched = self.latched();
-        let text = transcript.text.trim().to_string();
+        let text = sanitize(&transcript.text);
         // Dropping a segment is not an error and raises nothing: it is the gate working.
         if text.is_empty() || self.hallucinated(&transcript) {
             return;

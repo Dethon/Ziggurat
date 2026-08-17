@@ -293,6 +293,21 @@ async fn nothing_but_the_surrounding_whitespace_is_rewritten() {
 }
 
 #[tokio::test]
+async fn typed_text_never_carries_a_character_that_could_submit_it() {
+    // Enter in a chat box sends a half-finished message, and submitting is the person's own
+    // act. Line breaks and tabs become spaces; any other control character is dropped outright.
+    let host = FakeHost::new();
+    host.will_say("primera línea\r\nsegunda\tlínea\u{1b}");
+    let driver = Driver::start_with(host.clone(), one_spanish_binding());
+
+    driver.hold(SPANISH, &[speech(800)]).await;
+    host.wait_for_idle().await;
+
+    assert_eq!(host.injected(), ["primera línea segunda línea"]);
+    driver.stop().await;
+}
+
+#[tokio::test]
 async fn a_dictation_that_only_ever_falls_silent_asks_nothing_of_lemonade() {
     let host = FakeHost::new();
     let driver = Driver::start_with(host.clone(), one_spanish_binding());

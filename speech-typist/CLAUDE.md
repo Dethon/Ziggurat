@@ -72,6 +72,10 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
   release marks the dictation over: moving between windows is part of dictating hands-free, so
   each transcript is typed into the window in front when it arrives, and a segment joins the
   previous one with a space only when that previous text is in the same window.
+- **Injected text never submits.** A transcript is typed as characters and nothing else: line
+  breaks and tabs become spaces and every other control character is dropped, because an Enter
+  reaching a chat box sends a half-finished message. Pressing Enter is the person's own act,
+  whichever injection method is configured.
 - **The gate fails open.** A quality signal that is absent or malformed means no signal and the
   words are typed, for the same reason the .NET client fails open: a shortcoming in the response
   must never silently swallow words that were actually said.
