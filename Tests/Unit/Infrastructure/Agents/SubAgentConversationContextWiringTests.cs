@@ -105,9 +105,7 @@ public sealed class SubAgentConversationContextWiringTests : IDisposable
                     McpServerEndpoints = []
                 },
                 approvalHandler,
-                "conv-1",
-                [],
-                "fran");
+                new SpawnContext("conv-1", "fran", [], UsesOutposts: false));
         }
         else
         {

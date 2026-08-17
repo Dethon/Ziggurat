@@ -266,8 +266,17 @@ services:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerSandbox/Dockerfile
     user: ${PUID:-1654}:${PGID:-1654}
+    # Only /dev/dri, same as lemonade: the render node alone keeps this up on hosts with no
+    # /dev/kfd (Intel iGPU, Raspberry Pi). An AMD host that wants ROCm/HIP inside the sandbox
+    # adds the compute node via docker-compose.override.rocm.yml.
     devices:
       - /dev/dri:/dev/dri
+    # /dev/dri/renderD* is root:render 0660 and --device preserves host ownership, so PUID
+    # needs render as a supplementary GID or every open is EACCES and whatever the agent
+    # installed silently falls back to CPU. Set RENDER_GID from the target host:
+    # getent group render | cut -d: -f3
+    group_add:
+      - "${RENDER_GID:-993}"
     # deploy:
     #   resources:
     #     reservations:

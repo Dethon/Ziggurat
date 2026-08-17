@@ -1,0 +1,33 @@
+# Opt-in: give the sandbox the AMD ROCm compute node, so a HIP/ROCm runtime the agent installs
+# into the sandbox home volume can see the GPU.
+#
+# The base file maps only /dev/dri, which is enough for Vulkan/OpenGL/VA-API but not for ROCm:
+# a HIP runtime opens /dev/kfd first and reports the GPU as absent — not merely unusable — when
+# that node is missing. The node is not in the base file because a host with a render node but
+# no /dev/kfd (Intel iGPU, Raspberry Pi) would then fail to start the service at all:
+#   error gathering device information while adding custom device "/dev/kfd"
+#
+# Requires an AMD GPU with the amdgpu kernel driver loaded, and RENDER_GID set in .env to the
+# host's render group (the base file adds it to mcp-sandbox; /dev/kfd is root:render 0660 too,
+# so the same GID covers both nodes). Apply as an extra -f AFTER the base and OS override files:
+#
+#   docker compose \
+#     -f DockerCompose/docker-compose.yml \
+#     -f DockerCompose/docker-compose.override.linux.yml \
+#     -f DockerCompose/docker-compose.override.rocm.yml \
+#     -p jackbot up -d mcp-sandbox
+#
+# Mutually exclusive with docker-compose.override.no-dri.yml, which strips every device mapping
+# for hosts that have no render node at all.
+#
+# CAVEAT — device access is necessary, not sufficient. ROCm ships compiled kernels for a fixed
+# gfx list, and an APU whose target is absent from a given build (the Ryzen AI 370's gfx115x,
+# for one) still enumerates zero agents with both nodes mapped. That is worked around inside
+# the sandbox with HSA_OVERRIDE_GFX_VERSION against the nearest supported target, not here,
+# because the right value depends on the runtime the agent installed.
+
+services:
+  mcp-sandbox:
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/kfd:/dev/kfd

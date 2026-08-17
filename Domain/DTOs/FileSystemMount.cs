@@ -10,4 +10,9 @@ public record FileSystemMount(string Name, string MountPoint, string Description
     // the mount declares none — which is most of them. An attachment lands here, and a mount that
     // declares nothing lands nothing rather than falling back to the mount root (ADR 0025).
     public string? Workspace { get; init; }
+
+    // Whether attachments may be put into this mount. A separate claim from being able to run
+    // commands: an outpost is a filesystem on somebody's real machine and may well execute, and a
+    // person's files still belong in the sandbox (ADR 0025, refined).
+    public bool IsLandingTarget { get; init; }
 }

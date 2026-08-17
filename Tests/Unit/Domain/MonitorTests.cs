@@ -173,7 +173,8 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
         return agent;
     }
 
-    public DisposableAgent CreateSubAgent(SubAgentDefinition definition, IToolApprovalHandler approvalHandler, string conversationId, string[] whitelistPatterns, string userId)
+    public DisposableAgent CreateSubAgent(
+        SubAgentDefinition definition, IToolApprovalHandler approvalHandler, SpawnContext spawn)
         => throw new NotImplementedException();
 }
 

@@ -15,6 +15,13 @@ public record SubAgentDefinition
     // Absolute reply language. Null leaves the subagent free to follow the conversation.
     public string? Language { get; init; }
     public string[] EnabledFeatures { get; init; } = [];
+
+    // Whether this subagent may see outposts, named as it is on an agent definition and half of
+    // the answer: it reaches them only where its parent is opted in too. Nothing is opted in by
+    // default, so a worker profile added to the file hands itself no machines — the same rule as
+    // for an agent, applied a second time because the list of subagents is shared by every agent
+    // that enables the feature. See docs/adr/0028.
+    public bool UsesOutposts { get; init; }
     public int MaxExecutionSeconds { get; init; } = 120;
     public int? MaxContextTokens { get; init; }
     public string? ReasoningEffort { get; init; }

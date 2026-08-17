@@ -121,6 +121,32 @@ The agent exposes 10 unified domain tools — `VfsTextRead`, `VfsTextCreate`, `V
 
 New filesystems are added by deploying any MCP server that exposes a `filesystem://` resource — no agent code changes needed.
 
+### Outposts
+
+Every mount above is a container in the compose stack, configured into an agent by hand. An **outpost** is the exception: a filesystem on a real machine that announces itself, so the agent can read and edit the files on a laptop for as long as that laptop is switched on, with nothing added to any configuration file.
+
+It is a self-contained single-file `linux-x64` binary. Copy it onto a machine and run it:
+
+```bash
+SHAREDSECRET=... ./McpServerOutpost --name laptop --dir ~/project --jailed --hub http://agent-host:5000
+```
+
+`--name` is the mount point the agent addresses (`/laptop/...`). `--dir` is where files land and commands run, and is the mount's declared workspace. `--jailed` confines every operation to it — the mount root is still the machine's root, so a path keeps the same name either way and asking for something outside comes back as a refusal rather than an empty result. `--exec` allows commands and is off unless asked for. `--advertise` overrides the address worked out from the route toward the hub, `--port` the documented default of 8099, and `--ext` the shared list of extensions that count as text.
+
+The binary registers with the agent's HTTP API on startup, refreshes every 30 seconds against a 90 second expiry, and takes its registration back when stopped — so a machine that is switched off disappears at once, and one that loses power lapses on its own with nothing on the hub having to notice. Both directions present one shared secret — the machine when it registers, the agent when it dials — so a port on somebody's own computer is not an open door. Set `SHAREDSECRET` in the machine's environment and `OUTPOSTS__SHAREDSECRET` on the hub; it is deliberately not a flag, because a command line is visible to every process.
+
+On a machine that has this checkout, `scripts/run-outpost.sh` publishes the binary and runs it in one step, filling in `--name` (the hostname), `--dir` (the directory you ran it from) and `--hub` for the flags you did not type, and reading `SHAREDSECRET` from the environment or `OUTPOSTS__SHAREDSECRET` from `DockerCompose/.env`. Adding `--install-service` writes a systemd **user** unit that starts the binary with exactly those resolved flags at every boot:
+
+```bash
+./scripts/run-outpost.sh --name <name> --dir /home/<user>/ --exec --install-service
+```
+
+A user unit rather than a system one because an outpost publishes a person's own filesystem and the service has to reach precisely the files its operator reaches; lingering is enabled so it comes up with nobody logged in. The unit is named after the outpost (`ziggurat-outpost-<name>.service`), so a machine can run a jailed outpost and an unjailed one side by side, and it runs a copy of the binary under `~/.local/share/ziggurat-outpost` rather than the publish output — republishing over the file a running service is executing would fail with "text file busy". The secret stays out of the unit for the reason it stays off the command line, in a mode-600 `EnvironmentFile`. `--uninstall-service` takes it all back off again. WSL and an ordinary Linux machine take the same path; a WSL distro with systemd switched off gets `[boot] systemd=true` written into `/etc/wsl.conf` and a note to run `wsl --shutdown`, and one on default NAT networking is warned that the address the outpost works out for itself is not one the hub can dial back — pass `--advertise`.
+
+An agent sees outposts only if `usesOutposts` is set on it; nothing is opted in by default. Live registrations join its endpoint list when a session is built, so a machine that appeared mid-conversation is there from the next session. A machine that is asleep costs only its own mount — a dynamically registered endpoint that will not answer is logged and dropped, while a configured one still fails the session loudly ([ADR 0027](docs/adr/0027-static-endpoints-fail-dynamic-ones-are-dropped.md)). An outpost whose name is already another mount's is *shadowed*: the existing mount wins, and the next keepalive tells the machine why it never appeared.
+
+A subagent sees outposts only when its parent has `usesOutposts` and its own definition sets it too — both default to false, so delegation reaches a machine only when somebody said so twice ([ADR 0028](docs/adr/0028-a-subagent-inherits-outposts-only-if-it-also-asks.md)). What it inherits is the opt-in rather than the parent's machines: its own session build asks the registry, so it mounts whatever is live when it is spawned, `fs_exec` included where the machine allows it. It never writes a mount verdict, which stays the answer to "did the agent you registered with mount you".
+
 ### Scheduled Tasks
 
 Scheduling is a dual-role MCP server (`mcp-scheduling`) rather than an in-process agent feature. The agent connects to it both as a tool/filesystem server and as a channel:
@@ -208,6 +234,7 @@ See `satellite/README.md` for build prerequisites, CLI flags, and dev-test comma
 | **mcp-scheduling** | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_exec                                  | `filesystem://schedules` | Manage cron/one-shot scheduled agent tasks as a virtual filesystem; also runs as a channel that fires due schedules (see [Scheduled Tasks](#scheduled-tasks)) |
 | **mcp-printer**   | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_edit, fs_copy, fs_delete, fs_blob_read, fs_blob_write              | `filesystem://print-queue` | Print plain text/JPEG to a configured IPP/CUPS printer as a virtual filesystem — copy/create to submit, remove to cancel (see [Printing](#printing)) |
 | **mcp-timers**    | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_delete, fs_exec                                                    | `filesystem://timers`      | Hub-local countdown timers as a virtual filesystem — create to arm, read status.json for time left, remove to cancel, exec dismiss.sh to stop ringing; rings on the voice satellites via the voice hub |
+| **outpost**       | fs_glob, fs_read, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_copy, fs_info, fs_blob_read, fs_blob_write, fs_move_out_check, (fs_exec with `--exec`) | `filesystem://<name>` | A real machine's own filesystem, served by a single-file binary somebody copies onto it and runs. **Not a container**: no Dockerfile, no compose service, no appsettings — it takes flags, registers itself with the hub and expires on its own when the machine sleeps (see [Outposts](#outposts)) |
 
 ### MCP Channel Servers
 
@@ -261,6 +288,7 @@ Agent routing:
 | `McpServerScheduling`    | MCP server for scheduled tasks (`filesystem://schedules` + channel) |
 | `McpServerPrinter`       | MCP server exposing a print queue as `filesystem://print-queue` (IPP/CUPS) |
 | `McpServerTimers`        | MCP server exposing countdown timers as `filesystem://timers`; rings via the voice hub's HTTP endpoints |
+| `McpServerOutpost`       | MCP server for a real machine's own filesystem — self-contained single-file `linux-x64` binary, self-registering, the one server with no Dockerfile and no compose service |
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
 | `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
 | `McpChannelServiceBus`   | MCP channel server for Azure Service Bus (queues)               |

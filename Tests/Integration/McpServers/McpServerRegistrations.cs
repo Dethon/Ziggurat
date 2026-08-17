@@ -6,6 +6,7 @@ using McpChannelVoice.Modules;
 using McpServerHomeAssistant.Modules;
 using McpServerIdealista.Modules;
 using McpServerLibrary.Modules;
+using McpServerOutpost.Modules;
 using McpServerPrinter.Modules;
 using McpServerSandbox.Modules;
 using McpServerScheduling.Modules;
@@ -16,6 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 using HaSettings = McpServerHomeAssistant.Settings;
 using IdealistaSettings = McpServerIdealista.Settings;
 using LibrarySettings = McpServerLibrary.Settings;
+using OutpostSettings = McpServerOutpost.Settings;
 using PrinterSettings = McpServerPrinter.Settings;
 using SandboxSettings = McpServerSandbox.Settings;
 using SchedulingSettings = McpServerScheduling.Settings;
@@ -172,6 +174,18 @@ public static class McpServerRegistrations
             new PrinterSettings.PrinterSettings { PrinterUri = "ipp://printer:631/ipp/print" },
             (services, settings) => services.ConfigurePrinter(settings)),
 
+        // The one server with no shipped appsettings.json, because it has no Dockerfile and no
+        // compose service either: it is configured entirely by the flags somebody types when they
+        // run the binary on their own machine. ProjectDirectory still names its folder, and the
+        // appsettings assertions skip a server that ships none.
+        Row("outpost", "McpServerOutpost", McpServerRole.Tool,
+            new OutpostSettings.OutpostSettings
+            {
+                Name = "outpost",
+                WorkingDirectory = "/home/someone/project"
+            },
+            (services, settings) => services.ConfigureMcp(settings)),
+
         Row("sandbox", "McpServerSandbox", McpServerRole.Tool,
             new SandboxSettings.McpSettings
             {
@@ -182,8 +196,7 @@ public static class McpServerRegistrations
                 HomeDir = "/srv/jail/home/sandbox_user",
                 DefaultTimeoutSeconds = 30,
                 MaxTimeoutSeconds = 300,
-                OutputCapBytes = 65536,
-                AllowedExtensions = [".txt", ".py"]
+                OutputCapBytes = 65536
             },
             (services, settings) => services.ConfigureMcp(settings)),
 

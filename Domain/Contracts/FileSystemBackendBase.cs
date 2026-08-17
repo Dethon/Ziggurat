@@ -37,6 +37,15 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     // composes the virtual path from the mount point, so a backend states its own root once.
     public virtual string? Workspace => null;
 
+    // Whether a person's attachments may be put into this mount. Landing asks this rather than
+    // asking which mount can run commands: that lookup was sufficient while the sandbox was the
+    // only executing mount, and an exec-enabled outpost would otherwise start receiving somebody's
+    // files onto their own machine. Two claims, deliberately separate — a mount can be somewhere
+    // work is done without being somewhere a person's files belong (ADR 0025, refined).
+    //
+    // Default false, so a new mount receives nothing until it says so.
+    public virtual bool IsLandingTarget => false;
+
     // A caller-supplied pattern can be pathological, so every search matches under a bounded
     // timeout. Overridable because a test needs to trip it without waiting a real second.
     protected virtual TimeSpan SearchMatchTimeout => TimeSpan.FromSeconds(1);

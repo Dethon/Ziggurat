@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Infrastructure.Agents;
 using Infrastructure.Agents.Mcp;
 using ModelContextProtocol.Client;
 using Shouldly;
@@ -18,7 +19,7 @@ public class McpClientManagerDialTests
         var dialing = Stopwatch.StartNew();
 
         await Should.ThrowAsync<Exception>(() => McpClientManager.CreateAsync(
-            "test", "user", "test agent", ["http://localhost:1/mcp"],
+            "test", "user", "test agent", [McpServerEndpoint.Configured("http://localhost:1/mcp")],
             new McpClientHandlers(), ct: CancellationToken.None));
 
         dialing.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(30));

@@ -29,21 +29,24 @@ internal static class AgentSpecProjection
             ProviderRouting = ProviderRoutingResolver.Resolve(
                 definition.ProviderRouting, openRouterConfig.ProviderRouting,
                 definition.Model, definition.Id, logger),
-            McpServerEndpoints = definition.McpServerEndpoints,
+            // Everything a definition names came out of the deployment's own settings, so
+            // everything composed here is configured. Dynamic endpoints — live outposts — are
+            // merged in downstream, where the registry of them is reachable.
+            McpServerEndpoints = [.. definition.McpServerEndpoints.Select(McpServerEndpoint.Configured)],
+            UsesOutposts = definition.UsesOutposts,
             EnabledFeatures = definition.EnabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(definition.EnabledFeatures),
             WhitelistPatterns = definition.WhitelistPatterns,
             CustomInstructions = definition.CustomInstructions,
             Language = definition.Language,
             KeepsHistory = true,
+            RecordsOutpostVerdicts = true,
             PatchableModelIds = openRouterConfig.PatchableModelIds ?? []
         };
 
     public static AgentSpec ForSubAgent(
         SubAgentDefinition definition,
-        string conversationId,
-        string[] whitelistPatterns,
-        string userId,
+        SpawnContext spawn,
         OpenRouterConfig openRouterConfig,
         ILogger? logger)
     {
@@ -63,21 +66,35 @@ internal static class AgentSpecProjection
             RoutingSessionId = $"{identity}:{Guid.NewGuid():N}",
             // The parent's conversation, deliberately: a subagent acts on the parent's behalf,
             // so its metrics answer "which conversation was this slow subagent running in".
-            ConversationId = conversationId,
-            UserId = userId,
+            ConversationId = spawn.ConversationId,
+            UserId = spawn.UserId,
             Model = definition.Model,
             MaxContextTokens = definition.MaxContextTokens ?? openRouterConfig.MaxContextTokens,
             ReasoningEffort = definition.ReasoningEffort,
             ProviderRouting = ProviderRoutingResolver.Resolve(
                 definition.ProviderRouting, openRouterConfig.ProviderRouting,
                 definition.Model, identity, logger),
-            McpServerEndpoints = definition.McpServerEndpoints,
+            McpServerEndpoints = [.. definition.McpServerEndpoints.Select(McpServerEndpoint.Configured)],
+            // Two yeses, and neither alone is enough. The parent's is the ceiling — a subagent
+            // acts on its behalf and cannot reach a machine it could not — and the definition's
+            // is what keeps a narrow worker off the machines: the list of subagents is shared by
+            // every agent that enables the feature, so inheriting the parent's flag alone would
+            // hand a newly added profile every registered laptop. What is inherited is the flag
+            // and never a set of machines: the session build below asks the registry itself, so
+            // a subagent mounts whatever is live when it is spawned. See docs/adr/0028.
+            UsesOutposts = spawn.UsesOutposts && definition.UsesOutposts,
             EnabledFeatures = enabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures),
-            WhitelistPatterns = whitelistPatterns,
+            WhitelistPatterns = spawn.WhitelistPatterns,
             CustomInstructions = definition.CustomInstructions,
             Language = definition.Language,
             KeepsHistory = false,
+            // A subagent mounts the machines it was given and judges none of them. The verdict is
+            // the answer to "did the agent you registered with mount you", and a subagent is not
+            // that agent: its endpoint list is its own, so it can reach a different verdict for
+            // the same machine, and writing it would report a collision inside somebody's
+            // delegated task as the operator's name being taken.
+            RecordsOutpostVerdicts = false,
             // A config patch names a model from the parent's whitelist and an effort chosen for
             // the parent's job; a subagent runs the model its own definition configures, which
             // is the point of having one. No patch reaches a subagent today, so this is the

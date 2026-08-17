@@ -13,7 +13,9 @@ namespace Domain.Agents;
 // appears as a file: the upload store is never mounted, because one store serves every
 // conversation and a mount is visible to the model (ADR 0021).
 //
-// The mount says where it can be written and this puts the file there (ADR 0025): under the
+// The mount declares whether it is a landing target and this asks that, so an outpost — a
+// filesystem on somebody's own machine, which may well run commands — never receives a person's
+// attachments. The mount says where it can be written and this puts the file there (ADR 0025): under the
 // workspace, a directory per conversation and one per message, keeping the name the person used —
 // reduced to a single safe path segment, because a sender-supplied name is untrusted input. The
 // per-message directory is what separates one message's files from another's, so two `scan.pdf`s
@@ -44,20 +46,34 @@ public static class AttachmentLanding
         Landing landing, ILogger logger, CancellationToken ct)
     {
         var (registry, attachments, fetch, conversationId, messageKey) = landing;
-        var sandbox = FindSandbox(registry);
-        if (registry is null || sandbox is null || attachments.Count == 0)
+        var sandbox = FindLandingTarget(registry);
+        if (registry is null || attachments.Count == 0)
         {
             return LandingOutcome.Nothing;
         }
 
-        // A mount that can run something but declares nowhere to write it lands nothing. Falling
+        // No landing target and nothing that can run a command is an agent with no sandbox: the
+        // attachment is context the model looks at, and there is nothing it was ever going to act
+        // on, so nothing is named as lost.
+        //
+        // A mount that can run commands and is nobody's landing target is the other case, and the
+        // model has to be told: it can see a filesystem it could execute against, and left
+        // unnamed the file would look like one it simply failed to find.
+        if (sandbox is null)
+        {
+            return registry.GetMounts().Any(m => m.Capabilities.Contains(VfsExecTool.Name))
+                ? Unplaceable(registry, attachments, logger)
+                : LandingOutcome.Nothing;
+        }
+
+        // A mount that accepts landings but declares nowhere to write them lands nothing. Falling
         // back to the mount root is what shipped: the sandbox mount is the container root, the
         // image never creates a directory there and the container runs unprivileged, so every
         // write failed and every turn continued as if no file had been sent (ADR 0025).
         if (sandbox.Workspace is null)
         {
             logger.LogWarning(
-                "The {Mount} mount can run commands but declares no workspace, so {Count} attachment(s) "
+                "The {Mount} mount accepts landings but declares no workspace, so {Count} attachment(s) "
                 + "were not landed; the model is told which files it cannot act on",
                 sandbox.Name, attachments.Count);
             return new LandingOutcome([], [.. attachments.Select(a => a.FileName)]);
@@ -114,11 +130,29 @@ public static class AttachmentLanding
         return string.IsNullOrWhiteSpace(cleaned) || cleaned is "." or ".." ? "attachment" : cleaned;
     }
 
-    // The sandbox is the mount that can run something, which is the whole reason a file belongs
-    // there. Asking the capability rather than the name keeps this from depending on one server's
-    // spelling — and is why the mount has to say where it can be written, rather than this knowing.
-    private static FileSystemMount? FindSandbox(IVirtualFileSystemRegistry? registry) =>
-        registry?.GetMounts().FirstOrDefault(m => m.Capabilities.Contains(VfsExecTool.Name));
+    // The mount that says a person's files may be put into it. Asking the claim rather than the
+    // name keeps this from depending on one server's spelling — and is why the mount also has to
+    // say where it can be written, rather than this knowing.
+    //
+    // This used to ask which mount could run commands, which was the same question while the
+    // sandbox was the only executing mount. An outpost is a filesystem on somebody's real machine
+    // and may well execute, so the two questions came apart and landing takes the narrower one
+    // (ADR 0025, refined).
+    private static FileSystemMount? FindLandingTarget(IVirtualFileSystemRegistry? registry) =>
+        registry?.GetMounts().FirstOrDefault(m => m.IsLandingTarget);
+
+    private static LandingOutcome Unplaceable(
+        IVirtualFileSystemRegistry registry, IReadOnlyList<AttachmentReference> attachments, ILogger logger)
+    {
+        logger.LogWarning(
+            "No mount accepts landings, so {Count} attachment(s) were not landed even though {Mounts} "
+            + "can run commands; the model is told which files it cannot act on",
+            attachments.Count,
+            string.Join(", ", registry.GetMounts()
+                .Where(m => m.Capabilities.Contains(VfsExecTool.Name))
+                .Select(m => m.Name)));
+        return new LandingOutcome([], [.. attachments.Select(a => a.FileName)]);
+    }
 
     // A failed write is logged and the turn proceeds as context-only: a broken tool must not cost
     // an answer the model could still give.

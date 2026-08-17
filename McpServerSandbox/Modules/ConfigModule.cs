@@ -35,7 +35,9 @@ public static class ConfigModule
                 + "prompt for limits.",
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.ContainerRoot),
-                settings.AllowedExtensions,
+                // The one list, in Domain, so the sandbox and any other disk root over a real
+                // machine agree on what is text.
+                TextFileExtensions.Default,
                 sp.GetRequiredService<ICommandRunner>(),
                 settings.HomeDir))
             .AddToolServer(settings, ToolResponse.Create)

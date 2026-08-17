@@ -15,6 +15,16 @@ public record AgentSettings
     public PatchableModel[] PatchableModels { get; init; } = [];
     public AttachmentConfiguration Attachments { get; init; } = new();
     public RetentionSettings Retention { get; init; } = new();
+    public OutpostConfiguration Outposts { get; init; } = new();
+}
+
+public record OutpostConfiguration
+{
+    // The one value on either side of an outpost's life that is a secret, so the only one that
+    // arrives as an environment variable rather than as configuration or a flag. Empty means no
+    // machine may attach: an unset secret refuses every registration rather than accepting any,
+    // because a deployment that forgot to set it must not be one anyone on the network can join.
+    public string SharedSecret { get; [UsedImplicitly] init; } = "";
 }
 
 public record AttachmentConfiguration

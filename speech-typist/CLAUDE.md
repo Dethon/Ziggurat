@@ -56,16 +56,35 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
 - **The binding key is swallowed for the whole time it is held**, key-up included, and its own
   auto-repeat is not a second dictation. Everything else the person types mid-dictation still
   reaches the window — this is a dictation key, not a keyboard blocker.
-- **The watchdog is a correctness requirement, not a nicety.** A key-up lost to a remote desktop
-  session, fast user switching or a hook that lost its window would otherwise hold the microphone
-  for as long as the process lives. It is also the backstop if the event queue ever drops a
-  key-up under load, and it carries more weight under `dictation.mode = "latch"`, where nothing
-  is held and so nothing physically reminds a person the microphone is open.
+- **The watchdog is a correctness requirement, not a nicety — and it is a held-mode one.** A
+  key-up lost to a remote desktop session, fast user switching or a hook that lost its window
+  would otherwise hold the microphone for as long as the process lives, and it is also the
+  backstop if the event queue ever drops a key-up under load. All of that is about a key-up that
+  never arrived. Latched no key-up ends anything, so there is nothing to recover from and a clock
+  there would only be a cap on how long a person may speak: a latched dictation runs until they
+  press, however long that is. What stops it from being unbounded by accident is the tray, which
+  shows `Recording` for as long as the microphone is open. `injection.watchdog_secs` is read only
+  by held dictations.
+- **A dictation keeps the mode it began under**, which is why `Live` carries `latched` rather
+  than the core reading the config each time it asks. The tray can switch modes mid-dictation,
+  and a running dictation that changed mode underneath would either leave a person holding a key
+  that no longer ends anything, or strip the watchdog off a held dictation whose key-up is
+  exactly what went missing.
 - **Latched and held are one dictation with two endings, not two features.** `latch` changes
-  which event ends a dictation and nothing else: the hook is unaware of the mode, the same
-  `Live` state runs either way, and only the key that began a dictation can end it. Injection is
-  told no key is held while latched, because releasing a modifier the person is not pressing
-  would leave the keyboard in a state nobody chose.
+  which event ends a dictation: the hook is unaware of the mode, the same `Live` state runs
+  either way, and only the key that began a dictation can end it. Injection is told no key is
+  held while latched, because releasing a modifier the person is not pressing would leave the
+  keyboard in a state nobody chose.
+- **The window guard is a held-mode protection, and latched words follow the focus.** Held, a
+  changed window abandons the rest of the dictation — the key was let go and the person moved
+  on, and words in the wrong window are worse than missing words. Latched there is no key whose
+  release marks the dictation over: moving between windows is part of dictating hands-free, so
+  each transcript is typed into the window in front when it arrives, and a segment joins the
+  previous one with a space only when that previous text is in the same window.
+- **Injected text never submits.** A transcript is typed as characters and nothing else: line
+  breaks and tabs become spaces and every other control character is dropped, because an Enter
+  reaching a chat box sends a half-finished message. Pressing Enter is the person's own act,
+  whichever injection method is configured.
 - **The gate fails open.** A quality signal that is absent or malformed means no signal and the
   words are typed, for the same reason the .NET client fails open: a shortcoming in the response
   must never silently swallow words that were actually said.

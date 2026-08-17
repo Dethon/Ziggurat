@@ -1,6 +1,6 @@
 //! The dictation itself: a binding goes down, frames accumulate, segments are cut where the
-//! person paused, each becomes a transcript, and each transcript is typed into the window the
-//! dictation began in front of.
+//! person paused, each becomes a transcript, and each transcript is typed — held, into the
+//! window the dictation began in front of; latched, into the window in front when it arrives.
 //!
 //! Everything outward goes through [`Host`], which is what makes all of this testable in WSL.
 
@@ -31,6 +31,9 @@ struct Attempt {
 struct Live {
     key: KeyCode,
     binding: usize,
+    /// The mode this dictation began under, so the tray switching mid-dictation cannot change
+    /// how a dictation already running ends — or strip the watchdog off a held one.
+    latched: bool,
     target: WindowId,
     sample_rate: u32,
     started_ms: u64,
@@ -39,14 +42,17 @@ struct Live {
     inflight: Option<Attempt>,
     /// The key came up (or the watchdog fired): no more audio, but the queue still drains.
     ended: bool,
-    /// The window in front stopped being the target: nothing more from this dictation is typed.
+    /// Held only: the window in front stopped being the target, so nothing more from this
+    /// dictation is typed. A latched dictation is never abandoned — its words follow the focus.
     abandoned: bool,
     /// One notification per dictation, not one per segment.
     told: bool,
     /// The previous segment's transcript, for the prompt chain. A segment that produced nothing
     /// leaves it alone rather than clearing it.
     previous: Option<String>,
-    injected_any: bool,
+    /// The window the previous transcript was typed into, so a segment joins with a space only
+    /// when the text it would join is actually in front of it.
+    typed_in: Option<WindowId>,
     /// Where the audio is cut into segments. Held by the dictation rather than by the core, so a
     /// detector never carries state from one dictation into the next.
     detector: Box<dyn SegmentDetector>,
@@ -81,6 +87,27 @@ struct Core {
 
 /// What a finished request carries back to the loop.
 struct Done(Result<Transcript, TranscribeError>);
+
+/// Injected characters must never act as keys: Enter in a chat box sends a half-finished
+/// message, and submitting is the person's own act, not the typist's. Line breaks and tabs
+/// become spaces (never doubled), every other control character is dropped, and the
+/// surrounding whitespace goes with it. Nothing else is rewritten — whisper already
+/// punctuates, and a rewrite layer would fight it.
+fn sanitize(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\r' | '\n' | '\t' => {
+                if !out.ends_with(' ') {
+                    out.push(' ');
+                }
+            }
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out.trim().to_string()
+}
 
 pub async fn run(host: Arc<dyn Host>, mut events: mpsc::Receiver<HostEvent>, session: Session) {
     let mut core = Core {
@@ -207,7 +234,7 @@ impl Core {
             // Latched, the same key pressed again is how the dictation ends. Any other binding is
             // ignored either way: two languages must never interleave into the same window, and
             // the first dictation carries on undisturbed.
-            if self.latched() && self.live.as_ref().is_some_and(|live| live.key == key) {
+            if self.live.as_ref().is_some_and(|live| live.latched && live.key == key) {
                 self.stop_listening();
                 self.pump(done);
             }
@@ -234,6 +261,7 @@ impl Core {
         self.live = Some(Live {
             key,
             binding,
+            latched: self.latched(),
             target: self.host.window_in_front(),
             sample_rate: format.sample_rate,
             started_ms: self.now_ms,
@@ -243,7 +271,7 @@ impl Core {
             abandoned: false,
             told: false,
             previous: None,
-            injected_any: false,
+            typed_in: None,
             detector: Box::new(EnergyDetector::new(&self.config.detector, format.sample_rate)),
         });
         self.refresh_tray();
@@ -252,10 +280,7 @@ impl Core {
     fn on_up(&mut self, key: KeyCode, done: &mpsc::Sender<Done>) {
         // Latched, nothing is being held: the key coming up is the person taking their finger off
         // the press that began the dictation, and the next press is what ends it.
-        if self.latched() {
-            return;
-        }
-        if self.live.as_ref().is_none_or(|live| live.key != key) {
+        if self.live.as_ref().is_none_or(|live| live.latched || live.key != key) {
             return;
         }
         self.stop_listening();
@@ -276,13 +301,15 @@ impl Core {
     fn on_tick(&mut self, at_ms: u64, done: &mpsc::Sender<Done>) {
         self.now_ms = at_ms;
         let watchdog_ms = self.config.injection.watchdog_secs * 1_000;
-        let expired = self
-            .live
-            .as_ref()
-            .is_some_and(|live| !live.ended && at_ms.saturating_sub(live.started_ms) >= watchdog_ms);
+        // Held only. The watchdog recovers a key-up that never arrived — lost to a remote desktop
+        // session, fast user switching or a hook that lost its window — which would otherwise
+        // hold the microphone for as long as the process lives. Latched, no key-up ends anything,
+        // so there is no lost event to recover from and a clock here would only be a cap on how
+        // long a person may speak. A latched dictation ends when they press, and not before.
+        let expired = self.live.as_ref().is_some_and(|live| {
+            !live.latched && !live.ended && at_ms.saturating_sub(live.started_ms) >= watchdog_ms
+        });
         if expired {
-            // A key-up lost to a remote desktop session, fast user switching or a hook that lost
-            // its window would otherwise hold the microphone for as long as the process lives.
             self.stop_listening();
             self.pump(done);
         }
@@ -378,8 +405,8 @@ impl Core {
     }
 
     fn accept(&mut self, transcript: Transcript) {
-        let latched = self.latched();
-        let text = transcript.text.trim().to_string();
+        let latched = self.live.as_ref().is_some_and(|live| live.latched);
+        let text = sanitize(&transcript.text);
         // Dropping a segment is not an error and raises nothing: it is the gate working.
         if text.is_empty() || self.hallucinated(&transcript) {
             return;
@@ -388,9 +415,13 @@ impl Core {
             return;
         };
 
-        // Words in the wrong window are worse than missing words, so the target is checked
-        // immediately before typing rather than when the segment was cut.
-        if self.host.window_in_front() != live.target {
+        // Held, words in the wrong window are worse than missing words: a changed window means
+        // the key was let go and the person moved on, so the target is checked immediately
+        // before typing rather than when the segment was cut. Latched there is no key whose
+        // release marks the dictation over — moving between windows is part of dictating
+        // hands-free, and the words follow the focus.
+        let window = self.host.window_in_front();
+        if !latched && window != live.target {
             live.abandoned = true;
             live.waiting.clear();
             live.ended = true;
@@ -402,7 +433,7 @@ impl Core {
             return;
         }
 
-        let joined = if live.injected_any { format!(" {text}") } else { text.clone() };
+        let joined = if live.typed_in == Some(window) { format!(" {text}") } else { text.clone() };
         // Still held means the binding's key is logically down while these characters are sent.
         // Latched, it never is — asking the host to release a modifier the person is not pressing
         // would leave the keyboard in a state nobody chose.
@@ -421,7 +452,7 @@ impl Core {
             return;
         }
         let live = self.live.as_mut().expect("a live dictation cannot end during injection");
-        live.injected_any = true;
+        live.typed_in = Some(window);
         live.previous = Some(text);
     }
 

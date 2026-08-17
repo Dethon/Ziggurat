@@ -18,7 +18,11 @@ public sealed record AgentSpec
     public int? MaxContextTokens { get; init; }
     public string? ReasoningEffort { get; init; }
     public ProviderRouting? ProviderRouting { get; init; }
-    public required string[] McpServerEndpoints { get; init; }
+    public required IReadOnlyList<McpServerEndpoint> McpServerEndpoints { get; init; }
+
+    // Whether live outposts join the endpoint list above when a session is built. A deliberate
+    // choice per agent, never a default.
+    public bool UsesOutposts { get; init; }
     public required IReadOnlyList<string> EnabledFeatures { get; init; }
 
     // Derived from the enabled features by the projection rather than handed to the agent
@@ -28,5 +32,12 @@ public sealed record AgentSpec
     public string? CustomInstructions { get; init; }
     public string? Language { get; init; }
     public required bool KeepsHistory { get; init; }
+
+    // Whether this build writes each outpost's mount verdict back onto its registration. True for
+    // an agent and false for a subagent: the verdict is a machine's one feedback channel and it
+    // answers "did the agent you registered with mount you", so a collision reached inside a
+    // delegated task is not the operator's to be told about. Its own field rather than a second
+    // meaning for KeepsHistory, which is about thread state and would answer this by coincidence.
+    public required bool RecordsOutpostVerdicts { get; init; }
     public required IReadOnlyList<string> PatchableModelIds { get; init; }
 }

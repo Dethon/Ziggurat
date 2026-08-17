@@ -31,7 +31,7 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
 
         // Act
         var session = await ThreadSession.CreateAsync(
-            [fixture.McpEndpoint],
+            [McpServerEndpoint.Configured(fixture.McpEndpoint)],
             "TestClient",
             "test-user",
             "Test Description",

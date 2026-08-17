@@ -5,6 +5,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
+using Domain.Outposts;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
@@ -72,7 +73,8 @@ public static class InjectorModule
                     sp.GetRequiredService<ILogger<OpenRouterModelCapabilities>>()))
                 .AddSingleton<IModelCapabilityCatalog>(sp =>
                     sp.GetRequiredService<OpenRouterModelCapabilities>())
-                .AddHostedService<ModelCapabilityRefresher>();
+                .AddHostedService<ModelCapabilityRefresher>()
+                .AddOutposts(settings.Outposts);
         }
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
@@ -106,6 +108,12 @@ public static class InjectorModule
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>()));
         }
 
+        private IServiceCollection AddOutposts(OutpostConfiguration outposts) =>
+            // The registry and the secret travel together, because neither is any use without the
+            // other: a registration nobody may dial is a mount that cannot be reached.
+            services.AddSingleton(sp => new OutpostAccess(
+                sp.GetRequiredService<IOutpostRegistry>(), outposts.SharedSecret));
+
         private IServiceCollection AddRedis(RedisConfiguration config, RetentionSettings retention)
         {
             return services
@@ -116,7 +124,16 @@ public static class InjectorModule
                     retention,
                     sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>()));
+                    sp.GetRequiredService<IConnectionMultiplexer>()))
+                // An outpost registration survives the agent recycling because it lives here
+                // rather than in this process: a container restart must not silently drop every
+                // machine that had announced itself.
+                .AddSingleton<IOutpostStore>(sp => new RedisOutpostStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>()))
+                .AddSingleton<IOutpostRegistry>(sp => new OutpostRegistry(
+                    sp.GetRequiredService<IOutpostStore>(),
+                    sp.GetRequiredService<IMetricsPublisher>(),
+                    sp.GetRequiredService<TimeProvider>()));
         }
     }
 }

@@ -55,7 +55,8 @@ public sealed class AgentSpecProjectionTests
         _agentDefinition, new AgentKey("conv-1", "jack"), "fran", _openRouter, null);
 
     private static AgentSpec SubAgentSpec() => AgentSpecProjection.ForSubAgent(
-        _subAgentDefinition, "conv-1", ["allow-*"], "fran", _openRouter, null);
+        _subAgentDefinition, new SpawnContext("conv-1", "fran", ["allow-*"], UsesOutposts: false),
+        _openRouter, null);
 
     // One row per field the two paths resolve, so a new difference is a new row rather than a
     // new test. A row whose two expectations are equal is a difference this change removed on
@@ -68,6 +69,9 @@ public sealed class AgentSpecProjectionTests
         Row("conversation id", s => s.ConversationId, "conv-1", "conv-1"),
         Row("metrics identity", s => s.MetricsAgentId, "Jack", "Worker"),
         Row("keeps history", s => s.KeepsHistory, true, false),
+        // A mount verdict answers "did the agent you registered with mount you", so a delegated
+        // task's collision set is nobody's business at the machine.
+        Row("records outpost verdicts", s => s.RecordsOutpostVerdicts, true, false),
         Row("patchable model ids", s => s.PatchableModelIds,
             new[] { "model-a", "model-b" }, Array.Empty<string>()),
         Row("enabled features", s => s.EnabledFeatures,
@@ -79,7 +83,13 @@ public sealed class AgentSpecProjectionTests
             new[] { "allow-*" }, new[] { "allow-*" }),
         // The agent declares its own routing wholesale; the subagent declares none and inherits
         // the global default. Both arrive on the spec already resolved.
-        Row("provider routing", s => s.ProviderRouting, _declaredRouting, _globalRouting)
+        Row("provider routing", s => s.ProviderRouting, _declaredRouting, _globalRouting),
+        // An endpoint stops being a bare string here. Everything the projection reads came out of
+        // appsettings.json, so everything it composes is marked configured; a dynamic one is
+        // contributed later, by the registry of live outposts, and never by a definition.
+        Row("mcp server endpoints", s => s.McpServerEndpoints,
+            new[] { McpServerEndpoint.Configured("http://tools") },
+            new[] { McpServerEndpoint.Configured("http://tools") })
     ];
 
     [Theory]
@@ -89,6 +99,25 @@ public sealed class AgentSpecProjectionTests
     {
         read(AgentSpec()).ShouldBe(expectedForAgent);
         read(SubAgentSpec()).ShouldBe(expectedForSubAgent);
+    }
+
+    // Two flags rather than one, and the whole table is the argument for it: the parent is the
+    // ceiling, so a worker cannot reach a machine its parent cannot, and the worker's own
+    // definition is the second yes, so adding a narrow profile to the shipped settings does not
+    // hand it every registered laptop. ADR-0028 has the alternatives and why they lose.
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, false)]
+    public void ForSubAgent_TheOutpostsOptIn_IsTheParentsAndItsOwn(
+        bool parent, bool ownDefinition, bool expected)
+    {
+        AgentSpecProjection.ForSubAgent(
+                _subAgentDefinition with { UsesOutposts = ownDefinition },
+                new SpawnContext("conv-1", "fran", ["allow-*"], UsesOutposts: parent),
+                _openRouter, null)
+            .UsesOutposts.ShouldBe(expected);
     }
 
     // The session id is what OpenRouter sticks a prompt cache to, so two spawns of the same

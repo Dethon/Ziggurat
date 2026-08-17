@@ -26,6 +26,40 @@ public class AgentAppSettingsTests
             .ShouldNotContain("the language the user spoke");
     }
 
+    // One of the few values worth reading back off the file, because it is a rule rather than a
+    // setting: an agent that exists to search for downloads has no business reaching a person's
+    // laptop, and the opt-in is what keeps a machine appearing on the network from widening what
+    // any agent can touch. Turning it on for the download assistant would be a decision, and a
+    // decision is what this is here to make somebody state.
+    [Fact]
+    public void Outposts_TheDownloadAssistant_IsNotOptedIn()
+    {
+        BoundAgents().Single(a => a.Id == "jack").UsesOutposts.ShouldBeFalse();
+    }
+
+    // The other half of the same rule, and the delegation path the deployment actually uses: both
+    // agents that enable subagents are opted in, so the worker saying yes too is what makes a
+    // delegated task reach the machines its parent can already reach.
+    [Fact]
+    public void Outposts_TheWorkerSubAgent_IsOptedIn()
+    {
+        BoundSubAgents().Single(a => a.Id == "jonas-worker").UsesOutposts.ShouldBeTrue();
+    }
+
+    // An omitted flag means no at either level, which is the whole point of both defaulting to
+    // false — a profile added without thinking about machines reaches none of them.
+    [Fact]
+    public void Bind_ASubAgentDeclaringNoOptIn_ReachesNoOutposts()
+    {
+        var settings = BindSettings(
+            ("subAgents:0:id", "worker"),
+            ("subAgents:0:name", "Worker"),
+            ("subAgents:0:model", "openai/gpt-5"),
+            ("subAgents:0:mcpServerEndpoints:0", "http://localhost"));
+
+        settings.SubAgents.Single().UsesOutposts.ShouldBeFalse();
+    }
+
     // The rest of the chain: appsettings -> AgentDefinition -> system prompt. Every hop binds by
     // convention, so a renamed or dropped key fails nothing at build time -- the agent just
     // quietly goes back to inferring its language from an all-English request.

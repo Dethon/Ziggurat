@@ -199,9 +199,9 @@ max_prompt_chars = 700
 # "hold"  — hold the key for as long as you speak; letting go ends the dictation.
 # "latch" — press once to begin and again to end, with nothing held in between. Useful for a long
 #           dictation, and for a keyboard whose binding key is awkward to hold. The same key that
-#           began it is the only one that ends it, and the watchdog below still closes a latched
-#           dictation nobody ended — with nothing held there is no physical reminder that the
-#           microphone is open.
+#           began it is the only one that ends it, and it runs until you press however long that
+#           takes — the watchdog below is for a key-up that never arrived, and latched there is
+#           none. The tray icon shows it is recording for as long as the microphone is open.
 mode = "hold"
 
 [audio]
@@ -243,8 +243,9 @@ min_avg_logprob = -1.0
 # the escape hatch for applications that mishandle them; it restores the previous clipboard.
 # Never chosen automatically per application.
 method = "keys"
-# A dictation whose key-up never arrives — remote desktop, fast user switching, a hook that lost
-# its window — ends by itself after this long, so the microphone is never held indefinitely.
+# A held dictation whose key-up never arrives — remote desktop, fast user switching, a hook that
+# lost its window — ends by itself after this long, so the microphone is never held indefinitely.
+# A latched dictation has no key-up to lose and ignores this: it ends when you press again.
 watchdog_secs = 120
 
 # A binding is a key together with the language its transcripts are expected in and the

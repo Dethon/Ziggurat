@@ -56,3 +56,10 @@ preserve exactly the silent failure this ADR exists to remove.
   behind, and nothing sweeps that either.
 - A future mount that wants a workspace declares one. Nothing else has to change, and nothing
   reads the field except the code that decides where an attachment goes.
+- **Refined 2026-08-15, when outposts arrived.** Asking for the exec capability was a sufficient
+  way to find the sandbox while it was the only mount that could run anything. An outpost is a
+  filesystem on a person's real machine and may be exec-capable, so the lookup would have started
+  landing attachments there. A mount now declares whether it accepts landings as its own claim,
+  published beside the workspace, and landing asks for that instead. The principle above is
+  unchanged and the reason for it is the same: the mount answers for itself, and landing never
+  reasons from a name.

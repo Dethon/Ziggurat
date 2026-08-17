@@ -42,12 +42,9 @@ public sealed class MultiAgentFactory(
     public DisposableAgent CreateSubAgent(
         SubAgentDefinition definition,
         IToolApprovalHandler approvalHandler,
-        string conversationId,
-        string[] whitelistPatterns,
-        string userId)
+        SpawnContext spawn)
     {
-        var spec = AgentSpecProjection.ForSubAgent(
-            definition, conversationId, whitelistPatterns, userId, openRouterConfig, _logger);
+        var spec = AgentSpecProjection.ForSubAgent(definition, spawn, openRouterConfig, _logger);
 
         return Build(spec, approvalHandler);
     }
@@ -76,9 +73,13 @@ public sealed class MultiAgentFactory(
         var effectiveClient = new ToolApprovalChatClient(
             chatClient, approvalHandler, spec.ConversationId, spec.WhitelistPatterns, agentPublisher);
 
+        // Composed from the spec this build is already running against, so the parent's values
+        // reach the projection with no second source of truth for any of them.
+        var spawn = new SpawnContext(
+            spec.ConversationId, spec.UserId, spec.WhitelistPatterns, spec.UsesOutposts);
+
         var featureConfig = new FeatureConfig(
-            SubAgentFactory: def => CreateSubAgent(
-                def, approvalHandler, spec.ConversationId, spec.WhitelistPatterns, spec.UserId),
+            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, spawn),
             UserId: spec.UserId,
             ConversationContextProvider: () => ConversationContextMeta.Current);
 
@@ -102,7 +103,11 @@ public sealed class MultiAgentFactory(
             domainTools,
             domainPrompts,
             loggerFactory,
-            _promptCache);
+            _promptCache,
+            // Optional: a host with no outpost access — every test host, and any deployment that
+            // never turned them on — simply has no outposts to offer, which is the same answer as
+            // an agent that did not opt in.
+            serviceProvider?.GetService<OutpostAccess>());
     }
 
     internal IChatClient CreateChatClient(

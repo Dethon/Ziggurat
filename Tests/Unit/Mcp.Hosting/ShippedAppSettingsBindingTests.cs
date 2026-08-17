@@ -27,7 +27,20 @@ public class ShippedAppSettingsBindingTests
     private static readonly MethodInfo _bindMethod = typeof(SettingsBinder)
         .GetMethod(nameof(SettingsBinder.BindSettings), BindingFlags.Static | BindingFlags.NonPublic)!;
 
-    public static TheoryData<string> Servers => McpServerRegistrations.Ids(McpServerRegistrations.All);
+    // Every server that ships an appsettings.json. The outpost ships none and never will: it has no
+    // Dockerfile and no compose service either, because it is a file somebody copies onto their own
+    // machine and starts with flags. A row with nothing to bind would assert nothing.
+    public static TheoryData<string> Servers => McpServerRegistrations.Ids(
+        McpServerRegistrations.All.Where(row => File.Exists(ShippedAppSettings(row))));
+
+    // The exemption stated rather than left as an empty theory: a server that quietly stopped
+    // shipping its settings file would otherwise drop out of this suite without a word.
+    [Fact]
+    public void TheOutpostAlone_ShipsNoAppSettings() =>
+        McpServerRegistrations.All
+            .Where(row => !File.Exists(ShippedAppSettings(row)))
+            .Select(row => row.Id)
+            .ShouldBe(["outpost"]);
 
     [Theory]
     [MemberData(nameof(Servers))]

@@ -38,7 +38,8 @@ public class FileSystemServerConformanceTests
         { "ha", "homeassistant", typeof(HaFileSystem) },
         { "media", "library", typeof(MediaLibraryDiskFileSystem) },
         { "vault", "vault", typeof(TextDiskFileSystem) },
-        { "sandbox", "sandbox", typeof(SandboxFileSystem) }
+        { "sandbox", "sandbox", typeof(SandboxFileSystem) },
+        { "outpost", "outpost", typeof(OutpostFileSystem) }
     };
 
     // What each mount is expected to advertise, written out rather than derived. Everything else in
@@ -77,6 +78,16 @@ public class FileSystemServerConformanceTests
             [
                 "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
                 "fs_delete", "fs_copy", "fs_exec", "fs_blob_read", "fs_blob_write"
+            ],
+            // The vault's surface plus the move-out check, and no exec. Exec is off unless the
+            // operator asked for it, and the row here is a plain outpost. The check is the second
+            // mount in the repo to have a rule about what may leave it: a jailed outpost refuses a
+            // transfer out of a path it refuses everything else on, and a transfer never reaches
+            // fs_move to be refused there.
+            ["outpost"] =
+            [
+                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
+                "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write", "fs_move_out_check"
             ]
         };
 
@@ -93,7 +104,28 @@ public class FileSystemServerConformanceTests
             ["ha"] = null,
             ["media"] = null,
             ["vault"] = null,
-            ["sandbox"] = "home/sandbox_user"
+            ["sandbox"] = "home/sandbox_user",
+            // The working directory it was started with: where files land and commands run.
+            ["outpost"] = "home/someone/project"
+        };
+
+    // Which mounts accept a person's attachments. The sandbox alone, and deliberately not by way of
+    // being the mount that can execute: an outpost is a filesystem on somebody's own machine and may
+    // well run commands, so the two claims came apart (ADR 0025, refined). Written out here for the
+    // same reason the workspaces are — a claim derived from the code it checks proves nothing.
+    private static readonly IReadOnlyDictionary<string, bool> _landingTargets =
+        new Dictionary<string, bool>(StringComparer.Ordinal)
+        {
+            ["timers"] = false,
+            ["schedules"] = false,
+            ["print-queue"] = false,
+            ["ha"] = false,
+            ["media"] = false,
+            ["vault"] = false,
+            ["sandbox"] = true,
+            // Never, exec or not. A person's attachments belong in the deployment's own container,
+            // not on whichever of their machines happens to be switched on.
+            ["outpost"] = false
         };
 
     // The shipped server, not a re-registration of it: each row drives the ConfigModule that runs in
@@ -124,8 +156,10 @@ public class FileSystemServerConformanceTests
         // setting, the declaration and the landing target cannot disagree.
         var configured = (FileSystemBackendBase)provider.GetRequiredService(backendType);
         configured.Workspace.ShouldBe(_workspaces[name], serverId);
-        Published(FileSystemServerResource.Describe(configured)).Workspace
-            .ShouldBe(_workspaces[name], serverId);
+        configured.IsLandingTarget.ShouldBe(_landingTargets[name], serverId);
+        var describedMount = Published(FileSystemServerResource.Describe(configured));
+        describedMount.Workspace.ShouldBe(_workspaces[name], serverId);
+        describedMount.LandingTarget.ShouldBe(_landingTargets[name], serverId);
 
         // The backend's own declaration of the same set: what it overrides is what the server
         // registers is what the mount publishes.
@@ -175,7 +209,9 @@ public class FileSystemServerConformanceTests
             ["sandbox"] = new SandboxFileSystem(
                 "sandbox", "A sandbox container.", Mock.Of<IFileSystemClient>(),
                 new LibraryPathConfig("/sandbox"), [".py"], Mock.Of<ICommandRunner>(),
-                "/sandbox/home/sandbox_user")
+                "/sandbox/home/sandbox_user"),
+            ["outpost"] = new OutpostFileSystem(
+                "outpost", Mock.Of<IFileSystemClient>(), "/home/someone/project", [".py"])
         };
 
     // The other half of the same idea. A mount's identity used to be written three times per server
@@ -260,7 +296,8 @@ public class FileSystemServerConformanceTests
         JsonSerializer.Deserialize<PublishedMount>(
             json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
 
-    private record PublishedMount(string Name, string MountPoint, string Description, string? Workspace);
+    private record PublishedMount(
+        string Name, string MountPoint, string Description, string? Workspace, bool LandingTarget);
 
     // The move-out check inverts what an override means: elsewhere overriding declares "I can do
     // this", here it declares "I have something to refuse". So a backend with no rule registers no

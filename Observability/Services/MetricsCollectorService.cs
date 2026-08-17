@@ -134,6 +134,9 @@ public sealed class MetricsCollectorService(
             case VoiceEvent voice:
                 await ProcessVoiceAsync(voice, db);
                 break;
+            case OutpostEvent outpost:
+                await ProcessOutpostAsync(outpost, db);
+                break;
         }
     }
 
@@ -229,6 +232,21 @@ public sealed class MetricsCollectorService(
             db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
 
         await hubContext.Clients.All.SendAsync("OnScheduleExecution", evt);
+    }
+
+    // Stored as a day-keyed time series like a schedule execution, and pushed nowhere: outposts
+    // have no view in the dashboard on purpose. What this answers is "was that machine up at two
+    // o'clock", which nothing else can answer — an outpost leaves no other trace of having been
+    // there.
+    private async Task ProcessOutpostAsync(OutpostEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:outposts:{dateKey}";
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        await Task.WhenAll(
+            db.SortedSetAddAsync(sortedSetKey, json, evt.Timestamp.ToUnixTimeMilliseconds()),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
     }
 
     private async Task ProcessHeartbeatAsync(HeartbeatEvent evt, IDatabase db)

@@ -25,7 +25,10 @@ public sealed class McpAgent : DisposableAgent
     private readonly string _description;
     private readonly IReadOnlyList<AIFunction> _domainTools;
     private readonly IReadOnlyList<string> _domainPrompts;
-    private readonly string[] _endpoints;
+    private readonly IReadOnlyList<McpServerEndpoint> _endpoints;
+    private readonly bool _usesOutposts;
+    private readonly bool _recordsOutpostVerdicts;
+    private readonly OutpostAccess? _outposts;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger<McpAgent>? _logger;
@@ -65,9 +68,13 @@ public sealed class McpAgent : DisposableAgent
         IReadOnlyList<AIFunction> domainTools,
         IReadOnlyList<string> domainPrompts,
         ILoggerFactory? loggerFactory = null,
-        McpPromptCache? promptCache = null)
+        McpPromptCache? promptCache = null,
+        OutpostAccess? outposts = null)
     {
         _endpoints = spec.McpServerEndpoints;
+        _usesOutposts = spec.UsesOutposts;
+        _recordsOutpostVerdicts = spec.RecordsOutpostVerdicts;
+        _outposts = outposts;
         _filesystemEnabledTools = spec.FilesystemEnabledTools;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger<McpAgent>();
@@ -458,10 +465,26 @@ public sealed class McpAgent : DisposableAgent
                 return existing;
             }
 
+            // Asked here rather than at construction: an agent outlives many sessions and an
+            // outpost outlives none, so a machine that appeared since the last session is picked
+            // up by the next one and nothing mutates a session already built.
+            var composed = await OutpostEndpoints.ComposeAsync(
+                _endpoints, _outposts, _usesOutposts, _logger, ct);
+
             var newSession = await ThreadSession
-                .CreateAsync(_endpoints, _name, _userId, _description,
+                .CreateAsync(composed.Endpoints, _name, _userId, _description,
                              _domainTools, _filesystemEnabledTools, _loggerFactory,
                              ct, _promptCache);
+
+            // The one moment a shadowed outpost is knowable, and the machine serving it has no way
+            // to find out for itself — the next keepalive carries the answer home. Whether this
+            // build is one that answers is a field on the spec, like everything else that differs
+            // between an agent and a subagent.
+            await OutpostEndpoints.RecordVerdictsAsync(
+                _outposts, _recordsOutpostVerdicts, composed.Outposts,
+                newSession.MountedNames, newSession.ShadowedNames,
+                newSession.ClientManager.DialledEndpoints, _logger, ct);
+
             _threadSessions[thread] = newSession;
             return newSession;
         }, ct);

@@ -259,7 +259,9 @@ A dictation carrying on with nothing held down. It is the same dictation and not
 one: the same audio keeps accumulating under the same clock, and only the way it can end
 changes, from letting go to pressing. The chat client and the speech typist both have it;
 in the speech typist it is a setting rather than something reached mid-dictation, so a
-binding either latches or is held and never both in one press.
+binding either latches or is held and never both in one press. There the target window
+also stops being pinned: a latched dictation survives a window change, and its words
+follow the focus.
 _Avoid_: locked recording, hands-free, toggle mode
 
 ## Speech typing
@@ -297,10 +299,10 @@ delivery.
 _Avoid_: paste, output, send keys, emit
 
 **Target window**:
-The window a dictation was begun in front of, and the only one its words are allowed
-to arrive in. A dictation whose target stops being the one in front ends where it is,
-with the rest of its words unsaid — words in the wrong window are worse than missing
-ones.
+The window a held dictation was begun in front of, and the only one its words are
+allowed to arrive in. A held dictation whose target stops being the one in front ends
+where it is, with the rest of its words unsaid — words in the wrong window are worse
+than missing ones. A latched dictation has no target: its words follow the focus.
 _Avoid_: focused window, active window, foreground
 
 ## Channel connection
@@ -519,6 +521,37 @@ makes about itself rather than something a caller finds by trying, and most moun
 having one says the mount is somewhere work can be done, not merely read.
 _Avoid_: home directory, writable root, scratch space
 
+**Landing target**:
+A mount's claim that attachments may be put into it. It is a separate claim from being able to
+run commands: a mount can be somewhere work is done without being somewhere a person's files
+belong.
+_Avoid_: landing mount, attachment destination, sandbox mount
+
+## Outposts
+
+**Outpost**:
+A filesystem on a real machine that announces itself to the hub, rather than being configured
+into it. It is the only mount whose existence is decided by the machine it lives on, so it can
+be absent for reasons that are nobody's fault.
+_Avoid_: remote filesystem, host filesystem, satellite, node
+
+**Outpost registration**:
+The hub's record that one outpost is live, named by the outpost and expiring on its own. It is
+a claim with a lifetime rather than a piece of configuration: nothing deletes it when a machine
+dies, it simply stops being renewed.
+_Avoid_: registration entry, lease, session, connection
+
+**Jailed outpost**:
+An outpost that refuses every path outside its working directory. It is still mounted at the
+machine's root, so jailing changes what an operation will do and never what a path is called.
+_Avoid_: chrooted, restricted mount, sandboxed outpost
+
+**Shadowed outpost**:
+An outpost whose name is already some other mount's, and which is therefore not mounted at all.
+The existing mount always wins, so a name collision costs the outpost rather than quietly
+replacing what was there.
+_Avoid_: duplicate mount, conflicting outpost, rejected registration
+
 ## Media library
 
 **Live download**:
@@ -554,5 +587,7 @@ _Avoid_: agent options, agent config, agent definition
 
 **Subagent**:
 An agent that another agent spawns for one task. It keeps no history, and it runs
-under the parent's conversation because it acts on the parent's behalf.
+under the parent's conversation because it acts on the parent's behalf. It reaches
+outposts only when its parent and its own definition both allow it, so it is never
+more privileged than the agent that spawned it.
 _Avoid_: child agent, worker, nested agent
