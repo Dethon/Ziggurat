@@ -5,7 +5,7 @@ namespace Domain.Contracts;
 // What the store answers when asked what is out there: the registrations still live, and the names
 // it was holding that have gone since the last read. A lapsed name is reported once and then
 // forgotten, which is what lets an expiry be published as an event without anything watching for
-// one — there is no reaper, no sweep and no timer on the hub (spec, Registration).
+// one — there is no reaper, no sweep and no timer on the hub (docs/adr/0027).
 public sealed record OutpostSnapshot(
     IReadOnlyList<OutpostRegistration> Live,
     IReadOnlyList<string> Lapsed);

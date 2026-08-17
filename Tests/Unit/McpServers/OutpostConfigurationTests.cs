@@ -57,7 +57,8 @@ public class OutpostConfigurationTests
     }
 
     // `--jailed`, not `--jailed true`: that is what a person types, and the command-line
-    // configuration provider throws on a switch with no value.
+    // configuration provider would otherwise swallow the next flag as the switch's value or drop
+    // a trailing one on the floor.
     [Theory]
     [InlineData("--jailed")]
     [InlineData("--jailed=true")]

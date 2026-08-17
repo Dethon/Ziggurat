@@ -19,8 +19,12 @@ public static class OutpostFlags
     };
 
     // A boolean switch is typed on its own — `--jailed`, not `--jailed true` — and the
-    // command-line configuration provider requires every switch to carry a value, throwing on a
-    // bare one. Both booleans are given the value they obviously mean before it ever sees them.
+    // command-line configuration provider does not read it that way: a bare switch swallows the
+    // next argument as its value (`--jailed --exec` reads Jailed as "--exec") and a bare trailing
+    // one is silently dropped. Both booleans are given the value they obviously mean before the
+    // provider ever sees them. The host builder's own command-line source still holds the raw
+    // args, mis-parsed exactly so — harmless only because this sanitized source sits above it and
+    // restates every key a flag can set.
     private static readonly string[] _booleanFlags = ["--jailed", "--exec"];
 
     // The one value that is not a flag, refused rather than ignored. The reason it is a secret is
