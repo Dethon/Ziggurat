@@ -2,6 +2,8 @@ using Domain.Tools.Files;
 using McpServerOutpost.Modules;
 using McpServerOutpost.Settings;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.EnvironmentVariables;
+using Microsoft.Extensions.Configuration.Memory;
 using Shouldly;
 
 namespace Tests.Unit.McpServers;
@@ -89,9 +91,7 @@ public class OutpostConfigurationTests
     }
 
     // The binder's own gate, reached through the outpost's wrapper: a missing flag fails startup
-    // naming what is missing rather than serving a machine nobody asked for. Asked of --dir rather
-    // than --name because the real process environment is in this stack and a bare `NAME` is set on
-    // an ordinary shell, which would fill the gap and hide the gate.
+    // naming what is missing rather than serving a machine nobody asked for.
     [Fact]
     public void StartingWithNoWorkingDirectory_FailsNamingWhatIsMissing()
     {
@@ -120,9 +120,29 @@ public class OutpostConfigurationTests
     }
 
     private static OutpostSettings Bind(string[] args, Dictionary<string, string?>? environment = null) =>
-        new ConfigurationBuilder()
-            // Stands in for the process environment, which BindSettings reads for real and no test
-            // may write to: it is added first, exactly where AddEnvironmentVariables lands.
-            .AddInMemoryCollection(environment ?? [])
-            .GetOutpostSettings(args);
+        new BuilderWithFakeEnvironment(environment ?? []).GetOutpostSettings(args);
+
+    // The real process environment must never reach these tests — a SHAREDSECRET or NAME exported
+    // in the shell running them would shadow the fake — and no test may write to it either, because
+    // the suite runs in parallel in one process. So the fake is swapped in for the environment
+    // source itself: it lands exactly where AddEnvironmentVariables lands, and precedence is
+    // measured against the real stack.
+    private sealed class BuilderWithFakeEnvironment(Dictionary<string, string?> environment)
+        : IConfigurationBuilder
+    {
+        private readonly ConfigurationBuilder _inner = new();
+
+        public IDictionary<string, object> Properties => _inner.Properties;
+        public IList<IConfigurationSource> Sources => _inner.Sources;
+
+        public IConfigurationBuilder Add(IConfigurationSource source)
+        {
+            _inner.Add(source is EnvironmentVariablesConfigurationSource
+                ? new MemoryConfigurationSource { InitialData = environment }
+                : source);
+            return this;
+        }
+
+        public IConfigurationRoot Build() => _inner.Build();
+    }
 }
