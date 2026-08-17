@@ -10,6 +10,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
 using OpenAI;
@@ -29,6 +30,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
     private readonly IAttachmentSource? _attachmentSource;
+    private readonly IReadImageStore? _readImageStore;
     private readonly int _hydrationDepthMessages;
 
     public OpenRouterChatClient(
@@ -42,13 +44,15 @@ public sealed class OpenRouterChatClient : IChatClient
         ProviderRouting? providerRouting = null,
         HttpMessageHandler? transportHandler = null,
         IAttachmentSource? attachmentSource = null,
-        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages)
+        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
+        IReadImageStore? readImageStore = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
+        _readImageStore = readImageStore;
         _hydrationDepthMessages = hydrationDepthMessages;
         _httpClient = CreateHttpClient(
             _reasoningQueue, _costQueue, _cachedTokenQueue, sessionId, providerRouting, transportHandler);
@@ -63,13 +67,15 @@ public sealed class OpenRouterChatClient : IChatClient
         IMetricsPublisher? metricsPublisher = null,
         TimeProvider? timeProvider = null,
         IAttachmentSource? attachmentSource = null,
-        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages)
+        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
+        IReadImageStore? readImageStore = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
+        _readImageStore = readImageStore;
         _hydrationDepthMessages = hydrationDepthMessages;
         _client = innerClient;
     }
@@ -97,16 +103,23 @@ public sealed class OpenRouterChatClient : IChatClient
         var decorated = messages
             .Select(x => TurnDecoration.Apply(x, _timeProvider.LocalTimeZone))
             .ToList();
+        // The conversation reaches this send on the turn's own options, the way MCP tool metadata
+        // already does: a chat client is built per model from DI, so there is nothing per
+        // conversation for it to have been constructed with.
         var transformedMessages = await AttachmentHydration.ApplyAsync(
-            decorated, _attachmentSource, _hydrationDepthMessages, ct);
+            decorated, _attachmentSource, _readImageStore,
+            ConversationContextMeta.TryRead(options)?.ConversationId,
+            _hydrationDepthMessages, _timeProvider.LocalTimeZone, ct);
 
         // The model a per-message config patch resolved to rides this request's own options
         // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on
         // and a concurrent turn has nothing shared to overwrite.
         var effectiveModel = options?.ModelId ?? _model;
 
+        // Skipping the messages this send injected: an image the model went looking for arrives on a
+        // user message attributed to the system, and the metric answers "whose turn overflowed".
         var sender = transformedMessages
-            .LastOrDefault(m => m.Role == ChatRole.User)
+            .LastOrDefault(m => m.Role == ChatRole.User && !m.IsInjected)
             ?.GetSenderId();
 
         var fixedOverhead = MessageTruncator.EstimateOptionsOverheadTokens(options);

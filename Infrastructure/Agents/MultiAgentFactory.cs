@@ -158,7 +158,10 @@ public sealed class MultiAgentFactory(
             // client built without a container has no way to ask. Neither is an error — the turn
             // simply reaches the model with no bytes put back.
             attachmentSource: serviceProvider?.GetService<IAttachmentSource>(),
-            hydrationDepthMessages: openRouterConfig.HydrationDepthMessages);
+            hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
+            // The other half of the same pass: the tool writes the bytes here and this send reads
+            // them back, so both ends have to be handed the one store or neither works.
+            readImageStore: serviceProvider?.GetService<IReadImageStore>());
     }
 }
 

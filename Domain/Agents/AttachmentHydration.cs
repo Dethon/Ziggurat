@@ -13,6 +13,10 @@ namespace Domain.Agents;
 // One rule for every kind of attachment, and one distance measured in messages. Beyond it — and
 // for any reference whose bytes are gone, at any distance — the model gets a placeholder naming
 // the file, so it says the file is gone rather than inventing what it contained.
+//
+// It widened rather than splitting when the model learned to read images: an image the model asked
+// for is a reference whose bytes have to be put back too, so it obeys the same distance and takes
+// the same shape of placeholder. Where the bytes go differs, and that is ReadImageExpansion's half.
 public static class AttachmentHydration
 {
     public const int DefaultDepthMessages = 20;
@@ -20,10 +24,18 @@ public static class AttachmentHydration
     public static async Task<IReadOnlyList<ChatMessage>> ApplyAsync(
         IReadOnlyList<ChatMessage> messages,
         IAttachmentSource? source,
+        IReadImageStore? readImages,
+        string? conversationId,
         int depthMessages,
+        TimeZoneInfo localTimeZone,
         CancellationToken ct)
     {
-        if (source is null || !messages.Any(NeedsHydrating))
+        var hydratesAttachments = source is not null && messages.Any(NeedsHydrating);
+        var expandsImages = readImages is not null
+                            && !string.IsNullOrWhiteSpace(conversationId)
+                            && messages.Any(ReadImageExpansion.Produced);
+
+        if (!hydratesAttachments && !expandsImages)
         {
             return messages;
         }
@@ -38,10 +50,24 @@ public static class AttachmentHydration
         for (var index = 0; index < messages.Count; index++)
         {
             var message = messages[index];
-            hydrated.Add(NeedsHydrating(message)
-                ? await HydrateAsync(
-                    message, source, withinDepth: distances[index] < depthMessages, ct)
+            var withinDepth = distances[index] < depthMessages;
+
+            hydrated.Add(source is not null && NeedsHydrating(message)
+                ? await HydrateAsync(message, source, withinDepth, ct)
                 : message);
+
+            // Appended after the message it belongs to rather than woven into it, and measured at
+            // that message's own distance — so the images a tool call produced age out with the
+            // call, not with wherever the injected message happens to sit.
+            if (expandsImages && ReadImageExpansion.Produced(message))
+            {
+                var injected = await ReadImageExpansion.ExpandAsync(
+                    message, readImages!, conversationId!, withinDepth, localTimeZone, ct);
+                if (injected is not null)
+                {
+                    hydrated.Add(injected);
+                }
+            }
         }
 
         return hydrated;
@@ -66,8 +92,12 @@ public static class AttachmentHydration
         return distances;
     }
 
+    // An injected message is excluded for the same reason a tool call is: it belongs to the turn
+    // being run rather than to the conversation. A model that reads twenty images would otherwise
+    // age out the photo a person actually sent.
     private static bool IsConversational(ChatMessage message) =>
-        !message.Contents.Any(c => c is FunctionCallContent or FunctionResultContent);
+        !message.IsInjected
+        && !message.Contents.Any(c => c is FunctionCallContent or FunctionResultContent);
 
     private static bool NeedsHydrating(ChatMessage message) =>
         message.GetAttachments() is { Count: > 0 }

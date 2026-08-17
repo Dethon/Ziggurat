@@ -25,23 +25,23 @@ keeps naming the person.
 
 **Status:** ready-for-agent
 
-- [ ] A read-image store contract lives in the domain layer, written by the tool and read by the
+- [x] A read-image store contract lives in the domain layer, written by the tool and read by the
       hydration pass, with a Redis implementation beside the other Redis stores.
-- [ ] Entries are keyed by conversation and tool call id, taken from the conversation metadata and
+- [x] Entries are keyed by conversation and tool call id, taken from the conversation metadata and
       the function-invocation context the tool already has access to.
-- [ ] Stored entries carry a 24-hour horizon.
-- [ ] The store is optional in DI; a host without one behaves exactly as ticket 02 specified.
-- [ ] `file_read` writes bytes on a successful image read and answers `shown: true`; it writes
+- [x] Stored entries carry a 24-hour horizon.
+- [x] The store is optional in DI; a host without one behaves exactly as ticket 02 specified.
+- [x] `file_read` writes bytes on a successful image read and answers `shown: true`; it writes
       nothing in any refusal case.
-- [ ] Hydration widens rather than splits: one pass, one distance rule, one placeholder shape,
+- [x] Hydration widens rather than splits: one pass, one distance rule, one placeholder shape,
       covering attachments and read images alike.
-- [ ] Exactly one user-role message is inserted immediately after each tool-role message that
+- [x] Exactly one user-role message is inserted immediately after each tool-role message that
       produced images, never between that message's results.
-- [ ] Each image is preceded by a text label naming its virtual path.
-- [ ] Several images read in one batch appear in that single message, in call order, uncapped.
-- [ ] The injected message is attributed to the system as its sender and decorated like other turns.
-- [ ] The injected message is never persisted — it exists only in the copy sent to the model.
-- [ ] The context-truncation event's sender skips injected messages and still names the person.
-- [ ] Covered by a new chat-client suite that captures the messages handed to a mocked inner client,
+- [x] Each image is preceded by a text label naming its virtual path.
+- [x] Several images read in one batch appear in that single message, in call order, uncapped.
+- [x] The injected message is attributed to the system as its sender and decorated like other turns.
+- [x] The injected message is never persisted — it exists only in the copy sent to the model.
+- [x] The context-truncation event's sender skips injected messages and still names the person.
+- [x] Covered by a new chat-client suite that captures the messages handed to a mocked inner client,
       following the existing attachment suites, plus an integration suite for the store against a
       real Redis through the existing fixture. Tests written failing first.

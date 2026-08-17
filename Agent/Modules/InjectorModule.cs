@@ -126,6 +126,10 @@ public static class InjectorModule
                     sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
                     sp.GetRequiredService<IConnectionMultiplexer>()))
+                // Outside this process for the same reason an outpost registration is: recycling the
+                // agent must not blind it to a picture that is still in view.
+                .AddSingleton<IReadImageStore>(sp => new RedisReadImageStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>()))
                 // An outpost registration survives the agent recycling because it lives here
                 // rather than in this process: a container restart must not silently drop every
                 // machine that had announced itself.
