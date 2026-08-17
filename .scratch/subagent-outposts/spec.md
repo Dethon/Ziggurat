@@ -1,6 +1,6 @@
 # Subagents and outposts: delegation that reaches the machine
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 
