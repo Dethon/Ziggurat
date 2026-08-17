@@ -58,10 +58,27 @@ nothing to attribute, place, or exclude from any count.
 **Hydration widens rather than splitting.** It is putting bytes back where a reference sits,
 whoever put the reference there. One distance rule, one placeholder shape, one pass.
 
-**The bytes rest with the agent.** The tool writes them to a store of the agent's own, keyed by
-conversation and tool call, read back by the rewrite. The message distance is the real bound — the
-key is deleted once, on the send where the image drops out of view — and a time horizon is the
-backstop for a conversation that goes quiet.
+**The bytes rest with the agent.** The tool writes them to a store of the agent's own, read back
+by the rewrite, the hash and its horizon landing in one MULTI/EXEC so a crash between the two
+cannot leave a key with no expiry. The key is the tool call id plus the conversation id **the
+turn's own context carries** — the same id at both ends, because the send looks the bytes up by
+what rides its options, and a write keyed by anything else (the id captured on the agent spec,
+say) agrees on every channel and subagent path but strands the bytes on a run that carries no
+context at all: a harness or benchmark turn would store under a key no send will ever ask for,
+answer `shown: true`, and then hydrate a placeholder inviting the model to read the file again,
+forever. A read on a context-less turn therefore refuses, with its own reason. The message
+distance is the real bound — the key is deleted once, on the send where the image drops out of
+view — and the time horizon is the backstop for a conversation that goes quiet.
+
+**A refusal never costs the transfer.** Reading the file before deciding would name the exact
+size in every envelope, but it would also pull an over-the-ceiling file in full — every byte
+across the wire, off somebody's laptop when the mount is an outpost — just to be counted, and
+pull a file the tool was about to refuse for a reason that had nothing to do with bytes. So the
+tool stats the mount first (`InfoAsync`, which every image-capable disk root already has, asked
+as a courtesy whose failures fall through to the read) and decides the empty check, the ceiling
+and every byte-free refusal before the first byte. A mount that cannot stat is read with the pull
+stopped at the ceiling; what that saves is paid for with exactness, so the envelope then names
+the count as a floor, and `sizeBytes` is omitted on a byte-free refusal the tool never measured.
 
 **Capability is asked twice, once per end.** The tool asks it when it runs, so a model without
 vision gets `shown: false` and nothing is stored. The send asks it again for the model the turn
@@ -97,8 +114,9 @@ truncation metric's sender. Switching the wire deleted all of it.
   so `FileSystemOperations.All` is untouched and the tool is offered wherever `fs_read` is. The
   three mounts with no bytes behind them — timers, home assistant, schedules — render JSON and
   markdown and can hold no image file.
-- An image is refused above a configured ceiling rather than downscaled. Re-encoding would need an
-  image codec in Domain and would silently change what the model is looking at.
+- An image is refused above a configured ceiling rather than downscaled, and the refusal costs a
+  stat rather than the file. Re-encoding would need an image codec in Domain and would silently
+  change what the model is looking at.
 - A miss is cheap and says so. Out of depth, expired, or a host with no store at all, the model
   gets a placeholder naming the path and telling it to read the file again — honest in a way a
   lost attachment's placeholder cannot be, because the file is still on the mount.
