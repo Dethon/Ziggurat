@@ -50,6 +50,13 @@ public sealed class RedisOutpostStore(IConnectionMultiplexer redis) : IOutpostSt
     // keepTtl, so a verdict landing does not extend a registration the machine is keeping alive on
     // its own schedule. A registration that lapsed between the read and the write is simply not
     // written back: the machine is gone, and reviving it here would resurrect a mount nobody holds.
+    //
+    // The write is guarded by the value it read, because a machine can re-register between the two
+    // — a laptop that moved networks announces a new endpoint — and writing the modified copy back
+    // unguarded would restore the old endpoint under the fresh TTL, leaving the hub dialling an
+    // address the machine has left until the entry lapses. The aborted write is not retried: the
+    // verdict was about a mount from before the re-registration, and re-registering forgets a
+    // verdict anyway.
     public async Task RecordVerdictAsync(
         string name, OutpostVerdict verdict, CancellationToken ct = default)
     {
@@ -61,12 +68,15 @@ public sealed class RedisOutpostStore(IConnectionMultiplexer redis) : IOutpostSt
             return;
         }
 
-        await _db.StringSetAsync(
+        var transaction = _db.CreateTransaction();
+        transaction.AddCondition(Condition.StringEqual(EntryKey(name), json));
+        _ = transaction.StringSetAsync(
             EntryKey(name),
             JsonSerializer.Serialize(registration with { Verdict = verdict }),
             expiry: null,
             keepTtl: true,
             when: When.Exists);
+        await transaction.ExecuteAsync();
     }
 
     public async Task<bool> RemoveAsync(string name, CancellationToken ct = default)
