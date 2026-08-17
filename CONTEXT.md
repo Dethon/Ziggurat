@@ -228,10 +228,10 @@ _Avoid_: rehydration, inlining, resolving, expansion
 
 **Read image**:
 An image the model read from a mount and was shown. It is not an attachment — nobody
-sent it, and the model asked for it — so it arrives as its own message rather than as
-part of what a person said, and it is attributed to the system. Its bytes rest with
-the agent rather than with a channel, on a clock of their own, and the file it came
-from stays on the mount: an image that is no longer in view can always be read again.
+sent it, and the model asked for it — so it arrives inside the tool result that
+answered the read, never as part of what a person said. Its bytes rest with the agent
+rather than with a channel, on a clock of their own, and the file it came from stays
+on the mount: an image that is no longer in view can always be read again.
 _Avoid_: attachment, inline image, viewed file, screenshot
 
 **Landing**:

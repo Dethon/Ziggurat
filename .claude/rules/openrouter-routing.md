@@ -14,7 +14,7 @@ Each `agents[]` / `subAgents[]` entry may carry a `providerRouting` object (`sor
 `openRouter.providerRouting` **wholesale** — never field-by-field. It reaches the wire through
 the same path as `session_id`: `ProviderRoutingResolver.Resolve` (called from `AgentSpecProjection`,
 which puts the resolved value on the agent spec) → `OpenRouterChatClient` →
-`ReasoningHandler` → `OpenRouterHttpHelpers.PrepareRequestBodyAsync`, which stamps `provider`.
+`WireHandler` → `OpenRouterHttpHelpers.PrepareRequestBodyAsync`, which stamps `provider`.
 `{}` is not the wholesale opt-out it looks like: the JSON config provider records an empty
 object as a null-valued key, `Get<ProviderRouting>()` returns null for it, and `declared ??
 global` inherits the global — opting an agent back to balanced routing under a non-empty global

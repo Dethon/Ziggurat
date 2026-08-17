@@ -2,6 +2,13 @@
 
 Status: ready-for-agent
 
+> **Addendum (2026-08-17, issue 05):** the delivery mechanism described below — one injected
+> user message after the tool-result message — was built, then replaced before merge. The chat
+> client now speaks OpenRouter's Responses API, whose `function_call_output` accepts content
+> parts, so the image travels inside the tool result itself and the injection machinery is gone.
+> Everything else in this spec (the rename, the envelope, the store, the ceiling, the distance,
+> the placeholders) stands. See issue 05 and ADR 0029 for the pivot and its live-probe evidence.
+
 ## Problem Statement
 
 A person keeps images where they keep everything else: a screenshot in the vault, a scanned page
