@@ -19,6 +19,12 @@ internal sealed class McpClientManager : IAsyncDisposable
     private static readonly TimeSpan _initializationTimeout = TimeSpan.FromSeconds(10);
 
     public IReadOnlyList<McpClient> Clients { get; }
+
+    // The addresses whose dial produced a client. The verdict writer reads this: an outpost whose
+    // dial was dropped must not be judged by its name, which a configured mount can coincidentally
+    // hold — the address is the one thing that is the machine's own.
+    public IReadOnlyList<string> DialledEndpoints { get; }
+
     public IReadOnlyList<AITool> Tools { get; }
     public IReadOnlyList<string> Prompts { get; }
 
@@ -26,10 +32,12 @@ internal sealed class McpClientManager : IAsyncDisposable
 
     private McpClientManager(
         IReadOnlyList<McpClient> clients,
+        IReadOnlyList<string> dialledEndpoints,
         IReadOnlyList<AITool> tools,
         IReadOnlyList<string> prompts)
     {
         Clients = clients;
+        DialledEndpoints = dialledEndpoints;
         Tools = tools;
         Prompts = prompts;
     }
@@ -50,7 +58,8 @@ internal sealed class McpClientManager : IAsyncDisposable
         var promptsTask = LoadPrompts(clientsWithEndpoints, userId, promptCache, ct);
         await Task.WhenAll(toolsTask, promptsTask);
         var clients = clientsWithEndpoints.Select(c => c.Client).ToArray();
-        return new McpClientManager(clients, await toolsTask, await promptsTask);
+        var dialled = clientsWithEndpoints.Select(c => c.Address).ToArray();
+        return new McpClientManager(clients, dialled, await toolsTask, await promptsTask);
     }
 
     public async ValueTask DisposeAsync()
@@ -81,7 +90,7 @@ internal sealed class McpClientManager : IAsyncDisposable
     //
     // The surviving clients keep the order they were given, which is what lets the caller put
     // configured endpoints first and have their mounts claim their names before any outpost does.
-    private static async Task<(McpClient Client, string ServerName)[]> CreateClientsWithRetry(
+    private static async Task<(McpClient Client, string ServerName, string Address)[]> CreateClientsWithRetry(
         string name,
         string description,
         IReadOnlyList<McpServerEndpoint> endpoints,
@@ -116,14 +125,14 @@ internal sealed class McpClientManager : IAsyncDisposable
 
             if (endpoint.Origin is McpEndpointOrigin.Configured)
             {
-                return ((McpClient Client, string ServerName)?)
-                    (await retryPolicy.ExecuteAsync(dial), ExtractServerName(endpoint.Address));
+                return ((McpClient Client, string ServerName, string Address)?)
+                    (await retryPolicy.ExecuteAsync(dial), ExtractServerName(endpoint.Address), endpoint.Address);
             }
 
             try
             {
-                return ((McpClient Client, string ServerName)?)
-                    (await dial(), ExtractServerName(endpoint.Address));
+                return ((McpClient Client, string ServerName, string Address)?)
+                    (await dial(), ExtractServerName(endpoint.Address), endpoint.Address);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -145,7 +154,7 @@ internal sealed class McpClientManager : IAsyncDisposable
     }
 
     private static async Task<AITool[]> LoadTools(
-        IEnumerable<(McpClient Client, string ServerName)> clients,
+        IEnumerable<(McpClient Client, string ServerName, string Address)> clients,
         CancellationToken ct)
     {
         var tasks = clients.Select(async c =>
@@ -168,7 +177,7 @@ internal sealed class McpClientManager : IAsyncDisposable
     }
 
     private static async Task<string[]> LoadPrompts(
-        IEnumerable<(McpClient Client, string ServerName)> clients,
+        IEnumerable<(McpClient Client, string ServerName, string Address)> clients,
         string userId,
         McpPromptCache? promptCache,
         CancellationToken ct)

@@ -106,9 +106,34 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
         await using var session = await BuildAsync(composed);
         await OutpostEndpoints.RecordVerdictsAsync(
             access, recordsVerdicts: true, composed.Outposts, session.MountedNames, session.ShadowedNames,
-            logger: null, CancellationToken.None);
+            session.ClientManager.DialledEndpoints, logger: null, CancellationToken.None);
 
         registry.Verdicts[name].ShouldBe(expected);
+    }
+
+    // The name alone proves nothing. An outpost registered under a name a configured mount already
+    // holds, on a machine that is asleep, must not be told "Mounted" by way of that mount vouching
+    // for it — the machine would believe the agent can reach its files, and the collision it is
+    // owed would surface only once it woke up. No dial, no verdict.
+    [Fact]
+    public async Task AnAsleepOutpostNamedLikeAConfiguredMount_IsNotJudgedByThatMount()
+    {
+        var registry = new StubRegistry([
+            Registered("vault", $"http://localhost:{TestPort.GetAvailable()}/mcp")
+        ]);
+        var access = Access(registry);
+        var composed = await OutpostEndpoints.ComposeAsync(
+            [McpServerEndpoint.Configured(vault.McpEndpoint)], access, usesOutposts: true,
+            logger: null, CancellationToken.None);
+
+        await using var session = await BuildAsync(composed);
+        await OutpostEndpoints.RecordVerdictsAsync(
+            access, recordsVerdicts: true, composed.Outposts, session.MountedNames, session.ShadowedNames,
+            session.ClientManager.DialledEndpoints, logger: null, CancellationToken.None);
+
+        session.FileSystemRegistry.ShouldNotBeNull()
+            .GetMounts().Select(m => m.Name).ShouldBe(["vault"]);
+        registry.Verdicts.ShouldBeEmpty();
     }
 
     // The two sessions the ADR is about, in the order they happen. The parent already mounts a
@@ -131,6 +156,7 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
             await OutpostEndpoints.RecordVerdictsAsync(
                 access, recordsVerdicts: true, parent.Outposts,
                 parentSession.MountedNames, parentSession.ShadowedNames,
+                parentSession.ClientManager.DialledEndpoints,
                 logger: null, CancellationToken.None);
         }
 
@@ -143,7 +169,8 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
         await using var session = await BuildAsync(composed);
         await OutpostEndpoints.RecordVerdictsAsync(
             access, spec.RecordsOutpostVerdicts, composed.Outposts,
-            session.MountedNames, session.ShadowedNames, logger: null, CancellationToken.None);
+            session.MountedNames, session.ShadowedNames, session.ClientManager.DialledEndpoints,
+            logger: null, CancellationToken.None);
 
         session.FileSystemRegistry.ShouldNotBeNull()
             .GetMounts().Select(m => m.Name).ShouldContain("notes");

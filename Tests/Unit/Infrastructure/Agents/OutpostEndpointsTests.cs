@@ -40,7 +40,7 @@ public class OutpostEndpointsTests
         var endpoints = await ComposeAsync(new RecordingRegistry(_laptop), usesOutposts: true);
 
         endpoints.Endpoints.ShouldBe([_vault, McpServerEndpoint.Dynamic(_laptop.Endpoint, Secret)]);
-        endpoints.Outposts.ShouldBe(["laptop"]);
+        endpoints.Outposts.ShouldBe([_laptop]);
     }
 
     // Mount order decides a name collision, and the configured filesystems have to be mounted
@@ -82,14 +82,16 @@ public class OutpostEndpointsTests
     [Fact]
     public async Task ASessionBuild_WritesEachOutpostsVerdictAndNobodyElses()
     {
-        var registry = new RecordingRegistry(_laptop, _laptop with { Name = "desktop" });
+        var desktop = _laptop with { Name = "desktop", Endpoint = "http://192.168.1.21:8099/mcp" };
+        var registry = new RecordingRegistry(_laptop, desktop);
 
         await OutpostEndpoints.RecordVerdictsAsync(
             Access(registry),
             recordsVerdicts: true,
-            outposts: ["laptop", "desktop"],
+            outposts: [_laptop, desktop],
             mounted: ["vault", "sandbox", "laptop", "desktop"],
             shadowed: ["desktop"],
+            dialled: [_laptop.Endpoint, desktop.Endpoint],
             NullLogger.Instance,
             CancellationToken.None);
 
@@ -109,8 +111,25 @@ public class OutpostEndpointsTests
         var registry = new RecordingRegistry(_laptop);
 
         await OutpostEndpoints.RecordVerdictsAsync(
-            Access(registry), recordsVerdicts: true, outposts: ["laptop"], mounted: ["vault"], shadowed: [],
-            NullLogger.Instance, CancellationToken.None);
+            Access(registry), recordsVerdicts: true, outposts: [_laptop], mounted: ["vault"], shadowed: [],
+            dialled: [], NullLogger.Instance, CancellationToken.None);
+
+        registry.Verdicts.ShouldBeEmpty();
+    }
+
+    // The name alone proves nothing: a configured mount can hold the same name as a machine that
+    // is asleep, and matching on names would let that mount vouch for a machine the build never
+    // reached — told "Mounted" while it is not there, hiding exactly the collision the verdict
+    // channel exists to expose. A verdict is written only where the outpost's own dial survived.
+    [Fact]
+    public async Task AnUndialledOutpostNamedLikeAnExistingMount_IsNotJudgedByThatMount()
+    {
+        var impostor = _laptop with { Name = "vault" };
+        var registry = new RecordingRegistry(impostor);
+
+        await OutpostEndpoints.RecordVerdictsAsync(
+            Access(registry), recordsVerdicts: true, outposts: [impostor], mounted: ["vault"], shadowed: [],
+            dialled: [], NullLogger.Instance, CancellationToken.None);
 
         registry.Verdicts.ShouldBeEmpty();
     }
@@ -120,8 +139,8 @@ public class OutpostEndpointsTests
     public async Task ARegistryThatCannotBeWritten_DoesNotFailTheSession()
     {
         await Should.NotThrowAsync(() => OutpostEndpoints.RecordVerdictsAsync(
-            Access(new UnreachableRegistry()), recordsVerdicts: true, outposts: ["laptop"], mounted: ["laptop"],
-            shadowed: [],
+            Access(new UnreachableRegistry()), recordsVerdicts: true, outposts: [_laptop], mounted: ["laptop"],
+            shadowed: [], dialled: [_laptop.Endpoint],
             NullLogger.Instance, CancellationToken.None));
     }
 

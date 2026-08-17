@@ -482,7 +482,8 @@ public sealed class McpAgent : DisposableAgent
             // between an agent and a subagent.
             await OutpostEndpoints.RecordVerdictsAsync(
                 _outposts, _recordsOutpostVerdicts, composed.Outposts,
-                newSession.MountedNames, newSession.ShadowedNames, _logger, ct);
+                newSession.MountedNames, newSession.ShadowedNames,
+                newSession.ClientManager.DialledEndpoints, _logger, ct);
 
             _threadSessions[thread] = newSession;
             return newSession;

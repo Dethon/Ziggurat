@@ -9,12 +9,13 @@ namespace Infrastructure.Agents;
 // any use without the other — a registration nobody may dial is a mount that cannot be reached.
 public sealed record OutpostAccess(IOutpostRegistry Registry, string SharedSecret);
 
-// What one session build was given, and which of those endpoints were machines. The names are kept
-// because the verdict written back afterwards is per outpost, and a mount name that belongs to the
-// deployment's own filesystem is nobody's registration to write on.
+// What one session build was given, and which of those endpoints were machines. The registrations
+// are kept whole because the verdict written back afterwards is per outpost and only for a machine
+// whose own dial survived — the endpoint address is what ties a registration to its dial, since a
+// mount name proves nothing: the deployment's own filesystem can hold the same one.
 internal sealed record ComposedEndpoints(
     IReadOnlyList<McpServerEndpoint> Endpoints,
-    IReadOnlyList<string> Outposts);
+    IReadOnlyList<OutpostRegistration> Outposts);
 
 // Live outposts joining an agent's endpoint list, asked for at the moment a session is built.
 //
@@ -55,7 +56,7 @@ internal static class OutpostEndpoints
                         .. live.Select(outpost =>
                             McpServerEndpoint.Dynamic(outpost.Endpoint, outposts!.SharedSecret))
                     ],
-                    [.. live.Select(outpost => outpost.Name)]);
+                    live);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -74,9 +75,11 @@ internal static class OutpostEndpoints
     // can see. The next keepalive carries it home.
     //
     // Only the outposts this session was given are written, and only where the build reached a
-    // decision about one. An outpost that could not be dialled is left as it was, because "the hub
-    // could not reach you" is not a verdict on a mount and calling it shadowed would name the
-    // wrong problem.
+    // decision about one: the machine's own dial produced a client, and its mount then happened or
+    // was shadowed. An outpost that could not be dialled is left as it was, because "the hub could
+    // not reach you" is not a verdict on a mount and calling it shadowed would name the wrong
+    // problem — and its name alone proves nothing, since a configured mount holding the same name
+    // would otherwise vouch for a machine the build never reached.
     //
     // A build that does not record — a subagent's — mounts the same machines and leaves their
     // registrations exactly as it found them. The verdict answers "did the agent you registered
@@ -84,9 +87,10 @@ internal static class OutpostEndpoints
     public static async Task RecordVerdictsAsync(
         OutpostAccess? access,
         bool recordsVerdicts,
-        IReadOnlyList<string> outposts,
+        IReadOnlyList<OutpostRegistration> outposts,
         IReadOnlyList<string> mounted,
         IReadOnlyList<string> shadowed,
+        IReadOnlyList<string> dialled,
         ILogger? logger,
         CancellationToken ct)
     {
@@ -98,7 +102,7 @@ internal static class OutpostEndpoints
         try
         {
             await Task.WhenAll(outposts
-                .Select(name => (Name: name, Verdict: Verdict(name, mounted, shadowed)))
+                .Select(outpost => (outpost.Name, Verdict: Verdict(outpost, mounted, shadowed, dialled)))
                 .Where(v => v.Verdict is not null)
                 .Select(v => registry.RecordVerdictAsync(v.Name, v.Verdict!.Value, ct)));
         }
@@ -110,11 +114,16 @@ internal static class OutpostEndpoints
         }
     }
 
-    // Shadowed first: a name that is both mounted and shadowed is exactly the collision case, where
-    // the mount that is there belongs to somebody else.
+    // Undialled first, judged by the endpoint address rather than the name, because the address is
+    // the one thing that is the machine's own. Then shadowed before mounted: a name that is both
+    // is exactly the collision case, where the mount that is there belongs to somebody else.
     private static OutpostVerdict? Verdict(
-        string name, IReadOnlyList<string> mounted, IReadOnlyList<string> shadowed) =>
-        shadowed.Contains(name, StringComparer.Ordinal) ? OutpostVerdict.Shadowed
-        : mounted.Contains(name, StringComparer.Ordinal) ? OutpostVerdict.Mounted
+        OutpostRegistration outpost,
+        IReadOnlyList<string> mounted,
+        IReadOnlyList<string> shadowed,
+        IReadOnlyList<string> dialled) =>
+        !dialled.Contains(outpost.Endpoint, StringComparer.Ordinal) ? null
+        : shadowed.Contains(outpost.Name, StringComparer.Ordinal) ? OutpostVerdict.Shadowed
+        : mounted.Contains(outpost.Name, StringComparer.Ordinal) ? OutpostVerdict.Mounted
         : null;
 }
