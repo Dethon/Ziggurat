@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.DTOs;
+using Infrastructure.Agents.ChatClients;
 using Shouldly;
 
 namespace Tests.Eval.Harness;
@@ -13,7 +14,7 @@ public class ScorecardTests : IDisposable
     public void Dispose() => Directory.Delete(_output, recursive: true);
 
     [Fact]
-    public void AFullPassWritesOneSummaryNamingTheRouteThatServedIt()
+    public void AFullPass_WritesOneSummary_NamingTheRouteThatServedIt()
     {
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("openai/gpt-5.6-luna", "Fireworks"),
         [
@@ -34,7 +35,7 @@ public class ScorecardTests : IDisposable
     }
 
     [Fact]
-    public void AClaimNothingExercisedIsDistinguishableFromOneThatFailed()
+    public void AClaimNothingExercised_IsDistinguishableFromOneThatFailed()
     {
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
         [
@@ -49,7 +50,7 @@ public class ScorecardTests : IDisposable
     }
 
     [Fact]
-    public void ASmokeRunDoesNotOverwriteAFullPass()
+    public void ASmokeRun_DoesNotOverwriteAFullPass()
     {
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("full-model", null),
             [new ClaimOutcome("timers.duration-under-4h", 3, 3)]);

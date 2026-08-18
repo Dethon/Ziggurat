@@ -160,7 +160,7 @@ public class ToolInvocationObserverTests
     }
 
     [Fact]
-    public async Task AStreamedTurnIsObservedToo()
+    public async Task AStreamedTurn_IsObservedToo()
     {
         var recording = new Recording();
         var fakeClient = new FakeChatClient { Route = new ServedRoute("z-ai/glm-5.2", "DeepInfra") };

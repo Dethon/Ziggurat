@@ -12,7 +12,7 @@ public class ScenarioChecksTests
     private const string Remove = "domain__filesystem_remove";
     private const string Glob = "domain__filesystem_glob";
 
-    private static Scenario Timer(Scenario? _ = null) => new()
+    private static Scenario Timer() => new()
     {
         Name = "eight-minute pasta timer",
         AgentId = "nabu",
@@ -141,6 +141,21 @@ public class ScenarioChecksTests
         var scenario = Extending() with { Permitted = [new CallPermission(Glob, "*")] };
 
         ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ARepeatedCallOnTheWrongSideOfThePair_DoesNotHideAValidOne()
+    {
+        // The model deleted, thought better of it, read the status and deleted again. There is a
+        // status read followed by a delete, which is what the contract asks for; matching only the
+        // first of each would report the order as broken because of the false start.
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Call(Remove, "/timers/pasta"),
+            ScriptedTurn.Call(Read, "/timers/pasta/status.json"),
+            ScriptedTurn.Call(Remove, "/timers/pasta"));
+
+        ScenarioChecks.Failures(Extending(), recording).ShouldBeEmpty();
     }
 
     [Fact]

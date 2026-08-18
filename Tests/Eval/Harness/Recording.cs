@@ -1,5 +1,5 @@
 using Domain.Contracts;
-using Domain.DTOs;
+using Infrastructure.Agents.ChatClients;
 
 namespace Tests.Eval.Harness;
 

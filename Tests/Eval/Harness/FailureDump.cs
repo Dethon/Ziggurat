@@ -1,4 +1,5 @@
 using System.Text;
+using Infrastructure.Agents.ChatClients;
 
 namespace Tests.Eval.Harness;
 
@@ -10,52 +11,39 @@ public static class FailureDump
     // At the repository root rather than under bin: a dump is read by a person after the run, and
     // one that a rebuild deletes is one nobody gets to read. Git ignores the directory.
     public static string DefaultDirectory =>
-        Path.Combine(RepositoryRoot(), ".eval-output");
-
-    private static string RepositoryRoot() =>
-        Ancestors(new DirectoryInfo(AppContext.BaseDirectory))
-            .FirstOrDefault(d => File.Exists(Path.Combine(d.FullName, "Ziggurat.sln")))
-            ?.FullName
-        ?? AppContext.BaseDirectory;
-
-    private static IEnumerable<DirectoryInfo> Ancestors(DirectoryInfo directory) =>
-        directory.Parent is null ? [directory] : [directory, .. Ancestors(directory.Parent)];
+        Path.Combine(RepositoryRoot.Path, ".eval-output");
 
     // Null when there is nothing to explain — a passing scenario archives nothing, so a green run
     // leaves the working tree exactly as it found it.
-    public static string? Describe(
-        string directory, Scenario scenario, Recording recording, string decoratedTurn,
-        IReadOnlyList<string> failures)
+    public static string? Describe(string directory, FailedRun run)
     {
-        if (failures.Count == 0)
+        if (run.Failures.Count == 0)
         {
             return null;
         }
 
-        var path = Write(directory, scenario, recording, decoratedTurn, failures);
+        var path = Write(directory, run);
 
         return $"""
-                Scenario '{scenario.Name}' failed:
-                  {string.Join("\n  ", failures)}
+                Scenario '{run.Scenario.Name}' failed:
+                  {string.Join("\n  ", run.Failures)}
 
                 Full dump:
                   {path}
                 """;
     }
 
-    public static string Write(
-        string directory, Scenario scenario, Recording recording, string decoratedTurn,
-        IReadOnlyList<string> failures)
+    public static string Write(string directory, FailedRun run)
     {
         Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, $"{Slug(scenario.Name)}-{Guid.NewGuid():N}.md");
-        File.WriteAllText(path, Render(scenario, recording, decoratedTurn, failures));
+        var path = Path.Combine(directory, $"{Slug(run.Scenario.Name)}-{Guid.NewGuid():N}.md");
+        File.WriteAllText(path, Render(run));
         return path;
     }
 
-    private static string Render(
-        Scenario scenario, Recording recording, string decoratedTurn, IReadOnlyList<string> failures)
+    private static string Render(FailedRun run)
     {
+        var (scenario, recording, decoratedTurn, route, failures) = run;
         var dump = new StringBuilder()
             .AppendLine($"# {scenario.Name}")
             .AppendLine()
@@ -65,8 +53,8 @@ public static class FailureDump
             .AppendLine()
             // The configured model is in the system prompt section below; what a routing surprise
             // is diagnosed from is the one that actually answered.
-            .AppendLine($"Served model: {recording.Route?.Model ?? "unknown"}")
-            .AppendLine($"Served provider: {recording.Route?.Provider ?? "unknown"}")
+            .AppendLine($"Served model: {route?.Model ?? "unknown"}")
+            .AppendLine($"Served provider: {route?.Provider ?? "unknown"}")
             .AppendLine()
             .AppendLine("## Failed assertions")
             .AppendLine()
@@ -126,3 +114,13 @@ public static class FailureDump
         string.Join("-", name.ToLowerInvariant().Split(
             [' ', '/', '\\', ':'], StringSplitOptions.RemoveEmptyEntries));
 }
+
+// One failed run, whole. The route is carried beside the recording rather than read off it: under
+// k of N the provider name is resolved after the fact, and the run being explained is the one that
+// failed rather than the last one taken.
+public sealed record FailedRun(
+    Scenario Scenario,
+    Recording Recording,
+    string DecoratedTurn,
+    ServedRoute? Route,
+    IReadOnlyList<string> Failures);

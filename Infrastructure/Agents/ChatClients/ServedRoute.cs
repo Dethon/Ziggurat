@@ -1,4 +1,4 @@
-namespace Domain.DTOs;
+namespace Infrastructure.Agents.ChatClients;
 
 // Which model and which provider actually answered, as opposed to the ones configured. Routing
 // picks an endpoint per request, so a turn that behaved badly is only diagnosable against the

@@ -1,4 +1,5 @@
-using Domain.DTOs;
+using Infrastructure.Agents.ChatClients;
+using Shouldly;
 using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
 using Tests.Eval.Scenarios;
@@ -28,12 +29,32 @@ public static class EvalSuite
         return data;
     }
 
+    // What both tiers do, so that the only thing separating them is the threshold they ask for and
+    // the tier they file their scorecard under.
+    public static async Task AssertAsync(
+        string name, EvalTier tier, Func<Scenario, RunPolicy> policy, RedisFixture redis,
+        EvalScorecard scorecard)
+    {
+        Skip.IfNot(EvalGate.IsArmed, EvalGate.Reason);
+        Skip.If(EvalGate.ApiKey is null, "openRouter:apiKey is not set in user secrets");
+
+        var scenario = ByName(name);
+        var outcome = await RunAsync(scenario, policy(scenario), redis);
+
+        scorecard.Record(tier, scenario, outcome.Result);
+        scorecard.Observe(outcome.Route);
+
+        outcome.Result.Passed.ShouldBeTrue(
+            outcome.Failure ?? $"'{name}' failed with no dump written");
+    }
+
     // One run of one scenario, at whichever threshold the tier asks for, with the dump written by
     // the run that failed rather than by the last one taken.
     public static async Task<EvalOutcome> RunAsync(
         Scenario scenario, RunPolicy policy, RedisFixture redis)
     {
         Recording? failed = null;
+        ServedRoute? failedRoute = null;
         ServedRoute? route = null;
         IReadOnlyList<string> failures = [];
 
@@ -45,25 +66,28 @@ public static class EvalSuite
             if (observed.Count > 0 && failed is null)
             {
                 failed = recording;
+                // The route of the run being explained, not of the last run taken: under k of N
+                // they are different runs and can be different endpoints.
+                failedRoute = recording.Route;
                 failures = observed;
             }
 
             return observed;
         });
 
-        // Asked for once, and only where something is about to be written that names it.
-        route = await ProviderLookup.ResolveAsync(route, EvalGate.ApiKey ?? "");
-
         if (result.Passed || failed is null)
         {
+            // The raw route travels on: a passing scenario writes nothing, so nothing here needs
+            // the provider's name yet and nothing pays a request for it.
             return new EvalOutcome(result, null, route);
         }
 
-        failed.OnTurn(new TurnObservation(failed.SystemPrompt, route));
-
-        var message = FailureDump.Describe(
-            FailureDump.DefaultDirectory, scenario, failed, EvalRun.Decorated(scenario),
-            [$"passed {result.Passes} of {result.Attempts} runs, needed {policy.K}", .. failures]);
+        var message = FailureDump.Describe(FailureDump.DefaultDirectory, new FailedRun(
+            scenario,
+            failed,
+            EvalRun.Decorated(scenario),
+            await ProviderLookup.ResolveAsync(failedRoute, EvalGate.ApiKey ?? ""),
+            [$"passed {result.Passes} of {result.Attempts} runs, needed {policy.K}", .. failures]));
 
         return new EvalOutcome(result, message, route);
     }

@@ -1,3 +1,4 @@
+using Domain.Prompts;
 using Tests.Eval.Harness;
 
 namespace Tests.Eval.Scenarios;
@@ -57,7 +58,7 @@ public static class TimerScenarios
             new CallPermission(EvalTools.Info, "/timers*")
         ],
         CallCeiling = 4,
-        Claims = ["timers.created-at-its-own-path"],
+        Claims = [TimerPrompt.CreatedAtItsOwnPath.Id],
         Policy = new RunPolicy(2, 3),
         Tier = EvalTier.Smoke
     };
@@ -127,7 +128,11 @@ public static class TimerScenarios
             new OrderingConstraint("delete", "recreate")
         ],
         CallCeiling = 6,
-        Claims = ["timers.changed-by-delete-and-recreate", "timers.status-is-read-for-time-left"],
+        Claims =
+        [
+            TimerPrompt.ChangedByDeleteAndRecreate.Id,
+            TimerPrompt.StatusIsReadForTimeLeft.Id
+        ],
         Policy = new RunPolicy(2, 3)
     };
 }

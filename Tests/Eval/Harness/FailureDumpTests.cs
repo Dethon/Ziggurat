@@ -12,15 +12,16 @@ public class FailureDumpTests : IDisposable
     public void Dispose() => Directory.Delete(_output, recursive: true);
 
     [Fact]
-    public async Task AFailedRunWritesEverythingNeededToUnderstandIt()
+    public async Task AFailedRun_WritesEverythingNeededToUnderstandIt()
     {
         var recording = await ScriptedTurn.RunAsync(
             "Listo, ocho minutos.",
             ScriptedTurn.Call("domain__filesystem_create", "/schedules/pasta/task.json"));
 
         var scenario = Scenario();
-        var path = FailureDump.Write(
-            _output, scenario, recording, TurnText(scenario), ["unnecessary call: /schedules"]);
+        var path = FailureDump.Write(_output, new FailedRun(
+            scenario, recording, TurnText(scenario), recording.Route,
+            ["unnecessary call: /schedules"]));
 
         var dump = await File.ReadAllTextAsync(path);
 
@@ -35,13 +36,15 @@ public class FailureDumpTests : IDisposable
     }
 
     [Fact]
-    public async Task ThePathOfTheDumpIsWhatTheFailureMessageSays()
+    public async Task ThePathOfTheDump_IsWhatTheFailureMessageSays()
     {
         var recording = await ScriptedTurn.RunAsync("listo");
         var scenario = Scenario();
 
-        var message = FailureDump.Describe(
-            _output, scenario, recording, TurnText(scenario), ["required call 'create' never happened"])
+        var message = FailureDump
+            .Describe(_output, new FailedRun(
+                scenario, recording, TurnText(scenario), recording.Route,
+                ["required call 'create' never happened"]))
             .ShouldNotBeNull();
 
         message.ShouldContain("required call 'create' never happened");
@@ -50,17 +53,19 @@ public class FailureDumpTests : IDisposable
     }
 
     [Fact]
-    public async Task APassingScenarioWritesNothing()
+    public async Task APassingScenario_WritesNothing()
     {
         var recording = await ScriptedTurn.RunAsync("listo");
 
-        FailureDump.Describe(_output, Scenario(), recording, "turn", []).ShouldBeNull();
+        FailureDump
+            .Describe(_output, new FailedRun(Scenario(), recording, "turn", recording.Route, []))
+            .ShouldBeNull();
 
         Directory.GetFiles(_output).ShouldBeEmpty();
     }
 
     [Fact]
-    public void TheOutputDirectoryIsGitIgnored()
+    public void TheOutputDirectory_IsGitIgnored()
     {
         // The dumps and the scorecard land in one place, and a stochastic wobble must never dirty
         // the working tree — a run that reds the suite must not also make it look like an edit.

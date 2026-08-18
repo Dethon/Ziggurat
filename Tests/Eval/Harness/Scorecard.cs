@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Domain.DTOs;
+using Infrastructure.Agents.ChatClients;
 
 namespace Tests.Eval.Harness;
 
@@ -10,7 +10,8 @@ namespace Tests.Eval.Harness;
 public static class Scorecard
 {
     public static string Write(
-        string directory, EvalTier tier, ServedRoute? route, IReadOnlyList<ClaimOutcome> claims)
+        string directory, EvalTier tier, ServedRoute? route, IReadOnlyList<ClaimOutcome> claims,
+        TimeProvider? clock = null)
     {
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, $"scorecard-{tier.ToString().ToLowerInvariant()}.json");
@@ -22,7 +23,10 @@ public static class Scorecard
             ["model"] = route?.Model,
             ["provider"] = route?.Provider,
             ["tier"] = tier.ToString().ToLowerInvariant(),
-            ["timestamp"] = DateTimeOffset.UtcNow.ToString("O"),
+            // When the pass ran, which is the axis two scorecards are compared along. It is the
+            // one time in this suite that is not the scenario's pinned instant: a scorecard is
+            // about a run, not about the turn inside it.
+            ["timestamp"] = (clock ?? TimeProvider.System).GetUtcNow().ToString("O"),
             ["claims"] = claims
                 .GroupBy(c => c.Claim)
                 .Aggregate(new JsonObject(), (claimsNode, group) =>

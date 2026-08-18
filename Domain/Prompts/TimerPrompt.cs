@@ -66,43 +66,108 @@ public static class TimerPrompt
           `dismiss.sh` is the only way to silence it remotely.
         """;
 
-    // Every falsifiable statement the prose above makes, in the order it makes them. Declared in
-    // full rather than only where a scenario exists: the rules nothing tests yet are exactly the
-    // ones most worth writing down, and the exemption list beside the suite is the backlog.
+    // Every falsifiable statement the prose above makes, in the order it makes them, each one
+    // named so that a scenario cites it as a compile-time reference rather than as a string
+    // nothing checks until run time. Declared in full rather than only where a scenario exists:
+    // the rules nothing tests yet are the ones most worth writing down, and the exemption list
+    // beside the suite is the backlog.
+    public static readonly PromptClaim DurationIsACountdown =
+        new("timers.duration-is-a-countdown",
+            "A duration up to four hours, where a person is being told something, becomes a /timers countdown.");
+
+    public static readonly PromptClaim AgentActsIsAScheduledTask =
+        new("timers.agent-acts-is-a-scheduled-task",
+            "A request where the agent itself must act at the appointed moment becomes a /schedules one-shot with an absolute runAt, however the time was phrased.");
+
+    public static readonly PromptClaim ClockTimeIsACalendarAlarm =
+        new("timers.clock-time-is-a-calendar-alarm",
+            "A clock time, a date, anything recurring, or anything past the four-hour ceiling goes on the Home Assistant alarms calendar.");
+
+    public static readonly PromptClaim SchedulesAreNeverHumanReminders =
+        new("timers.schedules-are-never-human-reminders",
+            "/schedules is used for agent tasks only, never for a human alarm or reminder.");
+
+    public static readonly PromptClaim CreatedAtItsOwnPath =
+        new("timers.created-at-its-own-path",
+            "A countdown is created as JSON at /timers/<descriptive-id>/timer.json carrying durationSeconds and an optional spoken text.");
+
+    public static readonly PromptClaim DurationCappedAtFourHours =
+        new("timers.duration-capped-at-four-hours",
+            "durationSeconds is never written above four hours.");
+
+    public static readonly PromptClaim IdIsDescriptive =
+        new("timers.id-is-descriptive",
+            "The timer's id describes what it is for, because a timer with no text announces itself by its id.");
+
+    public static readonly PromptClaim VoiceTargetsTheSpeakingRoom =
+        new("timers.voice-targets-the-speaking-room",
+            "On a voice turn the timer targets the room the request came from, unless another room is named.");
+
+    public static readonly PromptClaim NoSatelliteAsksWhichRoom =
+        new("timers.no-satellite-asks-which-room",
+            "On a turn with no speaking room the agent asks which room or satellite before creating anything, and never guesses one.");
+
+    public static readonly PromptClaim TextIsSpokenNeverAnInstruction =
+        new("timers.text-is-spoken-never-an-instruction",
+            "The text of a timer is a message spoken to a person, never a command to be carried out.");
+
+    public static readonly PromptClaim StatusIsReadForTimeLeft =
+        new("timers.status-is-read-for-time-left",
+            "How long is left is read from /timers/<id>/status.json rather than calculated.");
+
+    public static readonly PromptClaim SpokenStatusGivesOnlyTheRemainingTime =
+        new("timers.spoken-status-gives-only-the-remaining-time",
+            "A spoken reply about a running timer gives the remaining time alone, without the firing time.");
+
+    public static readonly PromptClaim WrittenStatusIncludesFiresAt =
+        new("timers.written-status-includes-fires-at",
+            "A written reply includes firesAt when the user asked when the timer fires.");
+
+    public static readonly PromptClaim ListedByGlob =
+        new("timers.listed-by-glob",
+            "The timers that exist are listed by globbing /timers.");
+
+    public static readonly PromptClaim CancelledByRemovingIt =
+        new("timers.cancelled-by-removing-it",
+            "A timer is cancelled by removing /timers/<id>.");
+
+    public static readonly PromptClaim ChangedByDeleteAndRecreate =
+        new("timers.changed-by-delete-and-recreate",
+            "A running timer is changed by reading its status, deleting it, and creating its replacement, in that order.");
+
+    public static readonly PromptClaim ExtendingADismissedOneIsANewTimer =
+        new("timers.extending-a-dismissed-one-is-a-new-timer",
+            "Extending a timer that has already fired and been dismissed creates a new timer rather than reviving the old one.");
+
+    public static readonly PromptClaim RecreationIsNeverNarrated =
+        new("timers.recreation-is-never-narrated",
+            "The delete-and-recreate is internal: the reply states the new time and never mentions deleting or recreating.");
+
+    public static readonly PromptClaim RingingIsStoppedByDismiss =
+        new("timers.ringing-is-stopped-by-dismiss",
+            "A request to stop or dismiss a ringing timer runs dismiss.sh at /timers, from any room and any channel.");
+
     public static readonly IReadOnlyList<PromptClaim> Claims =
     [
-        new("timers.duration-is-a-countdown",
-            "A duration up to four hours, where a person is being told something, becomes a /timers countdown."),
-        new("timers.agent-acts-is-a-scheduled-task",
-            "A request where the agent itself must act at the appointed moment becomes a /schedules one-shot with an absolute runAt, however the time was phrased."),
-        new("timers.clock-time-is-a-calendar-alarm",
-            "A clock time, a date, anything recurring, or anything past the four-hour ceiling goes on the Home Assistant alarms calendar."),
-        new("timers.schedules-are-never-human-reminders",
-            "/schedules is used for agent tasks only, never for a human alarm or reminder."),
-        new("timers.created-at-its-own-path",
-            "A countdown is created as JSON at /timers/<descriptive-id>/timer.json carrying durationSeconds and an optional spoken text."),
-        new("timers.duration-capped-at-four-hours",
-            "durationSeconds is never written above four hours."),
-        new("timers.voice-targets-the-speaking-room",
-            "On a voice turn the timer targets the room the request came from, unless another room is named."),
-        new("timers.no-satellite-asks-which-room",
-            "On a turn with no speaking room the agent asks which room or satellite before creating anything, and never guesses one."),
-        new("timers.text-is-spoken-never-an-instruction",
-            "The text of a timer is a message spoken to a person, never a command to be carried out."),
-        new("timers.status-is-read-for-time-left",
-            "How long is left is read from /timers/<id>/status.json rather than calculated."),
-        new("timers.spoken-status-gives-only-the-remaining-time",
-            "A spoken reply about a running timer gives the remaining time alone, without the firing time."),
-        new("timers.listed-by-glob",
-            "The timers that exist are listed by globbing /timers."),
-        new("timers.cancelled-by-removing-it",
-            "A timer is cancelled by removing /timers/<id>."),
-        new("timers.changed-by-delete-and-recreate",
-            "A running timer is changed by reading its status, deleting it, and creating its replacement, in that order."),
-        new("timers.recreation-is-never-narrated",
-            "The delete-and-recreate is internal: the reply states the new time and never mentions deleting or recreating."),
-        new("timers.ringing-is-stopped-by-dismiss",
-            "A request to stop or dismiss a ringing timer runs dismiss.sh at /timers, from any room and any channel.")
+        DurationIsACountdown,
+        AgentActsIsAScheduledTask,
+        ClockTimeIsACalendarAlarm,
+        SchedulesAreNeverHumanReminders,
+        CreatedAtItsOwnPath,
+        DurationCappedAtFourHours,
+        IdIsDescriptive,
+        VoiceTargetsTheSpeakingRoom,
+        NoSatelliteAsksWhichRoom,
+        TextIsSpokenNeverAnInstruction,
+        StatusIsReadForTimeLeft,
+        SpokenStatusGivesOnlyTheRemainingTime,
+        WrittenStatusIncludesFiresAt,
+        ListedByGlob,
+        CancelledByRemovingIt,
+        ChangedByDeleteAndRecreate,
+        ExtendingADismissedOneIsANewTimer,
+        RecreationIsNeverNarrated,
+        RingingIsStoppedByDismiss
     ];
 
     // The roster comes live from the hub at prompt-fetch time; an empty roster (hub unreachable —

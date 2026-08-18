@@ -14,10 +14,6 @@ public sealed class FakeVoiceHub : HttpMessageHandler
 
     public FakeVoiceHub(params SatelliteDescriptor[] roster) => _roster = roster;
 
-    public List<string> Announced { get; } = [];
-
-    public int Dismissals { get; private set; }
-
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -34,15 +30,15 @@ public sealed class FakeVoiceHub : HttpMessageHandler
             return Json(Resolve(target));
         }
 
+        // Answered but not recorded: with a clock that never advances nothing fires, and a
+        // counter no scenario reads would be a fixture pretending to be an assertion.
         if (path.EndsWith("api/voice/announce"))
         {
-            Announced.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
             return new HttpResponseMessage(HttpStatusCode.Accepted);
         }
 
         if (path.EndsWith("api/voice/dismiss"))
         {
-            Dismissals++;
             return Json(Array.Empty<string>());
         }
 

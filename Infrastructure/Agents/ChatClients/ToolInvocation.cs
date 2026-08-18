@@ -1,4 +1,4 @@
-namespace Domain.DTOs;
+namespace Infrastructure.Agents.ChatClients;
 
 // One tool invocation as the function-invoking client saw it: what was called, with what, and
 // what came back. Both failure shapes are invocations too — a tool that threw and a call naming
