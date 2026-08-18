@@ -62,6 +62,51 @@ public class FileSystemBackendBaseTests
         error.Message.ShouldContain("bare");
     }
 
+    // A refusal that only says no sends a model looking for another wording of the same call. The
+    // mount's own overrides are what it can do instead, so the two cannot drift.
+    [Theory]
+    [MemberData(nameof(Operations))]
+    public async Task Operation_NotOverridden_NamesTheMountItCannotBeCalledOn(
+        string operation, Func<FileSystemBackendBase, Task<ToolErrorResult?>> call)
+    {
+        _ = operation;
+        var bare = await call(_bare);
+
+        // A mount that implements nothing has nothing to offer instead, and says that rather than
+        // an empty list.
+        bare!.Recovery.ShouldContain("/bare");
+        bare.Recovery.ShouldContain("Nothing");
+    }
+
+    // The list is the mount's own overrides, read exactly as the MCP registrar reads them, so what
+    // a refusal offers and what the server advertises cannot drift apart.
+    [Fact]
+    public async Task Operation_NotOverridden_OffersTheOperationsTheMountDoesImplement()
+    {
+        var refused = ErrorOf(await new ReadOnlyBackend().ExecAsync("/", "ls", null, default));
+
+        refused!.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        refused.Retryable.ShouldBeFalse();
+        refused.Recovery.ShouldContain(VfsFileReadTool.Name);
+        refused.Recovery.ShouldNotContain(VfsExecTool.Name);
+    }
+
+    // A mount that implements one operation. Its capability list is read off the override, exactly
+    // as the MCP registrar reads it.
+    private sealed class ReadOnlyBackend : FileSystemBackendBase
+    {
+        public override string FilesystemName => "readonly";
+
+        public override string DescribeMount => "A mount that only reads.";
+
+        public override Task<FsResult<FsReadResult>> ReadAsync(
+            string path, int? offset, int? limit, CancellationToken ct) =>
+            Task.FromResult<FsResult<FsReadResult>>(new FsResult<FsReadResult>.Ok(new FsReadResult
+            {
+                FilePath = path, Content = "", TotalLines = 0, Truncated = false
+            }));
+    }
+
     [Fact]
     public async Task BlobOperations_NotOverridden_ReportUnsupported()
     {

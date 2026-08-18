@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Domain.Tools;
 using Domain.Tools.SubAgents;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -43,7 +44,9 @@ public class SubAgentRunToolTests
     }
 
     [Fact]
-    public async Task RunAsync_NullSubAgentFactory_ReturnsError()
+    // A run with no way to spawn is not a dependency that is down: it will refuse identically
+    // forever, so the envelope must not invite a retry, and it has to say what to do instead.
+    public async Task RunAsync_NullSubAgentFactory_RefusesWithoutInvitingARetry()
     {
         var config = CreateConfig(factory: null);
         var tool = CreateTool(config, _testProfile);
@@ -51,8 +54,9 @@ public class SubAgentRunToolTests
         var result = await tool.RunAsync("summarizer", "do something");
 
         result["ok"]!.GetValue<bool>().ShouldBeFalse();
-        result["errorCode"]!.GetValue<string>().ShouldBe("unavailable");
-        result["message"]!.GetValue<string>().ShouldContain("not available");
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied);
+        result["retryable"]!.GetValue<bool>().ShouldBeFalse();
+        result["hint"]!.GetValue<string>().ShouldContain("Do the work in this turn");
     }
 
     [Fact]

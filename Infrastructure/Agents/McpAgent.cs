@@ -479,6 +479,11 @@ public sealed class McpAgent : DisposableAgent
             // to find out for itself — the next keepalive carries the answer home. Whether this
             // build is one that answers is a field on the spec, like everything else that differs
             // between an agent and a subagent.
+            // Asked about by name later, when the model tries a path on a machine that is not here.
+            OutpostEndpoints.DeclareUnreachable(
+                newSession.FileSystemRegistry, composed.Outposts,
+                newSession.ClientManager.DialledEndpoints);
+
             await OutpostEndpoints.RecordVerdictsAsync(
                 _outposts, _recordsOutpostVerdicts, composed.Outposts,
                 newSession.MountedNames, newSession.ShadowedNames,

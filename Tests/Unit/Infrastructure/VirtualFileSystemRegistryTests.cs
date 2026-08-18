@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Tools;
 using Infrastructure.Agents;
 using Moq;
 using Shouldly;
@@ -99,9 +100,29 @@ public class VirtualFileSystemRegistryTests
 
         _registry.Resolve("/unknown/file.md").TryGetValue(out _, out var error).ShouldBeFalse();
 
-        error!.Message.ShouldContain("No filesystem mounted");
+        // A name nothing here has ever had: absent, so nothing to wait for, and the recovery is
+        // the list of mounts that do exist.
+        error!.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
+        error.Retryable.ShouldBeFalse();
+        error.Message.ShouldContain("No filesystem mounted");
         error.Message.ShouldContain("/unknown/file.md");
-        error.Message.ShouldContain("/library");
+        error.Recovery!.ShouldContain("/library");
+    }
+
+    // The same miss, for a machine that registered and then did not answer when this conversation
+    // started. It is the one absence worth trying again, and reading it as a typo — which is what
+    // every miss used to say — sends the model looking for a path that was spelled right.
+    [Fact]
+    public void Resolve_AMountThisSessionKnowsIsUnreachable_SaysSoAndInvitesARetry()
+    {
+        _registry.Mount(new FileSystemMount("library", "/library", "Library"), CreateMockBackend("library"));
+        _registry.DeclareAbsence("/laptop", CapabilityState.Unavailable, "it did not answer when this conversation started");
+
+        _registry.Resolve("/laptop/notes.md").TryGetValue(out _, out var error).ShouldBeFalse();
+
+        error!.ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
+        error.Retryable.ShouldBeTrue();
+        error.Message.ShouldContain("did not answer");
     }
 
     // The plain Mount obeys the same rule as TryMount above — this used to be last-write-wins, and

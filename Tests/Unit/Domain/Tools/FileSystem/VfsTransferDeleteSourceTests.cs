@@ -127,8 +127,12 @@ public class VfsTransferDeleteSourceTests
             "/media/movies/a.mkv", "/vault/a.mkv",
             overwrite: false, createDirectories: true, ct: CancellationToken.None);
 
+        // Half the work stands. Repeating the move would copy what is already there, so the
+        // envelope says partial rather than borrowing the delete's own refusal code — and the
+        // refusal itself stays in the message, because what to do about the leftover depends on it.
         result["ok"]!.GetValue<bool>().ShouldBeFalse();
-        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PartialSuccess);
+        result["retryable"]!.GetValue<bool>().ShouldBeFalse();
         result["message"]!.GetValue<string>().ShouldContain("/vault/a.mkv");
         result["message"]!.GetValue<string>().ShouldContain("delete refused by the media filesystem");
         result["hint"]!.GetValue<string>().ShouldNotBeNullOrWhiteSpace();
@@ -190,7 +194,7 @@ public class VfsTransferDeleteSourceTests
             overwrite: false, createDirectories: true, ct: CancellationToken.None);
 
         result["ok"]!.GetValue<bool>().ShouldBeFalse();
-        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PartialSuccess);
         result["message"]!.GetValue<string>().ShouldContain("/vault/dst");
         result["message"]!.GetValue<string>().ShouldContain("delete refused by the media filesystem");
         result["hint"]!.GetValue<string>().ShouldNotBeNullOrWhiteSpace();

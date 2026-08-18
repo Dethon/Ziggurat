@@ -227,7 +227,7 @@ public class TimerFileSystemJourneyTests
         // Fail closed and say so: no unvalidated timer gets armed, and the agent learns this is
         // the hub being down (retryable), not a bad spec — instead of a raw exception envelope.
         var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
-        err.Error.ErrorCode.ShouldBe(ToolError.Codes.Unavailable);
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
         err.Error.Retryable.ShouldBeTrue();
         err.Error.Message.ShouldContain("voice hub");
         err.Error.Message.ShouldContain("not armed");
@@ -243,7 +243,7 @@ public class TimerFileSystemJourneyTests
         var result = await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None);
 
         var err = result.ShouldBeOfType<FsResult<FsExecResult>.Err>();
-        err.Error.ErrorCode.ShouldBe(ToolError.Codes.Unavailable);
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
         err.Error.Retryable.ShouldBeTrue();
         err.Error.Message.ShouldContain("voice hub");
     }

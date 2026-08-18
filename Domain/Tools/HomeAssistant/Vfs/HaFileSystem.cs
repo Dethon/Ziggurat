@@ -251,7 +251,6 @@ public sealed partial class HaFileSystem(
         {
             ErrorCode = ToolError.Codes.NotFound,
             Message = $"No such path: {path}",
-            Retryable = false,
             Hint = canonicalName is null
                 ? null
                 : $"Use the exact directory name a listing returns: '{canonicalName}'."

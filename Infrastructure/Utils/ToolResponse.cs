@@ -1,6 +1,5 @@
 using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
-using Domain.Exceptions;
 using Domain.Tools;
 using ModelContextProtocol.Protocol;
 
@@ -15,10 +14,7 @@ public static class ToolResponse
 
     public static CallToolResult Create(Exception ex)
     {
-        var envelope = ToolError.Create(
-            MapErrorCode(ex),
-            ex.Message,
-            retryable: IsRetryable(ex));
+        var envelope = ToolError.Create(MapErrorCode(ex), ex.Message);
 
         return new CallToolResult
         {
@@ -81,29 +77,7 @@ public static class ToolResponse
         };
     }
 
-    // Exception → envelope code mapping for the tools that still throw: property search, web
-    // search, Home Assistant service calls. The filesystem no longer passes through here — its
-    // tools return FsResult with the envelope already chosen — so the arms that existed only for
-    // filesystem exception types are gone.
-    private static string MapErrorCode(Exception ex) => ex switch
-    {
-        ArgumentException => ToolError.Codes.InvalidArgument,
-        HomeAssistantNotFoundException => ToolError.Codes.NotFound,
-        HomeAssistantUnauthorizedException => ToolError.Codes.InvalidArgument,
-        HomeAssistantException { StatusCode: >= 400 and < 500 } => ToolError.Codes.InvalidArgument,
-        TimeoutException => ToolError.Codes.Timeout,
-        OperationCanceledException => ToolError.Codes.Timeout,
-        _ => ToolError.Codes.InternalError
-    };
-
-    private static bool IsRetryable(Exception ex) => ex switch
-    {
-        ArgumentException => false,
-        HomeAssistantNotFoundException => false,
-        HomeAssistantUnauthorizedException => false,
-        HomeAssistantException { StatusCode: >= 400 and < 500 } => false,
-        TimeoutException => true,
-        OperationCanceledException => true,
-        _ => true
-    };
+    // The mapping itself lives in Domain (ToolError.CodeFor), because a channel server's filter
+    // needs the same answer and cannot reach Infrastructure.
+    private static string MapErrorCode(Exception ex) => ToolError.CodeFor(ex);
 }

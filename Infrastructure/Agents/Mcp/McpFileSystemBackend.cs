@@ -256,7 +256,6 @@ internal class McpFileSystemBackend(
                 ToolError.Codes.UnsupportedOperation,
                 $"The '{filesystemName}' filesystem does not support the '{toolName}' operation. " +
                 $"This tool is not available on this filesystem backend. Details: {ex.Message}",
-                retryable: false,
                 hint: "Pick a different mount or a different operation.");
         }
 
@@ -280,8 +279,7 @@ internal class McpFileSystemBackend(
                 ? parsed!
                 : ToolError.Create(
                     ToolError.Codes.InternalError,
-                    $"Error calling '{toolName}' on the '{filesystemName}' filesystem: {text}",
-                    retryable: false);
+                    $"Error calling '{toolName}' on the '{filesystemName}' filesystem: {text}");
         }
 
         if (parsed is null)
@@ -304,7 +302,6 @@ internal class McpFileSystemBackend(
             ToolError.Codes.InternalError,
             $"The '{filesystemName}' filesystem returned a malformed '{toolName}' payload " +
             "that does not match the expected schema.",
-            retryable: false,
             hint: "This is a backend bug; the payload was rejected to protect the conversation.");
     }
 

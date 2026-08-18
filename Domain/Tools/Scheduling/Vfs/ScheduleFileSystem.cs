@@ -520,7 +520,7 @@ public sealed class ScheduleFileSystem(
         IsReadOnlyFile(node.Kind) && await NodeExistsAsync(node, ct) ? ReadOnly<T>(path) : NotFound<T>(path);
 
     private static ToolErrorResult Error(string code, string message) =>
-        new() { ErrorCode = code, Message = message, Retryable = false };
+        new() { ErrorCode = code, Message = message };
 
     // The zone the engine actually computes in, read off the injected TimeProvider rather than a
     // static call, so what the model is told and what a cron expression means cannot drift apart.

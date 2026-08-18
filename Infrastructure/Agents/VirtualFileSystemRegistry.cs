@@ -10,6 +10,9 @@ internal sealed class VirtualFileSystemRegistry : IVirtualFileSystemRegistry
     private readonly Dictionary<string, (FileSystemMount Mount, IFileSystemBackend Backend)> _mounts =
         new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly Dictionary<string, (CapabilityState State, string Detail)> _absences =
+        new(StringComparer.OrdinalIgnoreCase);
+
     public void Mount(FileSystemMount mount, IFileSystemBackend backend) => TryMount(mount, backend);
 
     // First wins. A mount point is a name the model addresses, so two mounts claiming one is not a
@@ -25,6 +28,13 @@ internal sealed class VirtualFileSystemRegistry : IVirtualFileSystemRegistry
         return _mounts.TryAdd(mount.MountPoint, (mount, backend));
     }
 
+    // Why a name that is not mounted is not mounted, learned while the session was built and kept
+    // here because this is the one place a caller asks about a mount by name. Without it every
+    // miss reads as a typo, and a machine that registered and then went to sleep is reported the
+    // same way as a path nobody ever had.
+    public void DeclareAbsence(string mountPoint, CapabilityState state, string detail) =>
+        _absences[mountPoint] = (state, detail);
+
     public FsResult<FileSystemResolution> Resolve(string virtualPath)
     {
         var match = _mounts
@@ -39,13 +49,25 @@ internal sealed class VirtualFileSystemRegistry : IVirtualFileSystemRegistry
 
         return match is not null
             ? new FsResult<FileSystemResolution>.Ok(match)
-            : new FsResult<FileSystemResolution>.Err(new ToolErrorResult
-            {
-                ErrorCode = ToolError.Codes.InvalidArgument,
-                Message = $"No filesystem mounted for path '{virtualPath}'. Available: {FormatMounts()}",
-                Retryable = false,
-                Hint = "Virtual paths must start with a mount point; retry with one of the mounts listed."
-            });
+            : new FsResult<FileSystemResolution>.Err(Missing(virtualPath));
+    }
+
+    private ToolErrorResult Missing(string virtualPath)
+    {
+        var root = "/" + virtualPath.TrimStart('/').Split('/')[0];
+
+        // A name this session knows something about answers with what it knows. A machine that
+        // registered and did not answer is temporarily gone rather than imaginary, and that is the
+        // one case where trying the same path later is the right thing to do.
+        return _absences.TryGetValue(root, out var absence)
+            ? CapabilityError.For(
+                absence.State,
+                $"'{root}' is not mounted in this conversation: {absence.Detail}",
+                $"Mounted here: {FormatMounts()}.")
+            : CapabilityError.For(
+                CapabilityState.Absent,
+                $"No filesystem mounted for path '{virtualPath}'.",
+                $"Virtual paths start at a mount point. Mounted here: {FormatMounts()}.");
     }
 
     public IReadOnlyList<FileSystemMount> GetMounts()

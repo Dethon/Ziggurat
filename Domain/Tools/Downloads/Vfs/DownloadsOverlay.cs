@@ -365,5 +365,5 @@ public sealed class DownloadsOverlay(
         });
 
     private static ToolErrorResult Error(string code, string message, string? hint = null) =>
-        new() { ErrorCode = code, Message = message, Retryable = false, Hint = hint };
+        new() { ErrorCode = code, Message = message, Hint = hint };
 }

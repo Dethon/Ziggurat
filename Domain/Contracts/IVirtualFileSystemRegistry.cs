@@ -1,5 +1,6 @@
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Tools;
 
 namespace Domain.Contracts;
 
@@ -29,6 +30,12 @@ public interface IVirtualFileSystemRegistry
     // filesystem prompt warns the model about, and it must come back as the envelope the prompt
     // promises rather than unwinding twelve tool call sites that none of them guard.
     FsResult<FileSystemResolution> Resolve(string virtualPath);
+
+    // Why a mount point a caller may ask for is not here, learned while the session was built.
+    // Without it every miss reads as a typo, and a machine that registered and then went to sleep
+    // is answered the same way as a path nobody ever had — one is worth asking for again and the
+    // other never will be. Default empty: a registry with nothing to explain explains nothing.
+    void DeclareAbsence(string mountPoint, CapabilityState state, string detail) { }
 
     IReadOnlyList<FileSystemMount> GetMounts();
 }

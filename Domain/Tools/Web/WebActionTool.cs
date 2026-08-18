@@ -67,26 +67,22 @@ public class WebActionTool(IWebBrowser browser)
     {
         if (result.Status is not WebActionStatus.Success)
         {
-            var (code, retryable, hint) = result.Status switch
+            var (code, hint) = result.Status switch
             {
                 WebActionStatus.SessionNotFound => (
                     ToolError.Codes.SessionNotFound,
-                    false,
                     "The browser session has expired. Call web_browse to start a new session."),
                 WebActionStatus.ElementNotFound => (
                     ToolError.Codes.ElementNotFound,
-                    false,
                     "Call web_snapshot to refresh element refs — the page or DOM may have changed."),
                 WebActionStatus.Timeout => (
                     ToolError.Codes.Timeout,
-                    true,
                     "Element may be obscured by an overlay. Retry once with force=true if you're certain the ref is correct."),
-                _ => (ToolError.Codes.InternalError, true, (string?)null)
+                _ => (ToolError.Codes.InternalError, (string?)null)
             };
             var error = ToolError.Create(
                 code,
                 result.ErrorMessage ?? "Action failed",
-                retryable,
                 hint);
             error["sessionId"] = result.SessionId;
             error["url"] = result.Url;

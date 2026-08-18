@@ -61,8 +61,7 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
         {
             return ToolError.Create(
                 ToolError.Codes.InvalidArgument,
-                "Either filePath or directoryPath must be provided",
-                retryable: false);
+                "Either filePath or directoryPath must be provided");
         }
 
         if (!registry.Resolve(directoryPath).TryGetValue(out var dirResolution, out var unresolvedDir))

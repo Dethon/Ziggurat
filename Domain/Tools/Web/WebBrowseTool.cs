@@ -58,18 +58,16 @@ public class WebBrowseTool(IWebBrowser browser)
 
         if (result.Status is BrowseStatus.Error or BrowseStatus.SessionNotFound)
         {
-            var (code, retryable, hint) = result.Status switch
+            var (code, hint) = result.Status switch
             {
                 BrowseStatus.SessionNotFound => (
                     ToolError.Codes.SessionNotFound,
-                    false,
                     "The browser session has expired. Call web_browse again with a fresh sessionId."),
-                _ => (ToolError.Codes.InternalError, true, (string?)null)
+                _ => (ToolError.Codes.InternalError, (string?)null)
             };
             var error = ToolError.Create(
                 code,
                 result.ErrorMessage ?? "Browse failed",
-                retryable,
                 hint);
             error["sessionId"] = result.SessionId;
             error["url"] = result.Url;

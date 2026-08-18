@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Tools;
 using Domain.Tools.Memory;
 using Moq;
 using Shouldly;
@@ -175,12 +176,16 @@ public class MemoryForgetToolTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task Run_MissingUserIdInFeatureConfig_ReturnsUnavailableAndDoesNotTouchStore(string? userId)
+    // Memory is scoped per user, so a run with no identity has nothing to scope to. That is a
+    // missing credential, not a passing outage — the envelope says so and offers no retry.
+    public async Task Run_MissingUserIdInFeatureConfig_RefusesAsAuthenticationAndDoesNotTouchStore(string? userId)
     {
         var result = await CreateTool(userId).Run(memoryId: "mem1");
 
         result["ok"]!.GetValue<bool>().ShouldBeFalse();
-        result["errorCode"]!.GetValue<string>().ShouldBe("unavailable");
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.Authentication);
+        result["retryable"]!.GetValue<bool>().ShouldBeFalse();
+        result["hint"]!.ShouldNotBeNull();
         _store.Verify(s => s.GetByIdAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         _store.Verify(s => s.DeleteAsync(

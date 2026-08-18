@@ -108,27 +108,10 @@ public static class FileSystemServerTools
         return builder;
     }
 
-    // The operations a backend really implements, in the one list's canonical order. An operation
-    // with two shapes — the two byte-streaming ones — counts as implemented when either is
-    // overridden, because either one is a working tool: the registered handler dispatches to the
-    // ranged method, whose base default drives the chunk stream.
+    // The operations a backend really implements, asked of the one list so the registrar and the
+    // refusal an unsupported call answers with cannot disagree about what a mount can do.
     public static IReadOnlyList<string> SupportedToolNames(Type backendType) =>
-        FileSystemOperations.All
-            .Where(o => Overrides(backendType, o.MethodName)
-                        || (o.AlternateMethodName is { } alternate && Overrides(backendType, alternate)))
-            .Select(o => o.ToolName)
-            .ToList();
-
-    // The backend's own declaration of what it can do. An operation it never overrode is still the
-    // base's unsupported default, so there is nothing to register. Only a true override counts:
-    // a `new`-shadowing method shares the name but not the base's virtual slot, and the handlers
-    // dispatch through a base-typed reference, which would land on the unsupported default.
-    private static bool Overrides(Type backendType, string methodName) =>
-        backendType
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Any(m => m.Name == methodName
-                      && m.DeclaringType != typeof(FileSystemBackendBase)
-                      && m.GetBaseDefinition().DeclaringType == typeof(FileSystemBackendBase));
+        [.. FileSystemOperations.SupportedBy(backendType).Select(o => o.ToolName)];
 
     // The wire hands outputMode over as a string; a value that names neither mode is the caller's
     // error and answers the invalid-argument envelope instead of silently becoming Content.
