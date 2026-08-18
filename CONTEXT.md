@@ -600,3 +600,32 @@ under the parent's conversation because it acts on the parent's behalf. It reach
 outposts only when its parent and its own definition both allow it, so it is never
 more privileged than the agent that spawned it.
 _Avoid_: child agent, worker, nested agent
+
+## Behavioural evaluation
+
+**Claim**:
+One falsifiable statement a prompt section makes about what the agent will do —
+"a duration under four hours becomes a timer, never a calendar alarm". It is
+declared beside the prose that teaches it and cited by the scenarios that test it,
+so a claim nobody tests is visible rather than assumed. Distinct from a **prompt
+rule**, which names a topic one section legislates so another can override it; a
+rule is a subject, a claim is an assertion.
+_Avoid_: rule, requirement, behaviour, invariant
+
+**Scenario**:
+One user request run against a real model with the deployment's own agent
+definition, together with everything that must hold afterwards. It names the
+claims it exercises, so the claim and its witness are linked in both directions.
+_Avoid_: test case, eval, example, fixture
+
+**Recording**:
+What one run of a scenario produced: every tool invocation in sequence with its
+arguments and result, and the final reply. Every assertion reads the recording and
+nothing else, so what a scenario checks does not depend on where a tool lives.
+_Avoid_: transcript, trace, log, capture
+
+**Permitted set**:
+The tool calls a scenario tolerates — the ones it requires plus the ones it
+explicitly allows. A call outside the set is an unnecessary call by definition,
+which is what makes "it did nothing extra" something a test can decide.
+_Avoid_: allowlist, whitelist, expected calls
