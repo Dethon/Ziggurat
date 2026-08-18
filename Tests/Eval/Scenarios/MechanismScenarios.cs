@@ -10,11 +10,6 @@ namespace Tests.Eval.Scenarios;
 // the wrong answer is always available — a discrimination with one option is not one.
 public static class MechanismScenarios
 {
-    // A Monday evening in Madrid, the same instant the timer scenarios pin, so an expected fire
-    // time is a string somebody can read in a dump.
-    private static readonly DateTimeOffset _evening =
-        new(2026, 8, 17, 20, 0, 0, TimeSpan.FromHours(2));
-
     public static IReadOnlyList<Scenario> All =>
     [
         RemindMeInTenMinutes, TurnTheAirOffInAnHour, WakeMeAtSeven, SixHoursFromNow,
@@ -35,7 +30,7 @@ public static class MechanismScenarios
             Room = "kitchen",
             SatelliteId = "kitchen-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation
@@ -49,12 +44,7 @@ public static class MechanismScenarios
                 ]
             }
         ],
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/timers*"),
-            new CallPermission(EvalTools.Read, "/timers*"),
-            new CallPermission(EvalTools.Info, "/timers*")
-        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
         // No citation: both rules were deleted from every prompt that teaches them and this still
         // passed. It runs as a regression guard rather than as evidence — see ClaimExemptions.
@@ -75,7 +65,7 @@ public static class MechanismScenarios
             Room = "kitchen",
             SatelliteId = "kitchen-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation
@@ -123,7 +113,7 @@ public static class MechanismScenarios
             Room = "office",
             SatelliteId = "office-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation
@@ -143,15 +133,16 @@ public static class MechanismScenarios
         // directory, and nowhere else in the home.
         Permitted =
         [
-            new CallPermission(EvalTools.Glob, "/ha*"),
-            new CallPermission(EvalTools.Read, "/ha*"),
-            new CallPermission(EvalTools.Info, "/ha*"),
+            .. CallPermission.Looking("/ha*"),
             new CallPermission(EvalTools.Exec, FakeHomeAssistant.AlarmsDirectory)
         ],
         CallCeiling = 6,
         // No citation: the calendar entity is called Assistant Alarms, which teaches the rule the
         // prose teaches and cannot be deleted without deleting the calendar.
-        Policy = new RunPolicy(2, 3)
+        Policy = new RunPolicy(2, 3),
+        // This family's canary: the three-way choice on the one turn where the wrong answer is a
+        // countdown that a restart would silently lose.
+        Tier = EvalTier.Smoke
     };
 
     // Past the four-hour ceiling, phrased as a duration — the one case where the phrasing points
@@ -167,7 +158,7 @@ public static class MechanismScenarios
             Room = "office",
             SatelliteId = "office-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation
@@ -182,14 +173,9 @@ public static class MechanismScenarios
                 ]
             }
         ],
-        // Reading an action's arguments before writing one is what the mount tells the agent to
-        // do, and `--help` is an exec like any other — so exec is tolerated on the alarms
-        // directory, and nowhere else in the home.
         Permitted =
         [
-            new CallPermission(EvalTools.Glob, "/ha*"),
-            new CallPermission(EvalTools.Read, "/ha*"),
-            new CallPermission(EvalTools.Info, "/ha*"),
+            .. CallPermission.Looking("/ha*"),
             new CallPermission(EvalTools.Exec, FakeHomeAssistant.AlarmsDirectory)
         ],
         CallCeiling = 6,
@@ -211,7 +197,7 @@ public static class MechanismScenarios
             Room = "office",
             SatelliteId = "office-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation
@@ -226,12 +212,7 @@ public static class MechanismScenarios
                 ]
             }
         ],
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/timers*"),
-            new CallPermission(EvalTools.Read, "/timers*"),
-            new CallPermission(EvalTools.Info, "/timers*")
-        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
         // No citation: the office won even with the rule deleted from the prompt and the mount.
         // A turn whose decoration names a room is answered with that room by default.
@@ -251,14 +232,19 @@ public static class MechanismScenarios
             Text = "pon un temporizador de ocho minutos para la pasta",
             Sender = "fran"
         },
-        Instant = _evening,
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/timers*"),
-            new CallPermission(EvalTools.Read, "/timers*"),
-            new CallPermission(EvalTools.Info, "/timers*")
-        ],
+        Instant = EvalInstant.Evening,
+        Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 3,
+        Reply = new ReplyExpectation
+        {
+            // Creating nothing is half of it; a silent refusal would pass that half. What the
+            // contract asks for is a question, and the roster gives it two rooms to offer.
+            Mentions =
+            [
+                new SpokenValue("where it should ring",
+                    "habitación", "sala", "dónde", "cocina", "oficina", "despacho", "satélite")
+            ]
+        },
         Claims = [TimerPrompt.NoSatelliteAsksWhichRoom.Id],
         Policy = new RunPolicy(2, 3)
     };

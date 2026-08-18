@@ -61,6 +61,13 @@ public sealed class Recording : IToolInvocationObserver
     // observed on its way past.
     public string Reply { get; set; } = "";
 
+    // What the turn moved, computed in one place: the checks decide whether it was declared and
+    // the dump prints it, and two copies of "different from before" is one copy too many.
+    public IReadOnlyDictionary<string, string> Moved =>
+        StateAfter
+            .Where(entry => StateBefore.GetValueOrDefault(entry.Key) != entry.Value)
+            .ToDictionary(entry => entry.Key, entry => entry.Value);
+
     public void OnTurn(TurnObservation turn)
     {
         lock (_gate)

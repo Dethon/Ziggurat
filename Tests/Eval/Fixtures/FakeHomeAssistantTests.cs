@@ -80,6 +80,26 @@ public class FakeHomeAssistantTests
         read.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("\"on\"");
     }
 
+    [Fact]
+    public async Task ATurnThatOnlyRead_LeavesNothingForTheDiffToReport()
+    {
+        // The other half of the state diff's contract: a read is not a change. Taken around real
+        // calls through the real mount rather than around two dictionaries somebody typed, because
+        // what is being checked is that reading through this fake has no side effects.
+        var home = new FakeHomeAssistant();
+        var mount = Mount(home);
+        var before = home.Snapshot();
+
+        await mount.ReadAsync(Relative(FakeHomeAssistant.KitchenLightDirectory) + "/state.json",
+            offset: null, limit: null, CancellationToken.None);
+        await mount.GlobAsync(Relative("/ha/entities"), "**", CancellationToken.None);
+        await mount.ExecAsync(Relative(FakeHomeAssistant.KitchenLightDirectory), "turn_off.sh --help",
+            timeoutSeconds: null, CancellationToken.None);
+
+        home.Snapshot().ShouldBe(before);
+        home.Calls.ShouldBeEmpty();
+    }
+
     private static HaFileSystem Mount(FakeHomeAssistant? home = null)
     {
         var fake = home ?? new FakeHomeAssistant();

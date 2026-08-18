@@ -1,3 +1,4 @@
+using System.Reflection;
 using Domain.Prompts;
 using Shouldly;
 
@@ -58,6 +59,34 @@ public class PromptClaimTests
         timers.Claims.ShouldContain(c => c.Id == "timers.no-satellite-asks-which-room");
         timers.Claims.Count.ShouldBeGreaterThanOrEqualTo(10);
     }
+
+    [Fact]
+    public void EveryDeclaredClaim_IsListedByTheSectionThatDeclaresIt()
+    {
+        // A claim declared as a field and left out of its section's list is invisible: the manifest
+        // never sees it, the coverage test never asks for it, and the rule it names goes back to
+        // being an assumption — which is the one failure ADR-0031 exists to prevent.
+        var unlisted = typeof(PromptManifest).Assembly.GetTypes()
+            .Select(type => (Type: type, Listed: Listed(type)))
+            .Where(section => section.Listed is not null)
+            .SelectMany(section => Declared(section.Type)
+                .Where(field => !section.Listed!.Any(claim => claim.Id == field.Value.Id))
+                .Select(field => $"{section.Type.Name}.{field.Name}"))
+            .ToList();
+
+        unlisted.ShouldBeEmpty(
+            "these claims are declared as fields and left out of their section's list: " +
+            string.Join(", ", unlisted));
+    }
+
+    private static IReadOnlyList<PromptClaim>? Listed(Type type) =>
+        type.GetField("Claims", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
+            as IReadOnlyList<PromptClaim>;
+
+    private static IEnumerable<(string Name, PromptClaim Value)> Declared(Type type) =>
+        type.GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(field => field.FieldType == typeof(PromptClaim))
+            .Select(field => (field.Name, (PromptClaim)field.GetValue(null)!));
 
     [Fact]
     public void TheManifest_EnumeratesEveryClaimOfEverySection()

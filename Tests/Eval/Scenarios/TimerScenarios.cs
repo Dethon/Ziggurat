@@ -8,11 +8,6 @@ namespace Tests.Eval.Scenarios;
 // the model's default behaviour and protects nothing.
 public static class TimerScenarios
 {
-    // A Monday evening in Madrid. Fixed rather than relative, because the whole point of pinning
-    // an instant is that an expected fire time is a string somebody can read in a dump.
-    private static readonly DateTimeOffset _evening =
-        new(2026, 8, 17, 20, 0, 0, TimeSpan.FromHours(2));
-
     public static IReadOnlyList<Scenario> All => [PastaTimer, ExtendARunningTimer];
 
     // The tracer bullet: one voice turn, one countdown, at the path the contract names. It cites
@@ -30,7 +25,7 @@ public static class TimerScenarios
             Room = "kitchen",
             SatelliteId = "kitchen-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation
@@ -54,12 +49,7 @@ public static class TimerScenarios
         ],
         // A model that looks before it writes is not doing anything unnecessary; one that writes
         // to /schedules or the calendar is, and neither is permitted here.
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/timers*"),
-            new CallPermission(EvalTools.Read, "/timers*"),
-            new CallPermission(EvalTools.Info, "/timers*")
-        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
         Claims = [TimerPrompt.CreatedAtItsOwnPath.Id],
         Policy = new RunPolicy(2, 3),
@@ -79,7 +69,7 @@ public static class TimerScenarios
             Room = "kitchen",
             SatelliteId = "kitchen-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         // Eight minutes armed, three of them spent: the remaining five is a number that exists
         // only in status.json, so a model that read the timer's spec instead writes 600 and the
         // scenario says so.
@@ -119,12 +109,7 @@ public static class TimerScenarios
         // Reading anything under /timers is tolerated: what the contract discriminates is which
         // file the new duration came from, and the required status read plus the remainder pin
         // that far better than forbidding a look at the spec would.
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/timers*"),
-            new CallPermission(EvalTools.Info, "/timers*"),
-            new CallPermission(EvalTools.Read, "/timers*")
-        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
         Ordering =
         [
             new OrderingConstraint("status", "delete"),

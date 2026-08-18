@@ -83,6 +83,16 @@ public class ReplyChecksTests
             .ShouldBeEmpty();
     }
 
+    [Theory]
+    [InlineData("Quedan 15 minutos.")]
+    [InlineData("Quedan veinticinco minutos.")]
+    public void AValueSittingInsideAnother_DoesNotCountAsCarryingIt(string reply)
+    {
+        // The failure this check exists to catch is the wrong number, and "5" is inside "15".
+        Failures(new ReplyExpectation { Mentions = [new SpokenValue("the remaining time", "5", "cinco")] }, reply)
+            .ShouldHaveSingleItem().ShouldContain("the remaining time");
+    }
+
     [Fact]
     public void AReplyNarratingWhatShouldStayInternal_Fails()
     {

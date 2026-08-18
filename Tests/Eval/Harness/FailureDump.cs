@@ -95,8 +95,7 @@ public static class FailureDump
             .ToList()
             .ForEach(section => dump.AppendLine(section));
 
-        var moved = recording.StateAfter
-            .Where(entry => recording.StateBefore.GetValueOrDefault(entry.Key) != entry.Value)
+        var moved = recording.Moved
             .Select(entry =>
                 $"- {entry.Key}: " +
                 $"{recording.StateBefore.GetValueOrDefault(entry.Key) ?? "absent"} → {entry.Value}")

@@ -10,9 +10,6 @@ namespace Tests.Eval.Scenarios;
 // around a capability by hand.
 public static class MountScenarios
 {
-    private static readonly DateTimeOffset _evening =
-        new(2026, 8, 17, 20, 0, 0, TimeSpan.FromHours(2));
-
     public static IReadOnlyList<Scenario> All =>
         [APathWithNoPrefix, AMountThatIsNotThere];
 
@@ -27,7 +24,7 @@ public static class MountScenarios
             Text = "léeme lo que dice Cocina/Salsas.md",
             Sender = "fran"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation
@@ -49,6 +46,7 @@ public static class MountScenarios
             new CallPermission(EvalTools.Glob, "*")
         ],
         CallCeiling = 5,
+        Tier = EvalTier.Smoke,
         // No citation: with the must-start-at-a-mount sentence deleted the model still resolved
         // the note to the vault. The mount list alone is enough to place a path.
         Policy = new RunPolicy(2, 3)
@@ -65,7 +63,9 @@ public static class MountScenarios
             Text = "dime qué películas tengo en /media/Movies",
             Sender = "fran"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
+        // Looking anywhere is fine — finding out which mounts exist is the sane first move. What
+        // the scenario is about is what happens next.
         Permitted =
         [
             new CallPermission(EvalTools.Glob, "*"),
@@ -76,8 +76,20 @@ public static class MountScenarios
         // impossible listing to one, and what the contract forbids is trying harder, not trying
         // once. The ceiling is where that is measured — a delegation counts as a call like any
         // other, so a model that asks two workers and globs twice breaks it.
-        MayDelegateTo = ["jonas-worker", "jack-worker"],
+        // One worker, by the only profile this deployment ships.
+        MayDelegateTo = ["jonas-worker"],
         CallCeiling = 3,
+        Reply = new ReplyExpectation
+        {
+            // The other half of the checkbox: a ceiling says the agent stopped, and only the reply
+            // says it explained rather than answering with a film list it made up.
+            Mentions =
+            [
+                new SpokenValue("that it cannot reach it",
+                    "no tengo", "no puedo", "no hay", "no está", "no existe", "no dispongo",
+                    "sin acceso", "no aparece")
+            ]
+        },
         // No citation, after a correction: the demonstration that turned this red counted a single
         // delegation as a failure, and this model delegates an impossible listing about half the
         // time with the prose still in place. Tolerating that made the demonstration green again,

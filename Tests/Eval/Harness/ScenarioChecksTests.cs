@@ -73,22 +73,6 @@ public class ScenarioChecksTests
     }
 
     [Fact]
-    public async Task ATurnThatOnlyRead_LeavesNothingInTheDiff()
-    {
-        var recording = await ScriptedTurn.RunAsync("Veintiún grados", ScriptedTurn.Call(Read, "/ha/x/state.json"));
-        recording.StateBefore = new Dictionary<string, string> { ["climate.salon"] = "cool" };
-        recording.StateAfter = new Dictionary<string, string> { ["climate.salon"] = "cool" };
-
-        var scenario = Timer() with
-        {
-            Required = [],
-            Permitted = [new CallPermission(Read, "*")]
-        };
-
-        ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
-    }
-
-    [Fact]
     public async Task ANoteThatLostSyntaxTheEditDidNotTouch_FailsTheScenario()
     {
         // The whole risk of editing somebody's notes: the change asked for lands, and a wikilink
@@ -152,6 +136,23 @@ public class ScenarioChecksTests
         ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("does not exist");
     }
 
+    [Fact]
+    public async Task AFileTheTurnWasSupposedToRemove_FailsWhileItIsStillThere()
+    {
+        // A rename that copies and leaves the original updates every incoming link correctly and
+        // still leaves the user with two notes where they had one.
+        var recording = await Written("/vault/Cocina/Salsas.md", "El pesto va en [[Pasta al pesto]].");
+
+        var scenario = Timer() with
+        {
+            Required = [],
+            Permitted = [new CallPermission(Create, "*")],
+            Files = [new FileExpectation { Path = "/vault/Cocina/Salsas.md", Deleted = true }]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("still there");
+    }
+
     private static async Task<Recording> Written(string path, string content)
     {
         var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, path));
@@ -176,7 +177,7 @@ public class ScenarioChecksTests
         // The declaration is the permission. A scenario that had to say it twice would report a
         // correct decision as an unnecessary call the first time somebody forgot the second line.
         var recording = await ScriptedTurn.RunAsync(
-            "Hecho", ScriptedTurn.Call(EvalTools.Delegate, "/ignored"));
+            "Hecho", ScriptedTurn.Call(EvalTools.Subagent, "/ignored"));
         recording.Delegations = [new Delegation("jonas-worker", "resume la carpeta Cocina")];
 
         var scenario = Timer() with

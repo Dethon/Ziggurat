@@ -29,4 +29,11 @@ what.
       both). What it lacks is a scenario that reliably delegates.
 - [ ] The final reply synthesises the worker's result and does not attribute it to a worker.
       Blocked by the same thing: it can only be asserted on a turn that delegated.
-- [x] Every scenario cites its claims and was demonstrated red once.
+- [x] Every scenario was demonstrated red once, and the one that ships cites nothing: with the
+      do-it-yourself bullet deleted the model still read the timer's status itself.
+
+Deviation from the spec, on purpose: this adds a **second** production seam where the spec said
+there would be one. `ISubAgentSpawner` is the same shape as the tool observer — an optional
+interface nothing in a deployment registers — and it exists because the alternative is paying a
+second model to answer every delegation scenario and letting its answer decide whether the parent
+passed.
