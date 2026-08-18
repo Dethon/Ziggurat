@@ -45,6 +45,7 @@ public static class EvalRun
         recording.Reply = response.Text;
         recording.StateAfter = stack.Home.Snapshot();
         recording.FilesAfter = EvalVault.Read(stack.VaultPath);
+        recording.Delegations = stack.Workers.Delegations;
         return recording;
     }
 

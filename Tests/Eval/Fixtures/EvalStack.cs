@@ -9,6 +9,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
 using Domain.Tools.Timers.Vfs;
+using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients.HomeAssistant;
 using Infrastructure.Clients.Voice;
@@ -63,6 +64,10 @@ public sealed class EvalStack : IAsyncDisposable
     // this one's assertions about what survived meaningless.
     public string VaultPath { get; private set; } = "";
 
+    // The workers, canned. A scenario about delegation is about the parent's decision, so what a
+    // worker would have answered is a fixed string the scenario chooses rather than another run.
+    public CannedSubAgents Workers { get; private set; } = null!;
+
     // One instant for the agent's decoration and for every server, so an expected fire time is an
     // exact string. It never advances: a clock that ticks would make a timer's remaining seconds a
     // range, and a scenario asserting a range asserts almost nothing.
@@ -78,6 +83,7 @@ public sealed class EvalStack : IAsyncDisposable
         // arm every timer with its full duration left.
         var stack = new EvalStack
         {
+            Workers = new CannedSubAgents(scenario.WorkerAnswer),
             Clock = new FakeTimeProvider(
                 scenario.Instant - scenario.Armed.Select(a => a.RunningFor).DefaultIfEmpty().Max())
         };
@@ -288,6 +294,7 @@ public sealed class EvalStack : IAsyncDisposable
         services.AddAgent(settings);
         services.AddSubAgents(settings.SubAgents);
         services.AddSingleton(observer);
+        services.AddSingleton<ISubAgentSpawner>(Workers);
 
         _agentServices = services.BuildServiceProvider();
         Factory = _agentServices.GetRequiredService<IAgentFactory>();

@@ -113,6 +113,16 @@ public static class FailureDump
                 .AppendLine();
         }
 
+        if (recording.Delegations.Count > 0)
+        {
+            dump.AppendLine("## Delegated")
+                .AppendLine()
+                .AppendJoin("\n", recording.Delegations.Select(d =>
+                    $"- {d.ProfileId}: \"{d.Prompt}\""))
+                .AppendLine()
+                .AppendLine();
+        }
+
         return dump
             .AppendLine("## Final reply")
             .AppendLine()

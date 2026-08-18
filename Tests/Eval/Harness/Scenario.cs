@@ -44,6 +44,22 @@ public sealed record Scenario
     // catch a permitted call that did more than it was asked to.
     public IReadOnlyList<StateChange> Changes { get; init; } = [];
 
+    // Workers a turn may use without the scenario declaring what for. The delegation equivalent of
+    // a permitted call, and needed for the same reason: a scenario whose subject is something else
+    // should not fail because the model handed a lookup to a worker on the way there.
+    public IReadOnlyList<string> MayDelegateTo { get; init; } = [];
+
+    // What a canned worker answers. It has to read like a real result: a worker that comes back
+    // with something obviously useless makes the parent redo the work itself, and the scenario
+    // then measures the stub rather than the decision.
+    public string WorkerAnswer { get; init; } =
+        "Hecho. Te dejo el resultado resumido en dos líneas.";
+
+    // Every task this turn is allowed to hand to a worker. Exhaustive like the state diff: a
+    // delegation that is not declared here fails the scenario, which is how a scenario says that
+    // a one-call lookup is done in place.
+    public IReadOnlyList<DelegationExpectation> Delegates { get; init; } = [];
+
     // What the files the turn touched must say afterwards.
     public IReadOnlyList<FileExpectation> Files { get; init; } = [];
 
@@ -110,6 +126,16 @@ public sealed record OrderingConstraint(string Before, string After);
 // of its attributes (`climate.salon#temperature`) — a thermostat set to another temperature has
 // changed without its state moving, and a scenario about setting one has to be able to say so.
 public sealed record StateChange(string Key, string To);
+
+// One task handed to a worker: which profile ran it, and what the prompt had to carry. The worker
+// starts with no conversation history, so every url, name and requirement the task needs has to be
+// in the prompt the parent wrote — that is what `Carries` is asking about.
+public sealed record DelegationExpectation
+{
+    public required string Profile { get; init; }
+
+    public IReadOnlyList<string> Carries { get; init; } = [];
+}
 
 // One file, and what it must say once the turn is over. Substrings rather than whole contents:
 // what the vault contract protects is the syntax around the change, and a scenario that pinned the

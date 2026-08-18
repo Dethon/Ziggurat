@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Infrastructure.Agents.ChatClients;
+using Tests.Eval.Fixtures;
 
 namespace Tests.Eval.Harness;
 
@@ -49,6 +50,11 @@ public sealed class Recording : IToolInvocationObserver
 
     public IReadOnlyDictionary<string, string> FilesAfter { get; set; } =
         new Dictionary<string, string>();
+
+    // The work this turn handed to a worker, set by the runner that drove it. It does not come
+    // through the tool seam usefully: the call is there, but which profile ran and what the parent
+    // wrote in the prompt are what a delegation scenario is about.
+    public IReadOnlyList<Delegation> Delegations { get; set; } = [];
 
     // The agent's own answer, set by the runner that drove it: it comes back as the response
     // rather than through the seam, because a reply is what the agent returned and not something

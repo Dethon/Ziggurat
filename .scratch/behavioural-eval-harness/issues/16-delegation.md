@@ -12,11 +12,21 @@ what.
 
 **Blocked by:** 04, 05.
 
-**Status:** ready-for-agent
+**Status:** partially-done — the positive half needs a turn this model reliably delegates
 
-- [ ] The subagent factory is stubbed and records the profile id and prompt it was asked for.
+- [x] The subagent factory is stubbed and records the profile id and prompt it was asked for.
 - [ ] A request with two independent parts delegates both rather than doing them in sequence.
-- [ ] A single trivial lookup is done directly and delegates nothing.
-- [ ] The delegated prompt contains the context the task needs and does not rely on history.
+      **Written, run and withdrawn — it does not hold.** Asked to summarise two unrelated vault
+      folders "a la vez, por separado", the model delegated both halves on one run and on the next
+      two did the work itself: 17 sequential reads in its own turn. Making each folder eight notes
+      instead of two did not change it. The scenario is not in the suite because it would be a red
+      test rather than a guard; the finding is in `ClaimExemptions` and is the most useful thing
+      this family produced.
+- [x] A single trivial lookup is done directly and delegates nothing.
+- [x] The delegated prompt contains the context the task needs and does not rely on history — the
+      check exists and is proven deterministically (a declared delegation whose prompt lacks what
+      the task needs fails, and two declared tasks are not satisfied by one worker told to do
+      both). What it lacks is a scenario that reliably delegates.
 - [ ] The final reply synthesises the worker's result and does not attribute it to a worker.
-- [ ] Every scenario cites its claims and was demonstrated red once.
+      Blocked by the same thing: it can only be asserted on a turn that delegated.
+- [x] Every scenario cites its claims and was demonstrated red once.

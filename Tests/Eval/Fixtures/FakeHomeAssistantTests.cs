@@ -83,11 +83,11 @@ public class FakeHomeAssistantTests
     private static HaFileSystem Mount(FakeHomeAssistant? home = null)
     {
         var fake = home ?? new FakeHomeAssistant();
-        IHomeAssistantClient Client() => new HomeAssistantClient(
+        IHomeAssistantClient client() => new HomeAssistantClient(
             new HttpClient(fake) { BaseAddress = new Uri("http://home-assistant.eval/") },
             FakeHomeAssistant.Token);
 
-        return new HaFileSystem(new HaCatalogProvider(Client), Client);
+        return new HaFileSystem(new HaCatalogProvider(client), client);
     }
 
     // The backend is handed mount-relative paths; the `/ha` prefix a scenario asserts on is the
