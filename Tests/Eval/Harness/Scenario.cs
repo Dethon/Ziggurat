@@ -118,7 +118,19 @@ public sealed record CallExpectation
 }
 
 // A call the scenario tolerates, by tool and path only. Both accept `*`.
-public sealed record CallPermission(string Tool, string Path = "*");
+public sealed record CallPermission(string Tool, string Path = "*")
+{
+    // Looking before acting is tolerated almost everywhere in this suite, and spelling out the
+    // same four lines per scenario is how one of them ends up missing and reporting a glob as a
+    // behavioural failure.
+    public static IReadOnlyList<CallPermission> Looking(string path) =>
+    [
+        new(EvalTools.Glob, path),
+        new(EvalTools.Read, path),
+        new(EvalTools.Info, path),
+        new(EvalTools.Search, path)
+    ];
+}
 
 public sealed record OrderingConstraint(string Before, string After);
 
@@ -147,6 +159,10 @@ public sealed record FileExpectation
     public IReadOnlyList<string> Contains { get; init; } = [];
 
     public IReadOnlyList<string> Absent { get; init; } = [];
+
+    // Gone. A rename that copies and leaves the original behind updates every link correctly and
+    // still leaves two notes where the user had one, and nothing else in the scenario notices.
+    public bool Deleted { get; init; }
 
     // Byte-identical to before the turn. The strongest thing a scenario can say about a file it
     // did not ask to be edited, and the only one that catches an incidental rewrite whole.

@@ -92,11 +92,17 @@ public static class ReplyChecks
     // model's business and the value surviving at all is the contract's.
     private static IEnumerable<string> Missing(ReplyExpectation expectation, string reply) =>
         expectation.Mentions
-            .Where(value => !value.Spellings.Any(
-                spelling => reply.Contains(spelling, StringComparison.OrdinalIgnoreCase)))
+            .Where(value => !value.Spellings.Any(spelling => Carries(reply, spelling)))
             .Select(value =>
                 $"the reply does not carry {value.Name} (any of {string.Join(", ", value.Spellings)}): " +
                 $"\"{reply}\"");
+
+    // At a word boundary, because half of these values are numbers: a reply that said fifteen
+    // minutes were left would otherwise satisfy a scenario asking for five, and the check would be
+    // green on exactly the answer it exists to catch.
+    private static bool Carries(string reply, string spelling) =>
+        Regex.IsMatch(reply, $@"(?<![\p{{L}}\p{{N}}]){Regex.Escape(spelling)}(?![\p{{L}}\p{{N}}])",
+            RegexOptions.IgnoreCase);
 
     // The other half of what a reply contract asks for: silence about mechanism. Matched as a
     // fragment rather than a word so one entry covers a verb's conjugations.

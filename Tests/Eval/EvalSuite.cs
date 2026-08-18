@@ -12,7 +12,16 @@ namespace Tests.Eval;
 // nothing executes.
 public static class EvalSuite
 {
-    public static IReadOnlyList<Scenario> All => [.. TimerScenarios.All, .. MechanismScenarios.All, .. VoiceScenarios.All, .. HomeAssistantScenarios.All, .. VaultScenarios.All, .. MountScenarios.All, .. DelegationScenarios.All];
+    public static IReadOnlyList<Scenario> All =>
+    [
+        .. TimerScenarios.All,
+        .. MechanismScenarios.All,
+        .. VoiceScenarios.All,
+        .. HomeAssistantScenarios.All,
+        .. VaultScenarios.All,
+        .. MountScenarios.All,
+        .. DelegationScenarios.All
+    ];
 
     public static Scenario ByName(string name) =>
         All.FirstOrDefault(s => s.Name == name)

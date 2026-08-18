@@ -9,9 +9,6 @@ namespace Tests.Eval.Scenarios;
 // and after the turn.
 public static class HomeAssistantScenarios
 {
-    private static readonly DateTimeOffset _evening =
-        new(2026, 8, 17, 20, 0, 0, TimeSpan.FromHours(2));
-
     public static IReadOnlyList<Scenario> All => [TurnTheAirConditionerOn, SetTheTemperature];
 
     // "Turn on the AC" and stop: the prompt's own example of the thing not to do is picking a mode
@@ -28,7 +25,7 @@ public static class HomeAssistantScenarios
             Room = "kitchen",
             SatelliteId = "kitchen-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation
@@ -59,9 +56,10 @@ public static class HomeAssistantScenarios
     };
 
     // A temperature is set and nothing is read back. Home Assistant stores the new value after a
-    // delay, so a read taken now returns the old one — a model that checks its own work concludes
-    // it failed, and says so. Reading is simply not permitted here, which is the only way to say
-    // "and then it stopped".
+    // delay, so a read taken now returns the old one and a model that checks its own work concludes
+    // it failed. The fake does not reproduce that delay — it applies the call at once — so what
+    // enforces the rule here is that reading is not permitted, which is also the only way a
+    // scenario can say "and then it stopped".
     public static Scenario SetTheTemperature => new()
     {
         Name = "a temperature is set and never read back",
@@ -73,7 +71,7 @@ public static class HomeAssistantScenarios
             Room = "kitchen",
             SatelliteId = "kitchen-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation

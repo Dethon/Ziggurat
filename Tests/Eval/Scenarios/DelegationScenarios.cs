@@ -12,9 +12,6 @@ namespace Tests.Eval.Scenarios;
 // is the most interesting thing this family found.
 public static class DelegationScenarios
 {
-    private static readonly DateTimeOffset _evening =
-        new(2026, 8, 17, 20, 0, 0, TimeSpan.FromHours(2));
-
     public static IReadOnlyList<Scenario> All => [OneLookupIsDoneInPlace];
 
     // One read answers this, and a worker would make it slower and no better. Declaring no
@@ -30,7 +27,7 @@ public static class DelegationScenarios
             Room = "kitchen",
             SatelliteId = "kitchen-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Armed =
         [
             new ArmedTimerSeed("pasta", DurationSeconds: 480, Room: "kitchen",
@@ -45,13 +42,9 @@ public static class DelegationScenarios
                 Arguments = [Arg.Path("/timers/pasta/status.json")]
             }
         ],
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/timers*"),
-            new CallPermission(EvalTools.Read, "/timers*"),
-            new CallPermission(EvalTools.Info, "/timers*")
-        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
+        Tier = EvalTier.Smoke,
         // No citation: with the do-it-yourself bullet deleted the model still read the status
         // itself. Delegating a one-call lookup is not a temptation it has.
         Policy = new RunPolicy(2, 3)

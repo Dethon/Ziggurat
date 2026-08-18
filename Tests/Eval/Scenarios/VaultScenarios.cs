@@ -10,9 +10,6 @@ namespace Tests.Eval.Scenarios;
 // recording. The assertion is the note's own text once the turn is over.
 public static class VaultScenarios
 {
-    private static readonly DateTimeOffset _evening =
-        new(2026, 8, 17, 20, 0, 0, TimeSpan.FromHours(2));
-
     public static IReadOnlyList<Scenario> All =>
         [AnEditKeepsTheSyntaxAroundIt, ARenameFollowsItsLinks, ANewRecipeLandsInTheKitchen];
 
@@ -27,7 +24,7 @@ public static class VaultScenarios
             Text = "añade al final de la nota Pasta al pesto que usé albahaca del mercado",
             Sender = "fran"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Permitted =
         [
             new CallPermission(EvalTools.Glob, "/vault*"),
@@ -58,7 +55,8 @@ public static class VaultScenarios
                 Absent = ["](Salsas.md)", "](Salsas)"]
             },
             new FileExpectation { Path = EvalVault.SaucesNote, Unchanged = true },
-            new FileExpectation { Path = $"{EvalVault.Mount}/.obsidian/app.json", Unchanged = true }
+            new FileExpectation { Path = $"{EvalVault.Mount}/.obsidian/app.json", Unchanged = true },
+            new FileExpectation { Path = $"{EvalVault.Mount}/.obsidian/workspace.json", Unchanged = true }
         ],
         CallCeiling = 6,
         // No citation: both syntax rules were deleted from the prompt and the note came out
@@ -79,7 +77,7 @@ public static class VaultScenarios
             Text = "renombra la nota Salsas a Salsas base",
             Sender = "fran"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Permitted =
         [
             new CallPermission(EvalTools.Glob, "/vault*"),
@@ -98,6 +96,9 @@ public static class VaultScenarios
                 Path = $"{EvalVault.Mount}/Cocina/Salsas base.md",
                 Contains = ["[[Pasta al pesto]]"]
             },
+            // A copy that left the original behind would update both links and still leave the
+            // user with two notes where they had one.
+            new FileExpectation { Path = EvalVault.SaucesNote, Deleted = true },
             new FileExpectation
             {
                 Path = EvalVault.PastaNote,
@@ -121,7 +122,7 @@ public static class VaultScenarios
             Text = "crea una nota con la receta de la tortilla de patatas: patatas, huevos y cebolla",
             Sender = "fran"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation
@@ -131,13 +132,7 @@ public static class VaultScenarios
                 Arguments = [Arg.PathMatches(@"^/vault/Cocina/[^/]+\.md$")]
             }
         ],
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/vault*"),
-            new CallPermission(EvalTools.Read, "/vault*"),
-            new CallPermission(EvalTools.Info, "/vault*"),
-            new CallPermission(EvalTools.Search, "/vault*")
-        ],
+        Permitted = [.. CallPermission.Looking("/vault*")],
         CallCeiling = 6,
         // No citation: with the fit-into-the-tree bullet deleted the recipe still landed in
         // Cocina. A folder called Cocina holding two recipes is its own instruction.

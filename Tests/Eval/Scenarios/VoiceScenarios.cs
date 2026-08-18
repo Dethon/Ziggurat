@@ -8,9 +8,6 @@ namespace Tests.Eval.Scenarios;
 // said survived into it, and whether it carries anything that cannot be pronounced.
 public static class VoiceScenarios
 {
-    private static readonly DateTimeOffset _evening =
-        new(2026, 8, 17, 20, 0, 0, TimeSpan.FromHours(2));
-
     // Eight minutes armed and three of them spent, so the remaining five exists only in
     // status.json — the same seed the extend scenario uses, for the same reason.
     private static readonly ArmedTimerSeed _pasta =
@@ -35,7 +32,7 @@ public static class VoiceScenarios
             Room = "kitchen",
             SatelliteId = "kitchen-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation
@@ -45,12 +42,7 @@ public static class VoiceScenarios
                 Arguments = [Arg.PathMatches(@"^/timers/[^/]+/timer\.json$")]
             }
         ],
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/timers*"),
-            new CallPermission(EvalTools.Read, "/timers*"),
-            new CallPermission(EvalTools.Info, "/timers*")
-        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
         Reply = new ReplyExpectation
         {
@@ -81,7 +73,7 @@ public static class VoiceScenarios
             Room = "kitchen",
             SatelliteId = "kitchen-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Armed = [_pasta],
         Required =
         [
@@ -92,12 +84,7 @@ public static class VoiceScenarios
                 Arguments = [Arg.Path("/timers/pasta/status.json")]
             }
         ],
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/timers*"),
-            new CallPermission(EvalTools.Read, "/timers*"),
-            new CallPermission(EvalTools.Info, "/timers*")
-        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
         Reply = new ReplyExpectation
         {
@@ -129,16 +116,10 @@ public static class VoiceScenarios
             Room = "office",
             SatelliteId = "office-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         // Nothing is required: the garage has no light, so the right number of successful actions
         // is none, and what is being checked is what the agent said about that.
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/ha*"),
-            new CallPermission(EvalTools.Read, "/ha*"),
-            new CallPermission(EvalTools.Info, "/ha*"),
-            new CallPermission(EvalTools.Search, "/ha*")
-        ],
+        Permitted = [.. CallPermission.Looking("/ha*")],
         CallCeiling = 6,
         Reply = new ReplyExpectation
         {
@@ -164,7 +145,7 @@ public static class VoiceScenarios
             Room = "kitchen",
             SatelliteId = "kitchen-01"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation
@@ -174,12 +155,7 @@ public static class VoiceScenarios
                 Arguments = [Arg.Path("/timers"), Arg.Matches("command", @"^\.?/?dismiss\.sh")]
             }
         ],
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/timers*"),
-            new CallPermission(EvalTools.Read, "/timers*"),
-            new CallPermission(EvalTools.Info, "/timers*")
-        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
         Claims = [TimerPrompt.RingingIsStoppedByDismiss.Id],
         Policy = new RunPolicy(2, 3)
@@ -200,7 +176,7 @@ public static class VoiceScenarios
             SatelliteId = "kitchen-01",
             DismissedAlert = "pasta timer"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Required =
         [
             new CallExpectation
@@ -214,12 +190,7 @@ public static class VoiceScenarios
                 ]
             }
         ],
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/timers*"),
-            new CallPermission(EvalTools.Read, "/timers*"),
-            new CallPermission(EvalTools.Info, "/timers*")
-        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
         Claims = [TimerPrompt.ExtendingADismissedOneIsANewTimer.Id],
         Policy = new RunPolicy(2, 3)
@@ -236,7 +207,7 @@ public static class VoiceScenarios
             Text = "¿a qué hora suena el temporizador de la pasta?",
             Sender = "fran"
         },
-        Instant = _evening,
+        Instant = EvalInstant.Evening,
         Armed = [_pasta],
         Required =
         [
@@ -247,12 +218,7 @@ public static class VoiceScenarios
                 Arguments = [Arg.Path("/timers/pasta/status.json")]
             }
         ],
-        Permitted =
-        [
-            new CallPermission(EvalTools.Glob, "/timers*"),
-            new CallPermission(EvalTools.Read, "/timers*"),
-            new CallPermission(EvalTools.Info, "/timers*")
-        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
         Reply = new ReplyExpectation
         {

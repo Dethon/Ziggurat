@@ -30,27 +30,29 @@ public static class ScenarioChecks
     {
         var unmatched = recording.Delegations.ToList();
 
-        var missing = scenario.Delegates
-            .Select(expectation =>
+        // A loop rather than a projection: each expectation consumes the delegation it matched, so
+        // the state the next one reads is the state this one left.
+        var missing = new List<string>();
+        foreach (var expectation in scenario.Delegates)
+        {
+            // A delegation to the right profile that is missing something is consumed by the
+            // expectation it was trying to answer, so it is reported once — as the context it left
+            // out, rather than a second time as work nobody declared.
+            var match = unmatched.FirstOrDefault(d => Answers(expectation, d));
+            var attempt = match ?? unmatched.FirstOrDefault(d => SameProfile(expectation, d));
+            if (attempt is not null)
             {
-                // A delegation to the right profile that is missing something is consumed by the
-                // expectation it was trying to answer, so it is reported once — as the context it
-                // left out, rather than a second time as work nobody declared.
-                var match = unmatched.FirstOrDefault(d => Answers(expectation, d));
-                var attempt = match ?? unmatched.FirstOrDefault(d => SameProfile(expectation, d));
-                if (attempt is not null)
-                {
-                    unmatched.Remove(attempt);
-                }
+                unmatched.Remove(attempt);
+            }
 
-                return match is not null
-                    ? null
-                    : $"nothing was delegated to '{expectation.Profile}' carrying " +
-                      $"{string.Join(", ", expectation.Carries.Select(c => $"'{c}'"))}. " +
-                      $"Delegated: {Describe(recording)}";
-            })
-            .OfType<string>()
-            .ToList();
+            if (match is null)
+            {
+                missing.Add(
+                    $"nothing was delegated to '{expectation.Profile}' carrying " +
+                    $"{string.Join(", ", expectation.Carries.Select(c => $"'{c}'"))}. " +
+                    $"Delegated: {Describe(recording)}");
+            }
+        }
 
         var undeclared = unmatched
             .Where(delegation => !scenario.MayDelegateTo.Contains(
@@ -80,9 +82,14 @@ public static class ScenarioChecks
     // markdown on the way past made exactly one tool call, and it looked fine.
     private static IEnumerable<string> Wrote(Scenario scenario, Recording recording) =>
         scenario.Files.SelectMany(expectation =>
-            recording.FilesAfter.TryGetValue(expectation.Path, out var content)
-                ? Says(expectation, content, recording.FilesBefore.GetValueOrDefault(expectation.Path))
-                : [$"{expectation.Path} does not exist after the turn"]);
+            (recording.FilesAfter.TryGetValue(expectation.Path, out var content), expectation.Deleted) switch
+            {
+                (true, true) => [$"{expectation.Path} was to be gone and is still there"],
+                (true, false) =>
+                    Says(expectation, content!, recording.FilesBefore.GetValueOrDefault(expectation.Path)),
+                (false, true) => [],
+                (false, false) => [$"{expectation.Path} does not exist after the turn"]
+            });
 
     private static IEnumerable<string> Says(FileExpectation expectation, string content, string? before)
     {
@@ -107,9 +114,7 @@ public static class ScenarioChecks
     // see.
     private static IEnumerable<string> Moved(Scenario scenario, Recording recording)
     {
-        var changed = recording.StateAfter
-            .Where(entry => recording.StateBefore.GetValueOrDefault(entry.Key) != entry.Value)
-            .ToDictionary(entry => entry.Key, entry => entry.Value);
+        var changed = recording.Moved;
 
         var undeclared = changed
             .Where(entry => !scenario.Changes.Any(c => c.Key == entry.Key))
@@ -149,7 +154,7 @@ public static class ScenarioChecks
             .ToList();
 
         return recording.Calls
-            .Where(call => !string.Equals(call.ToolName, EvalTools.Delegate, StringComparison.Ordinal))
+            .Where(call => !string.Equals(call.ToolName, EvalTools.Subagent, StringComparison.Ordinal))
             .Where(call => !scenario.Required.Any(e => Matches(e, call))
                            && !permitted.Any(p => p.Tool.IsMatch(call.ToolName) && p.Path.IsMatch(Path(call))))
             .Select(call =>
