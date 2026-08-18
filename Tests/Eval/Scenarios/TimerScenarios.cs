@@ -44,8 +44,11 @@ public static class TimerScenarios
                     Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
                     Arg.Body("content",
                         Arg.Number("durationSeconds", 480),
-                        // Targeted without being told, from the room the request came from.
-                        Arg.Body("target", Arg.Matches("room", "^kitchen$")))
+                        // Targeted without being told, from the room the request came from —
+                        // named as the room or as the id of the satellite in it, which the contract
+                        // offers as two spellings of the same answer.
+                        Arg.Body("target", Arg.Any(
+                            Arg.Is("room", "kitchen"), Arg.Is("satelliteId", "kitchen-01"))))
                 ]
             }
         ],

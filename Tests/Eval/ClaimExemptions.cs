@@ -12,26 +12,36 @@ public static class ClaimExemptions
     public static IReadOnlyDictionary<string, string> Reasons { get; } = new Dictionary<string, string>
     {
         [TimerPrompt.DurationIsACountdown.Id] =
-            "Demonstrated on 2026-08-18 and it stayed green: with only the timers server hosted there is "
-            + "nowhere else a countdown could go, so nothing here discriminates a timer from a calendar "
-            + "alarm or a scheduled task. It needs the other two mounts — ticket 07.",
+            "Demonstrated twice and stayed green both times, most recently on 2026-08-18 with all three "
+            + "mounts hosted: deleting the countdown rule from the timer, Home Assistant and scheduling "
+            + "prompts still left 'recuérdame en diez minutos' in /timers. The timers mount description "
+            + "teaches it too, and deleting that takes the create path with it — so this claim cannot be "
+            + "falsified by deleting prose. The scenario is kept as a regression guard against a model "
+            + "that stops discriminating; it just cannot earn the citation.",
         [TimerPrompt.VoiceTargetsTheSpeakingRoom.Id] =
-            "Demonstrated on 2026-08-18 and it stayed green: with the rule deleted from both the prompt "
-            + "and the mount description, the model still targeted the room the decorated turn named. "
-            + "Targeting the speaking room is the model's default on this turn shape, so a scenario that "
-            + "witnesses the rule has to be one where the default and the rule disagree — ticket 07.",
+            "Demonstrated on 2026-08-18 with the rule deleted from the prompt and the mount, on a turn "
+            + "where the words point at another room (pasta, asked from the office): the model still "
+            + "targeted the office. Targeting the speaking room is its default whenever the decorated "
+            + "turn names a room, so nothing short of removing the room from the turn discriminates.",
         [TimerPrompt.AgentActsIsAScheduledTask.Id] =
-            "Needs the scheduling server in process beside the timers server — ticket 07.",
+            "Demonstrated on 2026-08-18: with the two-step choice deleted from the timer, scheduling and "
+            + "Home Assistant prompts, 'apaga el aire dentro de una hora' still became a /schedules "
+            + "one-shot at the right absolute time. The model works out on its own that a timer only "
+            + "speaks, so the prose is redundant on this turn shape.",
         [TimerPrompt.ClockTimeIsACalendarAlarm.Id] =
-            "Needs the calendar reachable through the Home Assistant fake — ticket 07.",
+            "Demonstrated on 2026-08-18 with the rule deleted from the timer prompt, the Home Assistant "
+            + "prompt and the timers mount description: 'despiértame mañana a las siete' still went to "
+            + "the alarms calendar. The calendar entity is called Assistant Alarms, which teaches the "
+            + "same thing and cannot be deleted without deleting the calendar.",
         [TimerPrompt.SchedulesAreNeverHumanReminders.Id] =
-            "The negative half of the three-way discrimination; arrives with the scheduling server — ticket 07.",
-        [TimerPrompt.DurationCappedAtFourHours.Id] =
-            "The over-ceiling case creates a calendar entry, so it needs the Home Assistant fake — ticket 07.",
-        [TimerPrompt.NoSatelliteAsksWhichRoom.Id] =
-            "A turn that must create nothing and ask instead; it asserts on the reply, so it waits on the reply checks — ticket 07 with 09.",
+            "Demonstrated on 2026-08-18 with the rule deleted from all three prompts: a ten-minute "
+            + "reminder still went to /timers rather than /schedules. Nothing tempts the model into "
+            + "/schedules for a human reminder, so the negative half of the discrimination has no "
+            + "turn that witnesses it yet.",
         [TimerPrompt.TextIsSpokenNeverAnInstruction.Id] =
-            "Discriminates a spoken message from an instruction, which is the scheduled-action family — ticket 07.",
+            "Demonstrated on 2026-08-18 with the rule deleted from the timer and Home Assistant prompts: "
+            + "the deferred action still became a schedule rather than a timer whose text is a command. "
+            + "Witnessing this one needs a turn that forces a timer and then asks what goes in its text.",
         [TimerPrompt.SpokenStatusGivesOnlyTheRemainingTime.Id] =
             "A claim about what the reply says, not about which tool ran — ticket 09.",
         [TimerPrompt.RecreationIsNeverNarrated.Id] =

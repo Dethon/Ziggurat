@@ -23,6 +23,14 @@ public static class Arg
             args => Read(args, name) is { ValueKind: JsonValueKind.String } element
                     && Regex.IsMatch(element.GetString() ?? "", pattern, RegexOptions.IgnoreCase));
 
+    // One question with more than one right answer. The contract itself offers alternatives —
+    // a timer's target is a room *or* an exact satellite id, and both honour the same rule — so a
+    // scenario that pinned one spelling would be asserting on the model's choice between two
+    // things the prose says are equally correct.
+    public static ArgumentMatcher Any(params ArgumentMatcher[] alternatives) =>
+        new(string.Join(" or ", alternatives.Select(m => m.Description)),
+            args => alternatives.Any(m => m.Matches(args)));
+
     // An argument whose value is itself a document: the body of a timer, a schedule or a note.
     // Either spelling counts — a model writes the file body as a JSON string and its nested keys
     // as real objects, and the scenario is asking about the values rather than about which of the

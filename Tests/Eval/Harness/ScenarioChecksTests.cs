@@ -44,6 +44,20 @@ public class ScenarioChecksTests
     }
 
     [Fact]
+    public async Task AReplyThatBreaksItsOwnContract_FailsTheScenario()
+    {
+        // The reply travels with the calls rather than beside them: a turn that called exactly the
+        // right tools and then read a file path aloud has not honoured the contract.
+        var recording = await ScriptedTurn.RunAsync(
+            "Listo, lo he escrito en /timers/pasta/timer.json",
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        var scenario = Timer() with { Reply = new ReplyExpectation { Spoken = true } };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("a file path");
+    }
+
+    [Fact]
     public async Task APermittedCallWithUnexpectedArguments_DoesNotFail()
     {
         // Permission is by tool and path, never by argument: a scenario that had to predict every

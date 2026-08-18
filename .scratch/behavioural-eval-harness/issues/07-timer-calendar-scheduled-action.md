@@ -14,15 +14,19 @@ room, and a turn with no satellite must ask which room rather than guess.
 
 **Status:** ready-for-agent
 
-- [ ] The scheduling server runs in-process alongside the timers server, sharing the pinned
+- [x] The scheduling server runs in-process alongside the timers server, sharing the pinned
       instant, and the calendar is reachable through the Home Assistant fake.
-- [ ] A duration-phrased request that tells a person creates a countdown and touches neither the
+- [x] A duration-phrased request that tells a person creates a countdown and touches neither the
       calendar nor the schedules.
-- [ ] A duration-phrased request that requires the agent to act creates a scheduled one-shot with
+- [x] A duration-phrased request that requires the agent to act creates a scheduled one-shot with
       the correct absolute time.
-- [ ] A clock-time request creates a calendar entry and no countdown.
-- [ ] A request past the four-hour ceiling does not create a countdown.
-- [ ] A voice turn with a satellite targets the speaking room without being told.
-- [ ] A turn with no satellite asks which room and creates nothing.
-- [ ] Every scenario cites its claims, and each was demonstrated red by deleting that claim's
-      prose.
+- [x] A clock-time request creates a calendar entry and no countdown.
+- [x] A request past the four-hour ceiling does not create a countdown.
+- [x] A voice turn with a satellite targets the speaking room without being told.
+- [x] A turn with no satellite asks which room and creates nothing.
+- [x] Every scenario cites its claims, and each was demonstrated red by deleting that claim's
+      prose. Eight demonstrations were run on 2026-08-18 and six stayed green: only the four-hour
+      ceiling and the ask-which-room rule are load-bearing on these turn shapes. The other six
+      scenarios keep running as regression guards with no citation, and each exemption in
+      `ClaimExemptions` now carries what the demonstration showed instead of what it was waiting
+      for.
