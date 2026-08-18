@@ -22,9 +22,6 @@ paths:
 - `RedisFixture` is a database on a pooled container, not a container of its own (`RedisPool`).
   A class that builds a `RedisStackMemoryStore` takes `MemorySearchFixture` instead — RediSearch
   only indexes database 0, so those classes share it and take their vector width from the fixture
-- Use `Shouldly` for assertions (`result.ShouldBe()`, `Should.Throw<>()`)
-- Create testable wrappers for classes with protected methods
-- Use `IDisposable` for cleanup of temp files/directories
 
 ## Waiting
 

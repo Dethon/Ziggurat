@@ -51,7 +51,7 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     protected virtual TimeSpan SearchMatchTimeout => TimeSpan.FromSeconds(1);
 
     public virtual Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsReadResult>(VfsTextReadTool.Name));
+        Task.FromResult(Unsupported<FsReadResult>(VfsFileReadTool.Name));
 
     public virtual Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>
         Task.FromResult(Unsupported<FsInfoResult>(VfsFileInfoTool.Name));

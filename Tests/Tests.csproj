@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <LangVersion>14</LangVersion>
+    <NoWarn>$(NoWarn);OPENAI001</NoWarn>
     <UserSecretsId>bae64127-c00e-4499-8325-0fb6b452133c</UserSecretsId>
   </PropertyGroup>
 

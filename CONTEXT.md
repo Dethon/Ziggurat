@@ -219,11 +219,20 @@ whose transport already keeps the file has none.
 _Avoid_: attachment store, staging mount, uploads folder
 
 **Hydration**:
-Putting an attachment's bytes back where its reference sits, on the way to the model
-and never on the way in. It reaches back a fixed distance, so an attachment stops
-being visible to the model long before its reference leaves the history. A reference
-whose bytes are gone hydrates to a placeholder naming the file.
+Putting bytes back where a reference to them sits, on the way to the model and never
+on the way in, whoever put the reference there — a person who sent an attachment, or
+the model itself reading an image off a mount. It reaches back a fixed distance, so
+bytes stop being visible to the model long before the reference leaves the history. A
+reference whose bytes are gone hydrates to a placeholder naming the file.
 _Avoid_: rehydration, inlining, resolving, expansion
+
+**Read image**:
+An image the model read from a mount and was shown. It is not an attachment — nobody
+sent it, and the model asked for it — so it arrives inside the tool result that
+answered the read, never as part of what a person said. Its bytes rest with the agent
+rather than with a channel, on a clock of their own, and the file it came from stays
+on the mount: an image that is no longer in view can always be read again.
+_Avoid_: attachment, inline image, viewed file, screenshot
 
 **Landing**:
 Putting an attachment into a sandbox as a real file, so the model can run something against it

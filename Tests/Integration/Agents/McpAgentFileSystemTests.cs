@@ -60,7 +60,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await RunAsync(llmClient,
-            "Use the domain__filesystem__text_read tool with filePath: /vault/read-test.md and tell me its content. " +
+            "Use the domain__filesystem__file_read tool with filePath: /vault/read-test.md and tell me its content. " +
             "IMPORTANT: the filePath argument MUST start with the mounted prefix /vault. " +
             "Pass it exactly as written — do not shorten, rename, or invent paths.",
             landed: r => LlmAttempt.Combine(r).Contains("Secret Document"));

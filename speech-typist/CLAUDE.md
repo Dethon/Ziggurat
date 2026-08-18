@@ -126,13 +126,8 @@ CRT otherwise emits about fifty-five lines of LNK4099 — lld hunting for Micros
 would read. It is scoped to that one warning deliberately: `-A linker_messages` would hide a real
 link failure just as effectively.
 
-Crates that were established to cross-compile this way: `cpal` (WASAPI capture and device
-enumeration), `windows` 0.58 (hook, tray, injection, registry, cue playback), `reqwest` with **no
-TLS features at all** (Lemonade is plain HTTP on the LAN, and dropping the TLS stack is most of
-why the executable is this small — a config naming an `https://` base URL will fail to connect, by
-design). The tray is `Shell_NotifyIconW` directly rather than a tray crate: a message loop already
-exists for the hook, the same call carries the balloon notifications, and it is one fewer thing
-that has to cross-compile.
+The crate choices and their cross-compile rationale (no-TLS `reqwest`, `Shell_NotifyIconW` over a
+tray crate) live as comments in `Cargo.toml`.
 
 ## Rough edges accepted on purpose
 

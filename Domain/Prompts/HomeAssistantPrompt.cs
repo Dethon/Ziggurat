@@ -47,10 +47,10 @@ public static class HomeAssistantPrompt
            `/ha/areas/<room>`, or read the setup index. Do NOT glob to discover actions:
            the setup index lists them per class, and action files live in the entity
            directory, so `glob` `/ha/entities/<class>/*.sh` returns nothing.
-        2. Inspect when you need an attribute as input: `text_read`
+        2. Inspect when you need an attribute as input: `file_read`
            `/ha/.../state.json`.
         3. Learn an action's arguments: `exec` `<service>.sh --help`. The `.sh` files are
-           action stubs, not scripts — don't `text_read` them; `--help` prints the field list.
+           action stubs, not scripts — don't `file_read` them; `--help` prints the field list.
         4. Act: `exec` from the entity directory, e.g.
            `exec(path="/ha/entities/light/kitchen_(kitchen)", command="turn_on.sh --brightness_pct 60")`.
 

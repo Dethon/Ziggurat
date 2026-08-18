@@ -51,4 +51,38 @@ public class OpenRouterHttpHelpersCostTests
         OpenRouterHttpHelpers.ExtractCachedTokensFromSseData(data).ShouldBeNull();
     }
 
+    // The Responses wire says it once, at the end: the `response.completed` event nests usage under
+    // `response`, and the cache counter is spelled `input_tokens_details` there rather than
+    // `prompt_tokens_details`.
+    [Fact]
+    public void ExtractCostFromSseData_ReadsTheResponseCompletedEvent()
+    {
+        const string data = """
+            {"type":"response.completed","response":{"id":"r1","status":"completed",
+             "usage":{"input_tokens":106,"output_tokens":5,"total_tokens":111,"cost":2.72e-05}}}
+            """;
+
+        OpenRouterHttpHelpers.ExtractCostFromSseData(data).ShouldBe(0.0000272m);
+    }
+
+    [Fact]
+    public void ExtractCachedTokensFromSseData_ReadsTheResponseCompletedEvent()
+    {
+        const string data = """
+            {"type":"response.completed","response":{"id":"r1","status":"completed",
+             "usage":{"input_tokens":6282,"input_tokens_details":{"cached_tokens":6266},
+             "output_tokens":9,"total_tokens":6291,"cost":1.4e-04}}}
+            """;
+
+        OpenRouterHttpHelpers.ExtractCachedTokensFromSseData(data).ShouldBe(6266);
+    }
+
+    [Theory]
+    [InlineData("""{"type":"response.output_text.delta","delta":"hi"}""")]
+    [InlineData("""{"type":"response.completed","response":{"status":"completed"}}""")]
+    public void TheResponsesEventsBeforeCompletion_CarryNoUsage(string data)
+    {
+        OpenRouterHttpHelpers.ExtractCostFromSseData(data).ShouldBeNull();
+        OpenRouterHttpHelpers.ExtractCachedTokensFromSseData(data).ShouldBeNull();
+    }
 }

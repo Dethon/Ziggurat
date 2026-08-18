@@ -3,16 +3,16 @@ using System.ClientModel.Primitives;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Runtime.CompilerServices;
-using System.Text;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
-using OpenAI;
+using OpenAI.Responses;
 
 namespace Infrastructure.Agents.ChatClients;
 
@@ -21,7 +21,6 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly IChatClient _client;
     private readonly HttpClient? _httpClient;
     private readonly HttpClientPipelineTransport? _transport;
-    private readonly ConcurrentQueue<string> _reasoningQueue = new();
     private readonly ConcurrentQueue<decimal> _costQueue = new();
     private readonly ConcurrentQueue<long> _cachedTokenQueue = new();
     private readonly IMetricsPublisher _metricsPublisher;
@@ -29,6 +28,8 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
     private readonly IAttachmentSource? _attachmentSource;
+    private readonly IReadImageStore? _readImageStore;
+    private readonly Func<string, bool> _modelAcceptsImages;
     private readonly int _hydrationDepthMessages;
 
     public OpenRouterChatClient(
@@ -42,16 +43,20 @@ public sealed class OpenRouterChatClient : IChatClient
         ProviderRouting? providerRouting = null,
         HttpMessageHandler? transportHandler = null,
         IAttachmentSource? attachmentSource = null,
-        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages)
+        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
+        IReadImageStore? readImageStore = null,
+        Func<string, bool>? modelAcceptsImages = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
+        _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
+        _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
         _hydrationDepthMessages = hydrationDepthMessages;
         _httpClient = CreateHttpClient(
-            _reasoningQueue, _costQueue, _cachedTokenQueue, sessionId, providerRouting, transportHandler);
+            _costQueue, _cachedTokenQueue, sessionId, providerRouting, transportHandler);
         _transport = new HttpClientPipelineTransport(_httpClient);
         _client = CreateClient(endpoint, apiKey, model, _transport);
     }
@@ -63,13 +68,17 @@ public sealed class OpenRouterChatClient : IChatClient
         IMetricsPublisher? metricsPublisher = null,
         TimeProvider? timeProvider = null,
         IAttachmentSource? attachmentSource = null,
-        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages)
+        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
+        IReadImageStore? readImageStore = null,
+        Func<string, bool>? modelAcceptsImages = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
+        _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
+        _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
         _hydrationDepthMessages = hydrationDepthMessages;
         _client = innerClient;
     }
@@ -97,13 +106,25 @@ public sealed class OpenRouterChatClient : IChatClient
         var decorated = messages
             .Select(x => TurnDecoration.Apply(x, _timeProvider.LocalTimeZone))
             .ToList();
-        var transformedMessages = await AttachmentHydration.ApplyAsync(
-            decorated, _attachmentSource, _hydrationDepthMessages, ct);
-
         // The model a per-message config patch resolved to rides this request's own options
         // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on
-        // and a concurrent turn has nothing shared to overwrite.
+        // and a concurrent turn has nothing shared to overwrite. Resolved before hydration,
+        // because whether an image part may travel at all depends on it: the wire rejects a
+        // request carrying an image the model cannot take rather than stripping it.
         var effectiveModel = options?.ModelId ?? _model;
+
+        // The conversation reaches this send on the turn's own options, the way MCP tool metadata
+        // already does: a chat client is built per model from DI, so there is nothing per
+        // conversation for it to have been constructed with.
+        var transformedMessages = await AttachmentHydration.ApplyAsync(
+            decorated,
+            _attachmentSource,
+            new ReadImageContext(
+                _readImageStore,
+                ConversationContextMeta.TryRead(options)?.ConversationId,
+                _modelAcceptsImages(effectiveModel)),
+            _hydrationDepthMessages,
+            ct);
 
         var sender = transformedMessages
             .LastOrDefault(m => m.Role == ChatRole.User)
@@ -132,7 +153,10 @@ public sealed class OpenRouterChatClient : IChatClient
 
         await foreach (var update in _client.GetStreamingResponseAsync(truncated, options, ct))
         {
-            AppendReasoningContent(update);
+            // The Responses adapter leaves MessageId empty where the chat wire stamped the
+            // completion id, and everything that reassembles a streamed turn keys on it. The
+            // response id is one id per model turn — the aggregation the consumers want.
+            update.MessageId ??= update.ResponseId;
             update.SetTimestamp(_timeProvider.GetUtcNow());
 
             var updateUsage = update.Contents.OfType<UsageContent>().FirstOrDefault();
@@ -197,43 +221,22 @@ public sealed class OpenRouterChatClient : IChatClient
         _httpClient?.Dispose();
     }
 
-    private void AppendReasoningContent(ChatResponseUpdate update)
-    {
-        var reasoning = DrainReasoningQueue();
-        if (!string.IsNullOrWhiteSpace(reasoning))
-        {
-            update.Contents.Add(new TextReasoningContent(reasoning));
-        }
-    }
-
-    private string DrainReasoningQueue()
-    {
-        if (_reasoningQueue.IsEmpty)
-        {
-            return string.Empty;
-        }
-
-        var sb = new StringBuilder();
-        while (_reasoningQueue.TryDequeue(out var chunk))
-        {
-            sb.Append(chunk);
-        }
-
-        return sb.ToString();
-    }
-
+    // The Responses wire, because it is the one on which a tool result may carry an image: a
+    // Chat Completions tool message is a plain string, and that constraint shaped the whole
+    // read-image feature until this client switched. OpenRouter serves it at the same base URL,
+    // honours session_id, provider routing and usage accounting on it, and translates it for
+    // non-OpenAI models. See docs/adr/0029.
     private static IChatClient CreateClient(
         string endpoint, string apiKey, string model, HttpClientPipelineTransport transport)
     {
-        var options = new OpenAIClientOptions
+        var options = new ResponsesClientOptions
         {
             Endpoint = new Uri(endpoint),
             Transport = transport
         };
 
-        return new OpenAIClient(new ApiKeyCredential(apiKey), options)
-            .GetChatClient(model)
-            .AsIChatClient();
+        return new ResponsesClient(new ApiKeyCredential(apiKey), options)
+            .AsIChatClient(model);
     }
 
     // Mirrors DrainCostQueue: the provider reports this once per response, in the same usage block.
@@ -264,20 +267,21 @@ public sealed class OpenRouterChatClient : IChatClient
     internal static SocketsHttpHandler SharedHandler => HostedConnectionPool.Shared;
 
     private static HttpClient CreateHttpClient(
-        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
+        ConcurrentQueue<decimal> costQueue,
         ConcurrentQueue<long> cachedQueue, string? sessionId, ProviderRouting? providerRouting,
         HttpMessageHandler? transportHandler = null)
     {
-        var handler = new ReasoningHandler(
-            reasoningQueue, costQueue, cachedQueue, sessionId, providerRouting)
+        var handler = new WireHandler(costQueue, cachedQueue, sessionId, providerRouting)
         {
             InnerHandler = transportHandler ?? HostedConnectionPool.Shared
         };
         return new HttpClient(handler, disposeHandler: false);
     }
 
-    private sealed class ReasoningHandler(
-        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
+    // Stamps what OpenRouter reads off the body (session pin, provider routing, usage accounting)
+    // and taps what its typed response drops (cost, the prompt-cache counter) on the way back.
+    private sealed class WireHandler(
+        ConcurrentQueue<decimal> costQueue,
         ConcurrentQueue<long> cachedQueue, string? sessionId, ProviderRouting? providerRouting)
         : DelegatingHandler
     {
@@ -292,8 +296,8 @@ public sealed class OpenRouterChatClient : IChatClient
             if (response.Content.Headers.ContentType?.MediaType?.Equals("text/event-stream",
                     StringComparison.OrdinalIgnoreCase) == true)
             {
-                response.Content = OpenRouterHttpHelpers.WrapWithReasoningTee(
-                    response.Content, reasoningQueue, costQueue, cachedQueue);
+                response.Content = OpenRouterHttpHelpers.WrapWithUsageTee(
+                    response.Content, costQueue, cachedQueue);
             }
 
             return response;

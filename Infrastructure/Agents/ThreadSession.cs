@@ -46,10 +46,11 @@ internal sealed class ThreadSession : IAsyncDisposable
         IReadOnlySet<string> filesystemEnabledTools,
         ILoggerFactory? loggerFactory,
         CancellationToken ct,
-        McpPromptCache? promptCache = null)
+        McpPromptCache? promptCache = null,
+        ReadImageSupport? readImages = null)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
-            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache);
+            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages);
         var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
     }
@@ -73,7 +74,8 @@ internal sealed class ThreadSessionBuilder(
     IReadOnlyList<AIFunction> domainTools,
     IReadOnlySet<string> filesystemEnabledTools,
     ILoggerFactory? loggerFactory,
-    McpPromptCache? promptCache = null)
+    McpPromptCache? promptCache = null,
+    ReadImageSupport? readImages = null)
 {
     private static readonly HashSet<string> _fileSystemMcpToolNames = [.. FileSystemOperations.ToolNames];
 
@@ -119,7 +121,7 @@ internal sealed class ThreadSessionBuilder(
             {
                 registry = fsRegistry;
                 var fsFeatureConfig = new FeatureConfig(EnabledTools: filesystemEnabledTools);
-                var feature = new FileSystemToolFeature(registry);
+                var feature = new FileSystemToolFeature(registry, readImages);
                 fileSystemTools = feature.GetTools(fsFeatureConfig).ToList();
                 fileSystemPrompts = feature.Prompt is not null ? [feature.Prompt] : [];
             }

@@ -89,6 +89,36 @@ public class VfsVirtualPathConformanceTests
             + string.Join(", ", leaked.Select(s => $"{s.Field}='{s.Value}'")));
     }
 
+    public static TheoryData<string> EverySpelling() => new(Spellings.Keys);
+
+    // The image envelope is a second response shape for the one read tool, and it carries a path of
+    // its own. Driven separately because the tool set above comes from the operation list, which has
+    // a single entry for the read whichever kind of file it turns out to be about.
+    [Theory]
+    [MemberData(nameof(EverySpelling))]
+    public async Task TheImageEnvelopeAnswersInVirtualPaths_WhateverItsBackendSpellsThemAs(string spelling)
+    {
+        var backend = new HostileBackend(Spellings[spelling]);
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.Resolve(It.IsAny<string>()))
+            .Returns<string>(p => Resolved(backend, p[(Mount.Length + 1)..], Mount));
+
+        var response = await new VfsFileReadTool(registry.Object).RunAsync($"{Mount}/docs/shot.png");
+
+        // A media type carries a slash and is not a path, so it is the one field the slash heuristic
+        // cannot judge here.
+        var paths = PathShapedStrings(response).Where(s => s.Field != "mediaType").ToList();
+        paths.ShouldNotBeEmpty("the envelope reported no path at all, so this proves nothing");
+
+        var leaked = paths
+            .Where(s => !s.Value.StartsWith(Mount + "/", StringComparison.Ordinal))
+            .ToList();
+
+        leaked.ShouldBeEmpty(
+            $"the image envelope answered in backend coordinates ({spelling}): "
+            + string.Join(", ", leaked.Select(s => $"{s.Field}='{s.Value}'")));
+    }
+
     private static bool IsExempt(string toolKey, string field) =>
         _exemptions.Any(e => e.Field == field && e.ToolKeys.Contains(toolKey));
 
@@ -107,7 +137,7 @@ public class VfsVirtualPathConformanceTests
         var vfs = registry.Object;
         return toolKey switch
         {
-            "read" => await new VfsTextReadTool(vfs).RunAsync($"{Mount}/docs/note.md"),
+            "read" => await new VfsFileReadTool(vfs).RunAsync($"{Mount}/docs/note.md"),
             "create" => await new VfsTextCreateTool(vfs).RunAsync($"{Mount}/docs/note.md", "hello"),
             "edit" => await new VfsTextEditTool(vfs).RunAsync(
                 $"{Mount}/docs/note.md", [new TextEdit("a", "b")]),

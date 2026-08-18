@@ -15,29 +15,8 @@ MCP tools wrap Domain tools and expose them via Model Context Protocol.
 2. `[McpServerToolType]` class attribute, `[McpServerTool]` + `[Description]` method attributes
 3. Return `CallToolResult` via `ToolResponse.Create()`
 
-```csharp
-[McpServerToolType]
-public class McpExampleTool(IDependency dep) : ExampleTool(dep)
-{
-    [McpServerTool(Name = Name)]
-    [Description(Description)]
-    public async Task<CallToolResult> Run(
-        RequestContext<CallToolRequestParams> context,
-        string parameter,
-        CancellationToken cancellationToken)
-    {
-        if (!ConversationScope.TryResolve(context.Params?.Meta, out var scope))
-        {
-            return ToolResponse.Create(ToolError.Create(
-                ToolError.Codes.InvalidArgument,
-                "Conversation context is missing from request _meta.",
-                retryable: false));
-        }
-
-        return ToolResponse.Create(await Run(scope, parameter, cancellationToken));
-    }
-}
-```
+Any file under `McpServer*/McpTools/*.cs` is a working example, `ConversationScope.TryResolve`
+guard included.
 
 The scope guard is only needed by tools that cache per-caller state across calls
 (`file_search`/`download_file`, the `web_*` browse tools). A stateless tool takes no scope at all.

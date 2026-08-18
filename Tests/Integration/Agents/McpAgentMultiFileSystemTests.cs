@@ -65,7 +65,7 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
 
         // Act
         var responses = await RunAsync(llmClient,
-            "Read both of these files using the domain__filesystem__text_read tool and tell me their contents:\n" +
+            "Read both of these files using the domain__filesystem__file_read tool and tell me their contents:\n" +
             "- filePath: /library/multi-read.md\n" +
             "- filePath: /notes/multi-read.md\n" +
             "IMPORTANT: Every filePath MUST begin with one of the mounted prefixes (/library or /notes). " +

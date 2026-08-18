@@ -31,7 +31,8 @@ public static class InjectorModule
                 MaxContextTokens = settings.OpenRouter.MaxContextTokens,
                 ProviderRouting = settings.OpenRouter.ProviderRouting,
                 PatchableModelIds = settings.PatchableModels.Select(m => m.Id).ToList(),
-                HydrationDepthMessages = settings.Attachments.HydrationDepthMessages
+                HydrationDepthMessages = settings.Attachments.HydrationDepthMessages,
+                MaxInlineImageBytes = settings.ReadImages.MaxInlineBytes
             };
 
             services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);
@@ -124,6 +125,10 @@ public static class InjectorModule
                     retention,
                     sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>()))
+                // Outside this process for the same reason an outpost registration is: recycling the
+                // agent must not blind it to a picture that is still in view.
+                .AddSingleton<IReadImageStore>(sp => new RedisReadImageStore(
                     sp.GetRequiredService<IConnectionMultiplexer>()))
                 // An outpost registration survives the agent recycling because it lives here
                 // rather than in this process: a container restart must not silently drop every

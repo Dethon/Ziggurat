@@ -1,11 +1,10 @@
 # Ziggurat
 
-AI agent via Telegram/WebChat/MessageBus using .NET 10 LTS, MCP, and OpenRouter LLMs. The solution file is
-`Ziggurat.sln`.
+AI agent via Telegram/WebChat/MessageBus using .NET 10 LTS, MCP, and OpenRouter LLMs.
 
 Two standalone Rust crates sit outside the .NET solution and share no build with each other or with it — read each one's `CLAUDE.md` before touching it. `satellite/` is `nabu-satellite`, the Wyoming voice satellite. `speech-typist/` is the Windows speech typist: a person holds a key and their words are typed into whatever window was already in front, posting at Lemonade directly rather than through this stack (`docs/adr/0026`). Its `cargo test` must keep passing with no .NET project built and no Lemonade reachable.
 
-`McpServerOutpost/` is the one server with **no Dockerfile and no compose service**, because it is not part of the deployment: it is a self-contained single-file `linux-x64` binary somebody copies onto their own machine and runs with flags (`--name`, `--dir`, `--jailed`, `--exec`, `--hub`, `--advertise`, `--port`, `--ext`), publishing that machine's filesystem to the agent and registering itself with the hub. It ships no `appsettings.json` either, and it is the one server allowed to add a configuration source of its own — a flag the operator typed has to beat an environment variable of the same name, which the default order does not give you. The shared secret is the one value that is **not** a flag, because a command line is visible to every process on the machine; both ends present the same secret under different names, since only one of them binds it inside a section: the machine reads `SHAREDSECRET`, the hub reads `OUTPOSTS__SHAREDSECRET` (placeholder in `DockerCompose/.env`). It gates **both** directions — registration at the hub, and `/mcp` at the machine — and passing it as a flag is refused with a message rather than quietly accepted. "Every server is a container" is otherwise a safe assumption. See `docs/adr/0027` and `docs/adr/0028`.
+**Every server is a container, except one.** `McpServerOutpost/` has no Dockerfile, no compose service and no `appsettings.json`, because it is not part of the deployment — it runs on somebody's own machine, configured by flags, and its shared secret is never one of them. The contract lives in `.claude/rules/outpost.md`, loaded when touching `McpServerOutpost/`, `Domain/Outposts/` or `DockerCompose/`.
 
 There is no Cargo workspace and no `Cargo.toml` at the root, deliberately — the two crates pin different targets and must not share a build. The cost is that rust-analyzer sees two projects and refuses to pick one, so `.vscode/settings.json` and `.zed/settings.json` name both in `linkedProjects`; a third crate goes in both lists. The two crates do pin the **same toolchain**, and should keep doing so: an editor runs one proc-macro server, and pinning them apart makes serde's derives fail to expand in whichever crate loses, which reads as errors the compiler never sees.
 
@@ -16,7 +15,7 @@ There is no Cargo workspace and no `Cargo.toml` at the root, deliberately — th
 
 ## Rules & TDD
 
-`.claude/rules/*.md` are path-scoped (frontmatter `paths:`) and apply when touching matching files — coding style and layer rules, plus per-subsystem architecture notes (voice, printing, timers, scheduling, observability, memory, web browsing, Home Assistant, OpenRouter provider routing). Don't duplicate their content here.
+`.claude/rules/*.md` are path-scoped (frontmatter `paths:`) and apply when touching matching files — coding style and layer rules, plus per-subsystem architecture notes (voice, printing, timers, scheduling, observability, memory, web browsing, Home Assistant, OpenRouter provider routing, the outpost). Don't duplicate their content here.
 
 Follow Red-Green-Refactor for all features and bug fixes: write a failing test first, watch it fail, then implement.
 

@@ -36,7 +36,7 @@ public sealed class JailedOutpostTests : IDisposable
     [Fact]
     public async Task AJailedOutpost_ReadsAFileInsideItsWorkingDirectory()
     {
-        var result = await new VfsTextReadTool(Registry(jailed: true))
+        var result = await new VfsFileReadTool(Registry(jailed: true))
             .RunAsync(Virtual(_workingDirectory, "notes.md"));
 
         result.ShouldNotBeNull().ShouldBeOk()["content"]!.GetValue<string>().ShouldContain("herons");
@@ -47,7 +47,7 @@ public sealed class JailedOutpostTests : IDisposable
     [Fact]
     public async Task AJailedOutpost_RefusesEveryPathOutsideItsWorkingDirectory()
     {
-        var tool = new VfsTextReadTool(Registry(jailed: true));
+        var tool = new VfsFileReadTool(Registry(jailed: true));
 
         foreach (var path in Outside())
         {
@@ -59,7 +59,7 @@ public sealed class JailedOutpostTests : IDisposable
     [Fact]
     public async Task AnUnjailedOutpost_AllowsEveryOneOfThem()
     {
-        var tool = new VfsTextReadTool(Registry(jailed: false));
+        var tool = new VfsFileReadTool(Registry(jailed: false));
 
         foreach (var path in Outside())
         {
@@ -72,7 +72,7 @@ public sealed class JailedOutpostTests : IDisposable
     [Fact]
     public async Task ARefusal_SaysItIsARefusalAndNotAnEmptyDirectory()
     {
-        var refusal = (await new VfsTextReadTool(Registry(jailed: true))
+        var refusal = (await new VfsFileReadTool(Registry(jailed: true))
             .RunAsync(Virtual(_elsewhere, "secrets.md")))!;
 
         refusal.ShouldBeError(ToolError.Codes.InvalidArgument);
@@ -85,7 +85,7 @@ public sealed class JailedOutpostTests : IDisposable
     [Fact]
     public async Task ARefusal_NamesThePathInVirtualCoordinates()
     {
-        var refusal = (await new VfsTextReadTool(Registry(jailed: true))
+        var refusal = (await new VfsFileReadTool(Registry(jailed: true))
             .RunAsync(Virtual(_elsewhere, "secrets.md")))!;
 
         var message = refusal["message"]!.GetValue<string>() + refusal["hint"]!.GetValue<string>();

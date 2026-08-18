@@ -50,7 +50,7 @@ public class SandboxLandingE2ETests(SandboxE2EFixture fixture)
         path.ShouldBe("/sandbox/home/sandbox_user/uploads/7-42/turn-abc/notes.txt");
 
         // The path the agent is given, read the way the agent would read it.
-        var read = await new VfsTextReadTool(registry).RunAsync(path, cancellationToken: cts.Token);
+        var read = await new VfsFileReadTool(registry).RunAsync(path, cancellationToken: cts.Token);
         read!.ToJsonString().ShouldContain("sent bytes");
     }
 
@@ -79,7 +79,7 @@ public class SandboxLandingE2ETests(SandboxE2EFixture fixture)
 
         await using var reconnected = await fixture.ConnectAsync(cts.Token);
         var registry = await MountAsync(reconnected, cts.Token);
-        var read = await new VfsTextReadTool(registry).RunAsync(path, cancellationToken: cts.Token);
+        var read = await new VfsFileReadTool(registry).RunAsync(path, cancellationToken: cts.Token);
 
         read!.ToJsonString().ShouldContain("kept bytes");
     }

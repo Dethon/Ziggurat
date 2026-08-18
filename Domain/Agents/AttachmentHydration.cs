@@ -13,6 +13,10 @@ namespace Domain.Agents;
 // One rule for every kind of attachment, and one distance measured in messages. Beyond it — and
 // for any reference whose bytes are gone, at any distance — the model gets a placeholder naming
 // the file, so it says the file is gone rather than inventing what it contained.
+//
+// It widened rather than splitting when the model learned to read images: an image the model asked
+// for is a reference whose bytes have to be put back too, so it obeys the same distance and takes
+// the same shape of placeholder. Where the bytes go differs, and that is ReadImageHydration's half.
 public static class AttachmentHydration
 {
     public const int DefaultDepthMessages = 20;
@@ -20,10 +24,19 @@ public static class AttachmentHydration
     public static async Task<IReadOnlyList<ChatMessage>> ApplyAsync(
         IReadOnlyList<ChatMessage> messages,
         IAttachmentSource? source,
+        ReadImageContext readImages,
         int depthMessages,
         CancellationToken ct)
     {
-        if (source is null || !messages.Any(NeedsHydrating))
+        // Parsed once for the whole send. Recognising an image read means serializing every tool
+        // result in a message, so asking twice would make every send pay it again for every tool
+        // call in the history — reads, searches and everything else included.
+        var imageReads = messages.Select(ReadImageHydration.Reads).ToList();
+
+        var hydratesAttachments = source is not null && messages.Any(NeedsHydrating);
+        var expandsImages = imageReads.Any(reads => reads.Count > 0);
+
+        if (!hydratesAttachments && !expandsImages)
         {
             return messages;
         }
@@ -38,10 +51,19 @@ public static class AttachmentHydration
         for (var index = 0; index < messages.Count; index++)
         {
             var message = messages[index];
-            hydrated.Add(NeedsHydrating(message)
-                ? await HydrateAsync(
-                    message, source, withinDepth: distances[index] < depthMessages, ct)
-                : message);
+            var withinDepth = distances[index] < depthMessages;
+
+            // The two rewrites touch different kinds of message — attachments sit on a person's
+            // turn, read images on a tool message — so each message takes at most one of them.
+            hydrated.Add(message switch
+            {
+                _ when source is not null && NeedsHydrating(message) =>
+                    await HydrateAsync(message, source, withinDepth, ct),
+                _ when imageReads[index].Count > 0 =>
+                    await ReadImageHydration.ExpandAsync(
+                        message, imageReads[index], readImages, withinDepth, ct),
+                _ => message
+            });
         }
 
         return hydrated;
