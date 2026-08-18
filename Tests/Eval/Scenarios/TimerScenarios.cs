@@ -131,10 +131,18 @@ public static class TimerScenarios
             new OrderingConstraint("delete", "recreate")
         ],
         CallCeiling = 6,
+        // The delete and recreate is internal: what the user asked for was two more minutes, and
+        // the machinery behind that answer is not something they asked to hear about.
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            NeverSays = ["borr", "elimin", "recre", "de nuevo", "otro temporizador"]
+        },
         Claims =
         [
             TimerPrompt.ChangedByDeleteAndRecreate.Id,
-            TimerPrompt.StatusIsReadForTimeLeft.Id
+            TimerPrompt.StatusIsReadForTimeLeft.Id,
+            TimerPrompt.RecreationIsNeverNarrated.Id
         ],
         Policy = new RunPolicy(2, 3)
     };
