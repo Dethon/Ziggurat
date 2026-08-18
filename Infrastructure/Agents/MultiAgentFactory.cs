@@ -77,7 +77,10 @@ public sealed class MultiAgentFactory(
             providerRouting: spec.ProviderRouting);
 
         var effectiveClient = new ToolApprovalChatClient(
-            chatClient, approvalHandler, spec.ConversationId, spec.WhitelistPatterns, agentPublisher);
+            chatClient, approvalHandler, spec.ConversationId, spec.WhitelistPatterns, agentPublisher,
+            // Absent in every deployment: only an evaluation harness registers one, and what it
+            // watches has to be the agent the deployment builds rather than one assembled beside it.
+            serviceProvider.GetService<IToolInvocationObserver>());
 
         // Composed from the spec this build is already running against, so the parent's values
         // reach the projection with no second source of truth for any of them.

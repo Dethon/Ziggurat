@@ -66,9 +66,11 @@ internal sealed class FakeChatClient : IChatClient
 
 internal static class ToolApprovalResponseFactory
 {
-    public static ChatResponse CreateToolCallResponse(string toolName, string callId)
+    public static ChatResponse CreateToolCallResponse(
+        string toolName, string callId, IDictionary<string, object?>? arguments = null)
     {
-        var toolCallContent = new FunctionCallContent(callId, toolName, new Dictionary<string, object?>());
+        var toolCallContent = new FunctionCallContent(
+            callId, toolName, arguments ?? new Dictionary<string, object?>());
         var message = new ChatMessage(ChatRole.Assistant, [toolCallContent]);
         return new ChatResponse([message]) { FinishReason = ChatFinishReason.ToolCalls };
     }
