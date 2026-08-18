@@ -15,8 +15,12 @@ public static class ScenarioChecks
         .. MissingRequired(scenario, recording),
         .. Unnecessary(scenario, recording),
         .. OutOfOrder(scenario, recording),
-        .. OverCeiling(scenario, recording)
+        .. OverCeiling(scenario, recording),
+        .. Answered(scenario, recording)
     ];
+
+    private static IReadOnlyList<string> Answered(Scenario scenario, Recording recording) =>
+        scenario.Reply is null ? [] : ReplyChecks.Failures(scenario.Reply, recording.Reply);
 
     private static IEnumerable<string> MissingRequired(Scenario scenario, Recording recording) =>
         scenario.Required

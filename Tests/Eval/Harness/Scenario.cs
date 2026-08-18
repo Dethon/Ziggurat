@@ -39,6 +39,11 @@ public sealed record Scenario
     // passing, so the ceiling is part of the contract rather than a safety net.
     public required int CallCeiling { get; init; }
 
+    // What the answer itself must look like. Declared only where the reply is part of the
+    // contract: most scenarios are about which tool ran, and a limit invented to fill this in
+    // would fail on wording rather than on behaviour.
+    public ReplyExpectation? Reply { get; init; }
+
     public IReadOnlyList<string> Claims { get; init; } = [];
 
     public RunPolicy Policy { get; init; } = RunPolicy.Once;

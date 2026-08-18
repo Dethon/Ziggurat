@@ -2,14 +2,21 @@ using System.Net;
 using System.Text.Json;
 using Agent.Modules;
 using Agent.Settings;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Clients.HomeAssistant;
 using Infrastructure.Clients.Voice;
 using Mcp.Hosting;
+using McpServerHomeAssistant.Modules;
+using McpServerHomeAssistant.Settings;
+using McpServerScheduling.Modules;
+using McpServerScheduling.Settings;
 using McpServerTimers.Modules;
 using McpServerTimers.Settings;
 using Microsoft.AspNetCore.Builder;
@@ -19,6 +26,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
+using StackExchange.Redis;
 using Tests.Eval.Harness;
 using Tests.Integration.Fixtures;
 
@@ -44,6 +52,10 @@ public sealed class EvalStack : IAsyncDisposable
 
     public FakeVoiceHub VoiceHub { get; } = new(Roster);
 
+    // The home behind the Home Assistant server: what a scenario reads to ask whether the change
+    // it wanted happened, and whether anything else moved.
+    public FakeHomeAssistant Home { get; } = new();
+
     // One instant for the agent's decoration and for every server, so an expected fire time is an
     // exact string. It never advances: a clock that ticks would make a timer's remaining seconds a
     // range, and a scenario asserting a range asserts almost nothing.
@@ -67,10 +79,17 @@ public sealed class EvalStack : IAsyncDisposable
         // once the zone is. The provider carries it so every server and the turn decoration agree.
         stack.Clock.SetLocalTimeZone(TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"));
 
-        var timers = await stack.StartTimersAsync(scenario);
-        stack.BuildAgentServices(redisConnectionString, observer, new Dictionary<string, string>
+        var shipped = ShippedSettings(redisConnectionString);
+
+        // All three mounts, on every scenario, because what the timer contract discriminates is
+        // *which* of them a request belongs in. A stack that hosted only the mount the answer
+        // lands in would leave the model no wrong place to put it, and a discrimination with one
+        // option is not one.
+        stack.BuildAgentServices(shipped, observer, new Dictionary<string, string>
         {
-            ["mcp-timers"] = timers
+            ["mcp-timers"] = await stack.StartTimersAsync(scenario),
+            ["mcp-scheduling"] = await stack.StartSchedulingAsync(shipped, redisConnectionString),
+            ["mcp-homeassistant"] = await stack.StartHomeAssistantAsync()
         });
 
         return stack;
@@ -93,14 +112,10 @@ public sealed class EvalStack : IAsyncDisposable
             })
             .ConfigurePrimaryHttpMessageHandler(() => VoiceHub);
 
-        var app = builder.Build();
-        app.MapMcp("/mcp");
-        await app.StartAsync();
-        _servers.Add(app);
+        var endpoint = await StartAsync(builder, port);
+        await ArmAsync(_servers[^1].Services.GetRequiredService<TimerFileSystem>(), scenario);
 
-        await ArmAsync(app.Services.GetRequiredService<TimerFileSystem>(), scenario);
-
-        return $"http://localhost:{port}/mcp";
+        return endpoint;
     }
 
     // Through the server's own create path, with the same JSON a model would write. Writing into
@@ -133,12 +148,87 @@ public sealed class EvalStack : IAsyncDisposable
         Clock.SetUtcNow(scenario.Instant);
     }
 
-    // The shipped configuration, with two edits and no third: the endpoints point at the servers
-    // this stack hosts, and the secrets come from user secrets rather than from the environment
-    // the container would have had.
-    private void BuildAgentServices(
-        string redisConnectionString, IToolInvocationObserver observer,
-        IReadOnlyDictionary<string, string> hosted)
+    // Home Assistant's own server, with the home behind it faked at the REST API. The catalog, the
+    // action files and the argument parsing a scenario exercises are therefore the deployment's.
+    private async Task<string> StartHomeAssistantAsync()
+    {
+        var port = TestPort.GetAvailable();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.Services.ConfigureMcp(new McpSettings
+        {
+            HomeAssistant = new HomeAssistantConfiguration
+            {
+                BaseUrl = "http://home-assistant.eval",
+                Token = FakeHomeAssistant.Token
+            }
+        });
+
+        // The typed client keeps its name from the interface it is registered against, so this
+        // reaches the same client the server resolves and replaces only its transport.
+        builder.Services.AddHttpClient(nameof(IHomeAssistantClient))
+            .ConfigurePrimaryHttpMessageHandler(() => Home);
+
+        return await StartAsync(builder, port);
+    }
+
+    // The scheduling server, on the same Redis the agent uses. Its keys are fixed names rather
+    // than a per-run prefix, so the slate is wiped on the way in: a schedule left behind by the
+    // previous run would show up in this one's listing and count against its ceiling.
+    private async Task<string> StartSchedulingAsync(
+        AgentSettings shipped, string redisConnectionString)
+    {
+        await ClearSchedulesAsync(redisConnectionString);
+
+        var port = TestPort.GetAvailable();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.Services.ConfigureScheduling(new SchedulingSettings
+        {
+            RedisConnectionString = redisConnectionString,
+            // Long enough that nothing dispatches during a turn. The clock is pinned anyway, so a
+            // due schedule is one the scenario armed rather than one the turn created.
+            DispatchIntervalSeconds = 3600,
+            DefaultDeliverTo = ["signalr"]
+        });
+        builder.Services.Replace(ServiceDescriptor.Singleton(_ => (TimeProvider)Clock));
+
+        var endpoint = await StartAsync(builder, port);
+
+        // What the channel registration does in production, on a stack that dials no channels: the
+        // agent directories under /schedules are the shipped agents, so a scenario that schedules
+        // work writes into the same directory a deployment would.
+        _servers[^1].Services.GetRequiredService<IMutableAgentCatalog>().Replace(
+            [.. shipped.Agents.Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description))]);
+
+        return endpoint;
+    }
+
+    private static async Task ClearSchedulesAsync(string redisConnectionString)
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
+        var database = connection.GetDatabase();
+        var ids = await database.SetMembersAsync("schedules");
+
+        await Task.WhenAll(ids.Select(id => database.KeyDeleteAsync($"schedule:{id}")));
+        await database.KeyDeleteAsync(["schedules", "schedules:due"]);
+    }
+
+    private async Task<string> StartAsync(WebApplicationBuilder builder, int port)
+    {
+        var app = builder.Build();
+        app.MapMcp("/mcp");
+        await app.StartAsync();
+        _servers.Add(app);
+
+        return $"http://localhost:{port}/mcp";
+    }
+
+    // The shipped configuration, with two edits and no third: the secrets come from user secrets
+    // rather than from the environment the container would have had, and nothing dials a channel —
+    // the boundary of an eval is the agent, and what a channel does with a reply afterwards is
+    // covered by the channel and end-to-end suites.
+    private static AgentSettings ShippedSettings(string redisConnectionString)
     {
         var configuration = new ConfigurationBuilder()
             .AddJsonFile(ShippedSettingsPath(), optional: false)
@@ -149,13 +239,22 @@ public sealed class EvalStack : IAsyncDisposable
         var shipped = configuration.Get<AgentSettings>()
                       ?? throw new InvalidOperationException("Agent/appsettings.json did not bind.");
 
-        var settings = shipped with
+        return shipped with
         {
             Redis = new RedisConfiguration { ConnectionString = redisConnectionString },
-            Agents = [.. shipped.Agents.Select(a => a with { McpServerEndpoints = Rewrite(a, hosted) })],
-            // Nothing dials a channel in an eval: the boundary is the agent, and what a channel
-            // does with a reply afterwards is covered by the channel and end-to-end suites.
             ChannelEndpoints = []
+        };
+    }
+
+    // The agent itself, built by the real factory. Only the configured endpoint urls are rewritten,
+    // to the servers this stack hosts.
+    private void BuildAgentServices(
+        AgentSettings shipped, IToolInvocationObserver observer,
+        IReadOnlyDictionary<string, string> hosted)
+    {
+        var settings = shipped with
+        {
+            Agents = [.. shipped.Agents.Select(a => a with { McpServerEndpoints = Rewrite(a, hosted) })]
         };
 
         var services = new ServiceCollection();
