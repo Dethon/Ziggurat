@@ -44,6 +44,11 @@ public class ChatMonitor(
             await foreach (var _ in groups)
             { }
         }
+        // Shutdown, not a fault. It reaches here as the merge and the groups unwind, and reporting
+        // it as an error put a red line in the dashboard on every ordinary deploy.
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "ChatMonitor exception: {exceptionMessage}", ex.Message);
@@ -53,6 +58,11 @@ public class ChatMonitor(
                 ErrorType = ex.GetType().Name,
                 Message = ex.Message
             });
+
+            // Reported here, decided elsewhere. Swallowing it left the caller unable to tell a
+            // monitor that finished from one that died, so the supervising loop restarted both the
+            // same way and as fast as the failure could recur.
+            throw;
         }
     }
 

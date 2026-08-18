@@ -192,7 +192,14 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public Action<SendReplyParams>? OnReply { get; init; }
 
-    public IAsyncEnumerable<ChannelMessage> Messages => _channel.Reader.ReadAllAsync();
+    // A channel that cannot hand out a stream at all. A stream that dies mid-flight would not do:
+    // the merge isolates a faulting stream deliberately (ConsumeStream), so one channel cannot tear
+    // down its siblings — which leaves a fault raised while the pipeline is being built as the only
+    // one that reaches the monitor's own catch, and it reaches it wrapped.
+    public Exception? StreamFailure { get; init; }
+
+    public IAsyncEnumerable<ChannelMessage> Messages =>
+        StreamFailure is null ? _channel.Reader.ReadAllAsync() : throw StreamFailure;
 
     public List<SendReplyParams> SentReplies { get; } = [];
 
@@ -234,6 +241,9 @@ internal sealed class FakeChannelConnection : IChannelConnection
     public void WriteMessage(ChannelMessage message) => _channel.Writer.TryWrite(message);
 
     public void Complete() => _channel.Writer.TryComplete();
+
+    // A channel whose stream dies rather than ends: what a dropped MCP connection looks like from
+    // the monitor's side, and the only way to fault a real ChatMonitor from outside it.
 }
 
 internal static class MonitorTestMocks
