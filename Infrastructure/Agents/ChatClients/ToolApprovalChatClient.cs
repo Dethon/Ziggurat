@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -85,6 +86,37 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                 return $"Tool execution was rejected by user: {toolName}. Waiting for new input.";
         }
     }
+
+    // Pass-through in both directions: what the observer is handed is the option set the agent
+    // built and the route the inner client ends up reporting, and nothing about the turn changes
+    // because somebody is watching it.
+    public override async Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await base.GetResponseAsync(messages, options, cancellationToken);
+        ObserveTurn(options);
+        return response;
+    }
+
+    public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken))
+        {
+            yield return update;
+        }
+
+        // After the stream, not before it: the route is only known once a provider has answered.
+        ObserveTurn(options);
+    }
+
+    private void ObserveTurn(ChatOptions? options) =>
+        _observer?.OnTurn(new TurnObservation(
+            options?.Instructions, GetService(typeof(ServedRoute)) as ServedRoute));
 
     // Every call of one iteration passes through here, including the two that never reach
     // InvokeFunctionAsync: a call whose tool threw, and a call naming a tool nothing serves. That

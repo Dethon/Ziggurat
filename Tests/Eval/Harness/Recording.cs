@@ -24,6 +24,27 @@ public sealed class Recording : IToolInvocationObserver
         }
     }
 
+    // What the turn was sent with and what answered it. Last write wins: a scenario is one turn,
+    // and a harness that re-used a recording across turns would be reporting the first turn's
+    // prompt beside the last turn's calls.
+    public string? SystemPrompt { get; private set; }
+
+    public ServedRoute? Route { get; private set; }
+
+    // The agent's own answer, set by the runner that drove it: it comes back as the response
+    // rather than through the seam, because a reply is what the agent returned and not something
+    // observed on its way past.
+    public string Reply { get; set; } = "";
+
+    public void OnTurn(TurnObservation turn)
+    {
+        lock (_gate)
+        {
+            SystemPrompt = turn.SystemPrompt ?? SystemPrompt;
+            Route = turn.Route ?? Route;
+        }
+    }
+
     public void OnInvoked(ToolInvocation invocation)
     {
         lock (_gate)

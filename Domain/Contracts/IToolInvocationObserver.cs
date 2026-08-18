@@ -9,4 +9,9 @@ namespace Domain.Contracts;
 public interface IToolInvocationObserver
 {
     void OnInvoked(ToolInvocation invocation);
+
+    // The two things that are gone the moment a turn ends: the prompt it was sent with and the
+    // endpoint that answered it. A stochastic failure cannot be reproduced by re-running, so
+    // whatever explains it has to be captured while it is still true.
+    void OnTurn(TurnObservation turn);
 }

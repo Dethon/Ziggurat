@@ -35,6 +35,10 @@ internal sealed class FakeChatClient : IChatClient
 {
     private readonly Queue<ChatResponse> _responses = new();
 
+    // What a real OpenRouter client answers once a response has streamed: the model and provider
+    // that actually served it, which is not necessarily the ones configured.
+    public ServedRoute? Route { get; set; }
+
     public void SetNextResponse(ChatResponse response) => _responses.Enqueue(response);
 
     public Task<ChatResponse> GetResponseAsync(
@@ -61,7 +65,8 @@ internal sealed class FakeChatClient : IChatClient
 
     public void Dispose() { }
 
-    public object? GetService(Type serviceType, object? serviceKey = null) => null;
+    public object? GetService(Type serviceType, object? serviceKey = null) =>
+        serviceType == typeof(ServedRoute) ? Route : null;
 }
 
 internal static class ToolApprovalResponseFactory

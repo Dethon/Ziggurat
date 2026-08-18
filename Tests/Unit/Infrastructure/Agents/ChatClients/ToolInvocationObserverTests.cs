@@ -141,6 +141,39 @@ public class ToolInvocationObserverTests
             .ShouldBe(["domain__filesystem_read", "domain__filesystem_glob"]);
     }
 
+    [Fact]
+    public async Task TheTurnItselfIsObserved_WithItsSystemPromptAndTheRouteThatServedIt()
+    {
+        // A failing run has to explain itself without being re-run, and the two things that are
+        // gone the moment the turn ends are the prompt it was sent with and the endpoint that
+        // answered it. Neither is reconstructible from the recording afterwards.
+        var recording = new Recording();
+        var fakeClient = new FakeChatClient { Route = new ServedRoute("openai/gpt-5.6-luna", "Fireworks") };
+        var client = Approving(fakeClient, recording);
+
+        await client.GetResponseAsync(
+            [new ChatMessage(ChatRole.User, "pon un temporizador")],
+            new ChatOptions { Instructions = "## Timers\nShort countdowns live at /timers." });
+
+        recording.SystemPrompt.ShouldNotBeNull().ShouldContain("Short countdowns live at /timers.");
+        recording.Route.ShouldBe(new ServedRoute("openai/gpt-5.6-luna", "Fireworks"));
+    }
+
+    [Fact]
+    public async Task AStreamedTurnIsObservedToo()
+    {
+        var recording = new Recording();
+        var fakeClient = new FakeChatClient { Route = new ServedRoute("z-ai/glm-5.2", "DeepInfra") };
+        var client = Approving(fakeClient, recording);
+
+        await client.GetStreamingResponseAsync(
+            [new ChatMessage(ChatRole.User, "pon un temporizador")],
+            new ChatOptions { Instructions = "## Timers" }).ToListAsync();
+
+        recording.Route.ShouldBe(new ServedRoute("z-ai/glm-5.2", "DeepInfra"));
+        recording.SystemPrompt.ShouldBe("## Timers");
+    }
+
     private static ToolApprovalChatClient Approving(IChatClient inner, IToolInvocationObserver observer) =>
         new(inner, new TestApprovalHandler(ToolApprovalResult.Approved), "conv",
             whitelistPatterns: ["domain__*", "mcp__*"], observer: observer);

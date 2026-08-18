@@ -23,6 +23,8 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly HttpClientPipelineTransport? _transport;
     private readonly ConcurrentQueue<decimal> _costQueue = new();
     private readonly ConcurrentQueue<long> _cachedTokenQueue = new();
+    private readonly ConcurrentQueue<ServedRoute> _routeQueue = new();
+    private ServedRoute? _servedRoute;
     private readonly IMetricsPublisher _metricsPublisher;
     private readonly int? _maxContextTokens;
     private readonly string _model;
@@ -56,7 +58,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
         _hydrationDepthMessages = hydrationDepthMessages;
         _httpClient = CreateHttpClient(
-            _costQueue, _cachedTokenQueue, sessionId, providerRouting, transportHandler);
+            _costQueue, _cachedTokenQueue, _routeQueue, sessionId, providerRouting, transportHandler);
         _transport = new HttpClientPipelineTransport(_httpClient);
         _client = CreateClient(endpoint, apiKey, model, _transport);
     }
@@ -207,11 +209,35 @@ public sealed class OpenRouterChatClient : IChatClient
 
     public object? GetService(Type serviceType, object? key = null)
     {
-        return serviceType == typeof(ChatClientMetadata)
-            ? Metadata
-            : serviceType.IsInstanceOfType(this)
-                ? this
-                : _client.GetService(serviceType, key);
+        if (serviceType == typeof(ChatClientMetadata))
+        {
+            return Metadata;
+        }
+
+        // Asked for by an evaluation harness after a turn, and by nothing in a deployment. The
+        // route only exists once a response has streamed, so a caller that asks before one has
+        // gets null rather than the configured model dressed up as the served one.
+        if (serviceType == typeof(ServedRoute))
+        {
+            return DrainRouteQueue();
+        }
+
+        return serviceType.IsInstanceOfType(this)
+            ? this
+            : _client.GetService(serviceType, key);
+    }
+
+    // Last one wins, and the last one seen is remembered: the route arrives on whichever chunk
+    // carried it, and a caller asking after the stream has finished draining must not get null
+    // because it asked twice.
+    private ServedRoute? DrainRouteQueue()
+    {
+        while (_routeQueue.TryDequeue(out var route))
+        {
+            _servedRoute = route;
+        }
+
+        return _servedRoute;
     }
 
     public void Dispose()
@@ -268,10 +294,11 @@ public sealed class OpenRouterChatClient : IChatClient
 
     private static HttpClient CreateHttpClient(
         ConcurrentQueue<decimal> costQueue,
-        ConcurrentQueue<long> cachedQueue, string? sessionId, ProviderRouting? providerRouting,
+        ConcurrentQueue<long> cachedQueue, ConcurrentQueue<ServedRoute> routeQueue,
+        string? sessionId, ProviderRouting? providerRouting,
         HttpMessageHandler? transportHandler = null)
     {
-        var handler = new WireHandler(costQueue, cachedQueue, sessionId, providerRouting)
+        var handler = new WireHandler(costQueue, cachedQueue, routeQueue, sessionId, providerRouting)
         {
             InnerHandler = transportHandler ?? HostedConnectionPool.Shared
         };
@@ -282,7 +309,8 @@ public sealed class OpenRouterChatClient : IChatClient
     // and taps what its typed response drops (cost, the prompt-cache counter) on the way back.
     private sealed class WireHandler(
         ConcurrentQueue<decimal> costQueue,
-        ConcurrentQueue<long> cachedQueue, string? sessionId, ProviderRouting? providerRouting)
+        ConcurrentQueue<long> cachedQueue, ConcurrentQueue<ServedRoute> routeQueue,
+        string? sessionId, ProviderRouting? providerRouting)
         : DelegatingHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -297,7 +325,7 @@ public sealed class OpenRouterChatClient : IChatClient
                     StringComparison.OrdinalIgnoreCase) == true)
             {
                 response.Content = OpenRouterHttpHelpers.WrapWithUsageTee(
-                    response.Content, costQueue, cachedQueue);
+                    response.Content, costQueue, cachedQueue, routeQueue);
             }
 
             return response;
