@@ -20,8 +20,27 @@ public static class ScenarioChecks
         .. Answered(scenario, recording),
         .. Moved(scenario, recording),
         .. Wrote(scenario, recording),
-        .. Delegated(scenario, recording)
+        .. Delegated(scenario, recording),
+        .. Forgot(scenario, recording)
     ];
+
+    // Both directions, because forgetting is destructive in both: a stale fact the user corrected
+    // and that is still remembered will be applied again next turn, and a fact nobody mentioned
+    // that went with it is work the user did once and has to do again.
+    private static IEnumerable<string> Forgot(Scenario scenario, Recording recording)
+    {
+        var remembered = recording.MemoriesAfter;
+
+        var lingering = scenario.Remembered
+            .Where(fact => fact.Forgotten && remembered.Contains(fact.Content, StringComparer.Ordinal))
+            .Select(fact => $"'{fact.Content}' was to be forgotten and is still remembered");
+
+        var swept = scenario.Remembered
+            .Where(fact => !fact.Forgotten && !remembered.Contains(fact.Content, StringComparer.Ordinal))
+            .Select(fact => $"'{fact.Content}' was forgotten and nothing asked for it");
+
+        return [.. lingering, .. swept];
+    }
 
     // Each declared task takes a delegation of its own, and every delegation has to answer to one:
     // two independent halves are two workers running at once, and one worker told to do both is

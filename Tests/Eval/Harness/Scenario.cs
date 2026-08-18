@@ -1,3 +1,5 @@
+using Domain.DTOs;
+
 namespace Tests.Eval.Harness;
 
 // One user request, everything that must hold afterwards, and how many times it must hold. Written
@@ -59,6 +61,12 @@ public sealed record Scenario
     // delegation that is not declared here fails the scenario, which is how a scenario says that
     // a one-call lookup is done in place.
     public IReadOnlyList<DelegationExpectation> Delegates { get; init; } = [];
+
+    // What the user is remembered as having said, injected the way recall injects it. Declaring
+    // the facts is also declaring what must still be remembered afterwards: a forget-by-query is
+    // one call that deletes everything its search reached, and the store after the turn is the
+    // only place that shows.
+    public IReadOnlyList<RememberedFact> Remembered { get; init; } = [];
 
     // What the files the turn touched must say afterwards.
     public IReadOnlyList<FileExpectation> Files { get; init; } = [];
@@ -167,6 +175,19 @@ public sealed record FileExpectation
     // Byte-identical to before the turn. The strongest thing a scenario can say about a file it
     // did not ask to be edited, and the only one that catches an incidental rewrite whole.
     public bool Unchanged { get; init; }
+}
+
+// One remembered fact riding the turn, and whether this turn was supposed to end it. Category and
+// importance are part of what the recall block says out loud, so a scenario about a correction can
+// give the stale fact the weight a real one would have had.
+public sealed record RememberedFact(string Content)
+{
+    public MemoryCategory Category { get; init; } = MemoryCategory.Fact;
+
+    public double Importance { get; init; } = 0.8;
+
+    // The turn must leave this one deleted. Everything else declared must survive it.
+    public bool Forgotten { get; init; }
 }
 
 // A timer already running when the turn arrives, and — the part that matters — already partly

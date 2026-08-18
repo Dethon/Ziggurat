@@ -51,6 +51,12 @@ public sealed class Recording : IToolInvocationObserver
     public IReadOnlyDictionary<string, string> FilesAfter { get; set; } =
         new Dictionary<string, string>();
 
+    // What the user is still remembered as having said once the turn is over, set by the runner
+    // that drove it. Read as a whole rather than as a diff of the calls: `memory_forget` takes a
+    // query and deletes everything the search matched, so one call can empty the store and the
+    // call log looks the same either way.
+    public IReadOnlyList<string> MemoriesAfter { get; set; } = [];
+
     // The work this turn handed to a worker, set by the runner that drove it. It does not come
     // through the tool seam usefully: the call is there, but which profile ran and what the parent
     // wrote in the prompt are what a delegation scenario is about.

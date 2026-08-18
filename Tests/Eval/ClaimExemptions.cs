@@ -42,6 +42,50 @@ public static class ClaimExemptions
         [SubAgentPrompt.AnswerIsSynthesised.Id] =
             "Distinguishing a synthesis from a paste needs the worker's text and the reply compared "
             + "for overlap, which is a check worth writing and not written yet.",
+        [MemoryPrompts.RecallShapesTheAnswer.Id] =
+            "Demonstrated on 2026-08-19 with the silent-application sentence deleted: a remembered "
+            + "'cuece la pasta nueve minutos' still came back as a 540-second timer. A fact in the "
+            + "recall block is used because it is in the context, not because a sentence says to "
+            + "use it. The scenario stays as a regression guard against a model that starts "
+            + "ignoring the block.",
+        [MemoryPrompts.MemoriesAreNotRestated.Id] =
+            "Demonstrated with the same deletion and stayed green: the reply applied the "
+            + "preference without reading it back. Restating a memory is not something this model "
+            + "does on a one-sentence voice turn, so the prose defends against a habit it lacks.",
+        [MemoryPrompts.CorrectionDeletesTheStaleFact.Id] =
+            "Demonstrated on 2026-08-19 in three steps, all green: with the correction bullet "
+            + "deleted from the prompt, then with it deleted from the forget tool's description "
+            + "too, then with the whole 'When to forget' section gone. 'Ya no trabajo en Acme' "
+            + "still deleted the employer memory and left the one beside it. Proactive deletion on "
+            + "a correction is this model's default, so the scenario is a guard rather than "
+            + "evidence — and the wording is worth keeping for a model that has no such default.",
+        [MemoryPrompts.ExplicitForgetIsObeyed.Id] =
+            "Demonstrated on 2026-08-19 with the whole 'When to forget' section deleted: 'olvida "
+            + "lo del piso' still removed exactly that memory. The tool's own description says "
+            + "what it is for, and a tool cannot be offered without one.",
+        [MemoryPrompts.MechanismIsNeverMentioned.Id] =
+            "Cited on 2026-08-19 and withdrawn: the reply named no plumbing on any run, including "
+            + "the ones with the memory prose deleted. The rule is only falsifiable on a turn that "
+            + "gives the model a reason to explain itself — being asked where a number came from, "
+            + "or a forget that failed.",
+        [MemoryPrompts.RemovalIsTheOnlyAction.Id] =
+            "Nothing can falsify it as written: removal is the only memory tool the deployment "
+            + "offers, so an agent that tried to store one has nothing to call. What the sentence "
+            + "really guards against is the agent asking the user to repeat something it was "
+            + "already told, which is a claim about a reply and needs a turn that tempts it.",
+        [MemoryPrompts.OutdatedFactsAreDeleted.Id] =
+            "Needs a fact whose expiry is legible from the turn's own instant — a flight last "
+            + "month, a deadline that has passed — and a turn that touches the subject without "
+            + "mentioning the fact. The correction scenario is the same rule with the user "
+            + "pointing at it, which is the easier half.",
+        [MemoryPrompts.NoisyStoreIsSwept.Id] =
+            "A sweep is a judgement about which of many memories are low-value, and the seeded "
+            + "store holds two facts on purpose: a store big enough to be noisy would make every "
+            + "other memory scenario's 'nothing else was forgotten' check expensive to state.",
+        [MemoryPrompts.NoOtherUsersMemories.Id] =
+            "Scoping is enforced by the store rather than by the agent — every call carries the "
+            + "run's user id — so a scenario could only witness this by handing the agent another "
+            + "user's memories, which no code path does.",
         [FileSystemToolFeature.AnEnvelopeIsDataNotAReasonToRetry.Id] =
             "Cited on 2026-08-18 and withdrawn the same day. The first demonstration turned red "
             + "because the model handed the impossible listing to two workers, but a later run "

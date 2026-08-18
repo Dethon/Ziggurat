@@ -1,4 +1,5 @@
 using Domain.Tools.FileSystem;
+using Domain.Tools.Memory;
 using Domain.Tools.SubAgents;
 
 namespace Tests.Eval.Harness;
@@ -14,6 +15,9 @@ public static class EvalTools
     // which worker ran and what it was told, so the call itself answers to that declaration rather
     // than to the permitted set.
     public static readonly string Subagent = "domain__subagents__" + SubAgentRunTool.Name;
+
+    // The only memory action there is: storing and recalling happen without the agent asking.
+    public static readonly string Forget = "domain__memory__" + MemoryForgetTool.Name;
 
     public static readonly string Create = Prefix + VfsTextCreateTool.Name;
     public static readonly string Read = Prefix + VfsFileReadTool.Name;

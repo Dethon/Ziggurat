@@ -8,6 +8,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
+using Domain.Tools.Memory;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
@@ -64,6 +65,10 @@ public sealed class EvalStack : IAsyncDisposable
     // this one's assertions about what survived meaningless.
     public string VaultPath { get; private set; } = "";
 
+    // What the user is remembered as having said. Recall rides the turn as data; this is what the
+    // forget tool searches and deletes from, and what a scenario reads afterwards.
+    public EvalMemory Memory { get; private set; } = null!;
+
     // The workers, canned. A scenario about delegation is about the parent's decision, so what a
     // worker would have answered is a fixed string the scenario chooses rather than another run.
     public CannedSubAgents Workers { get; private set; } = null!;
@@ -84,6 +89,7 @@ public sealed class EvalStack : IAsyncDisposable
         var stack = new EvalStack
         {
             Workers = new CannedSubAgents(scenario.WorkerAnswer),
+            Memory = new EvalMemory(scenario.Remembered),
             Clock = new FakeTimeProvider(
                 scenario.Instant - scenario.Armed.Select(a => a.RunningFor).DefaultIfEmpty().Max())
         };
@@ -295,6 +301,14 @@ public sealed class EvalStack : IAsyncDisposable
         services.AddSubAgents(settings.SubAgents);
         services.AddSingleton(observer);
         services.AddSingleton<ISubAgentSpawner>(Workers);
+
+        // The memory feature, the way the deployment enables it: both shipped assistants list
+        // `memory` among their features, so an eval without it would run a prompt one section
+        // short. What is replaced is the store's backend and the embedding server — the tool, its
+        // description and the prompt section are the deployment's.
+        services.AddSingleton<IMemoryStore>(Memory);
+        services.AddSingleton<IEmbeddingService>(Memory);
+        services.AddTransient<IDomainToolFeature, MemoryToolFeature>();
 
         _agentServices = services.BuildServiceProvider();
         Factory = _agentServices.GetRequiredService<IAgentFactory>();

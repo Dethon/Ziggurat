@@ -398,6 +398,52 @@ public class ScenarioChecksTests
         failures.ShouldNotContain(f => f.Contains("out of order"));
     }
 
+    [Fact]
+    public async Task AStaleFactTheTurnWasToForget_ThatSurvives_FailsTheScenario()
+    {
+        var recording = await ScriptedTurn.RunAsync("Vale, apuntado");
+        recording.MemoriesAfter = ["Trabaja en Acme", "Le gusta el café solo"];
+
+        var scenario = Corrected();
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("Acme");
+    }
+
+    [Fact]
+    public async Task AFactNobodyAskedToForget_ThatIsGone_FailsTheScenario()
+    {
+        // The failure mode a forget-by-query has: one call, no error, and everything the search
+        // reached deleted with it. Nothing in the call log says so — only the store afterwards.
+        var recording = await ScriptedTurn.RunAsync("Vale, apuntado");
+        recording.MemoriesAfter = [];
+
+        ScenarioChecks.Failures(Corrected(), recording)
+            .ShouldHaveSingleItem().ShouldContain("Le gusta el café solo");
+    }
+
+    [Fact]
+    public async Task ForgettingExactlyTheStaleFact_Passes()
+    {
+        var recording = await ScriptedTurn.RunAsync("Vale, apuntado");
+        recording.MemoriesAfter = ["Le gusta el café solo"];
+
+        ScenarioChecks.Failures(Corrected(), recording).ShouldBeEmpty();
+    }
+
+    private static Scenario Corrected() => new()
+    {
+        Name = "a corrected employer is forgotten",
+        AgentId = "nabu",
+        Turn = new EvalTurn { Text = "ya no trabajo en Acme", Sender = "jack" },
+        Instant = new DateTimeOffset(2026, 8, 18, 20, 0, 0, TimeSpan.FromHours(2)),
+        CallCeiling = 2,
+        Remembered =
+        [
+            new RememberedFact("Trabaja en Acme") { Forgotten = true },
+            new RememberedFact("Le gusta el café solo")
+        ]
+    };
+
     private static Scenario Extending() => new()
     {
         Name = "extend a running timer",

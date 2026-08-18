@@ -13,6 +13,10 @@ namespace Tests.Eval.Fixtures;
 // pinned clock, and a stack carried over from the previous run has neither.
 public static class EvalRun
 {
+    // The user every scenario runs as. Memory is scoped to it, and the forget tool refuses a run
+    // that carries no identity — so it is one constant rather than a string repeated per fixture.
+    public const string UserId = "eval-user";
+
     // A stalled provider costs the run rather than the suite. The budget is generous: a voice turn
     // that reads a prompt, calls a tool and answers takes seconds, and a run cut off at its own
     // deadline would be reported as a behavioural failure it is not.
@@ -27,7 +31,7 @@ public static class EvalRun
         var conversationId = $"eval:{Guid.NewGuid():N}";
         await using var agent = stack.Factory.Create(
             new AgentKey(conversationId, scenario.AgentId),
-            userId: "eval-user",
+            userId: UserId,
             agentId: scenario.AgentId,
             approvalHandler: new AutoApproveHandler());
 
@@ -40,19 +44,22 @@ public static class EvalRun
         var thread = await agent.CreateSessionAsync(cancellation.Token);
 
         var response = await agent.RunAsync(
-            [Turn(scenario, conversationId)], thread, cancellationToken: cancellation.Token);
+            [Turn(scenario, conversationId, stack.Memory.Context)], thread,
+            cancellationToken: cancellation.Token);
 
         recording.Reply = response.Text;
         recording.StateAfter = stack.Home.Snapshot();
         recording.FilesAfter = EvalVault.Read(stack.VaultPath);
         recording.Delegations = stack.Workers.Delegations;
+        recording.MemoriesAfter = stack.Memory.Remaining;
         return recording;
     }
 
     // Everything a channel puts on a turn, set the way a channel sets it. The decoration itself
     // happens where it happens in production — on the way out of the chat client — so what this
     // builds is the message, never the prefix.
-    public static ChatMessage Turn(Scenario scenario, string conversationId)
+    public static ChatMessage Turn(
+        Scenario scenario, string conversationId, MemoryContext? memories = null)
     {
         var message = new ChatMessage(ChatRole.User, scenario.Turn.Text);
         message.SetSenderId(scenario.Turn.Sender);
@@ -60,8 +67,11 @@ public static class EvalRun
         message.SetSatelliteId(scenario.Turn.SatelliteId);
         message.SetDismissedAlert(scenario.Turn.DismissedAlert);
         message.SetTimestamp(scenario.Instant);
+        // Set on the message the recall hook would have set it on, so the block reaches the model
+        // through the decoration that renders it in production rather than through a second path.
+        message.SetMemoryContext(memories);
         message.SetConversationContext(new ConversationContext(
-            scenario.AgentId, conversationId, "eval-user",
+            scenario.AgentId, conversationId, UserId,
             new ReplyTarget(scenario.Turn.SatelliteId is null ? "signalr" : "voice", conversationId)));
 
         return message;
@@ -71,7 +81,9 @@ public static class EvalRun
     // the same zone, so what a diagnosis reads is what the model read.
     public static string Decorated(Scenario scenario) =>
         TurnDecoration
-            .Apply(Turn(scenario, "eval:dump"), TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"))
+            .Apply(
+                Turn(scenario, "eval:dump", new EvalMemory(scenario.Remembered).Context),
+                TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"))
             .Text;
 }
 
