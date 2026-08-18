@@ -1,4 +1,5 @@
 using Domain.Prompts;
+using Domain.Tools.FileSystem;
 
 namespace Tests.Eval;
 
@@ -11,6 +12,24 @@ public static class ClaimExemptions
 {
     public static IReadOnlyDictionary<string, string> Reasons { get; } = new Dictionary<string, string>
     {
+        [FileSystemToolFeature.PathStartsAtAMount.Id] =
+            "Demonstrated on 2026-08-18 with the sentence deleted: the model still resolved an "
+            + "unprefixed note to the vault. The mount list that follows the sentence is enough on "
+            + "its own, and it cannot be deleted without removing the mounts from the prompt.",
+        [FileSystemToolFeature.CapabilitiesAreAdvertised.Id] =
+            "Attempted on 2026-08-18 and withdrawn: with no exec-capable mount hosted, a turn asking "
+            + "for a script tests a mount set no deployment has — in production the sandbox is there "
+            + "and the right answer is to transfer and run it, not to report that it cannot be done. "
+            + "The run did surface something worth keeping, though: asked to run a script with no "
+            + "mount that can, the model delegated to a worker with the same toolset rather than "
+            + "saying so. That belongs to the delegation family — ticket 16.",
+        [FileSystemToolFeature.ExecWorkGoesWhereExecLives.Id] =
+            "Needs a mount that advertises exec, and the eval does not host the sandbox: its backend "
+            + "runs bash with the container root pointed at a real directory, so hosting it in "
+            + "process would run model-authored shell on whoever's machine is running the suite.",
+        [FileSystemToolFeature.TransferIsOneCall.Id] =
+            "The single-call transfer needs two writable mounts, and for the same reason as above "
+            + "there is only one.",
         [VaultPrompt.WikilinksAreNeverFixed.Id] =
             "Demonstrated on 2026-08-18 with the wikilink rule deleted: the edit landed and every "
             + "link came out untouched. This model does not tidy syntax it was not asked about, so "
