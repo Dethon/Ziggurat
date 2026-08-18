@@ -14,12 +14,12 @@ nothing registers one.
 
 **Status:** ready-for-agent
 
-- [ ] An agent run with no observer registered behaves exactly as it does today, including tool
+- [x] An agent run with no observer registered behaves exactly as it does today, including tool
       approval and the whitelist.
-- [ ] With an observer registered, every tool invocation of a turn is recorded once, in
+- [x] With an observer registered, every tool invocation of a turn is recorded once, in
       invocation order, with tool name and raw argument JSON.
-- [ ] A tool that throws is recorded with its error; the recording does not stop at it.
-- [ ] A call naming a tool that does not exist is recorded.
-- [ ] Concurrent invocations are all recorded, each with a distinct sequence position.
-- [ ] Every criterion above is proven with a scripted chat client replaying canned tool-call
+- [x] A tool that throws is recorded with its error; the recording does not stop at it.
+- [x] A call naming a tool that does not exist is recorded.
+- [x] Concurrent invocations are all recorded, each with a distinct sequence position.
+- [x] Every criterion above is proven with a scripted chat client replaying canned tool-call
       sequences — deterministic, no network, no model.

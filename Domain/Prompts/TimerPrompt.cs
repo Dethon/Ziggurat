@@ -66,6 +66,45 @@ public static class TimerPrompt
           `dismiss.sh` is the only way to silence it remotely.
         """;
 
+    // Every falsifiable statement the prose above makes, in the order it makes them. Declared in
+    // full rather than only where a scenario exists: the rules nothing tests yet are exactly the
+    // ones most worth writing down, and the exemption list beside the suite is the backlog.
+    public static readonly IReadOnlyList<PromptClaim> Claims =
+    [
+        new("timers.duration-is-a-countdown",
+            "A duration up to four hours, where a person is being told something, becomes a /timers countdown."),
+        new("timers.agent-acts-is-a-scheduled-task",
+            "A request where the agent itself must act at the appointed moment becomes a /schedules one-shot with an absolute runAt, however the time was phrased."),
+        new("timers.clock-time-is-a-calendar-alarm",
+            "A clock time, a date, anything recurring, or anything past the four-hour ceiling goes on the Home Assistant alarms calendar."),
+        new("timers.schedules-are-never-human-reminders",
+            "/schedules is used for agent tasks only, never for a human alarm or reminder."),
+        new("timers.created-at-its-own-path",
+            "A countdown is created as JSON at /timers/<descriptive-id>/timer.json carrying durationSeconds and an optional spoken text."),
+        new("timers.duration-capped-at-four-hours",
+            "durationSeconds is never written above four hours."),
+        new("timers.voice-targets-the-speaking-room",
+            "On a voice turn the timer targets the room the request came from, unless another room is named."),
+        new("timers.no-satellite-asks-which-room",
+            "On a turn with no speaking room the agent asks which room or satellite before creating anything, and never guesses one."),
+        new("timers.text-is-spoken-never-an-instruction",
+            "The text of a timer is a message spoken to a person, never a command to be carried out."),
+        new("timers.status-is-read-for-time-left",
+            "How long is left is read from /timers/<id>/status.json rather than calculated."),
+        new("timers.spoken-status-gives-only-the-remaining-time",
+            "A spoken reply about a running timer gives the remaining time alone, without the firing time."),
+        new("timers.listed-by-glob",
+            "The timers that exist are listed by globbing /timers."),
+        new("timers.cancelled-by-removing-it",
+            "A timer is cancelled by removing /timers/<id>."),
+        new("timers.changed-by-delete-and-recreate",
+            "A running timer is changed by reading its status, deleting it, and creating its replacement, in that order."),
+        new("timers.recreation-is-never-narrated",
+            "The delete-and-recreate is internal: the reply states the new time and never mentions deleting or recreating."),
+        new("timers.ringing-is-stopped-by-dismiss",
+            "A request to stop or dismiss a ringing timer runs dismiss.sh at /timers, from any room and any channel.")
+    ];
+
     // The roster comes live from the hub at prompt-fetch time; an empty roster (hub unreachable —
     // the fail-open path) degrades to the static idiom text, which already tells the agent to ask.
     public static string Build(IReadOnlyList<SatelliteDescriptor> satellites) =>

@@ -54,6 +54,31 @@ public class OpenRouterServedRouteTests
     }
 
     [Fact]
+    public void AGenerationIdIsCarriedForTheWireThatNamesNoProvider()
+    {
+        // The Responses wire reports no provider at all, so the id is the only handle the name can
+        // be recovered from — by a caller willing to pay a request for it, which no turn is.
+        var route = OpenRouterHttpHelpers.ExtractRouteFromSseData(
+            """
+            {"type":"response.completed","response":{"id":"gen-123-abc","model":"openai/gpt-5.6-luna"}}
+            """);
+
+        route.ShouldNotBeNull();
+        route.GenerationId.ShouldBe("gen-123-abc");
+        route.Provider.ShouldBeNull();
+    }
+
+    [Fact]
+    public void AnIdThatIsNotAGenerationIsIgnored()
+    {
+        // Every event on the Responses wire carries some id; only OpenRouter's own generation id
+        // can be looked up, and storing a message id under that name would send the lookup
+        // hunting for something that never existed.
+        OpenRouterHttpHelpers.ExtractRouteFromSseData(
+            """{"type":"response.output_item.added","item":{"id":"msg_tmp_1"}}""").ShouldBeNull();
+    }
+
+    [Fact]
     public void MalformedDataIsNotARoute()
     {
         OpenRouterHttpHelpers.ExtractRouteFromSseData("not json at all").ShouldBeNull();

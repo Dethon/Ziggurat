@@ -26,27 +26,50 @@ public static class Arg
     public static ArgumentMatcher Absent(string name) =>
         new($"{name} absent", args => Read(args, name) is null);
 
-    // An argument whose value is itself a JSON document, which is how every file this agent writes
-    // reaches a tool: the body of a timer, a schedule or a note is one string argument.
+    // An argument whose value is itself a document: the body of a timer, a schedule or a note.
+    // Either spelling counts — a model writes the file body as a JSON string and its nested keys
+    // as real objects, and the scenario is asking about the values rather than about which of the
+    // two the model chose.
     public static ArgumentMatcher Body(string name, params ArgumentMatcher[] inner) =>
         new($"{name} = {{{string.Join(", ", inner.Select(m => m.Description))}}}",
-            args =>
+            args => Read(args, name) switch
             {
-                if (Read(args, name) is not { ValueKind: JsonValueKind.String } element)
-                {
-                    return false;
-                }
-
-                try
-                {
-                    using var body = JsonDocument.Parse(element.GetString() ?? "");
-                    return inner.All(m => m.Matches(body.RootElement));
-                }
-                catch (JsonException)
-                {
-                    return false;
-                }
+                { ValueKind: JsonValueKind.Object } nested => inner.All(m => m.Matches(nested)),
+                { ValueKind: JsonValueKind.String } text => Parsed(text.GetString(), inner),
+                _ => false
             });
+
+    private static bool Parsed(string? text, IReadOnlyList<ArgumentMatcher> inner)
+    {
+        try
+        {
+            using var body = JsonDocument.Parse(text ?? "");
+            return inner.All(m => m.Matches(body.RootElement));
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    // The path, whatever this tool calls it. Create and read say `filePath`, remove and info say
+    // `path`, glob says `basePath` — and what a scenario is asking about is the same question in
+    // all three cases, because for most of this suite "which tool was selected" is "which path was
+    // written to".
+    public static ArgumentMatcher Path(string value) =>
+        new($"path = '{value}'", args => PathOf(args) == value);
+
+    public static ArgumentMatcher PathMatches(string pattern) =>
+        new($"path matches /{pattern}/",
+            args => Regex.IsMatch(PathOf(args) ?? "", pattern, RegexOptions.IgnoreCase));
+
+    public static readonly string[] PathNames = ["path", "filePath", "basePath", "sourcePath"];
+
+    public static string? PathOf(JsonElement args) =>
+        PathNames
+            .Select(name => Read(args, name))
+            .FirstOrDefault(element => element is { ValueKind: JsonValueKind.String })
+            ?.GetString();
 
     public static ArgumentMatcher Number(string name, double value) =>
         new($"{name} = {value}",

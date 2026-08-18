@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -151,11 +152,17 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         }
     };
 
+    // Relaxed escaping, because the only reader of this string is a person reading a dump: the
+    // default encoder turns every quote inside a nested document into \u0022 and the arguments
+    // become unreadable exactly where they matter most.
+    private static readonly JsonSerializerOptions _argumentJson =
+        new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
     private static string SerializeArguments(IDictionary<string, object?>? arguments)
     {
         try
         {
-            return JsonSerializer.Serialize(arguments ?? new Dictionary<string, object?>());
+            return JsonSerializer.Serialize(arguments ?? new Dictionary<string, object?>(), _argumentJson);
         }
         catch (NotSupportedException)
         {

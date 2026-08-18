@@ -17,12 +17,12 @@ assertion message. Successes are not archived.
 
 **Status:** ready-for-agent
 
-- [ ] A scenario declares its threshold and tier; the smoke tier runs one canary per family once.
-- [ ] A scenario whose threshold becomes unreachable stops early and reports what it observed,
+- [x] A scenario declares its threshold and tier; the smoke tier runs one canary per family once.
+- [x] A scenario whose threshold becomes unreachable stops early and reports what it observed,
       not a fabricated rate.
-- [ ] A passing scenario writes no files.
-- [ ] A failing scenario writes a dump containing every element listed above, and names its path
+- [x] A passing scenario writes no files.
+- [x] A failing scenario writes a dump containing every element listed above, and names its path
       in the failure message.
-- [ ] The output directory is gitignored.
-- [ ] Threshold arithmetic, early stop and dump contents are proven against a scripted chat
+- [x] The output directory is gitignored.
+- [x] Threshold arithmetic, early stop and dump contents are proven against a scripted chat
       client, with no model involved.

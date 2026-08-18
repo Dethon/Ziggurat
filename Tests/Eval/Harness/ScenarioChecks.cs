@@ -97,11 +97,7 @@ public static class ScenarioChecks
         try
         {
             using var arguments = JsonDocument.Parse(call.Arguments);
-            return arguments.RootElement.ValueKind == JsonValueKind.Object
-                   && arguments.RootElement.TryGetProperty("path", out var path)
-                   && path.ValueKind == JsonValueKind.String
-                ? path.GetString() ?? ""
-                : "";
+            return Arg.PathOf(arguments.RootElement) ?? "";
         }
         catch (JsonException)
         {

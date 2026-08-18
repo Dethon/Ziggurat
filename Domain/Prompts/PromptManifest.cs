@@ -143,7 +143,8 @@ public static class PromptManifest
             Purpose = "Timers and alarms on the satellites, named by the room they ring in.",
             Priority = PromptPriority.Client,
             TokenBudget = 1_500,
-            ServedBy = "mcp-timers"
+            ServedBy = "mcp-timers",
+            Claims = TimerPrompt.Claims
         },
         new()
         {
@@ -202,6 +203,11 @@ public static class PromptManifest
         new(StringComparer.OrdinalIgnoreCase) { [VoicePrompt.Name] = VoicePrompt.Instructions };
 
     public static IReadOnlyCollection<string> SelectableSections => _selectable.Keys;
+
+    // Aggregated across sections the way the declarations themselves are, so a scenario can cite
+    // one id and a coverage test can enumerate every claim the deployment makes.
+    public static IReadOnlyList<PromptClaim> Claims { get; } =
+        [.. Declarations.SelectMany(d => d.Claims)];
 
     public static PromptDeclaration? Find(string name) => _byName.GetValueOrDefault(name);
 

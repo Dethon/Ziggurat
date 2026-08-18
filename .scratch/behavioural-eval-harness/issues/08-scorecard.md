@@ -10,8 +10,8 @@ exercised. It is not committed — a stochastic wobble must not dirty the workin
 
 **Status:** ready-for-agent
 
-- [ ] A full pass writes one summary into the same gitignored output directory as the dumps.
-- [ ] The summary names the model and provider actually served, not the configured one.
-- [ ] Every claim exercised in the pass appears with its observed rate; claims not exercised are
+- [x] A full pass writes one summary into the same gitignored output directory as the dumps.
+- [x] The summary names the model and provider actually served, not the configured one.
+- [x] Every claim exercised in the pass appears with its observed rate; claims not exercised are
       distinguishable from claims that failed.
-- [ ] A smoke-tier run does not overwrite a full pass's summary.
+- [x] A smoke-tier run does not overwrite a full pass's summary.
