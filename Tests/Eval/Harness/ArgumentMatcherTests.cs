@@ -38,5 +38,15 @@ public class ArgumentMatcherTests
             .Description.ShouldBe("room = 'kitchen' or satelliteId = 'kitchen-01'");
     }
 
+    [Fact]
+    public void ASearchScopedByItsDirectory_HasThatDirectoryAsItsPath()
+    {
+        // Search spells its scope `directoryPath`, and it passes `filePath: null` alongside — so a
+        // path permission that did not know the name matched nothing, and every search in the
+        // suite read as a call to an unpermitted place.
+        Arg.PathOf(Args("""{"query":"pesto","filePath":null,"directoryPath":"/vault"}"""))
+            .ShouldBe("/vault");
+    }
+
     private static JsonElement Args(string json) => JsonDocument.Parse(json).RootElement;
 }

@@ -11,6 +11,58 @@ public static class ClaimExemptions
 {
     public static IReadOnlyDictionary<string, string> Reasons { get; } = new Dictionary<string, string>
     {
+        [VaultPrompt.WikilinksAreNeverFixed.Id] =
+            "Demonstrated on 2026-08-18 with the wikilink rule deleted: the edit landed and every "
+            + "link came out untouched. This model does not tidy syntax it was not asked about, so "
+            + "the scenario guards against a future one rather than evidencing the prose.",
+        [VaultPrompt.EmbedsBlockIdsAndCalloutsSurvive.Id] =
+            "Demonstrated on 2026-08-18 with the embed, block-id, tag and callout bullets deleted: "
+            + "an append left all four alone. Appending is a surgical edit by nature, so witnessing "
+            + "this needs a turn that rewrites the middle of a note.",
+        [VaultPrompt.NewNoteFitsTheTree.Id] =
+            "Demonstrated on 2026-08-18 with the fit-into-the-tree bullet deleted: the recipe still "
+            + "landed in Cocina beside the other two. A folder whose contents match the note is a "
+            + "stronger instruction than the sentence telling the model to look for one.",
+        [VaultPrompt.ConfigurationIsOffLimits.Id] =
+            "Asserted as a side condition of the edit scenario — the configuration files must come "
+            + "out unchanged — but no scenario's subject is a turn that tempts the agent into them.",
+        [VaultPrompt.MarkdownIsTheNoteFormat.Id] =
+            "The create scenario pins a .md path, but as part of where the note lands rather than as "
+            + "a choice between accepted formats; a turn that tempts another extension is not written.",
+        [VaultPrompt.FrontmatterKeepsItsOtherKeys.Id] =
+            "The edit scenario asserts frontmatter survives whole; the rule about changing only the "
+            + "keys the user named needs a turn that asks for one key to change.",
+        [VaultPrompt.TemplatesAreNotExpanded.Id] =
+            "The template placeholder is seeded in a note no scenario edits yet.",
+        [VaultPrompt.TreeIsSurveyedBeforeCreating.Id] =
+            "Globbing the vault is permitted rather than required: a model that already knows where "
+            + "the note goes has not broken the contract, and requiring the glob would test the habit "
+            + "rather than the outcome.",
+        [VaultPrompt.NoNewTopLevelFolder.Id] =
+            "The negative half of where a note lands; it needs a turn whose topic fits nothing in "
+            + "the tree, which the seeded vault does not have yet.",
+        [VaultPrompt.ReadBeforeEditing.Id] =
+            "Same shape as surveying: reading first is tolerated everywhere and required nowhere, "
+            + "because the outcome the contract cares about is the edit that lands.",
+        [VaultPrompt.EditsAreSurgical.Id] =
+            "A whole-file rewrite that preserved every piece of syntax would pass the edit scenario, "
+            + "so witnessing this needs the file's own diff rather than its contents.",
+        [VaultPrompt.HeadingsAreReferenceable.Id] =
+            "Needs a turn that renames a heading another note links to, which the seeded vault could "
+            + "support and no scenario asks for yet.",
+        [VaultPrompt.DailyNotesAreAppendedTo.Id] =
+            "The daily note is seeded and nothing writes to it yet.",
+        [VaultPrompt.AttachmentsStayInTheirFolder.Id] =
+            "Needs a turn that adds an attachment, which means a binary the eval has no way to hand "
+            + "the agent.",
+        [VaultPrompt.IrreversibleChangeIsAskedAbout.Id] =
+            "A turn whose likeliest reading destroys a note, asserted on the reply and on nothing "
+            + "having been deleted — worth writing, and not written yet.",
+        [VaultPrompt.TransferIsOneCall.Id] =
+            "The cross-mount transfer belongs to the mounts-and-capabilities family — ticket 13.",
+        [VaultPrompt.WritesAreTextOnly.Id] =
+            "Needs a turn that asks for a file the vault will refuse, and an assertion about what "
+            + "the agent did after the refusal.",
         [HomeAssistantPrompt.ExactlyWhatWasAsked.Id] =
             "Demonstrated on 2026-08-18 with the whole Scope paragraph deleted: 'enciende el aire' "
             + "still turned the air conditioning on and touched nothing else. Doing only what was "

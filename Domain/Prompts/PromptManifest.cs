@@ -83,7 +83,8 @@ public static class PromptManifest
             Purpose = "Obsidian's conventions: frontmatter, wikilinks, where a new note belongs.",
             Priority = PromptPriority.Client,
             TokenBudget = 2_000,
-            ServedBy = "mcp-vault"
+            ServedBy = "mcp-vault",
+            Claims = VaultPrompt.Claims
         },
         new()
         {

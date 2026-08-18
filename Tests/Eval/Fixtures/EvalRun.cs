@@ -34,6 +34,7 @@ public static class EvalRun
         // Taken after the stack is up and before the turn goes out, so what the diff reports is
         // what this turn did rather than what arming the scenario did.
         recording.StateBefore = stack.Home.Snapshot();
+        recording.FilesBefore = EvalVault.Read(stack.VaultPath);
 
         using var cancellation = new CancellationTokenSource(_budget);
         var thread = await agent.CreateSessionAsync(cancellation.Token);
@@ -43,6 +44,7 @@ public static class EvalRun
 
         recording.Reply = response.Text;
         recording.StateAfter = stack.Home.Snapshot();
+        recording.FilesAfter = EvalVault.Read(stack.VaultPath);
         return recording;
     }
 

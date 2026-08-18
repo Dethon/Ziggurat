@@ -41,6 +41,15 @@ public sealed class Recording : IToolInvocationObserver
     public IReadOnlyDictionary<string, string> StateAfter { get; set; } =
         new Dictionary<string, string>();
 
+    // The vault before and after the turn, keyed by the path the agent sees. Notes are asserted on
+    // by their own text rather than through the calls that wrote them: a surgical edit and a
+    // whole-file rewrite are the same tool call, and only the file afterwards says which happened.
+    public IReadOnlyDictionary<string, string> FilesBefore { get; set; } =
+        new Dictionary<string, string>();
+
+    public IReadOnlyDictionary<string, string> FilesAfter { get; set; } =
+        new Dictionary<string, string>();
+
     // The agent's own answer, set by the runner that drove it: it comes back as the response
     // rather than through the seam, because a reply is what the agent returned and not something
     // observed on its way past.
