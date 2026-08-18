@@ -44,6 +44,50 @@ public class ScenarioChecksTests
     }
 
     [Fact]
+    public async Task AnEntityThatMovedAndWasNotDeclared_FailsTheScenario()
+    {
+        // What the permitted set cannot catch: one tolerated call whose script or scene cascades
+        // into three devices. The recording says a permitted action ran; only the diff says the
+        // whole living room went dark with it.
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.StateBefore = new Dictionary<string, string> { ["light.kitchen"] = "on", ["climate.salon"] = "cool" };
+        recording.StateAfter = new Dictionary<string, string> { ["light.kitchen"] = "off", ["climate.salon"] = "off" };
+
+        var scenario = Timer() with { Changes = [new StateChange("light.kitchen", "off")] };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("climate.salon");
+    }
+
+    [Fact]
+    public async Task ADeclaredChangeThatDidNotHappen_FailsEvenWhenTheReplySaysItDid()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "Listo, he encendido el aire", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.StateBefore = new Dictionary<string, string> { ["climate.salon"] = "off" };
+        recording.StateAfter = new Dictionary<string, string> { ["climate.salon"] = "off" };
+
+        var scenario = Timer() with { Changes = [new StateChange("climate.salon", "cool")] };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("climate.salon");
+    }
+
+    [Fact]
+    public async Task ATurnThatOnlyRead_LeavesNothingInTheDiff()
+    {
+        var recording = await ScriptedTurn.RunAsync("Veintiún grados", ScriptedTurn.Call(Read, "/ha/x/state.json"));
+        recording.StateBefore = new Dictionary<string, string> { ["climate.salon"] = "cool" };
+        recording.StateAfter = new Dictionary<string, string> { ["climate.salon"] = "cool" };
+
+        var scenario = Timer() with
+        {
+            Required = [],
+            Permitted = [new CallPermission(Read, "*")]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task AReplyThatBreaksItsOwnContract_FailsTheScenario()
     {
         // The reply travels with the calls rather than beside them: a turn that called exactly the

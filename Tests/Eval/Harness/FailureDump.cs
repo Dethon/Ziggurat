@@ -95,6 +95,24 @@ public static class FailureDump
             .ToList()
             .ForEach(section => dump.AppendLine(section));
 
+        var moved = recording.StateAfter
+            .Where(entry => recording.StateBefore.GetValueOrDefault(entry.Key) != entry.Value)
+            .Select(entry =>
+                $"- {entry.Key}: " +
+                $"{recording.StateBefore.GetValueOrDefault(entry.Key) ?? "absent"} → {entry.Value}")
+            .ToList();
+
+        // Only what moved. A dump listing every entity in the home would bury the one line that
+        // says the scene the model ran turned three other things off.
+        if (recording.StateBefore.Count > 0)
+        {
+            dump.AppendLine("## What moved in the home")
+                .AppendLine()
+                .AppendJoin("\n", moved.Count > 0 ? moved : ["- nothing"])
+                .AppendLine()
+                .AppendLine();
+        }
+
         return dump
             .AppendLine("## Final reply")
             .AppendLine()

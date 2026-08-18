@@ -31,6 +31,16 @@ public sealed class Recording : IToolInvocationObserver
 
     public ServedRoute? Route { get; private set; }
 
+    // The home before and after the turn, set by the runner that drove it. Two snapshots rather
+    // than a list of observed calls, because the question a scenario asks — did anything else
+    // move — is only answerable against the whole home: a service call whose script cascades into
+    // three devices reports one call and changes three states.
+    public IReadOnlyDictionary<string, string> StateBefore { get; set; } =
+        new Dictionary<string, string>();
+
+    public IReadOnlyDictionary<string, string> StateAfter { get; set; } =
+        new Dictionary<string, string>();
+
     // The agent's own answer, set by the runner that drove it: it comes back as the response
     // rather than through the seam, because a reply is what the agent returned and not something
     // observed on its way past.

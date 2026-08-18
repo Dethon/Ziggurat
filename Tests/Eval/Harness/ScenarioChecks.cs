@@ -16,8 +16,34 @@ public static class ScenarioChecks
         .. Unnecessary(scenario, recording),
         .. OutOfOrder(scenario, recording),
         .. OverCeiling(scenario, recording),
-        .. Answered(scenario, recording)
+        .. Answered(scenario, recording),
+        .. Moved(scenario, recording)
     ];
+
+    // Both halves of the same question, answered from one diff: did the change the user asked for
+    // actually happen, and did anything else move while it did. The first catches a reply that
+    // claims success over a call that failed; the second catches the cascade no permitted set can
+    // see.
+    private static IEnumerable<string> Moved(Scenario scenario, Recording recording)
+    {
+        var changed = recording.StateAfter
+            .Where(entry => recording.StateBefore.GetValueOrDefault(entry.Key) != entry.Value)
+            .ToDictionary(entry => entry.Key, entry => entry.Value);
+
+        var undeclared = changed
+            .Where(entry => !scenario.Changes.Any(c => c.Key == entry.Key))
+            .Select(entry =>
+                $"{entry.Key} changed to '{entry.Value}' and the scenario did not declare it " +
+                $"(it was '{recording.StateBefore.GetValueOrDefault(entry.Key) ?? "absent"}')");
+
+        var missing = scenario.Changes
+            .Where(change => changed.GetValueOrDefault(change.Key) != change.To)
+            .Select(change =>
+                $"{change.Key} was to end at '{change.To}' and is at " +
+                $"'{recording.StateAfter.GetValueOrDefault(change.Key) ?? "absent"}'");
+
+        return [.. missing, .. undeclared];
+    }
 
     private static IReadOnlyList<string> Answered(Scenario scenario, Recording recording) =>
         scenario.Reply is null ? [] : ReplyChecks.Failures(scenario.Reply, recording.Reply);

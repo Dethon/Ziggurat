@@ -54,12 +54,16 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
 
     // Every entity's state in one dictionary, which is what a scenario compares across a turn: the
     // question "did anything else move" is only answerable against the whole home, never against
-    // the entities the scenario happened to think of.
+    // the entities the scenario happened to think of. Attributes are in it too, keyed
+    // `<entity>#<attribute>`, because a thermostat set to another temperature has changed without
+    // its state moving.
     public IReadOnlyDictionary<string, string> Snapshot()
     {
         lock (_gate)
         {
-            return _entities.ToDictionary(e => e.Key, e => e.Value.State);
+            return _entities.Values
+                .SelectMany(entity => entity.Snapshot())
+                .ToDictionary(entry => entry.Key, entry => entry.Value);
         }
     }
 
@@ -217,6 +221,14 @@ internal sealed record HaEntity(
         attributes[name] = value;
         return this with { Attributes = attributes };
     }
+
+    public IEnumerable<KeyValuePair<string, string>> Snapshot() =>
+    [
+        new(EntityId, State),
+        .. (Attributes ?? []).Select(attribute =>
+            new KeyValuePair<string, string>(
+                $"{EntityId}#{attribute.Key}", attribute.Value?.ToJsonString().Trim('"') ?? ""))
+    ];
 
     public JsonNode ToJson()
     {
