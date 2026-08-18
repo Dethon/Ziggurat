@@ -12,6 +12,7 @@ public class ScenarioChecksTests
     private const string Read = "domain__filesystem_read";
     private const string Remove = "domain__filesystem_remove";
     private const string Glob = "domain__filesystem_glob";
+    private const string Exec = "domain__filesystem_exec";
 
     private static Scenario Timer() => new()
     {
@@ -429,6 +430,53 @@ public class ScenarioChecksTests
 
         ScenarioChecks.Failures(Corrected(), recording).ShouldBeEmpty();
     }
+
+    [Fact]
+    public async Task ReadingAnActionsManual_IsPermittedWithoutPermittingTheAction()
+    {
+        // An action file's arguments are read by running it with --help, which is an exec like any
+        // other. A scenario that had to permit exec on the directory to tolerate the manual would
+        // be permitting every action in it, including the one it exists to forbid.
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "media_seek.sh --help"),
+            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "media_seek.sh --seek_position 1"));
+
+        var scenario = Seeking();
+
+        ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AnActionRunForRealUnderTheSamePermission_IsStillUnnecessary()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "media_seek.sh --seek_position 1"),
+            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "music_assistant.play_media.sh --media_id x"));
+
+        ScenarioChecks.Failures(Seeking(), recording)
+            .ShouldHaveSingleItem().ShouldContain("play_media");
+    }
+
+    private static Scenario Seeking() => new()
+    {
+        Name = "start it over",
+        AgentId = "nabu",
+        Turn = new EvalTurn { Text = "ponlo desde el principio", Sender = "jack" },
+        Instant = new DateTimeOffset(2026, 8, 18, 20, 0, 0, TimeSpan.FromHours(2)),
+        CallCeiling = 4,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "seek",
+                Tool = Exec,
+                Arguments = [Arg.Matches("command", @"^media_seek\.sh\b")]
+            }
+        ],
+        Permitted = [CallPermission.Manual(Exec, "/ha*")]
+    };
 
     private static Scenario Corrected() => new()
     {

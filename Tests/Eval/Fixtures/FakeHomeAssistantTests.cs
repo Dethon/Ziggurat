@@ -2,7 +2,9 @@ using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.HomeAssistant.Vfs;
 using Infrastructure.Clients.HomeAssistant;
+using Infrastructure.Clients.MusicAssistant;
 using Shouldly;
+using Tests.Integration.Fixtures;
 
 namespace Tests.Eval.Fixtures;
 
@@ -100,14 +102,95 @@ public class FakeHomeAssistantTests
         home.Calls.ShouldBeEmpty();
     }
 
-    private static HaFileSystem Mount(FakeHomeAssistant? home = null)
+    [Fact]
+    public async Task BrowsingTheLibrary_ReturnsTheTitlesTheUserActuallyHas()
+    {
+        // The whole point of the browse-before-you-play rule: what the user calls the list and
+        // what the list is called are different strings, and only this call knows the second one.
+        var home = new FakeHomeAssistant();
+
+        var result = await Mount(home).ExecAsync(
+            Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
+            "browse_media.sh --media_content_id playlists --media_content_type music_assistant",
+            timeoutSeconds: null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0);
+        exec.Stdout.ShouldContain(FakeHomeAssistant.FavouritesPlaylist);
+    }
+
+    [Fact]
+    public async Task PlayingAPlaylistTheLibraryDoesNotHave_FailsTheWayHomeAssistantFails()
+    {
+        // A 500 with nothing useful in it, which is exactly what a real home answers when
+        // play_media cannot resolve a name. A fake that accepted an invented title would make the
+        // browse-first rule unfalsifiable.
+        var home = new FakeHomeAssistant();
+
+        var result = await Mount(home).ExecAsync(
+            Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
+            """music_assistant.play_media.sh --media_id "Mi música favorita" --media_type playlist""",
+            timeoutSeconds: null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(1);
+        exec.Stderr.ShouldContain("browse_media.sh");
+    }
+
+    [Fact]
+    public async Task PlayingAPlaylistThatIsInTheLibrary_ReachesMusicAssistant()
+    {
+        var home = new FakeHomeAssistant();
+
+        var result = await Mount(home).ExecAsync(
+            Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
+            $"""music_assistant.play_media.sh --media_id "{FakeHomeAssistant.FavouritesPlaylist}" --media_type playlist""",
+            timeoutSeconds: null, CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
+        var call = home.Calls.ShouldHaveSingleItem();
+        call.Domain.ShouldBe("music_assistant");
+        call.Service.ShouldBe("play_media");
+        call.EntityId.ShouldBe(FakeHomeAssistant.KitchenSpeakerEntityId);
+        call.Data["media_id"]!.GetValue<string>().ShouldBe(FakeHomeAssistant.FavouritesPlaylist);
+    }
+
+    [Fact]
+    public async Task ListingAPodcastsEpisodes_ReturnsTheUriEachOnePlaysBy()
+    {
+        // The action Home Assistant has no service for. It is served by the mount against Music
+        // Assistant's own websocket, so an eval that skipped this fake would leave the one rule
+        // about episodes untestable.
+        await using var music = await FakeMusicAssistantServer.StartAsync();
+        var home = new FakeHomeAssistant();
+
+        var result = await Mount(home, music).ExecAsync(
+            Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
+            """music_assistant.podcast_episodes.sh --podcast "No es el fin del mundo" --match "Palantir" """,
+            timeoutSeconds: null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0);
+        exec.Stdout.ShouldContain("podcast_episode/4Fk1sWv0xKvJ6teiCpTAJN");
+    }
+
+    private static HaFileSystem Mount(
+        FakeHomeAssistant? home = null, FakeMusicAssistantServer? music = null)
     {
         var fake = home ?? new FakeHomeAssistant();
         IHomeAssistantClient client() => new HomeAssistantClient(
             new HttpClient(fake) { BaseAddress = new Uri("http://home-assistant.eval/") },
             FakeHomeAssistant.Token);
 
-        return new HaFileSystem(new HaCatalogProvider(client), client);
+        // The podcast action exists only where Music Assistant does, in the mount as in the
+        // deployment: no music server, no extra service, no action file.
+        IMusicAssistantClient musicClient() =>
+            new MusicAssistantClient(music!.BaseUrl, FakeMusicAssistantServer.ValidToken);
+
+        return new HaFileSystem(
+            new HaCatalogProvider(client, extraServices: music is null ? null : [HaMusicActions.PodcastEpisodes]),
+            client,
+            musicClientFactory: music is null ? null : musicClient);
     }
 
     // The backend is handed mount-relative paths; the `/ha` prefix a scenario asserts on is the

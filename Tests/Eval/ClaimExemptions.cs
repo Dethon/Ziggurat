@@ -190,14 +190,18 @@ public static class ClaimExemptions
             "The timer half of snoozing is covered; the calendar half needs a turn arriving with a "
             + "dismissed alarm rather than a dismissed timer.",
         [HomeAssistantPrompt.MusicPlaysOnTheMusicAssistantPlayer.Id] =
-            "Needs the Music Assistant fake and a room with two players — ticket 11.",
-        [HomeAssistantPrompt.PlaylistIsBrowsedBeforeItIsPlayed.Id] =
-            "Needs a library whose playlist titles differ from the words the user says — ticket 11.",
-        [HomeAssistantPrompt.EpisodePlaysOnlyByItsUri.Id] =
-            "Needs the podcast-episode action, which is only advertised when Music Assistant is "
-            + "configured — ticket 11.",
+            "Demonstrated on 2026-08-19 with the whole MA-player paragraph deleted, in a kitchen "
+            + "holding both a Music Assistant speaker and a television that lists the same "
+            + "actions: the playlist still went to the speaker. A player called 'Altavoz Cocina' "
+            + "beside one called 'TV Cocina' teaches the choice, and the model reads state.json "
+            + "anyway. The scenario asserts the target as a side condition and cites the browse "
+            + "rule instead.",
         [HomeAssistantPrompt.RestartIsASeek.Id] =
-            "Needs something already playing on a player, which is Music Assistant's state — ticket 11.",
+            "Demonstrated on 2026-08-19 with the 'play it from the beginning' bullet deleted: "
+            + "'ponlo otra vez desde el principio' still came out as media_seek on the player that "
+            + "was playing, and not as another play. The first attempt at this demonstration was "
+            + "red for the wrong reason — the model read `media_seek.sh --help`, which the "
+            + "scenario did not tolerate — which is what CallPermission.Manual now exists for.",
         [HomeAssistantPrompt.AreaSlugIsReadNotDerived.Id] =
             "Needs an area whose slug and display name disagree and an action that takes an area id; "
             + "the fake home has the first and no action with the second.",

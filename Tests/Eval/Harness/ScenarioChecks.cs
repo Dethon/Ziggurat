@@ -169,13 +169,18 @@ public static class ScenarioChecks
         // Compiled once for the whole recording rather than once per call: a permission is a pair
         // of wildcard patterns, and rebuilding both regexes per call is work nobody asked for.
         var permitted = scenario.Permitted
-            .Select(p => (Tool: new ToolPatternMatcher([p.Tool]), Path: new ToolPatternMatcher([p.Path])))
+            .Select(p => (
+                Tool: new ToolPatternMatcher([p.Tool]),
+                Path: new ToolPatternMatcher([p.Path]),
+                Command: new ToolPatternMatcher([p.Command])))
             .ToList();
 
         return recording.Calls
             .Where(call => !string.Equals(call.ToolName, EvalTools.Subagent, StringComparison.Ordinal))
             .Where(call => !scenario.Required.Any(e => Matches(e, call))
-                           && !permitted.Any(p => p.Tool.IsMatch(call.ToolName) && p.Path.IsMatch(Path(call))))
+                           && !permitted.Any(p => p.Tool.IsMatch(call.ToolName)
+                                                  && p.Path.IsMatch(Path(call))
+                                                  && p.Command.IsMatch(Command(call))))
             .Select(call =>
                 $"unnecessary call: {call.ToolName} {call.Arguments} is neither required nor permitted");
     }
@@ -239,6 +244,24 @@ public static class ScenarioChecks
         catch (JsonException)
         {
             return false;
+        }
+    }
+
+    // Empty for every tool that runs nothing, which the default `*` permission matches — so a
+    // permission that says nothing about commands keeps meaning what it meant.
+    private static string Command(ToolInvocation call)
+    {
+        try
+        {
+            using var arguments = JsonDocument.Parse(call.Arguments);
+            return arguments.RootElement.TryGetProperty("command", out var command)
+                   && command.ValueKind == JsonValueKind.String
+                ? command.GetString() ?? ""
+                : "";
+        }
+        catch (JsonException)
+        {
+            return "";
         }
     }
 

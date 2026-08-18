@@ -10,7 +10,8 @@ internal static class HaServices
 {
     // The services whose handlers declare a response. Everything else answers `return_response=true`
     // with a 400, exactly as Home Assistant does.
-    private static readonly HashSet<string> _responding = ["calendar.get_events"];
+    private static readonly HashSet<string> _responding =
+        ["calendar.get_events", "media_player.browse_media", "media_player.search_media"];
 
     public static bool Responds(string qualified) => _responding.Contains(qualified);
 
@@ -38,20 +39,52 @@ internal static class HaServices
             Service("set_hvac_mode", "Sets the operation mode.", Text("hvac_mode")),
             Service("turn_on", "Turns the climate device on."),
             Service("turn_off", "Turns the climate device off.")),
+        // Everything a player advertises. The music rules are a set of discriminations between
+        // these — a playlist against a track, an episode against its show, a seek against another
+        // play — so a catalog holding only the right one would make each of them unfalsifiable.
+        Domain("media_player",
+            Service("browse_media", "Browses the media available on a player.",
+                Text("media_content_type"), Text("media_content_id")),
+            Service("search_media", "Searches the providers' whole catalog, not the user's library.",
+                Text("search_query", required: true), Text("media_content_type"),
+                Text("media_filter_classes")),
+            Service("play_media", "Plays a concrete media id or url on a player.",
+                Text("media_content_id", required: true), Text("media_content_type", required: true)),
+            Service("media_seek", "Seeks to a position in the item currently playing.",
+                Number("seek_position", 0, 86400)),
+            Service("media_play", "Resumes playback."),
+            Service("media_pause", "Pauses playback."),
+            Service("media_stop", "Stops playback."),
+            Service("media_next_track", "Skips to the next item."),
+            Service("volume_set", "Sets the volume.", Number("volume_level", 0, 1)),
+            Service("turn_off", "Turns the player off.")),
+        // Targeted at media_player rather than at its own domain, the way Music Assistant's
+        // integration declares them: that cross-domain target is what puts `music_assistant.*.sh`
+        // in every player's directory, and a fake that got it wrong would serve no action at all.
+        Domain("music_assistant", targets: "media_player",
+            Service("play_media", "Resolves a name in the user's library and plays it.",
+                Text("media_id", required: true), Text("media_type"), Text("artist"), Text("album"),
+                Text("enqueue"), Text("radio_mode")),
+            Service("transfer_queue", "Moves the queue to another player.", Text("source_player"))),
         Domain("switch",
             Service("turn_on", "Turns a switch on."),
             Service("turn_off", "Turns a switch off."),
             Service("toggle", "Toggles a switch."))
     ];
 
-    private static JsonNode Domain(string domain, params (string Name, JsonNode Definition)[] services)
+    private static JsonNode Domain(
+        string domain, params (string Name, JsonNode Definition)[] services) =>
+        Domain(domain, domain, services);
+
+    private static JsonNode Domain(
+        string domain, string targets, params (string Name, JsonNode Definition)[] services)
     {
         var table = new JsonObject();
         foreach (var (name, definition) in services)
         {
             definition["target"] = new JsonObject
             {
-                ["entity"] = new JsonArray(new JsonObject { ["domain"] = new JsonArray(domain) })
+                ["entity"] = new JsonArray(new JsonObject { ["domain"] = new JsonArray(targets) })
             };
             table[name] = definition;
         }
