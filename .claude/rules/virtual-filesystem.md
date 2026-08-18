@@ -8,7 +8,7 @@ paths:
 
 # Virtual Filesystem Architecture
 
-Each MCP server can expose a `filesystem://` resource (`vault`, `media`, `ha`, `schedules`, `print-queue`, `timers`). At session start `McpFileSystemDiscovery` detects them and mounts them into `VirtualFileSystemRegistry` with longest-prefix path resolution. `FileSystemToolFeature` provides 10 domain tools (`VfsFileRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsCopy`, `VfsRemove`, `VfsExec`, `VfsFileInfo`) dispatching through the registry; raw MCP `fs_*` tools are filtered out while domain tools are active. `VfsExec` is filesystem-conditional — backends without `fs_exec` return a "tool missing" envelope.
+Each MCP server can expose a `filesystem://` resource. At session start `McpFileSystemDiscovery` detects them and mounts them into `VirtualFileSystemRegistry` with longest-prefix path resolution. `FileSystemToolFeature` provides the `Vfs*` domain tools dispatching through the registry; raw MCP `fs_*` tools are filtered out while domain tools are active. `VfsExec` is filesystem-conditional — backends without `fs_exec` return a "tool missing" envelope.
 
 Each mount is its own backend — **tools cannot reach across mounts**; data needed elsewhere must be copied there first. Backends derive from `FileSystemBackendBase` (`Domain/Contracts/`), which implements twelve of `IFileSystemBackend`'s thirteen operations as unsupported and provides what every backend used to copy: the error envelopes, the glob prologue (base path plus the trailing-slash dirs-only rule), a search regex compiled with a match timeout and guarded against a bad pattern, and the search template. New filesystems need no agent changes.
 

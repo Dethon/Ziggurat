@@ -10,7 +10,7 @@ paths:
 
 # Web Browsing Architecture
 
-McpServerWebSearch exposes `web_browse` (navigate + extract), `web_snapshot` (accessibility tree with interactive element refs) and `web_action` (click/type/fill/select by ref). The backend is `PlaywrightWebBrowser` over a WebSocket to Camoufox. `AccessibilitySnapshotService` injects JS to traverse the DOM, infer ARIA roles and assign refs (`e-1`, `e-2`, …); `BrowserSessionManager` keeps pages alive per session with cookie persistence; `ModalDismisser` auto-closes cookie banners, newsletters and age gates.
+McpServerWebSearch exposes the `web_*` browse tools over `PlaywrightWebBrowser`, a WebSocket to Camoufox. The accessibility snapshot assigns interactive element refs (`e-1`, `e-2`, …) that `web_action` then addresses, pages are kept alive per session with cookie persistence, and cookie banners, newsletters and age gates are auto-dismissed.
 
 ## Camoufox
 
