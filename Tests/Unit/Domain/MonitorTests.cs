@@ -165,11 +165,11 @@ internal sealed class FakeAiAgent : DisposableAgent
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
-    public List<(AgentKey Key, IToolApprovalHandler ApprovalHandler)> Created { get; } = [];
+    public List<(AgentKey Key, string? AgentId, IToolApprovalHandler ApprovalHandler)> Created { get; } = [];
 
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
-        Created.Add((agentKey, approvalHandler));
+        Created.Add((agentKey, agentId, approvalHandler));
         return agent;
     }
 

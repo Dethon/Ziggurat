@@ -130,6 +130,30 @@ public class AgentAppSettingsTests
         ]);
     }
 
+    // Who answers a message whose channel named no agent is configuration, and the two halves of
+    // it live in the same file: a default naming an agent this file does not declare routes
+    // nothing at all, and the host refuses to start rather than fail one message at a time.
+    [Fact]
+    public void AgentDefaults_EveryConfiguredDefault_NamesAnAgentThisFileDeclares()
+    {
+        var defaults = BoundConfig().GetSection("agentDefaults").Get<AgentDefaults>()!;
+
+        Should.NotThrow(() => defaults.Validate(BoundAgents().Select(a => a.Id)));
+    }
+
+    // The nested map is the part that fails silently: a renamed key binds to nothing, the
+    // fallback answers for every channel, and voice starts speaking with the general assistant.
+    [Fact]
+    public void Bind_AgentDefaults_BindsTheFallbackAndThePerChannelMap()
+    {
+        var settings = BindSettings(
+            ("agentDefaults:fallback", "jonas"),
+            ("agentDefaults:byChannel:voice", "nabu"));
+
+        settings.AgentDefaults.For("voice").ShouldBe("nabu");
+        settings.AgentDefaults.For("telegram").ShouldBe("jonas");
+    }
+
     private static AgentSettings BindSettings(params (string Key, string? Value)[] entries)
     {
         var config = new Dictionary<string, string?>

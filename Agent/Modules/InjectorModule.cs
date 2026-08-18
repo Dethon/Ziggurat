@@ -35,9 +35,15 @@ public static class InjectorModule
                 MaxInlineImageBytes = settings.ReadImages.MaxInlineBytes
             };
 
+            // Before anything is registered: a default naming an agent nobody configured routes
+            // every unattributed message into an error, and the deployment should refuse to start
+            // rather than discover it one message at a time.
+            settings.AgentDefaults.Validate(settings.Agents.Select(a => a.Id));
+
             services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);
 
             return services
+                .AddSingleton(settings.AgentDefaults)
                 .AddSingleton(settings.Retention)
                 .AddRedis(settings.Redis, settings.Retention)
                 .AddMetricsPublishing("agent")

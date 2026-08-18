@@ -14,7 +14,11 @@ public class ChatMonitor(
     ChatThreadResolver threadResolver,
     IMetricsPublisher metricsPublisher,
     IMemoryRecallHook? memoryRecallHook,
-    ILogger<ChatMonitor> logger)
+    ILogger<ChatMonitor> logger,
+    // Optional because a host may configure none — a test harness, or a deployment where every
+    // channel names its agent. With none configured a message that names no agent is refused
+    // when the agent is built, which is the point: nothing guesses.
+    AgentDefaults? agentDefaults = null)
 {
     private readonly DeliveryTargetResolver _targetResolver = new(channels, logger);
     private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
@@ -24,7 +28,7 @@ public class ChatMonitor(
         try
         {
             var merged = channels
-                .Select(ch => ch.Messages.Select(m => (Channel: ch, Message: m)))
+                .Select(ch => ch.Messages.Select(m => (Channel: ch, Message: RouteToAgent(m))))
                 .Merge(cancellationToken);
 
             var groups = merged
@@ -51,6 +55,15 @@ public class ChatMonitor(
             });
         }
     }
+
+    // Resolved here, upstream of the grouping, so one id serves the whole turn: the group key, the
+    // agent built for it, the conversation context stamped on the message and the memory written
+    // from it. Resolving it later would let a message that named no agent group apart from one
+    // that named the same agent explicitly, running two agents over one conversation.
+    private ChannelMessage RouteToAgent(ChannelMessage message) =>
+        string.IsNullOrEmpty(message.AgentId) && agentDefaults?.For(message.ChannelId) is { } fallback
+            ? message with { AgentId = fallback }
+            : message;
 
     private async IAsyncEnumerable<bool> ProcessChatThread(
         AgentKey agentKey,
