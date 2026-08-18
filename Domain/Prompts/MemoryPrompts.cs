@@ -24,6 +24,59 @@ public static class MemoryPrompts
         Memories are scoped to the active user automatically. Never reference memories from other users.
         """;
 
+    // Every falsifiable statement the feature prompt above makes. They divide in two: what the
+    // agent does with a fact it was given, and when it removes one. The first half is asserted on
+    // the reply, the second on the store afterwards — a deletion leaves nothing in the call log
+    // that says which fact went.
+    public static readonly PromptClaim RecallShapesTheAnswer =
+        new("memory.recall-shapes-the-answer",
+            "A preference or instruction in the recall block is applied to the answer without being asked for again.");
+
+    public static readonly PromptClaim MemoriesAreNotRestated =
+        new("memory.memories-are-not-restated",
+            "The reply uses what was remembered without repeating the memory back to the user.");
+
+    public static readonly PromptClaim MechanismIsNeverMentioned =
+        new("memory.mechanism-is-never-mentioned",
+            "Memories, the memory context block and memory operations are never mentioned unless the user asked about them.");
+
+    public static readonly PromptClaim RemovalIsTheOnlyAction =
+        new("memory.removal-is-the-only-action",
+            "Storing and recalling happen without the agent acting; the only memory call it makes is a removal.");
+
+    public static readonly PromptClaim CorrectionDeletesTheStaleFact =
+        new("memory.correction-deletes-the-stale-fact",
+            "A user correcting a remembered fact has the outdated one deleted without asking for it to be forgotten.");
+
+    public static readonly PromptClaim ExplicitForgetIsObeyed =
+        new("memory.explicit-forget-is-obeyed",
+            "A request to forget something removes it.");
+
+    public static readonly PromptClaim OutdatedFactsAreDeleted =
+        new("memory.outdated-facts-are-deleted",
+            "A memory that has clearly expired is deleted rather than carried.");
+
+    public static readonly PromptClaim NoisyStoreIsSwept =
+        new("memory.noisy-store-is-swept",
+            "Low-value automatically-extracted memories are swept when the store gets noisy.");
+
+    public static readonly PromptClaim NoOtherUsersMemories =
+        new("memory.no-other-users-memories",
+            "A memory belonging to another user is never referenced.");
+
+    public static readonly IReadOnlyList<PromptClaim> Claims =
+    [
+        RecallShapesTheAnswer,
+        MemoriesAreNotRestated,
+        MechanismIsNeverMentioned,
+        RemovalIsTheOnlyAction,
+        CorrectionDeletesTheStaleFact,
+        ExplicitForgetIsObeyed,
+        OutdatedFactsAreDeleted,
+        NoisyStoreIsSwept,
+        NoOtherUsersMemories
+    ];
+
     public const string ExtractionSystemPrompt =
         """
         You are a memory extraction system. You will be given a short window of recent conversation turns rendered with turn markers like `[context -1]` and `[CURRENT]`. Your job is to extract storable facts, preferences, instructions, skills, events, and projects from the CURRENT user message only.

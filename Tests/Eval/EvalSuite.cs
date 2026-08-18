@@ -20,7 +20,8 @@ public static class EvalSuite
         .. HomeAssistantScenarios.All,
         .. VaultScenarios.All,
         .. MountScenarios.All,
-        .. DelegationScenarios.All
+        .. DelegationScenarios.All,
+        .. MemoryScenarios.All
     ];
 
     public static Scenario ByName(string name) =>

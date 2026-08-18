@@ -63,7 +63,8 @@ public static class PromptManifest
             Purpose = "Memory is invisible plumbing: applied silently, never narrated, forgotten on request.",
             Priority = PromptPriority.Feature,
             TokenBudget = 500,
-            Conflict = ConflictPolicy.Governs(PromptRules.Memory)
+            Conflict = ConflictPolicy.Governs(PromptRules.Memory),
+            Claims = MemoryPrompts.Claims
         },
         new()
         {
