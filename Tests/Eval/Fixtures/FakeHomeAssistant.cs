@@ -20,12 +20,28 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public const string AirConditionerEntityId = "climate.salon";
     public const string WashingMachineEntityId = "switch.lavadora";
 
+    // Two players in the kitchen, because "play it here" is only a decision when the room has more
+    // than one thing that could play it: one is a Music Assistant player and the other is a
+    // television that lists the same actions and does nothing with them.
+    public const string KitchenSpeakerEntityId = "media_player.altavoz_cocina";
+    public const string KitchenTvEntityId = "media_player.tv_cocina";
+
+    // What the user calls their favourites and what the playlist is called are different strings.
+    // That gap is the whole subject of the browse-before-you-play rule.
+    public const string FavouritesPlaylist = "Liked Songs dethonv";
+
+    // Already playing when a scenario arrives, so "start it over" has something to start over.
+    public const string PlayingEpisodeTitle = "280. Palantir: el control tecnológico de la defensa";
+    public const string PlayingEpisodeUri = "spotify--w2nq2jMe://podcast_episode/4Fk1sWv0xKvJ6teiCpTAJN";
+
     // The directory a scenario writes into its expectations, composed the way the mount composes
     // it rather than typed out: a friendly name edited here would otherwise rename the directory
     // and leave every scenario asserting a path nothing serves.
     public static readonly string AlarmsDirectory = Directory(AlarmsEntityId, "Assistant Alarms");
     public static readonly string KitchenLightDirectory = Directory(KitchenLightEntityId, "Luz Cocina");
     public static readonly string AirConditionerDirectory = Directory(AirConditionerEntityId, "Aire Salón");
+    public static readonly string KitchenSpeakerDirectory = Directory(KitchenSpeakerEntityId, "Altavoz Cocina");
+    public static readonly string KitchenTvDirectory = Directory(KitchenTvEntityId, "TV Cocina");
 
     private readonly Lock _gate = new();
     private readonly List<HaCall> _calls = [];
@@ -135,8 +151,71 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             Apply(domain, service, entityId, data);
         }
 
-        return Json(new JsonArray());
+        return Media(domain, service, data) ?? Json(new JsonArray());
     }
+
+    // The two media answers that are not "ok, nothing changed": a browse that returns a listing,
+    // and a name that resolves to nothing. Both are what the contract's rules are about — the
+    // listing is the only place a real playlist title exists, and the 500 is what an invented one
+    // gets, reported by Home Assistant as a bare failure that says nothing about what went wrong.
+    private HttpResponseMessage? Media(string domain, string service, JsonObject data) =>
+        (domain, service) switch
+        {
+            ("media_player", "browse_media") => Browse(data),
+            ("music_assistant", "play_media") when !Resolves(data) => Unresolvable(),
+            ("media_player", "play_media") => Unresolvable(),
+            _ => null
+        };
+
+    // Only the library's own listing. Home Assistant raises a BrowseError for anything else, which
+    // reaches the caller as a 500 with no explanation — including for a podcast, which is why the
+    // episode action exists at all.
+    private static HttpResponseMessage Browse(JsonObject data) =>
+        data["media_content_id"]?.GetValue<string>() == "playlists"
+            ? Json(new JsonObject
+            {
+                ["changed_states"] = new JsonArray(),
+                ["service_response"] = new JsonObject
+                {
+                    ["title"] = "Playlists",
+                    ["media_content_type"] = "playlists",
+                    ["children"] = new JsonArray([.. Playlists.Select(Playlist)])
+                }
+            })
+            : Unresolvable();
+
+    private static readonly string[] _playlists =
+        [FavouritesPlaylist, "Domingo por la mañana", "Gimnasio 2026"];
+
+    public static IReadOnlyList<string> Playlists => _playlists;
+
+    private static JsonNode Playlist(string title) => new JsonObject
+    {
+        ["title"] = title,
+        ["media_content_type"] = "playlist",
+        ["media_content_id"] = $"library://playlist/{Array.IndexOf(_playlists, title) + 1}",
+        ["can_play"] = true,
+        ["can_expand"] = false
+    };
+
+    // A name resolves if the library has it, and a uri resolves if it is one the fake serves.
+    // Everything else is a guess, and a guess is what the browse-first rule exists to prevent.
+    private static bool Resolves(JsonObject data) =>
+        data["media_id"]?.GetValue<string>() is { } id
+        && (_playlists.Contains(id, StringComparer.OrdinalIgnoreCase)
+            || id == PlayingEpisodeUri
+            || KnownNames.Contains(id, StringComparer.OrdinalIgnoreCase));
+
+    // Free-text names that resolve through the streaming providers, which is what the contract says
+    // a track, artist or show may be played by.
+    public static IReadOnlyList<string> KnownNames { get; } =
+        ["Miles Davis", "No es el fin del mundo", "Radio 3"];
+
+    private static HttpResponseMessage Unresolvable() =>
+        new(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("500 Internal Server Error: Server got itself in trouble")
+        };
 
     // What the call did to the home, as far as a scenario can observe it. Only the effects a
     // scenario asserts on are modelled: a fake that guessed at every service's real behaviour would
@@ -176,7 +255,8 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         new JsonObject
         {
             ["areas"] = new JsonArray(
-                Area("kitchen", "Cocina", KitchenLightEntityId, WashingMachineEntityId),
+                Area("kitchen", "Cocina", KitchenLightEntityId, WashingMachineEntityId,
+                    KitchenSpeakerEntityId, KitchenTvEntityId),
                 Area("salon", "Salón", AirConditionerEntityId))
         }.ToJsonString();
 
@@ -194,7 +274,23 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         new(KitchenLightEntityId, "on", "Luz Cocina"),
         new(AirConditionerEntityId, "cool", "Aire Salón",
             new JsonObject { ["temperature"] = 24, ["hvac_modes"] = new JsonArray("off", "cool", "heat") }),
-        new(WashingMachineEntityId, "off", "Lavadora")
+        new(WashingMachineEntityId, "off", "Lavadora"),
+        // The two attributes the contract says to read a player by. The episode already loaded is
+        // what makes a seek possible: media_seek needs something on the player, and a scenario
+        // about restarting one has to arrive with it playing.
+        new(KitchenSpeakerEntityId, "playing", "Altavoz Cocina", new JsonObject
+        {
+            ["app_id"] = "music_assistant",
+            ["mass_player_type"] = "player",
+            ["media_title"] = PlayingEpisodeTitle,
+            ["media_content_id"] = PlayingEpisodeUri,
+            ["media_position"] = 3600
+        }),
+        new(KitchenTvEntityId, "off", "TV Cocina", new JsonObject
+        {
+            ["app_id"] = "tv",
+            ["device_class"] = "tv"
+        })
     ];
 
     private static string Directory(string entityId, string friendlyName) =>

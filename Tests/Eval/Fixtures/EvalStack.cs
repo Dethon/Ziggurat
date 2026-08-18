@@ -65,6 +65,11 @@ public sealed class EvalStack : IAsyncDisposable
     // this one's assertions about what survived meaningless.
     public string VaultPath { get; private set; } = "";
 
+    // Music Assistant, faked at its own server the way ADR-0030 says. It exists for one action —
+    // a podcast's episode list — which Home Assistant has no service for and which is the only way
+    // to obtain the uri an episode plays by.
+    public FakeMusicAssistantServer Music { get; private set; } = null!;
+
     // What the user is remembered as having said. Recall rides the turn as data; this is what the
     // forget tool searches and deletes from, and what a scenario reads afterwards.
     public EvalMemory Memory { get; private set; } = null!;
@@ -190,6 +195,8 @@ public sealed class EvalStack : IAsyncDisposable
     // action files and the argument parsing a scenario exercises are therefore the deployment's.
     private async Task<string> StartHomeAssistantAsync()
     {
+        Music = await FakeMusicAssistantServer.StartAsync();
+
         var port = TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
@@ -199,6 +206,14 @@ public sealed class EvalStack : IAsyncDisposable
             {
                 BaseUrl = "http://home-assistant.eval",
                 Token = FakeHomeAssistant.Token
+            },
+            // Configured, so the server advertises the podcast-episode action — a deployment
+            // without Music Assistant does not, and a scenario about episodes would then be
+            // testing a toolset nobody runs.
+            MusicAssistant = new MusicAssistantConfiguration
+            {
+                BaseUrl = Music.BaseUrl,
+                Token = FakeMusicAssistantServer.ValidToken
             }
         });
 
@@ -339,6 +354,8 @@ public sealed class EvalStack : IAsyncDisposable
         {
             await _agentServices.DisposeAsync();
         }
+
+        await Music.DisposeAsync();
 
         if (Directory.Exists(VaultPath))
         {

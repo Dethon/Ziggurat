@@ -21,7 +21,8 @@ public static class EvalSuite
         .. VaultScenarios.All,
         .. MountScenarios.All,
         .. DelegationScenarios.All,
-        .. MemoryScenarios.All
+        .. MemoryScenarios.All,
+        .. MusicScenarios.All
     ];
 
     public static Scenario ByName(string name) =>

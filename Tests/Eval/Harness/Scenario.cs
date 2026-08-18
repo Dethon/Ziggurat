@@ -125,9 +125,16 @@ public sealed record CallExpectation
     public IReadOnlyList<ArgumentMatcher> Arguments { get; init; } = [];
 }
 
-// A call the scenario tolerates, by tool and path only. Both accept `*`.
-public sealed record CallPermission(string Tool, string Path = "*")
+// A call the scenario tolerates, by tool, by path and — where the tool runs something — by the
+// command it ran. All three accept `*`.
+public sealed record CallPermission(string Tool, string Path = "*", string Command = "*")
 {
+    // Reading an action file's manual. The mount tells the agent to read an action's arguments
+    // before writing one, and `--help` is an exec like any other — so a scenario whose subject is
+    // which action ran has to tolerate the manual without tolerating the actions in that directory,
+    // which a path-only permission cannot express.
+    public static CallPermission Manual(string tool, string path) => new(tool, path, "*--help*");
+
     // Looking before acting is tolerated almost everywhere in this suite, and spelling out the
     // same four lines per scenario is how one of them ends up missing and reporting a glob as a
     // behavioural failure.
