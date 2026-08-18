@@ -44,6 +44,9 @@ public sealed record Scenario
     // catch a permitted call that did more than it was asked to.
     public IReadOnlyList<StateChange> Changes { get; init; } = [];
 
+    // What the files the turn touched must say afterwards.
+    public IReadOnlyList<FileExpectation> Files { get; init; } = [];
+
     // What the answer itself must look like. Declared only where the reply is part of the
     // contract: most scenarios are about which tool ran, and a limit invented to fill this in
     // would fail on wording rather than on behaviour.
@@ -107,6 +110,22 @@ public sealed record OrderingConstraint(string Before, string After);
 // of its attributes (`climate.salon#temperature`) — a thermostat set to another temperature has
 // changed without its state moving, and a scenario about setting one has to be able to say so.
 public sealed record StateChange(string Key, string To);
+
+// One file, and what it must say once the turn is over. Substrings rather than whole contents:
+// what the vault contract protects is the syntax around the change, and a scenario that pinned the
+// whole note would fail on the wording of the sentence the user asked for.
+public sealed record FileExpectation
+{
+    public required string Path { get; init; }
+
+    public IReadOnlyList<string> Contains { get; init; } = [];
+
+    public IReadOnlyList<string> Absent { get; init; } = [];
+
+    // Byte-identical to before the turn. The strongest thing a scenario can say about a file it
+    // did not ask to be edited, and the only one that catches an incidental rewrite whole.
+    public bool Unchanged { get; init; }
+}
 
 // A timer already running when the turn arrives, and — the part that matters — already partly
 // spent. A timer armed at the pinned instant has its whole duration left, so reading its spec and

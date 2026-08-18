@@ -17,8 +17,35 @@ public static class ScenarioChecks
         .. OutOfOrder(scenario, recording),
         .. OverCeiling(scenario, recording),
         .. Answered(scenario, recording),
-        .. Moved(scenario, recording)
+        .. Moved(scenario, recording),
+        .. Wrote(scenario, recording)
     ];
+
+    // What the files say once the turn is over, which is a different question from what was
+    // written: an edit that lands the sentence the user asked for and turns a wikilink into
+    // markdown on the way past made exactly one tool call, and it looked fine.
+    private static IEnumerable<string> Wrote(Scenario scenario, Recording recording) =>
+        scenario.Files.SelectMany(expectation =>
+            recording.FilesAfter.TryGetValue(expectation.Path, out var content)
+                ? Says(expectation, content, recording.FilesBefore.GetValueOrDefault(expectation.Path))
+                : [$"{expectation.Path} does not exist after the turn"]);
+
+    private static IEnumerable<string> Says(FileExpectation expectation, string content, string? before)
+    {
+        var missing = expectation.Contains
+            .Where(text => !content.Contains(text, StringComparison.Ordinal))
+            .Select(text => $"{expectation.Path} no longer carries '{text}'");
+
+        var lingering = expectation.Absent
+            .Where(text => content.Contains(text, StringComparison.Ordinal))
+            .Select(text => $"{expectation.Path} still carries '{text}'");
+
+        var rewritten = expectation.Unchanged && before is not null && before != content
+            ? [$"{expectation.Path} was to be left unchanged and was rewritten"]
+            : Enumerable.Empty<string>();
+
+        return [.. missing, .. lingering, .. rewritten];
+    }
 
     // Both halves of the same question, answered from one diff: did the change the user asked for
     // actually happen, and did anything else move while it did. The first catches a reply that

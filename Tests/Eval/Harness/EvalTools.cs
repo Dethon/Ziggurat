@@ -16,4 +16,6 @@ public static class EvalTools
     public static readonly string Remove = Prefix + VfsRemoveTool.Name;
     public static readonly string Exec = Prefix + VfsExecTool.Name;
     public static readonly string Search = Prefix + VfsTextSearchTool.Name;
+    public static readonly string Edit = Prefix + VfsTextEditTool.Name;
+    public static readonly string Move = Prefix + VfsMoveTool.Name;
 }

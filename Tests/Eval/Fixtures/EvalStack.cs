@@ -19,6 +19,7 @@ using McpServerScheduling.Modules;
 using McpServerScheduling.Settings;
 using McpServerTimers.Modules;
 using McpServerTimers.Settings;
+using McpServerVault.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -29,6 +30,7 @@ using Microsoft.Extensions.Time.Testing;
 using StackExchange.Redis;
 using Tests.Eval.Harness;
 using Tests.Integration.Fixtures;
+using VaultSettings = McpServerVault.Settings.McpSettings;
 
 namespace Tests.Eval.Fixtures;
 
@@ -55,6 +57,11 @@ public sealed class EvalStack : IAsyncDisposable
     // The home behind the Home Assistant server: what a scenario reads to ask whether the change
     // it wanted happened, and whether anything else moved.
     public FakeHomeAssistant Home { get; } = new();
+
+    // The directory the vault server is pointed at, so a scenario can read the notes back after
+    // the turn. Per run, and deleted with the stack: a note edited by the previous run would make
+    // this one's assertions about what survived meaningless.
+    public string VaultPath { get; private set; } = "";
 
     // One instant for the agent's decoration and for every server, so an expected fire time is an
     // exact string. It never advances: a clock that ticks would make a timer's remaining seconds a
@@ -89,7 +96,8 @@ public sealed class EvalStack : IAsyncDisposable
         {
             ["mcp-timers"] = await stack.StartTimersAsync(scenario),
             ["mcp-scheduling"] = await stack.StartSchedulingAsync(shipped, redisConnectionString),
-            ["mcp-homeassistant"] = await stack.StartHomeAssistantAsync()
+            ["mcp-homeassistant"] = await stack.StartHomeAssistantAsync(),
+            ["mcp-vault"] = await stack.StartVaultAsync()
         });
 
         return stack;
@@ -146,6 +154,24 @@ public sealed class EvalStack : IAsyncDisposable
         }
 
         Clock.SetUtcNow(scenario.Instant);
+    }
+
+    // The vault, seeded into a temp directory the server is pointed at. Nothing is faked here —
+    // the backend a deployment runs is a directory on disk, so the eval gives it one.
+    private async Task<string> StartVaultAsync()
+    {
+        VaultPath = EvalVault.Seed();
+
+        var port = TestPort.GetAvailable();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.Services.ConfigureMcp(new VaultSettings
+        {
+            VaultPath = VaultPath,
+            AllowedExtensions = [".md", ".txt", ".json", ".yaml", ".yml"]
+        });
+
+        return await StartAsync(builder, port);
     }
 
     // Home Assistant's own server, with the home behind it faked at the REST API. The catalog, the
@@ -291,6 +317,11 @@ public sealed class EvalStack : IAsyncDisposable
         if (_agentServices is not null)
         {
             await _agentServices.DisposeAsync();
+        }
+
+        if (Directory.Exists(VaultPath))
+        {
+            Directory.Delete(VaultPath, recursive: true);
         }
     }
 }

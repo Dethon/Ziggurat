@@ -88,6 +88,77 @@ public class ScenarioChecksTests
     }
 
     [Fact]
+    public async Task ANoteThatLostSyntaxTheEditDidNotTouch_FailsTheScenario()
+    {
+        // The whole risk of editing somebody's notes: the change asked for lands, and a wikilink
+        // becomes a markdown link on the way past. Only the file's own text after the turn says so.
+        var recording = await Written(
+            "/vault/Cocina/Pasta.md", "---\ntags: [receta]\n---\nVer [salsas](Salsas.md)\n");
+
+        var scenario = Timer() with
+        {
+            Required = [],
+            Permitted = [new CallPermission(Create, "*")],
+            Files = [new FileExpectation { Path = "/vault/Cocina/Pasta.md", Contains = ["[[Salsas]]"] }]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("[[Salsas]]");
+    }
+
+    [Fact]
+    public async Task ATextTheEditWasSupposedToRemove_FailsWhileItIsStillThere()
+    {
+        var recording = await Written("/vault/Cocina/Pasta.md", "Ver [[Salsas]]\n");
+
+        var scenario = Timer() with
+        {
+            Required = [],
+            Permitted = [new CallPermission(Create, "*")],
+            Files = [new FileExpectation { Path = "/vault/Cocina/Pasta.md", Absent = ["[[Salsas]]"] }]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("still");
+    }
+
+    [Fact]
+    public async Task AFileDeclaredUntouched_FailsWhenTheTurnRewroteIt()
+    {
+        var recording = await Written("/vault/Cocina/Pasta.md", "rewritten");
+        recording.FilesBefore = new Dictionary<string, string> { ["/vault/Cocina/Pasta.md"] = "original" };
+
+        var scenario = Timer() with
+        {
+            Required = [],
+            Permitted = [new CallPermission(Create, "*")],
+            Files = [new FileExpectation { Path = "/vault/Cocina/Pasta.md", Unchanged = true }]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("unchanged");
+    }
+
+    [Fact]
+    public async Task AFileTheTurnWasSupposedToWrite_FailsWhenItIsNotThere()
+    {
+        var recording = await Written("/vault/Cocina/Otra.md", "algo");
+
+        var scenario = Timer() with
+        {
+            Required = [],
+            Permitted = [new CallPermission(Create, "*")],
+            Files = [new FileExpectation { Path = "/vault/Cocina/Tortilla.md", Contains = ["patata"] }]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("does not exist");
+    }
+
+    private static async Task<Recording> Written(string path, string content)
+    {
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, path));
+        recording.FilesAfter = new Dictionary<string, string> { [path] = content };
+        return recording;
+    }
+
+    [Fact]
     public async Task AReplyThatBreaksItsOwnContract_FailsTheScenario()
     {
         // The reply travels with the calls rather than beside them: a turn that called exactly the
