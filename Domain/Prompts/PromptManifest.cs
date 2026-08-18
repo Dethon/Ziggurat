@@ -99,7 +99,8 @@ public static class PromptManifest
             Purpose = "Searching, loading and reading pages, and what to do when one refuses.",
             Priority = PromptPriority.Client,
             TokenBudget = 1_500,
-            ServedBy = "mcp-websearch"
+            ServedBy = "mcp-websearch",
+            Claims = WebBrowsingPrompt.Claims
         },
         new()
         {

@@ -111,6 +111,46 @@ public static class ClaimExemptions
         [FileSystemToolFeature.TransferIsOneCall.Id] =
             "The single-call transfer needs two writable mounts, and for the same reason as above "
             + "there is only one.",
+        [WebBrowsingPrompt.UrlComesFromASearch.Id] =
+            "Not falsifiable against a served site: its pages live on a loopback address and "
+            + "whichever port was free when the stack came up, so no model can reach one without "
+            + "searching. The scenarios require the search and get it for free — what would "
+            + "witness this rule is a page whose url is guessable, which is the opposite of what "
+            + "the offline boundary is for.",
+        [WebBrowsingPrompt.AnswerComesFromWhatWasRead.Id] =
+            "Demonstrated on 2026-08-19 with both sentences deleted — the paragraph telling it to "
+            + "read the page and the bullet telling it to answer from what it found: the museum's "
+            + "opening time still came back as the page's 10:30 rather than the snippet's 9:00. "
+            + "Preferring the page it opened over the summary it was shown is this model's own "
+            + "behaviour; the scenario stays as the guard against a model that stops.",
+        [WebBrowsingPrompt.UrlsAreCitedOnlyInWriting.Id] =
+            "Demonstrated on 2026-08-19 with the citation rule deleted: the spoken reply still "
+            + "carried no url. The voice section forbids anything unspeakable on the same turn, so "
+            + "this rule cannot be isolated on a spoken scenario — and on a written one there is "
+            + "nothing to catch, because citing is what it asks for.",
+        [WebBrowsingPrompt.RawContentIsNeverDumped.Id] =
+            "Asserted as a side condition — the spoken research scenario is bounded to two "
+            + "sentences, which no page dump fits in — but the written half needs a turn against a "
+            + "page long enough that pasting it is a temptation.",
+        [WebBrowsingPrompt.ActionsChainFromTheDiff.Id] =
+            "About how many snapshots a flow costs rather than about what it did, so it is only "
+            + "visible as a call count. The booking scenario's ceiling bounds it, but a scenario "
+            + "whose subject is the chaining needs a page with more steps than this one.",
+        [WebBrowsingPrompt.BrowseReadsAndSnapshotStructures.Id] =
+            "The negative half of the rule — not calling both for the same purpose — is a "
+            + "judgement about intent that a call log cannot make.",
+        [WebBrowsingPrompt.TypeReactsAndFillSets.Id] =
+            "Needs a field that reacts to keystrokes, which means an autocomplete with its own "
+            + "javascript; the served site is static on purpose.",
+        [WebBrowsingPrompt.StepsAreNotReported.Id] =
+            "Checked negatively where a scenario bounds the reply, and nothing checks the general "
+            + "rule: the written scenarios' replies are allowed to be as long as the answer needs.",
+        [WebBrowsingPrompt.PartialContentIsFetchedOnce.Id] =
+            "Needs a page longer than the browse tool's default limit and a scenario that counts "
+            + "how many times the rest of it was fetched.",
+        [WebBrowsingPrompt.BackIsAnAction.Id] =
+            "Needs a turn that goes two pages deep and comes back, which the three-page site "
+            + "supports and no scenario asks for yet.",
         [VaultPrompt.WikilinksAreNeverFixed.Id] =
             "Demonstrated on 2026-08-18 with the wikilink rule deleted: the edit landed and every "
             + "link came out untouched. This model does not tidy syntax it was not asked about, so "

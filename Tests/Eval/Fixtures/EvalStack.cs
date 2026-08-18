@@ -12,6 +12,7 @@ using Domain.Tools.Memory;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Clients.Browser;
 using Infrastructure.Clients.HomeAssistant;
 using Infrastructure.Clients.Voice;
 using Mcp.Hosting;
@@ -22,6 +23,8 @@ using McpServerScheduling.Settings;
 using McpServerTimers.Modules;
 using McpServerTimers.Settings;
 using McpServerVault.Modules;
+using McpServerWebSearch.Modules;
+using McpServerWebSearch.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -29,10 +32,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
+using Microsoft.Playwright;
 using StackExchange.Redis;
 using Tests.Eval.Harness;
 using Tests.Integration.Fixtures;
+using HomeAssistantSettings = McpServerHomeAssistant.Settings.McpSettings;
 using VaultSettings = McpServerVault.Settings.McpSettings;
+using WebSearchSettings = McpServerWebSearch.Settings.McpSettings;
 
 namespace Tests.Eval.Fixtures;
 
@@ -53,6 +59,8 @@ public sealed class EvalStack : IAsyncDisposable
 
     private readonly List<IHost> _servers = [];
     private ServiceProvider? _agentServices;
+    private IPlaywright? _playwright;
+    private IBrowser? _browser;
 
     public FakeVoiceHub VoiceHub { get; } = new(Roster);
 
@@ -64,6 +72,11 @@ public sealed class EvalStack : IAsyncDisposable
     // the turn. Per run, and deleted with the stack: a note edited by the previous run would make
     // this one's assertions about what survived meaningless.
     public string VaultPath { get; private set; } = "";
+
+    // The site every web scenario browses, and the search engine that points at it. Served by the
+    // test host so the pages hold still: a scenario asserting what a page says cannot depend on
+    // somebody else's site, and no scenario in this suite reaches the internet.
+    public EvalWeb Web { get; private set; } = null!;
 
     // Music Assistant, faked at its own server the way ADR-0030 says. It exists for one action —
     // a podcast's episode list — which Home Assistant has no service for and which is the only way
@@ -114,7 +127,8 @@ public sealed class EvalStack : IAsyncDisposable
             ["mcp-timers"] = await stack.StartTimersAsync(scenario),
             ["mcp-scheduling"] = await stack.StartSchedulingAsync(shipped, redisConnectionString),
             ["mcp-homeassistant"] = await stack.StartHomeAssistantAsync(),
-            ["mcp-vault"] = await stack.StartVaultAsync()
+            ["mcp-vault"] = await stack.StartVaultAsync(),
+            ["mcp-websearch"] = await stack.StartWebSearchAsync()
         });
 
         return stack;
@@ -200,7 +214,7 @@ public sealed class EvalStack : IAsyncDisposable
         var port = TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
-        builder.Services.ConfigureMcp(new McpSettings
+        builder.Services.ConfigureMcp(new HomeAssistantSettings
         {
             HomeAssistant = new HomeAssistantConfiguration
             {
@@ -223,6 +237,55 @@ public sealed class EvalStack : IAsyncDisposable
             .ConfigurePrimaryHttpMessageHandler(() => Home);
 
         return await StartAsync(builder, port);
+    }
+
+    // The websearch server, with both of its externals replaced and nothing else: Brave answers
+    // from a table, and the browser is a local Chromium rather than the remote hardened Firefox a
+    // deployment connects to. Everything between them — the tools, the session manager, the
+    // accessibility snapshot, the modal dismisser — is the deployment's own.
+    private async Task<string> StartWebSearchAsync()
+    {
+        Web = await EvalWeb.StartAsync();
+
+        var port = TestPort.GetAvailable();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.Services.ConfigureMcp(new WebSearchSettings
+        {
+            BraveSearch = new BraveSearchConfiguration
+            {
+                ApiKey = "eval",
+                ApiUrl = "http://brave.eval/res/v1/"
+            }
+        });
+
+        // The typed client keeps its name from the interface it is registered against.
+        builder.Services.AddHttpClient(nameof(IWebSearchClient))
+            .ConfigurePrimaryHttpMessageHandler(() => Web.Search);
+
+        builder.Services.Replace(ServiceDescriptor.Singleton<IWebBrowser>(
+            _ => new PlaywrightWebBrowser(browserFactory: LaunchAsync)));
+
+        return await StartAsync(builder, port);
+    }
+
+    // One browser per stack, launched locally. Camoufox exists to get past anti-bot defences that
+    // a page served by this process does not have, so what a scenario would gain from connecting
+    // to one is a dependency rather than fidelity.
+    private async Task<IBrowser> LaunchAsync()
+    {
+        _playwright ??= await Playwright.CreateAsync();
+        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false",
+            // Everything but this machine goes to a proxy that is not listening, so a scenario
+            // cannot quietly leave the building: a page nobody in this process served fails to
+            // load rather than answering. Chromium bypasses loopback regardless of this setting,
+            // which is what leaves the served site reachable.
+            Proxy = new Microsoft.Playwright.Proxy { Server = "http://127.0.0.1:1", Bypass = "127.0.0.1,localhost" }
+        });
+
+        return _browser;
     }
 
     // The scheduling server, on the same Redis the agent uses. Its keys are fixed names rather
@@ -356,6 +419,14 @@ public sealed class EvalStack : IAsyncDisposable
         }
 
         await Music.DisposeAsync();
+        await Web.DisposeAsync();
+
+        if (_browser is not null)
+        {
+            await _browser.CloseAsync();
+        }
+
+        _playwright?.Dispose();
 
         if (Directory.Exists(VaultPath))
         {

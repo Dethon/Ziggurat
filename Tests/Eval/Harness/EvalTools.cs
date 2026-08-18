@@ -1,6 +1,7 @@
 using Domain.Tools.FileSystem;
 using Domain.Tools.Memory;
 using Domain.Tools.SubAgents;
+using Domain.Tools.Web;
 
 namespace Tests.Eval.Harness;
 
@@ -18,6 +19,15 @@ public static class EvalTools
 
     // The only memory action there is: storing and recalling happen without the agent asking.
     public static readonly string Forget = "domain__memory__" + MemoryForgetTool.Name;
+
+    // Served over MCP, so the name carries the endpoint the agent dialled — host and port — and
+    // the port is whatever was free when the stack came up. The wildcard is matched as a pattern.
+    private const string Served = "mcp__*__";
+
+    public static readonly string WebSearch = Served + WebSearchTool.Name;
+    public static readonly string WebBrowse = Served + WebBrowseTool.Name;
+    public static readonly string WebSnapshot = Served + WebSnapshotTool.Name;
+    public static readonly string WebAction = Served + WebActionTool.Name;
 
     public static readonly string Create = Prefix + VfsTextCreateTool.Name;
     public static readonly string Read = Prefix + VfsFileReadTool.Name;

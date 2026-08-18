@@ -7,7 +7,7 @@ public record WebSnapshotToolResult(JsonNode Envelope, string? Body);
 
 public class WebSnapshotTool(IWebBrowser browser)
 {
-    protected const string Name = "web_snapshot";
+    public const string Name = "web_snapshot";
 
     protected const string Description =
         """
