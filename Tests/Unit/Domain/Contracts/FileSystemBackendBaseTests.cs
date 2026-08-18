@@ -74,8 +74,9 @@ public class FileSystemBackendBaseTests
 
         // A mount that implements nothing has nothing to offer instead, and says that rather than
         // an empty list.
-        bare!.Recovery.ShouldContain("/bare");
-        bare.Recovery.ShouldContain("Nothing");
+        var recovery = bare!.Recovery.ShouldNotBeNull();
+        recovery.ShouldContain("/bare");
+        recovery.ShouldContain("Nothing");
     }
 
     // The list is the mount's own overrides, read exactly as the MCP registrar reads them, so what
@@ -87,8 +88,9 @@ public class FileSystemBackendBaseTests
 
         refused!.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
         refused.Retryable.ShouldBeFalse();
-        refused.Recovery.ShouldContain(VfsFileReadTool.Name);
-        refused.Recovery.ShouldNotContain(VfsExecTool.Name);
+        var recovery = refused.Recovery.ShouldNotBeNull();
+        recovery.ShouldContain(VfsFileReadTool.Name);
+        recovery.ShouldNotContain(VfsExecTool.Name);
     }
 
     // A mount that implements one operation. Its capability list is read off the override, exactly
