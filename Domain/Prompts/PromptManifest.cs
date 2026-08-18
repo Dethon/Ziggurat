@@ -1,3 +1,5 @@
+using Domain.Tools.FileSystem;
+
 namespace Domain.Prompts;
 
 // Every section that can reach a system prompt, declared in one table. What a section is for,
@@ -67,7 +69,10 @@ public static class PromptManifest
             Name = FilesystemMounts,
             Purpose = "The mounts this session actually has, and which one a path belongs under.",
             Priority = PromptPriority.FileSystem,
-            TokenBudget = 500
+            TokenBudget = 500,
+            // The words are generated from the registry, so the claims live beside the code that
+            // builds them rather than in a prompt file of their own.
+            Claims = FileSystemToolFeature.Claims
         },
         new()
         {
