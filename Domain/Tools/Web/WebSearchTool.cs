@@ -5,7 +5,7 @@ namespace Domain.Tools.Web;
 
 public class WebSearchTool(IWebSearchClient searchClient)
 {
-    protected const string Name = "web_search";
+    public const string Name = "web_search";
 
     protected const string Description = """
                                          Searches the web and returns relevant results with titles, snippets, and URLs.

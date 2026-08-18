@@ -7,7 +7,7 @@ public record WebBrowseToolResult(JsonNode Envelope, string? Body, string? Snaps
 
 public class WebBrowseTool(IWebBrowser browser)
 {
-    protected const string Name = "web_browse";
+    public const string Name = "web_browse";
 
     protected const string Description =
         """

@@ -231,7 +231,9 @@ public static class ScenarioChecks
 
     private static bool Matches(CallExpectation expectation, ToolInvocation call)
     {
-        if (!string.Equals(expectation.Tool, call.ToolName, StringComparison.OrdinalIgnoreCase))
+        // By pattern rather than by equality: a tool served over MCP is named after the endpoint it
+        // was dialled on, host and port, and the port is whatever was free when the stack came up.
+        if (!new ToolPatternMatcher([expectation.Tool]).IsMatch(call.ToolName))
         {
             return false;
         }

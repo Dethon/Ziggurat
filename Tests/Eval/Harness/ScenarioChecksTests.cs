@@ -478,6 +478,39 @@ public class ScenarioChecksTests
         Permitted = [CallPermission.Manual(Exec, "/ha*")]
     };
 
+    [Fact]
+    public async Task ARequiredCallNamedByPattern_MatchesTheServerThatActuallyAnswered()
+    {
+        // An MCP tool is named after the endpoint it was dialled on — host and port — and the port
+        // is whatever was free when the stack came up. A scenario that spelled the whole name would
+        // pass on nothing.
+        var recording = await ScriptedTurn.RunAsync(
+            "listo", ScriptedTurn.Call("mcp__localhost-49812__web_search"));
+
+        ScenarioChecks.Failures(Searching(), recording).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task APatternThatMatchesNothingCalled_StillFails()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo", ScriptedTurn.Call("mcp__localhost-49812__web_browse"));
+
+        ScenarioChecks.Failures(Searching(), recording)
+            .ShouldContain(f => f.Contains("never happened"));
+    }
+
+    private static Scenario Searching() => new()
+    {
+        Name = "search before browsing",
+        AgentId = "jonas",
+        Turn = new EvalTurn { Text = "busca la receta", Sender = "jack" },
+        Instant = new DateTimeOffset(2026, 8, 18, 20, 0, 0, TimeSpan.FromHours(2)),
+        CallCeiling = 3,
+        Required = [new CallExpectation { Label = "search", Tool = "mcp__*__web_search" }],
+        Permitted = [new CallPermission("mcp__*__web_browse")]
+    };
+
     private static Scenario Corrected() => new()
     {
         Name = "a corrected employer is forgotten",

@@ -6,12 +6,45 @@ contain the exact trap the claim is about.
 
 **Blocked by:** 05, 06.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The test host serves a static site, and a fake search server returns results pointing into
-      it.
-- [ ] A research turn searches, opens a result, reads it, and answers from what it read.
-- [ ] An action turn snapshots the page before acting on it; acting first fails the scenario.
-- [ ] A page whose content contradicts the search snippet is answered from the page.
-- [ ] No scenario in this family reaches the public internet.
-- [ ] Every scenario cites its claims and was demonstrated red once.
+- [x] The test host serves a static site, and a fake search server returns results pointing into
+      it. Three pages — a recipe, a museum's opening hours, a booking form — and Brave's own
+      response shape through Brave's own client. The websearch server runs in process with both of
+      its externals replaced and nothing else: search answers from a table, and the browser is a
+      locally launched Chromium instead of the remote hardened Firefox a deployment connects to.
+- [x] A research turn searches, opens a result, reads it, and answers from what it read. The
+      resting time is in the article and deliberately not in the snippet, so an answer carrying it
+      is an answer from a page that was loaded.
+- [x] An action turn snapshots the page before acting on it; acting first fails the scenario,
+      because a ref that was never in a snapshot addresses nothing. The proof that the booking
+      went through is the code on the confirmation page, which exists nowhere else.
+- [x] A page whose content contradicts the search snippet is answered from the page: the snippet
+      still advertises the old opening time and the page's first line corrects it.
+- [x] No scenario in this family reaches the public internet, and it is the browser that
+      guarantees it rather than a rule somebody has to remember: Chromium is launched behind a
+      proxy that is not listening, bypassed only for loopback. A fixture test proves a public page
+      cannot load while the served site can.
+- [ ] Every scenario cites its claims and was demonstrated red once. One of four cited claims
+      survived; the other three are exemptions:
+      - **Cited.** Refs come from a snapshot: deleting the interaction workflow turned the booking
+        red on both runs. What the model did instead of snapshotting was hand the whole booking to
+        a worker — the same reflex ticket 16 recorded — so without that prose it does not attempt
+        the interaction at all.
+      - **Withdrawn.** A url comes from a search: not falsifiable here. The served pages live on a
+        loopback address and a random port, so searching is forced by the fixture.
+      - **Withdrawn.** The answer comes from what was read: both sentences deleted, and the museum
+        answer still came from the page rather than from the snippet.
+      - **Withdrawn.** Urls are cited only in writing: deleted, and the spoken reply still carried
+        no url — the voice section forbids one on the same turn.
+
+**Two things this ticket changed in the harness.** A required call is matched by pattern rather
+than by name, because a tool served over MCP is named after the endpoint it was dialled on — host
+and port — and the port is whatever was free. And the booking scenario names the site rather than
+describing it: "el taller del barrio" reads as research, and research is handed to a worker about
+half the time, which would have made the scenario a measurement of that reflex.
+
+**One fixture defect worth recording**, found by the first failing run rather than by reading the
+code: the form originally answered its own POST with the confirmation, so the code lived at the
+form's url and every later read of that url returned the empty form. The model did everything
+right and reported, correctly, that the page showed no code. It is post/redirect/get now.
