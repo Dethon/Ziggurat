@@ -1,4 +1,5 @@
 using Domain.Tools.FileSystem;
+using Domain.Tools.SubAgents;
 
 namespace Tests.Eval.Harness;
 
@@ -8,6 +9,11 @@ namespace Tests.Eval.Harness;
 public static class EvalTools
 {
     private const string Prefix = "domain__filesystem__";
+
+    // Not a filesystem tool, and not judged like one: what a scenario declares about delegation is
+    // which worker ran and what it was told, so the call itself answers to that declaration rather
+    // than to the permitted set.
+    public static readonly string Delegate = "domain__subagents__" + SubAgentRunTool.Name;
 
     public static readonly string Create = Prefix + VfsTextCreateTool.Name;
     public static readonly string Read = Prefix + VfsFileReadTool.Name;

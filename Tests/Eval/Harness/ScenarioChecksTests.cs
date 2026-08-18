@@ -1,4 +1,5 @@
 using Shouldly;
+using Tests.Eval.Fixtures;
 
 namespace Tests.Eval.Harness;
 
@@ -156,6 +157,103 @@ public class ScenarioChecksTests
         var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, path));
         recording.FilesAfter = new Dictionary<string, string> { [path] = content };
         return recording;
+    }
+
+    [Fact]
+    public async Task ATurnThatDelegatedWhenNothingWasDeclared_Fails()
+    {
+        // Declaring nothing is how a scenario says "do this yourself": a lookup that takes one call
+        // is slower and worse through a worker, and nothing else in the recording would show it.
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.Delegations = [new Delegation("jonas-worker", "mira el temporizador")];
+
+        ScenarioChecks.Failures(Timer(), recording).ShouldHaveSingleItem().ShouldContain("jonas-worker");
+    }
+
+    [Fact]
+    public async Task ADeclaredDelegation_DoesNotAlsoHaveToBePermittedAsACall()
+    {
+        // The declaration is the permission. A scenario that had to say it twice would report a
+        // correct decision as an unnecessary call the first time somebody forgot the second line.
+        var recording = await ScriptedTurn.RunAsync(
+            "Hecho", ScriptedTurn.Call(EvalTools.Delegate, "/ignored"));
+        recording.Delegations = [new Delegation("jonas-worker", "resume la carpeta Cocina")];
+
+        var scenario = Timer() with
+        {
+            Required = [],
+            Delegates = [new DelegationExpectation { Profile = "jonas-worker", Carries = ["Cocina"] }]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ATolerateDelegation_IsNotAFailure()
+    {
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.Delegations = [new Delegation("jonas-worker", "mira una cosa")];
+
+        ScenarioChecks.Failures(Timer() with { MayDelegateTo = ["jonas-worker"] }, recording)
+            .ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ADelegatedPromptMissingWhatTheTaskNeeds_Fails()
+    {
+        // The worker has no conversation history, so a url, a name or a requirement the parent left
+        // out of the prompt is simply gone by the time the work starts.
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.Delegations = [new Delegation("jonas-worker", "busca el precio")];
+
+        var scenario = Timer() with
+        {
+            Delegates = [new DelegationExpectation { Profile = "jonas-worker", Carries = ["ejemplo.com"] }]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("ejemplo.com");
+    }
+
+    [Fact]
+    public async Task TwoDeclaredDelegations_AreNotSatisfiedByOne()
+    {
+        // Two independent halves are two workers running at once; one worker told to do both is
+        // the sequence the delegation exists to avoid, and its prompt would satisfy both.
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.Delegations = [new Delegation("jonas-worker", "el tiempo en Madrid y el precio del bitcoin")];
+
+        var scenario = Timer() with
+        {
+            Delegates =
+            [
+                new DelegationExpectation { Profile = "jonas-worker", Carries = ["tiempo"] },
+                new DelegationExpectation { Profile = "jonas-worker", Carries = ["bitcoin"] }
+            ]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("bitcoin");
+    }
+
+    [Fact]
+    public async Task TwoDelegationsCarryingWhatTheyNeed_Pass()
+    {
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.Delegations =
+        [
+            new Delegation("jonas-worker", "dime el tiempo en Madrid mañana"),
+            new Delegation("jonas-worker", "dime el precio del bitcoin hoy")
+        ];
+
+        var scenario = Timer() with
+        {
+            Delegates =
+            [
+                new DelegationExpectation { Profile = "jonas-worker", Carries = ["tiempo", "Madrid"] },
+                new DelegationExpectation { Profile = "jonas-worker", Carries = ["bitcoin"] }
+            ]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
     }
 
     [Fact]

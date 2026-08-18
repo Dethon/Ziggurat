@@ -2,6 +2,7 @@ using System.Text.Json;
 using Domain.DTOs;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Utils;
+using Tests.Eval.Fixtures;
 
 namespace Tests.Eval.Harness;
 
@@ -18,8 +19,61 @@ public static class ScenarioChecks
         .. OverCeiling(scenario, recording),
         .. Answered(scenario, recording),
         .. Moved(scenario, recording),
-        .. Wrote(scenario, recording)
+        .. Wrote(scenario, recording),
+        .. Delegated(scenario, recording)
     ];
+
+    // Each declared task takes a delegation of its own, and every delegation has to answer to one:
+    // two independent halves are two workers running at once, and one worker told to do both is
+    // the sequence delegating was supposed to avoid — with a prompt that would satisfy both.
+    private static IEnumerable<string> Delegated(Scenario scenario, Recording recording)
+    {
+        var unmatched = recording.Delegations.ToList();
+
+        var missing = scenario.Delegates
+            .Select(expectation =>
+            {
+                // A delegation to the right profile that is missing something is consumed by the
+                // expectation it was trying to answer, so it is reported once — as the context it
+                // left out, rather than a second time as work nobody declared.
+                var match = unmatched.FirstOrDefault(d => Answers(expectation, d));
+                var attempt = match ?? unmatched.FirstOrDefault(d => SameProfile(expectation, d));
+                if (attempt is not null)
+                {
+                    unmatched.Remove(attempt);
+                }
+
+                return match is not null
+                    ? null
+                    : $"nothing was delegated to '{expectation.Profile}' carrying " +
+                      $"{string.Join(", ", expectation.Carries.Select(c => $"'{c}'"))}. " +
+                      $"Delegated: {Describe(recording)}";
+            })
+            .OfType<string>()
+            .ToList();
+
+        var undeclared = unmatched
+            .Where(delegation => !scenario.MayDelegateTo.Contains(
+                delegation.ProfileId, StringComparer.OrdinalIgnoreCase))
+            .Select(delegation =>
+            $"'{delegation.ProfileId}' was handed work the scenario did not declare: " +
+            $"\"{delegation.Prompt}\"");
+
+        return [.. missing, .. undeclared];
+    }
+
+    private static bool SameProfile(DelegationExpectation expectation, Delegation delegation) =>
+        string.Equals(expectation.Profile, delegation.ProfileId, StringComparison.OrdinalIgnoreCase);
+
+    private static bool Answers(DelegationExpectation expectation, Delegation delegation) =>
+        SameProfile(expectation, delegation)
+        && expectation.Carries.All(text =>
+            delegation.Prompt.Contains(text, StringComparison.OrdinalIgnoreCase));
+
+    private static string Describe(Recording recording) =>
+        recording.Delegations.Count == 0
+            ? "nothing"
+            : string.Join("; ", recording.Delegations.Select(d => $"{d.ProfileId}: \"{d.Prompt}\""));
 
     // What the files say once the turn is over, which is a different question from what was
     // written: an edit that lands the sentence the user asked for and turns a wikilink into
@@ -82,6 +136,10 @@ public static class ScenarioChecks
                 $"required call '{expectation.Label}' never happened: expected {expectation.Tool} with " +
                 $"{Describe(expectation)}. Seen: {Seen(recording)}");
 
+    // Delegation is left out of this check on purpose: a delegated task is policed exhaustively by
+    // the scenario's own declaration, which says which worker may be handed what — so a scenario
+    // that also had to permit the tool by name would be saying the same thing twice, and a scenario
+    // that forgot would report the model's correct decision as an unnecessary call.
     private static IEnumerable<string> Unnecessary(Scenario scenario, Recording recording)
     {
         // Compiled once for the whole recording rather than once per call: a permission is a pair
@@ -91,6 +149,7 @@ public static class ScenarioChecks
             .ToList();
 
         return recording.Calls
+            .Where(call => !string.Equals(call.ToolName, EvalTools.Delegate, StringComparison.Ordinal))
             .Where(call => !scenario.Required.Any(e => Matches(e, call))
                            && !permitted.Any(p => p.Tool.IsMatch(call.ToolName) && p.Path.IsMatch(Path(call))))
             .Select(call =>

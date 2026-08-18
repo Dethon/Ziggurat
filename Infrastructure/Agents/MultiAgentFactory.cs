@@ -81,8 +81,15 @@ public sealed class MultiAgentFactory(
         var spawn = new SpawnContext(
             spec.ConversationId, spec.UserId, spec.WhitelistPatterns, spec.UsesOutposts);
 
+        // The spawner is absent in every deployment, so the factory builds its own workers; when
+        // one is registered it stands in for them whole, which is the only way a scenario about
+        // the parent's decision can avoid paying for a worker's answer.
+        var spawner = serviceProvider?.GetService<ISubAgentSpawner>();
+
         var featureConfig = new FeatureConfig(
-            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, spawn),
+            SubAgentFactory: def => spawner is null
+                ? CreateSubAgent(def, approvalHandler, spawn)
+                : spawner.Spawn(def),
             UserId: spec.UserId,
             ConversationContextProvider: () => ConversationContextMeta.Current);
 

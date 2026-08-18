@@ -24,7 +24,9 @@ inventing another route.
       toolset instead of saying so — recorded for ticket 16.
 - [ ] A cross-mount transfer uses the single transfer call rather than a hand-rolled read/write
       loop. **Withdrawn** for the same reason: it needs two writable mounts and the eval has one.
-- [x] Every scenario was demonstrated red once. The absent-mount scenario earned its citation and
-      earned it loudly: with the envelope-is-data rule deleted, the model delegated the same
-      impossible listing to two different workers. Resolving an unprefixed path stayed green — the
-      mount list alone places a path — so that scenario cites nothing.
+- [x] Every scenario was demonstrated red once, and neither citation survived. The absent-mount
+      demonstration was red at first — with the envelope-is-data rule deleted the model handed the
+      same impossible listing to two workers — but a later run showed it does that about half the
+      time with the rule in place, so the scenario now tolerates one worker and measures the storm
+      through its ceiling, and the demonstration is green again. Resolving an unprefixed path
+      stayed green too: the mount list alone places a path. Both scenarios stay as guards.

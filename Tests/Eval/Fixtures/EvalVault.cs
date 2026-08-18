@@ -58,6 +58,13 @@ public static class EvalVault
             """);
 
         Write(root, "Diario/2026-08-17.md", "# 2026-08-17\n\n- Compré albahaca.\n");
+
+        // Bulk, so that "read all of it yourself" is a decision with a cost. Delegation is only a
+        // real choice when doing the work in place is expensive, and four notes are not.
+        Filler(root, "Cocina", "receta", "Arroz caldoso", "Pan de masa madre", "Postres de invierno",
+            "Verduras al horno", "Caldo de pollo", "Pescado al horno");
+        Filler(root, "Proyectos", "proyecto", "Reforma de la casa", "Revisión del coche",
+            "Viaje a Japón", "Curso de alemán", "Huerto del balcón", "Copia de seguridad");
         Write(root, "attachments/pesto.png", "not really a png, but it is where images live");
 
         // Obsidian's own configuration, which the contract puts off limits. It is seeded precisely
@@ -77,6 +84,22 @@ public static class EvalVault
                     file => $"{Mount}/{Path.GetRelativePath(root, file).Replace('\\', '/')}",
                     File.ReadAllText)
             : new Dictionary<string, string>();
+
+    private static void Filler(string root, string folder, string tag, params string[] titles) =>
+        titles.ToList().ForEach(title => Write(root, $"{folder}/{title}.md",
+            $"""
+            ---
+            tags: [{tag}]
+            ---
+
+            # {title}
+
+            Notas sueltas sobre {title.ToLowerInvariant()}, pendientes de ordenar.
+
+            - Primer punto, con su detalle y su motivo.
+            - Segundo punto, que depende del anterior.
+            - Tercer punto, que quedó a medias en agosto.
+            """));
 
     private static void Write(string root, string relativePath, string content)
     {

@@ -12,6 +12,43 @@ public static class ClaimExemptions
 {
     public static IReadOnlyDictionary<string, string> Reasons { get; } = new Dictionary<string, string>
     {
+        [SubAgentPrompt.ParallelPartsAreDelegated.Id] =
+            "Written, run three times on 2026-08-18 and withdrawn, because it does not hold. Asked "
+            + "to summarise two unrelated vault folders 'a la vez, por separado', the model delegated "
+            + "both halves once, then on the next runs did the work itself — 17 sequential reads in "
+            + "its own turn, which is precisely what the prose tells it not to do. Making the folders "
+            + "heavier did not change it. This is a finding about the deployment rather than about "
+            + "the harness: the rule is stated and is not followed, and a scenario asserting it would "
+            + "be a red test rather than a guard.",
+        [SubAgentPrompt.NoWorkerIsNamed.Id] =
+            "Only assertable on a turn that delegated, and the one scenario that reliably delegates "
+            + "is the negative one — see the exemption above.",
+        [SubAgentPrompt.ASingleCallIsDoneInPlace.Id] =
+            "Demonstrated on 2026-08-18 with the do-it-yourself bullet deleted: the model still read "
+            + "the timer's status itself rather than handing it to a worker. The scenario stays as a "
+            + "guard — the same model delegates readily in other shapes, so this is worth watching.",
+        [SubAgentPrompt.HeavyWorkIsDelegated.Id] =
+            "Research and searching are what makes work heavy, and the eval hosts no search — "
+            + "tickets 15 and 16 together.",
+        [SubAgentPrompt.ContextBoundWorkIsNotDelegated.Id] =
+            "Needs a turn whose task depends on what was said earlier in the conversation, and every "
+            + "scenario in the suite is a single turn against an empty history.",
+        [SubAgentPrompt.PromptIsSelfContained.Id] =
+            "Asserted as a side condition — each delegated prompt must name the folder it is about — "
+            + "but the rule's real subject is a url or a name the user gave that only the parent saw.",
+        [SubAgentPrompt.SuccessCriteriaAreStated.Id] =
+            "What a good result looks like is a judgement about a sentence, which the deterministic "
+            + "checks cannot make; it waits on the judge pass.",
+        [SubAgentPrompt.AnswerIsSynthesised.Id] =
+            "Distinguishing a synthesis from a paste needs the worker's text and the reply compared "
+            + "for overlap, which is a check worth writing and not written yet.",
+        [FileSystemToolFeature.AnEnvelopeIsDataNotAReasonToRetry.Id] =
+            "Cited on 2026-08-18 and withdrawn the same day. The first demonstration turned red "
+            + "because the model handed the impossible listing to two workers, but a later run "
+            + "showed it does that about half the time with the prose still in place — so the "
+            + "scenario now tolerates one worker and measures the storm through its ceiling, and "
+            + "with that tolerance the demonstration is green again. The retry rule needs a turn "
+            + "where retrying is the only thing left to do.",
         [FileSystemToolFeature.PathStartsAtAMount.Id] =
             "Demonstrated on 2026-08-18 with the sentence deleted: the model still resolved an "
             + "unprefixed note to the vault. The mount list that follows the sentence is enough on "

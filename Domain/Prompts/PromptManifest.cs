@@ -54,7 +54,8 @@ public static class PromptManifest
             Priority = PromptPriority.Feature,
             TokenBudget = 600,
             Conflict = ConflictPolicy.Governs(
-                PromptRules.ToolUse, PromptRules.Formatting, PromptRules.Verbosity)
+                PromptRules.ToolUse, PromptRules.Formatting, PromptRules.Verbosity),
+            Claims = SubAgentPrompt.Claims
         },
         new()
         {

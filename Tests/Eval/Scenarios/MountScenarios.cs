@@ -72,10 +72,16 @@ public static class MountScenarios
             new CallPermission(EvalTools.Info, "*"),
             new CallPermission(EvalTools.Read, "/media*")
         ],
-        // Three calls is a look, a second look and a stop. A model that keeps trying prefixes
-        // breaks this before it answers.
+        // A worker is tolerated rather than required: about half the time this model hands the
+        // impossible listing to one, and what the contract forbids is trying harder, not trying
+        // once. The ceiling is where that is measured — a delegation counts as a call like any
+        // other, so a model that asks two workers and globs twice breaks it.
+        MayDelegateTo = ["jonas-worker", "jack-worker"],
         CallCeiling = 3,
-        Claims = [FileSystemToolFeature.AnEnvelopeIsDataNotAReasonToRetry.Id],
+        // No citation, after a correction: the demonstration that turned this red counted a single
+        // delegation as a failure, and this model delegates an impossible listing about half the
+        // time with the prose still in place. Tolerating that made the demonstration green again,
+        // so what is left is a ceiling that catches a storm — worth having, and not evidence.
         Policy = new RunPolicy(2, 3)
     };
 }
