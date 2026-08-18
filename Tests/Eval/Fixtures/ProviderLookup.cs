@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Domain.DTOs;
+using Infrastructure.Agents.ChatClients;
 
 namespace Tests.Eval.Fixtures;
 

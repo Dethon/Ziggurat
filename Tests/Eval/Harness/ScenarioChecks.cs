@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.DTOs;
+using Infrastructure.Agents.ChatClients;
 using Infrastructure.Utils;
 
 namespace Tests.Eval.Harness;
@@ -41,11 +42,16 @@ public static class ScenarioChecks
 
     // Pairwise and partial: the constraint is that one call precedes another, not that the
     // recording has a total order. Anything between them is somebody else's business.
+    //
+    // Satisfied by the earliest A against the latest B, because either side can happen more than
+    // once: a model that deleted, thought better of it, read the status and deleted again did do
+    // the two in the order the contract asks for, and matching only the first of each would call
+    // that a violation on the strength of the false start.
     private static IEnumerable<string> OutOfOrder(Scenario scenario, Recording recording) =>
         scenario.Ordering.Select(constraint =>
         {
-            var before = Match(Expectation(scenario, constraint.Before), recording);
-            var after = Match(Expectation(scenario, constraint.After), recording);
+            var before = Matches(scenario, constraint.Before, recording).FirstOrDefault();
+            var after = Matches(scenario, constraint.After, recording).LastOrDefault();
 
             return (before, after) switch
             {
@@ -59,6 +65,10 @@ public static class ScenarioChecks
                 _ => null
             };
         }).OfType<string>();
+
+    private static IEnumerable<ToolInvocation> Matches(
+        Scenario scenario, string label, Recording recording) =>
+        recording.Calls.Where(call => Matches(Expectation(scenario, label), call));
 
     private static IEnumerable<string> OverCeiling(Scenario scenario, Recording recording) =>
         recording.Calls.Count > scenario.CallCeiling

@@ -10,7 +10,7 @@ namespace Tests.Unit.Infrastructure.Agents.ChatClients;
 public class OpenRouterServedRouteTests
 {
     [Fact]
-    public void ARouteIsReadOffAChatCompletionsChunk()
+    public void ARoute_IsReadOffAChatCompletionsChunk()
     {
         var route = OpenRouterHttpHelpers.ExtractRouteFromSseData(
             """{"id":"gen-1","provider":"Fireworks","model":"openai/gpt-5.6-luna","choices":[]}""");
@@ -21,7 +21,7 @@ public class OpenRouterServedRouteTests
     }
 
     [Fact]
-    public void ARouteIsReadOffAResponsesEvent()
+    public void ARoute_IsReadOffAResponsesEvent()
     {
         var route = OpenRouterHttpHelpers.ExtractRouteFromSseData(
             """
@@ -34,14 +34,14 @@ public class OpenRouterServedRouteTests
     }
 
     [Fact]
-    public void AChunkNamingNeitherIsNotARoute()
+    public void AChunkNamingNeither_IsNotARoute()
     {
         OpenRouterHttpHelpers.ExtractRouteFromSseData(
             """{"type":"response.output_text.delta","delta":"hola"}""").ShouldBeNull();
     }
 
     [Fact]
-    public void AProviderlessChunkStillNamesTheModel()
+    public void AProviderlessChunk_StillNamesTheModel()
     {
         // Not every wire reports the provider, and the model alone still separates a routing
         // surprise from a prompt defect.
@@ -54,7 +54,7 @@ public class OpenRouterServedRouteTests
     }
 
     [Fact]
-    public void AGenerationIdIsCarriedForTheWireThatNamesNoProvider()
+    public void AGenerationId_IsCarriedForTheWireThatNamesNoProvider()
     {
         // The Responses wire reports no provider at all, so the id is the only handle the name can
         // be recovered from — by a caller willing to pay a request for it, which no turn is.
@@ -69,7 +69,7 @@ public class OpenRouterServedRouteTests
     }
 
     [Fact]
-    public void AnIdThatIsNotAGenerationIsIgnored()
+    public void AnIdThatIsNotAGeneration_IsIgnored()
     {
         // Every event on the Responses wire carries some id; only OpenRouter's own generation id
         // can be looked up, and storing a message id under that name would send the lookup
@@ -79,7 +79,7 @@ public class OpenRouterServedRouteTests
     }
 
     [Fact]
-    public void MalformedDataIsNotARoute()
+    public void MalformedData_IsNotARoute()
     {
         OpenRouterHttpHelpers.ExtractRouteFromSseData("not json at all").ShouldBeNull();
     }

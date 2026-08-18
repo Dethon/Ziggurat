@@ -1,4 +1,7 @@
 using Domain.DTOs;
+using Domain.Prompts;
+using Infrastructure.Agents.ChatClients;
+using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
 
 namespace Tests.Eval;
@@ -48,7 +51,20 @@ public sealed class EvalScorecard : IDisposable
                 return;
             }
 
-            Scorecard.Write(FailureDump.DefaultDirectory, _tier.Value, _route, _outcomes);
+            // Every declared claim, seeded at nothing, so a claim no scenario exercised appears
+            // with a null rate rather than being absent — absent reads as "there is no such
+            // claim", which is the one thing the file must not say.
+            var seeded = PromptManifest.Claims
+                .Select(claim => new ClaimOutcome(claim.Id, 0, 0))
+                .Concat(_outcomes)
+                .ToList();
+
+            // The one place the provider's name is worth a request, and the last place before the
+            // file is written. Blocking in a fixture's teardown is the cost of it.
+            var route = ProviderLookup
+                .ResolveAsync(_route, EvalGate.ApiKey ?? "").GetAwaiter().GetResult();
+
+            Scorecard.Write(FailureDump.DefaultDirectory, _tier.Value, route, seeded);
         }
     }
 }

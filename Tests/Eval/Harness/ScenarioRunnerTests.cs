@@ -5,10 +5,10 @@ namespace Tests.Eval.Harness;
 // A real model makes a run stochastic, so a scenario declares how many of how many runs must
 // pass. What it must never do is retry until green: half these assertions are negative, and a
 // retry past a failure hides exactly the regression the scenario exists to catch.
-public class RunPolicyTests
+public class ScenarioRunnerTests
 {
     [Fact]
-    public async Task ARunThatMeetsItsThresholdPasses_AndEveryDeclaredRunIsTaken()
+    public async Task ARunThatMeetsItsThreshold_Passes_AndEveryDeclaredRunIsTaken()
     {
         // Every run of a passing scenario is taken, deliberately: stopping at the k-th pass would
         // report a rate over however many runs it happened to take, and the scorecard compares

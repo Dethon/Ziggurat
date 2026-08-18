@@ -11,10 +11,7 @@ public static class EvalTools
 
     public static readonly string Create = Prefix + VfsTextCreateTool.Name;
     public static readonly string Read = Prefix + VfsFileReadTool.Name;
-    public static readonly string Edit = Prefix + VfsTextEditTool.Name;
     public static readonly string Glob = Prefix + VfsGlobFilesTool.Name;
     public static readonly string Info = Prefix + VfsFileInfoTool.Name;
     public static readonly string Remove = Prefix + VfsRemoveTool.Name;
-    public static readonly string Exec = Prefix + VfsExecTool.Name;
-    public static readonly string Search = Prefix + VfsTextSearchTool.Name;
 }

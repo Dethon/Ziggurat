@@ -7,6 +7,7 @@ using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
 using Domain.Tools.Timers.Vfs;
+using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients.Voice;
 using Mcp.Hosting;
 using McpServerTimers.Modules;
@@ -169,27 +170,16 @@ public sealed class EvalStack : IAsyncDisposable
 
     // An endpoint with nothing hosting it is dropped rather than left pointing at a compose host
     // name: a configured endpoint that cannot be dialled fails the whole session (ADR-0027), so
-    // the alternative is a scenario that cannot run at all. What was dropped is named, because a
-    // silently smaller toolset is a different agent from the shipped one.
+    // the alternative is a scenario that cannot run at all. The agent under test therefore has a
+    // smaller toolset than the shipped one until every family's servers are hosted, and which
+    // sections it actually got is readable in the dump's assembled prompt.
     private static string[] Rewrite(AgentDefinition agent, IReadOnlyDictionary<string, string> hosted) =>
         [.. agent.McpServerEndpoints
             .Select(endpoint => hosted.FirstOrDefault(h => endpoint.Contains(h.Key)).Value)
             .Where(rewritten => rewritten is not null)];
 
-    public static IReadOnlyList<string> Dropped(AgentDefinition agent, IReadOnlyCollection<string> hosted) =>
-        [.. agent.McpServerEndpoints.Where(e => !hosted.Any(e.Contains))];
-
-    private static string ShippedSettingsPath()
-    {
-        var root = Ancestors(new DirectoryInfo(AppContext.BaseDirectory))
-                       .FirstOrDefault(d => File.Exists(Path.Combine(d.FullName, "Ziggurat.sln")))
-                   ?? throw new InvalidOperationException("Could not find the repository root.");
-
-        return Path.Combine(root.FullName, "Agent", "appsettings.json");
-    }
-
-    private static IEnumerable<DirectoryInfo> Ancestors(DirectoryInfo directory) =>
-        directory.Parent is null ? [directory] : [directory, .. Ancestors(directory.Parent)];
+    private static string ShippedSettingsPath() =>
+        Path.Combine(RepositoryRoot.Path, "Agent", "appsettings.json");
 
     public async ValueTask DisposeAsync()
     {

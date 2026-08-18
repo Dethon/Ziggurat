@@ -1,7 +1,7 @@
-using Domain.DTOs;
+namespace Infrastructure.Agents.ChatClients;
 
-namespace Domain.Contracts;
-
+// Beside the client it hangs off rather than in Domain, which never consumes it.
+//
 // The one seam an evaluation harness needs and no deployment registers. It is resolved from the
 // container, absent by default, and every implementation of it lives in the tests: what a turn
 // did is otherwise only reconstructible by re-parsing streamed function-call content that the

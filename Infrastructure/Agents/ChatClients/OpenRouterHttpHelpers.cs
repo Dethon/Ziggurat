@@ -147,9 +147,9 @@ internal static class OpenRouterHttpHelpers
 
     public static HttpContent WrapWithUsageTee(
         HttpContent inner, ConcurrentQueue<decimal> costQueue, ConcurrentQueue<long> cachedQueue,
-        ConcurrentQueue<ServedRoute> routeQueue)
+        ServedRouteSink routeSink)
     {
-        return new TeeHttpContent(inner, costQueue, cachedQueue, routeQueue);
+        return new TeeHttpContent(inner, costQueue, cachedQueue, routeSink);
     }
 
     // Where this provider puts the usage block: at the root of a Chat Completions chunk, and under
@@ -275,7 +275,7 @@ internal static class OpenRouterHttpHelpers
 
     private sealed class TeeHttpContent(
         HttpContent inner, ConcurrentQueue<decimal> costQueue,
-        ConcurrentQueue<long> cachedQueue, ConcurrentQueue<ServedRoute> routeQueue) : HttpContent
+        ConcurrentQueue<long> cachedQueue, ServedRouteSink routeSink) : HttpContent
     {
         protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
         {
@@ -285,7 +285,7 @@ internal static class OpenRouterHttpHelpers
 
         protected override async Task<Stream> CreateContentReadStreamAsync()
         {
-            return new UsageTeeStream(await inner.ReadAsStreamAsync(), costQueue, cachedQueue, routeQueue);
+            return new UsageTeeStream(await inner.ReadAsStreamAsync(), costQueue, cachedQueue, routeSink);
         }
 
         protected override bool TryComputeLength(out long length)
@@ -310,7 +310,7 @@ internal static class OpenRouterHttpHelpers
     // usage drops, so they are still read off the stream on the way past.
     private sealed class UsageTeeStream(
         Stream inner, ConcurrentQueue<decimal> costQueue,
-        ConcurrentQueue<long> cachedQueue, ConcurrentQueue<ServedRoute> routeQueue) : Stream
+        ConcurrentQueue<long> cachedQueue, ServedRouteSink routeSink) : Stream
     {
         private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
         private readonly StringBuilder _buffer = new();
@@ -387,12 +387,15 @@ internal static class OpenRouterHttpHelpers
                     cachedQueue.Enqueue(cached!.Value);
                 }
 
-                foreach (var route in dataPayloads
+                // One slot rather than a queue, unlike cost and the cache counter: every chunk of a
+                // Chat Completions stream names the model, and nothing in a deployment ever reads
+                // this back — a queue would grow for the lifetime of the client with nobody
+                // draining it.
+                dataPayloads
                     .Select(ExtractRouteFromSseData)
-                    .Where(r => r is not null))
-                {
-                    routeQueue.Enqueue(route!);
-                }
+                    .Where(route => route is not null)
+                    .ToList()
+                    .ForEach(route => routeSink.Record(route!));
             }
             catch
             {

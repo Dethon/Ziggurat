@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 
 namespace Tests.Unit.Infrastructure.Helpers;

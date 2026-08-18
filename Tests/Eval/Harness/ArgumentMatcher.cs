@@ -23,9 +23,6 @@ public static class Arg
             args => Read(args, name) is { ValueKind: JsonValueKind.String } element
                     && Regex.IsMatch(element.GetString() ?? "", pattern, RegexOptions.IgnoreCase));
 
-    public static ArgumentMatcher Absent(string name) =>
-        new($"{name} absent", args => Read(args, name) is null);
-
     // An argument whose value is itself a document: the body of a timer, a schedule or a note.
     // Either spelling counts — a model writes the file body as a JSON string and its nested keys
     // as real objects, and the scenario is asking about the values rather than about which of the

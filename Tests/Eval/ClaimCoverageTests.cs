@@ -10,7 +10,7 @@ namespace Tests.Eval;
 public class ClaimCoverageTests
 {
     [Fact]
-    public void EveryDeclaredClaimHasEitherAScenarioOrAnExemption()
+    public void EveryDeclaredClaim_HasEitherAScenarioOrAnExemption()
     {
         var cited = EvalSuite.All.SelectMany(s => s.Claims).ToHashSet();
 
@@ -25,7 +25,7 @@ public class ClaimCoverageTests
     }
 
     [Fact]
-    public void EveryCitedClaimExists()
+    public void EveryCitedClaim_Exists()
     {
         var declared = PromptManifest.Claims.Select(c => c.Id).ToHashSet();
 
@@ -40,7 +40,7 @@ public class ClaimCoverageTests
     }
 
     [Fact]
-    public void EveryExemptionNamesADeclaredClaimAndGivesAReason()
+    public void EveryExemption_NamesADeclaredClaim_AndGivesAReason()
     {
         var declared = PromptManifest.Claims.Select(c => c.Id).ToHashSet();
 
@@ -52,7 +52,7 @@ public class ClaimCoverageTests
     }
 
     [Fact]
-    public void NoClaimIsBothCoveredAndExcused()
+    public void NoClaim_IsBothCoveredAndExcused()
     {
         // The exemption list is the backlog. A claim that has a scenario and is still excused
         // means the backlog is lying about how much is left.

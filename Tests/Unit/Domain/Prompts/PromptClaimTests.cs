@@ -9,7 +9,7 @@ namespace Tests.Unit.Domain.Prompts;
 public class PromptClaimTests
 {
     [Fact]
-    public void EveryClaimHasAStableIdAndAOneLineStatement()
+    public void EveryClaim_HasAStableId_AndAOneLineStatement()
     {
         foreach (var claim in PromptManifest.Claims)
         {
@@ -20,7 +20,7 @@ public class PromptClaimTests
     }
 
     [Fact]
-    public void ClaimIdsAreUniqueAcrossEverySection()
+    public void ClaimIds_AreUniqueAcrossEverySection()
     {
         // A scenario cites an id, so two sections claiming the same one would make a citation
         // ambiguous — and the coverage test would report a claim as covered by somebody else's
@@ -33,7 +33,7 @@ public class PromptClaimTests
     }
 
     [Fact]
-    public void AClaimIdIsPrefixedWithTheSectionThatDeclaresIt()
+    public void AClaimId_IsPrefixedWithTheSectionThatDeclaresIt()
     {
         // Readable in a scorecard and in a citation without looking anything up: the prefix says
         // which prose to delete when demonstrating a scenario red.
@@ -45,7 +45,7 @@ public class PromptClaimTests
     }
 
     [Fact]
-    public void TheTimerContractDeclaresItsClaimsInFull()
+    public void TheTimerContract_DeclaresItsClaimsInFull()
     {
         // Declared up front, including the ones nothing tests yet, because declaring claims only
         // where scenarios exist leaves the untested rules undeclared forever.
@@ -60,7 +60,7 @@ public class PromptClaimTests
     }
 
     [Fact]
-    public void TheManifestEnumeratesEveryClaimOfEverySection()
+    public void TheManifest_EnumeratesEveryClaimOfEverySection()
     {
         PromptManifest.Claims.Count.ShouldBe(PromptManifest.Declarations.Sum(d => d.Claims.Count));
     }
