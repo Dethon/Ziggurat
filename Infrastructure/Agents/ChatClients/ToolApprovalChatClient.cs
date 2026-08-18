@@ -17,15 +17,19 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly HashSet<string> _dynamicallyApproved;
     private readonly IMetricsPublisher _metricsPublisher;
     private readonly string _conversationId;
+    private readonly IToolInvocationObserver? _observer;
+    private int _observed;
 
     public ToolApprovalChatClient(
         IChatClient innerClient,
         IToolApprovalHandler approvalHandler,
         string conversationId,
         IEnumerable<string>? whitelistPatterns = null,
-        IMetricsPublisher? metricsPublisher = null)
+        IMetricsPublisher? metricsPublisher = null,
+        IToolInvocationObserver? observer = null)
         : base(innerClient)
     {
+        _observer = observer;
         ArgumentNullException.ThrowIfNull(approvalHandler);
         ArgumentNullException.ThrowIfNull(conversationId);
         _approvalHandler = approvalHandler;
@@ -79,6 +83,53 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             default:
                 context.Terminate = true;
                 return $"Tool execution was rejected by user: {toolName}. Waiting for new input.";
+        }
+    }
+
+    // Every call of one iteration passes through here, including the two that never reach
+    // InvokeFunctionAsync: a call whose tool threw, and a call naming a tool nothing serves. That
+    // is why the observation hangs off this override rather than off the invocation itself —
+    // those two are exactly what an evaluation is hunting, and neither produces a result.
+    protected override IList<ChatMessage> CreateResponseMessages(
+        ReadOnlySpan<FunctionInvocationResult> results)
+    {
+        if (_observer is not null)
+        {
+            foreach (var result in results)
+            {
+                _observer.OnInvoked(Describe(result, Interlocked.Increment(ref _observed) - 1));
+            }
+        }
+
+        return base.CreateResponseMessages(results);
+    }
+
+    private static ToolInvocation Describe(FunctionInvocationResult result, int sequence) => new()
+    {
+        Sequence = sequence,
+        ToolName = result.CallContent.Name,
+        Arguments = SerializeArguments(result.CallContent.Arguments),
+        Result = result.Result?.ToString(),
+        Error = result.Exception?.Message,
+        Outcome = result.Status switch
+        {
+            FunctionInvocationStatus.RanToCompletion => ToolInvocationOutcome.Completed,
+            FunctionInvocationStatus.NotFound => ToolInvocationOutcome.NotFound,
+            _ => ToolInvocationOutcome.Failed
+        }
+    };
+
+    private static string SerializeArguments(IDictionary<string, object?>? arguments)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(arguments ?? new Dictionary<string, object?>());
+        }
+        catch (NotSupportedException)
+        {
+            // An argument the serializer cannot write is still evidence the call happened, and an
+            // observation must never be the thing that takes a turn down.
+            return "{}";
         }
     }
 
