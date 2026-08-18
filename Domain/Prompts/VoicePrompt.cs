@@ -31,4 +31,65 @@ public static class VoicePrompt
 
         Sections above these voice rules describe how tools work and were written for replies read on a screen. Where any of them implies a longer or formatted reply, these rules win; their other instructions still apply.
         """;
+    // Every falsifiable statement the rules above make, each one named so a scenario cites it as a
+    // compile-time reference. These are all about the shape of an answer rather than its quality,
+    // which is why the suite can check them without paying a second model to have an opinion.
+    public static readonly PromptClaim OneSentenceTwelveWords =
+        new("voice.one-sentence-twelve-words",
+            "A spoken reply is one sentence of twelve words or fewer unless the user asked to explain, compare or list.");
+
+    public static readonly PromptClaim SeveralSentencesOnlyWhenAsked =
+        new("voice.several-sentences-only-when-asked",
+            "A reply runs to at most three sentences, and only when the user asked for an explanation, a comparison, a list, or an answer with separate parts.");
+
+    public static readonly PromptClaim ActionConfirmedInTwoWords =
+        new("voice.action-confirmed-in-two-words",
+            "An action carried out is confirmed in one or two words.");
+
+    public static readonly PromptClaim ValueSaidIsRepeated =
+        new("voice.value-said-is-repeated",
+            "A number, name or time the user said is repeated back in the confirmation.");
+
+    public static readonly PromptClaim FactIsTheValueAlone =
+        new("voice.fact-is-the-value-alone",
+            "A fact the user asked for is answered with the value alone, plus only what would change what they do.");
+
+    public static readonly PromptClaim FailureIsOneClause =
+        new("voice.failure-is-one-clause",
+            "Something that failed or does not exist is stated in one clause, with no cause, code or plan.");
+
+    public static readonly PromptClaim UnclearRequestIsActedOn =
+        new("voice.unclear-request-is-acted-on",
+            "An unclear request is answered by taking the likeliest reading and acting; a question is asked only before destroying something unrecoverable.");
+
+    public static readonly PromptClaim NothingIsNarrated =
+        new("voice.nothing-is-narrated",
+            "A spoken reply never restates the question or says what was searched, read, run or changed.");
+
+    public static readonly PromptClaim NothingUnspeakable =
+        new("voice.nothing-unspeakable",
+            "A spoken reply carries no emoji, markdown, file path, entity id, url, tool name or error code.");
+
+    public static readonly PromptClaim AbbreviationsAreSpelledOut =
+        new("voice.abbreviations-are-spelled-out",
+            "Abbreviations, symbols and acronyms are spelled out in the reply language.");
+
+    public static readonly PromptClaim OneWordBeforeSlowWork =
+        new("voice.one-word-before-slow-work",
+            "Before a search, a subagent or several rounds of tools, the first output is one plain word, and nothing more is said until the answer.");
+
+    public static readonly IReadOnlyList<PromptClaim> Claims =
+    [
+        OneSentenceTwelveWords,
+        SeveralSentencesOnlyWhenAsked,
+        ActionConfirmedInTwoWords,
+        ValueSaidIsRepeated,
+        FactIsTheValueAlone,
+        FailureIsOneClause,
+        UnclearRequestIsActedOn,
+        NothingIsNarrated,
+        NothingUnspeakable,
+        AbbreviationsAreSpelledOut,
+        OneWordBeforeSlowWork
+    ];
 }

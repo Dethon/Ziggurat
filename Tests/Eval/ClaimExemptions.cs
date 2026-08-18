@@ -11,6 +11,26 @@ public static class ClaimExemptions
 {
     public static IReadOnlyDictionary<string, string> Reasons { get; } = new Dictionary<string, string>
     {
+        [VoicePrompt.OneSentenceTwelveWords.Id] =
+            "Every spoken scenario declares a sentence and word limit, but none of them is *about* the "
+            + "limit, and the declared word count is the contract's twelve plus what the spelled-out "
+            + "numbers exclusion is worth — the check counts every word. A scenario whose subject is the "
+            + "limit needs a turn that tempts a long answer.",
+        [VoicePrompt.SeveralSentencesOnlyWhenAsked.Id] =
+            "The three-sentence allowance applies to a turn that asked for an explanation, a comparison "
+            + "or a list, and every scenario in the suite asks for one short thing.",
+        [VoicePrompt.UnclearRequestIsActedOn.Id] =
+            "Two rules in one: act on the likeliest reading, and ask before an irreversible delete. The "
+            + "second needs a turn whose likeliest reading destroys something, which no family sets up yet.",
+        [VoicePrompt.NothingIsNarrated.Id] =
+            "Checked negatively wherever a scenario names what the reply must not say, but nothing "
+            + "checks the general rule: a scenario about it needs a turn whose work is worth narrating.",
+        [VoicePrompt.AbbreviationsAreSpelledOut.Id] =
+            "Needs a turn whose answer is a unit or an acronym — a temperature, a distance — which "
+            + "arrives with the Home Assistant family.",
+        [VoicePrompt.OneWordBeforeSlowWork.Id] =
+            "A claim about what is said *before* the work, which the recording cannot see: it holds one "
+            + "reply, and the acknowledgement is a separate emission — tickets 15 and 16.",
         [TimerPrompt.DurationIsACountdown.Id] =
             "Demonstrated twice and stayed green both times, most recently on 2026-08-18 with all three "
             + "mounts hosted: deleting the countdown rule from the timer, Home Assistant and scheduling "
@@ -42,21 +62,11 @@ public static class ClaimExemptions
             "Demonstrated on 2026-08-18 with the rule deleted from the timer and Home Assistant prompts: "
             + "the deferred action still became a schedule rather than a timer whose text is a command. "
             + "Witnessing this one needs a turn that forces a timer and then asks what goes in its text.",
-        [TimerPrompt.SpokenStatusGivesOnlyTheRemainingTime.Id] =
-            "A claim about what the reply says, not about which tool ran — ticket 09.",
-        [TimerPrompt.RecreationIsNeverNarrated.Id] =
-            "A claim about what the reply must not say — ticket 09.",
         [TimerPrompt.ListedByGlob.Id] =
             "Covered incidentally as a permitted call today; a scenario whose subject is listing is not written yet.",
         [TimerPrompt.CancelledByRemovingIt.Id] =
             "Cancelling is the delete half of the extend scenario; a cancel-only scenario is not written yet.",
-        [TimerPrompt.RingingIsStoppedByDismiss.Id] =
-            "Needs a turn arriving with a dismissed alert on it, which the voice family sets up — ticket 09.",
         [TimerPrompt.IdIsDescriptive.Id] =
-            "What makes an id descriptive is a judgement about a word, which the deterministic checks cannot make; it waits on the judge pass.",
-        [TimerPrompt.WrittenStatusIncludesFiresAt.Id] =
-            "A claim about a written reply, and every scenario in the suite so far is a voice turn — ticket 09.",
-        [TimerPrompt.ExtendingADismissedOneIsANewTimer.Id] =
-            "Needs a turn arriving with a dismissed alert on it, and a timer that has already fired — ticket 09."
+            "What makes an id descriptive is a judgement about a word, which the deterministic checks cannot make; it waits on the judge pass."
     };
 }

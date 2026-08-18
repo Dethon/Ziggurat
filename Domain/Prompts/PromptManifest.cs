@@ -172,7 +172,8 @@ public static class PromptManifest
             // an answer.
             Conflict = ConflictPolicy
                 .Governs(PromptRules.Formatting, PromptRules.Verbosity, PromptRules.ToolUse)
-                .Beating(Subagents, DownloaderPrompt.Name)
+                .Beating(Subagents, DownloaderPrompt.Name),
+            Claims = VoicePrompt.Claims
         },
         new()
         {
