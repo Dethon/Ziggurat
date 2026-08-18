@@ -100,6 +100,24 @@ public class ScenarioChecksTests
     }
 
     [Fact]
+    public async Task ACallNamingItsPathSomethingElse_IsStillMatchedByPath()
+    {
+        // Create and read say `filePath`, remove and info say `path`, glob says `basePath`. A
+        // scenario asks about the path, and a check that only knew one spelling would tolerate a
+        // write to anywhere as long as the tool spelled its argument differently.
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            new ScriptedTurn.Step(Create, new Dictionary<string, object?>
+            {
+                ["filePath"] = "/schedules/pasta/task.json"
+            }));
+
+        var scenario = Timer() with { Permitted = [new CallPermission(Create, "/timers*")] };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldContain(f => f.Contains("unnecessary"));
+    }
+
+    [Fact]
     public async Task AnOrderingPairInTheWrongOrder_Fails()
     {
         var recording = await ScriptedTurn.RunAsync(

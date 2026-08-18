@@ -19,6 +19,11 @@ public sealed record Scenario
     // two values could disagree, and a scenario whose clock disagrees with itself proves nothing.
     public required DateTimeOffset Instant { get; init; }
 
+    // Timers already running when the turn arrives, armed through the server's own create path
+    // rather than written into its store: setup that bypassed the server would set up a state the
+    // server cannot produce.
+    public IReadOnlyList<ArmedTimerSeed> Armed { get; init; } = [];
+
     public IReadOnlyList<CallExpectation> Required { get; init; } = [];
 
     // Required plus permitted is the whole tolerated surface. A forbidden list was rejected in
@@ -38,6 +43,8 @@ public sealed record Scenario
 
     public RunPolicy Policy { get; init; } = RunPolicy.Once;
 
+    // Which tier this scenario is a canary for, not which tier is running: the smoke tier takes
+    // the ones marked Smoke, the full tier takes everything.
     public EvalTier Tier { get; init; } = EvalTier.Full;
 }
 
@@ -85,3 +92,10 @@ public sealed record CallExpectation
 public sealed record CallPermission(string Tool, string Path = "*");
 
 public sealed record OrderingConstraint(string Before, string After);
+
+// A timer already running when the turn arrives, and — the part that matters — already partly
+// spent. A timer armed at the pinned instant has its whole duration left, so reading its spec and
+// reading its status answer the same number, and a scenario about reading the status cannot tell
+// the two apart.
+public sealed record ArmedTimerSeed(
+    string Id, int DurationSeconds, string Room, TimeSpan RunningFor, string? Text = null);

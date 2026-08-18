@@ -11,6 +11,7 @@ There is no Cargo workspace and no `Cargo.toml` at the root, deliberately — th
 ## Build, Test & Format
 
 - `Tests/Unit` runs standalone. `Tests/Integration` and E2E tests (`[Trait("Category", "E2E")]`) need Docker, but their fixtures spin up the containers themselves (testcontainers for integration, the compose stack for E2E) — just run `dotnet test`; set `PLAYWRIGHT_HEADLESS=false` to watch the browser.
+- The behavioural eval (`[Trait("Category", "Eval")]`, `Tests/Eval/`) is the one category a bare `dotnet test` does **not** run, even with an OpenRouter key present — unlike `Category=Llm`, which does. It drives a real model against the shipped agent definition, so a routine test run must never spend money without being asked: `ZIGGURAT_EVAL=1 dotnet test --filter "Category=Eval"` for the full tier, adding `&Tier=Smoke` for one canary per family. Failures and the per-claim scorecard land in the gitignored `.eval-output/`. Its harness — the checks, the run policy, the dump and the claim coverage — is deterministic and runs on a bare invocation like anything else. See `docs/adr/0030` and `docs/adr/0031`.
 - The pre-commit hook (`.githooks/pre-commit`, wired via `core.hooksPath`) runs `dotnet format` over staged `.cs` files and re-stages them **whole** — partial/hunk staging does not survive a commit; make the working tree match the commit you want.
 
 ## Rules & TDD

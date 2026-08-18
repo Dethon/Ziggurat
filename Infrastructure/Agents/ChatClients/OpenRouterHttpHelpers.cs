@@ -223,15 +223,23 @@ internal static class OpenRouterHttpHelpers
 
             if (root.TryGetProperty("response", out var response) &&
                 response.ValueKind == JsonValueKind.Object &&
-                (response.TryGetProperty("model", out _) || response.TryGetProperty("provider", out _)))
+                (response.TryGetProperty("model", out _) || response.TryGetProperty("provider", out _)
+                 || response.TryGetProperty("id", out _)))
             {
                 root = response;
             }
 
             var model = ReadString(root, "model");
             var provider = ReadString(root, "provider");
+            // OpenRouter's own id for the generation, and the only handle on the wire that the
+            // provider name can be recovered from where the stream does not carry it.
+            var generation = ReadString(root, "id") is { } id && id.StartsWith("gen-", StringComparison.Ordinal)
+                ? id
+                : null;
 
-            return model is null && provider is null ? null : new ServedRoute(model, provider);
+            return model is null && provider is null && generation is null
+                ? null
+                : new ServedRoute(model, provider, generation);
         }
         catch (JsonException)
         {

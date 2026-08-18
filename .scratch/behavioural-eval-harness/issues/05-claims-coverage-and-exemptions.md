@@ -16,10 +16,10 @@ conflict arbitration, a claim is an assertion about behaviour.
 
 **Status:** ready-for-agent
 
-- [ ] Each claim has a stable id and a one-line statement, declared beside the prose it comes
+- [x] Each claim has a stable id and a one-line statement, declared beside the prose it comes
       from.
-- [ ] The manifest can enumerate every claim across every section.
-- [ ] A scenario cites the claim ids it exercises, and citing an id that does not exist fails.
-- [ ] A declared claim with no scenario and no exemption fails the coverage test.
-- [ ] The exemption list names each uncovered claim with a reason.
-- [ ] The timer contract's claims are declared in full, and the scenarios that exist cite them.
+- [x] The manifest can enumerate every claim across every section.
+- [x] A scenario cites the claim ids it exercises, and citing an id that does not exist fails.
+- [x] A declared claim with no scenario and no exemption fails the coverage test.
+- [x] The exemption list names each uncovered claim with a reason.
+- [x] The timer contract's claims are declared in full, and the scenarios that exist cite them.

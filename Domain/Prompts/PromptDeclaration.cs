@@ -28,6 +28,11 @@ public sealed record PromptDeclaration
     // added to an agent's endpoints without a declaration here has a prompt nobody budgeted.
     public string? ServedBy { get; init; }
 
+    // What this section asserts about behaviour, one falsifiable statement per entry. Empty for a
+    // section whose text this repo does not own and for one that legislates nothing a scenario can
+    // catch; an entry here is either cited by a scenario or listed as an exemption with a reason.
+    public IReadOnlyList<PromptClaim> Claims { get; init; } = [];
+
     // False for a prompt that arrived from a server the manifest says nothing about. It still
     // reaches the model; it is simply unbudgeted and unplaced, and the assembly reports it.
     public bool Declared { get; init; } = true;

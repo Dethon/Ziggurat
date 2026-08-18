@@ -14,10 +14,10 @@ allowed iterations and then answers correctly is not passing.
 
 **Status:** ready-for-agent
 
-- [ ] A call outside required-plus-permitted fails the scenario, naming the offending call.
-- [ ] A permitted call with unexpected arguments does not fail, since permission is by tool and
+- [x] A call outside required-plus-permitted fails the scenario, naming the offending call.
+- [x] A permitted call with unexpected arguments does not fail, since permission is by tool and
       path only.
-- [ ] A missing required call fails, naming what was expected and what was seen.
-- [ ] Exceeding the declared ceiling fails, and the recording is truncated at no point before it.
-- [ ] The first timer scenario declares both, and still passes.
-- [ ] Both checks are proven to fail correctly against a scripted chat client.
+- [x] A missing required call fails, naming what was expected and what was seen.
+- [x] Exceeding the declared ceiling fails, and the recording is truncated at no point before it.
+- [x] The first timer scenario declares both, and still passes.
+- [x] Both checks are proven to fail correctly against a scripted chat client.

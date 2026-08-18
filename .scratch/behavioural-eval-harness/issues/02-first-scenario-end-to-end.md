@@ -17,15 +17,15 @@ The suite is opt-in: a bare test run must not touch it even when an OpenRouter k
 
 **Status:** ready-for-agent
 
-- [ ] A scenario declares a turn (sender, room, satellite, timestamp), a pinned instant, and the
+- [x] A scenario declares a turn (sender, room, satellite, timestamp), a pinned instant, and the
       calls it requires with argument and path matchers.
-- [ ] Running it creates the timer, and the assertion reads the recording rather than the
+- [x] Running it creates the timer, and the assertion reads the recording rather than the
       server's storage.
-- [ ] The agent is built through the real factory from the shipped definition; no wiring is
+- [x] The agent is built through the real factory from the shipped definition; no wiring is
       reimplemented in the harness.
-- [ ] The eval category does not run on a bare test invocation with a key present; running it
+- [x] The eval category does not run on a bare test invocation with a key present; running it
       requires an explicit filter.
-- [ ] The project instructions' "just run the tests" line records that the eval category is
+- [x] The project instructions' "just run the tests" line records that the eval category is
       excluded and why.
-- [ ] The scenario is demonstrated red once by deleting the prose it relies on, noted in the
+- [x] The scenario is demonstrated red once by deleting the prose it relies on, noted in the
       commit.
