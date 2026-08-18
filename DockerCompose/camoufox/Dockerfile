@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/playwright:v1.61.0-noble
+FROM mcr.microsoft.com/playwright:v1.62.0-noble
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ ENV NPM_CONFIG_FETCH_RETRIES=5 \
 
 RUN set -eu; \
     for attempt in 1 2 3; do \
-        if npm install camoufox-js@0.9.3 playwright-core@1.61.0 && npx camoufox-js fetch; then \
+        if npm install camoufox-js@0.9.3 playwright-core@1.62.0 && npx camoufox-js fetch; then \
             exit 0; \
         fi; \
         echo "camoufox fetch attempt ${attempt} failed; retrying in 15s"; \
@@ -27,8 +27,8 @@ COPY patch-playwright.js .
 RUN node patch-playwright.js
 
 # Playwright's client/server version check is an exact minor match, so playwright-core here must
-# track Microsoft.Playwright in the .NET projects. 1.61 sends juggler viewport fields Camoufox's
-# Firefox build does not describe (see patch-viewport.js).
+# track Microsoft.Playwright in the .NET projects. Since 1.61 it sends juggler viewport fields
+# Camoufox's Firefox build does not describe (see patch-viewport.js).
 COPY patch-viewport.js .
 RUN node patch-viewport.js
 
