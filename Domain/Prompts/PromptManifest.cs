@@ -119,7 +119,8 @@ public static class PromptManifest
             // than with an edit: the setup index naming every area and entity is appended to it
             // when the server serves it.
             TokenBudget = 5_000,
-            ServedBy = "mcp-homeassistant"
+            ServedBy = "mcp-homeassistant",
+            Claims = HomeAssistantPrompt.Claims
         },
         new()
         {

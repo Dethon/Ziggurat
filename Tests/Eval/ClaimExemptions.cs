@@ -11,6 +11,44 @@ public static class ClaimExemptions
 {
     public static IReadOnlyDictionary<string, string> Reasons { get; } = new Dictionary<string, string>
     {
+        [HomeAssistantPrompt.ExactlyWhatWasAsked.Id] =
+            "Demonstrated on 2026-08-18 with the whole Scope paragraph deleted: 'enciende el aire' "
+            + "still turned the air conditioning on and touched nothing else. Doing only what was "
+            + "asked is the model's default here, so the scenario runs as a regression guard and the "
+            + "state diff it introduced is what actually earns its place.",
+        [HomeAssistantPrompt.ExitCodeIsTheConfirmation.Id] =
+            "Demonstrated on 2026-08-18 with the never-re-read rule deleted from both places it is "
+            + "written: the model set the temperature and stopped. It does not check its own work "
+            + "unprompted, so the prose defends against a habit this model does not have.",
+        [HomeAssistantPrompt.EntityNamedAsListed.Id] =
+            "The mount answers a near miss with a hint naming the right directory, so a wrong name "
+            + "costs a call rather than failing — witnessing this needs a ceiling tight enough that "
+            + "the retry breaks it, which is a scenario about the ceiling as much as about the name.",
+        [HomeAssistantPrompt.ArgumentsComeFromHelp.Id] =
+            "Reading --help is tolerated everywhere and required nowhere: what the contract asks for "
+            + "is that a bad-argument exit is fixed by re-reading rather than repeated, which needs a "
+            + "turn whose first attempt fails.",
+        [HomeAssistantPrompt.ExitCodesAreNeverVoiced.Id] =
+            "The spoken half is covered by the voice family's no-code rule; the written half — the "
+            + "stderr reason in plain words — has no scenario yet.",
+        [HomeAssistantPrompt.AlarmCarriesTargetAndInsistent.Id] =
+            "The alarms scenarios assert the mechanism and the time; the description's JSON shape is "
+            + "a second assertion on the same call and is not written yet.",
+        [HomeAssistantPrompt.SnoozeIsANewEvent.Id] =
+            "The timer half of snoozing is covered; the calendar half needs a turn arriving with a "
+            + "dismissed alarm rather than a dismissed timer.",
+        [HomeAssistantPrompt.MusicPlaysOnTheMusicAssistantPlayer.Id] =
+            "Needs the Music Assistant fake and a room with two players — ticket 11.",
+        [HomeAssistantPrompt.PlaylistIsBrowsedBeforeItIsPlayed.Id] =
+            "Needs a library whose playlist titles differ from the words the user says — ticket 11.",
+        [HomeAssistantPrompt.EpisodePlaysOnlyByItsUri.Id] =
+            "Needs the podcast-episode action, which is only advertised when Music Assistant is "
+            + "configured — ticket 11.",
+        [HomeAssistantPrompt.RestartIsASeek.Id] =
+            "Needs something already playing on a player, which is Music Assistant's state — ticket 11.",
+        [HomeAssistantPrompt.AreaSlugIsReadNotDerived.Id] =
+            "Needs an area whose slug and display name disagree and an action that takes an area id; "
+            + "the fake home has the first and no action with the second.",
         [VoicePrompt.OneSentenceTwelveWords.Id] =
             "Every spoken scenario declares a sentence and word limit, but none of them is *about* the "
             + "limit, and the declared word count is the contract's twelve plus what the spelled-out "

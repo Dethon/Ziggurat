@@ -11,8 +11,11 @@ whose script or scene cascades into three entities.
 
 **Status:** ready-for-agent
 
-- [ ] The Home Assistant fake exposes entity state before and after a turn.
-- [ ] A scenario declares an expected diff; an entity that changed and was not declared fails.
-- [ ] A declared change that did not happen fails, even when the reply claims success.
-- [ ] Read-only calls do not appear in the diff.
-- [ ] The family's scenarios pass, each citing its claims and demonstrated red once.
+- [x] The Home Assistant fake exposes entity state before and after a turn.
+- [x] A scenario declares an expected diff; an entity that changed and was not declared fails.
+- [x] A declared change that did not happen fails, even when the reply claims success.
+- [x] Read-only calls do not appear in the diff.
+- [x] The family's scenarios pass. Neither earns a citation: both demonstrations on 2026-08-18
+      stayed green, so doing only what was asked and not re-reading state afterwards are this
+      model's defaults rather than things the prose achieves. The scenarios stay as regression
+      guards, and the finding is written into `ClaimExemptions`.

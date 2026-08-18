@@ -39,6 +39,11 @@ public sealed record Scenario
     // passing, so the ceiling is part of the contract rather than a safety net.
     public required int CallCeiling { get; init; }
 
+    // Everything in the home that this turn is allowed to move. The declaration is exhaustive:
+    // an entity that changed and is not named here fails the scenario, which is the only way to
+    // catch a permitted call that did more than it was asked to.
+    public IReadOnlyList<StateChange> Changes { get; init; } = [];
+
     // What the answer itself must look like. Declared only where the reply is part of the
     // contract: most scenarios are about which tool ran, and a limit invented to fill this in
     // would fail on wording rather than on behaviour.
@@ -97,6 +102,11 @@ public sealed record CallExpectation
 public sealed record CallPermission(string Tool, string Path = "*");
 
 public sealed record OrderingConstraint(string Before, string After);
+
+// One entity, and what the turn must leave it at. The key is an entity id, or an entity id and one
+// of its attributes (`climate.salon#temperature`) — a thermostat set to another temperature has
+// changed without its state moving, and a scenario about setting one has to be able to say so.
+public sealed record StateChange(string Key, string To);
 
 // A timer already running when the turn arrives, and — the part that matters — already partly
 // spent. A timer armed at the pinned instant has its whole duration left, so reading its spec and

@@ -52,6 +52,23 @@ public class FakeHomeAssistantTests
     }
 
     [Fact]
+    public async Task SettingATargetTemperature_ShowsUpInTheSnapshot_ThoughTheStateDidNotMove()
+    {
+        // A thermostat moved to another temperature has changed without its state changing, so a
+        // snapshot that only carried states would report "nothing happened" for the one call the
+        // user actually made.
+        var home = new FakeHomeAssistant();
+
+        await Mount(home).ExecAsync(
+            Relative(FakeHomeAssistant.AirConditionerDirectory), "set_temperature.sh --temperature 22",
+            timeoutSeconds: null, CancellationToken.None);
+
+        var snapshot = home.Snapshot();
+        snapshot[FakeHomeAssistant.AirConditionerEntityId].ShouldBe("cool");
+        snapshot[FakeHomeAssistant.AirConditionerEntityId + "#temperature"].ShouldBe("22");
+    }
+
+    [Fact]
     public async Task ReadingAnEntity_ReturnsTheLiveState()
     {
         var home = new FakeHomeAssistant();
