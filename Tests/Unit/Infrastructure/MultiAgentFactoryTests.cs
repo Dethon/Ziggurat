@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Prompts;
 using Infrastructure.Agents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
@@ -49,7 +50,7 @@ public sealed class MultiAgentFactoryTests
             .Returns(Enumerable.Empty<AIFunction>());
         domainToolRegistry
             .Setup(r => r.GetPromptsForFeatures(It.IsAny<IEnumerable<string>>()))
-            .Returns(Enumerable.Empty<string>());
+            .Returns(Enumerable.Empty<PromptSection>());
 
         var stateStore = new Mock<IThreadStateStore>();
 

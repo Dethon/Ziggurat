@@ -14,7 +14,9 @@ public sealed class ScheduleFileSystem(
     TimeProvider timeProvider,
     TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
 {
-    public override string FilesystemName => "schedules";
+    public const string Name = "schedules";
+
+    public override string FilesystemName => Name;
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 

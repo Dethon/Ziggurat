@@ -11,7 +11,9 @@ public sealed partial class HaFileSystem(
     TimeSpan? regexMatchTimeout = null,
     Func<IMusicAssistantClient>? musicClientFactory = null) : FileSystemBackendBase
 {
-    public override string FilesystemName => "ha";
+    public const string Name = "ha";
+
+    public override string FilesystemName => Name;
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 

@@ -18,6 +18,11 @@ public record AgentDefinition
     public string? TelegramBotToken { get; init; }
     public string[] EnabledFeatures { get; init; } = [];
 
+    // Prompt sections this agent is given by name, from `PromptManifest.SelectableSections`. It is
+    // how behaviour that used to sit in `customInstructions` as unreviewable prose becomes a
+    // section with a purpose, a budget and a stated position in every conflict it takes part in.
+    public string[] PromptSections { get; init; } = [];
+
     // Whether this agent may see outposts — filesystems on real machines that announce themselves.
     // Nothing is opted in by default: an agent that exists to search for downloads has no business
     // reaching somebody's laptop, and a new machine appearing on the network must not silently

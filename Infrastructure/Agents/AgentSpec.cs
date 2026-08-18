@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.Prompts;
 
 namespace Infrastructure.Agents;
 
@@ -8,6 +9,9 @@ namespace Infrastructure.Agents;
 // here, which is what lets the build step assemble both without ever asking which one it is.
 public sealed record AgentSpec
 {
+    // The configured id, which is what a prompt section's audience and a routing default name. The
+    // display name beside it carries the conversation and belongs to metrics.
+    public required string AgentId { get; init; }
     public required string DisplayName { get; init; }
     public required string Description { get; init; }
     public required string MetricsAgentId { get; init; }
@@ -30,6 +34,11 @@ public sealed record AgentSpec
     public required IReadOnlySet<string> FilesystemEnabledTools { get; init; }
     public required string[] WhitelistPatterns { get; init; }
     public string? CustomInstructions { get; init; }
+
+    // Resolved from the definition's section names while the spec is projected, so an agent that
+    // names a section nothing declares is refused where the name was written rather than assembled
+    // one section short.
+    public required IReadOnlyList<PromptSection> PromptSections { get; init; }
     public string? Language { get; init; }
     public required bool KeepsHistory { get; init; }
 

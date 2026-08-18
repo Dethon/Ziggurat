@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Prompts;
 using Microsoft.Extensions.AI;
 
 namespace Infrastructure.Agents;
@@ -20,12 +21,15 @@ public class DomainToolRegistry(IEnumerable<IDomainToolFeature> features) : IDom
             });
     }
 
-    public IEnumerable<string> GetPromptsForFeatures(IEnumerable<string> enabledFeatures)
+    // A feature's prompt is declared in the manifest under the feature's own name, so enabling a
+    // feature is what puts its section in the prompt and there is no second list to keep in step.
+    public IEnumerable<PromptSection> GetPromptsForFeatures(IEnumerable<string> enabledFeatures)
     {
         return GroupByFeature(enabledFeatures)
             .Where(g => _features.ContainsKey(g.FeatureName))
-            .Select(g => _features[g.FeatureName].Prompt)
-            .OfType<string>();
+            .Select(g => (g.FeatureName, _features[g.FeatureName].Prompt))
+            .Where(f => !string.IsNullOrWhiteSpace(f.Prompt))
+            .Select(f => PromptManifest.Bind(f.FeatureName, f.Prompt!));
     }
 
     private static IEnumerable<FeatureGroup> GroupByFeature(IEnumerable<string> enabledFeatures)

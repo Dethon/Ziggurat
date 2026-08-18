@@ -18,12 +18,15 @@ namespace Tests.Unit.Agent;
 public class AgentAppSettingsTests
 {
     // Two contracts for the same thing is how the drift got in: a relative rule sitting beside
-    // the absolute one lets a short transcript surrounded by English resolve to English.
+    // the absolute one lets a short transcript surrounded by English resolve to English. The rule
+    // it used to sit in is now a typed section, and this is the chain that puts it in front of the
+    // model: the agent names the section, and the section carries no competing rule.
     [Fact]
-    public void CustomInstructions_Nabu_CarryNoCompetingRelativeLanguageRule()
+    public void VoiceRules_Nabu_SelectsThemAndTheyCarryNoCompetingRelativeLanguageRule()
     {
-        Agent("nabu")["customInstructions"]!.GetValue<string>()
-            .ShouldNotContain("the language the user spoke");
+        BoundAgents().Single(a => a.Id == "nabu").PromptSections.ShouldContain(VoicePrompt.Name);
+
+        VoicePrompt.Instructions.ShouldNotContain("the language the user spoke");
     }
 
     // One of the few values worth reading back off the file, because it is a rule rather than a
@@ -69,15 +72,16 @@ public class AgentAppSettingsTests
         var nabu = BoundAgents().Single(a => a.Id == "nabu");
         nabu.Language.ShouldBe("es");
 
-        McpAgent.BuildInstructions(
-                name: nabu.Name,
-                description: nabu.Description,
-                customInstructions: nabu.CustomInstructions,
-                language: nabu.Language,
-                domainPrompts: [],
-                fileSystemPrompts: [],
-                clientPrompts: [],
-                now: DateTimeOffset.UnixEpoch)
+        PromptComposer.Compose(new PromptContext
+        {
+            AgentId = nabu.Id,
+            Name = nabu.Name,
+            Description = nabu.Description,
+            CustomInstructions = nabu.CustomInstructions,
+            Language = nabu.Language,
+            Now = DateTimeOffset.UnixEpoch
+        })
+            .Text
             .ShouldEndWith(LanguagePrompt.Build("es")!);
     }
 

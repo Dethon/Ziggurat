@@ -15,6 +15,7 @@ internal static class TestAgentSpec
 
     public static AgentSpec Named(string conversationId) => new()
     {
+        AgentId = "test-agent",
         DisplayName = "test-agent",
         Description = "",
         MetricsAgentId = "test-agent",
@@ -26,6 +27,7 @@ internal static class TestAgentSpec
         EnabledFeatures = [],
         FilesystemEnabledTools = new HashSet<string>(),
         WhitelistPatterns = [],
+        PromptSections = [],
         KeepsHistory = true,
         RecordsOutpostVerdicts = true,
         PatchableModelIds = []

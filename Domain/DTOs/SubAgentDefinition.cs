@@ -16,6 +16,11 @@ public record SubAgentDefinition
     public string? Language { get; init; }
     public string[] EnabledFeatures { get; init; } = [];
 
+    // Prompt sections this agent is given by name, from `PromptManifest.SelectableSections`. It is
+    // how behaviour that used to sit in `customInstructions` as unreviewable prose becomes a
+    // section with a purpose, a budget and a stated position in every conflict it takes part in.
+    public string[] PromptSections { get; init; } = [];
+
     // Whether this subagent may see outposts, named as it is on an agent definition and half of
     // the answer: it reaches them only where its parent is opted in too. Nothing is opted in by
     // default, so a worker profile added to the file hands itself no machines — the same rule as

@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Prompts;
 using Infrastructure.Agents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -57,7 +58,7 @@ public sealed class SubAgentOutpostInheritanceTests
             .Returns(Enumerable.Empty<AIFunction>());
         toolRegistry
             .Setup(r => r.GetPromptsForFeatures(It.IsAny<IEnumerable<string>>()))
-            .Returns(Enumerable.Empty<string>());
+            .Returns(Enumerable.Empty<PromptSection>());
 
         var parent = new AgentDefinition
         {

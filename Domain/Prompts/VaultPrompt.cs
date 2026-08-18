@@ -2,6 +2,8 @@ namespace Domain.Prompts;
 
 public static class VaultPrompt
 {
+    public const string Name = "vault_prompt";
+
     public const string Prompt = """
         ## Vault Filesystem (Obsidian)
 

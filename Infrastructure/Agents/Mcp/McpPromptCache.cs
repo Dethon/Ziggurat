@@ -1,16 +1,17 @@
 using System.Collections.Concurrent;
+using Domain.Prompts;
 
 namespace Infrastructure.Agents.Mcp;
 
 public sealed class McpPromptCache(TimeProvider timeProvider, TimeSpan ttl)
 {
-    private sealed record CacheEntry(string[] Prompts, DateTimeOffset FetchedAt);
+    private sealed record CacheEntry(PromptSection[] Prompts, DateTimeOffset FetchedAt);
 
     private readonly ConcurrentDictionary<string, CacheEntry> _entries = new();
     private readonly ConcurrentDictionary<string, Task> _refreshes = new();
 
-    public async Task<string[]> GetOrFetchAsync(
-        string serverKey, Func<CancellationToken, Task<string[]>> fetch, CancellationToken ct)
+    public async Task<PromptSection[]> GetOrFetchAsync(
+        string serverKey, Func<CancellationToken, Task<PromptSection[]>> fetch, CancellationToken ct)
     {
         if (!_entries.TryGetValue(serverKey, out var entry))
         {

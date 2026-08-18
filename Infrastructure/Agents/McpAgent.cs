@@ -25,7 +25,9 @@ public sealed class McpAgent : DisposableAgent
     private readonly string? _language;
     private readonly string _description;
     private readonly IReadOnlyList<AIFunction> _domainTools;
-    private readonly IReadOnlyList<string> _domainPrompts;
+    private readonly IReadOnlyList<PromptSection> _domainPrompts;
+    private readonly IReadOnlyList<PromptSection> _selectedSections;
+    private readonly string _agentId;
     private readonly IReadOnlyList<McpServerEndpoint> _endpoints;
     private readonly bool _usesOutposts;
     private readonly bool _recordsOutpostVerdicts;
@@ -48,6 +50,7 @@ public sealed class McpAgent : DisposableAgent
 
     private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
     private int _isDisposed;
+    private string? _reportedPromptWarnings;
 
     public override string? Name => _innerAgent.Name;
     public override string? Description => _innerAgent.Description;
@@ -68,7 +71,7 @@ public sealed class McpAgent : DisposableAgent
         IMetricsPublisher metricsPublisher,
         TimeProvider timeProvider,
         IReadOnlyList<AIFunction> domainTools,
-        IReadOnlyList<string> domainPrompts,
+        IReadOnlyList<PromptSection> domainPrompts,
         ILoggerFactory? loggerFactory = null,
         McpPromptCache? promptCache = null,
         OutpostAccess? outposts = null,
@@ -88,6 +91,8 @@ public sealed class McpAgent : DisposableAgent
         _language = spec.Language;
         _domainTools = domainTools;
         _domainPrompts = domainPrompts;
+        _selectedSections = spec.PromptSections;
+        _agentId = spec.AgentId;
         _reasoningEffort = ParseEffort(spec.ReasoningEffort);
         _timeProvider = timeProvider;
         _metricsPublisher = metricsPublisher;
@@ -339,15 +344,7 @@ public sealed class McpAgent : DisposableAgent
         {
             ModelId = turnConfig.ModelOverride,
             Tools = [.. session.Tools],
-            Instructions = BuildInstructions(
-                _name,
-                _description,
-                _customInstructions,
-                _language,
-                _domainPrompts,
-                session.FileSystemPrompts,
-                session.ClientManager.Prompts,
-                _timeProvider.GetLocalNow()),
+            Instructions = BuildInstructions(session),
             Reasoning = turnConfig.Effort is null
                 ? null
                 : new ReasoningOptions { Effort = turnConfig.Effort.Value },
@@ -379,53 +376,51 @@ public sealed class McpAgent : DisposableAgent
         return new AdditionalPropertiesDictionary { [ConversationContextMeta.OptionsKey] = conversationContext };
     }
 
-    internal static string BuildInstructions(
-        string name,
-        string? description,
-        string? customInstructions,
-        string? language,
-        IEnumerable<string> domainPrompts,
-        IEnumerable<string> fileSystemPrompts,
-        IEnumerable<string> clientPrompts,
-        DateTimeOffset now)
+    // Every section this agent has, handed to the composer as data. Nothing about the order lives
+    // here any more: a section carries its own band, and what used to be a chain of Prepend and
+    // Append calls with a comment each is now the manifest those comments moved into.
+    private string BuildInstructions(ThreadSession session)
     {
-        var prompts = domainPrompts
-            .Concat(fileSystemPrompts)
-            .Concat(clientPrompts);
-
-        // Identity sits right after the core directive and before feature guidance, so the
-        // model knows which agent it is before reading any feature- or tool-specific prompt.
-        if (!string.IsNullOrWhiteSpace(name))
+        var assembly = PromptComposer.Compose(new PromptContext
         {
-            prompts = prompts.Prepend(IdentityPrompt.Build(name, description));
+            AgentId = _agentId,
+            Name = _name,
+            Description = _description,
+            Selected = _selectedSections,
+            Domain = _domainPrompts,
+            FileSystem = session.FileSystemPrompts,
+            Client = session.ClientManager.Prompts,
+            CustomInstructions = _customInstructions,
+            Language = _language,
+            Now = _timeProvider.GetLocalNow()
+        });
+
+        ReportPromptWarnings(assembly);
+
+        return assembly.Text;
+    }
+
+    // Reported once per distinct set, because instructions are rebuilt for every turn: a server
+    // whose prompt grew past its budget would otherwise say so on every turn of every conversation
+    // for as long as it stayed that way. The budget tests are what fail a build over it; this is
+    // what tells a running deployment which section changed under it.
+    private void ReportPromptWarnings(PromptAssembly assembly)
+    {
+        if (assembly.Warnings.Count == 0)
+        {
+            return;
         }
 
-        prompts = prompts.Prepend(BasePrompt.Instructions);
-
-        // The date goes after every static section, never first. It is the only part of the
-        // instructions that changes on its own, and the provider's prompt cache keys on a byte
-        // prefix -- dating the opening line threw away the whole cached prefix at every midnight
-        // to say one sentence. Behind the static sections, a rollover only re-prefills the tail.
-        prompts = prompts.Append(
-            $"Today is {now.ToString("dddd, yyyy-MM-dd", CultureInfo.InvariantCulture)}.");
-
-        // User custom instructions go LAST: closest to the conversation, they are the
-        // most recent (and least "lost in the middle") guidance the model sees, which
-        // matters for action-time rules like "acknowledge before calling a tool".
-        if (!string.IsNullOrEmpty(customInstructions))
+        var reported = string.Join("; ", assembly.Warnings);
+        if (Interlocked.Exchange(ref _reportedPromptWarnings, reported) == reported)
         {
-            prompts = prompts.Append(customInstructions);
+            return;
         }
 
-        // The reply language outranks even the custom instructions: it is a hard output
-        // constraint, and every other section -- plus the tool results the model reads right
-        // before answering -- is English, so it goes last, closest to the conversation.
-        if (LanguagePrompt.Build(language) is { } languagePrompt)
-        {
-            prompts = prompts.Append(languagePrompt);
-        }
-
-        return string.Join("\n\n", prompts);
+        _logger?.LogWarning(
+            "Agent '{AgentName}' assembled a system prompt of {Tokens} tokens with {Count} manifest " +
+            "warning(s): {Warnings}",
+            _name, assembly.TokenCount, assembly.Warnings.Count, reported);
     }
 
     internal static ReasoningEffort? ParseEffort(string? value)

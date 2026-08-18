@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.DTOs;
+using Domain.Prompts;
 using Domain.Tools.FileSystem;
 using Microsoft.Extensions.Logging;
 
@@ -17,6 +18,7 @@ internal static class AgentSpecProjection
         OpenRouterConfig openRouterConfig,
         ILogger? logger) => new()
         {
+            AgentId = definition.Id,
             DisplayName = $"{definition.Name}-{agentKey.ConversationId}",
             Description = definition.Description ?? "",
             MetricsAgentId = definition.Name,
@@ -38,6 +40,7 @@ internal static class AgentSpecProjection
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(definition.EnabledFeatures),
             WhitelistPatterns = definition.WhitelistPatterns,
             CustomInstructions = definition.CustomInstructions,
+            PromptSections = ResolveSections(definition.Id, definition.PromptSections),
             Language = definition.Language,
             KeepsHistory = true,
             RecordsOutpostVerdicts = true,
@@ -57,6 +60,7 @@ internal static class AgentSpecProjection
 
         return new AgentSpec
         {
+            AgentId = definition.Id,
             DisplayName = identity,
             Description = definition.Description ?? "",
             MetricsAgentId = definition.Name,
@@ -87,6 +91,7 @@ internal static class AgentSpecProjection
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures),
             WhitelistPatterns = spawn.WhitelistPatterns,
             CustomInstructions = definition.CustomInstructions,
+            PromptSections = ResolveSections(definition.Id, definition.PromptSections),
             Language = definition.Language,
             KeepsHistory = false,
             // A subagent mounts the machines it was given and judges none of them. The verdict is
@@ -102,6 +107,19 @@ internal static class AgentSpecProjection
             // properties down, the patch is rejected and logged instead of silently winning.
             PatchableModelIds = []
         };
+    }
+
+    // A name nothing declares is a configuration error and is refused here, where the name was
+    // written. Assembling the rest and going on would start an agent missing exactly the behaviour
+    // somebody added a line to give it, and nothing downstream would ever mention it again.
+    private static IReadOnlyList<PromptSection> ResolveSections(string agentId, IEnumerable<string> names)
+    {
+        return
+        [
+            .. names.Select(name => PromptManifest.Selected(name) ?? throw new InvalidOperationException(
+                $"Agent '{agentId}' names prompt section '{name}', which the manifest does not " +
+                $"declare as selectable. Available: {string.Join(", ", PromptManifest.SelectableSections)}."))
+        ];
     }
 
     private static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)

@@ -1,4 +1,5 @@
 using Domain.Outposts;
+using Domain.Prompts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
@@ -26,7 +27,7 @@ internal sealed class McpClientManager : IAsyncDisposable
     public IReadOnlyList<string> DialledEndpoints { get; }
 
     public IReadOnlyList<AITool> Tools { get; }
-    public IReadOnlyList<string> Prompts { get; }
+    public IReadOnlyList<PromptSection> Prompts { get; }
 
     private bool _isDisposed;
 
@@ -34,7 +35,7 @@ internal sealed class McpClientManager : IAsyncDisposable
         IReadOnlyList<McpClient> clients,
         IReadOnlyList<string> dialledEndpoints,
         IReadOnlyList<AITool> tools,
-        IReadOnlyList<string> prompts)
+        IReadOnlyList<PromptSection> prompts)
     {
         Clients = clients;
         DialledEndpoints = dialledEndpoints;
@@ -176,16 +177,18 @@ internal sealed class McpClientManager : IAsyncDisposable
         return uri.IsDefaultPort ? uri.Host : $"{uri.Host}-{uri.Port}";
     }
 
-    private static async Task<string[]> LoadPrompts(
+    private static async Task<PromptSection[]> LoadPrompts(
         IEnumerable<(McpClient Client, string ServerName, string Address)> clients,
         string userId,
         McpPromptCache? promptCache,
         CancellationToken ct)
     {
-        var userContextPrompt = $"## User Context\n" +
-                                $"Conversation created by user: '{userId}'\n" +
-                                $"Use this userId/username for all user-scoped operations. unless you get more " +
-                                $"updated information in the user's message";
+        var userContext = PromptManifest.Bind(
+            PromptManifest.UserContext,
+            $"## User Context\n" +
+            $"Conversation created by user: '{userId}'\n" +
+            $"Use this userId/username for all user-scoped operations. unless you get more " +
+            $"updated information in the user's message");
         var perClient = await Task.WhenAll(clients
             .Where(c => c.Client.ServerCapabilities.Prompts is not null)
             .Select(c => promptCache is null
@@ -194,21 +197,26 @@ internal sealed class McpClientManager : IAsyncDisposable
 
         return perClient
             .SelectMany(p => p)
-            .Where(r => !string.IsNullOrWhiteSpace(r))
-            .Prepend(userContextPrompt)
+            .Where(r => !string.IsNullOrWhiteSpace(r.Text))
+            .Prepend(userContext)
             .ToArray();
     }
 
-    private static async Task<string[]> FetchPromptsAsync(McpClient client, CancellationToken ct)
+    // The name travels with the text. A server's prompt is words this repo did not write, so its
+    // name is the only handle the manifest has on it: what it may cost, where it is read and what
+    // it is for are declared against that name, and a prompt that arrives under a name nobody
+    // declared is reported rather than silently budgeted.
+    private static async Task<PromptSection[]> FetchPromptsAsync(McpClient client, CancellationToken ct)
     {
         var list = await client.ListPromptsAsync(cancellationToken: ct);
         return await Task.WhenAll(list.Select(async p =>
         {
             var result = await client.GetPromptAsync(p.Name, cancellationToken: ct);
-            return string.Join("\n", result.Messages
+            var text = string.Join("\n", result.Messages
                 .Select(m => m.Content)
                 .OfType<TextContentBlock>()
                 .Select(t => t.Text));
+            return PromptManifest.Bind(p.Name, text);
         }));
     }
 }

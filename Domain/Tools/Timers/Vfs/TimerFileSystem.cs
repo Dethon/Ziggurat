@@ -17,7 +17,9 @@ public sealed class TimerFileSystem(
     ITimerStore store, TimeProvider timeProvider, IAlertDismisser dismisser,
     ISatelliteCatalog satellites, TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
 {
-    public override string FilesystemName => "timers";
+    public const string Name = "timers";
+
+    public override string FilesystemName => Name;
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 

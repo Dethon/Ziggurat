@@ -18,7 +18,9 @@ public sealed class PrinterQueueFileSystem(
     string supportedFormats,
     TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
 {
-    public override string FilesystemName => "print-queue";
+    public const string Name = "print-queue";
+
+    public override string FilesystemName => Name;
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 

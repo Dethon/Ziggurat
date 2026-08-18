@@ -8,6 +8,8 @@ namespace Domain.Prompts;
 // have left every sentence here quietly wrong with the whole suite still green.
 public static class SandboxPrompt
 {
+    public const string Name = "sandbox_prompt";
+
     // `workspace` arrives in the backend's own coordinates, as the mount publishes it, and is
     // composed into a virtual path here by the one translation — the model never reads a backend
     // spelling (ADR 0016).

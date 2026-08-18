@@ -7,11 +7,8 @@ namespace McpServerWebSearch.McpPrompts;
 [McpServerPromptType]
 public class McpSystemPrompt
 {
-    private const string Name = "system_prompt";
-
-    [McpServerPrompt(Name = Name)]
-    [Description(
-        "System prompt for web research and browsing agent with search, navigation, and interaction capabilities")]
+    [McpServerPrompt(Name = WebBrowsingPrompt.Name)]
+    [Description(WebBrowsingPrompt.Description)]
     public static string GetSystemPrompt()
     {
         return WebBrowsingPrompt.AgentSystemPrompt;
