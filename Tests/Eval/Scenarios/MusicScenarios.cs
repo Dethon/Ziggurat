@@ -35,7 +35,7 @@ public static class MusicScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerAnyView),
+                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
                     Arg.Matches("command", @"^browse_media\.sh\b")
                 ]
             },
@@ -47,7 +47,7 @@ public static class MusicScenarios
                 [
                     // On the Music Assistant player, not on the television standing beside it in
                     // the same room and listing the same actions.
-                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerAnyView),
+                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
                     Arg.Matches("command", @"^music_assistant\.play_media\.sh\b"),
                     Arg.Matches("command", FakeHomeAssistant.FavouritesPlaylist),
                     Arg.Matches("command", @"--media_type\s+""?playlist")
@@ -55,11 +55,7 @@ public static class MusicScenarios
             }
         ],
         Ordering = [new OrderingConstraint("browse", "play")],
-        Permitted =
-        [
-            .. CallPermission.Looking("/ha*"),
-            CallPermission.Manual(EvalTools.Exec, "/ha*")
-        ],
+        Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
         // Tight on purpose: a model that guesses a title first gets a 500, and the browse and the
         // retry that follow put it over. That is the failure this scenario is named after.
         CallCeiling = 5,
@@ -98,9 +94,11 @@ public static class MusicScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerAnyView),
+                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
                     Arg.Matches("command", @"^music_assistant\.podcast_episodes\.sh\b"),
-                    Arg.Matches("command", "(?i)--podcast")
+                    // The show, not just the flag: --podcast with anything after it would pass a
+                    // check on the flag's name alone.
+                    Arg.Matches("command", "(?i)--podcast +\"?[^\"]*fin del mundo")
                 ]
             },
             new CallExpectation
@@ -109,7 +107,7 @@ public static class MusicScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerAnyView),
+                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
                     Arg.Matches("command", @"^music_assistant\.play_media\.sh\b"),
                     // The exact uri the listing returned. A play carrying the episode's title, or
                     // the show's name, does not match — which is the point.
@@ -118,11 +116,7 @@ public static class MusicScenarios
             }
         ],
         Ordering = [new OrderingConstraint("episodes", "play")],
-        Permitted =
-        [
-            .. CallPermission.Looking("/ha*"),
-            CallPermission.Manual(EvalTools.Exec, "/ha*")
-        ],
+        Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
         CallCeiling = 5,
         // Demonstrated red by deleting the podcast bullet: with it gone the model read the
         // player's state and answered without playing anything at all.
@@ -157,7 +151,7 @@ public static class MusicScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerAnyView),
+                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
                     Arg.Matches("command", @"^media_seek\.sh\b"),
                     Arg.Matches("command", @"--seek_position\s+""?[01]\b")
                 ]
@@ -165,11 +159,7 @@ public static class MusicScenarios
         ],
         // Nothing else may be run: a play of any kind is an unnecessary call here, and that is
         // exactly the mistake the rule names. Reading an action's manual is not running it.
-        Permitted =
-        [
-            .. CallPermission.Looking("/ha*"),
-            CallPermission.Manual(EvalTools.Exec, "/ha*")
-        ],
+        Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
         CallCeiling = 4,
         // No citation: with the restart bullet deleted the seek still happened. Working out that
         // "from the beginning" is a seek rather than a second play is this model's default.

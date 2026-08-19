@@ -255,13 +255,13 @@ public sealed class EvalStack : IAsyncDisposable
             BraveSearch = new BraveSearchConfiguration
             {
                 ApiKey = "eval",
-                ApiUrl = "http://brave.eval/res/v1/"
+                ApiUrl = EvalWeb.SearchApiUrl
             }
         });
 
         // The typed client keeps its name from the interface it is registered against.
         builder.Services.AddHttpClient(nameof(IWebSearchClient))
-            .ConfigurePrimaryHttpMessageHandler(() => Web.Search);
+            .ConfigurePrimaryHttpMessageHandler(() => Web.SearchTransport);
 
         builder.Services.Replace(ServiceDescriptor.Singleton<IWebBrowser>(
             _ => new PlaywrightWebBrowser(browserFactory: LaunchAsync)));
@@ -269,21 +269,11 @@ public sealed class EvalStack : IAsyncDisposable
         return await StartAsync(builder, port);
     }
 
-    // One browser per stack, launched locally. Camoufox exists to get past anti-bot defences that
-    // a page served by this process does not have, so what a scenario would gain from connecting
-    // to one is a dependency rather than fidelity.
+    // One browser per stack, launched the way every web fixture launches one.
     private async Task<IBrowser> LaunchAsync()
     {
         _playwright ??= await Playwright.CreateAsync();
-        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-        {
-            Headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false",
-            // Everything but this machine goes to a proxy that is not listening, so a scenario
-            // cannot quietly leave the building: a page nobody in this process served fails to
-            // load rather than answering. Chromium bypasses loopback regardless of this setting,
-            // which is what leaves the served site reachable.
-            Proxy = new Microsoft.Playwright.Proxy { Server = "http://127.0.0.1:1", Bypass = "127.0.0.1,localhost" }
-        });
+        _browser = await EvalWeb.LaunchBrowserAsync(_playwright);
 
         return _browser;
     }

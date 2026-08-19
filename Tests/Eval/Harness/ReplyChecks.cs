@@ -29,16 +29,30 @@ public static class ReplyChecks
 
     private static IEnumerable<string> TooLong(ReplyExpectation expectation, string reply)
     {
-        if (expectation.MaxSentences is { } sentences && Sentences(reply) > sentences)
+        var answer = WithoutAcknowledgement(reply);
+
+        if (expectation.MaxSentences is { } sentences && Sentences(answer) > sentences)
         {
-            yield return $"the reply is {Sentences(reply)} sentences against a limit of " +
+            yield return $"the reply is {Sentences(answer)} sentences against a limit of " +
                          $"{sentences}: \"{reply}\"";
         }
 
-        if (expectation.MaxWords is { } words && Words(reply) > words)
+        if (expectation.MaxWords is { } words && Words(answer) > words)
         {
-            yield return $"the reply is {Words(reply)} words against a limit of {words}: \"{reply}\"";
+            yield return $"the reply is {Words(answer)} words against a limit of {words}: \"{reply}\"";
         }
+    }
+
+    // A single word before the answer is what the voice contract asks for ahead of slow work —
+    // "un momento", "consultando" — so a limit that counted it would fail a reply for obeying the
+    // rule beside the one being checked. Only the first sentence, and only if it is one word.
+    private static string WithoutAcknowledgement(string reply)
+    {
+        var parts = Regex.Split(reply.Trim(), @"(?<=[.!?…])\s+");
+
+        return parts.Length > 1 && Words(parts[0]) == 1
+            ? string.Join(" ", parts.Skip(1))
+            : reply;
     }
 
     // The five things a text-to-speech engine cannot say. Each is named separately because the fix

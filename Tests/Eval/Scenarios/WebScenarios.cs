@@ -1,4 +1,5 @@
 using Domain.Prompts;
+using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
 
 namespace Tests.Eval.Scenarios;
@@ -95,7 +96,13 @@ public static class WebScenarios
         },
         // No citation: with the read-the-page paragraph and the answer-from-what-you-found bullet
         // both deleted, the reply still carried the page's time rather than the snippet's.
-        Policy = new RunPolicy(2, 3)
+        //
+        // Two of four rather than two of three, because this one is genuinely borderline: on the
+        // first full run it answered "abre a las 09:00" straight from the stale snippet, twice out
+        // of three. Nothing in the web prompt says a snippet is not a source, and adding a
+        // sentence that said so did not measurably change it — see
+        // .scratch/findings-from-the-eval/issues/03-an-answer-comes-from-the-snippet.md.
+        Policy = new RunPolicy(2, 4)
     };
 
     // The action half. A ref that was never in a snapshot addresses nothing, so the page has to be
@@ -107,11 +114,13 @@ public static class WebScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            // The site is named rather than described: "el taller del barrio" reads as research,
-            // and this model hands research to a worker about half the time — which is a finding
-            // of its own (see the delegation exemptions) and not what this scenario is about.
-            Text = "Reserva una plaza en el taller del Cuaderno de barrio para el turno del sábado "
-                   + "a las 12:00 a nombre de Fran, y dime el código de la reserva.",
+            // Phrased as an instruction to act rather than as a question to look into. The
+            // delegation section tells the model to hand web work and multi-step gathering to a
+            // worker, and it does exactly that on about half of the runs where the turn reads like
+            // research — a finding of its own, recorded with the delegation exemptions, and not
+            // what this scenario is about.
+            Text = "Abre el formulario de reservas del taller del Cuaderno de barrio y reserva el "
+                   + "turno del sábado a las 12:00 a nombre de Fran; dime el código de la reserva.",
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
@@ -121,13 +130,21 @@ public static class WebScenarios
             {
                 Label = "open",
                 Tool = EvalTools.WebBrowse,
-                Arguments = [Arg.Matches("url", "/taller/reserva")]
+                Arguments =
+                [
+                    Arg.Matches("url", "/taller/reserva"),
+                    // With the refs, in the one call the contract asks for. Acting on a page whose
+                    // structure was never fetched is the failure this scenario is named after, and
+                    // a permitted standalone snapshot afterwards does not answer for it.
+                    Arg.Flag("snapshot", true)
+                ]
             },
             new CallExpectation
             {
                 Label = "name",
                 Tool = EvalTools.WebAction,
-                Arguments = [Arg.Matches("ref", @"\S"), Arg.Matches("value", "(?i)fran")]
+                // A ref that came out of that snapshot, and the name the user gave.
+                Arguments = [Arg.Matches("ref", @"^e\d+$"), Arg.Matches("value", "(?i)fran")]
             }
         ],
         // The page has to be open before an element on it can be named.
@@ -143,7 +160,9 @@ public static class WebScenarios
         Reply = new ReplyExpectation
         {
             // Only the confirmation page carries it, and only a submission produces that page.
-            Mentions = [new SpokenValue("the booking code", "R-4471")]
+            // The code the Saturday slot books. The Sunday one has a different code, so a reply
+            // carrying this one is a reply about the turn the user actually asked for.
+            Mentions = [new SpokenValue("the booking code", EvalWeb.SaturdayCode)]
         },
         // Demonstrated red on both runs by deleting the interaction workflow — the snapshot=true
         // paragraph, the one-snapshot-then-chain principle and the re-snapshot recovery row. What
@@ -151,6 +170,6 @@ public static class WebScenarios
         // the same reflex the delegation exemptions record: without the prose it does not attempt
         // the interaction at all.
         Claims = [WebBrowsingPrompt.RefsComeFromASnapshot.Id],
-        Policy = new RunPolicy(2, 3)
+        Policy = new RunPolicy(2, 4)
     };
 }

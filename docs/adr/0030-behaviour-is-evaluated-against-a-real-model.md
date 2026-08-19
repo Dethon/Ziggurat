@@ -31,6 +31,16 @@ so a scenario could pass against a contract no deployment has. A synthetic `Agen
 the suite stay green while the shipped model, provider routing, language or prompt sections are
 misconfigured, which is one of the failures the suite exists to catch.
 
+One fake sits deeper than that list, and knowingly: the **memory store**. Recall is injected as
+data, but `memory_forget` needs something to search and delete from, and the real store's search
+is a k-nearest query with no relevance floor — against a handful of seeded facts it returns all of
+them, so every forget would empty the store and no scenario could say which fact the turn was
+about. The eval's store matches lexically instead. The cost is stated where it lands: a scenario's
+"nothing else was forgotten" assertion is true of that store and not of the deployment's, and the
+unbounded delete is filed as a finding of its own rather than hidden by the substitution. What
+these scenarios are evidence about is the agent's decision to forget, which is the subject the
+spec keeps and retrieval quality is the subject it rules out.
+
 The whole suite is opt-in under `Category=Eval` and never runs on a bare `dotnet test`, even
 with an OpenRouter key present — unlike `Category=Llm`, which does. Sampling stays at provider
 defaults: pinning temperature for the eval would add a knob production does not use, so green

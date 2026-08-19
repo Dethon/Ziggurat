@@ -14,7 +14,14 @@ inventing another route.
 
 - [x] A turn naming an unprefixed path leads to the agent resolving the mount rather than
       guessing one.
-- [x] A declared-absent mount produces an explanation to the user and no retry storm.
+- [ ] A declared-absent mount produces an explanation to the user and no retry storm. **Green on
+      2026-08-18 and withdrawn on 2026-08-19**, when ticket 15 gave the eval the websearch server
+      both assistants dial. With a browser in the toolset, "dime qué películas tengo en
+      /media/Movies" hands the whole task to `jack-worker`, then to `jonas-worker`, then calls
+      `web_browse` on `file:///media/Movies`, and only then says it cannot reach the directory. The
+      explanation is right and the three calls before it are the working-around the rule forbids.
+      Filed as `.scratch/findings-from-the-eval/issues/04-an-unreachable-path-is-worked-around.md`;
+      the withdrawn scenario is its acceptance test.
 - [ ] A request needing a capability the mount lacks is reported, and the agent does not
       substitute a different mount silently. **Withdrawn**: the eval hosts no exec-capable mount,
       because the sandbox backend runs bash against a real directory and hosting it in process

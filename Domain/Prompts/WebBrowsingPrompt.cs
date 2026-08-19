@@ -76,9 +76,6 @@ public static class WebBrowsingPrompt
         ### Response Style
 
         - Answer the question from what you found; never dump raw page content.
-        - A search snippet is not a source. It is a summary written elsewhere and it goes stale:
-          open the page and answer from what the page says, even when the snippet looks like a
-          complete answer.
         - Cite source URLs only when your reply is written, never when it is read aloud.
         - If content is partial, fetch the missing part once, then answer with what you have; if you
           still cannot, say so in one clause — don't offer to get more.

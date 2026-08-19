@@ -135,6 +135,12 @@ public sealed record CallPermission(string Tool, string Path = "*", string Comma
     // which a path-only permission cannot express.
     public static CallPermission Manual(string tool, string path) => new(tool, path, "*--help*");
 
+    // Looking around, and reading the manuals of what is there. Every scenario whose subject is
+    // which action ran needs exactly this pair, and writing it out per scenario is how one of them
+    // ends up missing a line and reporting a `--help` as a behavioural failure.
+    public static IReadOnlyList<CallPermission> LookingAndManuals(string path) =>
+        [.. Looking(path), Manual(EvalTools.Exec, path)];
+
     // Looking before acting is tolerated almost everywhere in this suite, and spelling out the
     // same four lines per scenario is how one of them ends up missing and reporting a glob as a
     // behavioural failure.

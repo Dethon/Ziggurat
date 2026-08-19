@@ -22,7 +22,10 @@ only by its exact playable uri, which must be looked up first.
       fails the way it fails in a real home: the fake answers an unresolvable name with the same
       bare 500, and the browse-and-retry that follows breaks the call ceiling.
 - [x] A specific episode is looked up and played by its uri; playing the show name instead fails,
-      because the required call matches the uri and nothing else.
+      because the required call matches the uri and nothing else. The player arrives playing a
+      *different* episode of the same show: with the asked-for one loaded, its uri would be
+      readable from `state.json` and the required listing would prove nothing about where the uri
+      came from.
 - [x] A resume-versus-restart case behaves as the contract states: "ponlo otra vez desde el
       principio" is a seek on the player that already has the item loaded, and any play at all is
       an unnecessary call.
@@ -35,6 +38,11 @@ only by its exact playable uri, which must be looked up first.
       - **Withdrawn.** Which player music goes to: the paragraph was deleted and the playlist
         still went to the speaker rather than the television. Their names teach it.
       - **Withdrawn.** Restart-is-a-seek: deleted, the seek still happened.
+
+**The episode scenario asks for two of four runs** rather than two of three: on about a third of
+them the lookup goes to a worker instead of being done, which is the delegation reflex recorded in
+`ClaimExemptions`. The threshold says the behaviour has to hold at least half the time rather than
+being retried until it does.
 
 **Harness change this ticket forced:** a permission can now be scoped by the command it ran
 (`CallPermission.Manual`). The first two demonstrations were red for the wrong reason — the model
