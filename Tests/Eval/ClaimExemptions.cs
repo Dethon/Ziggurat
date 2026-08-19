@@ -235,9 +235,6 @@ public static class ClaimExemptions
             + "limit, and the declared word count is the contract's twelve plus what the spelled-out "
             + "numbers exclusion is worth — the check counts every word. A scenario whose subject is the "
             + "limit needs a turn that tempts a long answer."),
-        [VoicePrompt.SeveralSentencesOnlyWhenAsked.Id] = new(ExemptionKind.Unwritten,
-            "The three-sentence allowance applies to a turn that asked for an explanation, a comparison "
-            + "or a list, and every scenario in the suite asks for one short thing."),
         [VoicePrompt.UnclearRequestIsActedOn.Id] = new(ExemptionKind.Unwritten,
             "Two rules in one: act on the likeliest reading, and ask before an irreversible delete. The "
             + "second needs a turn whose likeliest reading destroys something, which no family sets up yet."),
@@ -277,13 +274,5 @@ public static class ClaimExemptions
             + "reminder still went to /timers rather than /schedules. Nothing tempts the model into "
             + "/schedules for a human reminder, so the negative half of the discrimination has no "
             + "turn that witnesses it yet."),
-        [TimerPrompt.TextIsSpokenNeverAnInstruction.Id] = new(ExemptionKind.Unwritten,
-            "Demonstrated on 2026-08-18 with the rule deleted from the timer and Home Assistant prompts: "
-            + "the deferred action still became a schedule rather than a timer whose text is a command. "
-            + "Witnessing this one needs a turn that forces a timer and then asks what goes in its text."),
-        [TimerPrompt.ListedByGlob.Id] = new(ExemptionKind.Unwritten,
-            "Covered incidentally as a permitted call today; a scenario whose subject is listing is not written yet."),
-        [TimerPrompt.CancelledByRemovingIt.Id] = new(ExemptionKind.Unwritten,
-            "Cancelling is the delete half of the extend scenario; a cancel-only scenario is not written yet.")
     };
 }

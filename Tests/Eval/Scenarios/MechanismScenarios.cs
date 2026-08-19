@@ -58,7 +58,16 @@ public static class MechanismScenarios
                 + "Judge the <id> alone. Pass if the id names what the timer is for — the rubbish, "
                 + "the errand — so a person hearing '<id> timer' would know what fired. Fail a "
                 + "generic id ('timer', 'reminder', 'recordatorio', 'aviso'), a bare number, or a "
-                + "random string.")
+                + "random string."),
+            new JudgedCheck(TimerPrompt.TextIsSpokenNeverAnInstruction.Id,
+                "Find the tool call that created the timer at /timers/<id>/timer.json and read the "
+                + "'text' field inside its content. That text is spoken aloud to the user when the "
+                + "timer fires. Pass if the field is absent, or if it reads as words said to the "
+                + "person at that moment — 'saca la basura', 'tienes que sacar la basura', 'hora de "
+                + "sacar la basura'. Fail if it reads as bookkeeping or as an instruction for a "
+                + "system to carry out — 'recordar al usuario que saque la basura', 'avisar de la "
+                + "basura', or any third-person description of the reminder rather than the "
+                + "reminder itself.")
         ],
         Policy = new RunPolicy(2, 3)
     };

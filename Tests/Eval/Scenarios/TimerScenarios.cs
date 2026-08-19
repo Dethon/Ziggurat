@@ -8,7 +8,8 @@ namespace Tests.Eval.Scenarios;
 // the model's default behaviour and protects nothing.
 public static class TimerScenarios
 {
-    public static IReadOnlyList<Scenario> All => [PastaTimer, ExtendARunningTimer];
+    public static IReadOnlyList<Scenario> All =>
+        [PastaTimer, ExtendARunningTimer, WhatTimersAreRunning, CancelThePastaTimer];
 
     // The tracer bullet: one voice turn, one countdown, at the path the contract names. It cites
     // one claim rather than the three it looks like it exercises — the other two were demonstrated
@@ -129,6 +130,94 @@ public static class TimerScenarios
             TimerPrompt.StatusIsReadForTimeLeft.Id,
             TimerPrompt.RecreationIsNeverNarrated.Id
         ],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The listing, as the subject rather than a permitted look on the way to something else. Two
+    // timers are armed so that the answer is a real list — and a list is exactly what the voice
+    // contract's three-sentence allowance exists for, so that claim is cited here too: every
+    // other spoken scenario asks for one short thing and caps the reply at one sentence.
+    public static Scenario WhatTimersAreRunning => new()
+    {
+        Name = "the running timers are listed by globbing",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "¿qué temporizadores tengo puestos?",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Armed =
+        [
+            new ArmedTimerSeed("pasta", DurationSeconds: 480, Room: "kitchen",
+                RunningFor: TimeSpan.FromMinutes(3)),
+            new ArmedTimerSeed("colada", DurationSeconds: 3600, Room: "kitchen",
+                RunningFor: TimeSpan.FromMinutes(10))
+        ],
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "list",
+                Tool = EvalTools.Glob,
+                Arguments = [Arg.PathMatches("^/timers")]
+            }
+        ],
+        // Reading a status after the glob is fine — how much is left is part of a useful answer —
+        // so the ceiling leaves room for both reads and no third.
+        Permitted = [.. CallPermission.Looking("/timers*")],
+        CallCeiling = 5,
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            // The user asked for a list, which is the one shape the voice contract allows more
+            // than a sentence for — and it caps that allowance at three.
+            MaxSentences = 3,
+            Mentions =
+            [
+                new SpokenValue("the pasta timer", "pasta"),
+                new SpokenValue("the laundry timer", "colada", "lavadora")
+            ]
+        },
+        Claims = [TimerPrompt.ListedByGlob.Id, VoicePrompt.SeveralSentencesOnlyWhenAsked.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // Cancelling as its own subject: the contract names one shape — remove /timers/<id> — and a
+    // running timer to point it at. Nothing else under /timers may be written or removed, which
+    // is what the permitted set says by permitting only looks.
+    public static Scenario CancelThePastaTimer => new()
+    {
+        Name = "a timer is cancelled by removing its directory",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "quita el temporizador de la pasta",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Armed =
+        [
+            new ArmedTimerSeed("pasta", DurationSeconds: 480, Room: "kitchen",
+                RunningFor: TimeSpan.FromMinutes(3))
+        ],
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "cancel",
+                Tool = EvalTools.Remove,
+                Arguments = [Arg.Path("/timers/pasta")]
+            }
+        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
+        CallCeiling = 3,
+        Reply = new ReplyExpectation { Spoken = true, MaxSentences = 1 },
+        Claims = [TimerPrompt.CancelledByRemovingIt.Id],
         Policy = new RunPolicy(2, 3)
     };
 }
