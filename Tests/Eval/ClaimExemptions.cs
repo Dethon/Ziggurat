@@ -51,28 +51,10 @@ public static class ClaimExemptions
             + "heavier did not change it. This is a finding about the deployment rather than about "
             + "the harness: the rule is stated and is not followed, and a scenario asserting it would "
             + "be a red test rather than a guard."),
-        [SubAgentPrompt.NoWorkerIsNamed.Id] = new(ExemptionKind.Unwritten,
-            "Only assertable on a turn that delegated, and the one scenario that reliably delegates "
-            + "is the negative one — see the exemption above."),
         [SubAgentPrompt.ASingleCallIsDoneInPlace.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-18 with the do-it-yourself bullet deleted: the model still read "
             + "the timer's status itself rather than handing it to a worker. The scenario stays as a "
             + "guard — the same model delegates readily in other shapes, so this is worth watching."),
-        [SubAgentPrompt.HeavyWorkIsDelegated.Id] = new(ExemptionKind.Unwritten,
-            "Recorded when the eval hosted no search; the websearch server has been hosted since the "
-            + "web family landed, so a research-shaped turn is writable now. What holds it back is "
-            + "the delegation finding above: whether this model delegates heavy work at all is the "
-            + "question that scenario would be asking."),
-        [SubAgentPrompt.PromptIsSelfContained.Id] = new(ExemptionKind.Unwritten,
-            "Asserted as a side condition — each delegated prompt must name the folder it is about — "
-            + "but the rule's real subject is a url or a name the user gave that only the parent saw."),
-        [SubAgentPrompt.SuccessCriteriaAreStated.Id] = new(ExemptionKind.Judge,
-            "The judged-check machinery exists and the rubric is writable; what is missing is a "
-            + "scenario that reliably delegates to carry it — the one that did was withdrawn, see "
-            + "the finding on parallel-parts-are-delegated."),
-        [SubAgentPrompt.AnswerIsSynthesised.Id] = new(ExemptionKind.Judge,
-            "A judged check comparing the canned worker answer with the reply, ready to write; "
-            + "like the entry above it waits on a scenario that reliably delegates."),
         [MemoryPrompts.RecallShapesTheAnswer.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-19 with the silent-application sentence deleted: a remembered "
             + "'cuece la pasta nueve minutos' still came back as a 540-second timer. A fact in the "
@@ -94,20 +76,6 @@ public static class ClaimExemptions
             "Demonstrated on 2026-08-19 with the whole 'When to forget' section deleted: 'olvida "
             + "lo del piso' still removed exactly that memory. The tool's own description says "
             + "what it is for, and a tool cannot be offered without one."),
-        [MemoryPrompts.MechanismIsNeverMentioned.Id] = new(ExemptionKind.Unwritten,
-            "Cited on 2026-08-19 and withdrawn: the reply named no plumbing on any run, including "
-            + "the ones with the memory prose deleted. The rule is only falsifiable on a turn that "
-            + "gives the model a reason to explain itself — being asked where a number came from, "
-            + "or a forget that failed."),
-        [MemoryPrompts.OutdatedFactsAreDeleted.Id] = new(ExemptionKind.Unwritten,
-            "Needs a fact whose expiry is legible from the turn's own instant — a flight last "
-            + "month, a deadline that has passed — and a turn that touches the subject without "
-            + "mentioning the fact. The correction scenario is the same rule with the user "
-            + "pointing at it, which is the easier half."),
-        [MemoryPrompts.NoisyStoreIsSwept.Id] = new(ExemptionKind.NeedsFixture,
-            "A sweep is a judgement about which of many memories are low-value, and the seeded "
-            + "store holds two facts on purpose: a store big enough to be noisy would make every "
-            + "other memory scenario's 'nothing else was forgotten' check expensive to state."),
         [FileSystemToolFeature.AnEnvelopeIsDataNotAReasonToRetry.Id] = new(ExemptionKind.Guard,
             "Cited on 2026-08-18 and withdrawn the same day. The first demonstration turned red "
             + "because the model handed the impossible listing to two workers, but a later run "
@@ -135,18 +103,6 @@ public static class ClaimExemptions
             + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "
             + "against a thirty-thousand-character page. No scenario's subject is the dumping "
             + "itself, so it guards rather than cites."),
-        [WebBrowsingPrompt.ActionsChainFromTheDiff.Id] = new(ExemptionKind.NeedsFixture,
-            "About how many snapshots a flow costs rather than about what it did, so it is only "
-            + "visible as a call count. The booking scenario's ceiling bounds it, but a scenario "
-            + "whose subject is the chaining needs a page with more steps than this one."),
-        [WebBrowsingPrompt.BrowseReadsAndSnapshotStructures.Id] = new(ExemptionKind.Judge,
-            "The negative half of the rule — not calling both for the same purpose — is a "
-            + "judgement about intent that a call log cannot make on its own; it waits on a "
-            + "judged check."),
-        [WebBrowsingPrompt.BackIsAnAction.Id] = new(ExemptionKind.Unwritten,
-            "Needs a turn that goes two pages deep and comes back, which the three-page site "
-            + "supports and no scenario asks for yet — and no turn shape found so far forces the "
-            + "return over the model simply remembering the first page."),
         [VaultPrompt.WikilinksAreNeverFixed.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-18 with the wikilink rule deleted: the edit landed and every "
             + "link came out untouched. This model does not tidy syntax it was not asked about, so "
@@ -178,23 +134,6 @@ public static class ClaimExemptions
             "Demonstrated on 2026-08-18 with the never-re-read rule deleted from both places it is "
             + "written: the model set the temperature and stopped. It does not check its own work "
             + "unprompted, so the prose defends against a habit this model does not have."),
-        [HomeAssistantPrompt.EntityNamedAsListed.Id] = new(ExemptionKind.Unwritten,
-            "The mount answers a near miss with a hint naming the right directory, so a wrong name "
-            + "costs a call rather than failing — witnessing this needs a ceiling tight enough that "
-            + "the retry breaks it, which is a scenario about the ceiling as much as about the name."),
-        [HomeAssistantPrompt.ArgumentsComeFromHelp.Id] = new(ExemptionKind.Unwritten,
-            "Reading --help is tolerated everywhere and required nowhere: what the contract asks for "
-            + "is that a bad-argument exit is fixed by re-reading rather than repeated, which needs a "
-            + "turn whose first attempt fails."),
-        [HomeAssistantPrompt.ExitCodesAreNeverVoiced.Id] = new(ExemptionKind.Unwritten,
-            "The spoken half is covered by the voice family's no-code rule; the written half — the "
-            + "stderr reason in plain words — has no scenario yet."),
-        [HomeAssistantPrompt.AlarmCarriesTargetAndInsistent.Id] = new(ExemptionKind.Unwritten,
-            "The alarms scenarios assert the mechanism and the time; the description's JSON shape is "
-            + "a second assertion on the same call and is not written yet."),
-        [HomeAssistantPrompt.SnoozeIsANewEvent.Id] = new(ExemptionKind.Unwritten,
-            "The timer half of snoozing is covered; the calendar half needs a turn arriving with a "
-            + "dismissed alarm rather than a dismissed timer."),
         [HomeAssistantPrompt.MusicPlaysOnTheMusicAssistantPlayer.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-19 with the whole MA-player paragraph deleted, in a kitchen "
             + "holding both a Music Assistant speaker and a television that lists the same "

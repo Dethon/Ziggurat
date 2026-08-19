@@ -27,8 +27,33 @@ note for that link to point at.
   note (a `Deleted` expectation on a path that must not exist), and the note must reference it
   as an embed rather than a Markdown link.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Seeds added; existing vault scenarios still green (armed spot-check).
-- [ ] Eight scenarios written, exemption lines removed, coverage test green.
-- [ ] Armed runs pass at each scenario's policy.
+- [x] Seeds added; existing vault scenarios still green (armed spot-check: the new-recipe
+      placement went 3/3 with the Inbox and the new notes in the tree).
+- [x] Eight scenarios written, exemption lines removed, coverage test green.
+- [x] Armed runs pass at each scenario's policy: tag 3/3, template 3/3, daily 3/3, inbox 3/3,
+      attachment 3/3, heading rename 3/3 after the prose fix, ask-first 2/3 after the spelling
+      fix, refused extension 2/3 after the prose fix and an honest ceiling.
+
+## Findings from the armed runs
+
+Five of eight passed on the first pass (tag 3/3, template 3/3, daily note 3/3, inbox 3/3,
+attachment 3/3). The other three each taught something:
+
+- **Heading rename went 0/2 as a real failure**: glob, read, edit, done — the model never
+  searched for incoming links. The prose said "search for incoming references" but, unlike the
+  filename bullet it obeys, never said to update them in the same change. Sharpened to "a rename
+  like any other: search for `#<old heading>` references first and update every incoming link in
+  the same change" → 3/3. The claim description now states the outcome (links updated), not the
+  habit (looking first).
+- **Ask-before-deleting went 0/2 on a check bug**: the model asked a perfect "¿Confirmas que
+  borre…?" and my spellings could not see it — the mentions matcher wants word boundaries, so
+  "confirm" never matches "Confirmas" and a bare "¿" never matches one glued to its word.
+  Whole-word spellings → 2/3.
+- **Refused extension went 0/2 twice**: first because the model bounced the choice back to the
+  user ("No puedo guardar .html; solo admite…") — the prose said "pick one rather than
+  guessing", which only forbids guessing, and now says to finish the write under the closest
+  accepted one and say so; then because the honest run (look around, refused create, accepted
+  create) is five calls against a ceiling of four. Ceiling now 6, which still catches a second
+  guessed extension.

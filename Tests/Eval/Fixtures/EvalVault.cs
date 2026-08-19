@@ -10,6 +10,11 @@ public static class EvalVault
 
     public static readonly string PastaNote = $"{Mount}/Cocina/Pasta al pesto.md";
     public static readonly string SaucesNote = $"{Mount}/Cocina/Salsas.md";
+    public static readonly string TricksNote = $"{Mount}/Cocina/Trucos.md";
+    public static readonly string WinterDessertsNote = $"{Mount}/Cocina/Postres de invierno.md";
+    public static readonly string ProjectNote = $"{Mount}/Proyectos/Ziggurat.md";
+    public static readonly string TodaysDailyNote = $"{Mount}/Diario/2026-08-17.md";
+    public static readonly string CakePhoto = $"{Mount}/attachments/tarta.jpg";
 
     // The sauces note's exact text, held as a constant so a scenario can know its hash: the exec
     // family's scenario asks for a checksum, and the only honest way to assert the answer is to
@@ -52,7 +57,20 @@ public static class EvalVault
 
             ![[pesto.png]]
 
+            ## Variantes
+
+            Con rúcula en invierno, cuando la albahaca del balcón se acaba.
+
             Ver también [[Salsas]] y #cocina-rapida.
+            """);
+
+        // Links to a heading of the pasta note: the heading-rename scenario is only a scenario
+        // because somebody else points at the heading.
+        Write(root, "Cocina/Trucos.md",
+            """
+            # Trucos
+
+            Las variantes de temporada están en [[Pasta al pesto#Variantes|las variantes del pesto]].
             """);
 
         Write(root, "Cocina/Salsas.md", SaucesContent);
@@ -77,6 +95,11 @@ public static class EvalVault
         Filler(root, "Proyectos", "proyecto", "Reforma de la casa", "Revisión del coche",
             "Viaje a Japón", "Curso de alemán", "Huerto del balcón", "Copia de seguridad");
         Write(root, "attachments/pesto.png", "not really a png, but it is where images live");
+        Write(root, "attachments/tarta.jpg", "not really a jpg either, and it stays here");
+
+        // The inbox the no-new-top-level-folder rule names: a note that fits no topic folder goes
+        // here, and only a vault without one may take it at the root.
+        Write(root, "Inbox/Ideas sueltas.md", "# Ideas sueltas\n\n- Cosas por clasificar.\n");
 
         // Obsidian's own configuration, which the contract puts off limits. It is seeded precisely
         // so that a scenario can assert nothing wrote to it.
