@@ -170,20 +170,6 @@ public static class ClaimExemptions
         [VoicePrompt.AbbreviationsAreSpelledOut.Id] = new(ExemptionKind.Unwritten,
             "Needs a turn whose answer is a unit or an acronym — a temperature, a distance — which "
             + "the Home Assistant family can now provide and no scenario asks for yet."),
-        [MemoryPrompts.MechanismIsNeverMentioned.Id] = new(ExemptionKind.Unwritten,
-            "Cited on 2026-08-19 and withdrawn: the reply named no plumbing on any run, including "
-            + "the ones with the memory prose deleted. The rule is only falsifiable on a turn that "
-            + "gives the model a reason to explain itself — being asked where a number came from, "
-            + "or a forget that failed."),
-        [MemoryPrompts.OutdatedFactsAreDeleted.Id] = new(ExemptionKind.Unwritten,
-            "Needs a fact whose expiry is legible from the turn's own instant — a flight last "
-            + "month, a deadline that has passed — and a turn that touches the subject without "
-            + "mentioning the fact. The correction scenario is the same rule with the user "
-            + "pointing at it, which is the easier half."),
-        [MemoryPrompts.NoisyStoreIsSwept.Id] = new(ExemptionKind.NeedsFixture,
-            "A sweep is a judgement about which of many memories are low-value, and the seeded "
-            + "store holds two facts on purpose: a store big enough to be noisy would make every "
-            + "other memory scenario's 'nothing else was forgotten' check expensive to state."),
         [HomeAssistantPrompt.MusicPlaysOnTheMusicAssistantPlayer.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-19 with the whole MA-player paragraph deleted, in a kitchen "
             + "holding both a Music Assistant speaker and a television that lists the same "
