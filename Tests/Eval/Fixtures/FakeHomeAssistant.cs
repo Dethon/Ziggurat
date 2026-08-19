@@ -51,10 +51,22 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public static readonly string AirConditionerDirectory = Directory(AirConditionerEntityId, "Aire Salón");
     public static readonly string KitchenSpeakerDirectory = Directory(KitchenSpeakerEntityId, "Altavoz Cocina");
     public static readonly string VacuumDirectory = Directory(VacuumEntityId, "Aspiradora");
+    public static readonly string WashingMachineDirectory = Directory(WashingMachineEntityId, "Lavadora");
+
+    // The washing machine reached under /ha/entities or under its area — and only with the
+    // composed `..._(<friendly-name>)` suffix a listing returns: the entity-named-as-listed
+    // scenario permits exactly this shape, so a bare id or a guessed suffix is an unnecessary
+    // call rather than a tolerated near-miss.
+    public static readonly string WashingMachinePathPattern =
+        $@"(^|/)({HaCatalog.ClassOf(WashingMachineEntityId)}\.)?{HaCatalog.ObjectOf(WashingMachineEntityId)}_\(";
 
     // The vacuum reached under /ha/entities or under its area, like the speaker below.
     public static readonly string VacuumPathPattern =
         $@"(^|/)({HaCatalog.ClassOf(VacuumEntityId)}\.)?{HaCatalog.ObjectOf(VacuumEntityId)}_\(";
+
+    // The air conditioner, either view, for a scenario that pins a read of its state.
+    public static readonly string AirConditionerPathPattern =
+        $@"(^|/)({HaCatalog.ClassOf(AirConditionerEntityId)}\.)?{HaCatalog.ObjectOf(AirConditionerEntityId)}_\(";
 
     // The same player reached either way. The mount serves entities under /ha/entities and again
     // under the area they belong to, and both are the deployment's own paths — a scenario that

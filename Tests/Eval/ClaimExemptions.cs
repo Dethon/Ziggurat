@@ -165,32 +165,10 @@ public static class ClaimExemptions
         [VaultPrompt.MarkdownIsTheNoteFormat.Id] = new(ExemptionKind.Guard,
             "The create scenario pins a .md path, but as part of where the note lands rather than as "
             + "a choice between accepted formats; a turn that tempts another extension is not written."),
-        [VaultPrompt.FrontmatterKeepsItsOtherKeys.Id] = new(ExemptionKind.Unwritten,
-            "The edit scenario asserts frontmatter survives whole; the rule about changing only the "
-            + "keys the user named needs a turn that asks for one key to change."),
-        [VaultPrompt.TemplatesAreNotExpanded.Id] = new(ExemptionKind.Unwritten,
-            "The template placeholder is seeded in a note no scenario edits yet."),
-        [VaultPrompt.NoNewTopLevelFolder.Id] = new(ExemptionKind.NeedsFixture,
-            "The negative half of where a note lands; it needs a turn whose topic fits nothing in "
-            + "the tree, which the seeded vault does not have yet."),
-        [VaultPrompt.HeadingsAreReferenceable.Id] = new(ExemptionKind.Unwritten,
-            "Needs a turn that renames a heading another note links to, which the seeded vault could "
-            + "support and no scenario asks for yet."),
-        [VaultPrompt.DailyNotesAreAppendedTo.Id] = new(ExemptionKind.Unwritten,
-            "The daily note is seeded and nothing writes to it yet."),
-        [VaultPrompt.AttachmentsStayInTheirFolder.Id] = new(ExemptionKind.NeedsFixture,
-            "Needs a turn that adds an attachment, which means a binary the eval has no way to hand "
-            + "the agent."),
-        [VaultPrompt.IrreversibleChangeIsAskedAbout.Id] = new(ExemptionKind.Unwritten,
-            "A turn whose likeliest reading destroys a note, asserted on the reply and on nothing "
-            + "having been deleted — worth writing, and not written yet."),
         [VaultPrompt.TransferIsOneCall.Id] = new(ExemptionKind.Guard,
             "The checksum scenario transfers out of the vault with a single copy and permits no "
             + "create; what it cites is the mounts section's transfer rule, and the vault prompt's "
             + "own copy of the sentence rides along uncited."),
-        [VaultPrompt.WritesAreTextOnly.Id] = new(ExemptionKind.Unwritten,
-            "Needs a turn that asks for a file the vault will refuse, and an assertion about what "
-            + "the agent did after the refusal."),
         [HomeAssistantPrompt.ExactlyWhatWasAsked.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-18 with the whole Scope paragraph deleted: 'enciende el aire' "
             + "still turned the air conditioning on and touched nothing else. Doing only what was "
@@ -235,21 +213,9 @@ public static class ClaimExemptions
             + "limit, and the declared word count is the contract's twelve plus what the spelled-out "
             + "numbers exclusion is worth — the check counts every word. A scenario whose subject is the "
             + "limit needs a turn that tempts a long answer."),
-        [VoicePrompt.SeveralSentencesOnlyWhenAsked.Id] = new(ExemptionKind.Unwritten,
-            "The three-sentence allowance applies to a turn that asked for an explanation, a comparison "
-            + "or a list, and every scenario in the suite asks for one short thing."),
-        [VoicePrompt.UnclearRequestIsActedOn.Id] = new(ExemptionKind.Unwritten,
-            "Two rules in one: act on the likeliest reading, and ask before an irreversible delete. The "
-            + "second needs a turn whose likeliest reading destroys something, which no family sets up yet."),
         [VoicePrompt.NothingIsNarrated.Id] = new(ExemptionKind.Guard,
             "Checked negatively wherever a scenario names what the reply must not say, but nothing "
             + "checks the general rule: a scenario about it needs a turn whose work is worth narrating."),
-        [VoicePrompt.AbbreviationsAreSpelledOut.Id] = new(ExemptionKind.Unwritten,
-            "Needs a turn whose answer is a unit or an acronym — a temperature, a distance — which "
-            + "the Home Assistant family can now provide and no scenario asks for yet."),
-        [VoicePrompt.OneWordBeforeSlowWork.Id] = new(ExemptionKind.NeedsFixture,
-            "A claim about what is said *before* the work, which the recording cannot see: it holds one "
-            + "reply, and the acknowledgement is a separate emission — tickets 15 and 16."),
         [TimerPrompt.DurationIsACountdown.Id] = new(ExemptionKind.Guard,
             "Demonstrated twice and stayed green both times, most recently on 2026-08-18 with all three "
             + "mounts hosted: deleting the countdown rule from the timer, Home Assistant and scheduling "
@@ -277,13 +243,5 @@ public static class ClaimExemptions
             + "reminder still went to /timers rather than /schedules. Nothing tempts the model into "
             + "/schedules for a human reminder, so the negative half of the discrimination has no "
             + "turn that witnesses it yet."),
-        [TimerPrompt.TextIsSpokenNeverAnInstruction.Id] = new(ExemptionKind.Unwritten,
-            "Demonstrated on 2026-08-18 with the rule deleted from the timer and Home Assistant prompts: "
-            + "the deferred action still became a schedule rather than a timer whose text is a command. "
-            + "Witnessing this one needs a turn that forces a timer and then asks what goes in its text."),
-        [TimerPrompt.ListedByGlob.Id] = new(ExemptionKind.Unwritten,
-            "Covered incidentally as a permitted call today; a scenario whose subject is listing is not written yet."),
-        [TimerPrompt.CancelledByRemovingIt.Id] = new(ExemptionKind.Unwritten,
-            "Cancelling is the delete half of the extend scenario; a cancel-only scenario is not written yet.")
     };
 }

@@ -14,7 +14,8 @@ public static class ReplyChecks
         .. TooLong(expectation, reply),
         .. Unspeakable(expectation, reply),
         .. Missing(expectation, reply),
-        .. Narrated(expectation, reply)
+        .. Narrated(expectation, reply),
+        .. Unacknowledged(expectation, reply)
     ];
 
     // A sentence ends at '.', '!', '?' or '…'. Spanish opens a question with '¿' and closes it the
@@ -118,6 +119,25 @@ public static class ReplyChecks
         Regex.IsMatch(reply, $@"(?<![\p{{L}}\p{{N}}]){Regex.Escape(spelling)}(?![\p{{L}}\p{{N}}])",
             RegexOptions.IgnoreCase);
 
+    // The one-word acknowledgement before slow work, which the reply string does carry: the
+    // pre-tool text and the answer arrive as one recording, separated the way WithoutAcknowledgement
+    // above already accounts for. Declared only by scenarios whose work is unambiguously slow —
+    // on a fast turn the contract says to stay silent, and this check would demand the opposite.
+    private static IEnumerable<string> Unacknowledged(ReplyExpectation expectation, string reply)
+    {
+        if (!expectation.AcknowledgesFirst)
+        {
+            yield break;
+        }
+
+        var parts = Regex.Split(reply.Trim(), @"(?<=[.!?…])\s+");
+        if (parts.Length < 2 || Words(parts[0]) != 1)
+        {
+            yield return "the reply does not open with a one-word acknowledgement before the " +
+                         $"answer: \"{reply}\"";
+        }
+    }
+
     // The other half of what a reply contract asks for: silence about mechanism. Matched as a
     // fragment rather than a word so one entry covers a verb's conjugations.
     private static IEnumerable<string> Narrated(ReplyExpectation expectation, string reply) =>
@@ -140,6 +160,11 @@ public sealed record ReplyExpectation
     public IReadOnlyList<SpokenValue> Mentions { get; init; } = [];
 
     public IReadOnlyList<string> NeverSays { get; init; } = [];
+
+    // The first output is one plain word, spoken before the tools run, and the answer follows.
+    // Only for scenarios whose work is unambiguously slow: several rounds of tools, a search, a
+    // worker. On anything faster the voice contract says the opposite — answer, with no opener.
+    public bool AcknowledgesFirst { get; init; }
 }
 
 // A value that must survive into the reply, and every spelling that counts as carrying it.

@@ -128,6 +128,27 @@ public class ReplyChecksTests
         failures.ShouldHaveSingleItem().ShouldContain("2 sentences");
     }
 
+    [Fact]
+    public void SlowWorkOpenedWithOneWord_Passes()
+    {
+        Failures(new ReplyExpectation { AcknowledgesFirst = true },
+                "Buscando.\nLa rifa recaudó mil euros.")
+            .ShouldBeEmpty();
+    }
+
+    [Theory]
+    // Straight to the answer: nothing was spoken while the tools ran.
+    [InlineData("La rifa recaudó mil euros.")]
+    // More than one word: the contract says one plain word, once.
+    [InlineData("Estoy buscando la información. La rifa recaudó mil euros.")]
+    // Only the acknowledgement: the answer never followed it.
+    [InlineData("Buscando.")]
+    public void SlowWorkWithoutAOneWordOpener_Fails(string reply)
+    {
+        Failures(new ReplyExpectation { AcknowledgesFirst = true }, reply)
+            .ShouldHaveSingleItem().ShouldContain("one-word acknowledgement");
+    }
+
     private static IReadOnlyList<string> Failures(ReplyExpectation expectation, string reply) =>
         ReplyChecks.Failures(expectation, reply);
 }

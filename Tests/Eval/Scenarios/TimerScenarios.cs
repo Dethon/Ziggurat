@@ -8,7 +8,8 @@ namespace Tests.Eval.Scenarios;
 // the model's default behaviour and protects nothing.
 public static class TimerScenarios
 {
-    public static IReadOnlyList<Scenario> All => [PastaTimer, ExtendARunningTimer];
+    public static IReadOnlyList<Scenario> All =>
+        [PastaTimer, ExtendARunningTimer, WhatTimersExist, CancelTheTimer, TheErrandGoesInTheText];
 
     // The tracer bullet: one voice turn, one countdown, at the path the contract names. It cites
     // one claim rather than the three it looks like it exercises — the other two were demonstrated
@@ -129,6 +130,130 @@ public static class TimerScenarios
             TimerPrompt.StatusIsReadForTimeLeft.Id,
             TimerPrompt.RecreationIsNeverNarrated.Id
         ],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // Two timers running, and a question about all of them: the listing is a glob of /timers, and
+    // the answer is a list — the one turn shape where the voice contract allows more than one
+    // sentence, still bounded at three. The remaining times are 5 and 50 minutes, distinct at a
+    // word boundary in both spellings, so the reply cannot pass by carrying the wrong one.
+    public static Scenario WhatTimersExist => new()
+    {
+        Name = "the timers that exist are answered from a glob",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "¿qué temporizadores tengo puestos y cuánto les queda?",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Armed =
+        [
+            new ArmedTimerSeed("pasta", DurationSeconds: 480, Room: "kitchen",
+                RunningFor: TimeSpan.FromMinutes(3)),
+            new ArmedTimerSeed("lavadora", DurationSeconds: 3600, Room: "kitchen",
+                RunningFor: TimeSpan.FromMinutes(10))
+        ],
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "list",
+                Tool = EvalTools.Glob,
+                Arguments = [Arg.PathMatches("^/timers")]
+            }
+        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
+        // The glob, one status per timer, and one spare.
+        CallCeiling = 5,
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            MaxSentences = 3,
+            Mentions =
+            [
+                new SpokenValue("the pasta timer", "pasta"),
+                new SpokenValue("its remaining time", "cinco", "5"),
+                new SpokenValue("the laundry timer", "lavadora", "colada"),
+                new SpokenValue("its remaining time", "cincuenta", "50")
+            ]
+        },
+        Claims = [TimerPrompt.ListedByGlob.Id, VoicePrompt.SeveralSentencesOnlyWhenAsked.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // Cancelling is a remove of the timer's own directory — not a dismiss (nothing is ringing)
+    // and not an edit (timers are immutable).
+    public static Scenario CancelTheTimer => new()
+    {
+        Name = "a timer is cancelled by removing it",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "quita el temporizador de la pasta",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Armed =
+        [
+            new ArmedTimerSeed("pasta", DurationSeconds: 480, Room: "kitchen",
+                RunningFor: TimeSpan.FromMinutes(3))
+        ],
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "cancel",
+                Tool = EvalTools.Remove,
+                Arguments = [Arg.Path("/timers/pasta")]
+            }
+        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
+        CallCeiling = 3,
+        Reply = new ReplyExpectation { Spoken = true, MaxSentences = 1 },
+        Claims = [TimerPrompt.CancelledByRemovingIt.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // A reminder whose errand could be misread as a job: "que apague el horno" is something the
+    // *person* will do when told, so it belongs in the timer's text — the message spoken when it
+    // fires. A model that reads it as its own task writes a /schedules one-shot instead, which
+    // nothing here permits; one that creates the timer but leaves the errand out of text fires a
+    // countdown that announces "recordatorio timer" and tells nobody what for.
+    public static Scenario TheErrandGoesInTheText => new()
+    {
+        Name = "the reminder's errand lands in the timer's text",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "recuérdame en veinte minutos que apague el horno",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "create",
+                Tool = EvalTools.Create,
+                Arguments =
+                [
+                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.Body("content",
+                        Arg.Number("durationSeconds", 1200),
+                        Arg.Matches("text", "(?i)horno"))
+                ]
+            }
+        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
+        CallCeiling = 4,
+        Claims = [TimerPrompt.TextIsSpokenNeverAnInstruction.Id],
         Policy = new RunPolicy(2, 3)
     };
 }

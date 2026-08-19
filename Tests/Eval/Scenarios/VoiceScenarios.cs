@@ -1,4 +1,5 @@
 using Domain.Prompts;
+using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
 
 namespace Tests.Eval.Scenarios;
@@ -16,7 +17,8 @@ public static class VoiceScenarios
     public static IReadOnlyList<Scenario> All =>
     [
         ActionConfirmedWithItsValue, TimeLeftIsTheValueAlone, WhatDoesNotExistIsOneClause,
-        StopTheRingingAlarm, TwoMoreMinutesAfterItRang, WhenItFiresInWriting
+        StopTheRingingAlarm, TwoMoreMinutesAfterItRang, WhenItFiresInWriting,
+        FiveMinutesForTea, TheThermostatInWords, TheRaffleByVoice
     ];
 
     // The reply to an action: two words, and the number the user said back in them. Repeating the
@@ -226,5 +228,141 @@ public static class VoiceScenarios
         },
         Claims = [TimerPrompt.WrittenStatusIncludesFiresAt.Id],
         Policy = new RunPolicy(2, 3)
+    };
+
+    // No verb, no "timer", just a duration and a subject. The likeliest reading is the only
+    // sensible one, and the contract says to take it and act: a model that asks what was meant
+    // never creates anything, and the required call says so.
+    public static Scenario FiveMinutesForTea => new()
+    {
+        Name = "an unclear request is acted on, not asked about",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "cinco minutos para el té",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "create",
+                Tool = EvalTools.Create,
+                Arguments =
+                [
+                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.Body("content", Arg.Number("durationSeconds", 300))
+                ]
+            }
+        ],
+        Permitted = [.. CallPermission.Looking("/timers*")],
+        CallCeiling = 3,
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            MaxSentences = 1,
+            MaxWords = 15,
+            Mentions = [new SpokenValue("the duration", "cinco", "5")]
+        },
+        Claims = [VoicePrompt.UnclearRequestIsActedOn.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The answer is a number with a unit, and state.json spells that unit as a symbol no
+    // text-to-speech engine says right. The reply has to carry the unit as a word.
+    public static Scenario TheThermostatInWords => new()
+    {
+        Name = "a unit is spelled out rather than read as a symbol",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "¿a qué temperatura está puesto el aire del salón?",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "state",
+                Tool = EvalTools.Read,
+                Arguments =
+                [
+                    Arg.PathMatches(FakeHomeAssistant.AirConditionerPathPattern),
+                    Arg.PathMatches(@"state\.json$")
+                ]
+            }
+        ],
+        Permitted = [.. CallPermission.Looking("/ha*")],
+        CallCeiling = 4,
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            MaxSentences = 1,
+            MaxWords = 15,
+            Mentions =
+            [
+                new SpokenValue("the target temperature", "veinticuatro", "24"),
+                new SpokenValue("the unit as a word", "grados")
+            ],
+            NeverSays = ["°", "º"]
+        },
+        Claims = [VoicePrompt.AbbreviationsAreSpelledOut.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // Research by voice: a search, a long page, a second fetch for its tail — unambiguously slow
+    // work, so the first output must be one plain word, spoken before the tools run. The recording
+    // sees it: the pre-tool text and the answer arrive as one reply string.
+    public static Scenario TheRaffleByVoice => new()
+    {
+        Name = "slow work opens with one word and then the answer",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "busca en la web del Cuaderno de barrio cuánto recaudó la rifa solidaria "
+                   + "de las fiestas",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "open",
+                Tool = EvalTools.WebBrowse,
+                Arguments = [Arg.Matches("url", "/cronica/fiestas")]
+            }
+        ],
+        Permitted =
+        [
+            new CallPermission(EvalTools.WebSearch),
+            new CallPermission(EvalTools.WebBrowse)
+        ],
+        // One worker tolerated, not required: the delegation reflex reaches research phrasing,
+        // and a canned worker reads no page, so the parent still pays for the tail itself.
+        MayDelegateTo = ["jonas-worker"],
+        CallCeiling = 6,
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            AcknowledgesFirst = true,
+            // The acknowledgement does not count against the limit; the answer itself is bounded.
+            MaxSentences = 2,
+            Mentions =
+            [
+                new SpokenValue("the raffle total",
+                    "1.842", "1842", "1 842", "mil ochocientos cuarenta y dos")
+            ]
+        },
+        Claims = [VoicePrompt.OneWordBeforeSlowWork.Id],
+        Policy = new RunPolicy(2, 4)
     };
 }
