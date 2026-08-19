@@ -38,3 +38,20 @@ with a filtered armed run at the end, the way the findings fixes were.
 - Memory retrieval quality stays out of scope (ADR-0030); `EvalMemory` stays a fake.
 - No forbidden-call lists (rejected in ADR-0030's design).
 - The judge does not grade deterministic checks; it exists only for claims that are judgments.
+
+## Validation, 2026-08-19
+
+Armed run over the smoke tier plus every scenario this effort added or changed, against
+`openai/gpt-5.6-luna` (OpenAI) with the judge live:
+
+- Smoke tier: 10/10 with the sandbox newly mounted in every stack — no regression from the
+  larger toolset.
+- Judged checks: timer id 3/3, no-step-narration 4/4, surgical edit 1/1 — the judge returned
+  parseable verdicts on every run.
+- New scenarios: checksum-from-the-sandbox 4/4, area-slug 3/3, context-bound summary 3/3,
+  chronicle 3/3 (after rephrasing as an instruction), autocomplete 3/4 (after the keyup fix and
+  tolerating the recorded delegation reflex).
+
+Two findings fed back into fixtures: a Playwright fill fires input events (pages meant to
+"react to keystrokes" must listen to key events), and research-phrased turns delegate — both
+now written where they bit.

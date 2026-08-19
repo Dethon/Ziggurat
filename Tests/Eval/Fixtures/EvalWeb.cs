@@ -284,7 +284,11 @@ public sealed class EvalWeb : IAsyncDisposable
               const campo = document.getElementById("actividad");
               const oculto = document.getElementById("actividadId");
               const lista = document.getElementById("sugerencias");
-              campo.addEventListener("input", () => {
+              // keyup rather than input, deliberately: a programmatic fill dispatches input but
+              // no key events, so only real keystrokes open the list. That is what makes this
+              // field "react to keystrokes" in the sense the type-vs-fill rule means — a filled
+              // value, however correct, produces no suggestions and therefore no code.
+              campo.addEventListener("keyup", () => {
                 oculto.value = "";
                 lista.innerHTML = "";
                 const texto = campo.value.trim().toLowerCase();

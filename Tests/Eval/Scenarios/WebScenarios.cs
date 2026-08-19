@@ -196,7 +196,11 @@ public static class WebScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "Busca la crónica de las fiestas del barrio y dime cuánto recaudó la rifa solidaria.",
+            // An instruction to act rather than a question to look into, the booking scenario's
+            // own lesson: phrased as research ("busca...") the whole task went to a worker on the
+            // first armed run — and a canned worker browses nothing, so the number never arrived.
+            Text = "Abre la crónica de las fiestas del barrio en la web del Cuaderno de barrio y "
+                   + "dime cuánto recaudó la rifa solidaria.",
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
@@ -275,11 +279,17 @@ public static class WebScenarios
             new CallPermission(EvalTools.WebSnapshot),
             new CallPermission(EvalTools.WebAction)
         ],
-        CallCeiling = 9,
+        // One worker is tolerated, not required — the delegation reflex the exemptions record
+        // lands here too, and a canned worker cannot produce the code, so the parent still has
+        // to do the flow itself. The ceiling absorbs the reflex plus one false start; a model
+        // that keeps wandering breaks it.
+        MayDelegateTo = ["jonas-worker"],
+        CallCeiling = 12,
         Reply = new ReplyExpectation
         {
             // Only the confirmation page carries it, and the confirmation only exists for a form
-            // whose activity was picked from the reactive list.
+            // whose activity was picked from the reactive list — a filled value opens nothing,
+            // because the suggestions are driven by key events a fill never sends.
             Mentions = [new SpokenValue("the signup code", EvalWeb.SignupCode)]
         },
         Claims = [WebBrowsingPrompt.TypeReactsAndFillSets.Id],
