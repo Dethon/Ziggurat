@@ -78,6 +78,13 @@ public sealed record Scenario
 
     public IReadOnlyList<string> Claims { get; init; } = [];
 
+    // Judgements the deterministic checks cannot make — whether an id is descriptive, whether a
+    // reply narrates its steps — graded by a pinned judge model against each rubric. A verdict
+    // failure fails the run like any other check; the claim is tallied in the scorecard as
+    // judged. Graded only on runs the deterministic checks pass, so a judge is never paid to
+    // grade a run that already failed.
+    public IReadOnlyList<JudgedCheck> Judged { get; init; } = [];
+
     public RunPolicy Policy { get; init; } = RunPolicy.Once;
 
     // Which tier this scenario is a canary for, not which tier is running: the smoke tier takes
@@ -154,6 +161,11 @@ public sealed record CallPermission(string Tool, string Path = "*", string Comma
 }
 
 public sealed record OrderingConstraint(string Before, string After);
+
+// One judgement, aimed by the claim it grades. The rubric is the whole instruction: it has to
+// say what passes and what fails in terms of the material the judge is shown, because the judge
+// knows nothing about this suite beyond what one run's material carries.
+public sealed record JudgedCheck(string Claim, string Rubric);
 
 // One entity, and what the turn must leave it at. The key is an entity id, or an entity id and one
 // of its attributes (`climate.salon#temperature`) — a thermostat set to another temperature has

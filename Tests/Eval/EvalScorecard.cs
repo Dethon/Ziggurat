@@ -26,8 +26,9 @@ public sealed class EvalScorecard : IDisposable
         lock (_gate)
         {
             _tier = tier;
-            _outcomes.AddRange(
-                scenario.Claims.Select(claim => new ClaimOutcome(claim, result.Passes, result.Attempts)));
+            _outcomes.AddRange(scenario.Claims
+                .Concat(scenario.Judged.Select(check => check.Claim))
+                .Select(claim => new ClaimOutcome(claim, result.Passes, result.Attempts)));
             // The scenario's own rate, cited or not: a guard's drift is only a diff if the guard
             // has a number.
             _scenarios.Add(new ScenarioOutcome(scenario.Name, result.Passes, result.Attempts));
@@ -41,14 +42,17 @@ public sealed class EvalScorecard : IDisposable
     private static IReadOnlyDictionary<string, string> Coverage()
     {
         var cited = EvalSuite.All.SelectMany(s => s.Claims).ToHashSet();
+        var judged = EvalSuite.All.SelectMany(s => s.Judged.Select(check => check.Claim)).ToHashSet();
 
         return PromptManifest.Claims.ToDictionary(
             claim => claim.Id,
             claim => cited.Contains(claim.Id)
                 ? "cited"
-                : ClaimExemptions.Reasons.TryGetValue(claim.Id, out var exemption)
-                    ? Spelled(exemption.Kind)
-                    : "uncovered");
+                : judged.Contains(claim.Id)
+                    ? "judged"
+                    : ClaimExemptions.Reasons.TryGetValue(claim.Id, out var exemption)
+                        ? Spelled(exemption.Kind)
+                        : "uncovered");
     }
 
     private static string Spelled(ExemptionKind kind) => kind switch

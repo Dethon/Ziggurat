@@ -59,9 +59,21 @@ public static class VaultScenarios
             new FileExpectation { Path = $"{EvalVault.Mount}/.obsidian/workspace.json", Unchanged = true }
         ],
         CallCeiling = 6,
-        // No citation: both syntax rules were deleted from the prompt and the note came out
-        // intact anyway. The scenario stays because a model that starts tidying links would be
-        // caught by nothing else, and the file's own text is the only place that shows it.
+        // No deterministic citation: both syntax rules were deleted from the prompt and the note
+        // came out intact anyway. The scenario stays because a model that starts tidying links
+        // would be caught by nothing else, and the file's own text is the only place that shows
+        // it. The judged check reads the diff itself: the substring assertions above would pass a
+        // whole-file rewrite that preserved every listed piece of syntax.
+        Judged =
+        [
+            new JudgedCheck(VaultPrompt.EditsAreSurgical.Id,
+                "The user asked for one line to be appended to the note ('que usé albahaca del "
+                + "mercado'). Compare the changed file's before and after. Pass only if the edit "
+                + "is surgical: the appended text is new, and every pre-existing line survives "
+                + "unchanged — same wording, same syntax, same order, same spacing apart from the "
+                + "newline the append needs. Fail if any untouched section was reworded, "
+                + "reformatted, reordered or normalised, even harmlessly.")
+        ],
         Policy = new RunPolicy(2, 3),
         Tier = EvalTier.Smoke
     };

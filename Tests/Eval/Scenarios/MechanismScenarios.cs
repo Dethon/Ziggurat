@@ -46,8 +46,20 @@ public static class MechanismScenarios
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
-        // No citation: both rules were deleted from every prompt that teaches them and this still
-        // passed. It runs as a regression guard rather than as evidence — see ClaimExemptions.
+        // No deterministic citation: both rules were deleted from every prompt that teaches them
+        // and this still passed. It runs as a regression guard rather than as evidence — see
+        // ClaimExemptions. The judged check is separate: whether the id is descriptive is a
+        // judgement about a word, and this is the scenario whose create call carries one.
+        Judged =
+        [
+            new JudgedCheck(TimerPrompt.IdIsDescriptive.Id,
+                "The user asked to be reminded to take out the rubbish ('que saque la basura'). "
+                + "Find the tool call that created the timer: its path is /timers/<id>/timer.json. "
+                + "Judge the <id> alone. Pass if the id names what the timer is for — the rubbish, "
+                + "the errand — so a person hearing '<id> timer' would know what fired. Fail a "
+                + "generic id ('timer', 'reminder', 'recordatorio', 'aviso'), a bare number, or a "
+                + "random string.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 

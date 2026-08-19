@@ -172,6 +172,17 @@ public static class WebScenarios
         // the same reflex the delegation exemptions record: without the prose it does not attempt
         // the interaction at all.
         Claims = [WebBrowsingPrompt.RefsComeFromASnapshot.Id],
+        // The reply of the one scenario that takes many steps is where narrating them tempts.
+        Judged =
+        [
+            new JudgedCheck(WebBrowsingPrompt.StepsAreNotReported.Id,
+                "Read the assistant's reply. It must carry the outcome — the booking made and its "
+                + "confirmation code — without an account of how it was done. Fail if the reply "
+                + "narrates the process: pages opened, forms filled, buttons clicked, snapshots "
+                + "taken, tools or workers used. Naming the workshop, the day, the time and the "
+                + "code is the outcome and passes; 'I opened the form and typed your name' is a "
+                + "step and fails.")
+        ],
         Policy = new RunPolicy(2, 4)
     };
 }

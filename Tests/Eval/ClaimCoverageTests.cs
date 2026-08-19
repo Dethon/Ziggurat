@@ -9,10 +9,17 @@ namespace Tests.Eval;
 // ran when somebody armed the eval would not collect that.
 public class ClaimCoverageTests
 {
+    // A judged check is a citation too: it aims a rubric at a claim, so the claim is tested —
+    // by a verdict rather than a matcher, which the scorecard's coverage field distinguishes.
+    private static HashSet<string> Cited() =>
+        EvalSuite.All
+            .SelectMany(s => s.Claims.Concat(s.Judged.Select(check => check.Claim)))
+            .ToHashSet();
+
     [Fact]
     public void EveryDeclaredClaim_HasEitherAScenarioOrAnExemption()
     {
-        var cited = EvalSuite.All.SelectMany(s => s.Claims).ToHashSet();
+        var cited = Cited();
 
         var uncovered = PromptManifest.Claims
             .Select(claim => claim.Id)
@@ -30,7 +37,8 @@ public class ClaimCoverageTests
         var declared = PromptManifest.Claims.Select(c => c.Id).ToHashSet();
 
         var invented = EvalSuite.All
-            .SelectMany(s => s.Claims.Select(claim => (s.Name, Claim: claim)))
+            .SelectMany(s => s.Claims.Concat(s.Judged.Select(check => check.Claim))
+                .Select(claim => (s.Name, Claim: claim)))
             .Where(cite => !declared.Contains(cite.Claim))
             .Select(cite => $"'{cite.Name}' cites '{cite.Claim}'")
             .ToList();
@@ -56,8 +64,6 @@ public class ClaimCoverageTests
     {
         // The exemption list is the backlog. A claim that has a scenario and is still excused
         // means the backlog is lying about how much is left.
-        var cited = EvalSuite.All.SelectMany(s => s.Claims).ToHashSet();
-
-        ClaimExemptions.Reasons.Keys.Where(cited.Contains).ShouldBeEmpty();
+        ClaimExemptions.Reasons.Keys.Where(Cited().Contains).ShouldBeEmpty();
     }
 }
