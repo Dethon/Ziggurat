@@ -26,3 +26,11 @@ Done. Two pages, offline boundary intact, both proven against the real browser i
 One thing the fixture work surfaced: every web_action re-stamps refs in document order, so an
 action that removes elements shifts every later ref — the fixture test re-snapshots after the
 pick, exactly as the tool description tells the model to.
+
+2026-08-19, later — Two corrections from the first armed run. Playwright's fill dispatches an
+input event, so the input-driven suggestions opened for a filled value and type-vs-fill was
+indistinguishable at the page: the list is now driven by keyup, which only real keystrokes
+produce, pinned by `FillingTheActivityField_OpensNoSuggestionsAtAll`. And the chronicle turn,
+phrased as research, went whole to a worker — the booking scenario's own lesson — so it now says
+"abre..." like booking does. After the fixes: chronicle 3/3, autocomplete 3/4 with one worker
+tolerated and the ceiling absorbing the delegation reflex the exemptions already record.

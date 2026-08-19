@@ -158,6 +158,25 @@ public class EvalWebTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task FillingTheActivityField_OpensNoSuggestionsAtAll()
+    {
+        // The trap has to bite: Playwright's fill dispatches an input event, so a page listening
+        // on input opens its suggestions for a filled value and type-vs-fill is indistinguishable
+        // — the first armed run proved it. The list is driven by key events, which only real
+        // keystrokes produce, so a filled field stays suggestion-less and typing is the only way
+        // to a code.
+        const string session = "proof-fill-inert";
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.SignupUrl));
+        var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
+
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "textbox", "Actividad"), WebActionType.Fill, "astro"));
+
+        (await _browsing.SnapshotAsync(new SnapshotRequest(session))).Snapshot
+            .ShouldNotContain("Astronomía en la azotea");
+    }
+
+    [Fact]
     public async Task SubmittingWithoutPickingASuggestion_DoesNotSignUp()
     {
         // Picking from the list is load-bearing: the hidden id is only set by the suggestion's own
