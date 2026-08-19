@@ -44,7 +44,7 @@ public static class EvalRun
         var thread = await agent.CreateSessionAsync(cancellation.Token);
 
         var response = await agent.RunAsync(
-            [Turn(scenario, conversationId, stack.Memory.Context)], thread,
+            Messages(scenario, conversationId, stack.Memory.Context), thread,
             cancellationToken: cancellation.Token);
 
         recording.Reply = response.Text;
@@ -55,18 +55,31 @@ public static class EvalRun
         return recording;
     }
 
+    // The whole run's input: the scripted history, oldest first and five minutes apart, then the
+    // turn itself. History rides as ordinary prior messages on the turn's own channel — a user
+    // message decorated the way the channel decorates one, and the assistant's answer verbatim —
+    // so what a multi-turn scenario tests is a conversation the model actually sees.
+    public static IReadOnlyList<ChatMessage> Messages(
+        Scenario scenario, string conversationId, MemoryContext? memories = null) =>
+    [
+        .. scenario.History.SelectMany<HistoryExchange, ChatMessage>((exchange, index) =>
+        [
+            Decorate(new ChatMessage(ChatRole.User, exchange.User), scenario,
+                scenario.Instant.AddMinutes(-5 * (scenario.History.Count - index))),
+            new ChatMessage(ChatRole.Assistant, exchange.Assistant)
+        ]),
+        Turn(scenario, conversationId, memories)
+    ];
+
     // Everything a channel puts on a turn, set the way a channel sets it. The decoration itself
     // happens where it happens in production — on the way out of the chat client — so what this
     // builds is the message, never the prefix.
     public static ChatMessage Turn(
         Scenario scenario, string conversationId, MemoryContext? memories = null)
     {
-        var message = new ChatMessage(ChatRole.User, scenario.Turn.Text);
-        message.SetSenderId(scenario.Turn.Sender);
-        message.SetLocation(scenario.Turn.Room);
-        message.SetSatelliteId(scenario.Turn.SatelliteId);
+        var message = Decorate(
+            new ChatMessage(ChatRole.User, scenario.Turn.Text), scenario, scenario.Instant);
         message.SetDismissedAlert(scenario.Turn.DismissedAlert);
-        message.SetTimestamp(scenario.Instant);
         // Set on the message the recall hook would have set it on, so the block reaches the model
         // through the decoration that renders it in production rather than through a second path.
         message.SetMemoryContext(memories);
@@ -74,6 +87,15 @@ public static class EvalRun
             scenario.AgentId, conversationId, UserId,
             new ReplyTarget(scenario.Turn.SatelliteId is null ? "signalr" : "voice", conversationId)));
 
+        return message;
+    }
+
+    private static ChatMessage Decorate(ChatMessage message, Scenario scenario, DateTimeOffset at)
+    {
+        message.SetSenderId(scenario.Turn.Sender);
+        message.SetLocation(scenario.Turn.Room);
+        message.SetSatelliteId(scenario.Turn.SatelliteId);
+        message.SetTimestamp(at);
         return message;
     }
 

@@ -63,10 +63,6 @@ public static class ClaimExemptions
             + "web family landed, so a research-shaped turn is writable now. What holds it back is "
             + "the delegation finding above: whether this model delegates heavy work at all is the "
             + "question that scenario would be asking."),
-        [SubAgentPrompt.ContextBoundWorkIsNotDelegated.Id] = new(ExemptionKind.NeedsFixture,
-            "Needs a turn whose task depends on what was said earlier in the conversation, and every "
-            + "scenario in the suite is a single turn against an empty history — scripted history is "
-            + "issue 07 of .scratch/comprehensive-eval."),
         [SubAgentPrompt.PromptIsSelfContained.Id] = new(ExemptionKind.Unwritten,
             "Asserted as a side condition — each delegated prompt must name the folder it is about — "
             + "but the rule's real subject is a url or a name the user gave that only the parent saw."),
