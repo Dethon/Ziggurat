@@ -102,11 +102,6 @@ public static class ClaimExemptions
             + "the ones with the memory prose deleted. The rule is only falsifiable on a turn that "
             + "gives the model a reason to explain itself — being asked where a number came from, "
             + "or a forget that failed."),
-        [MemoryPrompts.RemovalIsTheOnlyAction.Id] = new(ExemptionKind.Unfalsifiable,
-            "Nothing can falsify it as written: removal is the only memory tool the deployment "
-            + "offers, so an agent that tried to store one has nothing to call. What the sentence "
-            + "really guards against is the agent asking the user to repeat something it was "
-            + "already told, which is a claim about a reply and needs a turn that tempts it."),
         [MemoryPrompts.OutdatedFactsAreDeleted.Id] = new(ExemptionKind.Unwritten,
             "Needs a fact whose expiry is legible from the turn's own instant — a flight last "
             + "month, a deadline that has passed — and a turn that touches the subject without "
@@ -116,10 +111,6 @@ public static class ClaimExemptions
             "A sweep is a judgement about which of many memories are low-value, and the seeded "
             + "store holds two facts on purpose: a store big enough to be noisy would make every "
             + "other memory scenario's 'nothing else was forgotten' check expensive to state."),
-        [MemoryPrompts.NoOtherUsersMemories.Id] = new(ExemptionKind.Unfalsifiable,
-            "Scoping is enforced by the store rather than by the agent — every call carries the "
-            + "run's user id — so a scenario could only witness this by handing the agent another "
-            + "user's memories, which no code path does."),
         [FileSystemToolFeature.AnEnvelopeIsDataNotAReasonToRetry.Id] = new(ExemptionKind.Guard,
             "Cited on 2026-08-18 and withdrawn the same day. The first demonstration turned red "
             + "because the model handed the impossible listing to two workers, but a later run "

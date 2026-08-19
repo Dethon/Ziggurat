@@ -40,9 +40,12 @@ public static class MemoryPrompts
         new("memory.mechanism-is-never-mentioned",
             "Memories, the memory context block and memory operations are never mentioned unless the user asked about them.");
 
-    public static readonly PromptClaim RemovalIsTheOnlyAction =
-        new("memory.removal-is-the-only-action",
-            "Storing and recalling happen without the agent acting; the only memory call it makes is a removal.");
+    // Two sentences above deliberately declare no claim. "Your only memory action is removal" is
+    // a description of the toolset, not a contract — there is no other memory tool an agent could
+    // call, so no run can falsify it, and what it guards (a value memory holds is not asked for
+    // again) is already memory.recall-shapes-the-answer. "Never reference memories from other
+    // users" is enforced by the store, which scopes every call to the run's user id: no code path
+    // can hand the agent another user's memories for a scenario to witness.
 
     public static readonly PromptClaim CorrectionDeletesTheStaleFact =
         new("memory.correction-deletes-the-stale-fact",
@@ -60,21 +63,15 @@ public static class MemoryPrompts
         new("memory.noisy-store-is-swept",
             "Low-value automatically-extracted memories are swept when the store gets noisy.");
 
-    public static readonly PromptClaim NoOtherUsersMemories =
-        new("memory.no-other-users-memories",
-            "A memory belonging to another user is never referenced.");
-
     public static readonly IReadOnlyList<PromptClaim> Claims =
     [
         RecallShapesTheAnswer,
         MemoriesAreNotRestated,
         MechanismIsNeverMentioned,
-        RemovalIsTheOnlyAction,
         CorrectionDeletesTheStaleFact,
         ExplicitForgetIsObeyed,
         OutdatedFactsAreDeleted,
-        NoisyStoreIsSwept,
-        NoOtherUsersMemories
+        NoisyStoreIsSwept
     ];
 
     public const string ExtractionSystemPrompt =
