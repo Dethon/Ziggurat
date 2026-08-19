@@ -5,12 +5,6 @@ namespace Tests.Integration.Fixtures;
 
 public static class TestPort
 {
-    // Every number this has ever handed out. The probe is a real bind, so it can only say the port
-    // was free at the moment it asked — remembering the answer is what makes a repeat impossible
-    // within this process, whatever the caller does with it afterwards.
-    private static readonly HashSet<int> _issued = [];
-    private static readonly Lock _gate = new();
-
     // Where the kernel's own ephemeral range begins. Binding port zero draws from it, and so does
     // every outbound socket and every container publishing a random host port — which is what made
     // the old probe unsafe: it handed back a number the kernel was still free to give to somebody
@@ -18,41 +12,18 @@ public static class TestPort
     // assigned unless it is asked for by number.
     public static readonly int EphemeralRangeStart = ReadEphemeralRangeStart();
 
-    // A thousand is far more than a run holds and leaves the band clear of the well-known ports and
-    // of the services this suite itself starts on fixed numbers.
-    private static readonly int _bandStart = Math.Max(1024, EphemeralRangeStart - 1000);
+    // A thousand-wide band was thought to be far more than a run holds, until the full eval tier
+    // walked it to its end: seven servers per run, every scenario retried, and nothing given back.
+    // The band stays a thousand; what makes it enough is fixtures releasing their ports on
+    // dispose, so the walk only has to cover what is running at once.
+    private static readonly PortPool _pool =
+        new(Math.Max(1024, EphemeralRangeStart - 1000), EphemeralRangeStart, IsFree);
 
-    private static int _next = _bandStart;
+    public static int GetAvailable() => _pool.Get();
 
-    public static int GetAvailable()
-    {
-        // Walking the band rather than re-probing one number: a port this run already holds is
-        // never offered again, so the walk only pays for ports something else on the machine has.
-        while (true)
-        {
-            int candidate;
-            lock (_gate)
-            {
-                candidate = _next++;
-                if (candidate >= EphemeralRangeStart)
-                {
-                    throw new InvalidOperationException(
-                        $"No unused loopback port left below {EphemeralRangeStart}; "
-                        + "the reserved band looks exhausted.");
-                }
-
-                if (!_issued.Add(candidate))
-                {
-                    continue;
-                }
-            }
-
-            if (IsFree(candidate))
-            {
-                return candidate;
-            }
-        }
-    }
+    // For a fixture that has stopped whatever it bound; the number becomes issuable again, and the
+    // probe still has the last word when it is.
+    public static void Release(int port) => _pool.Release(port);
 
     private static bool IsFree(int port)
     {

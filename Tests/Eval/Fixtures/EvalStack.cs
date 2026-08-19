@@ -58,6 +58,7 @@ public sealed class EvalStack : IAsyncDisposable
     ];
 
     private readonly List<IHost> _servers = [];
+    private readonly List<int> _ports = [];
     private ServiceProvider? _agentServices;
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -334,6 +335,7 @@ public sealed class EvalStack : IAsyncDisposable
         app.MapMcp("/mcp");
         await app.StartAsync();
         _servers.Add(app);
+        _ports.Add(port);
 
         return $"http://localhost:{port}/mcp";
     }
@@ -410,6 +412,10 @@ public sealed class EvalStack : IAsyncDisposable
             await server.StopAsync();
             server.Dispose();
         }));
+
+        // Only once nothing binds them any more: a full tier is more runs than the band has
+        // ports, so a stack that kept its numbers for the process's lifetime exhausted it.
+        _ports.ForEach(TestPort.Release);
 
         if (_agentServices is not null)
         {

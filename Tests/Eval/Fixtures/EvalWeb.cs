@@ -65,6 +65,7 @@ public sealed class EvalWeb : IAsyncDisposable
         slot == SaturdaySlot ? SaturdayCode : SundayCode;
 
     private readonly IHost _host;
+    private readonly int _port;
     private readonly List<Booking> _bookings = [];
     private readonly List<Signup> _signups = [];
     private readonly List<MaterialsSignup> _materials = [];
@@ -77,10 +78,11 @@ public sealed class EvalWeb : IAsyncDisposable
     // typed client gets handed.
     public HttpMessageHandler SearchTransport { get; }
 
-    private EvalWeb(IHost host, string baseUrl)
+    private EvalWeb(IHost host, string baseUrl, int port)
     {
         _host = host;
         BaseUrl = baseUrl;
+        _port = port;
         SearchTransport = new FakeSearch(baseUrl);
     }
 
@@ -144,7 +146,7 @@ public sealed class EvalWeb : IAsyncDisposable
 
         // Constructed before the host is started, because the handlers below close over it: a
         // request arriving between StartAsync and the assignment would find null.
-        var site = new EvalWeb(app, $"http://127.0.0.1:{port}");
+        var site = new EvalWeb(app, $"http://127.0.0.1:{port}", port);
         app.MapGet("/", () => Html(Index()));
         app.MapGet("/recetas/gazpacho", () => Html(Recipe()));
         app.MapGet("/museo/horarios", () => Html(Museum()));
@@ -460,6 +462,7 @@ public sealed class EvalWeb : IAsyncDisposable
         await _host.StopAsync();
         _host.Dispose();
         SearchTransport.Dispose();
+        TestPort.Release(_port);
     }
 
     public sealed record Booking(string Name, string Slot);
