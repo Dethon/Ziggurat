@@ -164,12 +164,6 @@ public static class ClaimExemptions
             "Demonstrated on 2026-08-18 with the never-re-read rule deleted from both places it is "
             + "written: the model set the temperature and stopped. It does not check its own work "
             + "unprompted, so the prose defends against a habit this model does not have."),
-        [VoicePrompt.UnclearRequestIsActedOn.Id] = new(ExemptionKind.Unwritten,
-            "Two rules in one: act on the likeliest reading, and ask before an irreversible delete. The "
-            + "second needs a turn whose likeliest reading destroys something, which no family sets up yet."),
-        [VoicePrompt.AbbreviationsAreSpelledOut.Id] = new(ExemptionKind.Unwritten,
-            "Needs a turn whose answer is a unit or an acronym — a temperature, a distance — which "
-            + "the Home Assistant family can now provide and no scenario asks for yet."),
         [HomeAssistantPrompt.MusicPlaysOnTheMusicAssistantPlayer.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-19 with the whole MA-player paragraph deleted, in a kitchen "
             + "holding both a Music Assistant speaker and a television that lists the same "
@@ -191,9 +185,6 @@ public static class ClaimExemptions
         [VoicePrompt.NothingIsNarrated.Id] = new(ExemptionKind.Guard,
             "Checked negatively wherever a scenario names what the reply must not say, but nothing "
             + "checks the general rule: a scenario about it needs a turn whose work is worth narrating."),
-        [VoicePrompt.OneWordBeforeSlowWork.Id] = new(ExemptionKind.NeedsFixture,
-            "A claim about what is said *before* the work, which the recording cannot see: it holds one "
-            + "reply, and the acknowledgement is a separate emission — tickets 15 and 16."),
         [TimerPrompt.DurationIsACountdown.Id] = new(ExemptionKind.Guard,
             "Demonstrated twice and stayed green both times, most recently on 2026-08-18 with all three "
             + "mounts hosted: deleting the countdown rule from the timer, Home Assistant and scheduling "

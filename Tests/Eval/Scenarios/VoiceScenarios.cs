@@ -1,4 +1,5 @@
 using Domain.Prompts;
+using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
 
 namespace Tests.Eval.Scenarios;
@@ -16,7 +17,8 @@ public static class VoiceScenarios
     public static IReadOnlyList<Scenario> All =>
     [
         ActionConfirmedWithItsValue, TimeLeftIsTheValueAlone, WhatDoesNotExistIsOneClause,
-        StopTheRingingAlarm, TwoMoreMinutesAfterItRang, WhenItFiresInWriting
+        StopTheRingingAlarm, TwoMoreMinutesAfterItRang, WhenItFiresInWriting,
+        TheLikeliestLightIsActedOn, TheTemperatureIsSpelledOut, SlowWorkOpensWithOneWord
     ];
 
     // The reply to an action: two words, and the number the user said back in them. Repeating the
@@ -193,6 +195,134 @@ public static class VoiceScenarios
         Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
         Claims = [TimerPrompt.ExtendingADismissedOneIsANewTimer.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // "La luz", with no room named and nothing destroyed by being wrong: the likeliest reading is
+    // the speaking room's light, and the contract says act on it rather than ask. The question a
+    // careful model wants to ask is exactly the failure.
+    public static Scenario TheLikeliestLightIsActedOn => new()
+    {
+        Name = "an unclear request is acted on, not asked about",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "apaga la luz",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "turn off",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.Path(FakeHomeAssistant.KitchenLightDirectory),
+                    Arg.Matches("command", @"^turn_off\.sh")
+                ]
+            }
+        ],
+        Permitted =
+        [
+            .. CallPermission.Looking("/ha*"),
+            new CallPermission(EvalTools.Exec, FakeHomeAssistant.KitchenLightDirectory)
+        ],
+        Changes = [new StateChange(FakeHomeAssistant.KitchenLightEntityId, "off")],
+        CallCeiling = 5,
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            MaxSentences = 1,
+            NeverSays = ["cuál", "qué luz"]
+        },
+        Claims = [VoicePrompt.UnclearRequestIsActedOn.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The answer is a unit, which a screen writes as a symbol and a voice has to say in words.
+    // The value is an attribute the turn did not change, which is the one legal reason to read
+    // state.json.
+    public static Scenario TheTemperatureIsSpelledOut => new()
+    {
+        Name = "a spoken unit is spelled out",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "¿a qué temperatura está puesto el aire del salón?",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "read",
+                Tool = EvalTools.Read,
+                Arguments = [Arg.PathMatches(@"state\.json$")]
+            }
+        ],
+        Permitted = [.. CallPermission.Looking("/ha*")],
+        CallCeiling = 5,
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            MaxSentences = 1,
+            Mentions =
+            [
+                new SpokenValue("the temperature", "veinticuatro", "24"),
+                new SpokenValue("the unit, in words", "grados")
+            ],
+            NeverSays = ["°"]
+        },
+        Claims = [VoicePrompt.AbbreviationsAreSpelledOut.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // A spoken turn whose work is a search: the contract's opener applies — one plain word,
+    // once, then nothing until the answer. Only the reply's shape is checkable here; that the
+    // word reached the speaker before the tools ran is the channel's timing, out of a
+    // recording's reach.
+    public static Scenario SlowWorkOpensWithOneWord => new()
+    {
+        Name = "slow spoken work opens with one word",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "busca a qué hora abre el museo del Carmen",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "open",
+                Tool = EvalTools.WebBrowse,
+                Arguments = [Arg.Matches("url", "/museo/horarios")]
+            }
+        ],
+        Permitted =
+        [
+            new CallPermission(EvalTools.WebSearch),
+            new CallPermission(EvalTools.WebBrowse)
+        ],
+        CallCeiling = 4,
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            MaxSentences = 2,
+            OpensWithAcknowledgement = true,
+            Mentions = [new SpokenValue("the opening time", "diez y media", "10:30", "10.30")]
+        },
+        Claims = [VoicePrompt.OneWordBeforeSlowWork.Id],
         Policy = new RunPolicy(2, 3)
     };
 

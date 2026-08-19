@@ -128,6 +128,32 @@ public class ReplyChecksTests
         failures.ShouldHaveSingleItem().ShouldContain("2 sentences");
     }
 
+    [Fact]
+    public void SlowWorkThatOpensWithOneWord_Passes()
+    {
+        Failures(new ReplyExpectation { OpensWithAcknowledgement = true },
+                "Buscando.\nEl museo abre a las diez y media.")
+            .ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void SlowWorkThatAnswersColdWithNoAcknowledgement_Fails()
+    {
+        // The contract's own words: before a search, a subagent or several rounds of tools, the
+        // first output is one plain word. A reply that goes straight to the answer skipped it.
+        Failures(new ReplyExpectation { OpensWithAcknowledgement = true },
+                "El museo abre a las diez y media.")
+            .ShouldHaveSingleItem().ShouldContain("one plain word");
+    }
+
+    [Fact]
+    public void AnOpeningSentenceOfSeveralWords_IsNotAnAcknowledgement()
+    {
+        Failures(new ReplyExpectation { OpensWithAcknowledgement = true },
+                "Voy a mirarlo ahora mismo. El museo abre a las diez y media.")
+            .ShouldHaveSingleItem().ShouldContain("one plain word");
+    }
+
     private static IReadOnlyList<string> Failures(ReplyExpectation expectation, string reply) =>
         ReplyChecks.Failures(expectation, reply);
 }

@@ -14,8 +14,27 @@ public static class ReplyChecks
         .. TooLong(expectation, reply),
         .. Unspeakable(expectation, reply),
         .. Missing(expectation, reply),
-        .. Narrated(expectation, reply)
+        .. Narrated(expectation, reply),
+        .. ColdOpen(expectation, reply)
     ];
+
+    // The voice contract's opener before slow work: one plain word, once, ending in a full stop.
+    // Only the shape is checkable here — that the word was spoken before the tools ran is the
+    // channel's timing, which a recording of the finished reply cannot see.
+    private static IEnumerable<string> ColdOpen(ReplyExpectation expectation, string reply)
+    {
+        if (!expectation.OpensWithAcknowledgement)
+        {
+            yield break;
+        }
+
+        var first = Regex.Split(reply.Trim(), @"(?<=[.!?…])\s+").FirstOrDefault() ?? "";
+        if (Words(first) != 1)
+        {
+            yield return "slow work opens with one plain word, and this reply does not: " +
+                         $"\"{reply}\"";
+        }
+    }
 
     // A sentence ends at '.', '!', '?' or '…'. Spanish opens a question with '¿' and closes it the
     // same way English does, so nothing extra is needed to count one — but the reply this suite
@@ -136,6 +155,10 @@ public sealed record ReplyExpectation
 
     // Read aloud, so it must carry nothing a text-to-speech engine cannot say.
     public bool Spoken { get; init; }
+
+    // The turn's work is slow — a search, a subagent, several rounds of tools — so the reply's
+    // first sentence must be the contract's one-word acknowledgement.
+    public bool OpensWithAcknowledgement { get; init; }
 
     public IReadOnlyList<SpokenValue> Mentions { get; init; } = [];
 
