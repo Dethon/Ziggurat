@@ -41,6 +41,13 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public static readonly string KitchenLightDirectory = Directory(KitchenLightEntityId, "Luz Cocina");
     public static readonly string AirConditionerDirectory = Directory(AirConditionerEntityId, "Aire Salón");
     public static readonly string KitchenSpeakerDirectory = Directory(KitchenSpeakerEntityId, "Altavoz Cocina");
+
+    // The same player reached either way. The mount serves entities under /ha/entities and again
+    // under the area they belong to, and both are the deployment's own paths — a scenario that
+    // pinned one view would report the other as a behavioural failure.
+    public static readonly string KitchenSpeakerAnyView =
+        $@"(^|/)({HaCatalog.ClassOf(KitchenSpeakerEntityId)}\.)?{HaCatalog.ObjectOf(KitchenSpeakerEntityId)}_\(";
+
     public static readonly string KitchenTvDirectory = Directory(KitchenTvEntityId, "TV Cocina");
 
     private readonly Lock _gate = new();

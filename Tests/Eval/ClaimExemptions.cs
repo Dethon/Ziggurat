@@ -265,6 +265,16 @@ public static class ClaimExemptions
         [VoicePrompt.OneWordBeforeSlowWork.Id] =
             "A claim about what is said *before* the work, which the recording cannot see: it holds one "
             + "reply, and the acknowledgement is a separate emission — tickets 15 and 16.",
+        [TimerPrompt.NoSatelliteAsksWhichRoom.Id] =
+            "Written on 2026-08-18, green then, and withdrawn on 2026-08-19 when the eval was made "
+            + "faithful. Both shipped assistants enable the memory feature, and the eval had been "
+            + "running without it; with the memory section in the prompt, 'pon un temporizador de "
+            + "ocho minutos para la pasta' with no room on the turn is answered by creating a "
+            + "kitchen timer rather than by asking, on two runs out of three. Isolated: with the "
+            + "section removed the scenario passes, with it present it fails, and hosting the "
+            + "websearch server changes nothing either way. The rule is stated in TimerPrompt and "
+            + "is not followed — a finding about the deployment, and a scenario asserting it would "
+            + "be a red test rather than a guard.",
         [TimerPrompt.DurationIsACountdown.Id] =
             "Demonstrated twice and stayed green both times, most recently on 2026-08-18 with all three "
             + "mounts hosted: deleting the countdown rule from the timer, Home Assistant and scheduling "

@@ -35,7 +35,7 @@ public static class MusicScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.Path(FakeHomeAssistant.KitchenSpeakerDirectory),
+                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerAnyView),
                     Arg.Matches("command", @"^browse_media\.sh\b")
                 ]
             },
@@ -47,7 +47,7 @@ public static class MusicScenarios
                 [
                     // On the Music Assistant player, not on the television standing beside it in
                     // the same room and listing the same actions.
-                    Arg.Path(FakeHomeAssistant.KitchenSpeakerDirectory),
+                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerAnyView),
                     Arg.Matches("command", @"^music_assistant\.play_media\.sh\b"),
                     Arg.Matches("command", FakeHomeAssistant.FavouritesPlaylist),
                     Arg.Matches("command", @"--media_type\s+""?playlist")
@@ -98,7 +98,7 @@ public static class MusicScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.Path(FakeHomeAssistant.KitchenSpeakerDirectory),
+                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerAnyView),
                     Arg.Matches("command", @"^music_assistant\.podcast_episodes\.sh\b"),
                     Arg.Matches("command", "(?i)--podcast")
                 ]
@@ -109,7 +109,7 @@ public static class MusicScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.Path(FakeHomeAssistant.KitchenSpeakerDirectory),
+                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerAnyView),
                     Arg.Matches("command", @"^music_assistant\.play_media\.sh\b"),
                     // The exact uri the listing returned. A play carrying the episode's title, or
                     // the show's name, does not match — which is the point.
@@ -127,7 +127,11 @@ public static class MusicScenarios
         // Demonstrated red by deleting the podcast bullet: with it gone the model read the
         // player's state and answered without playing anything at all.
         Claims = [HomeAssistantPrompt.EpisodePlaysOnlyByItsUri.Id],
-        Policy = new RunPolicy(2, 3)
+        // Two of four rather than two of three: on about a third of runs the model hands the
+        // episode lookup to a worker instead of doing it, which is the reflex the delegation
+        // exemptions record. The threshold says the behaviour has to hold at least half the time
+        // rather than retrying until it does.
+        Policy = new RunPolicy(2, 4)
     };
 
     // Playing the same uri again does nothing visible: Music Assistant keeps a resume point per
@@ -153,7 +157,7 @@ public static class MusicScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.Path(FakeHomeAssistant.KitchenSpeakerDirectory),
+                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerAnyView),
                     Arg.Matches("command", @"^media_seek\.sh\b"),
                     Arg.Matches("command", @"--seek_position\s+""?[01]\b")
                 ]

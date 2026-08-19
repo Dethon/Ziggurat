@@ -23,10 +23,17 @@ room, and a turn with no satellite must ask which room rather than guess.
 - [x] A clock-time request creates a calendar entry and no countdown.
 - [x] A request past the four-hour ceiling does not create a countdown.
 - [x] A voice turn with a satellite targets the speaking room without being told.
-- [x] A turn with no satellite asks which room and creates nothing.
+- [ ] A turn with no satellite asks which room and creates nothing. **Green on 2026-08-18 and
+      withdrawn on 2026-08-19**, when ticket 14 gave the eval the memory feature both shipped
+      assistants enable — until then the suite had been running a prompt one section short. With
+      that section present the same turn creates a kitchen timer instead of asking, two runs out
+      of three; with it removed the scenario passes. Isolated against the websearch server too,
+      which changes nothing either way. The rule is stated in `TimerPrompt` and is not followed, so
+      the scenario is gone and the finding is in `ClaimExemptions`.
 - [x] Every scenario cites its claims, and each was demonstrated red by deleting that claim's
       prose. Eight demonstrations were run on 2026-08-18 and six stayed green: only the four-hour
-      ceiling and the ask-which-room rule are load-bearing on these turn shapes. The other six
+      ceiling and the ask-which-room rule were load-bearing on these turn shapes — and the second
+      of those is withdrawn as of 2026-08-19, leaving one. The other six
       scenarios keep running as regression guards with no citation, and each exemption in
       `ClaimExemptions` now carries what the demonstration showed instead of what it was waiting
       for.
