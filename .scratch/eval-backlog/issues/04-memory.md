@@ -14,7 +14,16 @@
   step (query reaching >1 returns candidates) means the sweep may take a confirmation
   round-trip — the ceiling allows for it.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Three scenarios written, exemption lines removed, coverage test green.
-- [ ] Armed runs pass at each scenario's policy.
+- [x] Three scenarios written, exemption lines removed, coverage test green.
+- [x] Armed runs pass at each scenario's policy — all three 3/3 on the first pass.
+
+## Answer
+
+The family closed without a single harness or prompt change. The why-question kept the plumbing
+out of the answer on every run; the returned-from-Lisbon turn deleted the stale project and left
+the coffee preference standing; and the sweep took exactly the four noise facts and kept the two
+real ones, working through the forget tool's confirmation step where its query reached more than
+one memory. The old needs-fixture reason for the sweep was simply stale: `Remembered` seeds are
+per-scenario, so a noisy store in this one scenario costs the other scenarios nothing.

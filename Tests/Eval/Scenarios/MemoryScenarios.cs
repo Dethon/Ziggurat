@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.Prompts;
 using Tests.Eval.Harness;
 
 namespace Tests.Eval.Scenarios;
@@ -8,7 +9,11 @@ namespace Tests.Eval.Scenarios;
 // whether the right fact was retrieved, only what the agent did with the one it was handed.
 public static class MemoryScenarios
 {
-    public static IReadOnlyList<Scenario> All => [PastaTheWayHeCooksIt, NoLongerAtAcme, ForgetTheFlat];
+    public static IReadOnlyList<Scenario> All =>
+    [
+        PastaTheWayHeCooksIt, NoLongerAtAcme, ForgetTheFlat,
+        WhyNineMinutes, BackFromLisbon, SweepTheNoise
+    ];
 
     // A preference applied without being asked for again, and without being read back. The value
     // is only in the recall block, so the timer's own duration is what says the block was used —
@@ -140,6 +145,138 @@ public static class MemoryScenarios
         Reply = new ReplyExpectation { NeverSays = ["memory_forget", "memoria"] },
         // No citation: with the whole 'When to forget' section deleted the flat was still
         // forgotten. What teaches this is the tool's description, which cannot be deleted.
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The turn that gives the model a reason to explain itself: asked where the nine minutes came
+    // from, the honest answer names what the user once said — never the plumbing that carried it.
+    public static Scenario WhyNineMinutes => new()
+    {
+        Name = "asked why, the answer names no plumbing",
+        AgentId = "nabu",
+        History =
+        [
+            new HistoryExchange(
+                "pon un temporizador para la pasta",
+                "Nueve minutos de pasta en marcha.")
+        ],
+        Turn = new EvalTurn
+        {
+            Text = "¿y por qué nueve minutos?",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Remembered =
+        [
+            new RememberedFact("Cuece la pasta siempre nueve minutos")
+            {
+                Category = MemoryCategory.Preference,
+                Importance = 0.9
+            }
+        ],
+        // Nothing to look up: the answer is a sentence over what the turn already carries.
+        CallCeiling = 1,
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            MaxSentences = 2,
+            NeverSays =
+            [
+                "memoria", "memory", "guardad", "almacen", "según mis datos", "contexto",
+                "mis registros"
+            ]
+        },
+        Claims = [MemoryPrompts.MechanismIsNeverMentioned.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // A fact whose expiry is legible from the turn itself: the trip being prepared is over. The
+    // stale project goes without being pointed at, and the fact beside it survives the sweep.
+    public static Scenario BackFromLisbon => new()
+    {
+        Name = "a fact the turn has expired is deleted unasked",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "Ya he vuelto de Lisboa, el viaje salió genial.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Remembered =
+        [
+            new RememberedFact("Está preparando un viaje a Lisboa")
+            {
+                Category = MemoryCategory.Project,
+                Forgotten = true
+            },
+            new RememberedFact("Le gusta el café solo") { Category = MemoryCategory.Preference }
+        ],
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "forget",
+                Tool = EvalTools.Forget,
+                Arguments = [Arg.Matches("query", "(?i)lisboa|viaje")]
+            }
+        ],
+        CallCeiling = 2,
+        Reply = new ReplyExpectation { NeverSays = ["memoria", "memory", "recuerd"] },
+        Claims = [MemoryPrompts.OutdatedFactsAreDeleted.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The bulk-cleanup bullet, on the one store that is actually noisy: four facts that are
+    // extraction residue and two worth keeping. Which four go is the judgement under test, and
+    // the store afterwards is the only place it shows. The user asked, so naming memory out loud
+    // is allowed here; the ceiling leaves room for the forget tool's confirmation round-trip.
+    public static Scenario SweepTheNoise => new()
+    {
+        Name = "a noisy store is swept down to what matters",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "Limpia mi memoria: borra los recuerdos que no aporten nada.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Remembered =
+        [
+            new RememberedFact("Cuece la pasta siempre nueve minutos")
+            {
+                Category = MemoryCategory.Preference,
+                Importance = 0.9
+            },
+            new RememberedFact("Trabaja en Globex como ingeniero de datos") { Importance = 0.9 },
+            new RememberedFact("Preguntó por el tiempo el martes pasado")
+            {
+                Importance = 0.2,
+                Forgotten = true
+            },
+            new RememberedFact("Pidió una pizza cuatro estaciones un viernes")
+            {
+                Importance = 0.2,
+                Forgotten = true
+            },
+            new RememberedFact("Estaba viendo una serie el domingo por la tarde")
+            {
+                Importance = 0.2,
+                Forgotten = true
+            },
+            new RememberedFact("Ayer llegó tarde a casa")
+            {
+                Importance = 0.2,
+                Forgotten = true
+            }
+        ],
+        Required =
+        [
+            new CallExpectation { Label = "sweep", Tool = EvalTools.Forget }
+        ],
+        CallCeiling = 8,
+        Claims = [MemoryPrompts.NoisyStoreIsSwept.Id],
         Policy = new RunPolicy(2, 3)
     };
 }
