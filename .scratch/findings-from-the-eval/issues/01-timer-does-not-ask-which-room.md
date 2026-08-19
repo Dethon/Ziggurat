@@ -38,3 +38,7 @@ about the user, not a room used before. The withdrawn scenario is restored from
 `27b50d3a^` as the acceptance test and the `timers.no-satellite-asks-which-room` exemption is
 removed. The deterministic harness is green; whether the strengthened prose actually holds
 against the model is an eval run (`ZIGGURAT_EVAL=1`), which this fix has not spent.
+
+2026-08-19, later — Armed run after the fix: the restored scenario passed 3 of 3 runs
+(`timers.no-satellite-asks-which-room` at rate 1.0 in the scorecard). The strengthened bullet
+holds with the memory section present.
