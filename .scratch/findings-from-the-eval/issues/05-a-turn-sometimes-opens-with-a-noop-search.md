@@ -1,6 +1,6 @@
 # 05 — A turn sometimes opens with a `web_search` for "noop"
 
-**Status:** needs-triage
+**Status:** resolved
 
 **Where it was found:** the behavioural eval, 2026-08-19, on a Home Assistant scenario that has
 nothing to do with the web ("pon el aire del salón a 22 grados"). Two runs of two.
@@ -24,3 +24,15 @@ rather than a regression. The call is still listed in every failure dump.
 something in how the tool list is presented. It started being visible when the websearch server was
 hosted for every eval scenario, which is only when the eval had a `web_search` to call — the
 behaviour may well predate that everywhere else the agent runs with web tools.
+
+## Comments
+
+2026-08-19 — The cost is fixed; the cause stays open. `WebSearchTool` now answers a query that
+trims to the literal word "noop" — the same definition `ScenarioChecks.IsWarmUpProbe` uses —
+without calling the search client: status `noop`, empty results, and a message telling the
+model to continue with the user's request. The Brave call and its latency drop out; what
+remains of an occurrence is one provider round trip, which nothing tool-side can remove. The
+call still appears in recordings and failure dumps, so if the tic changes shape or frequency
+the eval will show it. Whether it is the model or the provider's tool-priming is unanswered —
+isolating that means A/B runs against providers, which is eval spend for a question that no
+longer costs anything in production.

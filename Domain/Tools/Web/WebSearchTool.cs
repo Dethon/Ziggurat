@@ -24,6 +24,24 @@ public class WebSearchTool(IWebSearchClient searchClient)
         DateRange? dateRange,
         CancellationToken ct)
     {
+        // Some models open a turn with a search for the literal word "noop" and then do the real
+        // work — a throat-clearing probe, not an information need. Answering it here keeps the
+        // billed search API and its latency out of a turn that never wanted the web; the eval's
+        // checks ignore the same query by the same definition. See
+        // .scratch/findings-from-the-eval/issues/05-a-turn-sometimes-opens-with-a-noop-search.md.
+        if (string.Equals(query.Trim(), "noop", StringComparison.OrdinalIgnoreCase))
+        {
+            return new JsonObject
+            {
+                ["status"] = "noop",
+                ["query"] = query,
+                ["totalResults"] = 0,
+                ["results"] = new JsonArray(),
+                ["message"] = "No search was performed: 'noop' asks for nothing. Call web_search "
+                              + "only with a real information need; continue with the user's request."
+            };
+        }
+
         var searchQuery = new WebSearchQuery(
             Query: query,
             MaxResults: Math.Clamp(maxResults, 1, 20),
