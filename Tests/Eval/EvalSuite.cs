@@ -75,6 +75,13 @@ public static class EvalSuite
             var recording = await EvalRun.ExecuteAsync(scenario, redis.ConnectionString);
             route = recording.Route ?? route;
             var observed = ScenarioChecks.Failures(scenario, recording);
+            // The judged checks, on runs the deterministic ones pass: a verdict fails the run
+            // like any other check, and a judge is never paid to grade a run already red.
+            if (observed.Count == 0 && scenario.Judged.Count > 0)
+            {
+                observed = await Judge.FailuresAsync(scenario, recording, EvalGate.ApiKey ?? "");
+            }
+
             if (observed.Count > 0 && failed is null)
             {
                 failed = recording;

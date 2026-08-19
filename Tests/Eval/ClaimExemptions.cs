@@ -71,11 +71,12 @@ public static class ClaimExemptions
             "Asserted as a side condition — each delegated prompt must name the folder it is about — "
             + "but the rule's real subject is a url or a name the user gave that only the parent saw."),
         [SubAgentPrompt.SuccessCriteriaAreStated.Id] = new(ExemptionKind.Judge,
-            "What a good result looks like is a judgement about a sentence, which the deterministic "
-            + "checks cannot make; it waits on a judged check."),
+            "The judged-check machinery exists and the rubric is writable; what is missing is a "
+            + "scenario that reliably delegates to carry it — the one that did was withdrawn, see "
+            + "the finding on parallel-parts-are-delegated."),
         [SubAgentPrompt.AnswerIsSynthesised.Id] = new(ExemptionKind.Judge,
-            "Distinguishing a synthesis from a paste needs the worker's text and the reply compared, "
-            + "which is a judgement — it waits on a judged check."),
+            "A judged check comparing the canned worker answer with the reply, ready to write; "
+            + "like the entry above it waits on a scenario that reliably delegates."),
         [MemoryPrompts.RecallShapesTheAnswer.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-19 with the silent-application sentence deleted: a remembered "
             + "'cuece la pasta nueve minutos' still came back as a 540-second timer. A fact in the "
@@ -169,10 +170,6 @@ public static class ClaimExemptions
             "Needs a field that reacts to keystrokes, which means an autocomplete with its own "
             + "javascript; the served site is static on purpose. An inline-script page keeps the "
             + "offline boundary and is issue 05 of .scratch/comprehensive-eval."),
-        [WebBrowsingPrompt.StepsAreNotReported.Id] = new(ExemptionKind.Judge,
-            "Checked negatively where a scenario bounds the reply, and nothing checks the general "
-            + "rule: whether a reply is an account of the clicks rather than the answer is a "
-            + "judgement — it waits on a judged check."),
         [WebBrowsingPrompt.PartialContentIsFetchedOnce.Id] = new(ExemptionKind.NeedsFixture,
             "Needs a page longer than the browse tool's default limit and a scenario that counts "
             + "how many times the rest of it was fetched. The page is issue 05 of "
@@ -214,10 +211,6 @@ public static class ClaimExemptions
         [VaultPrompt.ReadBeforeEditing.Id] = new(ExemptionKind.Unfalsifiable,
             "Same shape as surveying: reading first is tolerated everywhere and required nowhere, "
             + "because the outcome the contract cares about is the edit that lands."),
-        [VaultPrompt.EditsAreSurgical.Id] = new(ExemptionKind.Judge,
-            "A whole-file rewrite that preserved every piece of syntax would pass the edit scenario, "
-            + "so witnessing this needs the file's own diff read with judgement about what counts "
-            + "as surgical — it waits on a judged check."),
         [VaultPrompt.HeadingsAreReferenceable.Id] = new(ExemptionKind.Unwritten,
             "Needs a turn that renames a heading another note links to, which the seeded vault could "
             + "support and no scenario asks for yet."),
@@ -332,9 +325,6 @@ public static class ClaimExemptions
         [TimerPrompt.ListedByGlob.Id] = new(ExemptionKind.Unwritten,
             "Covered incidentally as a permitted call today; a scenario whose subject is listing is not written yet."),
         [TimerPrompt.CancelledByRemovingIt.Id] = new(ExemptionKind.Unwritten,
-            "Cancelling is the delete half of the extend scenario; a cancel-only scenario is not written yet."),
-        [TimerPrompt.IdIsDescriptive.Id] = new(ExemptionKind.Judge,
-            "What makes an id descriptive is a judgement about a word, which the deterministic checks "
-            + "cannot make; it waits on a judged check.")
+            "Cancelling is the delete half of the extend scenario; a cancel-only scenario is not written yet.")
     };
 }
