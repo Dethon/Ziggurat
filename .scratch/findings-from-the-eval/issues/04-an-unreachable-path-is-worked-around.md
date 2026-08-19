@@ -44,3 +44,7 @@ sentence, not a hunt (`mounts.an-unmounted-path-is-answered`, a declared claim).
 a filesystem path is not a URL — so the browse on `file:///media/Movies` loses the wrong idea
 that produced it. The withdrawn scenario is restored from `2f8d486b^` citing the new claim; the
 delegation reflex it tolerates stays recorded under the subagent exemptions.
+
+2026-08-19, later — Armed run after the fix: the restored scenario passed 3 of 3 runs
+(`mounts.an-unmounted-path-is-answered` at rate 1.0) — inside the three-call ceiling, no
+worker storm, no file:// browse.

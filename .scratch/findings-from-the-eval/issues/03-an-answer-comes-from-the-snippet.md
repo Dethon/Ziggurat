@@ -37,3 +37,7 @@ disagree, and every success envelope opens with a `note` saying snippets may be 
 factual answer comes from opening the page. Pinned in
 `Tests/Unit/Domain/Tools/Web/WebSearchToolTests.cs`. The museum scenario stays the acceptance
 test at two of four; move it back to two of three once armed runs show it holding.
+
+2026-08-19, later — Armed run after the fix: the museum scenario passed at its two-of-four
+threshold with no failure dump written. One passing armed run is not yet the evidence the
+threshold move asks for; leave it at two of four until a few more runs hold.
