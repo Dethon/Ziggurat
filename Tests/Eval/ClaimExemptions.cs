@@ -153,11 +153,11 @@ public static class ClaimExemptions
             + "carried no url. The voice section forbids anything unspeakable on the same turn, so "
             + "this rule cannot be isolated on a spoken scenario — and on a written one there is "
             + "nothing to catch, because citing is what it asks for."),
-        [WebBrowsingPrompt.RawContentIsNeverDumped.Id] = new(ExemptionKind.NeedsFixture,
-            "Asserted as a side condition — the spoken research scenario is bounded to two "
-            + "sentences, which no page dump fits in — but the written half needs a turn against a "
-            + "page long enough that pasting it is a temptation. The page is issue 05 of "
-            + ".scratch/comprehensive-eval."),
+        [WebBrowsingPrompt.RawContentIsNeverDumped.Id] = new(ExemptionKind.Guard,
+            "Asserted as a side condition on both halves now: the spoken research scenario is "
+            + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "
+            + "against a thirty-thousand-character page. No scenario's subject is the dumping "
+            + "itself, so it guards rather than cites."),
         [WebBrowsingPrompt.ActionsChainFromTheDiff.Id] = new(ExemptionKind.NeedsFixture,
             "About how many snapshots a flow costs rather than about what it did, so it is only "
             + "visible as a call count. The booking scenario's ceiling bounds it, but a scenario "
@@ -166,14 +166,6 @@ public static class ClaimExemptions
             "The negative half of the rule — not calling both for the same purpose — is a "
             + "judgement about intent that a call log cannot make on its own; it waits on a "
             + "judged check."),
-        [WebBrowsingPrompt.TypeReactsAndFillSets.Id] = new(ExemptionKind.NeedsFixture,
-            "Needs a field that reacts to keystrokes, which means an autocomplete with its own "
-            + "javascript; the served site is static on purpose. An inline-script page keeps the "
-            + "offline boundary and is issue 05 of .scratch/comprehensive-eval."),
-        [WebBrowsingPrompt.PartialContentIsFetchedOnce.Id] = new(ExemptionKind.NeedsFixture,
-            "Needs a page longer than the browse tool's default limit and a scenario that counts "
-            + "how many times the rest of it was fetched. The page is issue 05 of "
-            + ".scratch/comprehensive-eval."),
         [WebBrowsingPrompt.BackIsAnAction.Id] = new(ExemptionKind.Unwritten,
             "Needs a turn that goes two pages deep and comes back, which the three-page site "
             + "supports and no scenario asks for yet — and no turn shape found so far forces the "

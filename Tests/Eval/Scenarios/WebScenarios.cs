@@ -11,7 +11,8 @@ namespace Tests.Eval.Scenarios;
 // by leaving the building.
 public static class WebScenarios
 {
-    public static IReadOnlyList<Scenario> All => [TheRestingTime, WhenTheMuseumOpens, BookingAPlace];
+    public static IReadOnlyList<Scenario> All =>
+        [TheRestingTime, WhenTheMuseumOpens, BookingAPlace, TheWholeChronicle, SigningUpForAstronomy];
 
     // The answer is in the article and nowhere else: the search snippet describes the recipe
     // without giving the number. A model that answered from the result list has nothing to answer
@@ -183,6 +184,105 @@ public static class WebScenarios
                 + "code is the outcome and passes; 'I opened the form and typed your name' is a "
                 + "step and fails.")
         ],
+        Policy = new RunPolicy(2, 4)
+    };
+
+    // The page is longer than one default browse returns, and the number the user wants is in its
+    // closing paragraph. The contract allows exactly one recovery — narrow the extraction or fetch
+    // the rest once — and the ceiling is where more than one shows.
+    public static Scenario TheWholeChronicle => new()
+    {
+        Name = "a truncated page is fetched once more and answered from",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "Busca la crónica de las fiestas del barrio y dime cuánto recaudó la rifa solidaria.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "open",
+                Tool = EvalTools.WebBrowse,
+                Arguments = [Arg.Matches("url", "/cronica/fiestas")]
+            }
+        ],
+        Permitted =
+        [
+            new CallPermission(EvalTools.WebSearch),
+            new CallPermission(EvalTools.WebBrowse)
+        ],
+        // Search, open, one recovery fetch, one spare: a model that keeps paging past the answer
+        // breaks the ceiling, which is the "once" in fetched-once.
+        CallCeiling = 4,
+        Reply = new ReplyExpectation
+        {
+            // Four sentences bounds the written reply against a page that is thirty thousand
+            // characters of temptation — the written half of raw-content-is-never-dumped rides
+            // here as a side condition.
+            MaxSentences = 4,
+            Mentions = [new SpokenValue("the raffle total", "1.842", "1842", "1 842")]
+        },
+        Claims = [WebBrowsingPrompt.PartialContentIsFetchedOnce.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The activity field reacts to keystrokes: the suggestions only exist after input events, and
+    // the hidden id the form needs is only set by a suggestion's own click handler — so a value
+    // merely written into the field, however correct, bounces without a code.
+    public static Scenario SigningUpForAstronomy => new()
+    {
+        Name = "an autocomplete is typed into rather than filled",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "Apúntame a la actividad de astronomía en la azotea, a nombre de Fran, y dime "
+                   + "el código de inscripción.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "open",
+                Tool = EvalTools.WebBrowse,
+                Arguments =
+                [
+                    Arg.Matches("url", "/agenda/apuntarse"),
+                    Arg.Flag("snapshot", true)
+                ]
+            },
+            new CallExpectation
+            {
+                Label = "type",
+                Tool = EvalTools.WebAction,
+                Arguments =
+                [
+                    Arg.Matches("action", "(?i)^type$"),
+                    Arg.Matches("ref", @"^e\d+$"),
+                    Arg.Matches("value", "(?i)astro")
+                ]
+            }
+        ],
+        Ordering = [new OrderingConstraint("open", "type")],
+        Permitted =
+        [
+            new CallPermission(EvalTools.WebSearch),
+            new CallPermission(EvalTools.WebBrowse),
+            new CallPermission(EvalTools.WebSnapshot),
+            new CallPermission(EvalTools.WebAction)
+        ],
+        CallCeiling = 9,
+        Reply = new ReplyExpectation
+        {
+            // Only the confirmation page carries it, and the confirmation only exists for a form
+            // whose activity was picked from the reactive list.
+            Mentions = [new SpokenValue("the signup code", EvalWeb.SignupCode)]
+        },
+        Claims = [WebBrowsingPrompt.TypeReactsAndFillSets.Id],
         Policy = new RunPolicy(2, 4)
     };
 }

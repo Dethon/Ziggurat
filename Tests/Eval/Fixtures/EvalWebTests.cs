@@ -105,6 +105,90 @@ public class EvalWebTests : IAsyncLifetime
         confirmation.Content.ShouldNotContain(EvalWeb.SundayCode);
     }
 
+    [Fact]
+    public async Task TheChronicle_OverflowsOneDefaultBrowse_AndItsTotalLivesOnlyAtTheEnd()
+    {
+        // The page the partial-content rule needs: a first fetch at the default length truncates
+        // and does not carry the number, so a reply with the number in it paid for the tail.
+        var first = await _browsing.NavigateAsync(new BrowseRequest("proof-chronicle", _web.ChronicleUrl));
+
+        first.Status.ShouldBe(BrowseStatus.Success);
+        first.Truncated.ShouldBeTrue();
+        first.Content.ShouldNotContain(EvalWeb.RaffleTotal);
+
+        var rest = await _browsing.NavigateAsync(new BrowseRequest(
+            "proof-chronicle", _web.ChronicleUrl, Offset: first.Content!.Length, MaxLength: 100_000));
+        rest.Truncated.ShouldBeFalse();
+        rest.Content.ShouldContain(EvalWeb.RaffleTotal);
+    }
+
+    [Fact]
+    public async Task TypingInTheActivityField_OpensSuggestions_AndPickingOneSignsUp()
+    {
+        // The reactive field the type-vs-fill rule needs, driven end to end: the suggestions only
+        // exist after keystrokes, and the signup only lands when one of them was picked.
+        const string session = "proof-signup";
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.SignupUrl));
+        var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
+
+        var typed = await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "textbox", "Actividad"), WebActionType.Type, "astro"));
+        typed.Status.ShouldBe(WebActionStatus.Success);
+
+        var suggestions = await _browsing.SnapshotAsync(new SnapshotRequest(session));
+        suggestions.Snapshot.ShouldContain("Astronomía en la azotea");
+
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(suggestions, "button", "Astronomía en la azotea"), WebActionType.Click));
+
+        // Every action re-stamps refs in document order, and the pick removed elements — so the
+        // numbers shifted, and the flow re-snapshots the way the tool tells the model to when the
+        // diff does not show what it needs.
+        var settled = await _browsing.SnapshotAsync(new SnapshotRequest(session));
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(settled, "textbox", "Nombre"), WebActionType.Fill, "Fran"));
+        var submitted = await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(settled, "button", "Apuntarse"), WebActionType.Click, WaitForNavigation: true));
+
+        submitted.Status.ShouldBe(WebActionStatus.Success);
+        var signup = _web.Signups.ShouldHaveSingleItem();
+        signup.Name.ShouldBe("Fran");
+        signup.ActivityId.ShouldBe("astro");
+        (await _browsing.GetCurrentPageAsync(session)).Content.ShouldContain(EvalWeb.SignupCode);
+    }
+
+    [Fact]
+    public async Task SubmittingWithoutPickingASuggestion_DoesNotSignUp()
+    {
+        // Picking from the list is load-bearing: the hidden id is only set by the suggestion's own
+        // click handler, so a form filled by value alone bounces and prints no code.
+        const string session = "proof-signup-unpicked";
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.SignupUrl));
+        var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
+
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "textbox", "Actividad"), WebActionType.Fill, "Astronomía en la azotea"));
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "textbox", "Nombre"), WebActionType.Fill, "Fran"));
+        var submitted = await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "button", "Apuntarse"), WebActionType.Click, WaitForNavigation: true));
+
+        submitted.Status.ShouldBe(WebActionStatus.Success);
+        _web.Signups.ShouldBeEmpty();
+        (await _browsing.GetCurrentPageAsync(session)).Content.ShouldNotContain(EvalWeb.SignupCode);
+    }
+
+    // A ref by role AND accessible name: the tree names a listitem after the button inside it, so
+    // a name-only lookup picks the wrapper and a click on it never reaches the button's handler.
+    private static string RefBy(SnapshotResult snapshot, string role, string name) =>
+        snapshot.Snapshot!
+            .Split('\n')
+            .Where(line => line.Contains($"{role} \"{name}\"", StringComparison.OrdinalIgnoreCase)
+                           && line.Contains("[ref=", StringComparison.Ordinal))
+            .Select(line => line[(line.IndexOf("[ref=", StringComparison.Ordinal) + 5)..])
+            .Select(rest => rest[..rest.IndexOf(']')])
+            .First();
+
     // The accessibility tree names each element by role and hands it a ref; the scenarios read the
     // same tree the model reads, so a change in how refs are rendered fails here first.
     private static string Ref(SnapshotResult snapshot, string role) =>

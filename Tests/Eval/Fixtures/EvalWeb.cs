@@ -38,11 +38,23 @@ public sealed class EvalWeb : IAsyncDisposable
 
     public const string SaturdaySlot = "Sábado 12:00";
 
+    // Printed once, in the chronicle's closing paragraph — past where a default-length browse
+    // truncates — so a reply carrying it paid for the tail of the page.
+    public const string RaffleTotal = "1.842";
+
+    // Printed only by the signup confirmation, which the form only produces when an activity was
+    // picked from the suggestion list: the hidden id travels through the option's own click
+    // handler and through nothing else.
+    public const string SignupCode = "AZ-3117";
+
+    public const string AstronomyActivity = "Astronomía en la azotea";
+
     private static string CodeFor(string slot) =>
         slot == SaturdaySlot ? SaturdayCode : SundayCode;
 
     private readonly IHost _host;
     private readonly List<Booking> _bookings = [];
+    private readonly List<Signup> _signups = [];
     private readonly Lock _gate = new();
 
     public string BaseUrl { get; }
@@ -67,6 +79,10 @@ public sealed class EvalWeb : IAsyncDisposable
 
     public string ConfirmationUrl => $"{BaseUrl}/taller/reserva/confirmada";
 
+    public string ChronicleUrl => $"{BaseUrl}/cronica/fiestas";
+
+    public string SignupUrl => $"{BaseUrl}/agenda/apuntarse";
+
     // What the site was told, for a scenario that wants to know the form was submitted rather than
     // described.
     public IReadOnlyList<Booking> Bookings
@@ -76,6 +92,17 @@ public sealed class EvalWeb : IAsyncDisposable
             lock (_gate)
             {
                 return [.. _bookings];
+            }
+        }
+    }
+
+    public IReadOnlyList<Signup> Signups
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _signups];
             }
         }
     }
@@ -109,6 +136,31 @@ public sealed class EvalWeb : IAsyncDisposable
             site.Bookings.Count == 0
                 ? Html(Page("Sin reserva", "<h1>Todavía no hay ninguna reserva</h1>"))
                 : Html(Confirmation(site.Bookings[^1])));
+        app.MapGet("/cronica/fiestas", () => Html(Chronicle()));
+        app.MapGet("/agenda/apuntarse", () => Html(SignupForm()));
+        // The same post-redirect-get shape as the booking, with one difference that is the point:
+        // the hidden activity id is only ever set by a suggestion's click handler, so a form
+        // whose text was merely written — typed whole, filled, pasted — bounces without a code.
+        app.MapPost("/agenda/apuntarse", async (HttpRequest request) =>
+        {
+            var form = await request.ReadFormAsync();
+            var activityId = form["actividadId"].ToString();
+            if (string.IsNullOrEmpty(activityId))
+            {
+                return Results.Redirect("/agenda/apuntarse/sin-actividad");
+            }
+
+            site.Record(new Signup(form["nombre"].ToString(), activityId));
+            return Results.Redirect("/agenda/apuntarse/confirmada");
+        });
+        app.MapGet("/agenda/apuntarse/sin-actividad", () =>
+            Html(Page("Falta la actividad",
+                "<h1>Elige una actividad de la lista de sugerencias</h1>"
+                + "<p>Escribe en el campo y pulsa una de las sugerencias que aparecen.</p>")));
+        app.MapGet("/agenda/apuntarse/confirmada", () =>
+            site.Signups.Count == 0
+                ? Html(Page("Sin inscripción", "<h1>Todavía no hay ninguna inscripción</h1>"))
+                : Html(SignupConfirmation(site.Signups[^1])));
 
         await app.StartAsync();
         return site;
@@ -119,6 +171,14 @@ public sealed class EvalWeb : IAsyncDisposable
         lock (_gate)
         {
             _bookings.Add(booking);
+        }
+    }
+
+    private void Record(Signup signup)
+    {
+        lock (_gate)
+        {
+            _signups.Add(signup);
         }
     }
 
@@ -171,6 +231,90 @@ public sealed class EvalWeb : IAsyncDisposable
             </form>
             """);
 
+    // Long on purpose: past what one default-length browse returns, with the number the scenario
+    // asks about in the closing paragraph and nowhere else. The filler is deterministic — day
+    // after day of fiesta chronicle — because a page that changed between runs would make two
+    // recordings incomparable.
+    private static string Chronicle()
+    {
+        var days = string.Join("\n", Enumerable.Range(1, 24).Select(day => $"""
+            <h2>Día {day}</h2>
+            <p>La jornada número {day} de las fiestas del barrio empezó, como ya es costumbre,
+            con el pasacalles de la charanga por la calle Mayor y el reparto de chocolate con
+            churros en la plaza. A media mañana los mayores jugaron su campeonato de petanca
+            junto al quiosco, y los pequeños llenaron los talleres de la carpa municipal, donde
+            este año se pintaron caretas, se montaron cometas y se aprendió a hacer pan. Por la
+            tarde hubo concurso de tortillas frente al centro cívico — con más discusión que
+            nunca sobre el punto de la cebolla — y la verbena se alargó hasta bien entrada la
+            noche con la orquesta de siempre, que repitió el pasodoble dos veces porque la pista
+            no se vaciaba. Los vecinos de la calle del Pozo volvieron a ganar el premio al balcón
+            mejor engalanado, y la comisión recordó por megafonía que los boletos de la rifa
+            solidaria seguían a la venta en la caseta de la entrada.</p>
+            """));
+
+        return Page("Crónica de las fiestas del barrio", $"""
+            <h1>Crónica de las fiestas del barrio</h1>
+            <p>Todo lo que dieron de sí las fiestas de este año, día a día.</p>
+            {days}
+            <h2>El cierre</h2>
+            <p>Y el dato que todos esperaban: <strong>la rifa solidaria cerró con {RaffleTotal}
+            euros recaudados</strong>, que la comisión entregará íntegros al comedor social del
+            barrio.</p>
+            """);
+    }
+
+    private static string SignupForm() =>
+        Page("Apuntarse a una actividad", $$"""
+            <h1>Apuntarse a una actividad</h1>
+            <form method="post" action="/agenda/apuntarse">
+              <label for="actividad">Actividad</label>
+              <input id="actividad" name="actividad" type="text" autocomplete="off" />
+              <input id="actividadId" name="actividadId" type="hidden" />
+              <ul id="sugerencias"></ul>
+              <label for="nombre">Nombre</label>
+              <input id="nombre" name="nombre" type="text" />
+              <button type="submit">Apuntarse</button>
+            </form>
+            <script>
+              const actividades = [
+                { id: "ajedrez", nombre: "Ajedrez al aire libre" },
+                { id: "aquagym", nombre: "Aquagym en el polideportivo" },
+                { id: "astro", nombre: "{{AstronomyActivity}}" }
+              ];
+              const campo = document.getElementById("actividad");
+              const oculto = document.getElementById("actividadId");
+              const lista = document.getElementById("sugerencias");
+              campo.addEventListener("input", () => {
+                oculto.value = "";
+                lista.innerHTML = "";
+                const texto = campo.value.trim().toLowerCase();
+                if (!texto) return;
+                actividades
+                  .filter(a => a.nombre.toLowerCase().includes(texto))
+                  .forEach(a => {
+                    const boton = document.createElement("button");
+                    boton.type = "button";
+                    boton.textContent = a.nombre;
+                    boton.addEventListener("click", () => {
+                      campo.value = a.nombre;
+                      oculto.value = a.id;
+                      lista.innerHTML = "";
+                    });
+                    const fila = document.createElement("li");
+                    fila.appendChild(boton);
+                    lista.appendChild(fila);
+                  });
+              });
+            </script>
+            """);
+
+    private static string SignupConfirmation(Signup signup) =>
+        Page($"Inscripción confirmada {SignupCode}", $"""
+            <h1>Inscripción {SignupCode} confirmada</h1>
+            <p>Plaza apuntada a nombre de {WebUtility.HtmlEncode(signup.Name)}.</p>
+            <p>Tu código de inscripción es <strong>{SignupCode}</strong>. Guárdalo.</p>
+            """);
+
     private static string Confirmation(Booking booking) =>
         Page($"Reserva confirmada {CodeFor(booking.Slot)}", $"""
             <h1>Reserva {CodeFor(booking.Slot)} confirmada</h1>
@@ -194,6 +338,8 @@ public sealed class EvalWeb : IAsyncDisposable
     }
 
     public sealed record Booking(string Name, string Slot);
+
+    public sealed record Signup(string Name, string ActivityId);
 
     // The browser every web scenario runs through, in one place: everything but this machine goes
     // to a proxy that is not listening, so a page nobody in this process served fails to load
@@ -258,7 +404,19 @@ internal sealed class FakeSearch(string baseUrl) : HttpMessageHandler
         new(["taller", "reserva", "reservar", "plaza"],
             "Reservar plaza en el taller — Cuaderno de barrio",
             $"{baseUrl}/taller/reserva",
-            "Formulario de reserva de plaza para el taller del fin de semana.")
+            "Formulario de reserva de plaza para el taller del fin de semana."),
+        // Accent-free keywords on purpose: the query arrives url-encoded, so "crónica" reaches
+        // this table as "cr%c3%b3nica" and only its ASCII neighbours can match.
+        new(["fiestas", "rifa", "barrio", "cronica"],
+            "Crónica de las fiestas del barrio — Cuaderno de barrio",
+            $"{baseUrl}/cronica/fiestas",
+            // No total in the snippet: the number lives at the end of the page and nowhere else.
+            "Todo lo que dieron de sí las fiestas de este año, día a día."),
+        new(["astronom", "actividad", "actividades", "apuntar", "agenda", "inscri"],
+            "Apuntarse a una actividad — Cuaderno de barrio",
+            $"{baseUrl}/agenda/apuntarse",
+            "El formulario para apuntarse a las actividades del barrio: busca la actividad y "
+            + "apúntate con tu nombre.")
     ];
 
     private sealed record SearchEntry(
