@@ -199,6 +199,89 @@ public class EvalWebTests : IAsyncLifetime
             .ShouldNotContain(EvalWeb.SignupCode);
     }
 
+    [Fact]
+    public async Task TheArchive_HidesItsEditionUrls_AndBackReturnsToIt()
+    {
+        // The back rule is only forced if the edition urls leak nowhere: a content read or a
+        // snapshot that carried them would let a model browse forward and never return.
+        const string session = "proof-archive";
+        var archive = await _browsing.NavigateAsync(new BrowseRequest(session, _web.ArchiveUrl));
+        archive.Content.ShouldNotBeNull().ShouldNotContain("ed-3f7");
+        archive.Content.ShouldNotContain("ed-b12");
+
+        var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
+        snapshot.Snapshot.ShouldNotBeNull().ShouldNotContain("ed-3f7");
+
+        var opened = await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "button", "La rifa de 2024"), WebActionType.Click,
+            WaitForNavigation: true));
+        opened.Status.ShouldBe(WebActionStatus.Success);
+        (await _browsing.GetCurrentPageAsync(session)).Content.ShouldNotBeNull()
+            .ShouldContain(EvalWeb.Raffle2024Total);
+
+        var back = await _browsing.ActionAsync(new WebActionRequest(
+            session, Action: WebActionType.Back));
+        back.Status.ShouldBe(WebActionStatus.Success);
+
+        var again = await _browsing.SnapshotAsync(new SnapshotRequest(session));
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(again, "button", "La rifa de 2025"), WebActionType.Click,
+            WaitForNavigation: true));
+        (await _browsing.GetCurrentPageAsync(session)).Content.ShouldNotBeNull()
+            .ShouldContain(EvalWeb.Raffle2025Total);
+    }
+
+    [Fact]
+    public async Task TheMaterialsForm_TakesFourFieldsAndAnswersWithTheCode()
+    {
+        // The chaining page: four fields and a submit from one snapshot's refs — the form is
+        // static, so nothing re-stamps between actions and no second snapshot is ever needed.
+        const string session = "proof-materials";
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.MaterialsUrl));
+        var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
+
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "textbox", "Nombre"), WebActionType.Fill, "Fran"));
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "textbox", "Teléfono"), WebActionType.Fill, "600111222"));
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "textbox", "Correo"), WebActionType.Fill, "fran@example.com"));
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "combobox", "Taller"), WebActionType.Select,
+            EvalWeb.CeramicsWorkshop));
+        var submitted = await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "button", "Enviar"), WebActionType.Click,
+            WaitForNavigation: true));
+
+        submitted.Status.ShouldBe(WebActionStatus.Success);
+        var signup = _web.Materials.ShouldHaveSingleItem();
+        signup.Name.ShouldBe("Fran");
+        signup.Workshop.ShouldBe(EvalWeb.CeramicsWorkshop);
+        (await _browsing.GetCurrentPageAsync(session)).Content.ShouldNotBeNull()
+            .ShouldContain(EvalWeb.MaterialsCode);
+    }
+
+    [Fact]
+    public async Task SubmittingTheMaterialsFormIncomplete_PrintsNoCode()
+    {
+        // Every field is load-bearing: the code is only behind a form filled whole, so a flow
+        // that skipped a field cannot pass by submitting anyway.
+        const string session = "proof-materials-short";
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.MaterialsUrl));
+        var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
+
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "textbox", "Nombre"), WebActionType.Fill, "Fran"));
+        var submitted = await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "button", "Enviar"), WebActionType.Click,
+            WaitForNavigation: true));
+
+        submitted.Status.ShouldBe(WebActionStatus.Success);
+        _web.Materials.ShouldBeEmpty();
+        (await _browsing.GetCurrentPageAsync(session)).Content.ShouldNotBeNull()
+            .ShouldNotContain(EvalWeb.MaterialsCode);
+    }
+
     // A ref by role AND accessible name: the tree names a listitem after the button inside it, so
     // a name-only lookup picks the wrapper and a click on it never reaches the button's handler.
     private static string RefBy(SnapshotResult snapshot, string role, string name) =>

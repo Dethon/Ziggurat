@@ -49,12 +49,25 @@ public sealed class EvalWeb : IAsyncDisposable
 
     public const string AstronomyActivity = "Astronomía en la azotea";
 
+    // One total per archived edition, each printed only on its own page. The archive reaches
+    // them through JS buttons rather than links, so the urls appear in no content read and no
+    // snapshot — the only ways to the second total are a click, and back, and a click.
+    public const string Raffle2024Total = "1.316";
+
+    public const string Raffle2025Total = "1.577";
+
+    // Printed only by the materials form's confirmation, and only when every field went in.
+    public const string MaterialsCode = "M-2210";
+
+    public const string CeramicsWorkshop = "Cerámica sábado";
+
     private static string CodeFor(string slot) =>
         slot == SaturdaySlot ? SaturdayCode : SundayCode;
 
     private readonly IHost _host;
     private readonly List<Booking> _bookings = [];
     private readonly List<Signup> _signups = [];
+    private readonly List<MaterialsSignup> _materials = [];
     private readonly Lock _gate = new();
 
     public string BaseUrl { get; }
@@ -83,6 +96,10 @@ public sealed class EvalWeb : IAsyncDisposable
 
     public string SignupUrl => $"{BaseUrl}/agenda/apuntarse";
 
+    public string ArchiveUrl => $"{BaseUrl}/archivo";
+
+    public string MaterialsUrl => $"{BaseUrl}/taller/materiales";
+
     // What the site was told, for a scenario that wants to know the form was submitted rather than
     // described.
     public IReadOnlyList<Booking> Bookings
@@ -103,6 +120,17 @@ public sealed class EvalWeb : IAsyncDisposable
             lock (_gate)
             {
                 return [.. _signups];
+            }
+        }
+    }
+
+    public IReadOnlyList<MaterialsSignup> Materials
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _materials];
             }
         }
     }
@@ -161,6 +189,41 @@ public sealed class EvalWeb : IAsyncDisposable
             site.Signups.Count == 0
                 ? Html(Page("Sin inscripción", "<h1>Todavía no hay ninguna inscripción</h1>"))
                 : Html(SignupConfirmation(site.Signups[^1])));
+        // Opaque, unrelated slugs on purpose: an action result carries the url it landed on, so
+        // sibling pages named after a pattern (rifa-2024, rifa-2025) let a model that saw one
+        // guess the other and browse forward instead of going back — the first armed run did
+        // exactly that.
+        app.MapGet("/archivo", () => Html(Archive()));
+        app.MapGet("/archivo/ed-3f7", () =>
+            Html(ArchivedEdition("2024", Raffle2024Total)));
+        app.MapGet("/archivo/ed-b12", () =>
+            Html(ArchivedEdition("2025", Raffle2025Total)));
+        app.MapGet("/taller/materiales", () => Html(MaterialsForm()));
+        // Post-redirect-get like its siblings, and every field is load-bearing: the code only
+        // exists behind a form that was filled whole, which is what makes the chained actions
+        // provable rather than described.
+        app.MapPost("/taller/materiales", async (HttpRequest request) =>
+        {
+            var form = await request.ReadFormAsync();
+            var signup = new MaterialsSignup(
+                form["nombre"].ToString(), form["telefono"].ToString(),
+                form["correo"].ToString(), form["taller"].ToString());
+            if (signup.Name.Length == 0 || signup.Phone.Length == 0
+                || signup.Email.Length == 0 || signup.Workshop.Length == 0)
+            {
+                return Results.Redirect("/taller/materiales/incompleto");
+            }
+
+            site.Record(signup);
+            return Results.Redirect("/taller/materiales/confirmado");
+        });
+        app.MapGet("/taller/materiales/incompleto", () =>
+            Html(Page("Faltan datos",
+                "<h1>Faltan datos</h1><p>Rellena nombre, teléfono, correo y taller.</p>")));
+        app.MapGet("/taller/materiales/confirmado", () =>
+            site.Materials.Count == 0
+                ? Html(Page("Sin inscripción", "<h1>Todavía no hay ninguna inscripción</h1>"))
+                : Html(MaterialsConfirmation(site.Materials[^1])));
 
         await app.StartAsync();
         return site;
@@ -179,6 +242,14 @@ public sealed class EvalWeb : IAsyncDisposable
         lock (_gate)
         {
             _signups.Add(signup);
+        }
+    }
+
+    private void Record(MaterialsSignup signup)
+    {
+        lock (_gate)
+        {
+            _materials.Add(signup);
         }
     }
 
@@ -312,6 +383,56 @@ public sealed class EvalWeb : IAsyncDisposable
             </script>
             """);
 
+    // Buttons, deliberately: a link's href survives into the markdown a browse returns, and a
+    // model that has read the edition urls never needs to go back — it just browses forward.
+    // With the urls only inside click handlers, the second edition is reachable by exactly the
+    // path the back rule describes: click in, back out, click in.
+    private static string Archive() =>
+        Page("Archivo de la rifa solidaria", """
+            <h1>Archivo de la rifa solidaria</h1>
+            <p>Lo recaudado en cada edición, una página por año.</p>
+            <ul>
+              <li><button type="button" onclick="location.href='/archivo/ed-3f7'">La rifa de 2024</button></li>
+              <li><button type="button" onclick="location.href='/archivo/ed-b12'">La rifa de 2025</button></li>
+            </ul>
+            """);
+
+    private static string ArchivedEdition(string year, string total) =>
+        Page($"La rifa solidaria de {year}", $"""
+            <h1>La rifa solidaria de {year}</h1>
+            <p>La edición de {year} cerró con <strong>{total} euros</strong> recaudados para el
+            comedor social del barrio.</p>
+            """);
+
+    private static string MaterialsForm() =>
+        Page("Materiales del taller", $"""
+            <h1>Materiales del taller</h1>
+            <p>Apúntate para recibir el lote de materiales de tu taller.</p>
+            <form method="post" action="/taller/materiales">
+              <label for="nombre">Nombre</label>
+              <input id="nombre" name="nombre" type="text" />
+              <label for="telefono">Teléfono</label>
+              <input id="telefono" name="telefono" type="text" />
+              <label for="correo">Correo</label>
+              <input id="correo" name="correo" type="text" />
+              <label for="taller">Taller</label>
+              <select id="taller" name="taller">
+                <option value="">Elige un taller</option>
+                <option value="{CeramicsWorkshop}">{CeramicsWorkshop}</option>
+                <option value="Acuarela domingo">Acuarela domingo</option>
+              </select>
+              <button type="submit">Enviar</button>
+            </form>
+            """);
+
+    private static string MaterialsConfirmation(MaterialsSignup signup) =>
+        Page($"Inscripción {MaterialsCode} confirmada", $"""
+            <h1>Inscripción {MaterialsCode} confirmada</h1>
+            <p>Lote de materiales reservado para {WebUtility.HtmlEncode(signup.Name)} en el
+            taller de {WebUtility.HtmlEncode(signup.Workshop)}.</p>
+            <p>Tu código es <strong>{MaterialsCode}</strong>. Guárdalo.</p>
+            """);
+
     private static string SignupConfirmation(Signup signup) =>
         Page($"Inscripción confirmada {SignupCode}", $"""
             <h1>Inscripción {SignupCode} confirmada</h1>
@@ -344,6 +465,8 @@ public sealed class EvalWeb : IAsyncDisposable
     public sealed record Booking(string Name, string Slot);
 
     public sealed record Signup(string Name, string ActivityId);
+
+    public sealed record MaterialsSignup(string Name, string Phone, string Email, string Workshop);
 
     // The browser every web scenario runs through, in one place: everything but this machine goes
     // to a proxy that is not listening, so a page nobody in this process served fails to load
@@ -416,6 +539,20 @@ internal sealed class FakeSearch(string baseUrl) : HttpMessageHandler
             $"{baseUrl}/cronica/fiestas",
             // No total in the snippet: the number lives at the end of the page and nowhere else.
             "Todo lo que dieron de sí las fiestas de este año, día a día."),
+        // "rifa" and "solidaria" overlap the chronicle's keywords on purpose: a query about the
+        // raffle returns both pages, and picking the archive over the chronicle is the reader's
+        // ordinary job. The first armed run had no overlap, and the model spent twenty calls
+        // hunting for a page its own first search should have surfaced.
+        new(["archivo", "ediciones", "anteriores", "rifa", "solidaria", "recaud"],
+            "Archivo de la rifa solidaria — Cuaderno de barrio",
+            $"{baseUrl}/archivo",
+            // No totals in the snippet, and no edition urls either: the pages behind the archive
+            // are reachable only through its own buttons.
+            "Lo recaudado en cada edición de la rifa solidaria, una página por año."),
+        new(["materiales", "lote"],
+            "Materiales del taller — Cuaderno de barrio",
+            $"{baseUrl}/taller/materiales",
+            "El formulario para reservar el lote de materiales del taller."),
         new(["astronom", "actividad", "actividades", "apuntar", "agenda", "inscri"],
             "Apuntarse a una actividad — Cuaderno de barrio",
             $"{baseUrl}/agenda/apuntarse",

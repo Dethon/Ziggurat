@@ -14,7 +14,7 @@ public static class WebScenarios
     public static IReadOnlyList<Scenario> All =>
     [
         TheRestingTime, WhenTheMuseumOpens, BookingAPlace, TheWholeChronicle,
-        TheSiteNamedByName, SigningUpForAstronomy
+        TheSiteNamedByName, SigningUpForAstronomy, TwoEditionsOfTheRaffle, TheMaterialsForm
     ];
 
     // The answer is in the article and nowhere else: the search snippet describes the recipe
@@ -185,7 +185,15 @@ public static class WebScenarios
                 + "narrates the process: pages opened, forms filled, buttons clicked, snapshots "
                 + "taken, tools or workers used. Naming the workshop, the day, the time and the "
                 + "code is the outcome and passes; 'I opened the form and typed your name' is a "
-                + "step and fails.")
+                + "step and fails."),
+            new JudgedCheck(WebBrowsingPrompt.BrowseReadsAndSnapshotStructures.Id,
+                "Look at the tool calls. web_browse fetches a page's content (and, with "
+                + "snapshot=true, its interactive structure in the same call); web_snapshot "
+                + "fetches structure alone. Fail if the flow paid twice for the same thing: a "
+                + "browse of a url followed by a standalone snapshot of that same page before "
+                + "any action changed it, or a second browse of a page whose content was "
+                + "already in hand. A snapshot taken after actions changed the page, or a "
+                + "browse of a genuinely new url, is a new need and passes.")
         ],
         Policy = new RunPolicy(2, 4)
     };
@@ -363,6 +371,113 @@ public static class WebScenarios
             Mentions = [new SpokenValue("the signup code", EvalWeb.SignupCode)]
         },
         Claims = [WebBrowsingPrompt.TypeReactsAndFillSets.Id],
+        Policy = new RunPolicy(2, 4)
+    };
+
+    // Two pages deep and back out: the archive reaches its editions through buttons whose urls
+    // appear in no content read and no snapshot, so the second total is only reachable by
+    // returning — and the return has to be the browser's own back, not a second browse.
+    public static Scenario TwoEditionsOfTheRaffle => new()
+    {
+        Name = "going back is the browser's back, not a second browse",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            // "La página del archivo … en la web": the first armed run said just "el archivo",
+            // and the model reasonably went looking for one in the vault first.
+            Text = "Abre la página del archivo de la rifa solidaria en la web del Cuaderno de "
+                   + "barrio y dime cuánto se recaudó en la rifa de 2024 y en la de 2025.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "open",
+                Tool = EvalTools.WebBrowse,
+                // No snapshot flag demanded: how the refs were fetched is the booking
+                // scenario's subject, and an armed run showed this model opening plain and
+                // snapshotting separately here — with the back exactly where it belongs.
+                Arguments = [Arg.Matches("url", "/archivo")]
+            },
+            new CallExpectation
+            {
+                Label = "back",
+                Tool = EvalTools.WebAction,
+                Arguments = [Arg.Matches("action", "(?i)^back$")]
+            }
+        ],
+        Ordering = [new OrderingConstraint("open", "back")],
+        Permitted =
+        [
+            new CallPermission(EvalTools.WebSearch),
+            new CallPermission(EvalTools.WebBrowse),
+            new CallPermission(EvalTools.WebSnapshot),
+            new CallPermission(EvalTools.WebAction)
+        ],
+        MayDelegateTo = ["jonas-worker"],
+        // Search, open, click, a read of the landed page, back, click, read, the possible
+        // worker and one spare: re-browsing the archive instead of going back both misses the
+        // required back and pays an extra call.
+        CallCeiling = 9,
+        Reply = new ReplyExpectation
+        {
+            MaxSentences = 4,
+            Mentions =
+            [
+                new SpokenValue("the 2024 total", EvalWeb.Raffle2024Total, "1316", "1 316"),
+                new SpokenValue("the 2025 total", EvalWeb.Raffle2025Total, "1577", "1 577")
+            ]
+        },
+        Claims = [WebBrowsingPrompt.BackIsAnAction.Id],
+        Policy = new RunPolicy(2, 4)
+    };
+
+    // More steps than the booking: four fields and a submit, all addressable from the refs the
+    // opening browse already returned — the form is static, so nothing re-stamps between
+    // actions. The ceiling is where a snapshot between every action shows.
+    public static Scenario TheMaterialsForm => new()
+    {
+        Name = "a static form is chained from one snapshot's refs",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "Abre el formulario de materiales del taller del Cuaderno de barrio y "
+                   + "apúntame al lote de Cerámica sábado: Fran, teléfono 600111222, correo "
+                   + "fran@example.com. Dime el código.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "open",
+                Tool = EvalTools.WebBrowse,
+                Arguments =
+                [
+                    Arg.Matches("url", "/taller/materiales"),
+                    Arg.Flag("snapshot", true)
+                ]
+            }
+        ],
+        Permitted =
+        [
+            new CallPermission(EvalTools.WebSearch),
+            new CallPermission(EvalTools.WebBrowse),
+            new CallPermission(EvalTools.WebSnapshot),
+            new CallPermission(EvalTools.WebAction)
+        ],
+        MayDelegateTo = ["jonas-worker"],
+        // The straight flow is six calls: open with refs, three fills, a select, the submit.
+        // A worker detour and one stray call fit; a snapshot between every action does not.
+        CallCeiling = 8,
+        Reply = new ReplyExpectation
+        {
+            Mentions = [new SpokenValue("the materials code", EvalWeb.MaterialsCode)]
+        },
+        Claims = [WebBrowsingPrompt.ActionsChainFromTheDiff.Id],
         Policy = new RunPolicy(2, 4)
     };
 }

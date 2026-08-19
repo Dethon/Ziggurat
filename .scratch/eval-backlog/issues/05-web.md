@@ -13,9 +13,28 @@
   reads the call list and fails a flow that fetched the same page twice for one purpose
   (a browse followed by a standalone snapshot of the same page before any action).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Pages and fixture proofs in EvalWeb/EvalWebTests (including that /archivo's markdown
+- [x] Pages and fixture proofs in EvalWeb/EvalWebTests (including that /archivo's markdown
       carries no edition url).
-- [ ] Two scenarios plus the judged check, exemption lines removed, coverage test green.
-- [ ] Armed runs pass at each scenario's policy.
+- [x] Two scenarios plus the judged check, exemption lines removed, coverage test green.
+- [x] Armed runs pass at each scenario's policy: materials 4/4 first pass, booking 3/4 with
+      both judged checks, back 3/4 after three fixture fixes.
+
+## Findings from the armed runs
+
+The materials form and the booking's new browse-vs-snapshot judged check passed straight away.
+The back scenario took three fixture lessons, all mine:
+
+- The archive's search keywords shared nothing with a natural query about the raffle, so the
+  model's first search surfaced the chronicle instead and it spent twenty calls hunting —
+  including four text-searches of the vault, because the turn said "el archivo" without saying
+  it was a web page. Keywords now overlap the chronicle's on purpose; the turn says "la página
+  del archivo … en la web".
+- An action result carries the url it landed on, so sibling pages named after a pattern
+  (rifa-2024 → rifa-2025) let the model guess the second and browse forward instead of going
+  back. The editions are now at opaque, unrelated slugs.
+- With those fixed the flow was exactly right — open, click, read, Back, click, read — and the
+  run still failed because the required open demanded snapshot=true, a requirement borrowed
+  from the booking whose claim it belongs to. This model opened plain and snapshotted
+  separately, which back-is-an-action has no business forbidding. Dropped; 3/4.
