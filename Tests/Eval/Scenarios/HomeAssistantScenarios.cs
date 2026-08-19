@@ -1,3 +1,4 @@
+using Domain.Prompts;
 using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
 
@@ -9,7 +10,8 @@ namespace Tests.Eval.Scenarios;
 // and after the turn.
 public static class HomeAssistantScenarios
 {
-    public static IReadOnlyList<Scenario> All => [TurnTheAirConditionerOn, SetTheTemperature];
+    public static IReadOnlyList<Scenario> All =>
+        [TurnTheAirConditionerOn, SetTheTemperature, VacuumTheStudy];
 
     // "Turn on the AC" and stop: the prompt's own example of the thing not to do is picking a mode
     // or a temperature while you are there. Both of those show up in the diff, which is why the
@@ -98,6 +100,49 @@ public static class HomeAssistantScenarios
         CallCeiling = 5,
         // No citation, for the same reason: with the never-re-read rule gone the model still did
         // not check its own work.
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The area was created as "Despacho" and later renamed to "Estudio": HA froze the slug at
+    // creation, the display name moved on, and a model deriving the id from what the user said
+    // sends an area the registry does not have. The setup index and the /ha/areas tree are the
+    // only bridge between the two words.
+    public static Scenario VacuumTheStudy => new()
+    {
+        Name = "an area argument is the slug the files say",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "pasa la aspiradora por el estudio",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "clean",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.PathMatches(FakeHomeAssistant.VacuumPathPattern),
+                    Arg.Matches("command", @"^clean_zone\.sh\b"),
+                    Arg.Matches("command",
+                        $@"--cleaning_area_id[= ]+""?{FakeHomeAssistant.StudyAreaSlug}\b")
+                ]
+            }
+        ],
+        Permitted =
+        [
+            .. CallPermission.LookingAndManuals("/ha*"),
+            new CallPermission(EvalTools.Exec, "*aspiradora*")
+        ],
+        Changes = [new StateChange(FakeHomeAssistant.VacuumEntityId, "cleaning")],
+        CallCeiling = 6,
+        Reply = new ReplyExpectation { Spoken = true, MaxSentences = 1 },
+        Claims = [HomeAssistantPrompt.AreaSlugIsReadNotDerived.Id],
         Policy = new RunPolicy(2, 3)
     };
 }

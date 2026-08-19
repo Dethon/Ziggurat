@@ -259,10 +259,6 @@ public static class ClaimExemptions
             + "was playing, and not as another play. The first attempt at this demonstration was "
             + "red for the wrong reason — the model read `media_seek.sh --help`, which the "
             + "scenario did not tolerate — which is what CallPermission.Manual now exists for."),
-        [HomeAssistantPrompt.AreaSlugIsReadNotDerived.Id] = new(ExemptionKind.NeedsFixture,
-            "Needs an area whose slug and display name disagree and an action that takes an area id; "
-            + "the fake home has the first and no action with the second. Issue 06 of "
-            + ".scratch/comprehensive-eval."),
         [VoicePrompt.OneSentenceTwelveWords.Id] = new(ExemptionKind.Guard,
             "Every spoken scenario declares a sentence and word limit, but none of them is *about* the "
             + "limit, and the declared word count is the contract's twelve plus what the spelled-out "
