@@ -16,9 +16,12 @@ contain the exact trap the claim is about.
 - [x] A research turn searches, opens a result, reads it, and answers from what it read. The
       resting time is in the article and deliberately not in the snippet, so an answer carrying it
       is an answer from a page that was loaded.
-- [x] An action turn snapshots the page before acting on it; acting first fails the scenario,
-      because a ref that was never in a snapshot addresses nothing. The proof that the booking
-      went through is the code on the confirmation page, which exists nowhere else.
+- [x] An action turn snapshots the page before acting on it; acting first fails the scenario. The
+      required call is the browse that carries `snapshot: true` — the single call the contract asks
+      for — and the action must name a ref of the shape that snapshot hands out, so acting on a
+      page whose structure was never fetched cannot pass. The proof that the booking went through
+      is the confirmation code, and there is one code per turn: booking Sunday returns a different
+      one, so a reply carrying the Saturday code is a reply about the turn the user asked for.
 - [x] A page whose content contradicts the search snippet is answered from the page: the snippet
       still advertises the old opening time and the page's first line corrects it.
 - [x] No scenario in this family reaches the public internet, and it is the browser that
@@ -37,6 +40,11 @@ contain the exact trap the claim is about.
         answer still came from the page rather than from the snippet.
       - **Withdrawn.** Urls are cited only in writing: deleted, and the spoken reply still carried
         no url — the voice section forbids one on the same turn.
+
+**The turn says to act rather than to look into it** — "abre el formulario … y reserva" rather
+than "reserva una plaza en el taller del barrio". Phrased as research, the booking goes to a worker
+on about half the runs, which is the reflex the delegation exemptions already record; this scenario
+is about the refs, not about that decision.
 
 **Two things this ticket changed in the harness.** A required call is matched by pattern rather
 than by name, because a tool served over MCP is named after the endpoint it was dialled on — host

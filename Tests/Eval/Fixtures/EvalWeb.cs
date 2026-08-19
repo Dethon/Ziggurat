@@ -1,10 +1,13 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using Domain.Contracts;
+using Infrastructure.Clients;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Playwright;
 using Tests.Integration.Fixtures;
 
 namespace Tests.Eval.Fixtures;
@@ -27,9 +30,16 @@ public sealed class EvalWeb : IAsyncDisposable
 
     public const string StaleOpeningTime = "9:00";
 
-    // Printed only by the confirmation the form produces. A reply carrying it is a reply from a
-    // booking that actually went through.
-    public const string BookingCode = "R-4471";
+    // Printed only by the confirmation the form produces, and different per turn: a reply carrying
+    // one of these is a reply from a booking that went through, for the turn it names.
+    public const string SaturdayCode = "R-4471";
+
+    public const string SundayCode = "R-8890";
+
+    public const string SaturdaySlot = "Sábado 12:00";
+
+    private static string CodeFor(string slot) =>
+        slot == SaturdaySlot ? SaturdayCode : SundayCode;
 
     private readonly IHost _host;
     private readonly List<Booking> _bookings = [];
@@ -37,14 +47,16 @@ public sealed class EvalWeb : IAsyncDisposable
 
     public string BaseUrl { get; }
 
-    // The search engine's answers, faked at Brave's own HTTP API — the outermost external.
-    public HttpMessageHandler Search { get; }
+    // The search engine's answers, faked at Brave's own HTTP API — the outermost external. It is
+    // the transport a client is built on rather than a client, so it is what the server's own
+    // typed client gets handed.
+    public HttpMessageHandler SearchTransport { get; }
 
     private EvalWeb(IHost host, string baseUrl)
     {
         _host = host;
         BaseUrl = baseUrl;
-        Search = new FakeSearch(baseUrl);
+        SearchTransport = new FakeSearch(baseUrl);
     }
 
     public string RecipeUrl => $"{BaseUrl}/recetas/gazpacho";
@@ -75,7 +87,9 @@ public sealed class EvalWeb : IAsyncDisposable
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
         var app = builder.Build();
 
-        EvalWeb site = null!;
+        // Constructed before the host is started, because the handlers below close over it: a
+        // request arriving between StartAsync and the assignment would find null.
+        var site = new EvalWeb(app, $"http://127.0.0.1:{port}");
         app.MapGet("/", () => Html(Index()));
         app.MapGet("/recetas/gazpacho", () => Html(Recipe()));
         app.MapGet("/museo/horarios", () => Html(Museum()));
@@ -89,7 +103,7 @@ public sealed class EvalWeb : IAsyncDisposable
             var form = await request.ReadFormAsync();
             var booking = new Booking(form["nombre"].ToString(), form["turno"].ToString());
             site.Record(booking);
-            return Results.Redirect($"/taller/reserva/confirmada?codigo={BookingCode}");
+            return Results.Redirect($"/taller/reserva/confirmada?codigo={CodeFor(booking.Slot)}");
         });
         app.MapGet("/taller/reserva/confirmada", () =>
             site.Bookings.Count == 0
@@ -97,7 +111,6 @@ public sealed class EvalWeb : IAsyncDisposable
                 : Html(Confirmation(site.Bookings[^1])));
 
         await app.StartAsync();
-        site = new EvalWeb(app, $"http://127.0.0.1:{port}");
         return site;
     }
 
@@ -159,11 +172,11 @@ public sealed class EvalWeb : IAsyncDisposable
             """);
 
     private static string Confirmation(Booking booking) =>
-        Page($"Reserva confirmada {BookingCode}", $"""
-            <h1>Reserva {BookingCode} confirmada</h1>
+        Page($"Reserva confirmada {CodeFor(booking.Slot)}", $"""
+            <h1>Reserva {CodeFor(booking.Slot)} confirmada</h1>
             <p>Plaza reservada a nombre de {WebUtility.HtmlEncode(booking.Name)} para el turno de
             {WebUtility.HtmlEncode(booking.Slot)}.</p>
-            <p>Tu código de reserva es <strong>{BookingCode}</strong>. Guárdalo.</p>
+            <p>Tu código de reserva es <strong>{CodeFor(booking.Slot)}</strong>. Guárdalo.</p>
             """);
 
     private static string Page(string title, string body) =>
@@ -177,10 +190,31 @@ public sealed class EvalWeb : IAsyncDisposable
     {
         await _host.StopAsync();
         _host.Dispose();
-        Search.Dispose();
+        SearchTransport.Dispose();
     }
 
     public sealed record Booking(string Name, string Slot);
+
+    // The browser every web scenario runs through, in one place: everything but this machine goes
+    // to a proxy that is not listening, so a page nobody in this process served fails to load
+    // rather than answering. Camoufox is what a deployment connects to, and it exists to get past
+    // anti-bot defences a locally served page does not have.
+    public static Task<IBrowser> LaunchBrowserAsync(IPlaywright playwright) =>
+        playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false",
+            Proxy = new Proxy { Server = "http://127.0.0.1:1", Bypass = "127.0.0.1,localhost" }
+        });
+
+    // The search client the websearch server builds, built the same way for a test that wants to
+    // ask this fake a question directly.
+    public IWebSearchClient SearchClient() =>
+        new BraveSearchClient(
+            new HttpClient(SearchTransport) { BaseAddress = new Uri(SearchApiUrl) }, "eval");
+
+    // Not a real host: the transport answers whatever is asked of it, and the client needs a base
+    // address to build a relative path against.
+    public const string SearchApiUrl = "http://brave.eval/res/v1/";
 }
 
 // Brave's web-search API, answered from a fixed table. The snippets matter as much as the urls:

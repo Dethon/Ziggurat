@@ -20,7 +20,10 @@ public class ReplyChecksTests
     {
         var failures = Failures(
             new ReplyExpectation { MaxSentences = 1 },
-            "Listo. He puesto el temporizador. Te aviso cuando suene.");
+            // No one-word opener: the contract allows one of those before slow work, so a reply
+            // starting with one is counted from the second sentence and this test would be about
+            // that rule instead of about the limit.
+            "He puesto el temporizador. Suena a las ocho y cinco. Te aviso cuando suene.");
 
         var failure = failures.ShouldHaveSingleItem();
         failure.ShouldContain("3 sentences");
@@ -101,6 +104,28 @@ public class ReplyChecksTests
         Failures(new ReplyExpectation { NeverSays = ["borrado", "eliminad"] },
                 "He eliminado el temporizador y he creado otro de diez minutos.")
             .ShouldHaveSingleItem().ShouldContain("eliminad");
+    }
+
+    [Fact]
+    public void AnAcknowledgementBeforeTheAnswer_DoesNotCountAgainstAOneSentenceLimit()
+    {
+        // The voice section allows one word before slow work and one sentence of answer. A limit
+        // that counted the acknowledgement would fail the model for obeying the rule beside it.
+        var failures = Failures(
+            new ReplyExpectation { MaxSentences = 1, MaxWords = 12 },
+            "Consultando.\nQuedan cinco minutos.");
+
+        failures.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void TwoSentencesOfAnswer_StillFailAOneSentenceLimit()
+    {
+        var failures = Failures(
+            new ReplyExpectation { MaxSentences = 1 },
+            "Quedan cinco minutos. Suena a las ocho y cinco.");
+
+        failures.ShouldHaveSingleItem().ShouldContain("2 sentences");
     }
 
     private static IReadOnlyList<string> Failures(ReplyExpectation expectation, string reply) =>

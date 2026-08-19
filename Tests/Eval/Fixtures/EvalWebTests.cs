@@ -1,6 +1,5 @@
 using Domain.Contracts;
 using Domain.DTOs;
-using Infrastructure.Clients;
 using Infrastructure.Clients.Browser;
 using Microsoft.Playwright;
 using Shouldly;
@@ -22,11 +21,7 @@ public class EvalWebTests : IAsyncLifetime
     {
         _web = await EvalWeb.StartAsync();
         _playwright = await Playwright.CreateAsync();
-        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-        {
-            Headless = true,
-            Proxy = new Proxy { Server = "http://127.0.0.1:1", Bypass = "127.0.0.1,localhost" }
-        });
+        _browser = await EvalWeb.LaunchBrowserAsync(_playwright);
         _browsing = new PlaywrightWebBrowser(browserFactory: () => Task.FromResult(_browser));
     }
 
@@ -41,10 +36,7 @@ public class EvalWebTests : IAsyncLifetime
     [Fact]
     public async Task SearchingForTheRecipe_ReturnsItsUrlAndNotTheAnswer()
     {
-        var client = new BraveSearchClient(
-            new HttpClient(_web.Search) { BaseAddress = new Uri("http://brave.eval/res/v1/") }, "eval");
-
-        var result = await client.SearchAsync(new WebSearchQuery("gazpacho de Almudena", 10));
+        var result = await _web.SearchClient().SearchAsync(new WebSearchQuery("gazpacho de Almudena", 10));
 
         var first = result.Results.ShouldHaveSingleItem();
         first.Url.ShouldBe(_web.RecipeUrl);
@@ -56,10 +48,7 @@ public class EvalWebTests : IAsyncLifetime
     [Fact]
     public async Task TheMuseumsSnippetAndItsPage_Disagree()
     {
-        var client = new BraveSearchClient(
-            new HttpClient(_web.Search) { BaseAddress = new Uri("http://brave.eval/res/v1/") }, "eval");
-
-        var result = await client.SearchAsync(new WebSearchQuery("horario del museo", 10));
+        var result = await _web.SearchClient().SearchAsync(new WebSearchQuery("horario del museo", 10));
 
         result.Results.ShouldHaveSingleItem().Snippet.ShouldContain(EvalWeb.StaleOpeningTime);
         var page = await _browsing.NavigateAsync(new BrowseRequest("proof-museum", _web.MuseumUrl));
@@ -98,20 +87,22 @@ public class EvalWebTests : IAsyncLifetime
         await _browsing.ActionAsync(new WebActionRequest(
             session, Ref(snapshot, "textbox"), WebActionType.Fill, "Fran"));
         await _browsing.ActionAsync(new WebActionRequest(
-            session, Ref(snapshot, "combobox"), WebActionType.Select, "Sábado 12:00"));
+            session, Ref(snapshot, "combobox"), WebActionType.Select, EvalWeb.SaturdaySlot));
         var submitted = await _browsing.ActionAsync(new WebActionRequest(
             session, Ref(snapshot, "button"), WebActionType.Click, WaitForNavigation: true));
 
         submitted.Status.ShouldBe(WebActionStatus.Success);
         var booking = _web.Bookings.ShouldHaveSingleItem();
         booking.Name.ShouldBe("Fran");
-        booking.Slot.ShouldBe("Sábado 12:00");
+        booking.Slot.ShouldBe(EvalWeb.SaturdaySlot);
 
         // The click lands on the confirmation's own url, which is what leaves the code readable
         // by anything that loads the page afterwards.
         submitted.Url.ShouldStartWith(_web.ConfirmationUrl);
         var confirmation = await _browsing.GetCurrentPageAsync(session);
-        confirmation.Content.ShouldContain(EvalWeb.BookingCode);
+        // The Saturday code rather than any code: booking the wrong turn produces the other one.
+        confirmation.Content.ShouldContain(EvalWeb.SaturdayCode);
+        confirmation.Content.ShouldNotContain(EvalWeb.SundayCode);
     }
 
     // The accessibility tree names each element by role and hands it a ref; the scenarios read the

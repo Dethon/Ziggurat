@@ -15,6 +15,12 @@ namespace Tests.Eval.Fixtures;
 // say which fact the turn was about. The matching here is lexical, which means a scenario has to
 // seed a fact whose own words a plausible query would use — a query that matched nothing shows up
 // as the stale fact surviving, with the query itself in the dump.
+//
+// One consequence to keep in view: a scenario's "nothing else was forgotten" assertion is true of
+// this store and not of the deployment's. The unbounded delete behind a forget-by-query is filed
+// as .scratch/findings-from-the-eval/issues/02-forget-by-query-has-no-relevance-floor.md, and it
+// is the agent's decision to forget that these scenarios are evidence about, never the store's
+// decision about what that means.
 public sealed class EvalMemory(IReadOnlyList<RememberedFact> facts) : IMemoryStore, IEmbeddingService
 {
     private readonly Dictionary<string, MemoryEntry> _entries = facts

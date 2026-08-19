@@ -21,7 +21,12 @@ asserted is what the reply used, which memory calls followed, and what the reply
       as 540 seconds, with the reply silent about where the number came from.
 - [x] A user correction results in the stale fact being removed — and the fact beside it survives,
       which is the half a call log cannot show: a forget takes a query and deletes everything the
-      search reached.
+      search reached. **Read that second half narrowly**: it holds against the eval's store, whose
+      search is lexical. The deployment's is a k-nearest query with no relevance floor, so the same
+      agent behaviour there would delete every memory the search returned — filed as
+      `.scratch/findings-from-the-eval/issues/02-forget-by-query-has-no-relevance-floor.md`. What
+      these scenarios are evidence about is the agent's decision to forget, never the store's
+      decision about what that covers.
 - [ ] …and the new one recorded. Withdrawn: recording is the extraction pipeline's job — a
       separate model call in a background worker reading the *persisted* message, which no prompt
       claims and which the eval's boundary (one turn, one agent) does not contain.

@@ -17,6 +17,10 @@ public static class ScriptedTurn
     public static Step Call(string tool, object? path = null, string result = "ok") =>
         new(tool, path is null ? null : new Dictionary<string, object?> { ["path"] = path }, result);
 
+    // A search, which is the one tool whose argument is a question rather than a path.
+    public static Step Search(string tool, string query, string result = "{}") =>
+        new(tool, new Dictionary<string, object?> { ["query"] = query }, result);
+
     // An action file being run, which is the shape every Home Assistant call takes: the path names
     // the entity and the command names the action.
     public static Step Exec(string path, string command, string result = "ok") =>
@@ -34,7 +38,7 @@ public static class ScriptedTurn
         var tools = steps
             .DistinctBy(s => s.Tool)
             .Select(step => (AITool)AIFunctionFactory.Create(
-                (string? path = null, string? command = null) =>
+                (string? path = null, string? command = null, string? query = null) =>
                     steps.First(s => s.Tool == step.Tool).Result,
                 step.Tool))
             .ToList();

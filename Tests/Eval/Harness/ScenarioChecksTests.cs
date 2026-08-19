@@ -400,7 +400,7 @@ public class ScenarioChecksTests
     }
 
     [Fact]
-    public async Task AStaleFactTheTurnWasToForget_ThatSurvives_FailsTheScenario()
+    public async Task AStaleFactThatSurvivedTheTurn_FailsTheScenario()
     {
         var recording = await ScriptedTurn.RunAsync("Vale, apuntado");
         recording.MemoriesAfter = ["Trabaja en Acme", "Le gusta el café solo"];
@@ -411,7 +411,7 @@ public class ScenarioChecksTests
     }
 
     [Fact]
-    public async Task AFactNobodyAskedToForget_ThatIsGone_FailsTheScenario()
+    public async Task AFactNobodyAskedToForgetAndIsGone_FailsTheScenario()
     {
         // The failure mode a forget-by-query has: one call, no error, and everything the search
         // reached deleted with it. Nothing in the call log says so — only the store afterwards.
@@ -510,6 +510,33 @@ public class ScenarioChecksTests
         Required = [new CallExpectation { Label = "search", Tool = "mcp__*__web_search" }],
         Permitted = [new CallPermission("mcp__*__web_browse")]
     };
+
+    [Fact]
+    public async Task AWarmUpProbeThatAsksNothing_IsNotCountedAgainstTheScenario()
+    {
+        // Observed on 2026-08-19: the model opened a home-automation turn with
+        // web_search "noop" and then did the work correctly. It draws whichever scenario it lands
+        // on, so counting it would make one random scenario per run red for the model clearing its
+        // throat. It is recorded as a finding instead, and the dump still shows the call.
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Search("mcp__localhost-1234__web_search", "noop"),
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        ScenarioChecks.Failures(Timer() with { CallCeiling = 1 }, recording).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ASearchThatActuallyAsksSomething_IsStillAnUnnecessaryCall()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Search("mcp__localhost-1234__web_search", "temporizadores de pasta"),
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldHaveSingleItem().ShouldContain("web_search");
+    }
 
     private static Scenario Corrected() => new()
     {

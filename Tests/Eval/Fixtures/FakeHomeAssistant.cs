@@ -31,8 +31,11 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public const string FavouritesPlaylist = "Liked Songs dethonv";
 
     // Already playing when a scenario arrives, so "start it over" has something to start over.
-    public const string PlayingEpisodeTitle = "280. Palantir: el control tecnológico de la defensa";
-    public const string PlayingEpisodeUri = "spotify--w2nq2jMe://podcast_episode/4Fk1sWv0xKvJ6teiCpTAJN";
+    // Deliberately a different episode from the one the episode scenario asks for: with the same
+    // one loaded, its uri would be readable from state.json and the listing that scenario requires
+    // would prove nothing about where the uri came from.
+    public const string PlayingEpisodeTitle = "292. La guerra por el agua: el recurso imprescindible";
+    public const string PlayingEpisodeUri = "spotify--w2nq2jMe://podcast_episode/5V4Bf";
 
     // The directory a scenario writes into its expectations, composed the way the mount composes
     // it rather than typed out: a friendly name edited here would otherwise rename the directory
@@ -45,10 +48,9 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     // The same player reached either way. The mount serves entities under /ha/entities and again
     // under the area they belong to, and both are the deployment's own paths — a scenario that
     // pinned one view would report the other as a behavioural failure.
-    public static readonly string KitchenSpeakerAnyView =
+    public static readonly string KitchenSpeakerPathPattern =
         $@"(^|/)({HaCatalog.ClassOf(KitchenSpeakerEntityId)}\.)?{HaCatalog.ObjectOf(KitchenSpeakerEntityId)}_\(";
 
-    public static readonly string KitchenTvDirectory = Directory(KitchenTvEntityId, "TV Cocina");
 
     private readonly Lock _gate = new();
     private readonly List<HaCall> _calls = [];
@@ -186,15 +188,13 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
                 {
                     ["title"] = "Playlists",
                     ["media_content_type"] = "playlists",
-                    ["children"] = new JsonArray([.. Playlists.Select(Playlist)])
+                    ["children"] = new JsonArray([.. _playlists.Select(Playlist)])
                 }
             })
             : Unresolvable();
 
     private static readonly string[] _playlists =
         [FavouritesPlaylist, "Domingo por la mañana", "Gimnasio 2026"];
-
-    public static IReadOnlyList<string> Playlists => _playlists;
 
     private static JsonNode Playlist(string title) => new JsonObject
     {
@@ -211,12 +211,11 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         data["media_id"]?.GetValue<string>() is { } id
         && (_playlists.Contains(id, StringComparer.OrdinalIgnoreCase)
             || id == PlayingEpisodeUri
-            || KnownNames.Contains(id, StringComparer.OrdinalIgnoreCase));
+            || _knownNames.Contains(id, StringComparer.OrdinalIgnoreCase));
 
     // Free-text names that resolve through the streaming providers, which is what the contract says
     // a track, artist or show may be played by.
-    public static IReadOnlyList<string> KnownNames { get; } =
-        ["Miles Davis", "No es el fin del mundo", "Radio 3"];
+    private static readonly string[] _knownNames = ["Miles Davis", "No es el fin del mundo", "Radio 3"];
 
     private static HttpResponseMessage Unresolvable() =>
         new(HttpStatusCode.InternalServerError)

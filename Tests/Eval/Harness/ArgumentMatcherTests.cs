@@ -49,4 +49,15 @@ public class ArgumentMatcherTests
     }
 
     private static JsonElement Args(string json) => JsonDocument.Parse(json).RootElement;
+
+    [Fact]
+    public void AFlagMatcher_ReadsABooleanAndNotItsSpelling()
+    {
+        var call = Args("""{"url":"http://site/x","snapshot":true}""");
+
+        Arg.Flag("snapshot", true).Matches(call).ShouldBeTrue();
+        Arg.Flag("snapshot", false).Matches(call).ShouldBeFalse();
+        // The string matchers see a boolean as absent, which is why this one exists.
+        Arg.Is("snapshot", "true").Matches(call).ShouldBeFalse();
+    }
 }

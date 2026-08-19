@@ -23,6 +23,13 @@ public static class Arg
             args => Read(args, name) is { ValueKind: JsonValueKind.String } element
                     && Regex.IsMatch(element.GetString() ?? "", pattern, RegexOptions.IgnoreCase));
 
+    // A flag, which is a boolean and not a string: `snapshot: true` on a browse is what the web
+    // contract asks for, and the string matchers above would silently never match it.
+    public static ArgumentMatcher Flag(string name, bool value) =>
+        new($"{name} = {value.ToString().ToLowerInvariant()}",
+            args => Read(args, name) is { } element
+                    && element.ValueKind == (value ? JsonValueKind.True : JsonValueKind.False));
+
     // One question with more than one right answer. The contract itself offers alternatives —
     // a timer's target is a room *or* an exact satellite id, and both honour the same rule — so a
     // scenario that pinned one spelling would be asserting on the model's choice between two
