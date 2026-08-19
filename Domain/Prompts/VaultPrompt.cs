@@ -85,9 +85,11 @@ public static class VaultPrompt
         new("vault.templates-are-not-expanded",
             "Template placeholders are left for the plugin that evaluates them rather than expanded.");
 
-    public static readonly PromptClaim TreeIsSurveyedBeforeCreating =
-        new("vault.tree-is-surveyed-before-creating",
-            "The vault's folders are listed once before the first note of a session is created.");
+    // Two sentences in the prose deliberately declare no claim: survey-the-tree-first and
+    // read-before-editing describe means, not outcomes. Surveying is tolerated everywhere and
+    // required nowhere — a model that already knows where the note goes has broken nothing, and
+    // requiring the glob would test the habit rather than the outcome, which is what
+    // vault.new-note-fits-the-tree and the edit scenarios' file assertions already witness.
 
     public static readonly PromptClaim NewNoteFitsTheTree =
         new("vault.new-note-fits-the-tree",
@@ -96,10 +98,6 @@ public static class VaultPrompt
     public static readonly PromptClaim NoNewTopLevelFolder =
         new("vault.no-new-top-level-folder",
             "A new top-level folder is never invented; the existing inbox, or the root, takes a note that fits nowhere.");
-
-    public static readonly PromptClaim ReadBeforeEditing =
-        new("vault.read-before-editing",
-            "A note is read before it is edited, and what was read is never recited back.");
 
     public static readonly PromptClaim EditsAreSurgical =
         new("vault.edits-are-surgical",
@@ -138,10 +136,8 @@ public static class VaultPrompt
         WikilinksAreNeverFixed,
         EmbedsBlockIdsAndCalloutsSurvive,
         TemplatesAreNotExpanded,
-        TreeIsSurveyedBeforeCreating,
         NewNoteFitsTheTree,
         NoNewTopLevelFolder,
-        ReadBeforeEditing,
         EditsAreSurgical,
         HeadingsAreReferenceable,
         DailyNotesAreAppendedTo,
