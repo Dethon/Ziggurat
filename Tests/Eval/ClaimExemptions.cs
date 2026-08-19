@@ -51,28 +51,18 @@ public static class ClaimExemptions
             + "heavier did not change it. This is a finding about the deployment rather than about "
             + "the harness: the rule is stated and is not followed, and a scenario asserting it would "
             + "be a red test rather than a guard."),
-        [SubAgentPrompt.NoWorkerIsNamed.Id] = new(ExemptionKind.Unwritten,
-            "Only assertable on a turn that delegated, and the one scenario that reliably delegates "
-            + "is the negative one — see the exemption above."),
         [SubAgentPrompt.ASingleCallIsDoneInPlace.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-18 with the do-it-yourself bullet deleted: the model still read "
             + "the timer's status itself rather than handing it to a worker. The scenario stays as a "
             + "guard — the same model delegates readily in other shapes, so this is worth watching."),
-        [SubAgentPrompt.HeavyWorkIsDelegated.Id] = new(ExemptionKind.Unwritten,
-            "Recorded when the eval hosted no search; the websearch server has been hosted since the "
-            + "web family landed, so a research-shaped turn is writable now. What holds it back is "
-            + "the delegation finding above: whether this model delegates heavy work at all is the "
-            + "question that scenario would be asking."),
-        [SubAgentPrompt.PromptIsSelfContained.Id] = new(ExemptionKind.Unwritten,
-            "Asserted as a side condition — each delegated prompt must name the folder it is about — "
-            + "but the rule's real subject is a url or a name the user gave that only the parent saw."),
-        [SubAgentPrompt.SuccessCriteriaAreStated.Id] = new(ExemptionKind.Judge,
-            "The judged-check machinery exists and the rubric is writable; what is missing is a "
-            + "scenario that reliably delegates to carry it — the one that did was withdrawn, see "
-            + "the finding on parallel-parts-are-delegated."),
-        [SubAgentPrompt.AnswerIsSynthesised.Id] = new(ExemptionKind.Judge,
-            "A judged check comparing the canned worker answer with the reply, ready to write; "
-            + "like the entry above it waits on a scenario that reliably delegates."),
+        [SubAgentPrompt.HeavyWorkIsDelegated.Id] = new(ExemptionKind.Finding,
+            "Written as a research-shaped turn and run three times on 2026-08-19, and it does not "
+            + "hold: handed a url only reachable through a worker-shaped task, the parent browsed "
+            + "it itself — twice, https then http — and reported the timeout rather than "
+            + "delegating. The same self-reliance the parallel-parts finding records. The scenario "
+            + "now delegates by the user's own instruction, which is what lets the four claims "
+            + "about a delegation's quality run; the decision claim itself stays a finding about "
+            + "the deployment."),
         [MemoryPrompts.RecallShapesTheAnswer.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-19 with the silent-application sentence deleted: a remembered "
             + "'cuece la pasta nueve minutos' still came back as a 540-second timer. A fact in the "
