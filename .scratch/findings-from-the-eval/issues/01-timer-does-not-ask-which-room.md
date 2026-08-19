@@ -1,6 +1,6 @@
 # 01 — A timer with no room is created rather than asked about
 
-**Status:** needs-triage
+**Status:** resolved
 
 **Where it was found:** the behavioural eval, 2026-08-19. The scenario asserting it was written on
 2026-08-18, was green, and was withdrawn when the eval was made faithful — see
@@ -28,3 +28,13 @@ looks armed.
 no-room case out of `TimerPrompt` and into whatever section is read closest to the conversation.
 Whatever is tried, the withdrawn scenario is the acceptance test — restore it from git history at
 `27b50d3a^:Tests/Eval/Scenarios/MechanismScenarios.cs`.
+
+## Comments
+
+2026-08-19 — Fixed by strengthening the rule where it is written. The no-room bullet in
+`TimerPrompt` now closes the escape hatches the memory section opens: on a channel with no
+speaking room, nothing else supplies one — not what the timer is for, not anything remembered
+about the user, not a room used before. The withdrawn scenario is restored from
+`27b50d3a^` as the acceptance test and the `timers.no-satellite-asks-which-room` exemption is
+removed. The deterministic harness is green; whether the strengthened prose actually holds
+against the model is an eval run (`ZIGGURAT_EVAL=1`), which this fix has not spent.

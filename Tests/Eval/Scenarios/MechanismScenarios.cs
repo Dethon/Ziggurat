@@ -13,7 +13,7 @@ public static class MechanismScenarios
     public static IReadOnlyList<Scenario> All =>
     [
         RemindMeInTenMinutes, TurnTheAirOffInAnHour, WakeMeAtSeven, SixHoursFromNow,
-        FromTheOfficeAboutTheKitchen
+        FromTheOfficeAboutTheKitchen, NoSatelliteAtAll
     ];
 
     // A person is being told something, and the time is a duration: a countdown, with the message
@@ -216,6 +216,41 @@ public static class MechanismScenarios
         CallCeiling = 4,
         // No citation: the office won even with the rule deleted from the prompt and the mount.
         // A turn whose decoration names a room is answered with that room by default.
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The same request with no satellite on it: nothing was spoken, so there is no speaking room to
+    // default to, and a guess rings in an empty room or fails to arm at all. What must happen is
+    // that the agent asks — and, until the reply checks land, what is asserted is that it created
+    // nothing while asking.
+    //
+    // Withdrawn on 2026-08-19 — with the memory section in the prompt the model guessed a kitchen
+    // timer instead of asking, two runs out of three — and restored when the rule was rewritten to
+    // say that nothing but the turn supplies a room: not the topic, not a memory, not a default.
+    // See .scratch/findings-from-the-eval/issues/01-timer-does-not-ask-which-room.md.
+    public static Scenario NoSatelliteAtAll => new()
+    {
+        Name = "a timer with no speaking room is asked about",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "pon un temporizador de ocho minutos para la pasta",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Permitted = [.. CallPermission.Looking("/timers*")],
+        CallCeiling = 3,
+        Reply = new ReplyExpectation
+        {
+            // Creating nothing is half of it; a silent refusal would pass that half. What the
+            // contract asks for is a question, and the roster gives it two rooms to offer.
+            Mentions =
+            [
+                new SpokenValue("where it should ring",
+                    "habitación", "sala", "dónde", "cocina", "oficina", "despacho", "satélite")
+            ]
+        },
+        Claims = [TimerPrompt.NoSatelliteAsksWhichRoom.Id],
         Policy = new RunPolicy(2, 3)
     };
 }
