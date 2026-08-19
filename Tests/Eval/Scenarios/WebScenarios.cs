@@ -99,8 +99,10 @@ public static class WebScenarios
         //
         // Two of four rather than two of three, because this one is genuinely borderline: on the
         // first full run it answered "abre a las 09:00" straight from the stale snippet, twice out
-        // of three. Nothing in the web prompt says a snippet is not a source, and adding a
-        // sentence that said so did not measurably change it — see
+        // of three. Prompt prose saying a snippet is not a source measurably changed nothing, so
+        // the marker now rides the search result itself — web_search's envelope and description
+        // both say a snippet is a stale summary and the page wins. Move this back to two of three
+        // once runs show it holding. See
         // .scratch/findings-from-the-eval/issues/03-an-answer-comes-from-the-snippet.md.
         Policy = new RunPolicy(2, 4)
     };
