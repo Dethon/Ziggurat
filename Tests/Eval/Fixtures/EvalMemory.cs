@@ -11,16 +11,17 @@ namespace Tests.Eval.Fixtures;
 //
 // Faked rather than taken from Redis because retrieval quality is out of scope for this suite and
 // the real store's search is a k-nearest query with no relevance floor: against a handful of
-// seeded facts it returns all of them, so every forget would empty the store and no scenario could
-// say which fact the turn was about. The matching here is lexical, which means a scenario has to
-// seed a fact whose own words a plausible query would use — a query that matched nothing shows up
-// as the stale fact surviving, with the query itself in the dump.
+// seeded facts it returns all of them, and no scenario could say which fact the turn was about.
+// The matching here is lexical, which means a scenario has to seed a fact whose own words a
+// plausible query would use — a query that matched nothing shows up as the stale fact surviving,
+// with the query itself in the dump.
 //
-// One consequence to keep in view: a scenario's "nothing else was forgotten" assertion is true of
-// this store and not of the deployment's. The unbounded delete behind a forget-by-query is filed
-// as .scratch/findings-from-the-eval/issues/02-forget-by-query-has-no-relevance-floor.md, and it
-// is the agent's decision to forget that these scenarios are evidence about, never the store's
-// decision about what that means.
+// The unbounded delete that used to sit behind a forget-by-query (finding 02) is fixed in the
+// tool: a query that reaches more than one memory deletes nothing and returns the candidates, so
+// against this store a scenario's forget only lands when its query matches exactly the fact it is
+// about — which is what the lexical matching was already for. The tool's behaviour against the
+// real store is pinned by MemoryForgetToolRedisTests; what these scenarios are evidence about is
+// the agent's decision to forget, never the store's decision about what that means.
 public sealed class EvalMemory(IReadOnlyList<RememberedFact> facts) : IMemoryStore, IEmbeddingService
 {
     private readonly Dictionary<string, MemoryEntry> _entries = facts
