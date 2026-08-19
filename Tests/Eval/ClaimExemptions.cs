@@ -94,20 +94,6 @@ public static class ClaimExemptions
             "Demonstrated on 2026-08-19 with the whole 'When to forget' section deleted: 'olvida "
             + "lo del piso' still removed exactly that memory. The tool's own description says "
             + "what it is for, and a tool cannot be offered without one."),
-        [MemoryPrompts.MechanismIsNeverMentioned.Id] = new(ExemptionKind.Unwritten,
-            "Cited on 2026-08-19 and withdrawn: the reply named no plumbing on any run, including "
-            + "the ones with the memory prose deleted. The rule is only falsifiable on a turn that "
-            + "gives the model a reason to explain itself — being asked where a number came from, "
-            + "or a forget that failed."),
-        [MemoryPrompts.OutdatedFactsAreDeleted.Id] = new(ExemptionKind.Unwritten,
-            "Needs a fact whose expiry is legible from the turn's own instant — a flight last "
-            + "month, a deadline that has passed — and a turn that touches the subject without "
-            + "mentioning the fact. The correction scenario is the same rule with the user "
-            + "pointing at it, which is the easier half."),
-        [MemoryPrompts.NoisyStoreIsSwept.Id] = new(ExemptionKind.NeedsFixture,
-            "A sweep is a judgement about which of many memories are low-value, and the seeded "
-            + "store holds two facts on purpose: a store big enough to be noisy would make every "
-            + "other memory scenario's 'nothing else was forgotten' check expensive to state."),
         [FileSystemToolFeature.AnEnvelopeIsDataNotAReasonToRetry.Id] = new(ExemptionKind.Guard,
             "Cited on 2026-08-18 and withdrawn the same day. The first demonstration turned red "
             + "because the model handed the impossible listing to two workers, but a later run "
@@ -165,32 +151,10 @@ public static class ClaimExemptions
         [VaultPrompt.MarkdownIsTheNoteFormat.Id] = new(ExemptionKind.Guard,
             "The create scenario pins a .md path, but as part of where the note lands rather than as "
             + "a choice between accepted formats; a turn that tempts another extension is not written."),
-        [VaultPrompt.FrontmatterKeepsItsOtherKeys.Id] = new(ExemptionKind.Unwritten,
-            "The edit scenario asserts frontmatter survives whole; the rule about changing only the "
-            + "keys the user named needs a turn that asks for one key to change."),
-        [VaultPrompt.TemplatesAreNotExpanded.Id] = new(ExemptionKind.Unwritten,
-            "The template placeholder is seeded in a note no scenario edits yet."),
-        [VaultPrompt.NoNewTopLevelFolder.Id] = new(ExemptionKind.NeedsFixture,
-            "The negative half of where a note lands; it needs a turn whose topic fits nothing in "
-            + "the tree, which the seeded vault does not have yet."),
-        [VaultPrompt.HeadingsAreReferenceable.Id] = new(ExemptionKind.Unwritten,
-            "Needs a turn that renames a heading another note links to, which the seeded vault could "
-            + "support and no scenario asks for yet."),
-        [VaultPrompt.DailyNotesAreAppendedTo.Id] = new(ExemptionKind.Unwritten,
-            "The daily note is seeded and nothing writes to it yet."),
-        [VaultPrompt.AttachmentsStayInTheirFolder.Id] = new(ExemptionKind.NeedsFixture,
-            "Needs a turn that adds an attachment, which means a binary the eval has no way to hand "
-            + "the agent."),
-        [VaultPrompt.IrreversibleChangeIsAskedAbout.Id] = new(ExemptionKind.Unwritten,
-            "A turn whose likeliest reading destroys a note, asserted on the reply and on nothing "
-            + "having been deleted — worth writing, and not written yet."),
         [VaultPrompt.TransferIsOneCall.Id] = new(ExemptionKind.Guard,
             "The checksum scenario transfers out of the vault with a single copy and permits no "
             + "create; what it cites is the mounts section's transfer rule, and the vault prompt's "
             + "own copy of the sentence rides along uncited."),
-        [VaultPrompt.WritesAreTextOnly.Id] = new(ExemptionKind.Unwritten,
-            "Needs a turn that asks for a file the vault will refuse, and an assertion about what "
-            + "the agent did after the refusal."),
         [HomeAssistantPrompt.ExactlyWhatWasAsked.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-18 with the whole Scope paragraph deleted: 'enciende el aire' "
             + "still turned the air conditioning on and touched nothing else. Doing only what was "
@@ -217,6 +181,26 @@ public static class ClaimExemptions
         [HomeAssistantPrompt.SnoozeIsANewEvent.Id] = new(ExemptionKind.Unwritten,
             "The timer half of snoozing is covered; the calendar half needs a turn arriving with a "
             + "dismissed alarm rather than a dismissed timer."),
+        [VoicePrompt.UnclearRequestIsActedOn.Id] = new(ExemptionKind.Unwritten,
+            "Two rules in one: act on the likeliest reading, and ask before an irreversible delete. The "
+            + "second needs a turn whose likeliest reading destroys something, which no family sets up yet."),
+        [VoicePrompt.AbbreviationsAreSpelledOut.Id] = new(ExemptionKind.Unwritten,
+            "Needs a turn whose answer is a unit or an acronym — a temperature, a distance — which "
+            + "the Home Assistant family can now provide and no scenario asks for yet."),
+        [MemoryPrompts.MechanismIsNeverMentioned.Id] = new(ExemptionKind.Unwritten,
+            "Cited on 2026-08-19 and withdrawn: the reply named no plumbing on any run, including "
+            + "the ones with the memory prose deleted. The rule is only falsifiable on a turn that "
+            + "gives the model a reason to explain itself — being asked where a number came from, "
+            + "or a forget that failed."),
+        [MemoryPrompts.OutdatedFactsAreDeleted.Id] = new(ExemptionKind.Unwritten,
+            "Needs a fact whose expiry is legible from the turn's own instant — a flight last "
+            + "month, a deadline that has passed — and a turn that touches the subject without "
+            + "mentioning the fact. The correction scenario is the same rule with the user "
+            + "pointing at it, which is the easier half."),
+        [MemoryPrompts.NoisyStoreIsSwept.Id] = new(ExemptionKind.NeedsFixture,
+            "A sweep is a judgement about which of many memories are low-value, and the seeded "
+            + "store holds two facts on purpose: a store big enough to be noisy would make every "
+            + "other memory scenario's 'nothing else was forgotten' check expensive to state."),
         [HomeAssistantPrompt.MusicPlaysOnTheMusicAssistantPlayer.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-19 with the whole MA-player paragraph deleted, in a kitchen "
             + "holding both a Music Assistant speaker and a television that lists the same "
@@ -235,15 +219,9 @@ public static class ClaimExemptions
             + "limit, and the declared word count is the contract's twelve plus what the spelled-out "
             + "numbers exclusion is worth — the check counts every word. A scenario whose subject is the "
             + "limit needs a turn that tempts a long answer."),
-        [VoicePrompt.UnclearRequestIsActedOn.Id] = new(ExemptionKind.Unwritten,
-            "Two rules in one: act on the likeliest reading, and ask before an irreversible delete. The "
-            + "second needs a turn whose likeliest reading destroys something, which no family sets up yet."),
         [VoicePrompt.NothingIsNarrated.Id] = new(ExemptionKind.Guard,
             "Checked negatively wherever a scenario names what the reply must not say, but nothing "
             + "checks the general rule: a scenario about it needs a turn whose work is worth narrating."),
-        [VoicePrompt.AbbreviationsAreSpelledOut.Id] = new(ExemptionKind.Unwritten,
-            "Needs a turn whose answer is a unit or an acronym — a temperature, a distance — which "
-            + "the Home Assistant family can now provide and no scenario asks for yet."),
         [VoicePrompt.OneWordBeforeSlowWork.Id] = new(ExemptionKind.NeedsFixture,
             "A claim about what is said *before* the work, which the recording cannot see: it holds one "
             + "reply, and the acknowledgement is a separate emission — tickets 15 and 16."),

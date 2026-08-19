@@ -10,6 +10,11 @@ public static class EvalVault
 
     public static readonly string PastaNote = $"{Mount}/Cocina/Pasta al pesto.md";
     public static readonly string SaucesNote = $"{Mount}/Cocina/Salsas.md";
+    public static readonly string ProjectNote = $"{Mount}/Proyectos/Ziggurat.md";
+    public static readonly string RiceNote = $"{Mount}/Cocina/Arroz caldoso.md";
+
+    // The date is the suite's pinned instant, so "el diario de hoy" is this file and no other.
+    public static readonly string DailyNote = $"{Mount}/Diario/2026-08-17.md";
 
     // The sauces note's exact text, held as a constant so a scenario can know its hash: the exec
     // family's scenario asks for a checksum, and the only honest way to assert the answer is to
@@ -23,6 +28,8 @@ public static class EvalVault
         # Salsas
 
         El pesto va en [[Pasta al pesto]].
+
+        Las variantes del pesto están en [[Pasta al pesto#Variantes]].
         """;
 
     // Lowercase, the way sha256sum prints it.
@@ -52,6 +59,10 @@ public static class EvalVault
 
             ![[pesto.png]]
 
+            ## Variantes
+
+            Con rúcula en vez de albahaca cuando no es temporada.
+
             Ver también [[Salsas]] y #cocina-rapida.
             """);
 
@@ -77,6 +88,20 @@ public static class EvalVault
         Filler(root, "Proyectos", "proyecto", "Reforma de la casa", "Revisión del coche",
             "Viaje a Japón", "Curso de alemán", "Huerto del balcón", "Copia de seguridad");
         Write(root, "attachments/pesto.png", "not really a png, but it is where images live");
+        Write(root, "attachments/arroz.jpg", "not really a jpg, but it is where images live");
+
+        // The inbox the no-new-top-level-folder rule names: a note that fits nothing in the tree
+        // goes here, and only a vault without one may put it at the root.
+        Write(root, "Inbox/Por clasificar.md",
+            """
+            ---
+            tags: [inbox]
+            ---
+
+            # Por clasificar
+
+            Lo que todavía no tiene sitio en el árbol.
+            """);
 
         // Obsidian's own configuration, which the contract puts off limits. It is seeded precisely
         // so that a scenario can assert nothing wrote to it.

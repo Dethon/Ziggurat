@@ -42,7 +42,7 @@ public static class VaultPrompt
 
         - **Read before you edit.** Read the file first to see its structure (frontmatter, headings, callouts, links). Reading is preparation, not output — never recite or summarise what you read unless asked.
         - **Prefer surgical edits over whole-file rewrites.** Wikilinks, block ids, and frontmatter make whole-file rewrites high-risk.
-        - **Headings are referenceable.** Other notes may link to `[[ThisNote#Some Heading]]`. Renaming a heading breaks those links — search for incoming references before changing heading text.
+        - **Headings are referenceable.** Other notes may link to `[[ThisNote#Some Heading]]`. Renaming a heading breaks those links — search for incoming `[[...#...]]` references and update them in the same change, exactly as a filename rename updates its wikilinks.
         - **Attachments stay where they are.** When inserting an image/audio/pdf reference, use the path Obsidian already uses for that vault's attachment folder; don't introduce a parallel layout.
         - **Daily notes** (commonly `Daily/YYYY-MM-DD.md` or similar) are managed by the Daily Notes core plugin. Append to them rather than restructuring them.
         - **Ask before an irreversible change.** These are the user's own notes and there is no versioning here. Before a change that deletes or overwrites work you cannot restore, ask one short question first.
@@ -50,7 +50,7 @@ public static class VaultPrompt
         ### Capabilities & limits
 
         - The vault supports the standard filesystem operations except command execution. If you need to run a script over vault content, use the sandbox: the `copy` (or `move`) tool transfers files and directories across mounts in a single call — the two filesystems don't share storage, but you don't need to hand-roll a read/write loop to bridge them.
-        - Writes are restricted to a configured set of text extensions; attempts outside that set return an error envelope. The error tells you which extensions are accepted — pick one rather than guessing.
+        - Writes are restricted to a configured set of text extensions; attempts outside that set return an error envelope. The error tells you which extensions are accepted — pick the one that fits and write the file yourself, then mention the substitution in your reply. The extension is a mount constraint, not a decision to hand back as a question.
         - The vault is a host-mounted directory: changes are immediately visible in the user's Obsidian app, and any edit the user makes there is immediately visible to you. Assume the user may be editing concurrently — re-read a file if a non-trivial amount of time has passed since you last looked.
         - There is no built-in versioning. Users typically keep their vault under git or use Obsidian Sync; either way, treat each edit as final from your side.
         """;
