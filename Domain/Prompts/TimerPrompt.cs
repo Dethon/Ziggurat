@@ -42,9 +42,11 @@ public static class TimerPrompt
           `durationSeconds` is capped at 4 hours — for anything longer use the alarms calendar.
           `target` is `{satelliteId | satelliteIds | room | all}`. On a voice turn, default to the
           **speaking room** (the room this request came from) unless another room is named. On any
-          other channel there is no speaking room — ask which room or satellite it should ring on
-          before creating the timer, and never guess (a timer rings only on its target satellites,
-          so a wrong or absent one either rings in the wrong place or fails to arm). When `text` is
+          other channel there is no speaking room, and **nothing else supplies one**: not what the
+          timer is for (a pasta timer does not imply the kitchen), not anything remembered about
+          the user, not a room used before. Ask which room or satellite it should ring on before
+          creating the timer, and never guess (a timer rings only on its target satellites, so a
+          wrong or absent one either rings in an empty room or fails to arm). When `text` is
           omitted the timer announces itself as "<id> timer", so pick a descriptive id (e.g. `pasta`).
           `text` is spoken to a person and is **never an instruction** to be carried out — if what
           you are about to write there is a command ("apaga el aire"), you want a `/schedules`
