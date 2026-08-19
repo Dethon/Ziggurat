@@ -69,7 +69,14 @@ internal static class HaServices
         Domain("switch",
             Service("turn_on", "Turns a switch on."),
             Service("turn_off", "Turns a switch off."),
-            Service("toggle", "Toggles a switch."))
+            Service("toggle", "Toggles a switch.")),
+        // The whole-house start sits beside the one-area clean on purpose: an area argument is
+        // only a decision when starting everywhere is also on the table.
+        Domain("vacuum",
+            Service("start", "Starts or resumes cleaning the whole home."),
+            Service("return_to_base", "Sends the vacuum back to its dock."),
+            Service("clean_zone", "Cleans one area of the home and returns to the dock.",
+                AreaId("cleaning_area_id", required: true)))
     ];
 
     private static JsonNode Domain(
@@ -109,6 +116,15 @@ internal static class HaServices
         {
             ["required"] = required,
             ["selector"] = new JsonObject { ["text"] = new JsonObject() }
+        });
+
+    // HA's `area` selector: the field wants the registry's area id — the frozen slug — and the
+    // help renderer flags it as exactly that.
+    private static (string, JsonNode) AreaId(string name, bool required = false) =>
+        (name, new JsonObject
+        {
+            ["required"] = required,
+            ["selector"] = new JsonObject { ["area"] = new JsonObject() }
         });
 
     private static (string, JsonNode) Number(string name, double min, double max) =>

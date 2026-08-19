@@ -20,6 +20,12 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public const string AirConditionerEntityId = "climate.salon";
     public const string WashingMachineEntityId = "switch.lavadora";
 
+    // Lives in the study — an area created as "Despacho" and later renamed to "Estudio". HA
+    // freezes the slug at creation, so the registry says `despacho` while every display says
+    // Estudio, and only reading the files bridges the two. Its clean_zone action takes that slug.
+    public const string VacuumEntityId = "vacuum.aspiradora";
+    public const string StudyAreaSlug = "despacho";
+
     // Two players in the kitchen, because "play it here" is only a decision when the room has more
     // than one thing that could play it: one is a Music Assistant player and the other is a
     // television that lists the same actions and does nothing with them.
@@ -44,6 +50,11 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public static readonly string KitchenLightDirectory = Directory(KitchenLightEntityId, "Luz Cocina");
     public static readonly string AirConditionerDirectory = Directory(AirConditionerEntityId, "Aire Salón");
     public static readonly string KitchenSpeakerDirectory = Directory(KitchenSpeakerEntityId, "Altavoz Cocina");
+    public static readonly string VacuumDirectory = Directory(VacuumEntityId, "Aspiradora");
+
+    // The vacuum reached under /ha/entities or under its area, like the speaker below.
+    public static readonly string VacuumPathPattern =
+        $@"(^|/)({HaCatalog.ClassOf(VacuumEntityId)}\.)?{HaCatalog.ObjectOf(VacuumEntityId)}_\(";
 
     // The same player reached either way. The mount serves entities under /ha/entities and again
     // under the area they belong to, and both are the deployment's own paths — a scenario that
@@ -242,6 +253,10 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
                 entity.WithAttribute("temperature", temperature.DeepClone()),
             "set_hvac_mode" when data["hvac_mode"] is { } mode =>
                 entity with { State = mode.GetValue<string>() },
+            // Only the registry's frozen slug moves the vacuum: a lowercased display name is the
+            // wrong id, and the fake answering to it would make the slug rule unfalsifiable.
+            "clean_zone" when data["cleaning_area_id"]?.GetValue<string>() == StudyAreaSlug =>
+                entity with { State = "cleaning" },
             _ => entity
         };
     }
@@ -263,7 +278,8 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             ["areas"] = new JsonArray(
                 Area("kitchen", "Cocina", KitchenLightEntityId, WashingMachineEntityId,
                     KitchenSpeakerEntityId, KitchenTvEntityId),
-                Area("salon", "Salón", AirConditionerEntityId))
+                Area("salon", "Salón", AirConditionerEntityId),
+                Area(StudyAreaSlug, "Estudio", VacuumEntityId))
         }.ToJsonString();
 
     private static JsonNode Area(string id, string name, params string[] entities) =>
@@ -281,6 +297,7 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         new(AirConditionerEntityId, "cool", "Aire Salón",
             new JsonObject { ["temperature"] = 24, ["hvac_modes"] = new JsonArray("off", "cool", "heat") }),
         new(WashingMachineEntityId, "off", "Lavadora"),
+        new(VacuumEntityId, "docked", "Aspiradora"),
         // The two attributes the contract says to read a player by. The episode already loaded is
         // what makes a seek possible: media_seek needs something on the player, and a scenario
         // about restarting one has to arrive with it playing.

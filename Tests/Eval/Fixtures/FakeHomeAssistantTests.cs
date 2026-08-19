@@ -174,6 +174,46 @@ public class FakeHomeAssistantTests
         exec.Stdout.ShouldContain("podcast_episode/4Fk1sWv0xKvJ6teiCpTAJN");
     }
 
+    [Fact]
+    public async Task TheStudy_KeepsItsFrozenSlugUnderItsNewName()
+    {
+        // The area was created as "Despacho" and later renamed to "Estudio": HA freezes the slug
+        // at creation, so the directory keeps the old word and the display name carries the new
+        // one. This gap is the whole subject of the area-slug rule.
+        var files = await Mount().GlobAsync(Relative("/ha/areas/despacho"), "**", CancellationToken.None);
+
+        Paths(files).ShouldContain(path => path.Contains("aspiradora"));
+    }
+
+    [Fact]
+    public async Task TheCleanZoneHelp_SaysTheArgumentIsAnAreaSlug()
+    {
+        var result = await Mount().ExecAsync(
+            Relative(FakeHomeAssistant.VacuumDirectory), "clean_zone.sh --help",
+            timeoutSeconds: null, CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.Stdout
+            .ShouldContain("AREA_ID (slug)");
+    }
+
+    [Fact]
+    public async Task CleaningAnArea_AnswersToTheSlugAndNotToTheDisplayName()
+    {
+        var home = new FakeHomeAssistant();
+
+        // The display name, lowercased the way a model derives it, cleans nothing…
+        await Mount(home).ExecAsync(
+            Relative(FakeHomeAssistant.VacuumDirectory), "clean_zone.sh --cleaning_area_id estudio",
+            timeoutSeconds: null, CancellationToken.None);
+        home.StateOf(FakeHomeAssistant.VacuumEntityId).ShouldBe("docked");
+
+        // …and the frozen slug from the registry does.
+        await Mount(home).ExecAsync(
+            Relative(FakeHomeAssistant.VacuumDirectory), "clean_zone.sh --cleaning_area_id despacho",
+            timeoutSeconds: null, CancellationToken.None);
+        home.StateOf(FakeHomeAssistant.VacuumEntityId).ShouldBe("cleaning");
+    }
+
     private static HaFileSystem Mount(
         FakeHomeAssistant? home = null, FakeMusicAssistantServer? music = null)
     {
