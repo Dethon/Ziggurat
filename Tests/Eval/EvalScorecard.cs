@@ -13,6 +13,7 @@ namespace Tests.Eval;
 public sealed class EvalScorecard : IDisposable
 {
     private readonly List<ClaimOutcome> _outcomes = [];
+    private readonly List<ScenarioOutcome> _scenarios = [];
     private readonly Lock _gate = new();
     private EvalTier? _tier;
     private ServedRoute? _route;
@@ -27,6 +28,9 @@ public sealed class EvalScorecard : IDisposable
             _tier = tier;
             _outcomes.AddRange(
                 scenario.Claims.Select(claim => new ClaimOutcome(claim, result.Passes, result.Attempts)));
+            // The scenario's own rate, cited or not: a guard's drift is only a diff if the guard
+            // has a number.
+            _scenarios.Add(new ScenarioOutcome(scenario.Name, result.Passes, result.Attempts));
         }
     }
 
@@ -59,12 +63,19 @@ public sealed class EvalScorecard : IDisposable
                 .Concat(_outcomes)
                 .ToList();
 
+            // Scenarios the same way as claims: one that did not run appears at a null rate
+            // rather than being absent, so a filtered pass is legible as a filtered pass.
+            var scenarios = EvalSuite.All
+                .Select(scenario => new ScenarioOutcome(scenario.Name, 0, 0))
+                .Concat(_scenarios)
+                .ToList();
+
             // The one place the provider's name is worth a request, and the last place before the
             // file is written. Blocking in a fixture's teardown is the cost of it.
             var route = ProviderLookup
                 .ResolveAsync(_route, EvalGate.ApiKey ?? "").GetAwaiter().GetResult();
 
-            Scorecard.Write(FailureDump.DefaultDirectory, _tier.Value, route, seeded);
+            Scorecard.Write(FailureDump.DefaultDirectory, _tier.Value, route, seeded, scenarios);
         }
     }
 }

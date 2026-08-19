@@ -50,6 +50,28 @@ public class ScorecardTests : IDisposable
     }
 
     [Fact]
+    public void AScenarioRow_CarriesItsOwnRate_AndAnUnrunOneIsNull()
+    {
+        // Guards run and assert but cite nothing, so before this section existed they appeared
+        // only as pass/fail tests — drift that stayed above threshold was invisible as a number.
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
+            [new ClaimOutcome("timers.duration-under-4h", 2, 3)],
+            [
+                new ScenarioOutcome("a ten-minute reminder is a countdown", 2, 3),
+                new ScenarioOutcome("a scenario nothing ran", 0, 0)
+            ]);
+
+        var scenarios = Read(Path.Combine(_output, "scorecard-full.json")).GetProperty("scenarios");
+
+        var ran = scenarios.GetProperty("a ten-minute reminder is a countdown");
+        ran.GetProperty("passes").GetInt32().ShouldBe(2);
+        ran.GetProperty("runs").GetInt32().ShouldBe(3);
+        ran.GetProperty("rate").GetDouble().ShouldBe(2d / 3, 0.001);
+        scenarios.GetProperty("a scenario nothing ran").GetProperty("rate").ValueKind
+            .ShouldBe(JsonValueKind.Null);
+    }
+
+    [Fact]
     public void ASmokeRun_DoesNotOverwriteAFullPass()
     {
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("full-model", null),
