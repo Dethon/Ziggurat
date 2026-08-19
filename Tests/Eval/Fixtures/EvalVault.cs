@@ -11,6 +11,26 @@ public static class EvalVault
     public static readonly string PastaNote = $"{Mount}/Cocina/Pasta al pesto.md";
     public static readonly string SaucesNote = $"{Mount}/Cocina/Salsas.md";
 
+    // The sauces note's exact text, held as a constant so a scenario can know its hash: the exec
+    // family's scenario asks for a checksum, and the only honest way to assert the answer is to
+    // compute it from the same bytes the seed writes.
+    public const string SaucesContent =
+        """
+        ---
+        tags: [receta]
+        ---
+
+        # Salsas
+
+        El pesto va en [[Pasta al pesto]].
+        """;
+
+    // Lowercase, the way sha256sum prints it.
+    public static string SaucesSha256 =>
+        Convert.ToHexStringLower(
+            System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(SaucesContent)));
+
     public static string Seed()
     {
         var root = Path.Combine(Path.GetTempPath(), $"eval-vault-{Guid.NewGuid():N}");
@@ -35,16 +55,7 @@ public static class EvalVault
             Ver también [[Salsas]] y #cocina-rapida.
             """);
 
-        Write(root, "Cocina/Salsas.md",
-            """
-            ---
-            tags: [receta]
-            ---
-
-            # Salsas
-
-            El pesto va en [[Pasta al pesto]].
-            """);
+        Write(root, "Cocina/Salsas.md", SaucesContent);
 
         Write(root, "Proyectos/Ziggurat.md",
             """

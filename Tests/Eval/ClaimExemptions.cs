@@ -119,19 +119,11 @@ public static class ClaimExemptions
             "Demonstrated on 2026-08-18 with the sentence deleted: the model still resolved an "
             + "unprefixed note to the vault. The mount list that follows the sentence is enough on "
             + "its own, and it cannot be deleted without removing the mounts from the prompt."),
-        [FileSystemToolFeature.CapabilitiesAreAdvertised.Id] = new(ExemptionKind.NeedsFixture,
-            "Attempted on 2026-08-18 and withdrawn: with no exec-capable mount hosted, a turn asking "
-            + "for a script tests a mount set no deployment has — in production the sandbox is there "
-            + "and the right answer is to transfer and run it, not to report that it cannot be done. "
-            + "The sandbox as a testcontainer is issue 08 of .scratch/comprehensive-eval."),
-        [FileSystemToolFeature.ExecWorkGoesWhereExecLives.Id] = new(ExemptionKind.NeedsFixture,
-            "Needs a mount that advertises exec, and the eval does not host the sandbox: its backend "
-            + "runs bash with the container root pointed at a real directory, so hosting it in "
-            + "process would run model-authored shell on whoever's machine is running the suite. "
-            + "The sandbox as a testcontainer is issue 08 of .scratch/comprehensive-eval."),
-        [FileSystemToolFeature.TransferIsOneCall.Id] = new(ExemptionKind.NeedsFixture,
-            "The single-call transfer needs two writable mounts, and for the same reason as above "
-            + "there is only one."),
+        [FileSystemToolFeature.CapabilitiesAreAdvertised.Id] = new(ExemptionKind.Guard,
+            "The sandbox is hosted now, and the checksum scenario asserts this as a side condition: "
+            + "an exec against a mount that does not advertise it is an unnecessary call there. A "
+            + "scenario whose subject is the choice itself — tempted toward the wrong mount — is "
+            + "not written."),
         [WebBrowsingPrompt.UrlComesFromASearch.Id] = new(ExemptionKind.Unfalsifiable,
             "Not falsifiable against a served site: its pages live on a loopback address and "
             + "whichever port was free when the stack came up, so no model can reach one without "
@@ -210,9 +202,10 @@ public static class ClaimExemptions
         [VaultPrompt.IrreversibleChangeIsAskedAbout.Id] = new(ExemptionKind.Unwritten,
             "A turn whose likeliest reading destroys a note, asserted on the reply and on nothing "
             + "having been deleted — worth writing, and not written yet."),
-        [VaultPrompt.TransferIsOneCall.Id] = new(ExemptionKind.NeedsFixture,
-            "The cross-mount transfer needs a second writable mount — the sandbox, issue 08 of "
-            + ".scratch/comprehensive-eval."),
+        [VaultPrompt.TransferIsOneCall.Id] = new(ExemptionKind.Guard,
+            "The checksum scenario transfers out of the vault with a single copy and permits no "
+            + "create; what it cites is the mounts section's transfer rule, and the vault prompt's "
+            + "own copy of the sentence rides along uncited."),
         [VaultPrompt.WritesAreTextOnly.Id] = new(ExemptionKind.Unwritten,
             "Needs a turn that asks for a file the vault will refuse, and an assertion about what "
             + "the agent did after the refusal."),

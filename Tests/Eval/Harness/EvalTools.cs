@@ -38,4 +38,5 @@ public static class EvalTools
     public static readonly string Search = Prefix + VfsTextSearchTool.Name;
     public static readonly string Edit = Prefix + VfsTextEditTool.Name;
     public static readonly string Move = Prefix + VfsMoveTool.Name;
+    public static readonly string Copy = Prefix + VfsCopyTool.Name;
 }

@@ -87,6 +87,11 @@ public sealed class EvalStack : IAsyncDisposable
     // forget tool searches and deletes from, and what a scenario reads afterwards.
     public EvalMemory Memory { get; private set; } = null!;
 
+    // The sandbox container, real image and all: the one mount that advertises exec, without
+    // which exec-shaped work has nowhere legitimate to go and the transfer rules have a single
+    // writable mount to transfer between.
+    public EvalSandbox Sandbox { get; private set; } = null!;
+
     // The workers, canned. A scenario about delegation is about the parent's decision, so what a
     // worker would have answered is a fixed string the scenario chooses rather than another run.
     public CannedSubAgents Workers { get; private set; } = null!;
@@ -122,13 +127,16 @@ public sealed class EvalStack : IAsyncDisposable
         // *which* of them a request belongs in. A stack that hosted only the mount the answer
         // lands in would leave the model no wrong place to put it, and a discrimination with one
         // option is not one.
+        stack.Sandbox = await EvalSandbox.StartAsync();
+
         stack.BuildAgentServices(shipped, observer, new Dictionary<string, string>
         {
             ["mcp-timers"] = await stack.StartTimersAsync(scenario),
             ["mcp-scheduling"] = await stack.StartSchedulingAsync(shipped, redisConnectionString),
             ["mcp-homeassistant"] = await stack.StartHomeAssistantAsync(),
             ["mcp-vault"] = await stack.StartVaultAsync(),
-            ["mcp-websearch"] = await stack.StartWebSearchAsync()
+            ["mcp-websearch"] = await stack.StartWebSearchAsync(),
+            ["mcp-sandbox"] = stack.Sandbox.Endpoint
         });
 
         return stack;
@@ -410,6 +418,7 @@ public sealed class EvalStack : IAsyncDisposable
 
         await Music.DisposeAsync();
         await Web.DisposeAsync();
+        await Sandbox.DisposeAsync();
 
         if (_browser is not null)
         {
