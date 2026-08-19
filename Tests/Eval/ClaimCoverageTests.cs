@@ -44,10 +44,10 @@ public class ClaimCoverageTests
     {
         var declared = PromptManifest.Claims.Select(c => c.Id).ToHashSet();
 
-        foreach (var (id, reason) in ClaimExemptions.Reasons)
+        foreach (var (id, exemption) in ClaimExemptions.Reasons)
         {
             declared.ShouldContain(id, $"'{id}' is excused but no section declares it");
-            reason.ShouldNotBeNullOrWhiteSpace($"'{id}' is excused with no reason");
+            exemption.Reason.ShouldNotBeNullOrWhiteSpace($"'{id}' is excused with no reason");
         }
     }
 

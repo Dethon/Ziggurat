@@ -12,6 +12,7 @@ public static class Scorecard
     public static string Write(
         string directory, EvalTier tier, ServedRoute? route, IReadOnlyList<ClaimOutcome> claims,
         IReadOnlyList<ScenarioOutcome>? scenarios = null,
+        IReadOnlyDictionary<string, string>? coverage = null,
         TimeProvider? clock = null)
     {
         Directory.CreateDirectory(directory);
@@ -28,7 +29,9 @@ public static class Scorecard
             // one time in this suite that is not the scenario's pinned instant: a scorecard is
             // about a run, not about the turn inside it.
             ["timestamp"] = (clock ?? TimeProvider.System).GetUtcNow().ToString("O"),
-            ["claims"] = Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs))),
+            // Each claim row says how it is covered — "cited", "judged", or its exemption kind —
+            // so a null rate stops meaning three different things.
+            ["claims"] = Covered(Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs))), coverage),
             // The scenarios themselves, guards included: a guard asserts without citing a claim,
             // and before this section its rate existed nowhere a model-bump diff could see.
             ["scenarios"] = Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs)))
@@ -36,6 +39,19 @@ public static class Scorecard
 
         File.WriteAllText(path, summary.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         return path;
+    }
+
+    private static JsonObject Covered(JsonObject claims, IReadOnlyDictionary<string, string>? coverage)
+    {
+        foreach (var (claim, how) in coverage ?? new Dictionary<string, string>())
+        {
+            if (claims[claim] is JsonObject row)
+            {
+                row["coverage"] = how;
+            }
+        }
+
+        return claims;
     }
 
     private static JsonObject Tallied(IEnumerable<(string Key, int Passes, int Runs)> outcomes) =>

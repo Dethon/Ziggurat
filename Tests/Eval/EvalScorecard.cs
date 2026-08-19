@@ -34,6 +34,29 @@ public sealed class EvalScorecard : IDisposable
         }
     }
 
+    // How each declared claim is covered, from the same two sources the coverage tests read: a
+    // scenario citing it, or its typed exemption. The scorecard row then says what a null rate
+    // means — never tested, waiting on a fixture, a judgement, or a rule the deployment does not
+    // follow — instead of leaving the reader to guess.
+    private static IReadOnlyDictionary<string, string> Coverage()
+    {
+        var cited = EvalSuite.All.SelectMany(s => s.Claims).ToHashSet();
+
+        return PromptManifest.Claims.ToDictionary(
+            claim => claim.Id,
+            claim => cited.Contains(claim.Id)
+                ? "cited"
+                : ClaimExemptions.Reasons.TryGetValue(claim.Id, out var exemption)
+                    ? Spelled(exemption.Kind)
+                    : "uncovered");
+    }
+
+    private static string Spelled(ExemptionKind kind) => kind switch
+    {
+        ExemptionKind.NeedsFixture => "needs-fixture",
+        _ => kind.ToString().ToLowerInvariant()
+    };
+
     // The route that served the pass. It comes from a recording rather than from configuration:
     // an upgrade that changed nothing in appsettings still changes this, which is the whole point.
     public void Observe(ServedRoute? route)
@@ -75,7 +98,7 @@ public sealed class EvalScorecard : IDisposable
             var route = ProviderLookup
                 .ResolveAsync(_route, EvalGate.ApiKey ?? "").GetAwaiter().GetResult();
 
-            Scorecard.Write(FailureDump.DefaultDirectory, _tier.Value, route, seeded, scenarios);
+            Scorecard.Write(FailureDump.DefaultDirectory, _tier.Value, route, seeded, scenarios, Coverage());
         }
     }
 }
