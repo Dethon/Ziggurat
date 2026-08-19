@@ -36,15 +36,16 @@ public sealed class EvalMemory(IReadOnlyList<RememberedFact> facts) : IMemorySto
         }
     }
 
-    // What rides the turn. Relevance is 1 for every fact: the scenario declared them, so they are
-    // the ones recall would have returned.
-    public MemoryContext Context
+    // What rides the turn, or nothing at all: production's recall hook sets a context only when
+    // there is something in it, so a scenario that remembers nothing must decorate its turn with
+    // nothing — an empty block is a change to every turn in the suite.
+    public MemoryContext? Context
     {
         get
         {
             lock (_gate)
             {
-                return new MemoryContext(
+                return _entries.Count == 0 ? null : new MemoryContext(
                     [.. _entries.Values.OrderBy(e => e.CreatedAt).Select(e => new MemorySearchResult(e, 1.0))],
                     null);
             }

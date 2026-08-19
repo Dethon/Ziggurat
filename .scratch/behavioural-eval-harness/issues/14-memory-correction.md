@@ -38,3 +38,10 @@ of any family evaluated so far. Nine claims are declared; four were never citabl
 exemptions), and the five that were cited all failed their demonstration. What actually carries
 the behaviour is the recall block itself and the forget tool's description — neither of which can
 be deleted without deleting the capability.
+
+**What enabling memory cost, and why it was worth it.** Both shipped assistants list `memory`
+among their features, so every scenario written before this ticket had been running a prompt one
+section short. Putting the section back turned one green scenario red: a timer turn with no room
+on it now creates a kitchen timer instead of asking which room, two runs out of three, and the
+scenario passes again with the section removed. That is a real interaction between two prompt
+sections, and it was invisible while the eval ran a toolset the deployment does not.
