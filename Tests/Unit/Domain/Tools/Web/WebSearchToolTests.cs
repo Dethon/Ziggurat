@@ -42,6 +42,25 @@ public class WebSearchToolTests
             .ShouldBe("Abierto todos los días de 9:00 a 20:00");
     }
 
+    [Theory]
+    [InlineData("noop")]
+    [InlineData("NOOP")]
+    [InlineData("  noop ")]
+    public async Task RunAsync_ANoopQuery_AnswersWithoutSearching(string query)
+    {
+        // The model sometimes opens a turn with web_search {"query":"noop"} and then does the
+        // real work — clearing its throat. The eval's checks already ignore exactly this query;
+        // the tool answers it without paying the search API, so the tic costs one round trip
+        // instead of a billed call. Same definition as ScenarioChecks.IsWarmUpProbe.
+        var result = await _tool.TestRun(query, CancellationToken.None);
+
+        result["status"]!.GetValue<string>().ShouldBe("noop");
+        result["results"]!.AsArray().ShouldBeEmpty();
+        result["message"]!.GetValue<string>().ShouldContain("No search was performed");
+        _client.Verify(c => c.SearchAsync(
+            It.IsAny<WebSearchQuery>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private class TestableWebSearchTool(IWebSearchClient client) : WebSearchTool(client)
     {
         public Task<System.Text.Json.Nodes.JsonNode> TestRun(string query, CancellationToken ct)
