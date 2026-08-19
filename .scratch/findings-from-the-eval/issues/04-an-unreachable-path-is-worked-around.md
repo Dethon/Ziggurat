@@ -1,6 +1,6 @@
 # 04 — An unreachable path is worked around before it is explained
 
-**Status:** needs-triage
+**Status:** resolved
 
 **Where it was found:** the behavioural eval's mounts family, 2026-08-19. The scenario asserting it
 (`a mount that is not there is explained rather than retried`) was written on 2026-08-18 against a
@@ -33,3 +33,14 @@ costs is a call and a wrong idea about what the tool is for.
 pages and not local paths, and the mounts section could say that a path outside every mount is
 answered rather than searched for elsewhere. The withdrawn scenario is the acceptance test —
 restore it from git history.
+
+## Comments
+
+2026-08-19 — Fixed in the two places the issue names. The mounts section now ends with the rule
+the contract implied but never wrote: a path that starts under none of the session's mounts is
+not reachable by any tool or worker — the mount list is complete — and the answer is one
+sentence, not a hunt (`mounts.an-unmounted-path-is-answered`, a declared claim). And
+`web_browse`'s description now says it loads web pages only — http and https, file:// refused,
+a filesystem path is not a URL — so the browse on `file:///media/Movies` loses the wrong idea
+that produced it. The withdrawn scenario is restored from `2f8d486b^` citing the new claim; the
+delegation reflex it tolerates stays recorded under the subagent exemptions.

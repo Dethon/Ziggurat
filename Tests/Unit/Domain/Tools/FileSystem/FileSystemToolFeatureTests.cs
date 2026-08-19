@@ -51,6 +51,17 @@ public class FileSystemToolFeatureTests
     }
 
     [Fact]
+    public void Prompt_SaysAnUnmountedPathIsAnsweredRatherThanHunted()
+    {
+        // The eval's finding 04: asked about /media/Movies with no such mount, the model paid two
+        // workers and a file:// browse before saying it could not reach it. The section has to say
+        // that the answer for such a path is a sentence, not a hunt through other tools.
+        _feature.Prompt.ShouldNotBeNull();
+        _feature.Prompt.ShouldContain("starts under none of these mounts");
+        _feature.Prompt.ShouldContain("not reachable in this session");
+    }
+
+    [Fact]
     public void Prompt_ContainsMountPoints()
     {
         _feature.Prompt.ShouldNotBeNull();
