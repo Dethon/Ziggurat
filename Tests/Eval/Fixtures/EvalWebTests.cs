@@ -52,7 +52,7 @@ public class EvalWebTests : IAsyncLifetime
 
         result.Results.ShouldHaveSingleItem().Snippet.ShouldContain(EvalWeb.StaleOpeningTime);
         var page = await _browsing.NavigateAsync(new BrowseRequest("proof-museum", _web.MuseumUrl));
-        page.Content.ShouldContain(EvalWeb.OpeningTime);
+        page.Content.ShouldNotBeNull().ShouldContain(EvalWeb.OpeningTime);
     }
 
     [Fact]
@@ -71,7 +71,7 @@ public class EvalWebTests : IAsyncLifetime
         var result = await _browsing.NavigateAsync(new BrowseRequest("proof-recipe", _web.RecipeUrl));
 
         result.Status.ShouldBe(BrowseStatus.Success);
-        result.Content.ShouldContain($"{EvalWeb.RestingMinutes} minutos");
+        result.Content.ShouldNotBeNull().ShouldContain($"{EvalWeb.RestingMinutes} minutos");
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public class EvalWebTests : IAsyncLifetime
         submitted.Url.ShouldStartWith(_web.ConfirmationUrl);
         var confirmation = await _browsing.GetCurrentPageAsync(session);
         // The Saturday code rather than any code: booking the wrong turn produces the other one.
-        confirmation.Content.ShouldContain(EvalWeb.SaturdayCode);
+        confirmation.Content.ShouldNotBeNull().ShouldContain(EvalWeb.SaturdayCode);
         confirmation.Content.ShouldNotContain(EvalWeb.SundayCode);
     }
 
@@ -114,12 +114,12 @@ public class EvalWebTests : IAsyncLifetime
 
         first.Status.ShouldBe(BrowseStatus.Success);
         first.Truncated.ShouldBeTrue();
-        first.Content.ShouldNotContain(EvalWeb.RaffleTotal);
+        first.Content.ShouldNotBeNull().ShouldNotContain(EvalWeb.RaffleTotal);
 
         var rest = await _browsing.NavigateAsync(new BrowseRequest(
             "proof-chronicle", _web.ChronicleUrl, Offset: first.Content!.Length, MaxLength: 100_000));
         rest.Truncated.ShouldBeFalse();
-        rest.Content.ShouldContain(EvalWeb.RaffleTotal);
+        rest.Content.ShouldNotBeNull().ShouldContain(EvalWeb.RaffleTotal);
     }
 
     [Fact]
@@ -136,7 +136,7 @@ public class EvalWebTests : IAsyncLifetime
         typed.Status.ShouldBe(WebActionStatus.Success);
 
         var suggestions = await _browsing.SnapshotAsync(new SnapshotRequest(session));
-        suggestions.Snapshot.ShouldContain("Astronomía en la azotea");
+        suggestions.Snapshot.ShouldNotBeNull().ShouldContain("Astronomía en la azotea");
 
         await _browsing.ActionAsync(new WebActionRequest(
             session, RefBy(suggestions, "button", "Astronomía en la azotea"), WebActionType.Click));
@@ -154,7 +154,8 @@ public class EvalWebTests : IAsyncLifetime
         var signup = _web.Signups.ShouldHaveSingleItem();
         signup.Name.ShouldBe("Fran");
         signup.ActivityId.ShouldBe("astro");
-        (await _browsing.GetCurrentPageAsync(session)).Content.ShouldContain(EvalWeb.SignupCode);
+        (await _browsing.GetCurrentPageAsync(session)).Content.ShouldNotBeNull()
+            .ShouldContain(EvalWeb.SignupCode);
     }
 
     [Fact]
@@ -172,7 +173,7 @@ public class EvalWebTests : IAsyncLifetime
         await _browsing.ActionAsync(new WebActionRequest(
             session, RefBy(snapshot, "textbox", "Actividad"), WebActionType.Fill, "astro"));
 
-        (await _browsing.SnapshotAsync(new SnapshotRequest(session))).Snapshot
+        (await _browsing.SnapshotAsync(new SnapshotRequest(session))).Snapshot.ShouldNotBeNull()
             .ShouldNotContain("Astronomía en la azotea");
     }
 
@@ -194,7 +195,8 @@ public class EvalWebTests : IAsyncLifetime
 
         submitted.Status.ShouldBe(WebActionStatus.Success);
         _web.Signups.ShouldBeEmpty();
-        (await _browsing.GetCurrentPageAsync(session)).Content.ShouldNotContain(EvalWeb.SignupCode);
+        (await _browsing.GetCurrentPageAsync(session)).Content.ShouldNotBeNull()
+            .ShouldNotContain(EvalWeb.SignupCode);
     }
 
     // A ref by role AND accessible name: the tree names a listitem after the button inside it, so

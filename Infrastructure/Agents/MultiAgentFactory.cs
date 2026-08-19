@@ -14,7 +14,10 @@ using Microsoft.Extensions.Logging;
 namespace Infrastructure.Agents;
 
 public sealed class MultiAgentFactory(
-    IServiceProvider serviceProvider,
+    // Nullable, truthfully: the sub-agent tests build the factory without a container, and every
+    // service resolved from it is optional for that path — the one exception is the thread state
+    // store, which only a history-keeping spec reaches and which refuses by name below.
+    IServiceProvider? serviceProvider,
     IAgentDefinitionProvider definitionProvider,
     OpenRouterConfig openRouterConfig,
     IDomainToolRegistry domainToolRegistry,
@@ -101,7 +104,10 @@ public sealed class MultiAgentFactory(
             .ToList();
 
         var stateStore = spec.KeepsHistory
-            ? serviceProvider.GetRequiredService<IThreadStateStore>()
+            ? (serviceProvider ?? throw new InvalidOperationException(
+                    "A history-keeping agent needs a service provider to resolve its thread state "
+                    + "store, and this factory was built without one."))
+                .GetRequiredService<IThreadStateStore>()
             : new NullThreadStateStore();
 
         var effectiveClient = new ToolApprovalChatClient(
