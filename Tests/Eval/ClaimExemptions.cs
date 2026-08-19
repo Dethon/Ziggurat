@@ -51,6 +51,18 @@ public static class ClaimExemptions
             + "heavier did not change it. This is a finding about the deployment rather than about "
             + "the harness: the rule is stated and is not followed, and a scenario asserting it would "
             + "be a red test rather than a guard."),
+        [SubAgentPrompt.HeavyWorkIsDelegated.Id] = new(ExemptionKind.Finding,
+            "Written three ways on 2026-08-19 and withdrawn as a citation, because only half of "
+            + "it holds. On a light research turn (one page's opening hours) the model rightly "
+            + "did the work in place, three runs of three. On the heavy turn (summarise the "
+            + "thirty-thousand-character chronicle) it delegated readily — every delegating run "
+            + "wrote a self-contained worker prompt with success criteria — and then did the "
+            + "research itself anyway: after the worker answered, it searched, fetched the page "
+            + "twice, and browsed the very url the worker had cited. 'Delegated rather than run "
+            + "in the parent's own turn' is precisely the half that does not hold; the finding "
+            + "on parallel-parts-are-delegated records the same distrust. The scenario stays, "
+            + "tolerating the verification and citing the prompt-quality claims the runs do "
+            + "support."),
         [SubAgentPrompt.ASingleCallIsDoneInPlace.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-18 with the do-it-yourself bullet deleted: the model still read "
             + "the timer's status itself rather than handing it to a worker. The scenario stays as a "

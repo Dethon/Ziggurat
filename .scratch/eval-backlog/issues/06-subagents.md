@@ -24,7 +24,25 @@ If armed runs show the model doing the research itself instead (the parallel-par
 spreading to this shape), the five entries get the finding written down as their reason instead
 — with the run evidence in this file.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Scenario written, exemption lines removed, coverage test green.
-- [ ] Armed runs pass at policy — or the finding is recorded with evidence.
+- [x] Scenario written, exemption lines removed, coverage test green.
+- [x] Armed runs pass at policy — and one finding is recorded with evidence.
+
+## Answer
+
+It took three shapes to learn what this model actually does with a worker:
+
+1. A light research turn (one page's opening hours) is done in place, 3/3 — correctly, and the
+   scenario was reshaped rather than argued with.
+2. On the heavy turn (summarise the chronicle) it delegates readily and writes a good prompt —
+   self-contained, success criteria stated, every delegating run — and then re-does the
+   research itself: after the worker answered it searched, fetched the page twice, and browsed
+   the very url the worker cited. Feeding the canned answer everything the parent had asked for
+   (source url, dates) did not stop the verification.
+3. So `heavy-work-is-delegated` is now a Finding beside its parallel-parts sibling — the
+   delegated-*rather than run itself* half does not hold — and the scenario tolerates the
+   verification while citing what the runs do support: `prompt-is-self-contained` and
+   `no-worker-is-named` deterministically, `success-criteria-are-stated` and
+   `answer-is-synthesised` as judged checks. 2/4 armed at policy, judged checks graded on both
+   passing runs.

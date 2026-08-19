@@ -1,5 +1,11 @@
 # Close the eval backlog
 
+**Done 2026-08-19.** All 31 entries closed: 29 as citations or judged checks (armed-validated at
+each scenario's policy), one as a rewritten fixture-free check (the acknowledgement was in the
+recording all along), and one as a new Finding (`subagents.heavy-work-is-delegated` — the model
+delegates and then re-does the work; evidence in issue 06). The scorecard's coverage kinds are
+now cited, judged, guard and finding only.
+
 Make every claim the scorecard lists as `unwritten` (23), `needs-fixture` (5) or `judge` (3) run.
 The typed backlog in `Tests/Eval/ClaimExemptions.cs` is the work list; removing a line there and
 adding the citing scenario (or judged check) is what closing an entry looks like. Kinds `guard`
