@@ -16,6 +16,12 @@ public sealed record Scenario
 
     public required EvalTurn Turn { get; init; }
 
+    // Scripted exchanges that happened before the turn, seeded into the same run as prior
+    // messages. Scripted rather than generated: a history the model wrote itself would differ
+    // between runs, and what these scenarios are about is what the turn does with a conversation
+    // that is already there — a worker, for one, starts without it.
+    public IReadOnlyList<HistoryExchange> History { get; init; } = [];
+
     // One instant, shared by the agent's decoration and by every server the scenario hosts, so an
     // expected fire time is an exact string rather than a range. It is the turn's timestamp too —
     // two values could disagree, and a scenario whose clock disagrees with itself proves nothing.
@@ -91,6 +97,10 @@ public sealed record Scenario
     // the ones marked Smoke, the full tier takes everything.
     public EvalTier Tier { get; init; } = EvalTier.Full;
 }
+
+// One earlier exchange: what the user said and what the assistant answered, verbatim. It rides
+// the run as ordinary prior messages on the same channel as the turn, a few minutes apart.
+public sealed record HistoryExchange(string User, string Assistant);
 
 // Everything a channel puts on a turn that the user did not type. The speaking-room rule is only
 // decidable from these, so a scenario that omitted them would be testing a turn no channel sends.
