@@ -76,7 +76,8 @@ public static class WebBrowsingPrompt
         ### Response Style
 
         - Answer the question from what you found; never dump raw page content.
-        - Cite source URLs only when your reply is written, never when it is read aloud.
+        - A written reply names the url of the page it answered from — the user has to be able to
+          check the source. A reply that is read aloud never carries a url.
         - If content is partial, fetch the missing part once, then answer with what you have; if you
           still cannot, say so in one clause — don't offer to get more.
         - In a written reply, format extracted data as a table or list; when your reply is read aloud,

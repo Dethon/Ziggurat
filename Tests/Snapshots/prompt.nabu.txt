@@ -1,4 +1,4 @@
-# nabu — 11203 tokens across 17 sections
+# nabu — 11222 tokens across 17 sections
 
   core_directive           CoreDirective         142 / 250    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns.
   identity                 Identity               80 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -8,7 +8,7 @@
   filesystem_mounts        FileSystem             49 / 500    The mounts this session actually has, and which one a path belongs under.
   vault_prompt             Client               1554 / 2000   Obsidian's conventions: frontmatter, wikilinks, where a new note belongs.
   sandbox_prompt           Client               1004 / 1400   The sandbox's layout, what may be run in it and what it refuses.
-  websearch_prompt         Client               1063 / 1500   Searching, loading and reading pages, and what to do when one refuses.
+  websearch_prompt         Client               1082 / 1500   Searching, loading and reading pages, and what to do when one refuses.
   idealista_guide          Client                317 / 600    Property search: the filters that exist and how a listing is read back.
   home_assistant_guide     Client               2879 / 5000   The house: its areas and entities, and how an intent becomes a service call.
   scheduling_prompt        Client               1360 / 2000   Scheduled tasks as files: creating, listing, editing and firing one.
@@ -243,7 +243,8 @@ back action over re-browsing the previous URL.
 ### Response Style
 
 - Answer the question from what you found; never dump raw page content.
-- Cite source URLs only when your reply is written, never when it is read aloud.
+- A written reply names the url of the page it answered from — the user has to be able to
+  check the source. A reply that is read aloud never carries a url.
 - If content is partial, fetch the missing part once, then answer with what you have; if you
   still cannot, say so in one clause — don't offer to get more.
 - In a written reply, format extracted data as a table or list; when your reply is read aloud,

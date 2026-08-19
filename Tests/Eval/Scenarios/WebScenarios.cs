@@ -12,7 +12,10 @@ namespace Tests.Eval.Scenarios;
 public static class WebScenarios
 {
     public static IReadOnlyList<Scenario> All =>
-        [TheRestingTime, WhenTheMuseumOpens, BookingAPlace, TheWholeChronicle, SigningUpForAstronomy];
+    [
+        TheRestingTime, WhenTheMuseumOpens, BookingAPlace, TheWholeChronicle,
+        TheSiteNamedByName, SigningUpForAstronomy
+    ];
 
     // The answer is in the article and nowhere else: the search snippet describes the recipe
     // without giving the number. A model that answered from the result list has nothing to answer
@@ -218,18 +221,85 @@ public static class WebScenarios
             new CallPermission(EvalTools.WebSearch),
             new CallPermission(EvalTools.WebBrowse)
         ],
-        // Search, open, one recovery fetch, one spare: a model that keeps paging past the answer
-        // breaks the ceiling, which is the "once" in fetched-once.
-        CallCeiling = 4,
+        // One worker tolerated, not required — the reflex the exemptions record reaches this
+        // turn shape too, and a canned worker reads no page, so the parent still pays for the
+        // tail itself. Search, open, one recovery fetch, the possible worker and one spare: a
+        // model that keeps paging past the answer still breaks the ceiling, which is the "once"
+        // in fetched-once.
+        MayDelegateTo = ["jonas-worker"],
+        CallCeiling = 5,
         Reply = new ReplyExpectation
         {
             // Four sentences bounds the written reply against a page that is thirty thousand
             // characters of temptation — the written half of raw-content-is-never-dumped rides
             // here as a side condition.
             MaxSentences = 4,
-            Mentions = [new SpokenValue("the raffle total", "1.842", "1842", "1 842")]
+            Mentions =
+            [
+                new SpokenValue("the raffle total", "1.842", "1842", "1 842"),
+                // The citation the written contract asks for: this reply is written, so the
+                // source url has to be in it — the path, because the host is whichever loopback
+                // port was free when the stack came up. No leading slash: the mentions matcher
+                // wants a non-alphanumeric boundary, and inside a url the character before the
+                // path's slash is the port's last digit.
+                new SpokenValue("the source url", "cronica/fiestas")
+            ]
         },
-        Claims = [WebBrowsingPrompt.PartialContentIsFetchedOnce.Id],
+        Claims =
+        [
+            WebBrowsingPrompt.PartialContentIsFetchedOnce.Id,
+            // The written half; the spoken half is asserted wherever a reply is Spoken, because
+            // the no-unspeakables check already forbids a url there.
+            WebBrowsingPrompt.UrlsAreCitedOnlyInWriting.Id
+        ],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The site named the way a person names it, with nothing to paste. A model that fabricates a
+    // domain from the name browses a page nobody serves — and that browse fails here as an
+    // unnecessary call, because the only browse this scenario tolerates is the loopback url that
+    // exists nowhere but in the search's own results.
+    public static Scenario TheSiteNamedByName => new()
+    {
+        Name = "a named site is searched for, never guessed at",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "Mira en la web del Cuaderno de barrio cuánto tiene que reposar el gazpacho "
+                   + "de Almudena y dímelo.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "search",
+                Tool = EvalTools.WebSearch,
+                Arguments = [Arg.Matches("query", "(?i)gazpacho|cuaderno|barrio")]
+            },
+            new CallExpectation
+            {
+                Label = "open",
+                Tool = EvalTools.WebBrowse,
+                // Anchored to the loopback host on purpose: only a search result can know the
+                // port, so a url invented from the site's name — however plausible — matches
+                // nothing required or permitted and fails the run.
+                Arguments = [Arg.Matches("url", @"^http://127\.0\.0\.1:\d+/recetas/gazpacho")]
+            }
+        ],
+        Ordering = [new OrderingConstraint("search", "open")],
+        Permitted = [new CallPermission(EvalTools.WebSearch)],
+        // One worker tolerated, not required — the delegation reflex the exemptions record; a
+        // canned worker reads no page, so the parent still has to search and open.
+        MayDelegateTo = ["jonas-worker"],
+        CallCeiling = 5,
+        Reply = new ReplyExpectation
+        {
+            MaxSentences = 3,
+            Mentions = [new SpokenValue("the resting time", "90", "noventa")]
+        },
+        Claims = [WebBrowsingPrompt.UrlComesFromASearch.Id],
         Policy = new RunPolicy(2, 3)
     };
 

@@ -124,23 +124,12 @@ public static class ClaimExemptions
             + "an exec against a mount that does not advertise it is an unnecessary call there. A "
             + "scenario whose subject is the choice itself — tempted toward the wrong mount — is "
             + "not written."),
-        [WebBrowsingPrompt.UrlComesFromASearch.Id] = new(ExemptionKind.Unfalsifiable,
-            "Not falsifiable against a served site: its pages live on a loopback address and "
-            + "whichever port was free when the stack came up, so no model can reach one without "
-            + "searching. The scenarios require the search and get it for free — what would "
-            + "witness this rule is a page whose url is guessable, which is the opposite of what "
-            + "the offline boundary is for."),
         [WebBrowsingPrompt.AnswerComesFromWhatWasRead.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-19 with both sentences deleted — the paragraph telling it to "
             + "read the page and the bullet telling it to answer from what it found: the museum's "
             + "opening time still came back as the page's 10:30 rather than the snippet's 9:00. "
             + "Preferring the page it opened over the summary it was shown is this model's own "
             + "behaviour; the scenario stays as the guard against a model that stops."),
-        [WebBrowsingPrompt.UrlsAreCitedOnlyInWriting.Id] = new(ExemptionKind.Unfalsifiable,
-            "Demonstrated on 2026-08-19 with the citation rule deleted: the spoken reply still "
-            + "carried no url. The voice section forbids anything unspeakable on the same turn, so "
-            + "this rule cannot be isolated on a spoken scenario — and on a written one there is "
-            + "nothing to catch, because citing is what it asks for."),
         [WebBrowsingPrompt.RawContentIsNeverDumped.Id] = new(ExemptionKind.Guard,
             "Asserted as a side condition on both halves now: the spoken research scenario is "
             + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "
@@ -181,16 +170,9 @@ public static class ClaimExemptions
             + "keys the user named needs a turn that asks for one key to change."),
         [VaultPrompt.TemplatesAreNotExpanded.Id] = new(ExemptionKind.Unwritten,
             "The template placeholder is seeded in a note no scenario edits yet."),
-        [VaultPrompt.TreeIsSurveyedBeforeCreating.Id] = new(ExemptionKind.Unfalsifiable,
-            "Globbing the vault is permitted rather than required: a model that already knows where "
-            + "the note goes has not broken the contract, and requiring the glob would test the habit "
-            + "rather than the outcome."),
         [VaultPrompt.NoNewTopLevelFolder.Id] = new(ExemptionKind.NeedsFixture,
             "The negative half of where a note lands; it needs a turn whose topic fits nothing in "
             + "the tree, which the seeded vault does not have yet."),
-        [VaultPrompt.ReadBeforeEditing.Id] = new(ExemptionKind.Unfalsifiable,
-            "Same shape as surveying: reading first is tolerated everywhere and required nowhere, "
-            + "because the outcome the contract cares about is the edit that lands."),
         [VaultPrompt.HeadingsAreReferenceable.Id] = new(ExemptionKind.Unwritten,
             "Needs a turn that renames a heading another note links to, which the seeded vault could "
             + "support and no scenario asks for yet."),
