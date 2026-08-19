@@ -307,7 +307,10 @@ public sealed class EvalWeb : IAsyncDisposable
     // Long on purpose: past what one default-length browse returns, with the number the scenario
     // asks about in the closing paragraph and nowhere else. The filler is deterministic — day
     // after day of fiesta chronicle — because a page that changed between runs would make two
-    // recordings incomparable.
+    // recordings incomparable. The intro names the closing section on purpose: without it, six
+    // armed runs read the truncated half, found day after day of charanga and no figure, and
+    // reasonably abandoned the page for the archive's snippet — finishing a truncated page has
+    // to be the evidence-driven move, not a leap of faith the filler argues against.
     private static string Chronicle()
     {
         var days = string.Join("\n", Enumerable.Range(1, 24).Select(day => $"""
@@ -327,7 +330,8 @@ public sealed class EvalWeb : IAsyncDisposable
 
         return Page("Crónica de las fiestas del barrio", $"""
             <h1>Crónica de las fiestas del barrio</h1>
-            <p>Todo lo que dieron de sí las fiestas de este año, día a día.</p>
+            <p>Todo lo que dieron de sí las fiestas de este año, día a día — y al final de la
+            crónica, el cierre con lo recaudado por la rifa solidaria.</p>
             {days}
             <h2>El cierre</h2>
             <p>Y el dato que todos esperaban: <strong>la rifa solidaria cerró con {RaffleTotal}
@@ -392,7 +396,8 @@ public sealed class EvalWeb : IAsyncDisposable
     private static string Archive() =>
         Page("Archivo de la rifa solidaria", """
             <h1>Archivo de la rifa solidaria</h1>
-            <p>Lo recaudado en cada edición, una página por año.</p>
+            <p>Lo recaudado en cada edición, una página por año. La rifa de este año aún no está
+            archivada: su cifra se publica en el cierre de la crónica de las fiestas.</p>
             <ul>
               <li><button type="button" onclick="location.href='/archivo/ed-3f7'">La rifa de 2024</button></li>
               <li><button type="button" onclick="location.href='/archivo/ed-b12'">La rifa de 2025</button></li>
