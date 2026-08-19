@@ -30,14 +30,15 @@ public static class EvalSuite
         All.FirstOrDefault(s => s.Name == name)
         ?? throw new InvalidOperationException($"No scenario named '{name}'.");
 
-    public static TheoryData<string> Named(EvalTier tier)
+    public static TheoryData<string> Named(EvalTier tier) =>
+        Named(All.Where(s => tier == EvalTier.Full || s.Tier == tier));
+
+    // One family's worth, for the full-tier classes: xUnit parallelizes across collections and a
+    // class is one collection, so a class per family is what puts scenarios in flight at once.
+    public static TheoryData<string> Named(IEnumerable<Scenario> family)
     {
         var data = new TheoryData<string>();
-        All.Where(s => tier == EvalTier.Full || s.Tier == tier)
-            .Select(s => s.Name)
-            .ToList()
-            .ForEach(name => data.Add(name));
-
+        family.Select(s => s.Name).ToList().ForEach(name => data.Add(name));
         return data;
     }
 
