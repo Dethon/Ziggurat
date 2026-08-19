@@ -18,6 +18,9 @@ public static class Scorecard
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, $"scorecard-{tier.ToString().ToLowerInvariant()}.json");
 
+        var claimRows = Covered(Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs))), coverage);
+        var scenarioRows = Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs)));
+
         var summary = new JsonObject
         {
             // The route that served the pass, never the configured model: an upgrade that changed
@@ -29,12 +32,19 @@ public static class Scorecard
             // one time in this suite that is not the scenario's pinned instant: a scorecard is
             // about a run, not about the turn inside it.
             ["timestamp"] = (clock ?? TimeProvider.System).GetUtcNow().ToString("O"),
+            // The whole run in one place: the per-row sections say which claim moved, this says
+            // whether the run got better or worse without the reader summing rows across a diff.
+            ["summary"] = new JsonObject
+            {
+                ["claims"] = Totalled(claimRows),
+                ["scenarios"] = Totalled(scenarioRows)
+            },
             // Each claim row says how it is covered — "cited", "judged", or its exemption kind —
             // so a null rate stops meaning three different things.
-            ["claims"] = Covered(Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs))), coverage),
+            ["claims"] = claimRows,
             // The scenarios themselves, guards included: a guard asserts without citing a claim,
             // and before this section its rate existed nowhere a model-bump diff could see.
-            ["scenarios"] = Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs)))
+            ["scenarios"] = scenarioRows
         };
 
         File.WriteAllText(path, summary.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
@@ -52,6 +62,24 @@ public static class Scorecard
         }
 
         return claims;
+    }
+
+    // "exercised" beside "declared" keeps a filtered pass honest: a rate over the six scenarios
+    // that ran must not read as a rate over the suite.
+    private static JsonObject Totalled(JsonObject rows)
+    {
+        var tallies = rows.Select(row => (JsonObject)row.Value!).ToList();
+        var passes = tallies.Sum(tally => (int)tally["passes"]!);
+        var runs = tallies.Sum(tally => (int)tally["runs"]!);
+
+        return new JsonObject
+        {
+            ["declared"] = tallies.Count,
+            ["exercised"] = tallies.Count(tally => (int)tally["runs"]! > 0),
+            ["passes"] = passes,
+            ["runs"] = runs,
+            ["rate"] = runs == 0 ? null : JsonValue.Create((double)passes / runs)
+        };
     }
 
     private static JsonObject Tallied(IEnumerable<(string Key, int Passes, int Runs)> outcomes) =>

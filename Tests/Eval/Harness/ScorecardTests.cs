@@ -96,6 +96,51 @@ public class ScorecardTests : IDisposable
     }
 
     [Fact]
+    public void ARun_SummarisesItselfAsAWhole()
+    {
+        // The per-row sections answer "which claim moved"; the summary answers "did the run get
+        // better or worse" without the reader summing rows by hand across two files.
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
+            [
+                new ClaimOutcome("timers.duration-under-4h", 2, 3),
+                new ClaimOutcome("timers.voice-defaults-to-speaking-room", 3, 3),
+                new ClaimOutcome("mounts.never-run", 0, 0)
+            ],
+            [
+                new ScenarioOutcome("a ten-minute reminder is a countdown", 2, 3),
+                new ScenarioOutcome("a scenario nothing ran", 0, 0)
+            ]);
+
+        var summary = Read(Path.Combine(_output, "scorecard-full.json")).GetProperty("summary");
+
+        var claims = summary.GetProperty("claims");
+        claims.GetProperty("declared").GetInt32().ShouldBe(3);
+        claims.GetProperty("exercised").GetInt32().ShouldBe(2);
+        claims.GetProperty("passes").GetInt32().ShouldBe(5);
+        claims.GetProperty("runs").GetInt32().ShouldBe(6);
+        claims.GetProperty("rate").GetDouble().ShouldBe(5d / 6, 0.001);
+
+        var scenarios = summary.GetProperty("scenarios");
+        scenarios.GetProperty("declared").GetInt32().ShouldBe(2);
+        scenarios.GetProperty("exercised").GetInt32().ShouldBe(1);
+        scenarios.GetProperty("passes").GetInt32().ShouldBe(2);
+        scenarios.GetProperty("runs").GetInt32().ShouldBe(3);
+        scenarios.GetProperty("rate").GetDouble().ShouldBe(2d / 3, 0.001);
+    }
+
+    [Fact]
+    public void ARunWhereNothingRan_SummarisesAtANullRate()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
+            [new ClaimOutcome("timers.never-run", 0, 0)]);
+
+        var summary = Read(Path.Combine(_output, "scorecard-full.json")).GetProperty("summary");
+
+        summary.GetProperty("claims").GetProperty("rate").ValueKind.ShouldBe(JsonValueKind.Null);
+        summary.GetProperty("scenarios").GetProperty("rate").ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Fact]
     public void ASmokeRun_DoesNotOverwriteAFullPass()
     {
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("full-model", null),
