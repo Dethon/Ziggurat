@@ -136,7 +136,11 @@ public static class MechanismScenarios
                 [
                     Arg.Path(FakeHomeAssistant.AlarmsDirectory),
                     Arg.Matches("command", @"^create_event\.sh\b"),
-                    Arg.Matches("command", @"2026-08-18[ T]07:00")
+                    Arg.Matches("command", @"2026-08-18[ T]07:00"),
+                    // The description's JSON shape: without insistent the event is a one-shot
+                    // announce that speaks once into a bedroom at seven and gives up.
+                    Arg.Matches("command", "(?i)insistent"),
+                    Arg.Matches("command", "(?i)target")
                 ]
             }
         ],
@@ -149,8 +153,11 @@ public static class MechanismScenarios
             new CallPermission(EvalTools.Exec, FakeHomeAssistant.AlarmsDirectory)
         ],
         CallCeiling = 6,
-        // No citation: the calendar entity is called Assistant Alarms, which teaches the rule the
-        // prose teaches and cannot be deleted without deleting the calendar.
+        // Which calendar carries no citation — the entity is called Assistant Alarms, which
+        // teaches what the prose teaches and cannot be deleted without deleting the calendar.
+        // What is cited is the description's shape: target and insistent are only in the prose,
+        // and an event without them is an announce pretending to be an alarm.
+        Claims = [HomeAssistantPrompt.AlarmCarriesTargetAndInsistent.Id],
         Policy = new RunPolicy(2, 3),
         // This family's canary: the three-way choice on the one turn where the wrong answer is a
         // countdown that a restart would silently lose.
