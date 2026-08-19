@@ -1,5 +1,14 @@
 # Close the backlog: every unwritten, needs-fixture and judge claim runs
 
+**Done, 2026-08-19.** All eight issues resolved. The 90 declared claims now count 54 cited,
+7 judged, 27 guard and 2 findings — `unwritten`, `needs-fixture` and `judge` no longer appear
+in the scorecard. The second finding is this effort's own discovery:
+`subagents.heavy-work-is-delegated` was written, run and refuted (the parent browsed the
+unreachable url itself rather than delegating), the same self-reliance the parallel-parts
+finding recorded. Three of the five "needs-fixture" reasons turned out to be stale on
+inspection — the sweep's store is per-scenario, the attachment rule is about the reference
+and not the binary, and the acknowledgement does land in the recorded reply.
+
 The scorecard's coverage field still counts 23 `unwritten`, 5 `needs-fixture` and 3 `judge`
 claims. This effort closes them: each claim either gains a citing scenario, a judged check on a
 scenario that carries the material, or — where the evidence says the deployment does not follow
