@@ -76,7 +76,11 @@ internal static class HaServices
             Service("start", "Starts or resumes cleaning the whole home."),
             Service("return_to_base", "Sends the vacuum back to its dock."),
             Service("clean_zone", "Cleans one area of the home and returns to the dock.",
-                AreaId("cleaning_area_id", required: true)))
+                AreaId("cleaning_area_id", required: true)),
+            // The options carry a casing the user's words never do: "modo turbo" is not "Turbo",
+            // so an accepted value was read from the help or from the rejection that lists them.
+            Service("set_fan_speed", "Sets the suction level.",
+                Select("fan_speed", required: true, "Silencioso", "Normal", "Turbo")))
     ];
 
     private static JsonNode Domain(
@@ -116,6 +120,21 @@ internal static class HaServices
         {
             ["required"] = required,
             ["selector"] = new JsonObject { ["text"] = new JsonObject() }
+        });
+
+    // HA's `select` selector: the field takes one of a fixed option list, the help renderer
+    // prints the options, and the parser rejects anything else byte-for-byte.
+    private static (string, JsonNode) Select(string name, bool required, params string[] options) =>
+        (name, new JsonObject
+        {
+            ["required"] = required,
+            ["selector"] = new JsonObject
+            {
+                ["select"] = new JsonObject
+                {
+                    ["options"] = new JsonArray([.. options.Select(o => (JsonNode)o)])
+                }
+            }
         });
 
     // HA's `area` selector: the field wants the registry's area id — the frozen slug — and the

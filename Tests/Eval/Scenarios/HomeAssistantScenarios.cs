@@ -11,7 +11,11 @@ namespace Tests.Eval.Scenarios;
 public static class HomeAssistantScenarios
 {
     public static IReadOnlyList<Scenario> All =>
-        [TurnTheAirConditionerOn, SetTheTemperature, VacuumTheStudy];
+    [
+        TurnTheAirConditionerOn, SetTheTemperature, VacuumTheStudy,
+        TheWashingMachineByItsListedName, TurboIsTheListedSpelling,
+        SnoozeTheMedicationAlarm, TheGarageLightInWriting
+    ];
 
     // "Turn on the AC" and stop: the prompt's own example of the thing not to do is picking a mode
     // or a temperature while you are there. Both of those show up in the diff, which is why the
@@ -143,6 +147,161 @@ public static class HomeAssistantScenarios
         CallCeiling = 6,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 1 },
         Claims = [HomeAssistantPrompt.AreaSlugIsReadNotDerived.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The directory name is `lavadora_(lavadora)`, composed from the id and the friendly name.
+    // Only exec against that exact composed name is permitted, so a bare id or a guessed suffix
+    // fails as an unnecessary call — which is the exact-name rule stated as a scenario.
+    public static Scenario TheWashingMachineByItsListedName => new()
+    {
+        Name = "an entity is used by the exact name the listing returned",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "pon la lavadora",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "turn on",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.Path(FakeHomeAssistant.WashingMachineDirectory),
+                    Arg.Matches("command", @"^turn_on\.sh")
+                ]
+            }
+        ],
+        Permitted =
+        [
+            .. CallPermission.Looking("/ha*"),
+            new CallPermission(EvalTools.Exec, FakeHomeAssistant.WashingMachineDirectory)
+        ],
+        Changes = [new StateChange(FakeHomeAssistant.WashingMachineEntityId, "on")],
+        CallCeiling = 5,
+        Reply = new ReplyExpectation { Spoken = true, MaxSentences = 1 },
+        Claims = [HomeAssistantPrompt.EntityNamedAsListed.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // "Modo turbo" is the user's word; the service takes one of three options whose casing only
+    // the help or the rejection that lists them can supply. The state diff demands the accepted
+    // spelling arrived, and the ceiling is where repeating the same wrong shape shows.
+    public static Scenario TurboIsTheListedSpelling => new()
+    {
+        Name = "an action argument is read rather than derived",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "pon la aspiradora en modo turbo",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "set speed",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.PathMatches(FakeHomeAssistant.VacuumPathPattern),
+                    Arg.Matches("command", @"^set_fan_speed\.sh\b")
+                ]
+            }
+        ],
+        Permitted =
+        [
+            .. CallPermission.LookingAndManuals("/ha*"),
+            new CallPermission(EvalTools.Exec, "*aspiradora*")
+        ],
+        // The matcher above is case-blind; this is not. The mount's parser rejects anything but
+        // the listed options byte-for-byte, so the attribute ends at "Turbo" only if a listed
+        // spelling was actually sent.
+        Changes = [new StateChange($"{FakeHomeAssistant.VacuumEntityId}#fan_speed", "Turbo")],
+        CallCeiling = 6,
+        Reply = new ReplyExpectation { Spoken = true, MaxSentences = 1 },
+        Claims = [HomeAssistantPrompt.ArgumentsComeFromHelp.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The turn arrives with a dismissed *alarm* on it — not a timer — so "five more minutes" is
+    // a new one-shot calendar event at the offset, with the same summary and an insistent
+    // description. The timers mount is there and unpermitted, which is the discrimination.
+    public static Scenario SnoozeTheMedicationAlarm => new()
+    {
+        Name = "a snoozed alarm is a new calendar event",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "cinco minutos más",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01",
+            DismissedAlert = "alarma de la medicación"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "snooze",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.Path(FakeHomeAssistant.AlarmsDirectory),
+                    Arg.Matches("command", @"^create_event\.sh\b"),
+                    Arg.Matches("command", @"2026-08-17[ T]20:05"),
+                    Arg.Matches("command", "(?i)medicaci"),
+                    Arg.Matches("command", "insistent")
+                ]
+            }
+        ],
+        Permitted =
+        [
+            .. CallPermission.LookingAndManuals("/ha*"),
+            new CallPermission(EvalTools.Exec, FakeHomeAssistant.AlarmsDirectory)
+        ],
+        CallCeiling = 6,
+        Claims = [HomeAssistantPrompt.SnoozeIsANewEvent.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The written half of the failure rule: the garage has no light, and the reply on a written
+    // channel says so in plain words — no exit code, no stderr, no entity id. The spoken half is
+    // the voice family's one-clause scenario.
+    public static Scenario TheGarageLightInWriting => new()
+    {
+        Name = "a written failure is plain words with no code",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "Apaga la luz del garaje.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        // Nothing is required: there is no garage light, so the right number of successful
+        // actions is none.
+        Permitted = [.. CallPermission.Looking("/ha*")],
+        CallCeiling = 5,
+        Reply = new ReplyExpectation
+        {
+            Mentions =
+            [
+                new SpokenValue("that there is none",
+                    "no hay", "no existe", "no encuentro", "no veo", "no aparece", "no tengo")
+            ],
+            NeverSays = ["exit", "127", "stderr", "not_found", "errorCode", "light."]
+        },
+        Claims = [HomeAssistantPrompt.ExitCodesAreNeverVoiced.Id],
         Policy = new RunPolicy(2, 3)
     };
 }

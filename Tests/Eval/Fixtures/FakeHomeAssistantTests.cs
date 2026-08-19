@@ -214,6 +214,44 @@ public class FakeHomeAssistantTests
         home.StateOf(FakeHomeAssistant.VacuumEntityId).ShouldBe("cleaning");
     }
 
+    [Fact]
+    public async Task TheFanSpeedHelp_ListsItsExactOptions()
+    {
+        // The option set is the only place the exact casing exists: the user says "turbo" and the
+        // service wants "Turbo", so an argument that works was read rather than derived.
+        var result = await Mount().ExecAsync(
+            Relative(FakeHomeAssistant.VacuumDirectory), "set_fan_speed.sh --help",
+            timeoutSeconds: null, CancellationToken.None);
+
+        var stdout = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.Stdout;
+        stdout.ShouldContain("Silencioso");
+        stdout.ShouldContain("Turbo");
+    }
+
+    [Fact]
+    public async Task SettingTheFanSpeed_AnswersToTheListedOptionAndNotToAGuess()
+    {
+        var home = new FakeHomeAssistant();
+
+        // The user's word, passed as heard: a bad argument, answered with the real options —
+        // which is the same information --help prints, so the fix is a re-read either way.
+        var guessed = await Mount(home).ExecAsync(
+            Relative(FakeHomeAssistant.VacuumDirectory), "set_fan_speed.sh --fan_speed turbo",
+            timeoutSeconds: null, CancellationToken.None);
+
+        var exec = guessed.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldNotBe(0);
+        exec.Stderr.ShouldContain("Turbo");
+        home.Snapshot().ShouldNotContainKey(FakeHomeAssistant.VacuumEntityId + "#fan_speed");
+
+        var listed = await Mount(home).ExecAsync(
+            Relative(FakeHomeAssistant.VacuumDirectory), "set_fan_speed.sh --fan_speed Turbo",
+            timeoutSeconds: null, CancellationToken.None);
+
+        listed.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
+        home.Snapshot()[FakeHomeAssistant.VacuumEntityId + "#fan_speed"].ShouldBe("Turbo");
+    }
+
     private static HaFileSystem Mount(
         FakeHomeAssistant? home = null, FakeMusicAssistantServer? music = null)
     {

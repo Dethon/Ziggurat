@@ -51,6 +51,7 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public static readonly string AirConditionerDirectory = Directory(AirConditionerEntityId, "Aire Salón");
     public static readonly string KitchenSpeakerDirectory = Directory(KitchenSpeakerEntityId, "Altavoz Cocina");
     public static readonly string VacuumDirectory = Directory(VacuumEntityId, "Aspiradora");
+    public static readonly string WashingMachineDirectory = Directory(WashingMachineEntityId, "Lavadora");
 
     // The vacuum reached under /ha/entities or under its area, like the speaker below.
     public static readonly string VacuumPathPattern =
@@ -257,6 +258,10 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             // wrong id, and the fake answering to it would make the slug rule unfalsifiable.
             "clean_zone" when data["cleaning_area_id"]?.GetValue<string>() == StudyAreaSlug =>
                 entity with { State = "cleaning" },
+            // Applied as sent: the casing was already enforced by the mount's own parser against
+            // the catalog's option list, so whatever reaches here was a listed option.
+            "set_fan_speed" when data["fan_speed"] is { } speed =>
+                entity.WithAttribute("fan_speed", speed.DeepClone()),
             _ => entity
         };
     }

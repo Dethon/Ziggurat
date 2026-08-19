@@ -164,23 +164,6 @@ public static class ClaimExemptions
             "Demonstrated on 2026-08-18 with the never-re-read rule deleted from both places it is "
             + "written: the model set the temperature and stopped. It does not check its own work "
             + "unprompted, so the prose defends against a habit this model does not have."),
-        [HomeAssistantPrompt.EntityNamedAsListed.Id] = new(ExemptionKind.Unwritten,
-            "The mount answers a near miss with a hint naming the right directory, so a wrong name "
-            + "costs a call rather than failing — witnessing this needs a ceiling tight enough that "
-            + "the retry breaks it, which is a scenario about the ceiling as much as about the name."),
-        [HomeAssistantPrompt.ArgumentsComeFromHelp.Id] = new(ExemptionKind.Unwritten,
-            "Reading --help is tolerated everywhere and required nowhere: what the contract asks for "
-            + "is that a bad-argument exit is fixed by re-reading rather than repeated, which needs a "
-            + "turn whose first attempt fails."),
-        [HomeAssistantPrompt.ExitCodesAreNeverVoiced.Id] = new(ExemptionKind.Unwritten,
-            "The spoken half is covered by the voice family's no-code rule; the written half — the "
-            + "stderr reason in plain words — has no scenario yet."),
-        [HomeAssistantPrompt.AlarmCarriesTargetAndInsistent.Id] = new(ExemptionKind.Unwritten,
-            "The alarms scenarios assert the mechanism and the time; the description's JSON shape is "
-            + "a second assertion on the same call and is not written yet."),
-        [HomeAssistantPrompt.SnoozeIsANewEvent.Id] = new(ExemptionKind.Unwritten,
-            "The timer half of snoozing is covered; the calendar half needs a turn arriving with a "
-            + "dismissed alarm rather than a dismissed timer."),
         [VoicePrompt.UnclearRequestIsActedOn.Id] = new(ExemptionKind.Unwritten,
             "Two rules in one: act on the likeliest reading, and ask before an irreversible delete. The "
             + "second needs a turn whose likeliest reading destroys something, which no family sets up yet."),

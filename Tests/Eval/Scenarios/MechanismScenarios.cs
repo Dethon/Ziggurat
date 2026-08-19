@@ -145,7 +145,11 @@ public static class MechanismScenarios
                 [
                     Arg.Path(FakeHomeAssistant.AlarmsDirectory),
                     Arg.Matches("command", @"^create_event\.sh\b"),
-                    Arg.Matches("command", @"2026-08-18[ T]07:00")
+                    Arg.Matches("command", @"2026-08-18[ T]07:00"),
+                    // The description's declared shape: without insistent the event is a one-shot
+                    // announce rather than an alarm, and without target it rings nowhere.
+                    Arg.Matches("command", "target"),
+                    Arg.Matches("command", "insistent")
                 ]
             }
         ],
@@ -158,8 +162,10 @@ public static class MechanismScenarios
             new CallPermission(EvalTools.Exec, FakeHomeAssistant.AlarmsDirectory)
         ],
         CallCeiling = 6,
-        // No citation: the calendar entity is called Assistant Alarms, which teaches the rule the
-        // prose teaches and cannot be deleted without deleting the calendar.
+        // Which mount answers a clock time is uncited — the calendar entity is called Assistant
+        // Alarms, which teaches that rule and cannot be deleted without deleting the calendar.
+        // What is cited is the event's shape: target and insistent in the description.
+        Claims = [HomeAssistantPrompt.AlarmCarriesTargetAndInsistent.Id],
         Policy = new RunPolicy(2, 3),
         // This family's canary: the three-way choice on the one turn where the wrong answer is a
         // countdown that a restart would silently lose.
