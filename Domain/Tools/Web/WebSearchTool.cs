@@ -11,6 +11,10 @@ public class WebSearchTool(IWebSearchClient searchClient)
                                          Searches the web and returns relevant results with titles, snippets, and URLs.
                                          Use this to find current information about movies, TV shows, music, news, documentation, or any other topic.
                                          Results include title, URL, snippet, domain, and publication date when available.
+                                         A snippet is the search engine's cached summary, written at crawl time — it can be
+                                         stale or wrong, and the page it points at wins where they disagree. Use snippets to
+                                         choose which result to open, never as the source of a factual answer: open the page
+                                         with web_browse and answer from what it says.
                                          """;
 
     protected async Task<JsonNode> RunAsync(
@@ -57,6 +61,11 @@ public class WebSearchTool(IWebSearchClient searchClient)
         return new JsonObject
         {
             ["status"] = "success",
+            // Where the model reads it: at the moment the snippet tempts it to answer. The same
+            // rule as prompt prose was tried there and measurably changed nothing — see
+            // .scratch/findings-from-the-eval/issues/03-an-answer-comes-from-the-snippet.md.
+            ["note"] = "Snippets are cached summaries and may be stale; to answer a factual "
+                       + "question, open the page with web_browse and answer from what it says.",
             ["query"] = result.Query,
             ["totalResults"] = result.TotalResults,
             ["results"] = resultsArray,
