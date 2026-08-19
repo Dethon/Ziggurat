@@ -30,6 +30,9 @@ public static class WebBrowsingPrompt
 
         **Reading a page.** Call web_browse. If the response is truncated or you need a specific
         region, narrow it (the tool description shows how) before falling back to a second call.
+        When the page you opened for an answer arrives truncated, read its remainder (offset)
+        before opening a different page — the answer is usually in the tail you have not read,
+        and another page's snippet is a promise, not the page.
 
         **Interacting with a page.** Load with web_browse using snapshot=true to get content and refs
         in a single call, then chain web_action calls. Each web_action returns a diff with new refs —
@@ -42,8 +45,9 @@ public static class WebBrowsingPrompt
 
         **Hover menus / tooltips.** Hover the trigger first; the diff reveals the menu refs to click.
 
-        **Multi-page navigation.** Click links/buttons normally; for going back, prefer web_action's
-        back action over re-browsing the previous URL.
+        **Multi-page navigation.** Click links/buttons normally. Going back is web_action's back
+        action, never a second web_browse of a page you already visited — knowing its URL does not
+        change that; a re-browse starts the page over and loses its state.
 
         ### Key Principles
 
