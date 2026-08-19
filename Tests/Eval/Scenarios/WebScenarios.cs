@@ -14,7 +14,7 @@ public static class WebScenarios
     public static IReadOnlyList<Scenario> All =>
     [
         TheRestingTime, WhenTheMuseumOpens, BookingAPlace, TheWholeChronicle,
-        TheSiteNamedByName, SigningUpForAstronomy
+        TheSiteNamedByName, SigningUpForAstronomy, BackToTheFrontPage, TheThreeStepWizard
     ];
 
     // The answer is in the article and nowhere else: the search snippet describes the recipe
@@ -176,7 +176,8 @@ public static class WebScenarios
         // the same reflex the delegation exemptions record: without the prose it does not attempt
         // the interaction at all.
         Claims = [WebBrowsingPrompt.RefsComeFromASnapshot.Id],
-        // The reply of the one scenario that takes many steps is where narrating them tempts.
+        // The reply of the one scenario that takes many steps is where narrating them tempts —
+        // and its call log is where reading and structuring blur, so both judgements ride here.
         Judged =
         [
             new JudgedCheck(WebBrowsingPrompt.StepsAreNotReported.Id,
@@ -185,7 +186,16 @@ public static class WebScenarios
                 + "narrates the process: pages opened, forms filled, buttons clicked, snapshots "
                 + "taken, tools or workers used. Naming the workshop, the day, the time and the "
                 + "code is the outcome and passes; 'I opened the form and typed your name' is a "
-                + "step and fails.")
+                + "step and fails."),
+            new JudgedCheck(WebBrowsingPrompt.BrowseReadsAndSnapshotStructures.Id,
+                "Look at the tool calls. web_browse exists to read a page's content and "
+                + "web_snapshot to get its interactive structure; the contract forbids calling "
+                + "both for the same purpose on the same page state. A browse with snapshot=true "
+                + "that serves both at once passes. Fail if the run browsed a page it only needed "
+                + "refs from and then snapshotted the same unchanged page anyway, or took two "
+                + "snapshots of the same state with no action in between, or browsed the same url "
+                + "twice to re-read content it already had. A re-snapshot after an action that "
+                + "changed the page is legitimate recovery and passes.")
         ],
         Policy = new RunPolicy(2, 4)
     };
@@ -301,6 +311,112 @@ public static class WebScenarios
         },
         Claims = [WebBrowsingPrompt.UrlComesFromASearch.Id],
         Policy = new RunPolicy(2, 3)
+    };
+
+    // Two pages deep and back out, with the return named by the user: the contract says going
+    // back is the browser's own back action, never a second browse of the url that was left.
+    // The required back call is what a re-browse cannot satisfy.
+    public static Scenario BackToTheFrontPage => new()
+    {
+        Name = "going back is the browser's back, not a second browse",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "Abre la portada del Cuaderno de barrio, entra en la receta del gazpacho y "
+                   + "dime cuánto reposa; luego vuelve atrás a la portada y dime qué museo "
+                   + "aparece en su lista.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "front page",
+                Tool = EvalTools.WebBrowse,
+                Arguments = [Arg.Matches("url", @"^http://127\.0\.0\.1:\d+/?$")]
+            },
+            new CallExpectation
+            {
+                Label = "back",
+                Tool = EvalTools.WebAction,
+                Arguments = [Arg.Matches("action", "(?i)back")]
+            }
+        ],
+        Ordering = [new OrderingConstraint("front page", "back")],
+        Permitted =
+        [
+            new CallPermission(EvalTools.WebSearch),
+            new CallPermission(EvalTools.WebBrowse),
+            new CallPermission(EvalTools.WebSnapshot),
+            new CallPermission(EvalTools.WebAction)
+        ],
+        // One worker tolerated, not required — the delegation reflex the exemptions record; a
+        // canned worker browses nothing, so the parent still walks the pages itself.
+        MayDelegateTo = ["jonas-worker"],
+        CallCeiling = 8,
+        Reply = new ReplyExpectation
+        {
+            MaxSentences = 3,
+            Mentions =
+            [
+                new SpokenValue("the resting time", "90", "noventa"),
+                new SpokenValue("the museum on the front page", "Carmen")
+            ]
+        },
+        Claims = [WebBrowsingPrompt.BackIsAnAction.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // Three steps, each revealed by the previous click's own diff. The ceiling is the assertion:
+    // the flow fits with the one snapshot the first load took, and a model that re-snapshots
+    // between every action pays more calls than the ceiling holds.
+    public static Scenario TheThreeStepWizard => new()
+    {
+        Name = "a wizard is walked by chaining refs from each diff",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            // "En la web del", the chronicle's own lesson: named as a thing rather than a site,
+            // a "Cuaderno de barrio" reads like a notebook and the model went hunting for it in
+            // the vault.
+            Text = "Da de alta a Fran en el padrón de actividades, en la web del Cuaderno de "
+                   + "barrio: teléfono 600111222, actividad ajedrez. Dime el resguardo.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "open",
+                Tool = EvalTools.WebBrowse,
+                Arguments =
+                [
+                    Arg.Matches("url", "/padron/alta"),
+                    Arg.Flag("snapshot", true)
+                ]
+            }
+        ],
+        Permitted =
+        [
+            new CallPermission(EvalTools.WebSearch),
+            new CallPermission(EvalTools.WebBrowse),
+            new CallPermission(EvalTools.WebSnapshot),
+            new CallPermission(EvalTools.WebAction)
+        ],
+        // Search, open-with-snapshot, three fills, three clicks, one read of the confirmation,
+        // the tolerated worker and one spare. Snapshotting between every step does not fit.
+        MayDelegateTo = ["jonas-worker"],
+        CallCeiling = 11,
+        Reply = new ReplyExpectation
+        {
+            // Only the confirmation prints it, and the confirmation only exists for a form whose
+            // three steps were all walked.
+            Mentions = [new SpokenValue("the receipt code", EvalWeb.PadronCode)]
+        },
+        Claims = [WebBrowsingPrompt.ActionsChainFromTheDiff.Id],
+        Policy = new RunPolicy(2, 4)
     };
 
     // The activity field reacts to keystrokes: the suggestions only exist after input events, and

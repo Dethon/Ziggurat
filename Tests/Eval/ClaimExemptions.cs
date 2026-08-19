@@ -121,18 +121,6 @@ public static class ClaimExemptions
             + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "
             + "against a thirty-thousand-character page. No scenario's subject is the dumping "
             + "itself, so it guards rather than cites."),
-        [WebBrowsingPrompt.ActionsChainFromTheDiff.Id] = new(ExemptionKind.NeedsFixture,
-            "About how many snapshots a flow costs rather than about what it did, so it is only "
-            + "visible as a call count. The booking scenario's ceiling bounds it, but a scenario "
-            + "whose subject is the chaining needs a page with more steps than this one."),
-        [WebBrowsingPrompt.BrowseReadsAndSnapshotStructures.Id] = new(ExemptionKind.Judge,
-            "The negative half of the rule — not calling both for the same purpose — is a "
-            + "judgement about intent that a call log cannot make on its own; it waits on a "
-            + "judged check."),
-        [WebBrowsingPrompt.BackIsAnAction.Id] = new(ExemptionKind.Unwritten,
-            "Needs a turn that goes two pages deep and comes back, which the three-page site "
-            + "supports and no scenario asks for yet — and no turn shape found so far forces the "
-            + "return over the model simply remembering the first page."),
         [VaultPrompt.WikilinksAreNeverFixed.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-18 with the wikilink rule deleted: the edit landed and every "
             + "link came out untouched. This model does not tidy syntax it was not asked about, so "

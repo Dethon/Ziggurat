@@ -199,10 +199,92 @@ public class EvalWebTests : IAsyncLifetime
             .ShouldNotContain(EvalWeb.SignupCode);
     }
 
+    [Fact]
+    public async Task TheWizard_RevealsEachStepInTheClicksOwnDiff_AndTheChainReachesTheCode()
+    {
+        // The page the chaining rule needs: each step's field exists only after the previous
+        // click, and the click's own diff carries the new refs — so the whole flow is drivable
+        // from diffs, with the one snapshot the first load took.
+        const string session = "proof-wizard";
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.WizardUrl));
+        var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
+
+        // The later steps are hidden until reached: a tree that showed everything up front would
+        // let a model fill the whole form from the first snapshot and prove nothing.
+        snapshot.Snapshot.ShouldNotBeNull().ShouldNotContain("Teléfono");
+
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "textbox", "Nombre"), WebActionType.Fill, "Fran"));
+        var second = await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "button", "Siguiente"), WebActionType.Click));
+
+        var phone = RefBy(second.Snapshot.ShouldNotBeNull(), "textbox", "Teléfono");
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, phone, WebActionType.Fill, "600111222"));
+        var third = await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(second.Snapshot!, "button", "Continuar"), WebActionType.Click));
+
+        await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(third.Snapshot.ShouldNotBeNull(), "textbox", "Actividad"),
+            WebActionType.Fill, "ajedrez"));
+        var submitted = await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(third.Snapshot!, "button", "Enviar"), WebActionType.Click,
+            WaitForNavigation: true));
+
+        submitted.Status.ShouldBe(WebActionStatus.Success);
+        var record = _web.Padron.ShouldHaveSingleItem();
+        record.Name.ShouldBe("Fran");
+        record.Phone.ShouldBe("600111222");
+        record.Activity.ShouldBe("ajedrez");
+        (await _browsing.GetCurrentPageAsync(session)).Content.ShouldNotBeNull()
+            .ShouldContain(EvalWeb.PadronCode);
+    }
+
+    [Fact]
+    public async Task GoingBack_ReturnsToThePageThatWasLeft()
+    {
+        const string session = "proof-back";
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.BaseUrl));
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.RecipeUrl));
+
+        var back = await _browsing.ActionAsync(new WebActionRequest(
+            session, Action: WebActionType.Back, WaitForNavigation: true));
+
+        back.Status.ShouldBe(WebActionStatus.Success);
+        (await _browsing.GetCurrentPageAsync(session)).Url
+            .TrimEnd('/').ShouldBe(_web.BaseUrl.TrimEnd('/'));
+    }
+
+    [Fact]
+    public async Task SearchingForThePadron_AccentAndAll_ReturnsTheWizardUrl()
+    {
+        // The query reaches the table url-encoded, so "padrón" arrives as "padr%c3%b3n" and a
+        // keyword spelt whole never matches — the armed run proved it by signing the user up on
+        // the wrong form. Only the ASCII prefix before the accent survives encoding.
+        var result = await _web.SearchClient().SearchAsync(
+            new WebSearchQuery("\"Cuaderno de barrio\" \"padrón de actividades\"", 10));
+
+        result.Results.ShouldContain(r => r.Url == _web.WizardUrl);
+    }
+
+    [Fact]
+    public async Task SearchingForTheFrontPage_ReturnsTheIndexUrl()
+    {
+        var result = await _web.SearchClient().SearchAsync(
+            new WebSearchQuery("portada del Cuaderno de barrio", 10));
+
+        result.Results.ShouldContain(r => r.Url.TrimEnd('/') == _web.BaseUrl.TrimEnd('/'));
+    }
+
     // A ref by role AND accessible name: the tree names a listitem after the button inside it, so
     // a name-only lookup picks the wrapper and a click on it never reaches the button's handler.
     private static string RefBy(SnapshotResult snapshot, string role, string name) =>
-        snapshot.Snapshot!
+        RefBy(snapshot.Snapshot!, role, name);
+
+    // The same lookup against a click's own diff, because that is where a chained flow reads its
+    // next ref from.
+    private static string RefBy(string snapshot, string role, string name) =>
+        snapshot
             .Split('\n')
             .Where(line => line.Contains($"{role} \"{name}\"", StringComparison.OrdinalIgnoreCase)
                            && line.Contains("[ref=", StringComparison.Ordinal))

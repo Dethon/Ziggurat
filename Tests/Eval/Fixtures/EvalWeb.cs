@@ -49,12 +49,17 @@ public sealed class EvalWeb : IAsyncDisposable
 
     public const string AstronomyActivity = "Astronomía en la azotea";
 
+    // Printed only by the wizard's confirmation, which takes three steps to reach — each one
+    // revealed by the previous click, so the flow is only drivable by chaining refs from diffs.
+    public const string PadronCode = "PD-5521";
+
     private static string CodeFor(string slot) =>
         slot == SaturdaySlot ? SaturdayCode : SundayCode;
 
     private readonly IHost _host;
     private readonly List<Booking> _bookings = [];
     private readonly List<Signup> _signups = [];
+    private readonly List<PadronRecord> _padron = [];
     private readonly Lock _gate = new();
 
     public string BaseUrl { get; }
@@ -83,6 +88,8 @@ public sealed class EvalWeb : IAsyncDisposable
 
     public string SignupUrl => $"{BaseUrl}/agenda/apuntarse";
 
+    public string WizardUrl => $"{BaseUrl}/padron/alta";
+
     // What the site was told, for a scenario that wants to know the form was submitted rather than
     // described.
     public IReadOnlyList<Booking> Bookings
@@ -103,6 +110,17 @@ public sealed class EvalWeb : IAsyncDisposable
             lock (_gate)
             {
                 return [.. _signups];
+            }
+        }
+    }
+
+    public IReadOnlyList<PadronRecord> Padron
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _padron];
             }
         }
     }
@@ -161,6 +179,27 @@ public sealed class EvalWeb : IAsyncDisposable
             site.Signups.Count == 0
                 ? Html(Page("Sin inscripción", "<h1>Todavía no hay ninguna inscripción</h1>"))
                 : Html(SignupConfirmation(site.Signups[^1])));
+        app.MapGet("/padron/alta", () => Html(Wizard()));
+        app.MapPost("/padron/alta", async (HttpRequest request) =>
+        {
+            var form = await request.ReadFormAsync();
+            var record = new PadronRecord(
+                form["nombre"].ToString(), form["telefono"].ToString(), form["actividad"].ToString());
+            if (record.Name.Length == 0 || record.Phone.Length == 0 || record.Activity.Length == 0)
+            {
+                return Results.Redirect("/padron/alta/incompleto");
+            }
+
+            site.Record(record);
+            return Results.Redirect("/padron/alta/confirmado");
+        });
+        app.MapGet("/padron/alta/incompleto", () =>
+            Html(Page("Alta incompleta",
+                "<h1>Faltan datos</h1><p>Completa los tres pasos antes de enviar.</p>")));
+        app.MapGet("/padron/alta/confirmado", () =>
+            site.Padron.Count == 0
+                ? Html(Page("Sin alta", "<h1>Todavía no hay ningún alta</h1>"))
+                : Html(WizardConfirmation(site.Padron[^1])));
 
         await app.StartAsync();
         return site;
@@ -182,6 +221,14 @@ public sealed class EvalWeb : IAsyncDisposable
         }
     }
 
+    private void Record(PadronRecord record)
+    {
+        lock (_gate)
+        {
+            _padron.Add(record);
+        }
+    }
+
     private static IResult Html(string body) =>
         Results.Content(body, "text/html; charset=utf-8", Encoding.UTF8);
 
@@ -192,6 +239,7 @@ public sealed class EvalWeb : IAsyncDisposable
               <li><a href="/recetas/gazpacho">El gazpacho de Almudena</a></li>
               <li><a href="/museo/horarios">Museo del Carmen: horarios</a></li>
               <li><a href="/taller/reserva">Reservar plaza en el taller</a></li>
+              <li><a href="/padron/alta">Alta en el padrón de actividades</a></li>
             </ul>
             """);
 
@@ -312,6 +360,49 @@ public sealed class EvalWeb : IAsyncDisposable
             </script>
             """);
 
+    // Three steps, each revealed by the previous click. Hidden sections are out of the
+    // accessibility tree, so the first snapshot shows only step one — the rest of the flow is
+    // only reachable through the refs each click's own diff hands back.
+    private static string Wizard() =>
+        Page("Alta en el padrón de actividades", """
+            <h1>Alta en el padrón de actividades</h1>
+            <form method="post" action="/padron/alta">
+              <div id="paso1">
+                <label for="nombre">Nombre</label>
+                <input id="nombre" name="nombre" type="text" />
+                <button type="button" id="sigue1">Siguiente</button>
+              </div>
+              <div id="paso2" hidden>
+                <label for="telefono">Teléfono</label>
+                <input id="telefono" name="telefono" type="text" />
+                <button type="button" id="sigue2">Continuar</button>
+              </div>
+              <div id="paso3" hidden>
+                <label for="actividad">Actividad</label>
+                <input id="actividad" name="actividad" type="text" />
+                <button type="submit">Enviar</button>
+              </div>
+            </form>
+            <script>
+              const paso = (boton, campo, siguiente) =>
+                document.getElementById(boton).addEventListener("click", () => {
+                  if (!document.getElementById(campo).value.trim()) return;
+                  document.getElementById(siguiente).hidden = false;
+                  document.getElementById(boton).disabled = true;
+                });
+              paso("sigue1", "nombre", "paso2");
+              paso("sigue2", "telefono", "paso3");
+            </script>
+            """);
+
+    private static string WizardConfirmation(PadronRecord record) =>
+        Page($"Alta confirmada {PadronCode}", $"""
+            <h1>Alta {PadronCode} confirmada</h1>
+            <p>Inscripción en el padrón a nombre de {WebUtility.HtmlEncode(record.Name)} para la
+            actividad de {WebUtility.HtmlEncode(record.Activity)}.</p>
+            <p>Tu resguardo es <strong>{PadronCode}</strong>. Guárdalo.</p>
+            """);
+
     private static string SignupConfirmation(Signup signup) =>
         Page($"Inscripción confirmada {SignupCode}", $"""
             <h1>Inscripción {SignupCode} confirmada</h1>
@@ -344,6 +435,8 @@ public sealed class EvalWeb : IAsyncDisposable
     public sealed record Booking(string Name, string Slot);
 
     public sealed record Signup(string Name, string ActivityId);
+
+    public sealed record PadronRecord(string Name, string Phone, string Activity);
 
     // The browser every web scenario runs through, in one place: everything but this machine goes
     // to a proxy that is not listening, so a page nobody in this process served fails to load
@@ -416,6 +509,16 @@ internal sealed class FakeSearch(string baseUrl) : HttpMessageHandler
             $"{baseUrl}/cronica/fiestas",
             // No total in the snippet: the number lives at the end of the page and nowhere else.
             "Todo lo que dieron de sí las fiestas de este año, día a día."),
+        new(["portada", "cuaderno", "inicio"],
+            "Cuaderno de barrio",
+            baseUrl,
+            "El cuaderno del barrio: recetas, horarios y avisos, todo en una portada."),
+        // Only the ASCII prefix before the accent survives url-encoding: "padrón" arrives as
+        // "padr%c3%b3n", so "padron" spelt whole never matches and "padr" always does.
+        new(["padr", "alta", "resguardo"],
+            "Alta en el padrón de actividades — Cuaderno de barrio",
+            $"{baseUrl}/padron/alta",
+            "El alta en el padrón de actividades del barrio, en tres pasos con resguardo."),
         new(["astronom", "actividad", "actividades", "apuntar", "agenda", "inscri"],
             "Apuntarse a una actividad — Cuaderno de barrio",
             $"{baseUrl}/agenda/apuntarse",
