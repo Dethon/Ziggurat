@@ -11,7 +11,7 @@ namespace Tests.Eval.Scenarios;
 public static class MountScenarios
 {
     public static IReadOnlyList<Scenario> All =>
-        [APathWithNoPrefix, AMountThatIsNotThere];
+        [APathWithNoPrefix, AMountThatIsNotThere, TheChecksumComesFromTheSandbox];
 
     // A path the user gives without a mount: it exists, under exactly one of them. What the
     // contract asks is that the agent resolves it rather than picking a prefix that reads right.
@@ -98,5 +98,68 @@ public static class MountScenarios
         },
         Claims = [FileSystemToolFeature.AnUnmountedPathIsAnswered.Id],
         Policy = new RunPolicy(2, 3)
+    };
+
+    // Programmatic work, with a mount that can run it: a checksum cannot be produced by reading,
+    // the note lives on a mount with no exec, and the sandbox advertises it. The contract's whole
+    // shape in one turn — move the data with a single copy, run the computation where exec lives,
+    // answer with the result — and the answer is checkable because the harness knows the note's
+    // bytes. The permitted set deliberately has no create: a read-here-create-there transfer is
+    // exactly the two-call shape the one-call rule names.
+    public static Scenario TheChecksumComesFromTheSandbox => new()
+    {
+        Name = "exec work is transferred once and run where exec lives",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "Calcula el sha256 del fichero Cocina/Salsas.md del vault y dime los ocho "
+                   + "primeros caracteres.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "transfer",
+                Tool = EvalTools.Copy,
+                Arguments =
+                [
+                    Arg.Matches("sourcePath", @"^/vault/Cocina/Salsas\.md$"),
+                    Arg.Matches("destinationPath", "^/sandbox/")
+                ]
+            },
+            new CallExpectation
+            {
+                Label = "hash",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.PathMatches("^/sandbox"),
+                    Arg.Matches("command", "(?i)sha|openssl|hashlib")
+                ]
+            }
+        ],
+        Ordering = [new OrderingConstraint("transfer", "hash")],
+        Permitted =
+        [
+            .. CallPermission.Looking("/vault*"),
+            .. CallPermission.Looking("/sandbox*"),
+            new CallPermission(EvalTools.Copy),
+            new CallPermission(EvalTools.Exec, "/sandbox*")
+        ],
+        CallCeiling = 6,
+        Reply = new ReplyExpectation
+        {
+            // Only bytes that actually went through a real hasher produce this prefix; a model
+            // that "computed" it any other way answers something else.
+            Mentions = [new SpokenValue("the checksum's first characters", EvalVault.SaucesSha256[..8])]
+        },
+        Claims =
+        [
+            FileSystemToolFeature.ExecWorkGoesWhereExecLives.Id,
+            FileSystemToolFeature.TransferIsOneCall.Id
+        ],
+        Policy = new RunPolicy(2, 4)
     };
 }
