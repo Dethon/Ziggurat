@@ -83,6 +83,20 @@ public class ScorecardLedgerTests : IDisposable
     }
 
     [Fact]
+    public void AConditionallyCitedClaim_IsCoveredAsConditional()
+    {
+        // "conditional" is what tells the reader a null rate means "no run delegated this pass"
+        // rather than "nothing tests this": the claim is wired, its denominator is just not
+        // every run the scenario took.
+        _ledger.Record(EvalTier.Full, _first, new ScenarioResult(true, 1, 1, []));
+        _ledger.WriteAll(_output, Unresolved);
+
+        Read("scorecard-full.json").GetProperty("claims")
+            .GetProperty("subagents.prompt-is-self-contained")
+            .GetProperty("coverage").GetString().ShouldBe("conditional");
+    }
+
+    [Fact]
     public void ALaterWrite_HandsTheResolverTheRouteAlreadyResolved()
     {
         // One paid lookup per run: the resolved route is kept, so every dispose after the first

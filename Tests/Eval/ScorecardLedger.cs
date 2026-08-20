@@ -92,6 +92,13 @@ public sealed class ScorecardLedger
     {
         var cited = EvalSuite.All.SelectMany(s => s.Claims).ToHashSet();
         var judged = EvalSuite.All.SelectMany(s => s.Judged.Select(check => check.Claim)).ToHashSet();
+        // "conditional" is a citation with a smaller denominator: the claim is tested on every
+        // run that produces its material, so its null rate means "no run delegated this pass"
+        // rather than "nothing tests this".
+        var conditional = EvalSuite.All
+            .SelectMany(s => s.IfDelegated.SelectMany(c =>
+                c.Claims.Concat(c.Judged.Select(check => check.Claim))))
+            .ToHashSet();
 
         return PromptManifest.Claims.ToDictionary(
             claim => claim.Id,
@@ -99,9 +106,11 @@ public sealed class ScorecardLedger
                 ? "cited"
                 : judged.Contains(claim.Id)
                     ? "judged"
-                    : ClaimExemptions.Reasons.TryGetValue(claim.Id, out var exemption)
-                        ? Spelled(exemption.Kind)
-                        : "uncovered");
+                    : conditional.Contains(claim.Id)
+                        ? "conditional"
+                        : ClaimExemptions.Reasons.TryGetValue(claim.Id, out var exemption)
+                            ? Spelled(exemption.Kind)
+                            : "uncovered");
     }
 
     private static string Spelled(ExemptionKind kind) => kind switch

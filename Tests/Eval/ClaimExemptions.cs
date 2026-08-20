@@ -54,30 +54,11 @@ public static class ClaimExemptions
             + "fetching the page twice, and browsing the very url its worker cited. The research "
             + "scenario's ceiling now leaves no room for that wholesale redo, but a partial one — "
             + "a single stray search after delegating — still fits under it, so the ceiling "
-            + "guards rather than cites. A citation needs a conditional expectation (if a "
-            + "delegation happened, no web call may follow it) the harness cannot express yet."),
-        [SubAgentPrompt.PromptIsSelfContained.Id] = new(ExemptionKind.NeedsFixture,
-            "Held in every delegating run — each wrote a self-contained worker prompt — but "
-            + "whether the research turn delegates at all is a per-run coin, "
-            + "so a scenario requiring the delegation flakes on the "
-            + "runs that do the work in place. Citing this again needs a conditional expectation "
-            + "the harness cannot express yet: if a delegation happened, its prompt must carry "
-            + "the site and the subject."),
-        [SubAgentPrompt.SuccessCriteriaAreStated.Id] = new(ExemptionKind.NeedsFixture,
-            "Same blocker as prompt-is-self-contained: the judged rubric needs a delegated "
-            + "prompt as its material, and whether one exists is a per-run coin. Every "
-            + "delegating run on 2026-08-19 and 2026-08-20 did state what a good result looks "
-            + "like."),
-        [SubAgentPrompt.AnswerIsSynthesised.Id] = new(ExemptionKind.NeedsFixture,
-            "Same blocker: the rubric compares the reply against the worker's answer, which only "
-            + "exists on the runs that delegate. Where it was graded, one run on 2026-08-20 was "
-            + "failed for carrying the worker's facts in the worker's order — which a faithful "
-            + "summary of a two-sentence canned answer cannot avoid; the rubric kept in the "
-            + "scenario's history says so for whoever revives it."),
-        [SubAgentPrompt.NoWorkerIsNamed.Id] = new(ExemptionKind.Guard,
-            "The research scenario's reply forbids every worker word in both shapes, so the rule "
-            + "is asserted on every run; it just cannot earn the citation, because on an "
-            + "in-place run there is no worker to be tempted to name."),
+            + "guards rather than cites. A citation needs a conditional call-forbiddance (if a "
+            + "delegation happened, no web call may follow it) that IfDelegated does not "
+            + "express: a delegation is recorded without a sequence, so 'after' is not "
+            + "decidable, and forbidding the calls outright on delegating runs would red the "
+            + "stray search the ceiling deliberately tolerates."),
         [SubAgentPrompt.ASingleCallIsDoneInPlace.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-18 with the do-it-yourself bullet deleted: the model still read "
             + "the timer's status itself rather than handing it to a worker. The scenario stays as a "

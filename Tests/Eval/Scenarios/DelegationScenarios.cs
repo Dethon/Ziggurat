@@ -101,8 +101,9 @@ public static class DelegationScenarios
     // scenario requiring either shape fails on the other, so this one asserts what held in every
     // run of both: the answer carries the chronicle's facts, the work is paid for once (one
     // delegation, or one search and the page in two fetches — the ceiling has no room for doing
-    // both wholesale), and no reply says who did the work. The delegation-quality claims moved
-    // to the exemption backlog beside the coin flip that unseated them.
+    // both wholesale), and no reply says who did the work. The delegation-quality claims ride
+    // the coin instead of calling it: IfDelegated holds every run that does delegate to the
+    // prompt it wrote and the reply it made of the answer, and tallies those runs alone.
     public static Scenario TheResearchIsPaidForOnce => new()
     {
         Name = "research is paid for once, in place or delegated",
@@ -130,6 +131,47 @@ public static class DelegationScenarios
             + "repitió premio al balcón mejor engalanado y la rifa solidaria cerró con 1.842 "
             + "euros para el comedor social.",
         MayDelegateTo = ["jonas-worker"],
+        IfDelegated =
+        [
+            new ConditionalDelegation
+            {
+                Profile = "jonas-worker",
+                // The site and the subject: the worker starts with no history, so a prompt
+                // saying "la web que me dije" reaches it with the task already lost.
+                Carries = ["Cuaderno de barrio", "crónica"],
+                Claims =
+                [
+                    SubAgentPrompt.PromptIsSelfContained.Id,
+                    // The reply's NeverSays asserts this on every run; the citation counts only
+                    // the runs where a worker existed to be named.
+                    SubAgentPrompt.NoWorkerIsNamed.Id
+                ],
+                Judged =
+                [
+                    new JudgedCheck(SubAgentPrompt.SuccessCriteriaAreStated.Id,
+                        "Read the delegated task prompt (under 'Work handed to workers'). Pass "
+                        + "only if it states what a good result looks like — what to find (the "
+                        + "chronicle of the neighbourhood fiestas on the Cuaderno de barrio "
+                        + "site) and what to bring back (a short summary of the highlights, fit "
+                        + "to forward). Fail a prompt that only names the topic and leaves the "
+                        + "worker to guess what success means."),
+                    // Softened from the rubric a 2026-08-20 run was failed under: reusing the
+                    // worker's facts, even in the worker's order, is what a faithful summary
+                    // does — the facts have one natural order. What fails is lifted sentences
+                    // or an answer inflated past the ask.
+                    new JudgedCheck(SubAgentPrompt.AnswerIsSynthesised.Id,
+                        "The worker's answer (quoted under 'Work handed to workers') described "
+                        + "the chronicle: the dates, the parades, the petanque, the workshops, "
+                        + "the verbena, the balcony prize and the raffle total. Compare it with "
+                        + "the assistant's reply. Pass a reply that answers the user in its own "
+                        + "words at the length the request warrants — a short summary to "
+                        + "forward. Reusing the worker's facts, and even their order, is fine. "
+                        + "Fail only a reply that pastes the worker's sentences verbatim or "
+                        + "near-verbatim, or that inflates the answer with process, caveats or "
+                        + "filler beyond what was asked.")
+                ]
+            }
+        ],
         Permitted =
         [
             new CallPermission(EvalTools.WebSearch),
