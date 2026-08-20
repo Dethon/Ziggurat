@@ -45,17 +45,14 @@ public static class SubAgentPrompt
           length the question warrants, and never say which subagent did what.
         """;
 
-    // Every falsifiable statement the prose above makes. Most of them are about a decision rather
-    // than a call — whether to delegate at all, and what the prompt carried — which is why the
-    // harness records the profile and the prompt rather than reading the tool call.
-    public static readonly PromptClaim ParallelPartsAreDelegated =
-        new("subagents.parallel-parts-are-delegated",
-            "A request with independent parts is delegated one worker per part, concurrently, rather than done in sequence.");
-
-    public static readonly PromptClaim HeavyWorkIsDelegated =
-        new("subagents.heavy-work-is-delegated",
-            "Research, searching and multi-step gathering are delegated rather than run in the parent's own turn.");
-
+    // Every statement the prose above makes that the eval holds it to. The two when-to-delegate
+    // bullets (parallel parts, heavy operations) deliberately carry no claim: armed runs showed
+    // the model ignoring them as prose here (2026-08-18) and again as the subagent tool's own
+    // description (2026-08-20, ten probe runs), and the behaviour without enforcement is
+    // adequate — so a claim would be a standing finding, not a test. Most of the rest are about
+    // a decision rather than a call — whether to delegate at all, and what the prompt carried —
+    // which is why the harness records the profile and the prompt rather than reading the tool
+    // call.
     public static readonly PromptClaim ASingleCallIsDoneInPlace =
         new("subagents.a-single-call-is-done-in-place",
             "A task that is one tool call is done in place, because delegating it is slower.");
@@ -86,8 +83,6 @@ public static class SubAgentPrompt
 
     public static readonly IReadOnlyList<PromptClaim> Claims =
     [
-        ParallelPartsAreDelegated,
-        HeavyWorkIsDelegated,
         ASingleCallIsDoneInPlace,
         ContextBoundWorkIsNotDelegated,
         PromptIsSelfContained,

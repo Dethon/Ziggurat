@@ -7,10 +7,14 @@ namespace Tests.Eval.Scenarios;
 // prompt it wrote, never the worker's answer — the workers are canned, so a scenario here cannot
 // fail on what a second model happened to say.
 //
-// Whether the research-shaped turn delegates turned out to be a per-run coin (see the exemption
-// on `subagents.heavy-work-is-delegated`), so the positive half asserts the outcome and the
-// single spend rather than the choice. The two-workers-in-parallel case stays withdrawn: see the
-// exemption on `subagents.parallel-parts-are-delegated`.
+// There is no positive when-to-delegate half here, because the eval no longer claims one. It
+// was tried and withdrawn twice: against the system-prompt prose (2026-08-18: two parallel
+// folders read in place, 17 sequential reads) and against the same rules moved onto the
+// subagent tool's own description (2026-08-20: ten probe runs, the parallel turn in place on
+// all three, the heavy turn delegating six of seven — a coin either way). The behaviour is
+// adequate as it is, so the bullets stay in the prompt uncleaned and unclaimed, and what this
+// family asserts is the outcome: work paid for once, in place or delegated, plus the negatives
+// the model has actually been caught on.
 public static class DelegationScenarios
 {
     public static IReadOnlyList<Scenario> All =>

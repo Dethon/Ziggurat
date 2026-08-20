@@ -28,7 +28,12 @@ public enum ExemptionKind
     Judge,
 
     // The rule is stated and the deployment does not follow it: a scenario would be a standing
-    // red rather than a guard. A finding about the deployment, not a backlog item.
+    // red rather than a guard. A finding about the deployment, not a backlog item — and one that
+    // closes by withdrawing the claim, which is how the two delegation findings went
+    // (2026-08-20): the when-to-delegate bullets were ignored as prompt prose and again as the
+    // subagent tool's own description, the behaviour is adequate either way, so the bullets stay
+    // as prose the eval no longer holds the model to. The story lives with the claims in
+    // SubAgentPrompt.
     Finding
 }
 
@@ -43,31 +48,8 @@ public static class ClaimExemptions
 {
     public static IReadOnlyDictionary<string, Exemption> Reasons { get; } = new Dictionary<string, Exemption>
     {
-        [SubAgentPrompt.ParallelPartsAreDelegated.Id] = new(ExemptionKind.Finding,
-            "Written, run three times on 2026-08-18 and withdrawn, because it does not hold. Asked "
-            + "to summarise two unrelated vault folders 'a la vez, por separado', the model delegated "
-            + "both halves once, then on the next runs did the work itself — 17 sequential reads in "
-            + "its own turn, which is precisely what the prose tells it not to do. Making the folders "
-            + "heavier did not change it. This is a finding about the deployment rather than about "
-            + "the harness: the rule is stated and is not followed, and a scenario asserting it would "
-            + "be a red test rather than a guard."),
-        [SubAgentPrompt.HeavyWorkIsDelegated.Id] = new(ExemptionKind.Finding,
-            "Written three ways on 2026-08-19 and withdrawn as a citation, because only half of "
-            + "it holds. On a light research turn (one page's opening hours) the model rightly "
-            + "did the work in place, three runs of three. On the heavy turn (summarise the "
-            + "thirty-thousand-character chronicle) it delegated readily — every delegating run "
-            + "wrote a self-contained worker prompt with success criteria — and then did the "
-            + "research itself anyway: after the worker answered, it searched, fetched the page "
-            + "twice, and browsed the very url the worker had cited. 'Delegated rather than run "
-            + "in the parent's own turn' is precisely the half that does not hold; the finding "
-            + "on parallel-parts-are-delegated records the same distrust. Seven runs on "
-            + "2026-08-20, after a trust-the-result rule was added to the prose, split four "
-            + "delegating to three doing the work in place — same model, same served provider — "
-            + "so whether this turn delegates is a per-run coin. The research scenario now "
-            + "asserts the once-paid outcome instead of the choice, and the prompt-quality "
-            + "claims it cited moved to this backlog."),
         [SubAgentPrompt.TheResultIsNotRedone.Id] = new(ExemptionKind.Guard,
-            "Written on 2026-08-20 against the distrust the two findings above record: nine armed "
+            "Written on 2026-08-20 against an observed redo reflex: nine armed "
             + "runs of the research scenario showed the model delegating and then searching, "
             + "fetching the page twice, and browsing the very url its worker cited. The research "
             + "scenario's ceiling now leaves no room for that wholesale redo, but a partial one — "
@@ -76,8 +58,8 @@ public static class ClaimExemptions
             + "delegation happened, no web call may follow it) the harness cannot express yet."),
         [SubAgentPrompt.PromptIsSelfContained.Id] = new(ExemptionKind.NeedsFixture,
             "Held in every delegating run — each wrote a self-contained worker prompt — but "
-            + "whether the research turn delegates at all is a per-run coin (see "
-            + "heavy-work-is-delegated), so a scenario requiring the delegation flakes on the "
+            + "whether the research turn delegates at all is a per-run coin, "
+            + "so a scenario requiring the delegation flakes on the "
             + "runs that do the work in place. Citing this again needs a conditional expectation "
             + "the harness cannot express yet: if a delegation happened, its prompt must carry "
             + "the site and the subject."),

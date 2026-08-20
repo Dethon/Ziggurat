@@ -140,8 +140,8 @@ public static class WebScenarios
             // Phrased as an instruction to act rather than as a question to look into. The
             // delegation section tells the model to hand web work and multi-step gathering to a
             // worker, and it does exactly that on about half of the runs where the turn reads like
-            // research — a finding of its own, recorded with the delegation exemptions, and not
-            // what this scenario is about.
+            // research — the per-run coin recorded with the subagent claims in SubAgentPrompt, and
+            // not what this scenario is about.
             Text = "Abre el formulario de reservas del taller del Cuaderno de barrio y reserva el "
                    + "turno del sábado a las 12:00 a nombre de Fran; dime el código de la reserva.",
             Sender = "fran"
