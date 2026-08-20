@@ -14,7 +14,11 @@ public class ChatMonitor(
     ChatThreadResolver threadResolver,
     IMetricsPublisher metricsPublisher,
     IMemoryRecallHook? memoryRecallHook,
-    ILogger<ChatMonitor> logger)
+    ILogger<ChatMonitor> logger,
+    // Optional because a host may configure none — a test harness, or a deployment where every
+    // channel names its agent. With none configured a message that names no agent is refused
+    // when the agent is built, which is the point: nothing guesses.
+    AgentDefaults? agentDefaults = null)
 {
     private readonly DeliveryTargetResolver _targetResolver = new(channels, logger);
     private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
@@ -24,7 +28,7 @@ public class ChatMonitor(
         try
         {
             var merged = channels
-                .Select(ch => ch.Messages.Select(m => (Channel: ch, Message: m)))
+                .Select(ch => ch.Messages.Select(m => (Channel: ch, Message: RouteToAgent(m))))
                 .Merge(cancellationToken);
 
             var groups = merged
@@ -40,6 +44,11 @@ public class ChatMonitor(
             await foreach (var _ in groups)
             { }
         }
+        // Shutdown, not a fault. It reaches here as the merge and the groups unwind, and reporting
+        // it as an error put a red line in the dashboard on every ordinary deploy.
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "ChatMonitor exception: {exceptionMessage}", ex.Message);
@@ -49,8 +58,22 @@ public class ChatMonitor(
                 ErrorType = ex.GetType().Name,
                 Message = ex.Message
             });
+
+            // Reported here, decided elsewhere. Swallowing it left the caller unable to tell a
+            // monitor that finished from one that died, so the supervising loop restarted both the
+            // same way and as fast as the failure could recur.
+            throw;
         }
     }
+
+    // Resolved here, upstream of the grouping, so one id serves the whole turn: the group key, the
+    // agent built for it, the conversation context stamped on the message and the memory written
+    // from it. Resolving it later would let a message that named no agent group apart from one
+    // that named the same agent explicitly, running two agents over one conversation.
+    private ChannelMessage RouteToAgent(ChannelMessage message) =>
+        string.IsNullOrEmpty(message.AgentId) && agentDefaults?.For(message.ChannelId) is { } fallback
+            ? message with { AgentId = fallback }
+            : message;
 
     private async IAsyncEnumerable<bool> ProcessChatThread(
         AgentKey agentKey,

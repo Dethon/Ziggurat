@@ -6,6 +6,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
 using Domain.Outposts;
+using Domain.Prompts;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
@@ -35,9 +36,23 @@ public static class InjectorModule
                 MaxInlineImageBytes = settings.ReadImages.MaxInlineBytes
             };
 
+            // Before anything is registered: a default naming an agent nobody configured routes
+            // every unattributed message into an error, and the deployment should refuse to start
+            // rather than discover it one message at a time.
+            settings.AgentDefaults.Validate(settings.Agents.Select(a => a.Id));
+
+            // The same rule for the other thing an agent names rather than carries: a section id
+            // nothing declares is a behaviour somebody meant to give an agent and it would
+            // otherwise go missing in silence. The projection refuses it too, per agent built;
+            // this refuses the deployment.
+            PromptManifest.Validate(
+                settings.Agents.Select(a => (a.Id, (IEnumerable<string>)a.PromptSections))
+                    .Concat(settings.SubAgents.Select(a => (a.Id, (IEnumerable<string>)a.PromptSections))));
+
             services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);
 
             return services
+                .AddSingleton(settings.AgentDefaults)
                 .AddSingleton(settings.Retention)
                 .AddRedis(settings.Redis, settings.Retention)
                 .AddMetricsPublishing("agent")

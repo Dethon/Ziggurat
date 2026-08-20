@@ -41,7 +41,7 @@ internal static class FileSystemBackendMocks
     {
         backend.Setup(b => b.MoveOutCheckAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(FsError.Fail<FsMoveOutCheckResult>(
-                ToolError.Codes.UnsupportedOperation, message, retryable: false, hint));
+                ToolError.Codes.UnsupportedOperation, message, hint));
         return backend;
     }
 }

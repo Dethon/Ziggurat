@@ -18,7 +18,9 @@ public sealed class PrinterQueueFileSystem(
     string supportedFormats,
     TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
 {
-    public override string FilesystemName => "print-queue";
+    public const string Name = "print-queue";
+
+    public override string FilesystemName => Name;
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 
@@ -155,7 +157,6 @@ public sealed class PrinterQueueFileSystem(
             {
                 ErrorCode = ToolError.Codes.UnsupportedOperation,
                 Message = $"'{node.FileName}' is a binary document and cannot be read as text.",
-                Retryable = false,
                 Hint = "Read /print-queue/status.json for its print state, or use fs_blob_read for raw bytes."
             });
         }
@@ -217,8 +218,7 @@ public sealed class PrinterQueueFileSystem(
             return new FsResult<FsCreateResult>.Err(new ToolErrorResult
             {
                 ErrorCode = ToolError.Codes.AlreadyExists,
-                Message = $"A job named '{node.FileName}' is already queued. Pass overwrite=true to replace it.",
-                Retryable = false
+                Message = $"A job named '{node.FileName}' is already queued. Pass overwrite=true to replace it."
             });
         }
 
@@ -402,8 +402,7 @@ public sealed class PrinterQueueFileSystem(
             return new FsResult<FsCopyResult>.Err(new ToolErrorResult
             {
                 ErrorCode = ToolError.Codes.AlreadyExists,
-                Message = $"A job named '{dst.FileName}' is already queued.",
-                Retryable = false
+                Message = $"A job named '{dst.FileName}' is already queued."
             });
         }
 

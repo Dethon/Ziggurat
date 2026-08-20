@@ -23,7 +23,7 @@ public class FsResultTests
         var ran = false;
         var error = new ToolErrorResult
         {
-            ErrorCode = ToolError.Codes.NotFound, Message = "Path not found: docs/note.md", Retryable = false
+            ErrorCode = ToolError.Codes.NotFound, Message = "Path not found: docs/note.md"
         };
         var result = new FsResult<FsInfoResult>.Err(error);
 

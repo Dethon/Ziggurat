@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Tools;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
@@ -111,6 +112,31 @@ internal static class OutpostEndpoints
             // The verdict is feedback, not function. A session that built must not fail because
             // the machine it built from cannot be told about it.
             logger?.LogWarning(ex, "The mount verdicts for this session could not be recorded");
+        }
+    }
+
+    // A machine that registered and did not answer, told to the registry that will be asked about it
+    // by name. The registration is the evidence it is a real thing rather than a typo, and the dial
+    // is the evidence it is not here now — which together are the one absence worth trying again.
+    //
+    // Judged by the endpoint address rather than the name, for the same reason the verdict is: a
+    // configured mount can hold the same name and would otherwise vouch for a machine nobody reached.
+    public static void DeclareUnreachable(
+        IVirtualFileSystemRegistry? registry,
+        IReadOnlyList<OutpostRegistration> outposts,
+        IReadOnlyList<string> dialled)
+    {
+        if (registry is null)
+        {
+            return;
+        }
+
+        foreach (var outpost in outposts.Where(o => !dialled.Contains(o.Endpoint, StringComparer.Ordinal)))
+        {
+            registry.DeclareAbsence(
+                $"/{outpost.Name}",
+                CapabilityState.Unavailable,
+                "the machine registered with the hub but did not answer when this conversation started");
         }
     }
 

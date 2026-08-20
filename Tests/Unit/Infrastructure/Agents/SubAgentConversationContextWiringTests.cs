@@ -3,6 +3,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Prompts;
 using Infrastructure.Agents;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Extensions.AI;
@@ -70,7 +71,7 @@ public sealed class SubAgentConversationContextWiringTests : IDisposable
             .Returns(Enumerable.Empty<AIFunction>());
         registry
             .Setup(r => r.GetPromptsForFeatures(It.IsAny<IEnumerable<string>>()))
-            .Returns(Enumerable.Empty<string>());
+            .Returns(Enumerable.Empty<PromptSection>());
 
         var definition = new AgentDefinition
         {

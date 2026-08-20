@@ -33,8 +33,7 @@ public class WebSnapshotTool(IWebBrowser browser)
         {
             var error = ToolError.Create(
                 ToolError.Codes.InternalError,
-                result.ErrorMessage,
-                retryable: false);
+                result.ErrorMessage);
             error["sessionId"] = result.SessionId;
             return new WebSnapshotToolResult(error, null);
         }

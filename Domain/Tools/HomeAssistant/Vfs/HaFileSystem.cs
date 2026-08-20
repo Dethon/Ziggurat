@@ -11,7 +11,9 @@ public sealed partial class HaFileSystem(
     TimeSpan? regexMatchTimeout = null,
     Func<IMusicAssistantClient>? musicClientFactory = null) : FileSystemBackendBase
 {
-    public override string FilesystemName => "ha";
+    public const string Name = "ha";
+
+    public override string FilesystemName => Name;
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 
@@ -249,7 +251,6 @@ public sealed partial class HaFileSystem(
         {
             ErrorCode = ToolError.Codes.NotFound,
             Message = $"No such path: {path}",
-            Retryable = false,
             Hint = canonicalName is null
                 ? null
                 : $"Use the exact directory name a listing returns: '{canonicalName}'."

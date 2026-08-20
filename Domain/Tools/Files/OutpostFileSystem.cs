@@ -90,7 +90,6 @@ public class OutpostFileSystem(
             : new ToolErrorResult
             {
                 ErrorCode = ToolError.Codes.InvalidArgument,
-                Retryable = false,
                 Message =
                     $"'{FileSystemResolution.ToVirtualPath(MountPoint, path)}' is outside this "
                     + $"outpost's working directory. {FilesystemName} is jailed to "

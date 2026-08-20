@@ -1,3 +1,4 @@
+using Domain.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
@@ -51,14 +52,25 @@ internal static class CallToolErrorFilter
                     context.Services?.GetService<ILoggerFactory>()
                         ?.CreateLogger(typeof(CallToolErrorFilter))
                         .LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return errorResult?.Invoke(ex) ?? new CallToolResult
-                    {
-                        IsError = true,
-                        Content = [new TextContentBlock { Text = ex.Message }]
-                    };
+                    // A server that passed no error result still answers the envelope. The four
+                    // channel servers pass none, and used to hand a model a bare exception message:
+                    // no code, no retryability, nothing about what to do next.
+                    return errorResult?.Invoke(ex) ?? Envelope(ex);
                 }
             }));
     }
+
+    private static CallToolResult Envelope(Exception ex) => new()
+    {
+        IsError = true,
+        Content =
+        [
+            new TextContentBlock
+            {
+                Text = ToolError.Create(ToolError.CodeFor(ex), ex.Message).ToJsonString()
+            }
+        ]
+    };
 
     // Marks the filter as installed. Never resolved — its presence in the collection is the whole
     // signal, which is what makes a second ask a no-op rather than a second filter.

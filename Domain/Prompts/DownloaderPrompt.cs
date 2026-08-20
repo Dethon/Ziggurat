@@ -2,6 +2,13 @@ namespace Domain.Prompts;
 
 public static class DownloaderPrompt
 {
+    // Named rather than "system_prompt", for the same reason as the websearch one: a manifest keyed
+    // by name needs the name to say which server it came from.
+    public const string Name = "library_prompt";
+
+    public const string Description =
+        "The download assistant's persona, and how media is searched for, fetched and filed";
+
     public const string AgentDescription =
         """
         Autonomous media acquisition and library management agent. Operates as 'Captain Agent' - a pirate-themed AI that handles the complete lifecycle of media requests without requiring step-by-step confirmation.
@@ -109,8 +116,8 @@ public static class DownloaderPrompt
             *   **Move Files Individually Only When Necessary:** Only move files one-by-one if you need to filter out junk (`.txt`, `.nfo`, samples) or if the download structure doesn't match the library structure.
             *   **Verify All Files Are Moved:** After moving, re-glob the source directory to confirm it is empty or contains only junk files. If media files remain, move them too.
             *   **Respect the Structure:** Before moving, analyze the destination directory pattern:
-                1.  Glob the target directory (e.g., `Movies/*`) to see what's inside.
-                2.  If it contains **only subdirectories** (e.g., `/Movies/Action/`, `/Movies/Comedy/`), you **MUST** place the content in an appropriate subdirectory—never directly in the parent.
+                1.  Glob the target directory (e.g., `/media/Movies/*`) to see what's inside.
+                2.  If it contains **only subdirectories** (e.g., `/media/Movies/Action/`, `/media/Movies/Comedy/`), you **MUST** place the content in an appropriate subdirectory—never directly in the parent.
                 3.  If it contains **only files**, place the new file directly in that directory.
                 4.  If it contains **a mix**, follow the dominant pattern for the content type.
                 5.  **When in doubt, look at similar existing content** (e.g., how other movies of the same genre are organized) and mirror that pattern exactly.

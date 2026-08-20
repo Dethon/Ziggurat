@@ -68,7 +68,7 @@ public class VfsFileReadToolTests
         _backend.Setup(b => b.ReadAsync("missing.md", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsReadResult>.Err(new ToolErrorResult
             {
-                ErrorCode = ToolError.Codes.NotFound, Message = "Path not found: missing.md", Retryable = false
+                ErrorCode = ToolError.Codes.NotFound, Message = "Path not found: missing.md"
             }));
 
         var result = await _tool.RunAsync("/vault/missing.md");
@@ -366,15 +366,13 @@ public class VfsFileReadToolTests
             .ThrowsAsync(new FileSystemOperationException(new ToolErrorResult
             {
                 ErrorCode = ToolError.Codes.NotFound,
-                Message = "fs_info failed: Path not found: shots/error.png",
-                Retryable = false
+                Message = "fs_info failed: Path not found: shots/error.png"
             }));
         _backend.Setup(b => b.ReadChunksAsync(ImageRelative, It.IsAny<CancellationToken>()))
             .Throws(new FileSystemOperationException(new ToolErrorResult
             {
                 ErrorCode = ToolError.Codes.NotFound,
-                Message = "fs_blob_read failed: Path not found: shots/error.png",
-                Retryable = false
+                Message = "fs_blob_read failed: Path not found: shots/error.png"
             }));
         var tool = new VfsFileReadTool(_registry.Object, Support(new RecordingReadImageStore()));
 

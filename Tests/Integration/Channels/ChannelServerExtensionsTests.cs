@@ -1,6 +1,8 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Domain.Tools;
 using Mcp.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -138,15 +140,22 @@ public class ChannelServerExtensionsTests
         Content = [new TextContentBlock { Text = $"{Marker}: {ex.Message}" }]
     };
 
+    // A channel server passes no error result, and used to answer a bare exception message: no
+    // code, no retryability, nothing about what to do next. It answers the same envelope every
+    // tool server does, so a failure reads the same wherever a model meets it.
     [Fact]
-    public async Task CallToolFilter_AnyOtherException_BecomesAnErrorResult()
+    public async Task CallToolFilter_AnyOtherException_BecomesTheStandardErrorEnvelope()
     {
         await using var server = await StartAsync();
 
         var result = await server.Client.CallToolAsync("throws");
 
         result.IsError.ShouldBe(true);
-        result.Content.OfType<TextContentBlock>().First().Text.ShouldContain("boom");
+        var envelope = JsonNode.Parse(result.Content.OfType<TextContentBlock>().First().Text)!.AsObject();
+        envelope["ok"]!.GetValue<bool>().ShouldBeFalse();
+        envelope["message"]!.GetValue<string>().ShouldContain("boom");
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InternalError);
+        envelope["retryable"]!.GetValue<bool>().ShouldBe(ToolError.IsRetryable(ToolError.Codes.InternalError));
     }
 
     [Fact]

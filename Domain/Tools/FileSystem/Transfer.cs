@@ -86,20 +86,18 @@ internal static class Transfer
             return Fail(
                 ToolError.Codes.UnsupportedOperation,
                 $"Cannot transfer between '{request.SourcePath}' and '{request.DestinationPath}': {ex.Message}",
-                retryable: false,
                 hint: "One of these filesystems does not support raw byte streaming, so it cannot be a " +
                       "source or destination for a cross-filesystem copy or move.");
         }
         catch (FileSystemOperationException ex)
         {
-            // The backend knew exactly why it refused and had no envelope to say so in. Its code and
-            // its retryability are the answer: a denied path or a disallowed file type is permanent,
-            // and the catch-all below would invite the agent to retry it forever.
+            // The backend knew exactly why it refused and had no envelope to say so in. Its code is
+            // the answer, and the code carries its own retryability: a denied path or a disallowed
+            // file type is permanent, and the catch-all below would invite an endless retry.
             return Fail(
                 ex.Error.ErrorCode,
                 $"Cannot transfer '{request.SourcePath}' to '{request.DestinationPath}': {ex.Error.Message}",
-                retryable: ex.Error.Retryable,
-                hint: ex.Error.Hint);
+                ex.Error.Hint);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -110,7 +108,6 @@ internal static class Transfer
             return Fail(
                 ToolError.Codes.InternalError,
                 $"Cannot transfer '{request.SourcePath}' to '{request.DestinationPath}': {ex.Message}",
-                retryable: true,
                 hint: "Check that the source exists and that the destination is writable.");
         }
 
@@ -140,7 +137,6 @@ internal static class Transfer
                 ToolError.Codes.InvalidArgument,
                 $"Source directory '{request.SourcePath}' has {glob.Total} entries, more than a single listing can " +
                 "enumerate; copying it would silently drop files.",
-                retryable: false,
                 hint: "Copy smaller subdirectories individually.");
         }
 
@@ -168,7 +164,6 @@ internal static class Transfer
                 ToolError.Codes.UnsupportedOperation,
                 $"'{request.SourcePath}' has no files to stream, and a cross-filesystem move cannot recreate " +
                 "an empty directory on the destination; nothing was moved.",
-                retryable: false,
                 hint: "Create the directory on the destination filesystem instead, then remove the source.");
         }
 
@@ -305,17 +300,17 @@ internal static class Transfer
         });
 
     // A streamed move is copy + delete; a refused delete must not present the duplicate-leaving
-    // copy as a completed move. The envelope keeps the source's code so the caller can tell a
-    // read-only refusal from a transient failure.
+    // copy as a completed move. It is the partial-success case exactly: half the work stands, and
+    // repeating the move would copy what is already there. The source's own refusal stays in the
+    // message, because what to do about the leftover depends on why it would not go.
     private static FsResult<FsTransferResult> SourceNotRemoved(TransferRequest request, ToolErrorResult error) =>
         Fail(
-            error.ErrorCode,
+            ToolError.Codes.PartialSuccess,
             $"Copied '{request.SourcePath}' to '{request.DestinationPath}', but the source could not be removed: {error.Message}",
-            retryable: error.Retryable,
             hint: $"The destination holds a complete copy. Remove '{request.SourcePath}' yourself, or keep both copies.");
 
-    private static FsResult<FsTransferResult> Fail(string code, string message, bool retryable, string? hint) =>
-        FsError.Fail<FsTransferResult>(code, message, retryable, hint);
+    private static FsResult<FsTransferResult> Fail(string code, string message, string? hint = null) =>
+        FsError.Fail<FsTransferResult>(code, message, hint);
 
     private static string? ExtractTail(string srcRel, string sourceDir)
     {

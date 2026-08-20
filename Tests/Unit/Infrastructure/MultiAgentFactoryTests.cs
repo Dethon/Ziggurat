@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Prompts;
 using Infrastructure.Agents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
@@ -26,11 +27,21 @@ public sealed class MultiAgentFactoryTests
 
     public MultiAgentFactoryTests()
     {
-        var registryOptions = new AgentRegistryOptions { Agents = [_builtInAgent] };
+        _definitionProvider = CreateProvider(_customAgentRegistry, _builtInAgent);
+        _sut = CreateFactory(_definitionProvider);
+    }
 
+    private static AgentDefinitionProvider CreateProvider(
+        CustomAgentRegistry registry, params AgentDefinition[] agents)
+    {
         var optionsMonitor = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
-        optionsMonitor.Setup(o => o.CurrentValue).Returns(registryOptions);
+        optionsMonitor.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions { Agents = agents });
 
+        return new AgentDefinitionProvider(optionsMonitor.Object, registry);
+    }
+
+    private static MultiAgentFactory CreateFactory(IAgentDefinitionProvider definitionProvider)
+    {
         var openRouterConfig = new OpenRouterConfig { ApiUrl = "http://test", ApiKey = "test-key" };
 
         var domainToolRegistry = new Mock<IDomainToolRegistry>();
@@ -39,7 +50,7 @@ public sealed class MultiAgentFactoryTests
             .Returns(Enumerable.Empty<AIFunction>());
         domainToolRegistry
             .Setup(r => r.GetPromptsForFeatures(It.IsAny<IEnumerable<string>>()))
-            .Returns(Enumerable.Empty<string>());
+            .Returns(Enumerable.Empty<PromptSection>());
 
         var stateStore = new Mock<IThreadStateStore>();
 
@@ -48,11 +59,9 @@ public sealed class MultiAgentFactoryTests
             .Setup(sp => sp.GetService(typeof(IThreadStateStore)))
             .Returns(stateStore.Object);
 
-        _definitionProvider = new AgentDefinitionProvider(optionsMonitor.Object, _customAgentRegistry);
-
-        _sut = new MultiAgentFactory(
+        return new MultiAgentFactory(
             serviceProvider.Object,
-            _definitionProvider,
+            definitionProvider,
             openRouterConfig,
             domainToolRegistry.Object,
             null);
@@ -73,7 +82,6 @@ public sealed class MultiAgentFactoryTests
 
     public static IEnumerable<object[]> SuccessCases =>
     [
-        ["null agent id", "user1", (Func<MultiAgentFactoryTests, string?>)(_ => null)],
         ["built-in agent id", "user1", (Func<MultiAgentFactoryTests, string?>)(_ => _builtInAgent.Id)],
         ["custom agent id for owning user", "user1", (Func<MultiAgentFactoryTests, string?>)(t => t.AddCustomAgent("user1").Id)]
     ];
@@ -93,6 +101,9 @@ public sealed class MultiAgentFactoryTests
     public static IEnumerable<object?[]> ErrorCases =>
     [
         ["unknown agent id", "user1", (Func<MultiAgentFactoryTests, string>)(_ => "unknown-id"), "unknown-id"],
+        // Never the first configured agent: the array is ordered for display, and picking from it
+        // would answer a general request with whichever assistant happens to be listed first.
+        ["no agent id at all", "user1", (Func<MultiAgentFactoryTests, string?>)(_ => null), "No agent id"],
         ["custom agent unregistered before create", "user1", (Func<MultiAgentFactoryTests, string>)(t =>
         {
             var def = t.AddCustomAgent("user1");
@@ -104,7 +115,7 @@ public sealed class MultiAgentFactoryTests
 
     [Theory]
     [MemberData(nameof(ErrorCases))]
-    public void Create_RejectsInvalidAgentId_Throws(string _, string userId, Func<MultiAgentFactoryTests, string> agentIdFactory, string? expectedMessageFragment)
+    public void Create_RejectsInvalidAgentId_Throws(string _, string userId, Func<MultiAgentFactoryTests, string?> agentIdFactory, string? expectedMessageFragment)
     {
         var agentId = agentIdFactory(this);
         var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
@@ -112,7 +123,30 @@ public sealed class MultiAgentFactoryTests
         var ex = Should.Throw<InvalidOperationException>(
             () => _sut.Create(agentKey, userId, agentId, _approvalHandler.Object));
 
-        ex.Message.ShouldContain(expectedMessageFragment ?? agentId);
+        ex.Message.ShouldContain(expectedMessageFragment ?? agentId!);
+    }
+
+    // Routing reads the id, never the position. Reordering the catalogue is a display decision and
+    // has to leave every routing answer exactly where it was.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Create_AgentsReorderedInConfiguration_BuildsTheSameAgent(bool reversed)
+    {
+        AgentDefinition[] agents =
+        [
+            new() { Id = "jack", Name = "Jack", Model = "test-model", McpServerEndpoints = [] },
+            new() { Id = "jonas", Name = "Jonas", Model = "test-model", McpServerEndpoints = [] }
+        ];
+        var provider = CreateProvider(
+            new CustomAgentRegistry(), reversed ? [.. agents.Reverse()] : agents);
+        var sut = CreateFactory(provider);
+
+        var agent = sut.Create(
+            new AgentKey("1:1", "jonas"), "user1", "jonas", _approvalHandler.Object);
+
+        // The display name is the definition's name and the conversation it was built for.
+        agent.Name.ShouldBe("Jonas-1:1");
     }
 
     // ProviderRoutingResolverTests pins the resolution rules themselves, but not the argument

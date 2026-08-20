@@ -48,7 +48,10 @@ public sealed class ServiceBusProcessorService(
                                 ?? args.Message.CorrelationId
                                 ?? Guid.NewGuid().ToString();
             var sender = parsed.Sender ?? "service-bus";
-            var agentId = parsed.AgentId ?? "default";
+            // Left null when the sender named nobody, rather than invented here: which agent
+            // answers an unattributed prompt is the agent host's configured decision, and a
+            // literal "default" is an agent id nothing has ever been able to resolve.
+            var agentId = parsed.AgentId;
 
             // Gate-on-live: a false return means nothing was buffered, so abandoning here hands the
             // prompt back to the broker whole. Settling it instead would defeat at-least-once

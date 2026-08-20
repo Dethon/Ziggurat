@@ -1,5 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
+using Domain.Tools;
 using Infrastructure.Agents;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
@@ -142,6 +144,55 @@ public class OutpostEndpointsTests
             Access(new UnreachableRegistry()), recordsVerdicts: true, outposts: [_laptop], mounted: ["laptop"],
             shadowed: [], dialled: [_laptop.Endpoint],
             NullLogger.Instance, CancellationToken.None));
+    }
+
+    // A machine that registered and then did not answer is the one absence worth trying again, and
+    // the registry is where that is remembered — otherwise the model asks for /laptop, is told the
+    // path does not exist, and looks for a spelling mistake in a name that was right.
+    [Fact]
+    public void DeclareUnreachable_AMachineThatRegisteredAndWasNotDialled_IsRememberedAsUnavailable()
+    {
+        var registry = new RecordingAbsences();
+
+        OutpostEndpoints.DeclareUnreachable(registry, [_laptop], dialled: []);
+
+        var (mountPoint, state, detail) = registry.Declared.ShouldHaveSingleItem();
+        mountPoint.ShouldBe("/laptop");
+        state.ShouldBe(CapabilityState.Unavailable);
+        detail.ShouldContain("did not answer");
+    }
+
+    [Fact]
+    public void DeclareUnreachable_AMachineThatAnswered_IsNotRememberedAsAnything()
+    {
+        var registry = new RecordingAbsences();
+
+        OutpostEndpoints.DeclareUnreachable(registry, [_laptop], dialled: [_laptop.Endpoint]);
+
+        registry.Declared.ShouldBeEmpty();
+    }
+
+    // A session with no mounts at all has no registry to tell, and a build must not fall over
+    // because there was nothing to explain to.
+    [Fact]
+    public void DeclareUnreachable_NoRegistry_DoesNothing()
+    {
+        Should.NotThrow(() => OutpostEndpoints.DeclareUnreachable(null, [_laptop], dialled: []));
+    }
+
+    private sealed class RecordingAbsences : IVirtualFileSystemRegistry
+    {
+        public List<(string MountPoint, CapabilityState State, string Detail)> Declared { get; } = [];
+
+        public void DeclareAbsence(string mountPoint, CapabilityState state, string detail) =>
+            Declared.Add((mountPoint, state, detail));
+
+        public void Mount(FileSystemMount mount, IFileSystemBackend backend) { }
+
+        public FsResult<FileSystemResolution> Resolve(string virtualPath) =>
+            throw new NotSupportedException();
+
+        public IReadOnlyList<FileSystemMount> GetMounts() => [];
     }
 
     private static Task<ComposedEndpoints> ComposeAsync(

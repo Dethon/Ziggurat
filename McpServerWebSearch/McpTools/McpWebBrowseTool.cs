@@ -39,8 +39,7 @@ public class McpWebBrowseTool(IWebBrowser browser)
         {
             return ToolResponse.Create(ToolError.Create(
                 ToolError.Codes.InvalidArgument,
-                "Conversation context is missing from request _meta; cannot scope the browser session.",
-                retryable: false));
+                "Conversation context is missing from request _meta; cannot scope the browser session."));
         }
 
         var result = await RunAsync(sessionId, url, selector, maxLength, offset,

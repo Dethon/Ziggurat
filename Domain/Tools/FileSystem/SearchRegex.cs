@@ -22,7 +22,6 @@ public static class SearchRegex
             {
                 ErrorCode = ToolError.Codes.InvalidArgument,
                 Message = $"Invalid search pattern '{query}': {ex.Message}",
-                Retryable = false,
                 Hint = "Fix the regex, or set regex=false to match a literal string."
             });
         }
@@ -32,7 +31,6 @@ public static class SearchRegex
     {
         ErrorCode = ToolError.Codes.Timeout,
         Message = $"Search pattern '{query}' timed out while matching.",
-        Retryable = false,
         Hint = "Simplify the regex (avoid nested quantifiers), or set regex=false to match a literal string."
     };
 }

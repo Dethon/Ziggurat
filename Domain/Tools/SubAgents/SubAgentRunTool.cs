@@ -42,16 +42,19 @@ public class SubAgentRunTool(
         {
             return ToolError.Create(
                 ToolError.Codes.NotFound,
-                $"Unknown subagent: '{subAgentId}'. Available: {string.Join(", ", _profiles.Select(p => p.Id))}",
-                retryable: false);
+                $"Unknown subagent: '{subAgentId}'. Available: {string.Join(", ", _profiles.Select(p => p.Id))}");
         }
 
         if (featureConfig.SubAgentFactory is null)
         {
-            return ToolError.Create(
-                ToolError.Codes.Unavailable,
-                "Subagent execution is not available in this context",
-                retryable: false);
+            // Not a dependency that is down — a run this tool was handed without the means to spawn
+            // anything, which is how a harness or a subagent's own run reaches here. It will be
+            // exactly as unavailable on the next call, so the answer must not invite one.
+            return CapabilityError.For(
+                CapabilityState.Unassigned,
+                "Subagent execution was not granted to this run",
+                "Do the work in this turn rather than delegating it; retrying will not change this.")
+                .ToNode();
         }
 
         try
@@ -82,15 +85,13 @@ public class SubAgentRunTool(
         {
             return ToolError.Create(
                 ToolError.Codes.Timeout,
-                $"Subagent '{profile.Id}' exceeded its maximum execution time of {profile.MaxExecutionSeconds}s",
-                retryable: true);
+                $"Subagent '{profile.Id}' exceeded its maximum execution time of {profile.MaxExecutionSeconds}s");
         }
         catch (Exception ex)
         {
             return ToolError.Create(
                 ToolError.Codes.InternalError,
-                ex.Message,
-                retryable: true);
+                ex.Message);
         }
     }
 }

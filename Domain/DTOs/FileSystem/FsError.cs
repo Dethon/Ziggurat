@@ -18,13 +18,12 @@ public static class FsError
     public static FsResult<T> AlreadyExists<T>(string message) where T : class =>
         Fail<T>(ToolError.Codes.AlreadyExists, message);
 
-    public static FsResult<T> Fail<T>(string code, string message, bool retryable = false, string? hint = null)
+    public static FsResult<T> Fail<T>(string code, string message, string? hint = null)
         where T : class =>
         new FsResult<T>.Err(new ToolErrorResult
         {
             ErrorCode = code,
             Message = message,
-            Retryable = retryable,
             Hint = hint
         });
 }

@@ -11,6 +11,10 @@ public record AgentSettings
     public required OpenRouterConfiguration OpenRouter { get; init; }
     public required RedisConfiguration Redis { get; init; }
     public required AgentDefinition[] Agents { get; [UsedImplicitly] init; }
+
+    // Who answers when the channel that carried a message named no agent. Empty is legal and means
+    // such a message is refused rather than routed by position in the array above.
+    public AgentDefaults AgentDefaults { get; [UsedImplicitly] init; } = new();
     public ChannelEndpoint[] ChannelEndpoints { get; init; } = [];
     public SubAgentDefinition[] SubAgents { get; init; } = [];
     public PatchableModel[] PatchableModels { get; init; } = [];

@@ -119,7 +119,7 @@ public class DomainToolRegistryDottedTests
         var prompts = _registry.GetPromptsForFeatures(["filesystem.read"]).ToList();
 
         prompts.Count.ShouldBe(1);
-        prompts[0].ShouldBe("filesystem prompt");
+        prompts[0].Text.ShouldBe("filesystem prompt");
     }
 
     [Fact]

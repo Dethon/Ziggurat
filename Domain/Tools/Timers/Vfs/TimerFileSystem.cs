@@ -17,7 +17,9 @@ public sealed class TimerFileSystem(
     ITimerStore store, TimeProvider timeProvider, IAlertDismisser dismisser,
     ISatelliteCatalog satellites, TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
 {
-    public override string FilesystemName => "timers";
+    public const string Name = "timers";
+
+    public override string FilesystemName => Name;
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 
@@ -429,9 +431,11 @@ public sealed class TimerFileSystem(
         });
 
     private static FsResult<T> HubUnavailable<T>(string consequence) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.Unavailable,
-            $"The voice hub is unreachable, so {consequence} — try again shortly.", retryable: true));
+        new FsResult<T>.Err(Error(
+            ToolError.Codes.TransientDependency,
+            $"The voice hub is unreachable, so {consequence}.",
+            "The hub is what reaches the satellites; the same call works once it answers again."));
 
-    private static ToolErrorResult Error(string code, string message, bool retryable = false) =>
-        new() { ErrorCode = code, Message = message, Retryable = retryable };
+    private static ToolErrorResult Error(string code, string message, string? hint = null) =>
+        new() { ErrorCode = code, Message = message, Hint = hint };
 }

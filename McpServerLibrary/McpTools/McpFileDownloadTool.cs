@@ -35,8 +35,7 @@ public class McpFileDownloadTool(
         {
             return ToolResponse.Create(ToolError.Create(
                 ToolError.Codes.InvalidArgument,
-                "Conversation context is missing from request _meta; cannot scope search results.",
-                retryable: false));
+                "Conversation context is missing from request _meta; cannot scope search results."));
         }
 
         var normalizedLink = NormalizeOptionalText(link);
@@ -82,16 +81,14 @@ public class McpFileDownloadTool(
             return ToolError.Create(
                 ToolError.Codes.InvalidArgument,
                 "Provide either searchResultId or link, not both. To download a file_search result, " +
-                "pass only its searchResultId and omit link and title.",
-                retryable: false);
+                "pass only its searchResultId and omit link and title.");
         }
 
         if (!hasId && !hasLink)
         {
             return ToolError.Create(
                 ToolError.Codes.InvalidArgument,
-                "Provide either searchResultId or link.",
-                retryable: false);
+                "Provide either searchResultId or link.");
         }
 
         if (hasLink && normalizedTitle is null)
@@ -99,16 +96,14 @@ public class McpFileDownloadTool(
             return ToolError.Create(
                 ToolError.Codes.InvalidArgument,
                 "title is required when link is provided. Use the real release/display name from " +
-                "where the link was found, never placeholders like \"null\".",
-                retryable: false);
+                "where the link was found, never placeholders like \"null\".");
         }
 
         if (hasLink && !IsAcceptedLink(normalizedLink!))
         {
             return ToolError.Create(
                 ToolError.Codes.InvalidArgument,
-                "link must start with magnet:, http://, or https://.",
-                retryable: false);
+                "link must start with magnet:, http://, or https://.");
         }
 
         return null;

@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Prompts;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Extensions.AI;
@@ -13,7 +14,7 @@ internal sealed record ThreadSessionData(
     McpClientManager ClientManager,
     IReadOnlyList<AITool> Tools,
     IVirtualFileSystemRegistry? FileSystemRegistry,
-    IReadOnlyList<string> FileSystemPrompts,
+    IReadOnlyList<PromptSection> FileSystemPrompts,
     IReadOnlyList<string> MountedNames,
     IReadOnlyList<string> ShadowedNames);
 
@@ -24,7 +25,7 @@ internal sealed class ThreadSession : IAsyncDisposable
 
     public IReadOnlyList<AITool> Tools => _data.Tools;
     public McpClientManager ClientManager => _data.ClientManager;
-    public IReadOnlyList<string> FileSystemPrompts => _data.FileSystemPrompts;
+    public IReadOnlyList<PromptSection> FileSystemPrompts => _data.FileSystemPrompts;
     public IVirtualFileSystemRegistry? FileSystemRegistry => _data.FileSystemRegistry;
 
     // What this build made of the filesystems it found. Read once, by the step that writes each
@@ -100,7 +101,7 @@ internal sealed class ThreadSessionBuilder(
 
         IVirtualFileSystemRegistry? registry = null;
         IReadOnlyList<AIFunction> fileSystemTools = [];
-        IReadOnlyList<string> fileSystemPrompts = [];
+        IReadOnlyList<PromptSection> fileSystemPrompts = [];
         var fsLogger = loggerFactory?.CreateLogger(typeof(McpFileSystemDiscovery).FullName!)
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         var fsRegistry = new VirtualFileSystemRegistry();
@@ -123,7 +124,9 @@ internal sealed class ThreadSessionBuilder(
                 var fsFeatureConfig = new FeatureConfig(EnabledTools: filesystemEnabledTools);
                 var feature = new FileSystemToolFeature(registry, readImages);
                 fileSystemTools = feature.GetTools(fsFeatureConfig).ToList();
-                fileSystemPrompts = feature.Prompt is not null ? [feature.Prompt] : [];
+                fileSystemPrompts = feature.Prompt is { } mounts
+                    ? [PromptManifest.Bind(PromptManifest.FilesystemMounts, mounts)]
+                    : [];
             }
         }
 

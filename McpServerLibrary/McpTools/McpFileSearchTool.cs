@@ -25,8 +25,7 @@ public class McpFileSearchTool(
         {
             return ToolResponse.Create(ToolError.Create(
                 ToolError.Codes.InvalidArgument,
-                "Conversation context is missing from request _meta; cannot scope search results.",
-                retryable: false));
+                "Conversation context is missing from request _meta; cannot scope search results."));
         }
 
         return ToolResponse.Create(await Run(sessionId, searchStrings, cancellationToken));

@@ -41,18 +41,19 @@ public class MemoryForgetTool(
         var userId = featureConfig.UserId;
         if (string.IsNullOrWhiteSpace(userId))
         {
-            return ToolError.Create(
-                ToolError.Codes.Unavailable,
-                "Memory operations require an authenticated user context",
-                retryable: false);
+            // Memory is scoped per user, so a run carrying no identity has nothing to scope to.
+            // That is a missing credential rather than a passing outage: waiting changes nothing.
+            return ToolError.Authentication(
+                "Memory is scoped to a user and this run carries no user identity",
+                "Nothing here can supply it; tell the user their memories cannot be reached in this "
+                + "conversation.").ToNode();
         }
 
         if (string.IsNullOrWhiteSpace(memoryId) && string.IsNullOrWhiteSpace(query))
         {
             return ToolError.Create(
                 ToolError.Codes.InvalidArgument,
-                "Either memoryId or query must be provided",
-                retryable: false);
+                "Either memoryId or query must be provided");
         }
 
         var affectedMemories = !string.IsNullOrWhiteSpace(memoryId)

@@ -52,7 +52,7 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
 
         // Assert - prompts loaded from server
         session.ClientManager.Prompts.ShouldNotBeEmpty();
-        session.ClientManager.Prompts.Any(p => p.Contains("test assistant", StringComparison.OrdinalIgnoreCase))
+        session.ClientManager.Prompts.Any(p => p.Text.Contains("test assistant", StringComparison.OrdinalIgnoreCase))
             .ShouldBeTrue("Should contain the test system prompt");
 
         await session.DisposeAsync();

@@ -208,8 +208,26 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
         "Ask whether a path may be moved off this filesystem, before a cross-filesystem move streams "
         + "anything. An ok answer allows the move; an error explains why the path cannot leave.";
 
+    // The refusal names what this mount can do instead, because "no" on its own sends a model
+    // looking for another wording of the same call. The list is the mount's own overrides, so it
+    // cannot drift from the tools the server advertises.
     protected FsResult<T> Unsupported<T>(string operation) where T : class =>
-        FsError.Fail<T>(ToolError.Codes.UnsupportedOperation, UnsupportedMessage(operation));
+        new FsResult<T>.Err(CapabilityError.For(
+            CapabilityState.Unsupported,
+            UnsupportedMessage(operation),
+            SupportedOperationsHint()));
+
+    private string SupportedOperationsHint()
+    {
+        var supported = FileSystemOperations.SupportedBy(GetType())
+            .Where(o => o.Capability is not null)
+            .Select(o => o.Capability!)
+            .ToList();
+
+        return supported.Count == 0
+            ? $"Nothing on {MountPoint} can be called directly; use another mount."
+            : $"{MountPoint} supports: {string.Join(", ", supported)}. Use one of those, or another mount.";
+    }
 
     protected static FsResult<T> NotFound<T>(string path) where T : class => FsError.NotFound<T>(path);
 
@@ -217,8 +235,8 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
 
     protected static FsResult<T> ReadOnly<T>(string path) where T : class => FsError.ReadOnly<T>(path);
 
-    protected static FsResult<T> Fail<T>(string code, string message, bool retryable = false, string? hint = null)
-        where T : class => FsError.Fail<T>(code, message, retryable, hint);
+    protected static FsResult<T> Fail<T>(string code, string message, string? hint = null)
+        where T : class => FsError.Fail<T>(code, message, hint);
 
     // Applies the two glob conventions the tool advertises to the model and every mount must
     // honour: basePath scopes the pattern, and a trailing slash asks for directories only.

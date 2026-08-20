@@ -22,7 +22,6 @@ public static class GlobRegex
     {
         ErrorCode = ToolError.Codes.Timeout,
         Message = $"Glob pattern '{pattern}' timed out while matching.",
-        Retryable = false,
         Hint = "Simplify the pattern — fewer wildcards, or a narrower basePath."
     };
 

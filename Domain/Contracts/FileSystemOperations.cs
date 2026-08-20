@@ -33,6 +33,28 @@ public sealed record FileSystemOperation
 // was missed. Order is the canonical display order for a mount's capability list.
 public static class FileSystemOperations
 {
+    // The operations a backend really implements, in this list's canonical order. An operation with
+    // two shapes — the two byte-streaming ones — counts as implemented when either is overridden,
+    // because either one is a working tool.
+    //
+    // It lives here rather than with the registrar because two callers need the same answer: the
+    // registrar, deciding which fs_* tools a server advertises, and the base class, telling a model
+    // what a mount can do instead of what it just refused.
+    public static IReadOnlyList<FileSystemOperation> SupportedBy(Type backendType) =>
+        [.. All.Where(o => Overrides(backendType, o.MethodName)
+                           || (o.AlternateMethodName is { } alternate && Overrides(backendType, alternate)))];
+
+    // The backend's own declaration of what it can do. An operation it never overrode is still the
+    // base's unsupported default, so there is nothing to register. Only a true override counts:
+    // a `new`-shadowing method shares the name but not the base's virtual slot, and the handlers
+    // dispatch through a base-typed reference, which would land on the unsupported default.
+    private static bool Overrides(Type backendType, string methodName) =>
+        backendType
+            .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+            .Any(m => m.Name == methodName
+                      && m.DeclaringType != typeof(FileSystemBackendBase)
+                      && m.GetBaseDefinition().DeclaringType == typeof(FileSystemBackendBase));
+
     public static readonly IReadOnlyList<FileSystemOperation> All =
     [
         Op("fs_read", nameof(IFileSystemBackend.ReadAsync), typeof(FsReadResult),

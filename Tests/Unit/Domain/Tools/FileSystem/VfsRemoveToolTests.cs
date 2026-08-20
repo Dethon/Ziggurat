@@ -48,7 +48,7 @@ public class VfsRemoveToolTests
         _backend.Setup(b => b.DeleteAsync("missing.pdf", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsRemoveResult>.Err(new ToolErrorResult
             {
-                ErrorCode = ToolError.Codes.NotFound, Message = "Path not found: missing.pdf", Retryable = false
+                ErrorCode = ToolError.Codes.NotFound, Message = "Path not found: missing.pdf"
             }));
 
         var result = await _tool.RunAsync("/library/missing.pdf");

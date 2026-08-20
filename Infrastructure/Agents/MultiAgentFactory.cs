@@ -29,13 +29,17 @@ public sealed class MultiAgentFactory(
     {
         var agents = definitionProvider.GetAll(userId);
 
+        // By id or not at all. Falling back to the first configured agent read routing off the
+        // order of a display catalogue, so a request that named nobody was answered by whichever
+        // assistant happened to be listed first. Who answers a message that names no agent is
+        // decided from configuration before the message is grouped (AgentDefaults).
         var definition = string.IsNullOrEmpty(agentId)
-            ? agents.FirstOrDefault()
+            ? null
             : agents.FirstOrDefault(a => a.Id == agentId);
 
         _ = definition ?? throw new InvalidOperationException(
             string.IsNullOrEmpty(agentId)
-                ? "No agents configured."
+                ? "No agent id was supplied and no default agent is configured for the channel."
                 : $"No agent found for identifier '{agentId}'.");
 
         return CreateFromDefinition(agentKey, userId, definition, approvalHandler);

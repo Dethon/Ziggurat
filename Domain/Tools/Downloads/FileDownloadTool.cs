@@ -37,8 +37,7 @@ public class FileDownloadTool(
         {
             return ToolError.Create(
                 ToolError.Codes.AlreadyExists,
-                "Download with this id already exists, try another id",
-                retryable: false);
+                "Download with this id already exists, try another id");
         }
 
         var itemToDownload = searchResultsManager.Get(sessionId, searchResultId);
@@ -47,8 +46,7 @@ public class FileDownloadTool(
             return ToolError.Create(
                 ToolError.Codes.NotFound,
                 $"No search result found for id {searchResultId}. " +
-                "Make sure to run the file_search tool first and use the correct id.",
-                retryable: false);
+                "Make sure to run the file_search tool first and use the correct id.");
         }
 
         return await StartDownload(searchResultId, itemToDownload.Link, itemToDownload.Title, context, ct);
@@ -63,8 +61,7 @@ public class FileDownloadTool(
         {
             return ToolError.Create(
                 ToolError.Codes.AlreadyExists,
-                "Download with this link already exists, choose a different link",
-                retryable: false);
+                "Download with this link already exists, choose a different link");
         }
 
         var synthetic = new SearchResult

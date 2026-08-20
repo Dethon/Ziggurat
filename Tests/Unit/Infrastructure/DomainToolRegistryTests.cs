@@ -20,7 +20,7 @@ public sealed class DomainToolRegistryTests
 
         var prompts = registry.GetPromptsForFeatures(["subagents"]).ToList();
 
-        prompts.ShouldBe(["Use subagents proactively."]);
+        prompts.Select(p => p.Text).ShouldBe(["Use subagents proactively."]);
     }
 
     [Fact]
