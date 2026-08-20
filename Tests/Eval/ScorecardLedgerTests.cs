@@ -68,6 +68,21 @@ public class ScorecardLedgerTests : IDisposable
     }
 
     [Fact]
+    public void AConditionalClaim_IsTalliedOverItsOwnRuns_NotTheScenarios()
+    {
+        _ledger.Record(EvalTier.Full, _first, new ScenarioResult(true, 3, 3, [])
+        {
+            Conditionals = [new ClaimOutcome("subagents.prompt-is-self-contained", 1, 2)]
+        });
+        _ledger.WriteAll(_output, Unresolved);
+
+        var claim = Read("scorecard-full.json").GetProperty("claims")
+            .GetProperty("subagents.prompt-is-self-contained");
+        claim.GetProperty("runs").GetInt32().ShouldBe(2);
+        claim.GetProperty("passes").GetInt32().ShouldBe(1);
+    }
+
+    [Fact]
     public void ALaterWrite_HandsTheResolverTheRouteAlreadyResolved()
     {
         // One paid lookup per run: the resolved route is kept, so every dispose after the first

@@ -25,9 +25,12 @@ public sealed class ScorecardLedger
                 _tiers[tier] = state;
             }
 
+            // The scenario's own claims ride its rate whole; the conditional ones arrive already
+            // tallied over the runs that gave them material, which is a different denominator.
             state.Outcomes.AddRange(scenario.Claims
                 .Concat(scenario.Judged.Select(check => check.Claim))
-                .Select(claim => new ClaimOutcome(claim, result.Passes, result.Attempts)));
+                .Select(claim => new ClaimOutcome(claim, result.Passes, result.Attempts))
+                .Concat(result.Conditionals));
             // The scenario's own rate, cited or not: a guard's drift is only a diff if the guard
             // has a number.
             state.Scenarios.Add(new ScenarioOutcome(scenario.Name, result.Passes, result.Attempts));
