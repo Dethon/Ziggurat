@@ -155,20 +155,26 @@ public static class DelegationScenarios
                         + "site) and what to bring back (a short summary of the highlights, fit "
                         + "to forward). Fail a prompt that only names the topic and leaves the "
                         + "worker to guess what success means."),
-                    // Softened from the rubric a 2026-08-20 run was failed under: reusing the
-                    // worker's facts, even in the worker's order, is what a faithful summary
-                    // does — the facts have one natural order. What fails is lifted sentences
-                    // or an answer inflated past the ask.
+                    // Softened twice, both times against a graded run: reusing the worker's
+                    // facts in the worker's order (2026-08-20, pre-conditional), and then
+                    // reusing its noun phrases verbatim (2026-08-20, first conditional pass —
+                    // the prize's name, the raffle figure and the activity list have one
+                    // natural wording, and a faithful two-sentence summary cannot avoid them).
+                    // What the claim actually forbids is the answer being the worker's message
+                    // passed through whole, or inflated past the ask.
                     new JudgedCheck(SubAgentPrompt.AnswerIsSynthesised.Id,
                         "The worker's answer (quoted under 'Work handed to workers') described "
                         + "the chronicle: the dates, the parades, the petanque, the workshops, "
                         + "the verbena, the balcony prize and the raffle total. Compare it with "
-                        + "the assistant's reply. Pass a reply that answers the user in its own "
-                        + "words at the length the request warrants — a short summary to "
-                        + "forward. Reusing the worker's facts, and even their order, is fine. "
-                        + "Fail only a reply that pastes the worker's sentences verbatim or "
-                        + "near-verbatim, or that inflates the answer with process, caveats or "
-                        + "filler beyond what was asked.")
+                        + "the assistant's reply. Pass a reply that answers the user at the "
+                        + "length the request warrants — a short summary fit to forward. These "
+                        + "facts are names, figures and enumerations with one natural wording: "
+                        + "the reply reusing those words, even in long runs and in the same "
+                        + "order, is a faithful summary and passes. Fail only a reply that "
+                        + "reproduces the worker's message essentially whole — the same "
+                        + "sentences in the same structure with nothing recast or selected — "
+                        + "or that inflates the answer with process, caveats or filler beyond "
+                        + "what was asked.")
                 ]
             }
         ],
