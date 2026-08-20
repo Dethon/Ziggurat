@@ -50,3 +50,9 @@ that order: the same red pass reports the same run.
 
 Nothing about ADR-0030 changes. The suite still takes every declared run of a passing scenario,
 still never retries until green, and still reports its rate over the runs it actually took.
+
+Measured on the timer family — five scenarios, fifteen runs, armed against the shipped model:
+**2m14s before, 49s after**, both green and both over the same fifteen runs. A family is the
+smallest thing worth measuring and also the least favourable one, since a single class cannot use
+more of the gate than one scenario's width; the full tier gains again from the sharding, where the
+longest chain drops from eleven scenarios to six.
