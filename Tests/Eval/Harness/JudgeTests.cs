@@ -119,6 +119,57 @@ public class JudgeTests
     }
 
     [Fact]
+    public async Task AConditionalJudgedCheck_IsNotGraded_WhileNothingDelegated()
+    {
+        // The rubric's material is the delegated prompt; on a run that did the work in place
+        // there is nothing to grade, and paying a judge to fail on missing material would turn
+        // the model's legitimate coin into a red run.
+        var scenario = TheScenario() with
+        {
+            IfDelegated =
+            [
+                new ConditionalDelegation
+                {
+                    Profile = "jonas-worker",
+                    Judged = [new JudgedCheck("subagents.success-criteria-are-stated", "Judge the prompt.")]
+                }
+            ]
+        };
+        var recording = TheRecording();
+        recording.Delegations = [];
+        var transport = new CannedJudge("""{"pass": false, "reason": "nothing to grade"}""");
+
+        var failures = await Judge.FailuresAsync(scenario, recording, "key", transport);
+
+        failures.ShouldBeEmpty();
+        transport.Requests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AConditionalJudgedCheck_IsGraded_OnTheRunThatDelegated()
+    {
+        var scenario = TheScenario() with
+        {
+            IfDelegated =
+            [
+                new ConditionalDelegation
+                {
+                    Profile = "jonas-worker",
+                    Judged = [new JudgedCheck("subagents.success-criteria-are-stated", "Judge the prompt.")]
+                }
+            ]
+        };
+        var transport = new CannedJudge("""{"pass": false, "reason": "the prompt names no result"}""");
+
+        var failures = await Judge.FailuresAsync(scenario, TheRecording(), "key", transport);
+
+        failures.ShouldHaveSingleItem().ShouldContain("subagents.success-criteria-are-stated");
+        using var request = JsonDocument.Parse(transport.Requests.ShouldHaveSingleItem());
+        request.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!
+            .ShouldContain("Averigua el día del taller");
+    }
+
+    [Fact]
     public async Task FailuresAsync_SendsThePinnedModel_AndAVerdictWrappedInProseStillParses()
     {
         var check = new JudgedCheck("timers.id-is-descriptive", "Judge the id.");

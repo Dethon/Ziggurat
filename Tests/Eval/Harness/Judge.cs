@@ -38,7 +38,7 @@ public static class Judge
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
         var verdicts = new List<string>();
-        foreach (var check in scenario.Judged)
+        foreach (var check in ScenarioChecks.JudgedNow(scenario, recording))
         {
             var verdict = await AskAsync(client, Material(scenario, recording, check));
             if (verdict is null)

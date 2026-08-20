@@ -42,6 +42,17 @@ public static class ScenarioChecks
     private static bool Answers(ConditionalDelegation condition, Delegation delegation) =>
         string.Equals(condition.Profile, delegation.ProfileId, StringComparison.OrdinalIgnoreCase);
 
+    // The judged checks this run owes: the scenario's own, plus the conditional ones whose
+    // delegated prompt exists to be graded. A judge paid to fail on material a legitimate
+    // in-place run never produced would turn the model's own coin into a red run.
+    public static IReadOnlyList<JudgedCheck> JudgedNow(Scenario scenario, Recording recording) =>
+    [
+        .. scenario.Judged,
+        .. scenario.IfDelegated
+            .Where(condition => recording.Delegations.Any(d => Answers(condition, d)))
+            .SelectMany(condition => condition.Judged)
+    ];
+
     // Both directions, because forgetting is destructive in both: a stale fact the user corrected
     // and that is still remembered will be applied again next turn, and a fact nobody mentioned
     // that went with it is work the user did once and has to do again.
