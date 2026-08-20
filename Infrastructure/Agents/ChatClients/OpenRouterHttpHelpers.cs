@@ -146,9 +146,10 @@ internal static class OpenRouterHttpHelpers
     }
 
     public static HttpContent WrapWithUsageTee(
-        HttpContent inner, ConcurrentQueue<decimal> costQueue, ConcurrentQueue<long> cachedQueue)
+        HttpContent inner, ConcurrentQueue<decimal> costQueue, ConcurrentQueue<long> cachedQueue,
+        ServedRouteSink routeSink)
     {
-        return new TeeHttpContent(inner, costQueue, cachedQueue);
+        return new TeeHttpContent(inner, costQueue, cachedQueue, routeSink);
     }
 
     // Where this provider puts the usage block: at the root of a Chat Completions chunk, and under
@@ -205,6 +206,52 @@ internal static class OpenRouterHttpHelpers
         }
     }
 
+    // Read with the same two-level resolution the usage block needs, and for the same reason: the
+    // Chat Completions wire puts both fields at the root of a chunk, the Responses wire puts them
+    // under `response`. Neither is in the typed response, so this is the only place either can be
+    // read without asking OpenRouter about the generation afterwards.
+    internal static ServedRoute? ExtractRouteFromSseData(string data)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(data);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            if (root.TryGetProperty("response", out var response) &&
+                response.ValueKind == JsonValueKind.Object &&
+                (response.TryGetProperty("model", out _) || response.TryGetProperty("provider", out _)
+                 || response.TryGetProperty("id", out _)))
+            {
+                root = response;
+            }
+
+            var model = ReadString(root, "model");
+            var provider = ReadString(root, "provider");
+            // OpenRouter's own id for the generation, and the only handle on the wire that the
+            // provider name can be recovered from where the stream does not carry it.
+            var generation = ReadString(root, "id") is { } id && id.StartsWith("gen-", StringComparison.Ordinal)
+                ? id
+                : null;
+
+            return model is null && provider is null && generation is null
+                ? null
+                : new ServedRoute(model, provider, generation);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ReadString(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
     internal static decimal? ExtractCostFromSseData(string data)
     {
         try
@@ -228,7 +275,7 @@ internal static class OpenRouterHttpHelpers
 
     private sealed class TeeHttpContent(
         HttpContent inner, ConcurrentQueue<decimal> costQueue,
-        ConcurrentQueue<long> cachedQueue) : HttpContent
+        ConcurrentQueue<long> cachedQueue, ServedRouteSink routeSink) : HttpContent
     {
         protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
         {
@@ -238,7 +285,7 @@ internal static class OpenRouterHttpHelpers
 
         protected override async Task<Stream> CreateContentReadStreamAsync()
         {
-            return new UsageTeeStream(await inner.ReadAsStreamAsync(), costQueue, cachedQueue);
+            return new UsageTeeStream(await inner.ReadAsStreamAsync(), costQueue, cachedQueue, routeSink);
         }
 
         protected override bool TryComputeLength(out long length)
@@ -263,7 +310,7 @@ internal static class OpenRouterHttpHelpers
     // usage drops, so they are still read off the stream on the way past.
     private sealed class UsageTeeStream(
         Stream inner, ConcurrentQueue<decimal> costQueue,
-        ConcurrentQueue<long> cachedQueue) : Stream
+        ConcurrentQueue<long> cachedQueue, ServedRouteSink routeSink) : Stream
     {
         private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
         private readonly StringBuilder _buffer = new();
@@ -339,6 +386,16 @@ internal static class OpenRouterHttpHelpers
                 {
                     cachedQueue.Enqueue(cached!.Value);
                 }
+
+                // One slot rather than a queue, unlike cost and the cache counter: every chunk of a
+                // Chat Completions stream names the model, and nothing in a deployment ever reads
+                // this back — a queue would grow for the lifetime of the client with nobody
+                // draining it.
+                dataPayloads
+                    .Select(ExtractRouteFromSseData)
+                    .Where(route => route is not null)
+                    .ToList()
+                    .ForEach(route => routeSink.Record(route!));
             }
             catch
             {

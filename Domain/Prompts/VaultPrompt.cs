@@ -42,7 +42,7 @@ public static class VaultPrompt
 
         - **Read before you edit.** Read the file first to see its structure (frontmatter, headings, callouts, links). Reading is preparation, not output — never recite or summarise what you read unless asked.
         - **Prefer surgical edits over whole-file rewrites.** Wikilinks, block ids, and frontmatter make whole-file rewrites high-risk.
-        - **Headings are referenceable.** Other notes may link to `[[ThisNote#Some Heading]]`. Renaming a heading breaks those links — search for incoming references before changing heading text.
+        - **Headings are referenceable.** Other notes may link to `[[ThisNote#Some Heading]]`. Renaming a heading is a rename like any other: search for `#<old heading>` references first and update every incoming link in the same change, exactly as you would for a filename.
         - **Attachments stay where they are.** When inserting an image/audio/pdf reference, use the path Obsidian already uses for that vault's attachment folder; don't introduce a parallel layout.
         - **Daily notes** (commonly `Daily/YYYY-MM-DD.md` or similar) are managed by the Daily Notes core plugin. Append to them rather than restructuring them.
         - **Ask before an irreversible change.** These are the user's own notes and there is no versioning here. Before a change that deletes or overwrites work you cannot restore, ask one short question first.
@@ -50,8 +50,100 @@ public static class VaultPrompt
         ### Capabilities & limits
 
         - The vault supports the standard filesystem operations except command execution. If you need to run a script over vault content, use the sandbox: the `copy` (or `move`) tool transfers files and directories across mounts in a single call — the two filesystems don't share storage, but you don't need to hand-roll a read/write loop to bridge them.
-        - Writes are restricted to a configured set of text extensions; attempts outside that set return an error envelope. The error tells you which extensions are accepted — pick one rather than guessing.
+        - Writes are restricted to a configured set of text extensions; attempts outside that set return an error envelope. The error names the accepted extensions — finish the write under the closest accepted one and say so in your reply; never retry another refused extension, and never bounce the choice back to the user.
         - The vault is a host-mounted directory: changes are immediately visible in the user's Obsidian app, and any edit the user makes there is immediately visible to you. Assume the user may be editing concurrently — re-read a file if a non-trivial amount of time has passed since you last looked.
         - There is no built-in versioning. Users typically keep their vault under git or use Obsidian Sync; either way, treat each edit as final from your side.
         """;
+    // Every falsifiable statement the prose above makes. Most of them are about what an edit must
+    // leave alone, which is exactly the kind of rule that is never noticed until a note is quietly
+    // broken — declaring them is what makes the untested ones visible.
+    public static readonly PromptClaim ConfigurationIsOffLimits =
+        new("vault.configuration-is-off-limits",
+            "Obsidian's own configuration directory is never edited incidentally and never listed in a summary.");
+
+    public static readonly PromptClaim MarkdownIsTheNoteFormat =
+        new("vault.markdown-is-the-note-format",
+            "A note the user will browse is written as Markdown rather than in another accepted text format.");
+
+    public static readonly PromptClaim RenameUpdatesIncomingLinks =
+        new("vault.rename-updates-incoming-links",
+            "A renamed note has every incoming wikilink updated in the same turn, because a filename is what links reference.");
+
+    public static readonly PromptClaim FrontmatterKeepsItsOtherKeys =
+        new("vault.frontmatter-keeps-its-other-keys",
+            "Frontmatter survives an edit with only the keys the user mentioned changed.");
+
+    public static readonly PromptClaim WikilinksAreNeverFixed =
+        new("vault.wikilinks-are-never-fixed",
+            "A wikilink is never rewritten into Markdown link syntax.");
+
+    public static readonly PromptClaim EmbedsBlockIdsAndCalloutsSurvive =
+        new("vault.embeds-block-ids-and-callouts-survive",
+            "Embeds, block ids, tags and callout markers survive an edit to the note that carries them.");
+
+    public static readonly PromptClaim TemplatesAreNotExpanded =
+        new("vault.templates-are-not-expanded",
+            "Template placeholders are left for the plugin that evaluates them rather than expanded.");
+
+    // Two sentences in the prose deliberately declare no claim: survey-the-tree-first and
+    // read-before-editing describe means, not outcomes. Surveying is tolerated everywhere and
+    // required nowhere — a model that already knows where the note goes has broken nothing, and
+    // requiring the glob would test the habit rather than the outcome, which is what
+    // vault.new-note-fits-the-tree and the edit scenarios' file assertions already witness.
+
+    public static readonly PromptClaim NewNoteFitsTheTree =
+        new("vault.new-note-fits-the-tree",
+            "A new note lands in the deepest existing folder whose topic matches it.");
+
+    public static readonly PromptClaim NoNewTopLevelFolder =
+        new("vault.no-new-top-level-folder",
+            "A new top-level folder is never invented; the existing inbox, or the root, takes a note that fits nowhere.");
+
+    public static readonly PromptClaim EditsAreSurgical =
+        new("vault.edits-are-surgical",
+            "An edit changes the part it was asked to change rather than rewriting the whole file.");
+
+    public static readonly PromptClaim HeadingsAreReferenceable =
+        new("vault.headings-are-referenceable",
+            "A renamed heading has every incoming heading link updated in the same turn.");
+
+    public static readonly PromptClaim DailyNotesAreAppendedTo =
+        new("vault.daily-notes-are-appended-to",
+            "A daily note is appended to rather than restructured.");
+
+    public static readonly PromptClaim AttachmentsStayInTheirFolder =
+        new("vault.attachments-stay-in-their-folder",
+            "An attachment is referenced from the vault's attachments folder rather than placed beside the note.");
+
+    public static readonly PromptClaim IrreversibleChangeIsAskedAbout =
+        new("vault.irreversible-change-is-asked-about",
+            "A change that deletes or overwrites work with no versioning behind it is preceded by one short question.");
+
+    public static readonly PromptClaim TransferIsOneCall =
+        new("vault.transfer-is-one-call",
+            "Moving vault content to a mount that can execute uses the single transfer call rather than a read-and-write loop.");
+
+    public static readonly PromptClaim WritesAreTextOnly =
+        new("vault.writes-are-text-only",
+            "A write outside the configured text extensions is finished under an accepted one rather than retried or bounced back to the user.");
+
+    public static readonly IReadOnlyList<PromptClaim> Claims =
+    [
+        ConfigurationIsOffLimits,
+        MarkdownIsTheNoteFormat,
+        RenameUpdatesIncomingLinks,
+        FrontmatterKeepsItsOtherKeys,
+        WikilinksAreNeverFixed,
+        EmbedsBlockIdsAndCalloutsSurvive,
+        TemplatesAreNotExpanded,
+        NewNoteFitsTheTree,
+        NoNewTopLevelFolder,
+        EditsAreSurgical,
+        HeadingsAreReferenceable,
+        DailyNotesAreAppendedTo,
+        AttachmentsStayInTheirFolder,
+        IrreversibleChangeIsAskedAbout,
+        TransferIsOneCall,
+        WritesAreTextOnly
+    ];
 }

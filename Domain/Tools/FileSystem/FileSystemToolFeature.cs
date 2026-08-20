@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Prompts;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
@@ -15,6 +16,43 @@ public class FileSystemToolFeature(
         .Where(o => o.ToolKey is not null)
         .Select(o => o.ToolKey!)
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    // The falsifiable statements the section above makes. They are declared here rather than in
+    // Domain/Prompts because this is where the words are: the mounts section is generated from the
+    // registry a session actually has, so its prose has no file of its own.
+    public static readonly PromptClaim PathStartsAtAMount =
+        new("mounts.path-starts-at-a-mount",
+            "Every filesystem tool path starts at one of the mount prefixes the session declares, rather than at a bare path.");
+
+    public static readonly PromptClaim CapabilitiesAreAdvertised =
+        new("mounts.capabilities-are-advertised",
+            "An operation is called only on a mount that advertises it, rather than discovered to be unsupported by trying.");
+
+    public static readonly PromptClaim AnEnvelopeIsDataNotAReasonToRetry =
+        new("mounts.an-envelope-is-data-not-a-reason-to-retry",
+            "An error envelope is read as a hint to pick a different mount or operation, and never as a reason to retry the same call.");
+
+    public static readonly PromptClaim ExecWorkGoesWhereExecLives =
+        new("mounts.exec-work-goes-where-exec-lives",
+            "Programmatic work runs on a mount that advertises exec, and the readable result is persisted on the mount that owns it.");
+
+    public static readonly PromptClaim TransferIsOneCall =
+        new("mounts.transfer-is-one-call",
+            "Data needed on another mount is moved with a single copy or move call rather than a read on one and a create on the other.");
+
+    public static readonly PromptClaim AnUnmountedPathIsAnswered =
+        new("mounts.an-unmounted-path-is-answered",
+            "A path under none of the session's mounts is answered with a sentence saying it is not reachable, never hunted for through other tools or handed to a worker.");
+
+    public static readonly IReadOnlyList<PromptClaim> Claims =
+    [
+        PathStartsAtAMount,
+        CapabilitiesAreAdvertised,
+        AnEnvelopeIsDataNotAReasonToRetry,
+        ExecWorkGoesWhereExecLives,
+        TransferIsOneCall,
+        AnUnmountedPathIsAnswered
+    ];
 
     public string FeatureName => Feature;
 
@@ -111,6 +149,7 @@ public class FileSystemToolFeature(
             - Each mount is its own backend. Tools see only the filesystem of the mount you target — they cannot reach files on a different mount. If you need data from one mount available to a command on another (e.g. for `exec`), copy it across first.
             - `move` and `copy` accept source and destination on different mounts and handle the transfer natively (streaming for cross-FS, recursing into directories) — prefer a single `copy`/`move` call over reading on one mount and creating on another.
             - Paths are virtual: always include the mount prefix. Don't pass bare `/home/...` or `/notes/...` — start with one of the mount points listed above.
+            - A path that starts under none of these mounts is not reachable in this session, by any tool or by a worker — the mount list above is complete. Say so in one sentence instead of hunting for it: no retries under other spellings, no web tools, no delegation.
             """;
     }
 

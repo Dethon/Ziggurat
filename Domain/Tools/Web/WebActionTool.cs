@@ -5,7 +5,7 @@ namespace Domain.Tools.Web;
 
 public class WebActionTool(IWebBrowser browser)
 {
-    protected const string Name = "web_action";
+    public const string Name = "web_action";
 
     protected const string Description =
         """

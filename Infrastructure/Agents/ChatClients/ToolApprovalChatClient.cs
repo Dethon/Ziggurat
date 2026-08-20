@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -17,15 +19,19 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly HashSet<string> _dynamicallyApproved;
     private readonly IMetricsPublisher _metricsPublisher;
     private readonly string _conversationId;
+    private readonly IToolInvocationObserver? _observer;
+    private int _observed;
 
     public ToolApprovalChatClient(
         IChatClient innerClient,
         IToolApprovalHandler approvalHandler,
         string conversationId,
         IEnumerable<string>? whitelistPatterns = null,
-        IMetricsPublisher? metricsPublisher = null)
+        IMetricsPublisher? metricsPublisher = null,
+        IToolInvocationObserver? observer = null)
         : base(innerClient)
     {
+        _observer = observer;
         ArgumentNullException.ThrowIfNull(approvalHandler);
         ArgumentNullException.ThrowIfNull(conversationId);
         _approvalHandler = approvalHandler;
@@ -79,6 +85,90 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             default:
                 context.Terminate = true;
                 return $"Tool execution was rejected by user: {toolName}. Waiting for new input.";
+        }
+    }
+
+    // Pass-through in both directions: what the observer is handed is the option set the agent
+    // built and the route the inner client ends up reporting, and nothing about the turn changes
+    // because somebody is watching it.
+    public override async Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await base.GetResponseAsync(messages, options, cancellationToken);
+        ObserveTurn(options);
+        return response;
+    }
+
+    public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken))
+        {
+            yield return update;
+        }
+
+        // After the stream, not before it: the route is only known once a provider has answered.
+        ObserveTurn(options);
+    }
+
+    private void ObserveTurn(ChatOptions? options) =>
+        _observer?.OnTurn(new TurnObservation(
+            options?.Instructions, GetService(typeof(ServedRoute)) as ServedRoute));
+
+    // Every call of one iteration passes through here, including the two that never reach
+    // InvokeFunctionAsync: a call whose tool threw, and a call naming a tool nothing serves. That
+    // is why the observation hangs off this override rather than off the invocation itself —
+    // those two are exactly what an evaluation is hunting, and neither produces a result.
+    protected override IList<ChatMessage> CreateResponseMessages(
+        ReadOnlySpan<FunctionInvocationResult> results)
+    {
+        if (_observer is not null)
+        {
+            foreach (var result in results)
+            {
+                _observer.OnInvoked(Describe(result, Interlocked.Increment(ref _observed) - 1));
+            }
+        }
+
+        return base.CreateResponseMessages(results);
+    }
+
+    private static ToolInvocation Describe(FunctionInvocationResult result, int sequence) => new()
+    {
+        Sequence = sequence,
+        ToolName = result.CallContent.Name,
+        Arguments = SerializeArguments(result.CallContent.Arguments),
+        Result = result.Result?.ToString(),
+        Error = result.Exception?.Message,
+        Outcome = result.Status switch
+        {
+            FunctionInvocationStatus.RanToCompletion => ToolInvocationOutcome.Completed,
+            FunctionInvocationStatus.NotFound => ToolInvocationOutcome.NotFound,
+            _ => ToolInvocationOutcome.Failed
+        }
+    };
+
+    // Relaxed escaping, because the only reader of this string is a person reading a dump: the
+    // default encoder turns every quote inside a nested document into \u0022 and the arguments
+    // become unreadable exactly where they matter most.
+    private static readonly JsonSerializerOptions _argumentJson =
+        new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    private static string SerializeArguments(IDictionary<string, object?>? arguments)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(arguments ?? new Dictionary<string, object?>(), _argumentJson);
+        }
+        catch (NotSupportedException)
+        {
+            // An argument the serializer cannot write is still evidence the call happened, and an
+            // observation must never be the thing that takes a turn down.
+            return "{}";
         }
     }
 

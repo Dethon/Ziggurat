@@ -24,12 +24,23 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         .AddUserSecrets<McpAgentReasoningTests>()
         .Build();
 
+    // A dated build rather than the `~…-latest` alias, and no `:nitro`. Both were floating, and
+    // this test's subject is a flag the request carries: the alias follows whichever build
+    // DeepSeek ships and nitro sorts for throughput, so the endpoint that answered — and whether
+    // it honours `reasoning.effort: none` — changed between runs. A failure here has to mean the
+    // flag stopped reaching the wire, not that the router picked somewhere else this morning.
+    private const string PinnedModel = "deepseek/deepseek-v4-flash-0731";
+
+    // `only` rather than `order`, per the routing rule: order disables sticky routing, and a
+    // single-entry `only` pins the endpoint without paying for it.
+    private static readonly ProviderRouting _pinnedProvider = new() { Only = ["deepinfra"] };
+
     private static (string apiUrl, string apiKey, string model) GetConfig()
     {
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        var model = _configuration["openRouter:reasoningModel"] ?? "~deepseek/deepseek-v4-flash-latest:nitro";
+        var model = _configuration["openRouter:reasoningModel"] ?? PinnedModel;
         return (apiUrl, apiKey, model);
     }
 
@@ -41,7 +52,8 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         // reasoning configuration actually reaches the wire and is honored end-to-end.
         var (apiUrl, apiKey, model) = GetConfig();
 
-        using var openRouter = new OpenRouterChatClient(apiUrl, apiKey, model);
+        using var openRouter = new OpenRouterChatClient(
+            apiUrl, apiKey, model, providerRouting: _pinnedProvider);
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(10) }, TimeProvider.System);
 
         await using var agent = new McpAgent(
@@ -86,7 +98,8 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         // forces it on).
         var (apiUrl, apiKey, model) = GetConfig();
 
-        using var openRouter = new OpenRouterChatClient(apiUrl, apiKey, model);
+        using var openRouter = new OpenRouterChatClient(
+            apiUrl, apiKey, model, providerRouting: _pinnedProvider);
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(10) }, TimeProvider.System);
 
         await using var agent = new McpAgent(

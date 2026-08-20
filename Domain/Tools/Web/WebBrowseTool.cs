@@ -7,11 +7,13 @@ public record WebBrowseToolResult(JsonNode Envelope, string? Body, string? Snaps
 
 public class WebBrowseTool(IWebBrowser browser)
 {
-    protected const string Name = "web_browse";
+    public const string Name = "web_browse";
 
     protected const string Description =
         """
         Navigates to a URL and returns page content as markdown.
+        Loads web pages only — http and https. It cannot read local files or directories:
+        file:// URLs are refused, and a filesystem path is not a URL.
         Maintains a persistent browser session (cookies, login state preserved).
         Automatically dismisses cookie popups, age gates, newsletter modals.
 

@@ -14,7 +14,10 @@ using Microsoft.Extensions.Logging;
 namespace Infrastructure.Agents;
 
 public sealed class MultiAgentFactory(
-    IServiceProvider serviceProvider,
+    // Nullable, truthfully: the sub-agent tests build the factory without a container, and every
+    // service resolved from it is optional for that path — the one exception is the thread state
+    // store, which only a history-keeping spec reaches and which refuses by name below.
+    IServiceProvider? serviceProvider,
     IAgentDefinitionProvider definitionProvider,
     OpenRouterConfig openRouterConfig,
     IDomainToolRegistry domainToolRegistry,
@@ -76,16 +79,20 @@ public sealed class MultiAgentFactory(
             sessionId: spec.RoutingSessionId,
             providerRouting: spec.ProviderRouting);
 
-        var effectiveClient = new ToolApprovalChatClient(
-            chatClient, approvalHandler, spec.ConversationId, spec.WhitelistPatterns, agentPublisher);
-
         // Composed from the spec this build is already running against, so the parent's values
         // reach the projection with no second source of truth for any of them.
         var spawn = new SpawnContext(
             spec.ConversationId, spec.UserId, spec.WhitelistPatterns, spec.UsesOutposts);
 
+        // The spawner is absent in every deployment, so the factory builds its own workers; when
+        // one is registered it stands in for them whole, which is the only way a scenario about
+        // the parent's decision can avoid paying for a worker's answer.
+        var spawner = serviceProvider?.GetService<ISubAgentSpawner>();
+
         var featureConfig = new FeatureConfig(
-            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, spawn),
+            SubAgentFactory: def => spawner is null
+                ? CreateSubAgent(def, approvalHandler, spawn)
+                : spawner.Spawn(def),
             UserId: spec.UserId,
             ConversationContextProvider: () => ConversationContextMeta.Current);
 
@@ -97,8 +104,17 @@ public sealed class MultiAgentFactory(
             .ToList();
 
         var stateStore = spec.KeepsHistory
-            ? serviceProvider.GetRequiredService<IThreadStateStore>()
+            ? (serviceProvider ?? throw new InvalidOperationException(
+                    "A history-keeping agent needs a service provider to resolve its thread state "
+                    + "store, and this factory was built without one."))
+                .GetRequiredService<IThreadStateStore>()
             : new NullThreadStateStore();
+
+        var effectiveClient = new ToolApprovalChatClient(
+            chatClient, approvalHandler, spec.ConversationId, spec.WhitelistPatterns, agentPublisher,
+            // Absent in every deployment: only an evaluation harness registers one, and what it
+            // watches has to be the agent the deployment builds rather than one assembled beside it.
+            serviceProvider?.GetService<IToolInvocationObserver>());
 
         return new McpAgent(
             spec,

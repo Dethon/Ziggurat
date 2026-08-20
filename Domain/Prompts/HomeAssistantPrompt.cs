@@ -156,6 +156,9 @@ public static class HomeAssistantPrompt
           name isn't in the library) — NOT that MA is down. Browse the library and use an exact
           title instead of retrying name variants. Never retry the same call with a reworded name
           or a different uri shape: if a name did not resolve, list the real items and pick one.
+          And if the listing does not have it either, say so — the web is no fallback: nothing a
+          web search returns is playable on a player, so never go looking online for a station,
+          song or show the library could not resolve.
         - `search_media.sh` searches the entire provider catalog (public Spotify etc.), not the
           user's saved items, and the URIs it returns are generally not playable via
           `play_media`. Use it only for content the user doesn't have saved, then play the
@@ -192,6 +195,77 @@ public static class HomeAssistantPrompt
           from the `### <room>` heading the entity is listed under in the setup index.
           Whenever an action argument names a room or area, pass that slug, never the display
           name (e.g. a vacuum's `--cleaning_area_id salon`). In `--help`, such arguments are
-          typed `AREA_ID (slug)`.
+          typed `AREA_ID` and say so.
         """;
+    // Every falsifiable statement the prose above makes, declared in full rather than only where a
+    // scenario exists: the rules nothing tests yet are the ones most worth writing down, and the
+    // exemption list beside the suite is the backlog.
+    public static readonly PromptClaim ExactlyWhatWasAsked =
+        new("home.exactly-what-was-asked",
+            "A request to change one thing changes exactly that thing, and nothing else in the home moves.");
+
+    public static readonly PromptClaim EntityNamedAsListed =
+        new("home.entity-named-as-listed",
+            "An entity directory is used with the exact name a listing returned, never a bare id or a guessed friendly-name suffix.");
+
+    public static readonly PromptClaim ArgumentsComeFromHelp =
+        new("home.arguments-come-from-help",
+            "An action's arguments are read from its --help rather than guessed, and a bad-argument exit is fixed by re-reading it rather than by repeating the same shape.");
+
+    public static readonly PromptClaim ExitCodeIsTheConfirmation =
+        new("home.exit-code-is-the-confirmation",
+            "The exit code confirms an action; state.json is never re-read afterwards to check that it worked.");
+
+    public static readonly PromptClaim ExitCodesAreNeverVoiced =
+        new("home.exit-codes-are-never-voiced",
+            "A spoken reply states success or failure in one short clause and never voices an exit code or stderr text.");
+
+    public static readonly PromptClaim AlarmCarriesTargetAndInsistent =
+        new("home.alarm-carries-target-and-insistent",
+            "A calendar alarm's description carries target and insistent; without insistent it is a one-shot announce rather than an alarm.");
+
+    public static readonly PromptClaim SnoozeIsANewEvent =
+        new("home.snooze-is-a-new-event",
+            "A snooze after a dismissed alarm is a new one-shot event at the requested offset with the same summary and description.");
+
+    public static readonly PromptClaim MusicPlaysOnTheMusicAssistantPlayer =
+        new("home.music-plays-on-the-music-assistant-player",
+            "Music plays on the media_player whose state says it is a Music Assistant player, defaulting to the speaking room's.");
+
+    public static readonly PromptClaim PlaylistIsBrowsedBeforeItIsPlayed =
+        new("home.playlist-is-browsed-before-it-is-played",
+            "A playlist is played by an exact title read from a browse listing in the same turn, never by the words the user used.");
+
+    public static readonly PromptClaim EpisodePlaysOnlyByItsUri =
+        new("home.episode-plays-only-by-its-uri",
+            "A specific podcast episode is looked up first and played by its exact uri, because a name resolves to the show.");
+
+    public static readonly PromptClaim TheWebIsNoMediaFallback =
+        new("home.web-is-no-media-fallback",
+            "A name the library cannot resolve is reported, never hunted online — nothing a web search returns is playable on a player.");
+
+    public static readonly PromptClaim RestartIsASeek =
+        new("home.restart-is-a-seek",
+            "Starting an item over is a seek to the beginning; playing it again resumes where it was left.");
+
+    public static readonly PromptClaim AreaSlugIsReadNotDerived =
+        new("home.area-slug-is-read-not-derived",
+            "An area id passed to an action is the slug read from the setup index, never one derived from the display name.");
+
+    public static readonly IReadOnlyList<PromptClaim> Claims =
+    [
+        ExactlyWhatWasAsked,
+        EntityNamedAsListed,
+        ArgumentsComeFromHelp,
+        ExitCodeIsTheConfirmation,
+        ExitCodesAreNeverVoiced,
+        AlarmCarriesTargetAndInsistent,
+        SnoozeIsANewEvent,
+        MusicPlaysOnTheMusicAssistantPlayer,
+        PlaylistIsBrowsedBeforeItIsPlayed,
+        EpisodePlaysOnlyByItsUri,
+        TheWebIsNoMediaFallback,
+        RestartIsASeek,
+        AreaSlugIsReadNotDerived
+    ];
 }

@@ -1,3 +1,5 @@
+using Domain.Tools.FileSystem;
+
 namespace Domain.Prompts;
 
 // Every section that can reach a system prompt, declared in one table. What a section is for,
@@ -52,7 +54,8 @@ public static class PromptManifest
             Priority = PromptPriority.Feature,
             TokenBudget = 600,
             Conflict = ConflictPolicy.Governs(
-                PromptRules.ToolUse, PromptRules.Formatting, PromptRules.Verbosity)
+                PromptRules.ToolUse, PromptRules.Formatting, PromptRules.Verbosity),
+            Claims = SubAgentPrompt.Claims
         },
         new()
         {
@@ -60,14 +63,18 @@ public static class PromptManifest
             Purpose = "Memory is invisible plumbing: applied silently, never narrated, forgotten on request.",
             Priority = PromptPriority.Feature,
             TokenBudget = 500,
-            Conflict = ConflictPolicy.Governs(PromptRules.Memory)
+            Conflict = ConflictPolicy.Governs(PromptRules.Memory),
+            Claims = MemoryPrompts.Claims
         },
         new()
         {
             Name = FilesystemMounts,
             Purpose = "The mounts this session actually has, and which one a path belongs under.",
             Priority = PromptPriority.FileSystem,
-            TokenBudget = 500
+            TokenBudget = 500,
+            // The words are generated from the registry, so the claims live beside the code that
+            // builds them rather than in a prompt file of their own.
+            Claims = FileSystemToolFeature.Claims
         },
         new()
         {
@@ -83,7 +90,8 @@ public static class PromptManifest
             Purpose = "Obsidian's conventions: frontmatter, wikilinks, where a new note belongs.",
             Priority = PromptPriority.Client,
             TokenBudget = 2_000,
-            ServedBy = "mcp-vault"
+            ServedBy = "mcp-vault",
+            Claims = VaultPrompt.Claims
         },
         new()
         {
@@ -91,7 +99,8 @@ public static class PromptManifest
             Purpose = "Searching, loading and reading pages, and what to do when one refuses.",
             Priority = PromptPriority.Client,
             TokenBudget = 1_500,
-            ServedBy = "mcp-websearch"
+            ServedBy = "mcp-websearch",
+            Claims = WebBrowsingPrompt.Claims
         },
         new()
         {
@@ -119,7 +128,8 @@ public static class PromptManifest
             // than with an edit: the setup index naming every area and entity is appended to it
             // when the server serves it.
             TokenBudget = 5_000,
-            ServedBy = "mcp-homeassistant"
+            ServedBy = "mcp-homeassistant",
+            Claims = HomeAssistantPrompt.Claims
         },
         new()
         {
@@ -143,7 +153,8 @@ public static class PromptManifest
             Purpose = "Timers and alarms on the satellites, named by the room they ring in.",
             Priority = PromptPriority.Client,
             TokenBudget = 1_500,
-            ServedBy = "mcp-timers"
+            ServedBy = "mcp-timers",
+            Claims = TimerPrompt.Claims
         },
         new()
         {
@@ -171,7 +182,8 @@ public static class PromptManifest
             // an answer.
             Conflict = ConflictPolicy
                 .Governs(PromptRules.Formatting, PromptRules.Verbosity, PromptRules.ToolUse)
-                .Beating(Subagents, DownloaderPrompt.Name)
+                .Beating(Subagents, DownloaderPrompt.Name),
+            Claims = VoicePrompt.Claims
         },
         new()
         {
@@ -202,6 +214,11 @@ public static class PromptManifest
         new(StringComparer.OrdinalIgnoreCase) { [VoicePrompt.Name] = VoicePrompt.Instructions };
 
     public static IReadOnlyCollection<string> SelectableSections => _selectable.Keys;
+
+    // Aggregated across sections the way the declarations themselves are, so a scenario can cite
+    // one id and a coverage test can enumerate every claim the deployment makes.
+    public static IReadOnlyList<PromptClaim> Claims { get; } =
+        [.. Declarations.SelectMany(d => d.Claims)];
 
     public static PromptDeclaration? Find(string name) => _byName.GetValueOrDefault(name);
 

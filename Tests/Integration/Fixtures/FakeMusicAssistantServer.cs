@@ -20,6 +20,7 @@ public sealed class FakeMusicAssistantServer : IAsyncDisposable
     public const string ShowUri = "spotify--w2nq2jMe://podcast/5dbvpKwtqz3X3hcX1BSEzf";
 
     private readonly IHost _host;
+    private readonly int _port;
 
     public string BaseUrl { get; }
 
@@ -27,10 +28,11 @@ public sealed class FakeMusicAssistantServer : IAsyncDisposable
     public int Chunks { get; set; } = 1;
     public int AuthCount { get; private set; }
 
-    private FakeMusicAssistantServer(IHost host, string baseUrl)
+    private FakeMusicAssistantServer(IHost host, string baseUrl, int port)
     {
         _host = host;
         BaseUrl = baseUrl;
+        _port = port;
     }
 
     public static async Task<FakeMusicAssistantServer> StartAsync()
@@ -54,7 +56,7 @@ public sealed class FakeMusicAssistantServer : IAsyncDisposable
         });
 
         await app.StartAsync();
-        server = new FakeMusicAssistantServer(app, $"http://127.0.0.1:{port}");
+        server = new FakeMusicAssistantServer(app, $"http://127.0.0.1:{port}", port);
         return server;
     }
 
@@ -212,5 +214,6 @@ public sealed class FakeMusicAssistantServer : IAsyncDisposable
     {
         await _host.StopAsync();
         _host.Dispose();
+        TestPort.Release(_port);
     }
 }

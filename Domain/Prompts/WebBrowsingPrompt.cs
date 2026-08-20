@@ -30,6 +30,9 @@ public static class WebBrowsingPrompt
 
         **Reading a page.** Call web_browse. If the response is truncated or you need a specific
         region, narrow it (the tool description shows how) before falling back to a second call.
+        When the page you opened for an answer arrives truncated, read its remainder (offset)
+        before opening a different page — the answer is usually in the tail you have not read,
+        and another page's snippet is a promise, not the page.
 
         **Interacting with a page.** Load with web_browse using snapshot=true to get content and refs
         in a single call, then chain web_action calls. Each web_action returns a diff with new refs —
@@ -42,8 +45,9 @@ public static class WebBrowsingPrompt
 
         **Hover menus / tooltips.** Hover the trigger first; the diff reveals the menu refs to click.
 
-        **Multi-page navigation.** Click links/buttons normally; for going back, prefer web_action's
-        back action over re-browsing the previous URL.
+        **Multi-page navigation.** Click links/buttons normally. Going back is web_action's back
+        action, never a second web_browse of a page you already visited — knowing its URL does not
+        change that; a re-browse starts the page over and loses its state.
 
         ### Key Principles
 
@@ -58,6 +62,9 @@ public static class WebBrowsingPrompt
         5. **Start with search.** Use web_search to find URLs rather than guessing.
         6. **Verify silently.** Verify each action produced the expected change before the next one;
            verification is internal — do not report the steps.
+        7. **No probe calls.** The tools work; never spend a call checking that they do — no
+           throwaway search, no minimal fetch of a placeholder page. The first web call of a turn
+           is already part of the task, or the turn makes none.
 
         ### Error Recovery
 
@@ -76,7 +83,8 @@ public static class WebBrowsingPrompt
         ### Response Style
 
         - Answer the question from what you found; never dump raw page content.
-        - Cite source URLs only when your reply is written, never when it is read aloud.
+        - A written reply names the url of the page it answered from — the user has to be able to
+          check the source. A reply that is read aloud never carries a url.
         - If content is partial, fetch the missing part once, then answer with what you have; if you
           still cannot, say so in one clause — don't offer to get more.
         - In a written reply, format extracted data as a table or list; when your reply is read aloud,
@@ -89,4 +97,71 @@ public static class WebBrowsingPrompt
         - Session is per-conversation — resets between conversations.
         - Some sites may block automated access.
         """;
+
+    // Every falsifiable statement the prose above makes. They split into three: where a url comes
+    // from, where an answer comes from, and how an interaction is aimed — and the last of those is
+    // the only one whose failure is loud, because a ref that was never in a snapshot simply misses.
+    public static readonly PromptClaim UrlComesFromASearch =
+        new("web.url-comes-from-a-search",
+            "A page is reached by searching for it rather than by guessing its url.");
+
+    public static readonly PromptClaim AnswerComesFromWhatWasRead =
+        new("web.answer-comes-from-what-was-read",
+            "The answer states what the page said, not what the search result summarised.");
+
+    public static readonly PromptClaim RawContentIsNeverDumped =
+        new("web.raw-content-is-never-dumped",
+            "A reply answers the question rather than pasting the page back.");
+
+    public static readonly PromptClaim RefsComeFromASnapshot =
+        new("web.refs-come-from-a-snapshot",
+            "An element is acted on by a ref that came from a snapshot of the page, taken before the action.");
+
+    public static readonly PromptClaim ActionsChainFromTheDiff =
+        new("web.actions-chain-from-the-diff",
+            "Refs from an action's diff are reused rather than a fresh snapshot being taken between every action.");
+
+    public static readonly PromptClaim BrowseReadsAndSnapshotStructures =
+        new("web.browse-reads-and-snapshot-structures",
+            "Content is read with a browse and structure with a snapshot, never both for the same purpose.");
+
+    public static readonly PromptClaim TypeReactsAndFillSets =
+        new("web.type-reacts-and-fill-sets",
+            "A field that reacts to keystrokes is typed into; one that only needs a value is filled.");
+
+    public static readonly PromptClaim UrlsAreCitedOnlyInWriting =
+        new("web.urls-are-cited-only-in-writing",
+            "A source url appears in a written reply and never in one that is read aloud.");
+
+    public static readonly PromptClaim StepsAreNotReported =
+        new("web.steps-are-not-reported",
+            "The reply carries the answer rather than an account of the pages and clicks it took.");
+
+    public static readonly PromptClaim PartialContentIsFetchedOnce =
+        new("web.partial-content-is-fetched-once",
+            "Truncated content is fetched once more and then answered from, never offered to be fetched again.");
+
+    public static readonly PromptClaim NoProbeCalls =
+        new("web.no-probe-calls",
+            "A web tool is called only in service of the task — never a throwaway search or minimal fetch to check that it works.");
+
+    public static readonly PromptClaim BackIsAnAction =
+        new("web.back-is-an-action",
+            "Going back to the previous page is the browser's own back rather than a second browse of its url.");
+
+    public static readonly IReadOnlyList<PromptClaim> Claims =
+    [
+        UrlComesFromASearch,
+        AnswerComesFromWhatWasRead,
+        RawContentIsNeverDumped,
+        RefsComeFromASnapshot,
+        ActionsChainFromTheDiff,
+        BrowseReadsAndSnapshotStructures,
+        TypeReactsAndFillSets,
+        UrlsAreCitedOnlyInWriting,
+        StepsAreNotReported,
+        PartialContentIsFetchedOnce,
+        NoProbeCalls,
+        BackIsAnAction
+    ];
 }
