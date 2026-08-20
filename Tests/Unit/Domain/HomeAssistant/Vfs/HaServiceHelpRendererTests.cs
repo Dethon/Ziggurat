@@ -45,6 +45,11 @@ public class HaServiceHelpRendererTests
         help.ShouldContain("--cleaning_area_id");
         help.ShouldContain("AREA_ID");
         help.ShouldContain("slug");
+        // The one moment the model reliably looks is this help line, so it says where the slug
+        // is read from — armed runs showed the prompt's own version of the rule skipped one run
+        // in three, the model passing a slugified synonym of the user's words instead.
+        help.ShouldContain("setup index");
+        help.ShouldContain("never derived");
     }
 
     [Fact]

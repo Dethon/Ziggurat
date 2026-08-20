@@ -193,7 +193,7 @@ public class FakeHomeAssistantTests
             timeoutSeconds: null, CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.Stdout
-            .ShouldContain("AREA_ID (slug)");
+            .ShouldContain("AREA_ID (slug: read it verbatim from the setup index heading");
     }
 
     [Fact]

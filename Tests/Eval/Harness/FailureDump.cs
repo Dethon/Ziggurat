@@ -13,12 +13,20 @@ public static class FailureDump
     public static string DefaultDirectory =>
         Path.Combine(RepositoryRoot.Path, ".eval-output");
 
-    // Null when there is nothing to explain — a passing scenario archives nothing, so a green run
-    // leaves the working tree exactly as it found it.
-    public static string? Describe(string directory, FailedRun run)
+    // Null when there is nothing to explain, and null again when the scenario passed its k of N:
+    // a pass must not carry a failure message. But the run that failed inside a pass is as
+    // irrecoverable as any other, so it is kept under flakes/ — a chronic two-of-three is
+    // diagnosed from those instead of from another armed run.
+    public static string? Describe(string directory, FailedRun run, bool passed = false)
     {
         if (run.Failures.Count == 0)
         {
+            return null;
+        }
+
+        if (passed)
+        {
+            Write(Path.Combine(directory, "flakes"), run);
             return null;
         }
 

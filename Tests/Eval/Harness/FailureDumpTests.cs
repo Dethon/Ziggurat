@@ -65,6 +65,42 @@ public class FailureDumpTests : IDisposable
     }
 
     [Fact]
+    public async Task AFlakedRun_IsKeptUnderFlakes_AndFailsNothing()
+    {
+        // The scenario passed its k of N, so nothing must red the suite — but the run that
+        // failed is as irrecoverable as any other, and a chronic two-of-three is diagnosed
+        // from these instead of from another armed run.
+        var recording = await ScriptedTurn.RunAsync("listo");
+
+        FailureDump
+            .Describe(_output, new FailedRun(
+                Scenario(), recording, "turn", recording.Route,
+                ["passed 2 of 3 runs, needed 2", "unnecessary call: web_search"]),
+                passed: true)
+            .ShouldBeNull();
+
+        var flake = Directory.GetFiles(Path.Combine(_output, "flakes")).ShouldHaveSingleItem();
+        var dump = await File.ReadAllTextAsync(flake);
+        dump.ShouldContain("passed 2 of 3 runs");
+        dump.ShouldContain("unnecessary call: web_search");
+    }
+
+    [Fact]
+    public async Task AFailedScenario_StillDumpsBesideTheScorecard()
+    {
+        var recording = await ScriptedTurn.RunAsync("listo");
+
+        FailureDump
+            .Describe(_output, new FailedRun(
+                Scenario(), recording, "turn", recording.Route,
+                ["required call 'create' never happened"]),
+                passed: false)
+            .ShouldNotBeNull();
+
+        Directory.GetFiles(_output).ShouldHaveSingleItem();
+    }
+
+    [Fact]
     public void TheOutputDirectory_IsGitIgnored()
     {
         // The dumps and the scorecard land in one place, and a stochastic wobble must never dirty

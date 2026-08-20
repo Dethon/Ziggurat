@@ -62,6 +62,9 @@ public static class WebBrowsingPrompt
         5. **Start with search.** Use web_search to find URLs rather than guessing.
         6. **Verify silently.** Verify each action produced the expected change before the next one;
            verification is internal — do not report the steps.
+        7. **No probe calls.** The tools work; never spend a call checking that they do — no
+           throwaway search, no minimal fetch of a placeholder page. The first web call of a turn
+           is already part of the task, or the turn makes none.
 
         ### Error Recovery
 
@@ -138,6 +141,10 @@ public static class WebBrowsingPrompt
         new("web.partial-content-is-fetched-once",
             "Truncated content is fetched once more and then answered from, never offered to be fetched again.");
 
+    public static readonly PromptClaim NoProbeCalls =
+        new("web.no-probe-calls",
+            "A web tool is called only in service of the task — never a throwaway search or minimal fetch to check that it works.");
+
     public static readonly PromptClaim BackIsAnAction =
         new("web.back-is-an-action",
             "Going back to the previous page is the browser's own back rather than a second browse of its url.");
@@ -154,6 +161,7 @@ public static class WebBrowsingPrompt
         UrlsAreCitedOnlyInWriting,
         StepsAreNotReported,
         PartialContentIsFetchedOnce,
+        NoProbeCalls,
         BackIsAnAction
     ];
 }

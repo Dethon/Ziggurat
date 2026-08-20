@@ -68,10 +68,12 @@ public static class HaServiceHelpRenderer
         }
         // HA's `area` selector means the field wants an area_id — the lowercase registry slug
         // (e.g. `salon`), shown in the setup-index parens and as the /ha/areas/<room> segment,
-        // NOT the display name. Flag it so the agent passes the slug rather than guessing.
+        // NOT the display name. The help line spells out where to read it because this is the
+        // one place the model reliably looks: the prompt's own version of the rule was skipped
+        // one armed run in three, a slugified synonym of the user's words passed instead.
         if (selector["area"] is not null)
         {
-            return "AREA_ID (slug)";
+            return "AREA_ID (slug: read it verbatim from the setup index heading, never derived from the room's name)";
         }
         return "TEXT";
     }

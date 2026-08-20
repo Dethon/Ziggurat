@@ -7,14 +7,14 @@ namespace Tests.Eval.Scenarios;
 // prompt it wrote, never the worker's answer — the workers are canned, so a scenario here cannot
 // fail on what a second model happened to say.
 //
-// The positive half rides one research-shaped turn: the armed runs that broke the imperative web
-// scenarios proved that "Busca…" phrasing sends this model's work to a worker, so that reflex —
-// a finding everywhere else — is the fixture here. The two-workers-in-parallel case stays
-// withdrawn: see the exemption on `subagents.parallel-parts-are-delegated`.
+// Whether the research-shaped turn delegates turned out to be a per-run coin (see the exemption
+// on `subagents.heavy-work-is-delegated`), so the positive half asserts the outcome and the
+// single spend rather than the choice. The two-workers-in-parallel case stays withdrawn: see the
+// exemption on `subagents.parallel-parts-are-delegated`.
 public static class DelegationScenarios
 {
     public static IReadOnlyList<Scenario> All =>
-        [OneLookupIsDoneInPlace, TheSummaryStaysHome, TheResearchGoesToAWorker];
+        [OneLookupIsDoneInPlace, TheSummaryStaysHome, TheResearchIsPaidForOnce];
 
     // One read answers this, and a worker would make it slower and no better. Declaring no
     // delegation is how the scenario says so: any worker at all fails it.
@@ -91,22 +91,23 @@ public static class DelegationScenarios
         Policy = new RunPolicy(2, 3)
     };
 
-    // Research-shaped on purpose, where every imperative web scenario learned to avoid it: this
-    // is the turn shape the armed runs showed going to a worker. The empty permitted set is the
-    // heavy-work assertion — any tool call in the parent's own turn is unnecessary — and the
-    // declared delegation polices the prompt: the worker starts with no history, so the site and
-    // the museum have to be in the words the parent wrote.
-    public static Scenario TheResearchGoesToAWorker => new()
+    // Research-shaped on purpose, and no longer requiring the coin to land either side: nine
+    // armed runs on 2026-08-19 sent this turn to a worker every time, seven on 2026-08-20 split
+    // four delegating to three doing the work in place — same model, same served provider. A
+    // scenario requiring either shape fails on the other, so this one asserts what held in every
+    // run of both: the answer carries the chronicle's facts, the work is paid for once (one
+    // delegation, or one search and the page in two fetches — the ceiling has no room for doing
+    // both wholesale), and no reply says who did the work. The delegation-quality claims moved
+    // to the exemption backlog beside the coin flip that unseated them.
+    public static Scenario TheResearchIsPaidForOnce => new()
     {
-        Name = "research goes to a worker with a self-contained prompt",
+        Name = "research is paid for once, in place or delegated",
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            // The exact shape the armed evidence says delegates: summarising the thirty-
-            // thousand-character chronicle is the turn the imperative web scenarios had to be
-            // rephrased away from, because "Busca la crónica…" sent the whole task to a worker
-            // on both first-run attempts. A lighter ask (one page's opening hours) was tried
-            // first and the model rightly did it in place, three runs out of three.
+            // Summarising the thirty-thousand-character chronicle: heavy enough that either
+            // shape is real work, and the turn shape the imperative web scenarios had to be
+            // rephrased away from because "Busca la crónica…" kept going to a worker.
             Text = "Busca la crónica de las fiestas del barrio en la web del Cuaderno de barrio "
                    + "y hazme un resumen de lo más destacado para mandárselo a mi madre.",
             Sender = "fran"
@@ -124,27 +125,17 @@ public static class DelegationScenarios
             + "infantiles y verbena hasta la madrugada. Lo más destacado: la calle del Pozo "
             + "repitió premio al balcón mejor engalanado y la rifa solidaria cerró con 1.842 "
             + "euros para el comedor social.",
-        Delegates =
-        [
-            new DelegationExpectation
-            {
-                Profile = "jonas-worker",
-                Carries = ["Cuaderno de barrio", "crónica"]
-            }
-        ],
-        // The verification is tolerated, not endorsed: nine armed runs showed this model
-        // delegating and then re-doing the research itself every time — searching, reading the
-        // page, even browsing the url its own worker cited. That distrust is recorded as the
-        // finding on heavy-work-is-delegated; what this scenario cites is what the runs do
-        // support — the delegation happens, and the prompt it carries is whole.
+        MayDelegateTo = ["jonas-worker"],
         Permitted =
         [
             new CallPermission(EvalTools.WebSearch),
             new CallPermission(EvalTools.WebBrowse)
         ],
-        // The delegation, and the verification reflex's observed worst: a search, the page in
-        // two fetches, and one dead-end browse of the worker's cited url.
-        CallCeiling = 7,
+        // Either honest shape fits with one call of slack; delegating and then re-running the
+        // whole research (the redo reflex the trust-the-result rule targets) does not. A partial
+        // redo — one stray search after delegating — still fits, which is why the
+        // the-result-is-not-redone claim guards here rather than being cited.
+        CallCeiling = 4,
         Reply = new ReplyExpectation
         {
             MaxSentences = 5,
@@ -153,29 +144,6 @@ public static class DelegationScenarios
             // for when it starts explaining its help.
             NeverSays = ["worker", "subagente", "sub-agente", "agente"]
         },
-        Claims =
-        [
-            SubAgentPrompt.PromptIsSelfContained.Id,
-            SubAgentPrompt.NoWorkerIsNamed.Id
-        ],
-        Judged =
-        [
-            new JudgedCheck(SubAgentPrompt.SuccessCriteriaAreStated.Id,
-                "Read the delegated task prompt (under Delegations). Pass only if it states "
-                + "what a good result looks like — what to find (the chronicle of the "
-                + "neighbourhood fiestas on the Cuaderno de barrio site) and what to bring back "
-                + "(a short summary of the highlights). Fail a prompt that only names the topic "
-                + "and leaves the worker to guess what success means."),
-            new JudgedCheck(SubAgentPrompt.AnswerIsSynthesised.Id,
-                "The worker's answer described the chronicle page and its highlights: fiestas "
-                + "from the 1st to the 24th of August, daily brass-band parades, petanque, "
-                + "children's workshops, late verbenas, the calle del Pozo winning the balcony "
-                + "prize again, and the charity raffle closing at 1.842 euros. Compare that "
-                + "with the assistant's reply. Pass a reply that answers the user in its own "
-                + "words at the length the request warrants (a short summary to forward). Fail "
-                + "a reply that pastes the worker's text verbatim or near-verbatim, or that "
-                + "inflates it with process, caveats or filler beyond what was asked.")
-        ],
-        Policy = new RunPolicy(2, 4)
+        Policy = new RunPolicy(2, 3)
     };
 }

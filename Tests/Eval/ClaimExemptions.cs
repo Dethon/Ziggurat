@@ -60,13 +60,50 @@ public static class ClaimExemptions
             + "research itself anyway: after the worker answered, it searched, fetched the page "
             + "twice, and browsed the very url the worker had cited. 'Delegated rather than run "
             + "in the parent's own turn' is precisely the half that does not hold; the finding "
-            + "on parallel-parts-are-delegated records the same distrust. The scenario stays, "
-            + "tolerating the verification and citing the prompt-quality claims the runs do "
-            + "support."),
+            + "on parallel-parts-are-delegated records the same distrust. Seven runs on "
+            + "2026-08-20, after a trust-the-result rule was added to the prose, split four "
+            + "delegating to three doing the work in place — same model, same served provider — "
+            + "so whether this turn delegates is a per-run coin. The research scenario now "
+            + "asserts the once-paid outcome instead of the choice, and the prompt-quality "
+            + "claims it cited moved to this backlog."),
+        [SubAgentPrompt.TheResultIsNotRedone.Id] = new(ExemptionKind.Guard,
+            "Written on 2026-08-20 against the distrust the two findings above record: nine armed "
+            + "runs of the research scenario showed the model delegating and then searching, "
+            + "fetching the page twice, and browsing the very url its worker cited. The research "
+            + "scenario's ceiling now leaves no room for that wholesale redo, but a partial one — "
+            + "a single stray search after delegating — still fits under it, so the ceiling "
+            + "guards rather than cites. A citation needs a conditional expectation (if a "
+            + "delegation happened, no web call may follow it) the harness cannot express yet."),
+        [SubAgentPrompt.PromptIsSelfContained.Id] = new(ExemptionKind.NeedsFixture,
+            "Held in every delegating run — each wrote a self-contained worker prompt — but "
+            + "whether the research turn delegates at all is a per-run coin (see "
+            + "heavy-work-is-delegated), so a scenario requiring the delegation flakes on the "
+            + "runs that do the work in place. Citing this again needs a conditional expectation "
+            + "the harness cannot express yet: if a delegation happened, its prompt must carry "
+            + "the site and the subject."),
+        [SubAgentPrompt.SuccessCriteriaAreStated.Id] = new(ExemptionKind.NeedsFixture,
+            "Same blocker as prompt-is-self-contained: the judged rubric needs a delegated "
+            + "prompt as its material, and whether one exists is a per-run coin. Every "
+            + "delegating run on 2026-08-19 and 2026-08-20 did state what a good result looks "
+            + "like."),
+        [SubAgentPrompt.AnswerIsSynthesised.Id] = new(ExemptionKind.NeedsFixture,
+            "Same blocker: the rubric compares the reply against the worker's answer, which only "
+            + "exists on the runs that delegate. Where it was graded, one run on 2026-08-20 was "
+            + "failed for carrying the worker's facts in the worker's order — which a faithful "
+            + "summary of a two-sentence canned answer cannot avoid; the rubric kept in the "
+            + "scenario's history says so for whoever revives it."),
+        [SubAgentPrompt.NoWorkerIsNamed.Id] = new(ExemptionKind.Guard,
+            "The research scenario's reply forbids every worker word in both shapes, so the rule "
+            + "is asserted on every run; it just cannot earn the citation, because on an "
+            + "in-place run there is no worker to be tempted to name."),
         [SubAgentPrompt.ASingleCallIsDoneInPlace.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-18 with the do-it-yourself bullet deleted: the model still read "
             + "the timer's status itself rather than handing it to a worker. The scenario stays as a "
-            + "guard — the same model delegates readily in other shapes, so this is worth watching."),
+            + "guard — the same model delegates readily in other shapes, so this is worth watching. "
+            + "Watching paid on 2026-08-20: a flake dump showed the invented-station scenario handing "
+            + "the play action itself to a worker and voicing the canned 'Hecho' as success — a false "
+            + "confirmation the reply checks alone could not catch. The single-action bullet in the "
+            + "prose is the answer to that run."),
         [MemoryPrompts.RecallShapesTheAnswer.Id] = new(ExemptionKind.Guard,
             "Demonstrated on 2026-08-19 with the silent-application sentence deleted: a remembered "
             + "'cuece la pasta nueve minutos' still came back as a 540-second timer. A fact in the "
@@ -110,6 +147,14 @@ public static class ClaimExemptions
             + "opening time still came back as the page's 10:30 rather than the snippet's 9:00. "
             + "Preferring the page it opened over the summary it was shown is this model's own "
             + "behaviour; the scenario stays as the guard against a model that stops."),
+        [WebBrowsingPrompt.NoProbeCalls.Id] = new(ExemptionKind.Guard,
+            "Written on 2026-08-20 against an observed quirk: on Home Assistant voice turns the "
+            + "model sometimes opens with a minimal canary against example.com — a web_search for "
+            + "'site:example.com' in one run, a web_browse of https://example.com at maxLength 1 "
+            + "in another, roughly one snooze run in three — before doing the task. Every "
+            + "scenario's exhaustive permitted set already fails such a call as unnecessary, so "
+            + "the rule is guarded wherever it matters; no scenario's subject is the probe "
+            + "itself."),
         [WebBrowsingPrompt.RawContentIsNeverDumped.Id] = new(ExemptionKind.Guard,
             "Asserted as a side condition on both halves now: the spoken research scenario is "
             + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "

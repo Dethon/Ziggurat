@@ -156,6 +156,9 @@ public static class HomeAssistantPrompt
           name isn't in the library) — NOT that MA is down. Browse the library and use an exact
           title instead of retrying name variants. Never retry the same call with a reworded name
           or a different uri shape: if a name did not resolve, list the real items and pick one.
+          And if the listing does not have it either, say so — the web is no fallback: nothing a
+          web search returns is playable on a player, so never go looking online for a station,
+          song or show the library could not resolve.
         - `search_media.sh` searches the entire provider catalog (public Spotify etc.), not the
           user's saved items, and the URIs it returns are generally not playable via
           `play_media`. Use it only for content the user doesn't have saved, then play the
@@ -192,7 +195,7 @@ public static class HomeAssistantPrompt
           from the `### <room>` heading the entity is listed under in the setup index.
           Whenever an action argument names a room or area, pass that slug, never the display
           name (e.g. a vacuum's `--cleaning_area_id salon`). In `--help`, such arguments are
-          typed `AREA_ID (slug)`.
+          typed `AREA_ID` and say so.
         """;
     // Every falsifiable statement the prose above makes, declared in full rather than only where a
     // scenario exists: the rules nothing tests yet are the ones most worth writing down, and the
@@ -237,6 +240,10 @@ public static class HomeAssistantPrompt
         new("home.episode-plays-only-by-its-uri",
             "A specific podcast episode is looked up first and played by its exact uri, because a name resolves to the show.");
 
+    public static readonly PromptClaim TheWebIsNoMediaFallback =
+        new("home.web-is-no-media-fallback",
+            "A name the library cannot resolve is reported, never hunted online — nothing a web search returns is playable on a player.");
+
     public static readonly PromptClaim RestartIsASeek =
         new("home.restart-is-a-seek",
             "Starting an item over is a seek to the beginning; playing it again resumes where it was left.");
@@ -257,6 +264,7 @@ public static class HomeAssistantPrompt
         MusicPlaysOnTheMusicAssistantPlayer,
         PlaylistIsBrowsedBeforeItIsPlayed,
         EpisodePlaysOnlyByItsUri,
+        TheWebIsNoMediaFallback,
         RestartIsASeek,
         AreaSlugIsReadNotDerived
     ];

@@ -95,19 +95,22 @@ public static class EvalSuite
             return observed;
         });
 
-        if (result.Passed || failed is null)
+        if (failed is null)
         {
-            // The raw route travels on: a passing scenario writes nothing, so nothing here needs
-            // the provider's name yet and nothing pays a request for it.
+            // The raw route travels on: a clean pass writes nothing, so nothing here needs the
+            // provider's name yet and nothing pays a request for it.
             return new EvalOutcome(result, null, route);
         }
 
+        // A pass with a failed run inside it dumps that run under flakes/ and reports nothing;
+        // a failed scenario dumps beside the scorecard and the message is the test's failure.
         var message = FailureDump.Describe(FailureDump.DefaultDirectory, new FailedRun(
             scenario,
             failed,
             EvalRun.Decorated(scenario),
             await ProviderLookup.ResolveAsync(failedRoute, EvalGate.ApiKey ?? ""),
-            [$"passed {result.Passes} of {result.Attempts} runs, needed {policy.K}", .. failures]));
+            [$"passed {result.Passes} of {result.Attempts} runs, needed {policy.K}", .. failures]),
+            result.Passed);
 
         return new EvalOutcome(result, message, route);
     }

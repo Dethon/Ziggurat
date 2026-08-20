@@ -1,4 +1,4 @@
-# jonas-worker — 7237 tokens across 10 sections
+# jonas-worker — 7351 tokens across 10 sections
 
   core_directive           CoreDirective         142 / 250    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns.
   identity                 Identity               26 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -6,9 +6,9 @@
   filesystem_mounts        FileSystem             49 / 500    The mounts this session actually has, and which one a path belongs under.
   vault_prompt             Client               1603 / 2000   Obsidian's conventions: frontmatter, wikilinks, where a new note belongs.
   sandbox_prompt           Client               1004 / 1400   The sandbox's layout, what may be run in it and what it refuses.
-  websearch_prompt         Client               1166 / 1500   Searching, loading and reading pages, and what to do when one refuses.
+  websearch_prompt         Client               1223 / 1500   Searching, loading and reading pages, and what to do when one refuses.
   idealista_guide          Client                317 / 600    Property search: the filters that exist and how a listing is read back.
-  home_assistant_guide     Client               2879 / 5000   The house: its areas and entities, and how an intent becomes a service call.
+  home_assistant_guide     Client               2936 / 5000   The house: its areas and entities, and how an intent becomes a service call.
   date                     Date                    7 / 30     Today's date. Last of the static sections, because it is the only one that changes on its own.
 
 ================================================================================================
@@ -171,6 +171,9 @@ change that; a re-browse starts the page over and loses its state.
 5. **Start with search.** Use web_search to find URLs rather than guessing.
 6. **Verify silently.** Verify each action produced the expected change before the next one;
    verification is internal — do not report the steps.
+7. **No probe calls.** The tools work; never spend a call checking that they do — no
+   throwaway search, no minimal fetch of a placeholder page. The first web call of a turn
+   is already part of the task, or the turn makes none.
 
 ### Error Recovery
 
@@ -383,6 +386,9 @@ from) unless another room is named; "everywhere" => run it on every room's MA pl
   name isn't in the library) — NOT that MA is down. Browse the library and use an exact
   title instead of retrying name variants. Never retry the same call with a reworded name
   or a different uri shape: if a name did not resolve, list the real items and pick one.
+  And if the listing does not have it either, say so — the web is no fallback: nothing a
+  web search returns is playable on a player, so never go looking online for a station,
+  song or show the library could not resolve.
 - `search_media.sh` searches the entire provider catalog (public Spotify etc.), not the
   user's saved items, and the URIs it returns are generally not playable via
   `play_media`. Use it only for content the user doesn't have saved, then play the
@@ -419,6 +425,6 @@ talk.
   from the `### <room>` heading the entity is listed under in the setup index.
   Whenever an action argument names a room or area, pass that slug, never the display
   name (e.g. a vacuum's `--cleaning_area_id salon`). In `--help`, such arguments are
-  typed `AREA_ID (slug)`.
+  typed `AREA_ID` and say so.
 
 Today is Friday, 2026-05-15.
