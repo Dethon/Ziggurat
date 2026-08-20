@@ -129,6 +129,18 @@ public sealed record EvalTurn
 public sealed record RunPolicy(int K, int N)
 {
     public static RunPolicy Once { get; } = new(1, 1);
+
+    // How many of the N runs may be in flight at once. All of them, because the runs are
+    // independent — one full stack and one turn each — and taking them in turn made a family's
+    // wall clock the sum of every run in it.
+    //
+    // What that costs is the early stop: a scenario whose threshold has already become
+    // unreachable has its remaining runs already going, so a hard failure now spends the whole N
+    // where a serial pass would have spent K-1 fewer. That is at most one extra run per scenario
+    // that fails, on a pass that is red anyway, and it buys a uniform denominator — every
+    // scorecard rate is over N — for the diff a model bump is read through. A scenario that
+    // would rather have the saving asks for it by narrowing this.
+    public int Width { get; init; } = N;
 }
 
 public enum EvalTier

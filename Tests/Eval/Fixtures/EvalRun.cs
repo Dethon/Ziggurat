@@ -22,6 +22,15 @@ public static class EvalRun
     // deadline would be reported as a behavioural failure it is not.
     private static readonly TimeSpan _budget = TimeSpan.FromSeconds(180);
 
+    // One run in a slot of its own. The gate is what bounds how many stacks stand at once now
+    // that a scenario's runs go out together, and the lease is the database this run is alone on.
+    public static Task<Recording> ExecuteAsync(Scenario scenario) =>
+        EvalConcurrency.Gate.RunAsync(async () =>
+        {
+            await using var redis = await EvalRedis.LeaseAsync();
+            return await ExecuteAsync(scenario, redis.ConnectionString);
+        });
+
     public static async Task<Recording> ExecuteAsync(Scenario scenario, string redisConnectionString)
     {
         var recording = new Recording();
