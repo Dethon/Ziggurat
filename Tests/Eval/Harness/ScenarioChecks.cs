@@ -22,8 +22,25 @@ public static class ScenarioChecks
         .. Moved(scenario, recording),
         .. Wrote(scenario, recording),
         .. Delegated(scenario, recording),
+        .. ConditionallyDelegated(scenario, recording),
         .. Forgot(scenario, recording)
     ];
+
+    // The conditional half of Delegated: a run that handed nothing to the profile owes nothing
+    // here, but every delegation it did receive must carry the condition's context — a split
+    // into two workers is legitimate, and each starts with no history.
+    private static IEnumerable<string> ConditionallyDelegated(Scenario scenario, Recording recording) =>
+        scenario.IfDelegated.SelectMany(condition =>
+            recording.Delegations
+                .Where(delegation => Answers(condition, delegation))
+                .SelectMany(delegation => condition.Carries
+                    .Where(text => !delegation.Prompt.Contains(text, StringComparison.OrdinalIgnoreCase))
+                    .Select(text =>
+                        $"'{delegation.ProfileId}' was handed a prompt without '{text}': " +
+                        $"\"{delegation.Prompt}\"")));
+
+    private static bool Answers(ConditionalDelegation condition, Delegation delegation) =>
+        string.Equals(condition.Profile, delegation.ProfileId, StringComparison.OrdinalIgnoreCase);
 
     // Both directions, because forgetting is destructive in both: a stale fact the user corrected
     // and that is still remembered will be applied again next turn, and a fact nobody mentioned

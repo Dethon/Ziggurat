@@ -259,6 +259,73 @@ public class ScenarioChecksTests
     }
 
     [Fact]
+    public async Task AConditionalCarry_IsSilentWhileNothingDelegates()
+    {
+        // The antecedent is the model's own coin: a scenario that accepts both shapes must not
+        // fail the run that did the work in place over a prompt nobody wrote.
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        var scenario = Timer() with
+        {
+            MayDelegateTo = ["jonas-worker"],
+            IfDelegated = [new ConditionalDelegation { Profile = "jonas-worker", Carries = ["ejemplo.com"] }]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ADelegationThatDidHappen_IsHeldToTheConditionalCarries()
+    {
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.Delegations = [new Delegation("jonas-worker", "busca el precio")];
+
+        var scenario = Timer() with
+        {
+            MayDelegateTo = ["jonas-worker"],
+            IfDelegated = [new ConditionalDelegation { Profile = "jonas-worker", Carries = ["ejemplo.com"] }]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("ejemplo.com");
+    }
+
+    [Fact]
+    public async Task EveryDelegationThatHappened_MustCarryTheConditionalContext()
+    {
+        // A split into two workers is legitimate, but each starts with no history: the half whose
+        // prompt dropped the url is a worker that cannot do its job, however whole its sibling is.
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.Delegations =
+        [
+            new Delegation("jonas-worker", "busca el precio en ejemplo.com"),
+            new Delegation("jonas-worker", "busca el horario")
+        ];
+
+        var scenario = Timer() with
+        {
+            MayDelegateTo = ["jonas-worker"],
+            IfDelegated = [new ConditionalDelegation { Profile = "jonas-worker", Carries = ["ejemplo.com"] }]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("busca el horario");
+    }
+
+    [Fact]
+    public async Task ADelegationCarryingWhatTheConditionAsks_Passes()
+    {
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.Delegations = [new Delegation("jonas-worker", "busca el precio en Ejemplo.com")];
+
+        var scenario = Timer() with
+        {
+            MayDelegateTo = ["jonas-worker"],
+            IfDelegated = [new ConditionalDelegation { Profile = "jonas-worker", Carries = ["ejemplo.com"] }]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task AReplyThatBreaksItsOwnContract_FailsTheScenario()
     {
         // The reply travels with the calls rather than beside them: a turn that called exactly the

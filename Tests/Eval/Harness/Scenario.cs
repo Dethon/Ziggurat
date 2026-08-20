@@ -68,6 +68,13 @@ public sealed record Scenario
     // a one-call lookup is done in place.
     public IReadOnlyList<DelegationExpectation> Delegates { get; init; } = [];
 
+    // What must hold of a delegation if one happens. Nothing here requires the delegation — the
+    // profile still needs its MayDelegateTo tolerance — but a run that does hand work to it is
+    // held to the prompt it wrote. This is how a claim about a delegation's quality survives an
+    // antecedent that is the model's own coin: the claims listed inside are tallied only over
+    // the runs that delegated, so the scenario accepts both shapes without flaking on either.
+    public IReadOnlyList<ConditionalDelegation> IfDelegated { get; init; } = [];
+
     // What the user is remembered as having said, injected the way recall injects it. Declaring
     // the facts is also declaring what must still be remembered afterwards: a forget-by-query is
     // one call that deletes everything its search reached, and the store after the turn is the
@@ -190,6 +197,25 @@ public sealed record DelegationExpectation
     public required string Profile { get; init; }
 
     public IReadOnlyList<string> Carries { get; init; } = [];
+}
+
+// The conditional half of a delegation contract: nothing requires the worker, but every
+// delegation the profile does receive must carry these substrings — each worker starts with no
+// history, so a prompt missing one is not self-contained whatever else it says — and the judged
+// checks are graded only on the runs where a delegated prompt exists to be graded.
+public sealed record ConditionalDelegation
+{
+    public required string Profile { get; init; }
+
+    public IReadOnlyList<string> Carries { get; init; } = [];
+
+    // Claims these conditions cite. Kept apart from the scenario's own list because their run
+    // count differs: the scenario's claims are exercised every run, these only when the model
+    // chose to delegate, and a scorecard that summed both under one denominator would report a
+    // rate over runs that had no material.
+    public IReadOnlyList<string> Claims { get; init; } = [];
+
+    public IReadOnlyList<JudgedCheck> Judged { get; init; } = [];
 }
 
 // One file, and what it must say once the turn is over. Substrings rather than whole contents:
