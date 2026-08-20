@@ -154,7 +154,10 @@ public static class ClaimExemptions
             + "in another, roughly one snooze run in three — before doing the task. Every "
             + "scenario's exhaustive permitted set already fails such a call as unnecessary, so "
             + "the rule is guarded wherever it matters; no scenario's subject is the probe "
-            + "itself."),
+            + "itself. Production transcripts hold no example.com call at all (every thread on "
+            + "the prod host, checked 2026-08-20), so the probe is an artifact of the eval's "
+            + "fresh-context condition — worth the retry it occasionally costs, not more "
+            + "prose."),
         [WebBrowsingPrompt.RawContentIsNeverDumped.Id] = new(ExemptionKind.Guard,
             "Asserted as a side condition on both halves now: the spoken research scenario is "
             + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "

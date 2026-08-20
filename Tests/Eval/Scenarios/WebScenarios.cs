@@ -17,6 +17,16 @@ public static class WebScenarios
         TheSiteNamedByName, SigningUpForAstronomy, TwoEditionsOfTheRaffle, TheMaterialsForm
     ];
 
+    // What a worker answers wherever these scenarios tolerate one. The default canned answer is
+    // a success, and a success poisons a mechanics scenario both ways: a parent that believes it
+    // skips the required calls, and one that distrusts it redoes the work over the ceiling. A
+    // decline turns the delegation into a recoverable detour — the parent drives the browser
+    // itself, every mechanics check still runs, and the ceilings carry one call of slack for the
+    // detour. Flake dumps from the 2026-08-20 full pass are the evidence for all three shapes.
+    private const string WorkerCannotBrowse =
+        "No he podido completar la tarea: mi sesión de navegación ha fallado antes de cargar "
+        + "la página.";
+
     // The answer is in the article and nowhere else: the search snippet describes the recipe
     // without giving the number. A model that answered from the result list has nothing to answer
     // with, and a model that guessed the url never finds the page.
@@ -50,7 +60,11 @@ public static class WebScenarios
             }
         ],
         Ordering = [new OrderingConstraint("search", "open")],
-        CallCeiling = 4,
+        // The delegation reflex reaches voice turns too — an armed run handed this lookup to a
+        // worker — so the detour is tolerated, declined, and paid for with one slack call.
+        MayDelegateTo = ["jonas-worker"],
+        WorkerAnswer = WorkerCannotBrowse,
+        CallCeiling = 5,
         Reply = new ReplyExpectation
         {
             // Spoken, so the source url the written contract asks for must not appear — the check
@@ -91,7 +105,10 @@ public static class WebScenarios
             }
         ],
         Permitted = [new CallPermission(EvalTools.WebSearch)],
-        CallCeiling = 4,
+        MayDelegateTo = ["jonas-worker"],
+        WorkerAnswer = WorkerCannotBrowse,
+        // Search, open, and one recovery — plus the delegation detour the declined worker costs.
+        CallCeiling = 5,
         Reply = new ReplyExpectation
         {
             // The stale time may well appear beside the new one — "antes a las nueve, ahora a las
@@ -162,7 +179,9 @@ public static class WebScenarios
             new CallPermission(EvalTools.WebAction),
             new CallPermission(EvalTools.WebBrowse)
         ],
-        CallCeiling = 9,
+        MayDelegateTo = ["jonas-worker"],
+        WorkerAnswer = WorkerCannotBrowse,
+        CallCeiling = 10,
         Reply = new ReplyExpectation
         {
             // Only the confirmation page carries it, and only a submission produces that page.
@@ -230,11 +249,12 @@ public static class WebScenarios
             new CallPermission(EvalTools.WebBrowse)
         ],
         // One worker tolerated, not required — the reflex the exemptions record reaches this
-        // turn shape too, and a canned worker reads no page, so the parent still pays for the
+        // turn shape too, and a declined worker reads no page, so the parent still pays for the
         // tail itself. Search, open, one recovery fetch, the possible worker and one spare: a
         // model that keeps paging past the answer still breaks the ceiling, which is the "once"
         // in fetched-once.
         MayDelegateTo = ["jonas-worker"],
+        WorkerAnswer = WorkerCannotBrowse,
         CallCeiling = 5,
         Reply = new ReplyExpectation
         {
@@ -299,8 +319,9 @@ public static class WebScenarios
         Ordering = [new OrderingConstraint("search", "open")],
         Permitted = [new CallPermission(EvalTools.WebSearch)],
         // One worker tolerated, not required — the delegation reflex the exemptions record; a
-        // canned worker reads no page, so the parent still has to search and open.
+        // declined worker reads no page, so the parent still has to search and open.
         MayDelegateTo = ["jonas-worker"],
+        WorkerAnswer = WorkerCannotBrowse,
         CallCeiling = 5,
         Reply = new ReplyExpectation
         {
@@ -358,10 +379,11 @@ public static class WebScenarios
             new CallPermission(EvalTools.WebAction)
         ],
         // One worker is tolerated, not required — the delegation reflex the exemptions record
-        // lands here too, and a canned worker cannot produce the code, so the parent still has
+        // lands here too, and a declined worker cannot produce the code, so the parent still has
         // to do the flow itself. The ceiling absorbs the reflex plus one false start; a model
         // that keeps wandering breaks it.
         MayDelegateTo = ["jonas-worker"],
+        WorkerAnswer = WorkerCannotBrowse,
         CallCeiling = 12,
         Reply = new ReplyExpectation
         {
@@ -417,10 +439,12 @@ public static class WebScenarios
             new CallPermission(EvalTools.WebAction)
         ],
         MayDelegateTo = ["jonas-worker"],
+        WorkerAnswer = WorkerCannotBrowse,
         // Search, open, click, a read of the landed page, back, click, read, the possible
-        // worker and one spare: re-browsing the archive instead of going back both misses the
-        // required back and pays an extra call.
-        CallCeiling = 9,
+        // worker and one spare — and the spare survives a declined-worker detour, which armed
+        // runs showed costing exactly the call the old ceiling had no room for. Re-browsing the
+        // archive instead of going back still misses the required back.
+        CallCeiling = 10,
         Reply = new ReplyExpectation
         {
             MaxSentences = 4,
@@ -470,9 +494,11 @@ public static class WebScenarios
             new CallPermission(EvalTools.WebAction)
         ],
         MayDelegateTo = ["jonas-worker"],
+        WorkerAnswer = WorkerCannotBrowse,
         // The straight flow is six calls: open with refs, three fills, a select, the submit.
-        // A worker detour and one stray call fit; a snapshot between every action does not.
-        CallCeiling = 8,
+        // A declined-worker detour, its search and one stray call fit; a snapshot between every
+        // action still does not — that storm costs eleven or more.
+        CallCeiling = 9,
         Reply = new ReplyExpectation
         {
             Mentions = [new SpokenValue("the materials code", EvalWeb.MaterialsCode)]
