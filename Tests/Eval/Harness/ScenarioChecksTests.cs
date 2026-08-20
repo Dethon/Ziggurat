@@ -326,6 +326,33 @@ public class ScenarioChecksTests
     }
 
     [Fact]
+    public async Task TheClaimsARunExercised_AreTheConditionalOnesItsDelegationsAnswered()
+    {
+        var scenario = Timer() with
+        {
+            MayDelegateTo = ["jonas-worker"],
+            IfDelegated =
+            [
+                new ConditionalDelegation
+                {
+                    Profile = "jonas-worker",
+                    Claims = ["subagents.prompt-is-self-contained"],
+                    Judged = [new JudgedCheck("subagents.success-criteria-are-stated", "Judge the prompt.")]
+                }
+            ]
+        };
+
+        var inPlace = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        ScenarioChecks.Exercised(scenario, inPlace).ShouldBeEmpty();
+
+        var delegated = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        delegated.Delegations = [new Delegation("jonas-worker", "busca el precio en ejemplo.com")];
+        ScenarioChecks.Exercised(scenario, delegated).ShouldBe(
+            ["subagents.prompt-is-self-contained", "subagents.success-criteria-are-stated"],
+            ignoreOrder: true);
+    }
+
+    [Fact]
     public async Task AReplyThatBreaksItsOwnContract_FailsTheScenario()
     {
         // The reply travels with the calls rather than beside them: a turn that called exactly the

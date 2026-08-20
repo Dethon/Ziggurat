@@ -78,7 +78,7 @@ public static class EvalSuite
             var observed = ScenarioChecks.Failures(scenario, recording);
             // The judged checks, on runs the deterministic ones pass: a verdict fails the run
             // like any other check, and a judge is never paid to grade a run already red.
-            if (observed.Count == 0 && scenario.Judged.Count > 0)
+            if (observed.Count == 0 && ScenarioChecks.JudgedNow(scenario, recording).Count > 0)
             {
                 observed = await Judge.FailuresAsync(scenario, recording, EvalGate.ApiKey ?? "");
             }
@@ -92,7 +92,7 @@ public static class EvalSuite
                 failures = observed;
             }
 
-            return observed;
+            return new RunReading(observed, ScenarioChecks.Exercised(scenario, recording));
         });
 
         if (failed is null)

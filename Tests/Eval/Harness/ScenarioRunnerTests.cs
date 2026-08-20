@@ -46,6 +46,31 @@ public class ScenarioRunnerTests
     }
 
     [Fact]
+    public async Task AClaimExercisedOnlyOnSomeRuns_IsTalliedOverThoseRunsAlone()
+    {
+        // Delegation is the model's own coin, so a conditional claim's denominator is the runs
+        // that produced its material — a rate over all three would count the in-place runs as
+        // evidence about a prompt nobody wrote.
+        var attempts = 0;
+
+        var result = await ScenarioRunner.RunAsync(new RunPolicy(2, 3), () =>
+        {
+            attempts++;
+            return Task.FromResult(attempts switch
+            {
+                1 => new RunReading([], ["subagents.prompt-is-self-contained"]),
+                2 => new RunReading(["a failure"], ["subagents.prompt-is-self-contained"]),
+                _ => new RunReading([], [])
+            });
+        });
+
+        var claim = result.Conditionals.ShouldHaveSingleItem();
+        claim.Claim.ShouldBe("subagents.prompt-is-self-contained");
+        claim.Runs.ShouldBe(2);
+        claim.Passes.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task TheRateIsOverWhatWasActuallyRun_NeverOverWhatWasDeclared()
     {
         var result = await ScenarioRunner.RunAsync(new RunPolicy(2, 2), () =>

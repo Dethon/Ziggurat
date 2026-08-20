@@ -48,10 +48,20 @@ public static class ScenarioChecks
     public static IReadOnlyList<JudgedCheck> JudgedNow(Scenario scenario, Recording recording) =>
     [
         .. scenario.Judged,
-        .. scenario.IfDelegated
-            .Where(condition => recording.Delegations.Any(d => Answers(condition, d)))
-            .SelectMany(condition => condition.Judged)
+        .. Triggered(scenario, recording).SelectMany(condition => condition.Judged)
     ];
+
+    // The conditional claims this run produced material for, deterministic and judged alike:
+    // what the runner tallies them over, so their scorecard denominator is runs with a
+    // delegation rather than runs taken.
+    public static IReadOnlyList<string> Exercised(Scenario scenario, Recording recording) =>
+        [.. Triggered(scenario, recording)
+            .SelectMany(condition => condition.Claims.Concat(condition.Judged.Select(j => j.Claim)))
+            .Distinct()];
+
+    private static IEnumerable<ConditionalDelegation> Triggered(Scenario scenario, Recording recording) =>
+        scenario.IfDelegated
+            .Where(condition => recording.Delegations.Any(d => Answers(condition, d)));
 
     // Both directions, because forgetting is destructive in both: a stale fact the user corrected
     // and that is still remembered will be applied again next turn, and a fact nobody mentioned
