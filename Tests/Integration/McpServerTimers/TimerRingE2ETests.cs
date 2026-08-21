@@ -112,15 +112,21 @@ public class TimerRingE2ETests
         await WaitForAsync(() => sessions.Get("kitchen-01") is not null, TimeSpan.FromSeconds(5));
 
         // ---- The timers server half: store + VFS + fire loop, reaching the hub only over HTTP ----
+        // This half owns the only two spans that made the test slow and racy: a timer's duration
+        // and the fire loop's one-second poll. Both are taken off an injected clock the test drives,
+        // so the timer comes due because this test said so rather than because four real seconds
+        // happened to fit inside a ten-second cap. The hub half above keeps the system clock — its
+        // waits are Kestrel's and the satellite socket's, which are not this test's to fake.
+        var timers = new ArmedClock();
         using var hubClient = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{apiPort}") };
         var hubClientFactory = new FixedClientFactory(hubClient);
         var store = new InMemoryTimerStore();
         var fs = new TimerFileSystem(
-            store, TimeProvider.System,
+            store, timers,
             new HttpAlertDismisser(hubClientFactory, "secret"),
             new HttpSatelliteCatalog(hubClientFactory, "secret"));
         var fireLoop = new TimerFireService(
-            store, new HttpInsistentAnnouncer(hubClientFactory, "secret"), TimeProvider.System,
+            store, new HttpInsistentAnnouncer(hubClientFactory, "secret"), timers,
             NullLogger<TimerFireService>.Instance);
         await fireLoop.StartAsync(ct);
 
@@ -130,7 +136,10 @@ public class TimerRingE2ETests
             false, true, ct);
         created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
 
-        // Fires within duration + 1s poll and rings on the satellite via POST /api/voice/announce.
+        // Fires on the poll tick that first sees it due, and rings on the satellite via POST
+        // /api/voice/announce. Advancing past the timer's own duration is what makes it due; the
+        // ring itself still crosses a real socket, so the arrival is still waited for.
+        await AdvanceToNextPollAsync(timers, TimeSpan.FromSeconds(3));
         await WaitForAsync(() => !audioStarts.IsEmpty, TimeSpan.FromSeconds(10));
 
         // Wake on the satellite dismisses it (hub-local acknowledgment).
@@ -145,6 +154,7 @@ public class TimerRingE2ETests
             """{"durationSeconds": 2, "text": "tea is ready", "target": {"room": "Kitchen"}}""",
             false, true, ct);
         created2.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        await AdvanceToNextPollAsync(timers, TimeSpan.FromSeconds(3));
         await WaitForAsync(() => audioStarts.Count > startsBefore, TimeSpan.FromSeconds(10));
 
         var exec = (await fs.ExecAsync("/", "dismiss.sh", null, ct))
@@ -166,6 +176,13 @@ public class TimerRingE2ETests
     {
         public HttpClient CreateClient(string name) => client;
     }
+
+    // The fire loop parks on a one-second PeriodicTimer between passes. Advancing has to land on a
+    // tick the loop is actually waiting on — advancing past a timer it has not armed yet fires
+    // nothing and leaves the loop parked against a clock already beyond it — so wait for the tick
+    // to be outstanding first, then move far enough that the armed timer is also due.
+    private static Task AdvanceToNextPollAsync(ArmedClock clock, TimeSpan by) =>
+        clock.AdvancePastLiveAsync(TimeSpan.FromSeconds(1), by);
 
     private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
     {
