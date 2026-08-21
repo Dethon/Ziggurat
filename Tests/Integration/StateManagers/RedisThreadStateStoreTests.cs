@@ -423,12 +423,20 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.SaveTopicAsync(new TopicMetadata(
             "t-race", 650, 0, "agent-race", "Racing", DateTimeOffset.UtcNow, null));
 
-        await Task.WhenAll(Enumerable.Range(0, 100).SelectMany(i => new[]
+        // Interleaved in batches rather than as one burst of two hundred. What is under test is that
+        // an append and a read-stamp racing each other lose neither write, and a batch of ten of
+        // each races them just as thoroughly. Issuing all two hundred at once raced the multiplexer
+        // instead: the whole suite shares this connection, and a backlog deep enough to trip its
+        // internal failure aborted the test with a connection error rather than a lost write.
+        foreach (var batch in Enumerable.Range(0, 100).Chunk(10))
         {
-            store.AppendMessagesAsync(
-                HistoryKey("agent-race", 650), [new ChatMessage(ChatRole.Assistant, $"reply {i}")]),
-            store.MarkTopicReadAsync("agent-race", 650, "t-race")
-        }));
+            await Task.WhenAll(batch.SelectMany(i => new[]
+            {
+                store.AppendMessagesAsync(
+                    HistoryKey("agent-race", 650), [new ChatMessage(ChatRole.Assistant, $"reply {i}")]),
+                store.MarkTopicReadAsync("agent-race", 650, "t-race")
+            }));
+        }
 
         await store.MarkTopicReadAsync("agent-race", 650, "t-race");
 

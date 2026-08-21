@@ -122,8 +122,15 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         var rowsAtRest = await WebChatE2ETests.WaitForRowsToStopMovingAsync(page, tag);
 
         await EnsurePeekAsync(page);
-        var overlayInTheWay = await page.Locator(".approval-modal-overlay").CountAsync();
-        overlayInTheWay.ShouldBe(0, "an approval overlay is covering the sheet; the gesture would never reach it");
+
+        // An approval overlay covers the whole viewport and would swallow the gesture, so it has to
+        // be gone before the drag — but it rides a fire-and-forget resume chain and a sibling's can
+        // land at any moment, including after this point. Sampling the count once therefore reported
+        // an overlay that arrived a moment earlier as a defect in the sheet. Dismiss and re-read
+        // until the viewport is actually clear, and only then insist on it.
+        await WebChatE2ETests.DismissApprovalOverlayAsync(page);
+        await Assertions.Expect(page.Locator(".approval-modal-overlay"))
+            .ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 15_000 });
 
         await InstallTapLogAsync(page);
 

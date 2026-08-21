@@ -36,8 +36,13 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // answers even a greeting with a tool call, and that raises an approval prompt which
         // holds the reply hostage until it is answered — reject whatever appears between waits,
         // or no amount of timeout produces text.
+        // The reply comes from a real model over the network, so what bounds this is the provider's
+        // worst case rather than the app's. Three minutes: a queued or slow generation ran past the
+        // old ninety seconds and reported it as an empty bubble, which reads as a broken client
+        // rather than as the wait it was. The loop still returns the moment text appears, so a
+        // normal run pays nothing for the larger cap.
         var assistantMessage = page.Locator(".chat-message.assistant .message-content");
-        var deadline = DateTime.UtcNow.AddSeconds(90);
+        var deadline = DateTime.UtcNow.AddMinutes(3);
         while (true)
         {
             await DismissApprovalOverlayAsync(page);
@@ -50,6 +55,14 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             catch (PlaywrightException) when (DateTime.UtcNow < deadline)
             {
                 // An approval may have arrived mid-wait; loop to reject it and keep waiting.
+            }
+            catch (PlaywrightException ex)
+            {
+                // Past the cap. Say which wait ran out, because "expected not to be empty" on its
+                // own has been read as the client failing to render a reply it did receive.
+                throw new TimeoutException(
+                    "No assistant text after 3 minutes. The reply comes from a real model here, so "
+                    + "this is a slow or failed generation rather than the chat client.", ex);
             }
         }
     }
@@ -202,9 +215,23 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         while (DateTime.UtcNow < deadline && await overlay.IsVisibleAsync())
         {
             var showing = await CurrentApprovalIdAsync(page);
-            if (showing is null || !await rejectBtn.IsVisibleAsync())
+            if (showing is null)
             {
+                // Nothing is on screen any more — the prompt went away while this was asking, which
+                // is the goal rather than a state to keep working at.
                 return;
+            }
+
+            if (!await rejectBtn.IsVisibleAsync())
+            {
+                // An overlay is up and carries an id, but is not answerable yet: the modal is
+                // mid-render, or its buttons are still disabled while a previous answer is in
+                // flight. Returning here left the caller with a covered viewport and called it
+                // dismissed, which is how a leaked overlay survived to fail an assertion that had
+                // already checked for one. It is a moment in the overlay's life, not a state to
+                // give up on, so look again — the deadline above is what bounds this.
+                await page.WaitForTimeoutAsync(100);
+                continue;
             }
 
             // The buttons stay disabled while an answer is in flight, so the click waits for
