@@ -45,6 +45,29 @@ for this, and each shape below is one that has already failed here.
   loop keeps its list private and hands each reader a copy taken under the lock. A plain `List`
   enumerated while another thread appends throws out of the assertion, blaming whatever was being
   checked.
+- **A composition fixture injects the clock too.** Production code here takes `TimeProvider` for
+  every wait, and a fixture that registers `TimeProvider.System` hands all of that back: the WebChat
+  client's rebuild path spends three real 500ms retries before it gives up, and the test asserting
+  on what it does then was racing 1.5s it could not see. Register an `ArmedClock` and advance onto
+  each wait. Where a fixture's clock is shared with something whose waits belong to a real socket —
+  audio streaming down a Wyoming connection, Kestrel — construct just the service under test with
+  the fake one rather than swapping the singleton.
+- **A `PeriodicTimer` is not armed per tick.** It arms once and reuses that timer, so
+  `WaitForLiveAsync` is answered continuously and cannot separate a loop waiting for its next tick
+  from one still working through the last. An advance landing in that gap is consumed and the timer
+  never comes due. Drive the clock an interval at a time until the effect appears.
+- **A TTL is asked for, not inferred.** A test that writes a short expiry and then does anything
+  before refreshing it is racing that expiry, and losing the race reads as a behaviour failure.
+  Read the TTL off the key: it is faster, and it pins the expiry the refresh actually asked for
+  rather than merely proving it outlived a sibling.
+- **A burst is not the same claim as a race.** Two hundred concurrent operations on the multiplexer
+  the whole suite shares tripped its internal failure, and the test died on a connection error
+  instead of on the thing it was pinning. Interleave in batches — the race is just as real.
+- **An observation beats a margin.** Where a test has to let one phase finish before starting the
+  next and nothing on the wire marks it, expose the state internally (`WakeArbiter.IsDeciding`,
+  beside the `IsRegistered` that was already there) rather than sleeping a multiple of it. Wait for
+  both edges: asking only whether a window has closed is answered instantly by one that has not
+  opened yet.
 
 ## E2E Tests
 
@@ -69,6 +92,13 @@ for this, and each shape below is one that has already failed here.
   finish — one that never completes then costs every later wait its whole cap.
   `WaitForRowsToStopMovingAsync` takes the caller's tag for that reason and asks the streaming
   question only of the rows carrying it; `RowSettle` is the rule on its own, unit-tested
+- Dismissing an approval overlay is a wait, not a poke. The overlay rides a fire-and-forget resume
+  chain, so a sibling's can arrive at any moment — including after a test has checked for one. Ask
+  until the viewport is clear, and treat "an overlay is up but its buttons are not answerable yet"
+  as a moment to look again rather than as dismissed
+- A wait on a real model is bounded by the provider, not the app. The reply in
+  `SendMessage_AppearsInChat` crosses the network to a live LLM; when that cap is exceeded the
+  failure must say so, or an ordinary slow generation is read as the client failing to render
 - What a run spent its wall clock on is answerable rather than guessable: set `E2E_TRACE_FILE` and
   every fixture phase, container start and row-settle wait appends its seconds to that file
   (`E2ETrace`, a null check when the variable is unset). Read it beside the run's `.trx` — the trx
