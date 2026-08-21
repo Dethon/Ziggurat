@@ -89,8 +89,8 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
             "() => { const r = document.querySelector('.hearth-rows'); return r.scrollHeight > r.clientHeight + 8; }");
         overflows.ShouldBeTrue("the conversation list does not overflow, so this test would prove nothing");
 
-        var rows = await CentreOfAsync(page, ".hearth-rows");
-        await DragAsync(cdp, rows.X, rows.Y + 40, rows.Y - 40, 16, 12, frameMs: 28);
+        var (x, y) = await CentreOfAsync(page, ".hearth-rows");
+        await DragAsync(cdp, x, y + 40, y - 40, 16, 12, frameMs: 28);
         await page.WaitForTimeoutAsync(500);
 
         var scrollTop = await page.EvaluateAsync<double>(
@@ -140,7 +140,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         // from a button unless it is `.hearth-handle`, and Chromium's touch adjustment retargets
         // the middle of `.hearth-peek` onto the config trigger — so the handle is the only point
         // on the peek bar from which the sheet actually drags.
-        var start = await CentreOfAsync(page, ".hearth-handle");
+        var (x, y) = await CentreOfAsync(page, ".hearth-handle");
 
         // Velocity is pixels-per-frame over the frame interval the drag stamps on its own events.
         // Fast = 37.5px per 16ms frame ≈ -2.3 px/ms, straight into _settle's velocity branch.
@@ -153,7 +153,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         var frameMs = fast ? 16.0 : 34.0;
 
         var swipeStartedAt = DateTime.UtcNow;
-        await DragAsync(cdp, start.X, start.Y, start.Y - travel, steps, gapMs, frameMs);
+        await DragAsync(cdp, x, y, y - travel, steps, gapMs, frameMs);
         var releasedAt = DateTime.UtcNow;
 
         // Read the app's own velocity the instant the drag released — do not hope, assert.
@@ -188,7 +188,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
 
         var report = string.Join('\n',
             $"gesture      : {(fast ? "FLICK" : "SLOW SLIDE")} {travel}px over {steps} steps, {gapMs}ms gap, "
-                + $"from {start.X:0},{start.Y:0}, {(releasedAt - swipeStartedAt).TotalMilliseconds:0}ms wall",
+                + $"from {x:0},{y:0}, {(releasedAt - swipeStartedAt).TotalMilliseconds:0}ms wall",
             $"app _vy      : {vy:0.000} px/ms  (flick threshold {FlickThreshold})",
             $"settle       : {settle.SheetClass} | transform {settle.Transform} | settled after {settle.ElapsedMs:0}ms"
                 + $" ({(settle.Settled ? "stable" : "STILL MOVING at cap")})",
@@ -245,20 +245,20 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         ICDPSession cdp, double x, double yFrom, double yTo, int steps, int gapMs, double frameMs)
     {
         var stampedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
-        double Frame(int i) => stampedAt + (i * frameMs / 1000.0);
+        double frame(int i) => stampedAt + (i * frameMs / 1000.0);
 
-        await TouchAsync(cdp, "touchStart", Frame(0), Point(x, yFrom));
+        await TouchAsync(cdp, "touchStart", frame(0), Point(x, yFrom));
 
         foreach (var i in Enumerable.Range(1, steps))
         {
-            await TouchAsync(cdp, "touchMove", Frame(i), Point(x, yFrom + (yTo - yFrom) * i / steps));
+            await TouchAsync(cdp, "touchMove", frame(i), Point(x, yFrom + (yTo - yFrom) * i / steps));
             if (gapMs > 0)
             {
                 await Task.Delay(gapMs);
             }
         }
 
-        await TouchAsync(cdp, "touchEnd", Frame(steps + 1));
+        await TouchAsync(cdp, "touchEnd", frame(steps + 1));
     }
 
     // ---- instrumentation ---------------------------------------------------------------------
