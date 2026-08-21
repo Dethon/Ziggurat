@@ -23,6 +23,11 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         "Lemonade",
         "DashboardE2E",
         "PlaywrightWebBrowserIntegration",
+        // Home Assistant cold-starts on a freshly seeded /config and does not serve its API until
+        // the integration loader has run — seconds on an idle machine, but it was being offered a
+        // thread behind every unit test and then racing a three-minute readiness cap against a
+        // daemon busy starting everything else. It boots something, so it belongs here.
+        "HomeAssistantClientTests",
     ];
 
     public IEnumerable<ITestCollection> OrderTestCollections(IEnumerable<ITestCollection> testCollections) =>

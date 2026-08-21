@@ -46,24 +46,47 @@ public sealed class RedisOutpostStoreTests(RedisFixture fixture) : IClassFixture
         (await _store.ReadAsync()).Lapsed.ShouldNotContain(name);
     }
 
-    // The refreshed entry outlives an entry written at the same moment with the same short expiry,
-    // which is the state this waits for rather than a span it sleeps through.
+    // The expiry is read off the key rather than inferred from an entry outliving a sibling. That
+    // older shape wrote both entries with the two-second expiry and then refreshed one, which made
+    // the short expiry a deadline the test itself had to beat: the round trip and a thread shared
+    // with the rest of the suite were spent against it, and a stall longer than it left RefreshAsync
+    // nothing to find, reporting an empty Live as a behaviour failure. Asking Redis what the TTL is
+    // now says the same thing more directly — and more strictly, since an entry that outlived its
+    // sibling proves only that its expiry is longer, not that it is the one the refresh asked for.
     [Fact]
     public async Task RefreshingAnEntry_PushesItsExpiryOut()
     {
-        var refreshed = Unique();
-        var control = Unique();
-        await _store.SetAsync(Registration(refreshed), _shortExpiry);
-        await _store.SetAsync(Registration(control), _shortExpiry);
+        var name = Unique();
+        await _store.SetAsync(Registration(name), _shortExpiry);
 
-        (await _store.RefreshAsync(refreshed, _longExpiry)).ShouldNotBeNull().Name.ShouldBe(refreshed);
+        (await _store.RefreshAsync(name, _longExpiry)).ShouldNotBeNull().Name.ShouldBe(name);
+
+        // A lower bound only. Redis reports the remaining TTL, which is the expiry asked for minus
+        // however long the round trip took and rounded to its own resolution, so pinning the top of
+        // the range asserts the clock rather than the code — it was briefly pinned at exactly the
+        // long expiry, and a report a shade above it failed the test for no defect at all. What the
+        // refresh has to have done is move the TTL far past the short one it was written with, and
+        // a bound most of the way to the long expiry cannot be met by anything else here.
+        var ttl = await fixture.Connection.GetDatabase().KeyTimeToLiveAsync($"outpost:{name}");
+        ttl.ShouldNotBeNull();
+        ttl.Value.ShouldBeGreaterThan(_longExpiry - TimeSpan.FromSeconds(30));
+
+        await _store.RemoveAsync(name);
+    }
+
+    // The other half of the same rule, kept as its own test: an entry nobody refreshes really does
+    // go. It waits for that state rather than for a span, so it costs the expiry and no more.
+    [Fact]
+    public async Task AnEntryRefreshedThenLeft_StillLapsesOnTheExpiryItWasGiven()
+    {
+        var name = Unique();
+        await _store.SetAsync(Registration(name), _longExpiry);
+
+        (await _store.RefreshAsync(name, _shortExpiry)).ShouldNotBeNull().Name.ShouldBe(name);
 
         await Eventually.Until(
-            async ValueTask<bool> () => !(await _store.ReadAsync()).Live.Any(r => r.Name == control),
-            "the un-refreshed entry expires");
-        (await _store.ReadAsync()).Live.Select(r => r.Name).ShouldContain(refreshed);
-
-        await _store.RemoveAsync(refreshed);
+            async ValueTask<bool> () => !(await _store.ReadAsync()).Live.Any(r => r.Name == name),
+            "the entry refreshed onto a short expiry lapses");
     }
 
     [Fact]
