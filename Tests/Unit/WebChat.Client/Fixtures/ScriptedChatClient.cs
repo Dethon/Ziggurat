@@ -69,6 +69,13 @@ public sealed class ScriptedChatClient : IAsyncDisposable
 
     public FakeHubConnectionFactory Factory { get; } = new();
 
+    // The rebuild path waits between attempts on this clock. Left as TimeProvider.System those
+    // waits are real — a connection that never comes back costs three 500ms retries before the
+    // toast is dispatched — so a test asserting on that toast was racing 1.5s of wall clock it
+    // could not see. Armed, the test advances onto each retry once the code has actually parked
+    // on it, which is both deterministic and instant.
+    public ArmedClock Clock { get; } = new();
+
     public FakeConfigService ConfigService { get; } = new FakeConfigService().WithSpace("default");
 
     public FakeLocalStorageService LocalStorage { get; } = new();
@@ -121,7 +128,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<TimeProvider>(Clock);
         services.AddScoped<NavigationManager>(_ => new FakeNavigationManager());
         services.AddScoped(_ => new Mock<IJSRuntime>().Object);
 
