@@ -112,9 +112,15 @@ public class WakeArbitrationHostTests
 
             // A's own arbitration window must close before B claims, or B joins it and the outcome
             // below would be Rule A (loudest of two claims), not the Rule B steal this test exists
-            // to pin. Nothing on the wire marks a solo window closing, so the separation has to be
-            // wall-clock; 3x the window is the margin.
-            await Task.Delay(TimeSpan.FromMilliseconds(ArbitrationWindowMs * 3));
+            // to pin. This used to sleep three window-lengths and hope; the arbiter is asked instead,
+            // so the separation is the state it reports rather than a margin that a loaded machine
+            // can spend before the window has run.
+            // Both halves, in order: the claim has to be taken up before its closing means anything,
+            // or this returns instantly on a window that has not opened yet and B joins it after all.
+            await Eventually.Until(
+                () => hub.Arbiter.IsDeciding, "A's claim to open an arbitration window");
+            await Eventually.Until(
+                () => !hub.Arbiter.IsDeciding, "A's solo arbitration window to close");
 
             // A is still mid-sentence when B wakes. Streaming this burst immediately before B's
             // claim is what keeps the test robust: Rule B needs a speech onset inside the
@@ -148,7 +154,8 @@ public class WakeArbitrationHostTests
     }
 
     private sealed record Hub(
-        WyomingSatelliteHost Host, ChannelInboxProbe Emitter, RecordingMetrics Metrics);
+        WyomingSatelliteHost Host, ChannelInboxProbe Emitter, RecordingMetrics Metrics,
+        WakeArbiter Arbiter);
 
     // Gate resolution and the per-satellite room-noise memory live in one place now, so a test
     // builds the same factory the process would rather than assembling a tracker of its own.
@@ -216,7 +223,7 @@ public class WakeArbitrationHostTests
             Gates(voiceSettings, voiceSettings.WyomingClient),
             NullLogger<WyomingSatelliteHost>.Instance);
 
-        return new Hub(host, emitter, metrics);
+        return new Hub(host, emitter, metrics, arbiter);
     }
 
     // A silent lead-in frame then three loud ones: real captures open on the ambient gap left by

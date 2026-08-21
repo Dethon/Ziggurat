@@ -71,6 +71,22 @@ public sealed class WakeArbiter(
         }
     }
 
+    // Is a claim still waiting to be decided? Asked by the multi-satellite host test, which has to
+    // let one satellite's solo window close before the next claims — otherwise the second joins the
+    // first's window and the outcome is a loudness comparison rather than the steal under test.
+    // Nothing on the wire marks a solo window closing, and the alternative was to sleep a multiple
+    // of the window and hope, which is the shape that made that test intermittent.
+    internal bool IsDeciding
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _window is not null;
+            }
+        }
+    }
+
     public void Claim(string satelliteId, double? wakeRms, double? wakeScore, string source)
     {
         if (!settings.Enabled)
