@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Net.Sockets;
 using Domain.Contracts;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.WyomingProtocol;
@@ -12,11 +14,16 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
+using Tests.Unit;
 
 namespace Tests.Integration.McpChannelVoice;
 
 public class InsistentAnnounceE2ETests
 {
+    // The gap the request below asks for. Named because an advance must match the wait the code
+    // armed exactly — a loose match would settle some other wait on the same clock.
+    private static readonly TimeSpan _ringGap = TimeSpan.FromSeconds(1);
+
     [Fact]
     public async Task PostInsistentAnnounce_RepeatsUntilAcknowledged()
     {
@@ -68,7 +75,10 @@ public class InsistentAnnounceE2ETests
         builder.Services.AddSingleton(new SatelliteRegistry(settings.Satellites));
         builder.Services.AddSingleton<SatelliteSessionRegistry>();
         builder.Services.AddSingleton<ActiveAlertRegistry>();
-        builder.Services.AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>());
+        // Read rather than ignored: AlarmAcknowledged is the loop's own statement that it stopped
+        // because the alert was acknowledged, which is the half a count of rings cannot prove.
+        var metrics = new RecordingMetricsPublisher();
+        builder.Services.AddSingleton<IMetricsPublisher>(metrics);
 
         var tts = new Mock<ITextToSpeech>();
         tts.Setup(t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
@@ -86,7 +96,23 @@ public class InsistentAnnounceE2ETests
             NullLogger<VoiceConversationManager>.Instance));
         builder.Services.AddSingleton<AnnouncementService>();
         builder.Services.AddHttpClient();
-        builder.Services.AddSingleton<InsistentAnnouncementController>();
+        // Only the repeat loop's gap runs on a clock this test drives. Everything else in the hub
+        // — playback streaming audio down a real socket, the satellite host's reconnects — keeps
+        // the system clock, because those waits are the transport's and faking them would change
+        // what the test exercises. The controller is the one service whose wait belongs to the
+        // behaviour under test: how long it leaves between rings.
+        var rings = new ArmedClock();
+        builder.Services.AddSingleton<InsistentAnnouncementController>(sp =>
+            new InsistentAnnouncementController(
+                sp.GetRequiredService<SatelliteRegistry>(),
+                sp.GetRequiredService<SatelliteSessionRegistry>(),
+                sp.GetRequiredService<ITextToSpeech>(),
+                sp.GetRequiredService<VoiceSettings>(),
+                sp.GetRequiredService<ActiveAlertRegistry>(),
+                sp.GetRequiredService<IMetricsPublisher>(),
+                rings,
+                sp.GetRequiredService<IHttpClientFactory>(),
+                NullLogger<InsistentAnnouncementController>.Instance));
         // The host takes the arbiter as a constructor dependency; without these the container fails
         // to activate it and the whole test dies at StartAsync before reaching any assertion.
         builder.Services.AddSingleton(settings.Arbitration);
@@ -113,7 +139,11 @@ public class InsistentAnnounceE2ETests
             }, ct);
         response.StatusCode.ShouldBe(HttpStatusCode.Accepted);
 
-        // It must REPEAT: wait for at least two audio-start envelopes (gap = 1s).
+        // It must REPEAT: the second ring is the one the gap stands in front of, so advancing past
+        // that gap — once the loop has actually parked on it — is what produces it. Waiting for the
+        // envelope afterwards is still a real wait: it has a socket to cross.
+        await WaitForAsync(() => !audioStarts.IsEmpty, TimeSpan.FromSeconds(10));
+        await rings.AdvancePastLiveAsync(_ringGap, _ringGap);
         await WaitForAsync(() => audioStarts.Count >= 2, TimeSpan.FromSeconds(10));
 
         // Every ring must reach the satellite marked as an alert, or it plays on the calibrated
@@ -125,8 +155,24 @@ public class InsistentAnnounceE2ETests
         // Acknowledge -> the loop stops; no meaningful growth after a couple more gaps.
         app.Services.GetRequiredService<ActiveAlertRegistry>().Acknowledge("kitchen-01").ShouldNotBeEmpty();
         var countAtAck = audioStarts.Count;
-        await Task.Delay(TimeSpan.FromSeconds(3), ct); // 3 gaps elapse
+
+        // Nothing announces a ring that does not happen, so this half is bought with time: move the
+        // clock well past three gaps, then let anything already in flight arrive before counting.
+        rings.Advance(_ringGap * 3);
+
+        // The loop says so itself when it ends on an acknowledgement, and it publishes that once.
+        // Waiting for it is what makes this a state to poll for rather than a span to sleep
+        // through — and it is the assertion that fails if the loop ever ignores the token.
+        await Eventually.Until(
+            () => metrics.Published.OfType<VoiceEvent>()
+                .Any(e => e.Metric == VoiceMetric.AlarmAcknowledged),
+            "the ring loop to report that it stopped on the acknowledgement");
+
+        // Then the other half, which is an absence and so has to be bought with time.
+        await Eventually.Settle();
         audioStarts.Count.ShouldBeLessThanOrEqualTo(countAtAck + 1); // at most one in-flight round
+        metrics.Published.OfType<VoiceEvent>()
+            .ShouldNotContain(e => e.Metric == VoiceMetric.AlarmUnacknowledged);
 
         await app.StopAsync(CancellationToken.None);
         satListener.Stop();
