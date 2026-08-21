@@ -25,6 +25,10 @@ namespace Tests.Integration.McpServerTimers;
 // rings the satellite over HTTP, and both wake-dismiss and remote dismiss.sh cross the boundary.
 public class TimerRingE2ETests
 {
+    // TimerFireService's own poll cadence. Named so an advance moves the clock by exactly the span
+    // the loop waits on rather than a multiple guessed at the call site.
+    private static readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(1);
+
     [Fact]
     public async Task ArmedTimer_FiresRingsAndDismissesAcrossTheHubBoundary()
     {
@@ -137,10 +141,9 @@ public class TimerRingE2ETests
         created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
 
         // Fires on the poll tick that first sees it due, and rings on the satellite via POST
-        // /api/voice/announce. Advancing past the timer's own duration is what makes it due; the
-        // ring itself still crosses a real socket, so the arrival is still waited for.
-        await AdvanceToNextPollAsync(timers, TimeSpan.FromSeconds(3));
-        await WaitForAsync(() => !audioStarts.IsEmpty, TimeSpan.FromSeconds(10));
+        // /api/voice/announce. The clock is driven forward until that ring lands; it still crosses
+        // a real socket, so what is waited for is the arrival rather than a span.
+        await AdvanceUntilAsync(timers, () => !audioStarts.IsEmpty, "the first timer to ring");
 
         // Wake on the satellite dismisses it (hub-local acknowledgment).
         var dismissed = app.Services.GetRequiredService<ActiveAlertRegistry>().Acknowledge("kitchen-01");
@@ -154,8 +157,8 @@ public class TimerRingE2ETests
             """{"durationSeconds": 2, "text": "tea is ready", "target": {"room": "Kitchen"}}""",
             false, true, ct);
         created2.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
-        await AdvanceToNextPollAsync(timers, TimeSpan.FromSeconds(3));
-        await WaitForAsync(() => audioStarts.Count > startsBefore, TimeSpan.FromSeconds(10));
+        await AdvanceUntilAsync(
+            timers, () => audioStarts.Count > startsBefore, "the second timer to ring");
 
         var exec = (await fs.ExecAsync("/", "dismiss.sh", null, ct))
             .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
@@ -177,12 +180,31 @@ public class TimerRingE2ETests
         public HttpClient CreateClient(string name) => client;
     }
 
-    // The fire loop parks on a one-second PeriodicTimer between passes. Advancing has to land on a
-    // tick the loop is actually waiting on — advancing past a timer it has not armed yet fires
-    // nothing and leaves the loop parked against a clock already beyond it — so wait for the tick
-    // to be outstanding first, then move far enough that the armed timer is also due.
-    private static Task AdvanceToNextPollAsync(ArmedClock clock, TimeSpan by) =>
-        clock.AdvancePastLiveAsync(TimeSpan.FromSeconds(1), by);
+    // The fire loop parks on a one-second PeriodicTimer between passes, and a PeriodicTimer arms
+    // once and reuses that timer rather than arming a fresh one per tick. So "a one-second wait is
+    // outstanding" is true almost continuously here and cannot, on its own, tell a loop waiting for
+    // the next tick from one still working through the last — an advance landing in that gap is
+    // consumed without the timer this test wants ever coming due, and the wait after it then spends
+    // its whole cap. Driving the clock until the effect appears is the honest shape for a loop whose
+    // tick the test cannot observe individually: each pass moves time on by a whole poll interval,
+    // so a due timer is found within one of them, and it returns the moment the ring lands.
+    private static async Task AdvanceUntilAsync(ArmedClock clock, Func<bool> fired, string because)
+    {
+        await clock.WaitForLiveAsync(_pollInterval);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (fired())
+            {
+                return;
+            }
+
+            clock.Advance(_pollInterval);
+            await Task.Delay(20);
+        }
+
+        fired().ShouldBeTrue($"waited 10s for {because}");
+    }
 
     private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
     {
