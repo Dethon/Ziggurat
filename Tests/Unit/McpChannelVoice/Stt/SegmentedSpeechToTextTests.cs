@@ -70,20 +70,46 @@ public class SegmentedSpeechToTextTests
         new(inner, config ?? Config(), new WyomingClientSettings(), NullLogger<SegmentedSpeechToText>.Instance);
 
     // Inner stub: returns the chunk count it received as text, optionally via a custom handler.
-    private sealed class FakeStt(Func<int, Task<TranscriptionResult>>? handler = null) : ISpeechToText
+    private sealed class FakeStt(Func<int, Task<TranscriptionResult>>? handler = null, int gate = 0)
+        : ISpeechToText
     {
         private readonly Lock _lock = new();
+        private readonly TaskCompletionSource _gateReached =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _concurrent;
         public int MaxConcurrent { get; private set; }
         public int Calls { get; private set; }
+
+        // Set when `gate` decodes have been in flight at once. A decode that arrives after the gate
+        // opens never waits, so the last segment cannot deadlock behind a quota it cannot fill.
+        public Task GateReached => _gateReached.Task;
 
         public async Task<TranscriptionResult> TranscribeAsync(
             IAsyncEnumerable<AudioChunk> audio, TranscriptionOptions options, CancellationToken ct)
         {
             lock (_lock)
-            { _concurrent++; MaxConcurrent = Math.Max(MaxConcurrent, _concurrent); Calls++; }
+            {
+                _concurrent++;
+                MaxConcurrent = Math.Max(MaxConcurrent, _concurrent);
+                Calls++;
+                if (gate > 0 && _concurrent >= gate)
+                {
+                    _gateReached.TrySetResult();
+                }
+            }
+
             try
             {
+                // Hold this decode until the overlap the test is pinning has actually happened,
+                // rather than sleeping and hoping the scheduler produced it. Under a loaded machine
+                // a sleep lets decode one finish before decode two is ever scheduled, and the
+                // high-water mark reads 1. Inside the try so a decode that gives up still leaves
+                // the in-flight count where it found it.
+                if (gate > 0)
+                {
+                    await GateReached.WaitAsync(TimeSpan.FromSeconds(30), ct);
+                }
+
                 var count = 0;
                 await foreach (var _ in audio.WithCancellation(ct))
                 {
@@ -132,11 +158,11 @@ public class SegmentedSpeechToTextTests
         // With maxInFlight=2 the decoder MUST actually overlap two segment decodes — the latency
         // optimization that justifies this class. A hardcoded-serial implementation (or one
         // ignoring the config) would fail this.
-        var inner = new FakeStt(async count =>
-        {
-            await Task.Delay(50);
-            return new TranscriptionResult { Text = count.ToString() };
-        });
+        // Each decode parks until two are in flight at once, so the overlap is observed rather
+        // than timed. The old form slept 50ms per decode and asserted the high-water mark
+        // afterwards, which is a claim about the scheduler: on a loaded machine the first decode
+        // finished before the second was scheduled and MaxConcurrent read 1.
+        var inner = new FakeStt(gate: 2);
 
         // Leading Silence(1) seeds the floor (pre-roll gap): without it the smoothed floor tracker
         // seeds itself at speech level, and a 300 ms mid-stream gap alone is shorter than the

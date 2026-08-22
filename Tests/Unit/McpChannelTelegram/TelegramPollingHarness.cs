@@ -105,7 +105,12 @@ internal sealed class TelegramPollingHarness : IDisposable
 
     public async Task RunAsync()
     {
-        _cts.CancelAfter(TimeSpan.FromSeconds(1));
+        // A backstop, not the mechanism: the mock cancels the moment it is asked for a batch the
+        // test never queued, which is what normally ends this run and happens in milliseconds. One
+        // second was close enough to real scheduling that a loaded machine reached it first, cutting
+        // the pump off before it had processed the update and reading as "nothing was sent". The
+        // cap only has to catch a pump that never gets there at all.
+        _cts.CancelAfter(TimeSpan.FromSeconds(30));
         await Service.StartAsync(_cts.Token);
 
         // The pump awaits every update in a batch before it asks for the next one, and the mock
