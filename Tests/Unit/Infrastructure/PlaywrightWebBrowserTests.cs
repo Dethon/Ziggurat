@@ -329,4 +329,108 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
     {
         PlaywrightWebBrowser.ContainsCaptcha(html).ShouldBe(expected);
     }
+
+    // JSON-LD allows "@type" to be either a string or an array of strings, and Shopify-style
+    // product pages routinely ship the array form (@graph[0] on gpufanreplacement.com is
+    // ["Organization","Brand"]). Calling GetString() on that element throws
+    // InvalidOperationException: "The requested operation requires an element of type 'String',
+    // but the target element has type 'Array'." Inside @graph the throw escaped the surrounding
+    // try/catch entirely, because Select() is lazy and was only enumerated by ToList() after the
+    // catch had gone out of scope -- so a whole browse of the page failed with internal_error.
+    [Theory]
+    [InlineData(
+        """<script type="application/ld+json">{"@type":["Product","Thing"],"name":"GPU"}</script>""",
+        "Product")]
+    [InlineData(
+        """<script type="application/ld+json">{"@graph":[{"@type":["Organization","Brand"],"name":"X"}]}</script>""",
+        "Organization")]
+    [InlineData(
+        """<script type="application/ld+json">{"@type":"Product","name":"GPU"}</script>""",
+        "Product")]
+    [InlineData(
+        """<script type="application/ld+json">{"@graph":[{"@type":"WebSite","name":"X"}]}</script>""",
+        "WebSite")]
+    [InlineData(
+        """<script type="application/ld+json">{"@type":[],"name":"GPU"}</script>""",
+        "Unknown")]
+    [InlineData(
+        """<script type="application/ld+json">{"@type":[{"nested":1}],"name":"GPU"}</script>""",
+        "Unknown")]
+    [InlineData(
+        """<script type="application/ld+json">{"name":"GPU"}</script>""",
+        "Unknown")]
+    public void ExtractStructuredData_ReadsTypeWhetherItIsAStringOrAnArray(string html, string expectedType)
+    {
+        var result = PlaywrightWebBrowser.ExtractStructuredData(html);
+
+        result.ShouldHaveSingleItem().Type.ShouldBe(expectedType);
+    }
+
+    // The array-typed entry must not take its siblings down with it: the page that failed in
+    // production had one array @type followed by six well-formed string ones.
+    [Fact]
+    public void ExtractStructuredData_WithArrayTypeInGraph_StillReturnsEverySibling()
+    {
+        const string html = """
+            <script type="application/ld+json">
+            {"@graph":[
+                {"@type":["Organization","Brand"],"name":"A"},
+                {"@type":"ImageObject","name":"B"},
+                {"@type":"WebSite","name":"C"}
+            ]}
+            </script>
+            """;
+
+        var result = PlaywrightWebBrowser.ExtractStructuredData(html);
+
+        result.Select(s => s.Type).ShouldBe(["Organization", "ImageObject", "WebSite"]);
+    }
+
+    // Malformed JSON-LD is not worth failing a browse over -- it must still be swallowed.
+    [Fact]
+    public void ExtractStructuredData_WithUnparseableJson_ReturnsNothingInsteadOfThrowing()
+    {
+        var result = PlaywrightWebBrowser.ExtractStructuredData(
+            """<script type="application/ld+json">{ this is not json }</script>""");
+
+        result.ShouldBeEmpty();
+    }
+    // Sites that block automated traffic surface as raw Gecko network codes, which the agent then
+    // reported verbatim as "Browser error: NS_ERROR_NET_ERROR_RESPONSE". Production showed three
+    // of these (idealo.es twice, arctic.de, elecan3d.com) and in each case the agent could not tell
+    // a block from an outage, so it retried a URL that would never work. Each code means something
+    // different and must keep its own advice.
+    [Theory]
+    [InlineData("NS_ERROR_NET_ERROR_RESPONSE", "blocking automated")]
+    [InlineData("NS_ERROR_REDIRECT_LOOP", "redirect loop")]
+    [InlineData("NS_ERROR_UNKNOWN_HOST", "does not resolve")]
+    [InlineData("NS_ERROR_CONNECTION_REFUSED", "refused")]
+    [InlineData("NS_ERROR_NET_TIMEOUT", "did not respond")]
+    public void DescribeNavigationError_ExplainsGeckoNetworkCodes(string code, string expectedPhrase)
+    {
+        var message = PlaywrightWebBrowser.DescribeNavigationError(
+            $"{code}\nCall log:\n  - navigating to \"https://example.com/x\"");
+
+        message.ShouldContain(expectedPhrase, Case.Insensitive);
+        message.ShouldNotContain("Call log");
+    }
+
+    // A block must say plainly that retrying will not help, so the agent stops hammering it.
+    [Fact]
+    public void DescribeNavigationError_ForABlockedRequest_SaysRetryingWillNotHelp()
+    {
+        var message = PlaywrightWebBrowser.DescribeNavigationError("NS_ERROR_NET_ERROR_RESPONSE");
+
+        message.ShouldContain("web_search", Case.Insensitive);
+    }
+
+    // Anything unrecognised must still reach the caller rather than being flattened into a
+    // generic string that hides what actually happened.
+    [Fact]
+    public void DescribeNavigationError_ForAnUnrecognisedError_KeepsTheOriginalMessage()
+    {
+        const string raw = "Something entirely unexpected happened";
+
+        PlaywrightWebBrowser.DescribeNavigationError(raw).ShouldContain(raw);
+    }
 }

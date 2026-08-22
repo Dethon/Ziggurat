@@ -160,9 +160,16 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
             CreateMemory("mem_4", "User likes dark themes in all editors", MemoryCategory.Preference)
         };
 
+        // The predicate has to ask for what the assertions below demand, or the retry is spent on
+        // the wrong question: a run that came back with a decision naming [""] satisfied
+        // "Count > 0", was accepted as usable, and then failed the source-id assertion outright
+        // without ever retrying. A model that names no memory has not made a merge decision.
         var result = await LlmAttempt.UntilAsync(
             () => LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => consolidator.ConsolidateAsync(memories, ct)),
-            decisions => decisions.Count > 0);
+            decisions => decisions.Count > 0
+                         && decisions.All(d => d.SourceIds is { Count: > 0 }
+                                               && d.SourceIds.All(id => memories.Any(m =>
+                                                   string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase)))));
 
         result.ShouldNotBeEmpty(LlmAttempt.Explain(
             "LLM should produce at least one merge decision for overlapping memories", warnings));

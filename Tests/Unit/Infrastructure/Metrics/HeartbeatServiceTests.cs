@@ -38,12 +38,15 @@ public class HeartbeatServiceTests
         var publisher = new RecordingPublisher();
         var sut = new HeartbeatService(publisher, "test-service");
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-
         // The heartbeat is published from the service's own loop, so fifty milliseconds was a bet
         // that the loop got a thread inside them. Stopping the service before the first beat is
         // exactly how that bet loses, and it loses as "the service never published".
-        await sut.StartAsync(cts.Token);
+        //
+        // The same bet was still being placed on the way in: StartAsync used to take a token
+        // cancelled after 100ms, which on a loaded machine fired before ExecuteAsync was ever
+        // scheduled, so the loop exited at its while condition and published nothing. StopAsync
+        // below is what ends the service; the start token has no other job.
+        await sut.StartAsync(CancellationToken.None);
         await Eventually.Until(
             () => publisher.Events.OfType<HeartbeatEvent>().Any(e => e.Service == "test-service"),
             "the service to publish its first heartbeat");

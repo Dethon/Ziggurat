@@ -68,7 +68,7 @@ public class PlaywrightWebBrowser(
         }
         catch (PlaywrightException ex)
         {
-            return CreateErrorResult(request.SessionId, request.Url, $"Browser error: {ex.Message}");
+            return CreateErrorResult(request.SessionId, request.Url, DescribeNavigationError(ex.Message));
         }
         catch (TimeoutException)
         {
@@ -891,7 +891,7 @@ public class PlaywrightWebBrowser(
         }
     }
 
-    private static IReadOnlyList<StructuredData> ExtractStructuredData(string html)
+    internal static IReadOnlyList<StructuredData> ExtractStructuredData(string html)
     {
         var matches = System.Text.RegularExpressions.Regex.Matches(html,
             @"<script[^>]*type=[""']application/ld\+json[""'][^>]*>(.*?)</script>",
@@ -903,21 +903,22 @@ public class PlaywrightWebBrowser(
                 try
                 {
                     var json = match.Groups[1].Value.Trim();
-                    var doc = System.Text.Json.JsonDocument.Parse(json);
+                    using var doc = System.Text.Json.JsonDocument.Parse(json);
                     var root = doc.RootElement;
 
                     if (root.TryGetProperty("@graph", out var graph) &&
                         graph.ValueKind == System.Text.Json.JsonValueKind.Array)
                     {
-                        return graph.EnumerateArray().Select(item =>
-                        {
-                            var type = item.TryGetProperty("@type", out var t) ? t.GetString() : "Unknown";
-                            return new StructuredData(type ?? "Unknown", item.GetRawText());
-                        });
+                        // ToList() inside the try: Select() alone is lazy, so an exception raised
+                        // per-item would otherwise surface at the outer ToList(), long after this
+                        // catch went out of scope, and fail the whole browse.
+                        return graph.EnumerateArray()
+                            .Select(item => new StructuredData(ReadType(item), item.GetRawText()))
+                            .ToList()
+                            .AsEnumerable();
                     }
 
-                    var rootType = root.TryGetProperty("@type", out var rt) ? rt.GetString() : "Unknown";
-                    return new[] { new StructuredData(rootType ?? "Unknown", json) }.AsEnumerable();
+                    return new[] { new StructuredData(ReadType(root), json) }.AsEnumerable();
                 }
                 catch
                 {
@@ -925,6 +926,69 @@ public class PlaywrightWebBrowser(
                 }
             })
             .ToList();
+    }
+
+    // JSON-LD lets "@type" be a string or an array of strings; product pages ship both. Reading it
+    // as a bare string throws on the array form, so take the first string the array offers.
+    private static string ReadType(System.Text.Json.JsonElement element)
+    {
+        if (!element.TryGetProperty("@type", out var type))
+        {
+            return "Unknown";
+        }
+
+        return type.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.String => type.GetString() ?? "Unknown",
+            System.Text.Json.JsonValueKind.Array => type.EnumerateArray()
+                .Where(t => t.ValueKind == System.Text.Json.JsonValueKind.String)
+                .Select(t => t.GetString())
+                .FirstOrDefault(t => !string.IsNullOrEmpty(t)) ?? "Unknown",
+            _ => "Unknown"
+        };
+    }
+
+    // Gecko reports a refused connection, a bot wall and a dead domain with equally opaque
+    // NS_ERROR_* codes, and the raw text arrives wrapped in a multi-line Playwright call log.
+    // Passing that through told the agent nothing about whether retrying was worth it, so in
+    // production it re-browsed URLs that would never load. Each code keeps its own advice.
+    internal static string DescribeNavigationError(string playwrightMessage)
+    {
+        var code = playwrightMessage.Split('\n')[0].Trim();
+
+        if (code.Contains("NS_ERROR_NET_ERROR_RESPONSE", StringComparison.Ordinal))
+        {
+            return "The site refused the request, which usually means it is blocking automated "
+                   + "browsers. Retrying will not help; use web_search to find the same "
+                   + "information on a site that allows it.";
+        }
+
+        if (code.Contains("NS_ERROR_REDIRECT_LOOP", StringComparison.Ordinal))
+        {
+            return "The site sent the browser round a redirect loop, which usually means it is "
+                   + "blocking automated browsers or wants a cookie the session does not carry. "
+                   + "Retrying will not help; try web_search for another source.";
+        }
+
+        if (code.Contains("NS_ERROR_UNKNOWN_HOST", StringComparison.Ordinal))
+        {
+            return "That domain does not resolve, so the address is wrong or the site no longer "
+                   + "exists. Check the URL, or use web_search to find the current one.";
+        }
+
+        if (code.Contains("NS_ERROR_CONNECTION_REFUSED", StringComparison.Ordinal))
+        {
+            return "The server refused the connection, so it is down or not serving this port. "
+                   + "It may be worth trying again later.";
+        }
+
+        if (code.Contains("NS_ERROR_NET_TIMEOUT", StringComparison.Ordinal))
+        {
+            return "The server did not respond in time. It may be slow or temporarily down; "
+                   + "trying again later may work.";
+        }
+
+        return $"Browser error: {playwrightMessage}";
     }
 
     private static bool ValidateUrl(string url)

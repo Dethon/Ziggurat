@@ -220,4 +220,82 @@ public class BraveSearchClientTests : IDisposable
     {
         _server.Dispose();
     }
+    // The live Brave API does not return "total_results" at all -- a real response's web object
+    // carries only type, results and family_friendly. TotalResults was a non-nullable long, so the
+    // missing field deserialized to 0 and the "?? items.Count" fallback never fired (it only guards
+    // a null web object, and web is present). Every search in production therefore reported
+    // totalResults: 0 alongside a full results array. Every fixture here used to set the field, so
+    // the tests only ever exercised the shape the API never sends.
+    [Fact]
+    public async Task SearchAsync_WhenResponseOmitsTotalResults_FallsBackToTheResultCount()
+    {
+        // Arrange - the shape the live API actually returns
+        var response = new
+        {
+            query = new { response_time = 0.42 },
+            web = new
+            {
+                type = "search",
+                family_friendly = true,
+                results = new[]
+                {
+                    new { title = "First", url = "https://example.com/1", description = "d1" },
+                    new { title = "Second", url = "https://example.com/2", description = "d2" },
+                    new { title = "Third", url = "https://example.com/3", description = "d3" }
+                }
+            }
+        };
+
+        _server.Given(Request.Create()
+                .WithPath("/web/search")
+                .WithHeader("X-Subscription-Token", "test-api-key")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(JsonSerializer.Serialize(response)));
+
+        // Act
+        var result = await _client.SearchAsync(new WebSearchQuery("test query"));
+
+        // Assert
+        result.Results.Count.ShouldBe(3);
+        result.TotalResults.ShouldBe(3);
+    }
+
+    // An explicit total_results still wins: it is the engine's own estimate of the whole corpus,
+    // which is normally far larger than the page of results returned.
+    [Fact]
+    public async Task SearchAsync_WhenResponseCarriesTotalResults_KeepsTheReportedTotal()
+    {
+        // Arrange
+        var response = new
+        {
+            query = new { response_time = 0.42 },
+            web = new
+            {
+                total_results = 4820,
+                results = new[]
+                {
+                    new { title = "First", url = "https://example.com/1", description = "d1" }
+                }
+            }
+        };
+
+        _server.Given(Request.Create()
+                .WithPath("/web/search")
+                .WithHeader("X-Subscription-Token", "test-api-key")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(JsonSerializer.Serialize(response)));
+
+        // Act
+        var result = await _client.SearchAsync(new WebSearchQuery("test query"));
+
+        // Assert
+        result.Results.Count.ShouldBe(1);
+        result.TotalResults.ShouldBe(4820);
+    }
 }
