@@ -329,4 +329,70 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
     {
         PlaywrightWebBrowser.ContainsCaptcha(html).ShouldBe(expected);
     }
+
+    // JSON-LD allows "@type" to be either a string or an array of strings, and Shopify-style
+    // product pages routinely ship the array form (@graph[0] on gpufanreplacement.com is
+    // ["Organization","Brand"]). Calling GetString() on that element throws
+    // InvalidOperationException: "The requested operation requires an element of type 'String',
+    // but the target element has type 'Array'." Inside @graph the throw escaped the surrounding
+    // try/catch entirely, because Select() is lazy and was only enumerated by ToList() after the
+    // catch had gone out of scope -- so a whole browse of the page failed with internal_error.
+    [Theory]
+    [InlineData(
+        """<script type="application/ld+json">{"@type":["Product","Thing"],"name":"GPU"}</script>""",
+        "Product")]
+    [InlineData(
+        """<script type="application/ld+json">{"@graph":[{"@type":["Organization","Brand"],"name":"X"}]}</script>""",
+        "Organization")]
+    [InlineData(
+        """<script type="application/ld+json">{"@type":"Product","name":"GPU"}</script>""",
+        "Product")]
+    [InlineData(
+        """<script type="application/ld+json">{"@graph":[{"@type":"WebSite","name":"X"}]}</script>""",
+        "WebSite")]
+    [InlineData(
+        """<script type="application/ld+json">{"@type":[],"name":"GPU"}</script>""",
+        "Unknown")]
+    [InlineData(
+        """<script type="application/ld+json">{"@type":[{"nested":1}],"name":"GPU"}</script>""",
+        "Unknown")]
+    [InlineData(
+        """<script type="application/ld+json">{"name":"GPU"}</script>""",
+        "Unknown")]
+    public void ExtractStructuredData_ReadsTypeWhetherItIsAStringOrAnArray(string html, string expectedType)
+    {
+        var result = PlaywrightWebBrowser.ExtractStructuredData(html);
+
+        result.ShouldHaveSingleItem().Type.ShouldBe(expectedType);
+    }
+
+    // The array-typed entry must not take its siblings down with it: the page that failed in
+    // production had one array @type followed by six well-formed string ones.
+    [Fact]
+    public void ExtractStructuredData_WithArrayTypeInGraph_StillReturnsEverySibling()
+    {
+        const string html = """
+            <script type="application/ld+json">
+            {"@graph":[
+                {"@type":["Organization","Brand"],"name":"A"},
+                {"@type":"ImageObject","name":"B"},
+                {"@type":"WebSite","name":"C"}
+            ]}
+            </script>
+            """;
+
+        var result = PlaywrightWebBrowser.ExtractStructuredData(html);
+
+        result.Select(s => s.Type).ShouldBe(["Organization", "ImageObject", "WebSite"]);
+    }
+
+    // Malformed JSON-LD is not worth failing a browse over -- it must still be swallowed.
+    [Fact]
+    public void ExtractStructuredData_WithUnparseableJson_ReturnsNothingInsteadOfThrowing()
+    {
+        var result = PlaywrightWebBrowser.ExtractStructuredData(
+            """<script type="application/ld+json">{ this is not json }</script>""");
+
+        result.ShouldBeEmpty();
+    }
 }

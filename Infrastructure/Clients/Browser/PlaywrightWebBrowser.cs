@@ -891,7 +891,7 @@ public class PlaywrightWebBrowser(
         }
     }
 
-    private static IReadOnlyList<StructuredData> ExtractStructuredData(string html)
+    internal static IReadOnlyList<StructuredData> ExtractStructuredData(string html)
     {
         var matches = System.Text.RegularExpressions.Regex.Matches(html,
             @"<script[^>]*type=[""']application/ld\+json[""'][^>]*>(.*?)</script>",
@@ -903,21 +903,22 @@ public class PlaywrightWebBrowser(
                 try
                 {
                     var json = match.Groups[1].Value.Trim();
-                    var doc = System.Text.Json.JsonDocument.Parse(json);
+                    using var doc = System.Text.Json.JsonDocument.Parse(json);
                     var root = doc.RootElement;
 
                     if (root.TryGetProperty("@graph", out var graph) &&
                         graph.ValueKind == System.Text.Json.JsonValueKind.Array)
                     {
-                        return graph.EnumerateArray().Select(item =>
-                        {
-                            var type = item.TryGetProperty("@type", out var t) ? t.GetString() : "Unknown";
-                            return new StructuredData(type ?? "Unknown", item.GetRawText());
-                        });
+                        // ToList() inside the try: Select() alone is lazy, so an exception raised
+                        // per-item would otherwise surface at the outer ToList(), long after this
+                        // catch went out of scope, and fail the whole browse.
+                        return graph.EnumerateArray()
+                            .Select(item => new StructuredData(ReadType(item), item.GetRawText()))
+                            .ToList()
+                            .AsEnumerable();
                     }
 
-                    var rootType = root.TryGetProperty("@type", out var rt) ? rt.GetString() : "Unknown";
-                    return new[] { new StructuredData(rootType ?? "Unknown", json) }.AsEnumerable();
+                    return new[] { new StructuredData(ReadType(root), json) }.AsEnumerable();
                 }
                 catch
                 {
@@ -925,6 +926,26 @@ public class PlaywrightWebBrowser(
                 }
             })
             .ToList();
+    }
+
+    // JSON-LD lets "@type" be a string or an array of strings; product pages ship both. Reading it
+    // as a bare string throws on the array form, so take the first string the array offers.
+    private static string ReadType(System.Text.Json.JsonElement element)
+    {
+        if (!element.TryGetProperty("@type", out var type))
+        {
+            return "Unknown";
+        }
+
+        return type.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.String => type.GetString() ?? "Unknown",
+            System.Text.Json.JsonValueKind.Array => type.EnumerateArray()
+                .Where(t => t.ValueKind == System.Text.Json.JsonValueKind.String)
+                .Select(t => t.GetString())
+                .FirstOrDefault(t => !string.IsNullOrEmpty(t)) ?? "Unknown",
+            _ => "Unknown"
+        };
     }
 
     private static bool ValidateUrl(string url)
