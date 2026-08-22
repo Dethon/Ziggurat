@@ -74,10 +74,39 @@ public static partial class HtmlProcessor
             return ProcessFullBody(request, document);
         }
 
+        // Readability can also fail by succeeding: on a page whose real content sits in custom
+        // elements it scores as non-content, it settles on whatever plain prose is left -- a
+        // consent notice, a subscription pitch -- and returns that as the article. Compare what it
+        // kept against what the document actually holds, and prefer the body when the two disagree
+        // by an order of magnitude.
+        if (ReadabilityExtractionLooksTruncated(
+                (article.TextContent ?? string.Empty).Length,
+                (document.Body?.TextContent ?? string.Empty).Trim().Length))
+        {
+            return ProcessFullBody(request, document);
+        }
+
         var metadata = UpdateMetadataFromArticle(ExtractMetadata(document), article);
         var articleContent = HtmlConverter.Convert(article.Content, WebFetchOutputFormat.Markdown);
 
         return CreateSuccessResult(request.MaxLength, request.Offset, article.Title, articleContent, metadata);
+    }
+
+    // All three bounds are needed to tell a failed extraction from a legitimately thin one.
+    // Measured on real captures: reddit yields 625 chars from a 133627-char body (0.47%) and must
+    // fall back, while an arstechnica index yields 977 from 59950 (1.63%) and must not. The
+    // absolute floor separates those two; the ratio keeps a large-but-minority extraction (bbc at
+    // 7.69%) safe; the body floor stops a small page, where a short article is the whole story,
+    // from ever being second-guessed.
+    private const int MinTrustedExtractionChars = 800;
+    private const double MinTrustedExtractionRatio = 0.01;
+    private const int MinBodyCharsToDoubt = 10000;
+
+    internal static bool ReadabilityExtractionLooksTruncated(int extractedLength, int bodyLength)
+    {
+        return extractedLength < MinTrustedExtractionChars
+               && bodyLength >= MinBodyCharsToDoubt
+               && (double)extractedLength / bodyLength < MinTrustedExtractionRatio;
     }
 
     private static WebPageMetadata ExtractMetadata(IDocument document)

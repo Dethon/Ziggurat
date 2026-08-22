@@ -373,4 +373,39 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
+    // The agent reported four times that it could not read a reddit thread's comments "because of
+    // cookie consent". The consent wall was real but incidental: the comments were in the DOM the
+    // whole time, and dismissal worked. What actually happened is that readability discarded the
+    // <shreddit-comment> custom elements as non-content and settled on the consent notice -- the
+    // only ordinary prose left -- returning 625 characters of cookie text as the article. This is
+    // the end-to-end proof, on the real page, that a readability browse now reaches the comments.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task NavigateAsync_RedditThreadWithReadability_ReturnsCommentsNotTheConsentNotice()
+    {
+        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
+
+        var sessionId = GetUniqueSessionId();
+        try
+        {
+            var result = await fixture.Browser.NavigateAsync(new BrowseRequest(
+                SessionId: sessionId,
+                Url: "https://www.reddit.com/r/anime/comments/wbj3yc/can_someone_recommend_a_hidden_gem_isekai_pls/",
+                MaxLength: 20000,
+                UseReadability: true));
+
+            testOutputHelper.WriteLine($"status={result.Status} contentLength={result.ContentLength}");
+
+            result.Status.ShouldBe(BrowseStatus.Success);
+            var content = result.Content.ShouldNotBeNull();
+
+            // The failure returned ~735 bytes that were entirely the consent notice.
+            content.Length.ShouldBeGreaterThan(5000);
+            content.ShouldContain("Comments", Case.Insensitive);
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
 }

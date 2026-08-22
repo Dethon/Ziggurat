@@ -341,4 +341,38 @@ public class HtmlProcessorTests
         var invalidChars = result.Content!.Where(c => c < ' ' && c != '\t' && c != '\n' && c != '\r').ToList();
         invalidChars.ShouldBeEmpty($"Content contains invalid control characters: {string.Join(", ", invalidChars.Select(c => $"U+{(int)c:X4}"))}");
     }
+
+    // Reddit's comments live in <shreddit-comment> custom elements, which readability scores as
+    // non-content, so on a real 1.1MB thread it picked the cookie notice -- the densest block of
+    // ordinary prose on the page -- as the article and returned 625 characters of consent text with
+    // no comments. The pre-existing fallback only fires when readability returns nothing at all,
+    // and this returns something, confidently. Four browses in production came back this way and
+    // the agent reported it could not see the comments because of a consent wall, when they had
+    // been in the DOM the whole time.
+    //
+    // The bounds come from measuring real captures rather than taste. Falling back needs all three,
+    // because no single one separates the cases:
+    //   reddit  /anime   625 chars of 133627 (0.47%)  <- must fall back
+    //   reddit  /nvidia  657 chars of 117547 (0.56%)  <- must fall back
+    //   arstechnica      977 chars of  59950 (1.63%)  <- thin but correct, must be kept
+    //   bbc news        8116 chars of 105496 (7.69%)  <- must be kept
+    [Theory]
+    // The two production failures.
+    [InlineData(625, 133627, true)]
+    [InlineData(657, 117547, true)]
+    // Thin-but-correct extractions that must survive.
+    [InlineData(977, 59950, false)]
+    [InlineData(8116, 105496, false)]
+    [InlineData(3367, 14860, false)]
+    [InlineData(28434, 56833, false)]
+    // A small page is not evidence of a bad extraction: with little text anywhere, a short
+    // article is simply the whole story.
+    [InlineData(200, 900, false)]
+    [InlineData(0, 0, false)]
+    public void ReadabilityExtractionLooksTruncated_SeparatesFailedExtractionsFromThinOnes(
+        int extractedLength, int bodyLength, bool expected)
+    {
+        HtmlProcessor.ReadabilityExtractionLooksTruncated(extractedLength, bodyLength)
+            .ShouldBe(expected);
+    }
 }
