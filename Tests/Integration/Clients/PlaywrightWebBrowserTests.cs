@@ -396,8 +396,18 @@ public class PlaywrightWebBrowserTests(
 
             testOutputHelper.WriteLine($"status={result.Status} contentLength={result.ContentLength}");
 
-            result.Status.ShouldBe(BrowseStatus.Success);
+            // The subject here is what readability does with the page, not whether reddit is up.
+            // Asserting Success made a rate-limited or slow fetch from a third party read as a
+            // defect in the browse, which is how this failed a full-suite run that had nothing to
+            // do with it. An unreachable page has nothing to say about the extraction, so skip.
+            Skip.If(
+                result.Status != BrowseStatus.Success,
+                $"reddit did not serve the thread ({result.Status}: {result.ErrorMessage})");
             var content = result.Content.ShouldNotBeNull();
+
+            // Deliberately NOT skipped on a consent-wall body: that is exactly the regression this
+            // test exists to catch, and skipping it would hide the bug it was written for. Only an
+            // unreachable page is excused, above.
 
             // The failure returned ~735 bytes that were entirely the consent notice.
             content.Length.ShouldBeGreaterThan(5000);

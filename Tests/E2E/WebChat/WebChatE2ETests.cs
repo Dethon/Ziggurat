@@ -290,6 +290,15 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         var menu = page.Locator(".user-dropdown-menu");
         var dropdownItem = page.Locator(".user-dropdown-item").Nth(userIndex);
 
+        // The picker is Blazor-rendered after the app boots, and every WebChat and Dashboard test
+        // comes through here. Five seconds was a bet on how fast that boot is: in a full-suite run
+        // the container is serving every other test at the same time, and the wait expired before
+        // the button existed -- surfacing as "waiting for Locator(.avatar-button)" inside whichever
+        // unrelated test happened to be running. The interception retry below is for the approval
+        // overlay stealing a click, which is a different problem and is why three short attempts
+        // never helped: all three raced the same boot.
+        await avatarButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+
         for (var attempt = 0; attempt < 3; attempt++)
         {
             try
