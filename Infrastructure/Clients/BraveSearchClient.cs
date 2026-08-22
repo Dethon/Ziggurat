@@ -144,9 +144,12 @@ public class BraveSearchClient(HttpClient httpClient, string apiKey) : IWebSearc
         [JsonPropertyName("results")]
         public List<BraveWebResult>? Results { get; init; }
 
+        // Nullable on purpose: the live API omits "total_results" entirely, and a non-nullable
+        // long turned that absence into a real 0, which then beat the "?? items.Count" fallback
+        // and made every successful search report no results.
         [UsedImplicitly]
         [JsonPropertyName("total_results")]
-        public long TotalResults { get; init; }
+        public long? TotalResults { get; init; }
     }
 
     [UsedImplicitly]
