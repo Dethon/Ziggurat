@@ -68,7 +68,7 @@ public class PlaywrightWebBrowser(
         }
         catch (PlaywrightException ex)
         {
-            return CreateErrorResult(request.SessionId, request.Url, $"Browser error: {ex.Message}");
+            return CreateErrorResult(request.SessionId, request.Url, DescribeNavigationError(ex.Message));
         }
         catch (TimeoutException)
         {
@@ -946,6 +946,49 @@ public class PlaywrightWebBrowser(
                 .FirstOrDefault(t => !string.IsNullOrEmpty(t)) ?? "Unknown",
             _ => "Unknown"
         };
+    }
+
+    // Gecko reports a refused connection, a bot wall and a dead domain with equally opaque
+    // NS_ERROR_* codes, and the raw text arrives wrapped in a multi-line Playwright call log.
+    // Passing that through told the agent nothing about whether retrying was worth it, so in
+    // production it re-browsed URLs that would never load. Each code keeps its own advice.
+    internal static string DescribeNavigationError(string playwrightMessage)
+    {
+        var code = playwrightMessage.Split('\n')[0].Trim();
+
+        if (code.Contains("NS_ERROR_NET_ERROR_RESPONSE", StringComparison.Ordinal))
+        {
+            return "The site refused the request, which usually means it is blocking automated "
+                   + "browsers. Retrying will not help; use web_search to find the same "
+                   + "information on a site that allows it.";
+        }
+
+        if (code.Contains("NS_ERROR_REDIRECT_LOOP", StringComparison.Ordinal))
+        {
+            return "The site sent the browser round a redirect loop, which usually means it is "
+                   + "blocking automated browsers or wants a cookie the session does not carry. "
+                   + "Retrying will not help; try web_search for another source.";
+        }
+
+        if (code.Contains("NS_ERROR_UNKNOWN_HOST", StringComparison.Ordinal))
+        {
+            return "That domain does not resolve, so the address is wrong or the site no longer "
+                   + "exists. Check the URL, or use web_search to find the current one.";
+        }
+
+        if (code.Contains("NS_ERROR_CONNECTION_REFUSED", StringComparison.Ordinal))
+        {
+            return "The server refused the connection, so it is down or not serving this port. "
+                   + "It may be worth trying again later.";
+        }
+
+        if (code.Contains("NS_ERROR_NET_TIMEOUT", StringComparison.Ordinal))
+        {
+            return "The server did not respond in time. It may be slow or temporarily down; "
+                   + "trying again later may work.";
+        }
+
+        return $"Browser error: {playwrightMessage}";
     }
 
     private static bool ValidateUrl(string url)
