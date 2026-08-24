@@ -133,7 +133,7 @@ public static class VoiceScenarios
         Claims =
         [
             VoicePrompt.FailureIsOneClause.Id, VoicePrompt.NothingUnspeakable.Id,
-            VoicePrompt.NoPlaceholderToolCalls.Id
+            BasePrompt.NoPlaceholderToolCalls.Id
         ],
         Policy = new RunPolicy(2, 3)
     };

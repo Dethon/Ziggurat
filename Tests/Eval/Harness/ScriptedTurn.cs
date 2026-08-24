@@ -17,9 +17,15 @@ public static class ScriptedTurn
     public static Step Call(string tool, object? path = null, string result = "ok") =>
         new(tool, path is null ? null : new Dictionary<string, object?> { ["path"] = path }, result);
 
-    // A search, which is the one tool whose argument is a question rather than a path.
-    public static Step Search(string tool, string query, string result = "{}") =>
-        new(tool, new Dictionary<string, object?> { ["query"] = query }, result);
+    // A search, which is the one tool whose argument is a question rather than a path. maxResults
+    // rides along because it is what separates a real search from the model's warm-up probe: every
+    // probe observed asks for one result, and no genuine search does.
+    public static Step Search(string tool, string query, string result = "{}", int maxResults = 10) =>
+        new(tool, new Dictionary<string, object?>
+        {
+            ["query"] = query,
+            ["maxResults"] = maxResults
+        }, result);
 
     // An action file being run, which is the shape every Home Assistant call takes: the path names
     // the entity and the command names the action.

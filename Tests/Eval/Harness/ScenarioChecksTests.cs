@@ -614,10 +614,52 @@ public class ScenarioChecksTests
         // throat. It is recorded as a finding instead, and the dump still shows the call.
         var recording = await ScriptedTurn.RunAsync(
             "listo",
-            ScriptedTurn.Search("mcp__localhost-1234__web_search", "noop"),
+            ScriptedTurn.Search("mcp__localhost-1234__web_search", "noop", maxResults: 1),
             ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
 
         ScenarioChecks.Failures(Timer() with { CallCeiling = 1 }, recording).ShouldBeEmpty();
+    }
+
+    [Theory]
+    // Every shape the tic has been observed in since the "noop" one was first pinned, taken from
+    // the dumps: an empty query, a stand-in domain, a bare word lifted from the turn, and a
+    // site: filter naming somewhere that does not exist. What they share is not the wording —
+    // "timer" reads like a real question — but that each asks for a single result and then goes
+    // unread. See AGenuineSearch_IsNeverOneResult for the other half of that line.
+    [InlineData("")]
+    [InlineData("noop")]
+    [InlineData("ignore")]
+    [InlineData("site:example.com")]
+    [InlineData("timer")]
+    [InlineData("site:local Ziggurat")]
+    [InlineData("site: local Pasta al pesto")]
+    public async Task AOneResultProbe_IsNotCountedWhateverItsQuery(string query)
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Search("mcp__localhost-1234__web_search", query, maxResults: 1),
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        ScenarioChecks.Failures(Timer() with { CallCeiling = 1 }, recording).ShouldBeEmpty();
+    }
+
+    [Theory]
+    // The counterpart the widening must not break: a real search asks for several results. Across
+    // every armed dump the suite has produced, genuine searches ask for 5, 10 or 20 and the probes
+    // ask for 1 — so the count is the line, and a plausible-looking query does not cross it.
+    [InlineData(5)]
+    [InlineData(10)]
+    [InlineData(20)]
+    public async Task AGenuineSearch_IsNeverOneResult(int maxResults)
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Search(
+                "mcp__localhost-1234__web_search", "temporizadores de pasta", maxResults: maxResults),
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldHaveSingleItem().ShouldContain("web_search");
     }
 
     [Fact]

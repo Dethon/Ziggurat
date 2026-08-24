@@ -29,8 +29,6 @@ public static class VoicePrompt
 
         Before a web search, a subagent, or work that takes several tool calls, your first output is one plain word in your reply language, such as 'Buscando.' — one word, once, ending in a full stop. It is spoken immediately, before the tools run. That word is text you say, never a tool call. Then say nothing at all until the work is finished, and give the answer once. If one round of tools is enough, say nothing first, just answer.
 
-        Every tool call must be one you need, with the real arguments the request gives you. Never call a tool to warm it up, to check that it works, or to fill the moment before you answer, and never call one with placeholder arguments — an empty query, 'about:blank', 'example.com', a length of one. If you have nothing to look up, make no call.
-
         Sections above these voice rules describe how tools work and were written for replies read on a screen. Where any of them implies a longer or formatted reply, these rules win; their other instructions still apply.
         """;
     // Every falsifiable statement the rules above make, each one named so a scenario cites it as a
@@ -80,15 +78,6 @@ public static class VoicePrompt
         new("voice.one-word-before-slow-work",
             "Before a search, a subagent or several rounds of tools, the first output is one plain word, and nothing more is said until the answer.");
 
-    // Declared after three armed reds caught the same shape on three different tools: an empty
-    // web_search query, an 'about:blank' browse, an 'example.com' browse, each with a length of
-    // one and each ignored by the turn that made it. The filler word before slow work is what
-    // invites it — the model discharges 'say something before the tools run' as a tool call — so
-    // the rule that forbids it lives next to the rule that provokes it.
-    public static readonly PromptClaim NoPlaceholderToolCalls =
-        new("voice.no-placeholder-tool-calls",
-            "No tool is called to warm it up or fill a pause, and never with placeholder arguments such as an empty query or a stand-in url.");
-
     public static readonly IReadOnlyList<PromptClaim> Claims =
     [
         OneSentenceTwelveWords,
@@ -101,7 +90,6 @@ public static class VoicePrompt
         NothingIsNarrated,
         NothingUnspeakable,
         AbbreviationsAreSpelledOut,
-        OneWordBeforeSlowWork,
-        NoPlaceholderToolCalls
+        OneWordBeforeSlowWork
     ];
 }

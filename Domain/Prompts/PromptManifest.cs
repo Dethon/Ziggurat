@@ -28,10 +28,13 @@ public static class PromptManifest
         new()
         {
             Name = CoreDirective,
-            Purpose = "The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns.",
+            Purpose = "The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.",
             Priority = PromptPriority.CoreDirective,
-            TokenBudget = 250,
-            Conflict = ConflictPolicy.Governs(PromptRules.Refusals)
+            // 250 covered the refusals prose alone; the tool-call rule landed exactly on it,
+            // leaving a section every agent reads one word from failing the build.
+            TokenBudget = 350,
+            Conflict = ConflictPolicy.Governs(PromptRules.Refusals),
+            Claims = BasePrompt.Claims
         },
         new()
         {

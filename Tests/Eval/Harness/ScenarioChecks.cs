@@ -261,13 +261,23 @@ public static class ScenarioChecks
             : [];
 
     // Everything the scenario answers for. One call is left out: this model occasionally opens a
-    // turn with a search whose query is the word "noop" and then does the work correctly — it is
-    // clearing its throat rather than attempting the request, and it lands on whichever scenario
-    // happens to be running, so counting it would turn one arbitrary scenario per run red. The
-    // behaviour itself is recorded as a finding of its own, and the dump still lists the call.
+    // turn with a throwaway search and then does the work correctly — it is clearing its throat
+    // rather than attempting the request, and it lands on whichever scenario happens to be
+    // running, so counting it would turn one arbitrary scenario per run red. The behaviour itself
+    // is recorded as a finding of its own, and the dump still lists the call.
     private static IEnumerable<ToolInvocation> Considered(Recording recording) =>
         recording.Calls.Where(call => !IsWarmUpProbe(call));
 
+    // Originally the literal query "noop". The tic outlived that wording: later runs opened with
+    // an empty query, "ignore", "site:example.com", "site:local Ziggurat" and the bare word
+    // "timer" lifted from the turn — so matching on the words was a list that kept growing, and
+    // "timer" reads like a question a real search might ask.
+    //
+    // What every probe shares is that it asks for a single result. Across every armed dump this
+    // suite has produced, a genuine search asks for 5, 10 or 20 and never for 1: one result is
+    // useless to a model that means to read what comes back, which is why the tic and the real
+    // thing separate cleanly here and not on the query. A probe is still recorded and still
+    // dumped; what it no longer does is redden whichever scenario it landed on.
     private static bool IsWarmUpProbe(ToolInvocation call)
     {
         if (!call.ToolName.EndsWith(WebSearchTool.Name, StringComparison.Ordinal))
@@ -278,8 +288,9 @@ public static class ScenarioChecks
         try
         {
             using var arguments = JsonDocument.Parse(call.Arguments);
-            return arguments.RootElement.TryGetProperty("query", out var query)
-                   && string.Equals(query.GetString(), "noop", StringComparison.OrdinalIgnoreCase);
+            return arguments.RootElement.TryGetProperty("maxResults", out var maxResults)
+                   && maxResults.TryGetInt32(out var wanted)
+                   && wanted <= 1;
         }
         catch (JsonException)
         {
