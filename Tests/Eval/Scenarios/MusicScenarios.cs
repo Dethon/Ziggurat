@@ -10,7 +10,7 @@ namespace Tests.Eval.Scenarios;
 // which is why every scenario here is about the call that comes *before* the playback one.
 public static class MusicScenarios
 {
-    public static IReadOnlyList<Scenario> All => [FavouriteMusic, ThePalantirEpisode, FromTheBeginning];
+    public static IReadOnlyList<Scenario> All => [FavouriteMusic, ThePalantirEpisode, FromTheBeginning, RewindThreeMinutes];
 
     // The user's words for the list and the list's stored title share nothing. The only place the
     // real title exists is the library listing, so a play that did not browse first is a play of
@@ -163,6 +163,51 @@ public static class MusicScenarios
         CallCeiling = 4,
         // No citation: with the restart bullet deleted the seek still happened. Working out that
         // "from the beginning" is a seek rather than a second play is this model's default.
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // A relative move has no service of its own: media_seek takes an absolute position, so the
+    // model has to read where the player is and subtract. What made this dangerous in the field is
+    // that Home Assistant's stored media_position does not tick — it is refreshed only by a state
+    // transition — so a player an hour into an episode still reported the position it started
+    // with, and "rewind three minutes" computed 0 - 180, clamped, and threw the episode back to
+    // the beginning. Twice, on two different podcasts. The VFS now projects the value to the turn's
+    // instant and says so; the seek this scenario requires is reachable only from the projected
+    // number, so a regression that restores the raw field reds it.
+    public static Scenario RewindThreeMinutes => new()
+    {
+        Name = "a rewind seeks from where the player actually is",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "rebobina tres minutos",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "seek",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
+                    Arg.Matches("command", @"^media_seek\.sh\b"),
+                    // 4200 - 180. A seek computed from the raw 3600 lands on 3420, and the failure
+                    // this scenario was written for lands on 0 — neither matches.
+                    Arg.Matches("command", @"--seek_position\s+""?40(1[0-9]|2[0-9])\b")
+                ]
+            }
+        ],
+        // Reading state.json is how the position is obtained, so looking is permitted; running
+        // anything else on the player is not. A rewind is a seek and nothing else — one field run
+        // created a timer called "Rebobina" instead, which this forbids.
+        Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
+        CallCeiling = 5,
+        Claims = [HomeAssistantPrompt.RelativeSeekReadsThePositionFirst.Id],
         Policy = new RunPolicy(2, 3)
     };
 }

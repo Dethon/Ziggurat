@@ -1,4 +1,4 @@
-# jonas — 11062 tokens across 15 sections
+# jonas — 11182 tokens across 15 sections
 
   core_directive           CoreDirective         250 / 350    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               30 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -10,7 +10,7 @@
   sandbox_prompt           Client               1004 / 1400   The sandbox's layout, what may be run in it and what it refuses.
   websearch_prompt         Client               1223 / 1500   Searching, loading and reading pages, and what to do when one refuses.
   idealista_guide          Client                317 / 600    Property search: the filters that exist and how a listing is read back.
-  home_assistant_guide     Client               2936 / 5000   The house: its areas and entities, and how an intent becomes a service call.
+  home_assistant_guide     Client               3056 / 5000   The house: its areas and entities, and how an intent becomes a service call.
   scheduling_prompt        Client               1360 / 2000   Scheduled tasks as files: creating, listing, editing and firing one.
   printing_prompt          Client                330 / 600    The printer's queue, the formats it takes and what it rejects.
   timers_prompt            Client                979 / 1500   Timers and alarms on the satellites, named by the room they ring in.
@@ -473,6 +473,12 @@ from) unless another room is named; "everywhere" => run it on every room's MA pl
   nothing; the resume point just moves to where you stopped. `media_seek.sh` is the only
   call that restarts, and it needs something already loaded on the player: if the item is
   not playing yet, play it first, then seek.
+- "Rewind/skip forward N minutes": a relative move is an absolute `media_seek.sh`, so read
+  `media_position` from the player's `state.json` first and add or subtract from it. That
+  read is INPUT to the seek, not a confirmation of it. While the player is playing the
+  value is projected to now and the file says so (`media_position_is_projected`); trust it
+  as the current position. Never treat a rewind as a timer or a reminder — it is a seek on
+  the player and nothing else.
 - Grouping (synced multi-room): `join.sh` (`media_player.join`; `--group_members` = the
   other players) to play in sync; `unjoin.sh` (`media_player.unjoin`) to split a room
   back out.

@@ -9,9 +9,12 @@ public sealed partial class HaFileSystem(
     HaCatalogProvider catalogProvider,
     Func<IHomeAssistantClient> clientFactory,
     TimeSpan? regexMatchTimeout = null,
-    Func<IMusicAssistantClient>? musicClientFactory = null) : FileSystemBackendBase
+    Func<IMusicAssistantClient>? musicClientFactory = null,
+    TimeProvider? timeProvider = null) : FileSystemBackendBase
 {
     public const string Name = "ha";
+
+    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
     public override string FilesystemName => Name;
 
@@ -119,7 +122,7 @@ public sealed partial class HaFileSystem(
         return await SearchNodesAsync(
             scoped,
             (entity, _) => ValueTask.FromResult<(string, string?)>(
-                (CanonicalStatePath(entity), HaStateRenderer.ToJson(entity))),
+                (CanonicalStatePath(entity), HaStateRenderer.ToJson(entity, _time))),
             new FsSearchScan
             {
                 Query = query,
@@ -167,7 +170,7 @@ public sealed partial class HaFileSystem(
     private async Task<FsResult<FsReadResult>> ReadStateAsync(string path, string entityId, int? offset, int? limit, CancellationToken ct)
     {
         var entity = await clientFactory().GetStateAsync(entityId, ct);
-        return entity is null ? NotFound(path) : BuildReadResult(path, HaStateRenderer.ToJson(entity), offset, limit);
+        return entity is null ? NotFound(path) : BuildReadResult(path, HaStateRenderer.ToJson(entity, _time), offset, limit);
     }
 
     private static FsResult<FsReadResult> ReadAction(string path, string entityId, string service, HaCatalog catalog)

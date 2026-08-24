@@ -175,6 +175,12 @@ public static class HomeAssistantPrompt
           nothing; the resume point just moves to where you stopped. `media_seek.sh` is the only
           call that restarts, and it needs something already loaded on the player: if the item is
           not playing yet, play it first, then seek.
+        - "Rewind/skip forward N minutes": a relative move is an absolute `media_seek.sh`, so read
+          `media_position` from the player's `state.json` first and add or subtract from it. That
+          read is INPUT to the seek, not a confirmation of it. While the player is playing the
+          value is projected to now and the file says so (`media_position_is_projected`); trust it
+          as the current position. Never treat a rewind as a timer or a reminder — it is a seek on
+          the player and nothing else.
         - Grouping (synced multi-room): `join.sh` (`media_player.join`; `--group_members` = the
           other players) to play in sync; `unjoin.sh` (`media_player.unjoin`) to split a room
           back out.
@@ -248,6 +254,10 @@ public static class HomeAssistantPrompt
         new("home.restart-is-a-seek",
             "Starting an item over is a seek to the beginning; playing it again resumes where it was left.");
 
+    public static readonly PromptClaim RelativeSeekReadsThePositionFirst =
+        new("home.relative-seek-reads-the-position-first",
+            "A rewind or skip-forward reads media_position and seeks to that value plus or minus the offset, never to a bare offset and never as a timer.");
+
     public static readonly PromptClaim AreaSlugIsReadNotDerived =
         new("home.area-slug-is-read-not-derived",
             "An area id passed to an action is the slug read from the setup index, never one derived from the display name.");
@@ -266,6 +276,7 @@ public static class HomeAssistantPrompt
         EpisodePlaysOnlyByItsUri,
         TheWebIsNoMediaFallback,
         RestartIsASeek,
+        RelativeSeekReadsThePositionFirst,
         AreaSlugIsReadNotDerived
     ];
 }

@@ -26,6 +26,7 @@ public static class ConfigModule
             }
 
             services
+                .AddSingleton(TimeProvider.System)
                 .AddHomeAssistantClient(settings.HomeAssistant.BaseUrl, settings.HomeAssistant.Token)
                 .AddSingleton(sp => new HaCatalogProvider(
                     sp.GetRequiredService<IHomeAssistantClient>,
@@ -33,7 +34,8 @@ public static class ConfigModule
                 .AddSingleton(sp => new HaFileSystem(
                     sp.GetRequiredService<HaCatalogProvider>(),
                     sp.GetRequiredService<IHomeAssistantClient>,
-                    musicClientFactory: musicConfigured ? sp.GetRequiredService<IMusicAssistantClient> : null))
+                    musicClientFactory: musicConfigured ? sp.GetRequiredService<IMusicAssistantClient> : null,
+                    timeProvider: sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton(sp => new HomeAssistantSetupSummary(sp.GetRequiredService<HaCatalogProvider>()))
                 .AddToolServer(settings, ToolResponse.Create)
                 .AddFileSystemTools<HaFileSystem>()

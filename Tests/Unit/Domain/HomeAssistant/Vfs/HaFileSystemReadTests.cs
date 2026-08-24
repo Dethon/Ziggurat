@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
@@ -121,5 +122,47 @@ public class HaFileSystemReadTests
         var error = result.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error;
         error.ErrorCode.ShouldBe("not_found");
         error.Hint.ShouldNotBeNull().ShouldContain("porch");
+    }
+
+    // The position the agent reads drives relative seeks ("rewind three minutes"). HA freezes
+    // media_position between state transitions, so reading it raw sent a podcast episode back to 0.
+    // The attributes here are parsed from a real HA response shape (JsonElement-backed), not
+    // constructed values — the numeric accessor behaves differently for the two.
+    [Fact]
+    public async Task ReadAsync_PlayingMediaPlayer_ProjectsPositionFromRealHaPayload()
+    {
+        var attrs = JsonNode.Parse("""
+            {
+              "friendly_name": "Office",
+              "media_duration": 5891,
+              "media_position": 4243,
+              "media_position_updated_at": "2026-05-23T09:14:02+00:00"
+            }
+            """)!.AsObject();
+
+        var client = new FakeHaClient
+        {
+            States =
+            {
+                new HaEntityState
+                {
+                    EntityId = "media_player.office",
+                    State = "playing",
+                    Attributes = attrs.ToDictionary(a => a.Key, a => a.Value?.DeepClone())
+                }
+            },
+            Services = { Service("media_player", "media_seek", AnyEntityTarget()) },
+            AreaTemplateJson = """{"areas":[]}"""
+        };
+        var clock = new FakeTimeProvider();
+        clock.SetUtcNow(DateTimeOffset.Parse("2026-05-23T09:24:02Z"));
+        var fs = new HaFileSystem(
+            new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client, timeProvider: clock);
+
+        var result = await fs.ReadAsync("entities/media_player/office_(office)/state.json", null, null, CancellationToken.None);
+
+        var content = result.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
+        content.ShouldContain("\"media_position\": 4843");
+        content.ShouldContain("\"media_position_is_projected\": true");
     }
 }
