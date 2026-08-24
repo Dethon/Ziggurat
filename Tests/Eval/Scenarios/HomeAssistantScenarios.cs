@@ -302,7 +302,7 @@ public static class HomeAssistantScenarios
             new CallPermission(EvalTools.Exec, FakeHomeAssistant.AlarmsDirectory)
         ],
         CallCeiling = 6,
-        Claims = [HomeAssistantPrompt.SnoozeIsANewEvent.Id],
+        Claims = [HomeAssistantPrompt.SnoozeIsANewEvent.Id, VoicePrompt.NoPlaceholderToolCalls.Id],
         Policy = new RunPolicy(2, 3)
     };
 }

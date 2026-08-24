@@ -130,7 +130,11 @@ public static class VoiceScenarios
             Spoken = true,
             NeverSays = ["exit", "127", "stderr", "código"]
         },
-        Claims = [VoicePrompt.FailureIsOneClause.Id, VoicePrompt.NothingUnspeakable.Id],
+        Claims =
+        [
+            VoicePrompt.FailureIsOneClause.Id, VoicePrompt.NothingUnspeakable.Id,
+            VoicePrompt.NoPlaceholderToolCalls.Id
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
