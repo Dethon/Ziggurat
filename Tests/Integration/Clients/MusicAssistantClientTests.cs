@@ -96,4 +96,31 @@ public class MusicAssistantClientTests
         await Should.ThrowAsync<MusicAssistantException>(
             () => client.GetPodcastEpisodesAsync(Show, CancellationToken.None));
     }
+
+    // The position a relative seek is computed from. Home Assistant's media_position is refreshed
+    // only by a state transition, so this queue read is the only current number available; the
+    // field names and the unix-seconds stamp are the real server's, verified against it.
+    [Fact]
+    public async Task GetQueuePositionAsync_ReturnsTheQueuesLiveElapsedTime()
+    {
+        await using var server = await FakeMusicAssistantServer.StartAsync();
+
+        var position = await Client(server).GetQueuePositionAsync(
+            FakeMusicAssistantServer.QueueId, CancellationToken.None);
+
+        position.ShouldNotBeNull();
+        position.ElapsedTime.ShouldBe(FakeMusicAssistantServer.QueueElapsedTime);
+        position.State.ShouldBe("playing");
+        position.LastUpdated.ShouldBe(DateTimeOffset.FromUnixTimeMilliseconds(1787605526343));
+    }
+
+    [Fact]
+    public async Task GetQueuePositionAsync_UnknownQueue_ReturnsNull()
+    {
+        await using var server = await FakeMusicAssistantServer.StartAsync();
+
+        var position = await Client(server).GetQueuePositionAsync("ma_nowhere", CancellationToken.None);
+
+        position.ShouldBeNull();
+    }
 }

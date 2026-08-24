@@ -43,12 +43,14 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public const string PlayingEpisodeTitle = "292. La guerra por el agua: el recurso imprescindible";
     public const string PlayingEpisodeUri = "spotify--w2nq2jMe://podcast_episode/5V4Bf";
 
-    // Ten minutes before EvalInstant.Evening (18:00Z), so the stored 3600 is stale by 600s and the
-    // real position at the turn is 4200. A rewind of three minutes therefore seeks to 4020 — a
-    // number reachable only by projecting, which is what makes the scenario falsifiable.
+    // Ten minutes before EvalInstant.Evening (18:00Z). Home Assistant's stored 3600 is stale by
+    // that much; the queue reports the real 4200, so a rewind of three minutes seeks to 4020 — a
+    // number reachable only from the queue's value, which is what makes the scenario falsifiable.
     public const string PlayingPositionUpdatedAt = "2026-08-17T17:50:00+00:00";
 
     public const int PlayingPositionAtTurn = 4200;
+
+    public const string MusicAssistantQueueId = "ma_kitchen";
 
     // The directory a scenario writes into its expectations, composed the way the mount composes
     // it rather than typed out: a friendly name edited here would otherwise rename the directory
@@ -327,12 +329,13 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             ["media_title"] = PlayingEpisodeTitle,
             ["media_content_id"] = PlayingEpisodeUri,
             ["media_duration"] = 5891,
-            // Home Assistant freezes media_position between state transitions and stamps the
-            // moment it last moved, so a player that has been going for a while reports a stale
-            // pair — the shape that sent a real rewind to 0. The VFS projects it forward; a
-            // scenario about a relative seek only means something if it arrives stale.
+            // Home Assistant freezes media_position between state transitions, so a player that has
+            // been going for a while reports the number it started from — the shape that sent a
+            // real rewind to 0. The VFS replaces it with the queue's live position; a scenario
+            // about a relative seek only means something if HA's own value arrives stale.
             ["media_position"] = 3600,
-            ["media_position_updated_at"] = PlayingPositionUpdatedAt
+            ["media_position_updated_at"] = PlayingPositionUpdatedAt,
+            ["active_queue"] = MusicAssistantQueueId
         }),
         new(KitchenTvEntityId, "off", "TV Cocina", new JsonObject
         {

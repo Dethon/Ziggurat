@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Exceptions;
 using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
@@ -9,12 +11,9 @@ public sealed partial class HaFileSystem(
     HaCatalogProvider catalogProvider,
     Func<IHomeAssistantClient> clientFactory,
     TimeSpan? regexMatchTimeout = null,
-    Func<IMusicAssistantClient>? musicClientFactory = null,
-    TimeProvider? timeProvider = null) : FileSystemBackendBase
+    Func<IMusicAssistantClient>? musicClientFactory = null) : FileSystemBackendBase
 {
     public const string Name = "ha";
-
-    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
     public override string FilesystemName => Name;
 
@@ -122,7 +121,7 @@ public sealed partial class HaFileSystem(
         return await SearchNodesAsync(
             scoped,
             (entity, _) => ValueTask.FromResult<(string, string?)>(
-                (CanonicalStatePath(entity), HaStateRenderer.ToJson(entity, _time))),
+                (CanonicalStatePath(entity), HaStateRenderer.ToJson(entity))),
             new FsSearchScan
             {
                 Query = query,
@@ -170,8 +169,58 @@ public sealed partial class HaFileSystem(
     private async Task<FsResult<FsReadResult>> ReadStateAsync(string path, string entityId, int? offset, int? limit, CancellationToken ct)
     {
         var entity = await clientFactory().GetStateAsync(entityId, ct);
-        return entity is null ? NotFound(path) : BuildReadResult(path, HaStateRenderer.ToJson(entity, _time), offset, limit);
+        if (entity is null)
+        {
+            return NotFound(path);
+        }
+
+        return BuildReadResult(path, HaStateRenderer.ToJson(entity, await LivePositionAsync(entity, ct)), offset, limit);
     }
+
+    // The position Home Assistant stores is stale between state transitions, so for a Music
+    // Assistant player the queue is asked for the real one. Only a read of a single entity does
+    // this: search renders every entity in the home, and a websocket round trip per player would
+    // turn one bulk GET into a call per speaker for a field almost no search is about.
+    //
+    // MA is best-effort here. It is optional configuration, the socket can be down, and the queue
+    // may know nothing about this player — in every one of those cases the read still returns Home
+    // Assistant's own view rather than failing, because a state.json that errors is worse than one
+    // carrying the value HA has.
+    private async Task<MaQueuePosition?> LivePositionAsync(HaEntityState entity, CancellationToken ct)
+    {
+        if (musicClientFactory is null || QueueIdOf(entity) is not { } queueId)
+        {
+            return null;
+        }
+
+        try
+        {
+            var position = await musicClientFactory().GetQueuePositionAsync(queueId, ct);
+            return IsTrustworthy(position) ? position : null;
+        }
+        catch (MusicAssistantException)
+        {
+            return null;
+        }
+    }
+
+    // A queue MA is not playing has nothing live to report: its elapsed_time is whatever the last
+    // transition left behind, which is the same stale number HA already carries. Taking it would
+    // relabel a stale value as MA-sourced, so only a playing queue answers.
+    //
+    // Freshness beyond that is the caller's problem, not something this check can settle: MA
+    // repeats the previous elapsed_time for a few seconds after a resume, and one sample cannot
+    // tell that apart from a queue genuinely sitting at that position. The read is still strictly
+    // better than HA's — stale by seconds after a resume rather than by the whole session — and the
+    // stamp travels with it so a reader can see how old it is.
+    private static bool IsTrustworthy(MaQueuePosition? position) =>
+        position is { State: "playing" };
+
+    private static string? QueueIdOf(HaEntityState entity) =>
+        entity.Attributes.TryGetValue("active_queue", out var queue)
+        && queue?.GetValueKind() is JsonValueKind.String
+            ? queue.GetValue<string>()
+            : null;
 
     private static FsResult<FsReadResult> ReadAction(string path, string entityId, string service, HaCatalog catalog)
     {

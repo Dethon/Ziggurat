@@ -177,10 +177,12 @@ public static class HomeAssistantPrompt
           not playing yet, play it first, then seek.
         - "Rewind/skip forward N minutes": a relative move is an absolute `media_seek.sh`, so read
           `media_position` from the player's `state.json` first and add or subtract from it. That
-          read is INPUT to the seek, not a confirmation of it. While the player is playing the
-          value is projected to now and the file says so (`media_position_is_projected`); trust it
-          as the current position. Never treat a rewind as a timer or a reminder — it is a seek on
-          the player and nothing else.
+          read is INPUT to the seek, not a confirmation of it. On a Music Assistant player the
+          value comes from the queue and is current (`media_position_source: music_assistant`);
+          without that marker it is Home Assistant's own, which only moved when the player last
+          started or stopped, so treat it as a floor rather than the true position and say what you
+          did. Never treat a rewind as a timer or a reminder — it is a seek on the player and
+          nothing else.
         - Grouping (synced multi-room): `join.sh` (`media_player.join`; `--group_members` = the
           other players) to play in sync; `unjoin.sh` (`media_player.unjoin`) to split a room
           back out.

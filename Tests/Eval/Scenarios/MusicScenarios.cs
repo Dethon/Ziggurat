@@ -171,9 +171,9 @@ public static class MusicScenarios
     // that Home Assistant's stored media_position does not tick — it is refreshed only by a state
     // transition — so a player an hour into an episode still reported the position it started
     // with, and "rewind three minutes" computed 0 - 180, clamped, and threw the episode back to
-    // the beginning. Twice, on two different podcasts. The VFS now projects the value to the turn's
-    // instant and says so; the seek this scenario requires is reachable only from the projected
-    // number, so a regression that restores the raw field reds it.
+    // the beginning. Twice, on two different podcasts. The VFS now serves the queue's own position
+    // for a Music Assistant player; the seek this scenario requires is reachable only from that
+    // number, so a regression that restores Home Assistant's stale field reds it.
     public static Scenario RewindThreeMinutes => new()
     {
         Name = "a rewind seeks from where the player actually is",
@@ -196,8 +196,8 @@ public static class MusicScenarios
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
                     Arg.Matches("command", @"^media_seek\.sh\b"),
-                    // 4200 - 180. A seek computed from the raw 3600 lands on 3420, and the failure
-                    // this scenario was written for lands on 0 — neither matches.
+                    // 4200 - 180. A seek computed from Home Assistant's stale 3600 lands on 3420,
+                    // and the failure this scenario was written for lands on 0 — neither matches.
                     Arg.Matches("command", @"--seek_position\s+""?40(1[0-9]|2[0-9])\b")
                 ]
             }

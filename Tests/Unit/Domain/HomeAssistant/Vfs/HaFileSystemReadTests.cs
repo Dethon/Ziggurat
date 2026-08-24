@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
+using Domain.Exceptions;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -125,44 +126,106 @@ public class HaFileSystemReadTests
     }
 
     // The position the agent reads drives relative seeks ("rewind three minutes"). HA freezes
-    // media_position between state transitions, so reading it raw sent a podcast episode back to 0.
-    // The attributes here are parsed from a real HA response shape (JsonElement-backed), not
-    // constructed values — the numeric accessor behaves differently for the two.
-    [Fact]
-    public async Task ReadAsync_PlayingMediaPlayer_ProjectsPositionFromRealHaPayload()
+    // media_position between state transitions, so a player an hour in still reported where it
+    // started and a rewind computed from it clamped to 0. Music Assistant's queue has the real one.
+    private static HaFileSystem BuildPlayer(FakeMusicAssistantClient music, out FakeHaClient client, string state = "playing")
     {
-        var attrs = JsonNode.Parse("""
+        var attrs = JsonNode.Parse($$"""
             {
               "friendly_name": "Office",
+              "app_id": "music_assistant",
+              "active_queue": "ma_office",
               "media_duration": 5891,
-              "media_position": 4243,
-              "media_position_updated_at": "2026-05-23T09:14:02+00:00"
+              "media_position": 0,
+              "media_position_updated_at": "2026-05-23T08:14:02+00:00"
             }
             """)!.AsObject();
 
-        var client = new FakeHaClient
+        client = new FakeHaClient
         {
             States =
             {
                 new HaEntityState
                 {
                     EntityId = "media_player.office",
-                    State = "playing",
+                    State = state,
                     Attributes = attrs.ToDictionary(a => a.Key, a => a.Value?.DeepClone())
                 }
             },
             Services = { Service("media_player", "media_seek", AnyEntityTarget()) },
             AreaTemplateJson = """{"areas":[]}"""
         };
-        var clock = new FakeTimeProvider();
-        clock.SetUtcNow(DateTimeOffset.Parse("2026-05-23T09:24:02Z"));
-        var fs = new HaFileSystem(
-            new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client, timeProvider: clock);
+        var local = client;
+        return new HaFileSystem(
+            new HaCatalogProvider(() => local, new FakeTimeProvider()), () => local, musicClientFactory: () => music);
+    }
 
+    private static async Task<string> ReadPlayerAsync(HaFileSystem fs)
+    {
         var result = await fs.ReadAsync("entities/media_player/office_(office)/state.json", null, null, CancellationToken.None);
+        return result.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
+    }
 
-        var content = result.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
-        content.ShouldContain("\"media_position\": 4843");
-        content.ShouldContain("\"media_position_is_projected\": true");
+    [Fact]
+    public async Task ReadAsync_MusicAssistantPlayer_ReportsTheQueuesLivePosition()
+    {
+        var music = new FakeMusicAssistantClient
+        {
+            QueuePositions = { ["ma_office"] = FakeMusicAssistantClient.Position(4243) }
+        };
+
+        var content = await ReadPlayerAsync(BuildPlayer(music, out _));
+
+        content.ShouldContain("\"media_position\": 4243");
+        content.ShouldContain("\"media_position_source\": \"music_assistant\"");
+        music.LastQueueLookup.ShouldBe("ma_office");
+    }
+
+    [Fact]
+    public async Task ReadAsync_QueueNotPlaying_KeepsHomeAssistantsPosition()
+    {
+        // A stopped queue's elapsed_time is just what its last transition left behind — the same
+        // stale number HA has. Relabelling it as MA-sourced would dress a guess up as live.
+        var music = new FakeMusicAssistantClient
+        {
+            QueuePositions = { ["ma_office"] = FakeMusicAssistantClient.Position(4243, state: "idle") }
+        };
+
+        var content = await ReadPlayerAsync(BuildPlayer(music, out _, state: "idle"));
+
+        content.ShouldContain("\"media_position\": 0");
+        content.ShouldNotContain("media_position_source");
+    }
+
+    [Fact]
+    public async Task ReadAsync_MusicAssistantUnreachable_StillReturnsHomeAssistantsState()
+    {
+        // A state.json that errors is worse than one carrying HA's own value.
+        var music = new FakeMusicAssistantClient { Fault = new MusicAssistantException("socket down") };
+
+        var content = await ReadPlayerAsync(BuildPlayer(music, out _));
+
+        content.ShouldContain("\"media_position\": 0");
+        content.ShouldNotContain("media_position_source");
+    }
+
+    [Fact]
+    public async Task ReadAsync_QueueUnknownToMusicAssistant_KeepsHomeAssistantsPosition()
+    {
+        var content = await ReadPlayerAsync(BuildPlayer(new FakeMusicAssistantClient(), out _));
+
+        content.ShouldContain("\"media_position\": 0");
+        content.ShouldNotContain("media_position_source");
+    }
+
+    [Fact]
+    public async Task ReadAsync_NonMusicAssistantEntity_NeverAsksTheQueue()
+    {
+        var music = new FakeMusicAssistantClient();
+        var fs = Build(out _);
+
+        await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
+
+        music.LastQueueLookup.ShouldBeNull();
     }
 }

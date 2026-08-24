@@ -1,5 +1,6 @@
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Exceptions;
@@ -42,6 +43,35 @@ public sealed class MusicAssistantClient(string baseUrl, string token, TimeSpan?
         }, ct);
 
         return Items(result as JsonArray);
+    }
+
+    public async Task<MaQueuePosition?> GetQueuePositionAsync(string queueId, CancellationToken ct = default)
+    {
+        // `player_queues/get` is asked for one queue by id rather than filtering `player_queues/all`
+        // client-side: a home can have a queue per speaker and only this one is being read.
+        var result = await SendAsync("player_queues/get", new JsonObject
+        {
+            ["queue_id"] = queueId
+        }, ct);
+
+        if (result is not JsonObject queue
+            || queue["elapsed_time"]?.GetValueKind() is not JsonValueKind.Number)
+        {
+            return null;
+        }
+
+        return new MaQueuePosition
+        {
+            ElapsedTime = queue["elapsed_time"]!.GetValue<double>(),
+            // MA stamps this as unix seconds with a fractional part, not as a formatted date.
+            LastUpdated = queue["elapsed_time_last_updated"]?.GetValueKind() is JsonValueKind.Number
+                ? DateTimeOffset.FromUnixTimeMilliseconds(
+                    (long)(queue["elapsed_time_last_updated"]!.GetValue<double>() * 1000))
+                : DateTimeOffset.MinValue,
+            State = queue["state"]?.GetValueKind() is JsonValueKind.String
+                ? queue["state"]!.GetValue<string>()
+                : null
+        };
     }
 
     private static string Plural(string mediaType) => mediaType switch

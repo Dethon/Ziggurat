@@ -129,11 +129,33 @@ public sealed class FakeMusicAssistantServer : IAsyncDisposable
                 }), ct);
                 return;
 
+            // The queue's elapsed_time is the real playback position: Home Assistant's own
+            // media_position is refreshed only by a state transition, so it goes stale the moment
+            // playback settles. An unknown queue answers null, exactly as the real server does.
+            case "player_queues/get":
+                await SendAsync(socket, Result(id,
+                    args["queue_id"]?.GetValue<string>() == QueueId
+                        ? new JsonObject
+                        {
+                            ["queue_id"] = QueueId,
+                            ["state"] = "playing",
+                            ["elapsed_time"] = QueueElapsedTime,
+                            ["elapsed_time_last_updated"] = 1787605526.343
+                        }
+                        : null), ct);
+                return;
+
             default:
                 await SendAsync(socket, Error(id, 1, $"Unknown command: {command}"), ct);
                 return;
         }
     }
+
+    // Kept equal to the eval fixture's queue id and true position: the two fakes describe one
+    // imagined home, and a scenario that seeks by the queue's number needs them to agree.
+    public const string QueueId = "ma_kitchen";
+
+    public const double QueueElapsedTime = 4200;
 
     private static JsonArray Episodes() => new(
         Item("292. La guerra por el agua: el recurso imprescindible", "spotify--w2nq2jMe://podcast_episode/5V4Bf", 5279),

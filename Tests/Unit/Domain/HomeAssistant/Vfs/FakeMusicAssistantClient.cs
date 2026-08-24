@@ -42,6 +42,27 @@ public class FakeMusicAssistantClient : IMusicAssistantClient
         return Task.FromResult(episodes);
     }
 
+    public Dictionary<string, MaQueuePosition> QueuePositions { get; init; } = [];
+
+    public string? LastQueueLookup { get; private set; }
+
+    public Task<MaQueuePosition?> GetQueuePositionAsync(string queueId, CancellationToken ct = default)
+    {
+        LastQueueLookup = queueId;
+        if (Fault is not null)
+        {
+            return Task.FromException<MaQueuePosition?>(Fault);
+        }
+        return Task.FromResult(QueuePositions.GetValueOrDefault(queueId));
+    }
+
+    public static MaQueuePosition Position(double elapsed, string state = "playing") => new()
+    {
+        ElapsedTime = elapsed,
+        LastUpdated = DateTimeOffset.Parse("2026-05-23T09:24:02Z"),
+        State = state
+    };
+
     public static MaMediaItem Item(string name, string uri, double? duration = null) =>
         new() { Name = name, Uri = uri, DurationSeconds = duration };
 }
