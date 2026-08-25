@@ -660,19 +660,57 @@ public class PlaywrightWebBrowser(
                           || (/^[^\s/]+\.[A-Za-z0-9]{1,5}$/.test(fileName) ? fileName : '')
                           || '').trim().replace(/\s+/g, ' ').slice(0, 120);
 
-                      try {
-                          const response = await fetch(new URL(src, location.href).toString(),
-                              { credentials: 'include' });
-                          if (!response.ok) return 'error';
+                      const url = new URL(src, location.href).toString();
 
-                          const buffer = await response.arrayBuffer();
-                          const bytes = new Uint8Array(buffer);
-                          let binary = '';
-                          for (let i = 0; i < bytes.length; i++) {
-                              binary += String.fromCharCode(bytes[i]);
-                          }
-                          return (response.headers.get('content-type') || 'image/jpeg').split(';')[0]
-                              + '|' + label + '|' + btoa(binary);
+                      // Same-origin first: fetch keeps the bytes exactly as served, so no
+                      // re-encoding and no loss.
+                      if (new URL(url).origin === location.origin) {
+                          try {
+                              const response = await fetch(url, { credentials: 'include' });
+                              if (response.ok) {
+                                  const bytes = new Uint8Array(await response.arrayBuffer());
+                                  let binary = '';
+                                  for (let i = 0; i < bytes.length; i++) {
+                                      binary += String.fromCharCode(bytes[i]);
+                                  }
+                                  return (response.headers.get('content-type') || 'image/jpeg')
+                                      .split(';')[0] + '|' + label + '|' + btoa(binary);
+                              }
+                          } catch { /* fall through to the canvas */ }
+                      }
+
+                      // Cross-origin, which is the ordinary case: a page's pictures usually come
+                      // from a CDN on another host. A scripted fetch there is subject to CORS and
+                      // image CDNs send no Access-Control-Allow-Origin -- they serve <img>, not
+                      // XHR -- so fetch fails on exactly the images the page is displaying
+                      // perfectly well. Read the pixels the browser already has instead.
+                      //
+                      // This re-encodes rather than passing the served bytes through, which is the
+                      // price of reaching them at all: a canvas has pixels, not a file.
+                      try {
+                          const drawn = await new Promise((resolve) => {
+                              const probe = new Image();
+                              probe.crossOrigin = 'anonymous';
+                              probe.onload = () => resolve(probe);
+                              probe.onerror = () => resolve(null);
+                              // Already in the page and decoded: this is a cache hit, not a
+                              // second download, whenever the element itself has loaded.
+                              probe.src = url;
+                          });
+
+                          const source = drawn
+                              || (img.complete && img.naturalWidth > 0 ? img : null);
+                          if (!source) return 'error';
+
+                          const canvas = document.createElement('canvas');
+                          canvas.width = source.naturalWidth;
+                          canvas.height = source.naturalHeight;
+                          canvas.getContext('2d').drawImage(source, 0, 0);
+
+                          // Throws a SecurityError on a tainted canvas -- an image the browser
+                          // will show but not let script read. That is a real refusal.
+                          const dataUrl = canvas.toDataURL('image/png');
+                          return 'image/png|' + label + '|' + dataUrl.split(',')[1];
                       } catch {
                           return 'error';
                       }

@@ -173,6 +173,17 @@ public class PageImageEntryTests
         content.ShouldContain("[image i-1: harbour-at-dusk.png]");
     }
 
+    [Fact]
+    public async Task AnImageInsideALinkThatWrapsOtherContent_IsStillListed()
+    {
+        // The shape a real page uses: the anchor contains the picture and nothing else worth
+        // rendering as link text. commons.wikimedia.org's file pages are built exactly this way.
+        var content = await ContentOf(Page(
+            """<a href="/file.jpg"><img src="/photo.jpg" alt="A cat" data-img-w="539" data-img-h="600"></a>"""));
+
+        content.ShouldContain("[image i-1: A cat]");
+    }
+
     private static async Task<string> ContentOf(string html) =>
         (await HtmlProcessor.ProcessAsync(Request(), html, CancellationToken.None)).Content!;
 
