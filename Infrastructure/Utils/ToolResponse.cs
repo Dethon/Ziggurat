@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
@@ -73,7 +74,16 @@ public static class ToolResponse
         content.AddRange(images.SelectMany(image => new ContentBlock[]
         {
             new TextContentBlock { Text = image.Envelope.ToJsonString() },
-            new ImageContentBlock { MimeType = image.MediaType, Data = image.Bytes }
+            // `Data` is the base64 payload exactly as it travels the wire, not the picture's
+            // bytes -- `DecodedData` is those, and it is read-only. Assigning raw bytes here
+            // writes them as literal characters, and the receiving end then cannot parse the
+            // block at all: the call fails at the client before any result reaches the bridge,
+            // which is how this shipped once and sent the model to the sandbox instead.
+            new ImageContentBlock
+            {
+                MimeType = image.MediaType,
+                Data = Encoding.UTF8.GetBytes(Convert.ToBase64String(image.Bytes))
+            }
         }));
 
         return new CallToolResult
