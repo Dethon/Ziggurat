@@ -96,8 +96,11 @@ internal sealed class ThreadSessionBuilder(
     public async Task<ThreadSessionData> BuildAsync(CancellationToken ct)
     {
         var dialLogger = loggerFactory?.CreateLogger(typeof(McpClientManager).FullName!);
+        // The same store file_read writes to. An MCP server returning an image gets eviction and
+        // hydration through the bridge without knowing either exists.
         var clientManager = await McpClientManager.CreateAsync(
-            name, userId, description, endpoints, new McpClientHandlers(), promptCache, dialLogger, ct);
+            name, userId, description, endpoints, new McpClientHandlers(), promptCache, dialLogger,
+            readImages?.Store, ct);
 
         IVirtualFileSystemRegistry? registry = null;
         IReadOnlyList<AIFunction> fileSystemTools = [];

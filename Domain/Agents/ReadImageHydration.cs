@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 using Microsoft.Extensions.AI;
 
@@ -26,23 +27,66 @@ internal static class ReadImageHydration
             ? []
             : message.Contents
                 .OfType<FunctionResultContent>()
-                .Select(result => Recognise(result.CallId, result.Result))
-                .OfType<ReadImageReference>()
+                .SelectMany(result => Recognise(result.CallId, result.Result))
                 .ToList();
 
     // Two envelopes, each strict about its own shape. Asked in turn rather than merged into one
     // looser parse: the filesystem envelope's strictness is what stops a result that merely carries
     // a path being mistaken for an image read, and a shape that admitted both would spend it.
-    private static ReadImageReference? Recognise(string callId, object? result) =>
-        FsImageReadResult.TryRead(result) switch
+    private static IEnumerable<ReadImageReference> Recognise(string callId, object? result)
+    {
+        if (FsImageReadResult.TryRead(result) is { Shown: true } file)
         {
-            { Shown: true } file => new ReadImageReference(callId, file.FilePath, ReadImageOrigin.Mount),
-            _ => PageImageResult.TryRead(result) switch
+            return [new ReadImageReference(callId, file.FilePath, ReadImageOrigin.Mount)];
+        }
+
+        // A page result can carry several envelopes: view_image takes a list, and the bridge joins
+        // what it leaves behind into one text. Each envelope is one picture, indexed in the order
+        // the bridge stored them.
+        return PageImages(callId, result);
+    }
+
+    private static IEnumerable<ReadImageReference> PageImages(string callId, object? result)
+    {
+        var text = result as string ?? (result is JsonNode node ? node.ToJsonString() : null);
+        if (text is null)
+        {
+            return PageImageResult.TryRead(result) is { Shown: true } single
+                ? [new ReadImageReference(callId, single.Label, ReadImageOrigin.Page)]
+                : [];
+        }
+
+        // Every envelope in the joined text, in order, so an index matches the key the bridge
+        // wrote under -- including the ones that were refused, which take a slot and no picture.
+        return SplitEnvelopes(text)
+            .Select((envelope, index) => (Envelope: envelope, Index: index))
+            .Where(e => e.Envelope is { Shown: true })
+            .Select(e => new ReadImageReference(
+                callId, e.Envelope!.Label, ReadImageOrigin.Page, e.Index))
+            .ToList();
+    }
+
+    private static IEnumerable<PageImageResult?> SplitEnvelopes(string text) =>
+        text.Split("\n\n")
+            .Select(part => part.Trim())
+            .Where(part => part.StartsWith('{'))
+            .Select(part =>
             {
-                { Shown: true } page => new ReadImageReference(callId, page.Label, ReadImageOrigin.Page),
-                _ => null
-            }
-        };
+                try
+                {
+                    return PageImageResult.TryRead(JsonNode.Parse(part));
+                }
+                catch (JsonException)
+                {
+                    return null;
+                }
+            });
+
+    // Where a page image's bytes rest. One call can answer with several pictures, so the index
+    // within the call joins the call id that keys them all; a mount read is one image per call and
+    // keeps the bare id. The bridge writes under the same rule.
+    private static string StoreKey(ReadImageReference read) =>
+        read.Origin == ReadImageOrigin.Mount ? read.CallId : $"{read.CallId}#{read.Index}";
 
     // A copy of the tool message whose promised results carry their bytes — or, where the bytes
     // cannot or must not travel, a placeholder appended to the envelope. The original message is
@@ -54,20 +98,22 @@ internal static class ReadImageHydration
         bool withinDepth,
         CancellationToken ct)
     {
-        var byCallId = reads.ToDictionary(r => r.CallId);
+        // Grouped rather than keyed one-to-one: a single view_image call can promise several
+        // pictures, and they all answer under the same call id.
+        var byCallId = reads.GroupBy(r => r.CallId).ToDictionary(g => g.Key, g => g.ToList());
 
         var contents = new List<AIContent>(message.Contents.Count);
         foreach (var content in message.Contents)
         {
             if (content is not FunctionResultContent result ||
-                !byCallId.TryGetValue(result.CallId, out var read))
+                !byCallId.TryGetValue(result.CallId, out var group))
             {
                 contents.Add(content);
                 continue;
             }
 
             contents.Add(new FunctionResultContent(
-                result.CallId, await RewriteAsync(result.Result, read, context, withinDepth, ct)));
+                result.CallId, await RewriteAsync(result.Result, group, context, withinDepth, ct)));
         }
 
         var copy = message.Clone();
@@ -76,6 +122,45 @@ internal static class ReadImageHydration
     }
 
     private static async Task<object?> RewriteAsync(
+        object? envelope,
+        IReadOnlyList<ReadImageReference> reads,
+        ReadImageContext context,
+        bool withinDepth,
+        CancellationToken ct)
+    {
+        // The common case by far -- a mount read, or a call that asked for one picture -- keeps the
+        // single-envelope shape the wire and the truncator already estimate correctly.
+        if (reads.Count == 1)
+        {
+            return await RewriteOneAsync(envelope, reads[0], context, withinDepth, ct);
+        }
+
+        var parts = new List<AIContent> { new TextContent(EnvelopeText(envelope)) };
+        foreach (var read in reads)
+        {
+            if (!withinDepth)
+            {
+                await context.ForgetAsync(StoreKey(read), ct);
+                parts.Add(new TextContent(Placeholder(read)));
+                continue;
+            }
+
+            if (!context.ModelAcceptsImages)
+            {
+                parts.Add(new TextContent(NoVisionPlaceholder(read)));
+                continue;
+            }
+
+            var picture = await context.FetchAsync(StoreKey(read), ct);
+            parts.Add(picture is null
+                ? new TextContent(Placeholder(read))
+                : new DataContent(picture.Bytes, picture.MediaType));
+        }
+
+        return parts;
+    }
+
+    private static async Task<object?> RewriteOneAsync(
         object? envelope,
         ReadImageReference read,
         ReadImageContext context,
@@ -87,7 +172,7 @@ internal static class ReadImageHydration
             // The send an image drops out of view is the send its bytes go. That makes the
             // message window the real bound and the store's own horizon only a backstop for a
             // conversation that went quiet.
-            await context.ForgetAsync(read.CallId, ct);
+            await context.ForgetAsync(StoreKey(read), ct);
             return $"{EnvelopeText(envelope)}\n{Placeholder(read)}";
         }
 
@@ -98,7 +183,7 @@ internal static class ReadImageHydration
             return $"{EnvelopeText(envelope)}\n{NoVisionPlaceholder(read)}";
         }
 
-        var image = await context.FetchAsync(read.CallId, ct);
+        var image = await context.FetchAsync(StoreKey(read), ct);
         if (image is null)
         {
             return $"{EnvelopeText(envelope)}\n{Placeholder(read)}";
@@ -147,4 +232,5 @@ internal enum ReadImageOrigin
 
 // One image a tool result promised the model, and what to name if the bytes cannot be found — a
 // mount path, or the label the page's entry gave the picture.
-internal sealed record ReadImageReference(string CallId, string Name, ReadImageOrigin Origin);
+internal sealed record ReadImageReference(
+    string CallId, string Name, ReadImageOrigin Origin, int Index = 0);

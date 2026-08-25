@@ -53,7 +53,7 @@ public class OpenRouterChatClientPageImageTests
 
         await SendAsync(ConversationOfLength(6, readAt: 0), depth: 3);
 
-        _store.Deleted.ShouldContain($"{Conversation}:call-1");
+        _store.Deleted.ShouldContain($"{Conversation}:{McpImageLift.KeyFor("call-1", 0)}");
     }
 
     [Fact]
@@ -100,6 +100,28 @@ public class OpenRouterChatClientPageImageTests
         ResultText(captured, "call-1").ShouldNotContain("no longer in view");
     }
 
+    [Fact]
+    public async Task SeveralPicturesFromOneCall_EachArriveWithTheirOwnBytes()
+    {
+        // view_image takes a list, so one call id keys several pictures. Each is indexed under it,
+        // and hydration must bring back every one rather than only the first.
+        _store.Put(Conversation, "call-1", index: 0);
+        _store.Put(Conversation, "call-1", index: 1);
+
+        var messages = ConversationOfLength(4, readAt: 2);
+        var toolMessage = messages.Last(m => m.Role == ChatRole.Tool);
+        toolMessage.Contents =
+        [
+            new FunctionResultContent(
+                "call-1",
+                $"{Envelope(true).ToJsonString()}\n\n{Envelope(true, "i-2", "A second picture").ToJsonString()}")
+        ];
+
+        var captured = await SendAsync(messages);
+
+        AllDataContents(captured).Count.ShouldBe(2);
+    }
+
     private static IReadOnlyList<DataContent> AllDataContents(IReadOnlyList<ChatMessage> messages) =>
         messages
             .SelectMany(m => m.Contents.OfType<FunctionResultContent>())
@@ -141,11 +163,11 @@ public class OpenRouterChatClientPageImageTests
         return messages;
     }
 
-    private static JsonNode Envelope(bool shown) =>
+    private static JsonNode Envelope(bool shown, string imageRef = "i-1", string? label = null) =>
         FsResultContract.ToNode(new PageImageResult
         {
-            ImageRef = "i-1",
-            Label = Label,
+            ImageRef = imageRef,
+            Label = label ?? Label,
             MediaType = "image/jpeg",
             SizeBytes = 4,
             Shown = shown
@@ -203,8 +225,10 @@ public class OpenRouterChatClientPageImageTests
 
         public List<string> Deleted { get; } = [];
 
-        public void Put(string conversationId, string callId) =>
-            _entries[Key(conversationId, callId)] = new ReadImage
+        // The bridge writes a page image under the call id plus its index within the call, because
+        // one view_image call can answer with several pictures.
+        public void Put(string conversationId, string callId, int index = 0) =>
+            _entries[Key(conversationId, McpImageLift.KeyFor(callId, index))] = new ReadImage
             {
                 VirtualPath = Label, MediaType = "image/jpeg", Bytes = Bytes
             };

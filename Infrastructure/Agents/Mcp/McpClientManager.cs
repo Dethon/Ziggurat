@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Domain.Outposts;
 using Domain.Prompts;
 using Microsoft.Extensions.AI;
@@ -51,11 +52,12 @@ internal sealed class McpClientManager : IAsyncDisposable
         McpClientHandlers handlers,
         McpPromptCache? promptCache = null,
         ILogger? logger = null,
+        IReadImageStore? readImageStore = null,
         CancellationToken ct = default)
     {
         var clientsWithEndpoints = await CreateClientsWithRetry(
             name, description, endpoints, handlers, logger, ct);
-        var toolsTask = LoadTools(clientsWithEndpoints, ct);
+        var toolsTask = LoadTools(clientsWithEndpoints, readImageStore, ct);
         var promptsTask = LoadPrompts(clientsWithEndpoints, userId, promptCache, ct);
         await Task.WhenAll(toolsTask, promptsTask);
         var clients = clientsWithEndpoints.Select(c => c.Client).ToArray();
@@ -156,12 +158,13 @@ internal sealed class McpClientManager : IAsyncDisposable
 
     private static async Task<AITool[]> LoadTools(
         IEnumerable<(McpClient Client, string ServerName, string Address)> clients,
+        IReadImageStore? readImageStore,
         CancellationToken ct)
     {
         var tasks = clients.Select(async c =>
         {
             var tools = await c.Client.ListToolsAsync(cancellationToken: ct);
-            return tools.Select(t => new QualifiedMcpTool(c.ServerName, t));
+            return tools.Select(t => new QualifiedMcpTool(c.ServerName, t, readImageStore));
         });
 
         var results = await Task.WhenAll(tasks);
