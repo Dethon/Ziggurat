@@ -190,7 +190,9 @@ public sealed class FakeMusicAssistantServer : IAsyncDisposable
         return node;
     }
 
-    private static JsonObject Result(string id, JsonNode result) =>
+    // Nullable because a null result is a real answer here, not a missing one: an unknown queue
+    // answers JSON null, exactly as the real server does.
+    private static JsonObject Result(string id, JsonNode? result) =>
         new() { ["message_id"] = id, ["partial"] = false, ["result"] = result };
 
     private static JsonObject Error(string id, int code, string details) =>
