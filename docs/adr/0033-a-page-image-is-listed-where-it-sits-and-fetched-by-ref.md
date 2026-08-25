@@ -132,6 +132,24 @@ permanent failure or abandons a retryable one.
   built from is no longer uniformly image-free.
 - The size filter needs rendered dimensions, not markup attributes, so listing images asks the page
   a question that reading its text did not.
+- **Refined 2026-08-26, when the fetch met CORS.** "The fetch goes through the page that listed
+  it" is unchanged and was chosen for the right reason — cookies, referer and fingerprint are what
+  get the bytes served at all. What it did not anticipate is that a page's pictures usually come
+  from *another* origin: `commons.wikimedia.org` serves its images from `upload.wikimedia.org`,
+  `unsplash.com` from `images.unsplash.com`. A scripted `fetch` there is subject to CORS, and an
+  image CDN sends no `Access-Control-Allow-Origin` because it serves `<img>` tags rather than XHR
+  — so the fetch failed on exactly the images the page was displaying perfectly well, and said the
+  site had refused. Same URL, same page, same browser: `fetch` throws `NetworkError` while `<img>`
+  loads.
+
+  Same-origin still goes through `fetch`, which keeps the served bytes byte for byte.
+  Cross-origin draws the image the browser has already decoded onto a canvas and reads the pixels
+  back. **This amends "an image is fetched as served or refused" for the cross-origin case**: a
+  canvas holds pixels, not a file, so those images arrive re-encoded as PNG and usually larger
+  than what the site served. The alternative was refusing the majority of pictures on the web,
+  which is the feature. A canvas the browser will not let script read — a genuinely tainted one —
+  still refuses, so that message now means what it always claimed to.
+
 - No eval scenario. The mechanism is unit-testable end to end and the fetch is covered against the
   real container; whether a model chooses to look at a picture when it should is a behavioural
   claim nobody has yet made a prompt claim about.
