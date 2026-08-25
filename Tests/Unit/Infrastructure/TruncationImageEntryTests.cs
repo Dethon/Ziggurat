@@ -59,6 +59,17 @@ public class TruncationImageEntryTests
     }
 
     [Fact]
+    public void ProseCarryingTheWordsOfAnEntry_IsNotTrimmedForThem()
+    {
+        // "[image " in ordinary page text is page text. Only the entry's real shape counts.
+        var text = "\n" + new string('a', 180) + " see the [image gallery for more of these";
+
+        var truncated = HtmlConverter.Truncate(text, 225);
+
+        truncated.ShouldContain("[image gallery");
+    }
+
+    [Fact]
     public async Task ImagesBeyondTheReturnedWindow_AreCounted()
     {
         var html = Page(string.Join("\n", Enumerable.Range(1, 12).Select(i =>

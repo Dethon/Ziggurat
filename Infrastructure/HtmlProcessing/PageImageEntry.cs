@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using AngleSharp.Dom;
 using AngleSharp.Html.Dom;
+using Domain.Tools.Web;
 
 namespace Infrastructure.HtmlProcessing;
 
@@ -9,8 +10,6 @@ namespace Infrastructure.HtmlProcessing;
 // the ref back off it.
 public static partial class PageImageEntry
 {
-    public const string RefPrefix = "i-";
-
     private const string Open = "[image ";
     private const char Close = ']';
 
@@ -34,10 +33,7 @@ public static partial class PageImageEntry
 
     public static string Write(string imageRef, string label) => $"{Open}{imageRef}: {label}{Close}";
 
-    public static string RefFor(int number) => $"{RefPrefix}{number}";
-
-    public static bool IsImageRef(string? candidate) =>
-        candidate is not null && ImageRefRegex().IsMatch(candidate);
+    public static string RefFor(int number) => ImageRef.For(number);
 
     // Null when the image is page furniture rather than content.
     public static string? LabelFor(IHtmlImageElement img)
@@ -59,10 +55,13 @@ public static partial class PageImageEntry
 
     // Where a body cut short must back up to, so it never ends mid-entry. -1 when the tail carries
     // no partial entry at all.
+    //
+    // Matched against the entry's own opening shape rather than the bare "[image " literal: prose
+    // that happens to contain those words is page text and must not be trimmed for it.
     public static int PartialEntryStart(string text)
     {
-        var open = text.LastIndexOf(Open, StringComparison.Ordinal);
-        return open >= 0 && text.IndexOf(Close, open) < 0 ? open : -1;
+        var open = PartialOpenRegex().Match(text);
+        return open.Success && text.IndexOf(Close, open.Index) < 0 ? open.Index : -1;
     }
 
     public static int Count(string text) => EntryRegex().Count(text);
@@ -110,11 +109,12 @@ public static partial class PageImageEntry
         return flat.Length <= MaxLabelLength ? flat : flat[..MaxLabelLength].TrimEnd() + "…";
     }
 
-    [GeneratedRegex(@"^i-\d+$")]
-    private static partial Regex ImageRefRegex();
-
     [GeneratedRegex(@"\[image i-\d+: [^\]]*\]")]
     private static partial Regex EntryRegex();
+
+    // The last entry opening in the text, whether or not it ever closes.
+    [GeneratedRegex(@"\[image i-\d+:", RegexOptions.RightToLeft)]
+    private static partial Regex PartialOpenRegex();
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRegex();

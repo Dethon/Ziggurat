@@ -122,6 +122,33 @@ public class OpenRouterChatClientPageImageTests
         AllDataContents(captured).Count.ShouldBe(2);
     }
 
+    [Fact]
+    public async Task TheShapeTheServerActuallyReturns_StillFindsEveryPicture()
+    {
+        // The call's own envelope leads the result in production. It reads as JSON like the image
+        // envelopes do, so anything counting "{"-leading blocks must not let it take a picture's
+        // index -- that shifted every key by one and hydrated every image as gone.
+        // Indexed 1 and 2, because the call's own envelope is block 0 -- and that is the rule the
+        // bridge writes under, so the store is seeded exactly as production would leave it.
+        _store.Put(Conversation, "call-1", index: 1);
+        _store.Put(Conversation, "call-1", index: 2);
+
+        var messages = ConversationOfLength(4, readAt: 2);
+        messages.Last(m => m.Role == ChatRole.Tool).Contents =
+        [
+            new FunctionResultContent(
+                "call-1",
+                string.Join("\n\n",
+                    """{"status":"success","sessionId":"s","imageCount":2}""",
+                    Envelope(true).ToJsonString(),
+                    Envelope(true, "i-2", "A second picture").ToJsonString()))
+        ];
+
+        var captured = await SendAsync(messages);
+
+        AllDataContents(captured).Count.ShouldBe(2);
+    }
+
     private static IReadOnlyList<DataContent> AllDataContents(IReadOnlyList<ChatMessage> messages) =>
         messages
             .SelectMany(m => m.Contents.OfType<FunctionResultContent>())

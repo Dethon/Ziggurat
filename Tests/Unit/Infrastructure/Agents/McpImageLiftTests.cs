@@ -141,6 +141,56 @@ public class McpImageLiftTests
         store.Written.ShouldNotBeEmpty();
     }
 
+    [Fact]
+    public async Task TheRealResultShape_KeysEachPictureWhereHydrationLooksForIt()
+    {
+        // What ToolResponse.Create actually emits: the call's own envelope first, then each
+        // picture's envelope followed by its bytes. Every earlier test in this file started at an
+        // image envelope, which is why the call-level one was free to shift the indexes.
+        var store = new RecordingReadImageStore();
+        object result = new AIContent[]
+        {
+            new TextContent("""{"status":"success","sessionId":"s","imageCount":2}"""),
+            new TextContent(EnvelopeText("First picture")),
+            new DataContent(Bytes, "image/jpeg"),
+            new TextContent(EnvelopeText("Second picture")),
+            new DataContent(new byte[] { 1, 1 }, "image/png")
+        };
+
+        var lifted = await McpImageLift.ApplyAsync(result, store, Conversation, CallId, CancellationToken.None);
+
+        // The keys the bridge wrote must be the keys hydration will ask for: the nth page-image
+        // envelope in the text pairs with the nth picture.
+        var text = Text(lifted);
+        var envelopeOrder = text
+            .Split("\n")
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith('{'))
+            .Select(line =>
+            {
+                try
+                {
+                    return PageImageResult.TryRead(System.Text.Json.Nodes.JsonNode.Parse(line));
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                    return null;
+                }
+            })
+            .ToList();
+
+        var shownIndexes = envelopeOrder
+            .Select((envelope, index) => (envelope, index))
+            .Where(e => e.envelope is { Shown: true })
+            .Select(e => e.index)
+            .ToList();
+
+        foreach (var (position, storeIndex) in shownIndexes.Select((i, n) => (i, n)))
+        {
+            store.Written[storeIndex].CallId.ShouldBe(McpImageLift.KeyFor(CallId, position));
+        }
+    }
+
     private static object ResultWithImage() => new AIContent[]
     {
         new TextContent(EnvelopeText("A harbour at dusk")),

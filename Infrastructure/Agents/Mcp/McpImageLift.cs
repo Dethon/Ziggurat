@@ -47,10 +47,36 @@ internal static class McpImageLift
         }
 
         var kept = new List<AIContent>(contents.Count);
-        var stored = 0;
 
+        // Both sides count the same thing: a picture's index is the position of the envelope that
+        // introduces it among all the page-image envelopes in the result. Counting pictures here
+        // and envelopes in hydration is what let the call's own envelope shift every key by one.
+        var envelopesSeen = 0;
+        var currentIndex = -1;
+        string? currentLabel = null;
+
+        // A loop because each block is read against state the blocks before it left -- the running
+        // envelope count and the label the last one carried. A projection would need that state
+        // threaded through it anyway.
         foreach (var content in contents)
         {
+            if (content is TextContent text)
+            {
+                if (LabelOf(text.Text) is { } label)
+                {
+                    currentIndex = envelopesSeen;
+                    currentLabel = label;
+                }
+
+                if (LooksLikeEnvelope(text.Text))
+                {
+                    envelopesSeen++;
+                }
+
+                kept.Add(content);
+                continue;
+            }
+
             if (content is not DataContent image)
             {
                 kept.Add(content);
@@ -59,37 +85,36 @@ internal static class McpImageLift
 
             await store.PutAsync(
                 conversationId,
-                KeyFor(callId, stored),
+                KeyFor(callId, currentIndex < 0 ? envelopesSeen : currentIndex),
                 new ReadImage
                 {
                     // The label the entry gave this picture, taken off the envelope that precedes
                     // it, so a note left in its place names what the model actually asked for.
-                    VirtualPath = LabelBefore(kept) ?? "a page image",
+                    VirtualPath = currentLabel ?? "a page image",
                     MediaType = image.MediaType,
                     Bytes = image.Data.ToArray()
                 },
                 ct);
-
-            stored++;
         }
 
         return kept;
     }
 
     // The envelope sits immediately before its picture, which is the order view_image writes them
-    // in and the order the model reads them. A block that is not an envelope at all just yields no
+    // in and the order the model reads them. A block that is not a page-image envelope yields no
     // label -- the note then says "a page image", which is worse than a name and better than a
     // failed send.
-    private static string? LabelBefore(IReadOnlyList<AIContent> written)
-    {
-        if (written.OfType<TextContent>().LastOrDefault() is not { } text)
-        {
-            return null;
-        }
+    private static string? LabelOf(string text) => Parse(text)?.Label;
 
+    // Anything hydration's own split will count as a candidate. It has to be the same question,
+    // asked the same way, or the two sides number the pictures differently again.
+    public static bool LooksLikeEnvelope(string text) => text.TrimStart().StartsWith('{');
+
+    private static PageImageResult? Parse(string text)
+    {
         try
         {
-            return PageImageResult.TryRead(JsonNode.Parse(text.Text))?.Label;
+            return PageImageResult.TryRead(JsonNode.Parse(text));
         }
         catch (JsonException)
         {

@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
+using Domain.Tools.Web;
 using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Utils;
@@ -65,19 +66,15 @@ public static class ToolResponse
     // An image result: the call's own envelope, then each picture preceded by the envelope that
     // says which image it is. The server hands back what the protocol says an image result is and
     // knows nothing of where the bytes end up -- QualifiedMcpTool lifts them out on the way in.
-    public static CallToolResult Create(JsonNode envelope, IReadOnlyList<(JsonNode Envelope, string MediaType, byte[] Bytes)> images)
+    public static CallToolResult Create(JsonNode envelope, IReadOnlyList<ViewedImage> images)
     {
         var content = new List<ContentBlock> { new TextContentBlock { Text = envelope.ToJsonString() } };
 
-        foreach (var (imageEnvelope, mediaType, bytes) in images)
+        content.AddRange(images.SelectMany(image => new ContentBlock[]
         {
-            content.Add(new TextContentBlock { Text = imageEnvelope.ToJsonString() });
-            content.Add(new ImageContentBlock
-            {
-                MimeType = mediaType,
-                Data = bytes
-            });
-        }
+            new TextContentBlock { Text = image.Envelope.ToJsonString() },
+            new ImageContentBlock { MimeType = image.MediaType, Data = image.Bytes }
+        }));
 
         return new CallToolResult
         {

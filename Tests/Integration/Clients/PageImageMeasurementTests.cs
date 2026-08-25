@@ -146,6 +146,47 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
 
     [Trait("Category", "External")]
     [SkippableFact]
+    public async Task ALabelThePageCarries_ComesBackWithTheFetchedPicture()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        // The fetch runs the same label ladder the entry did, so the words the model chose the
+        // picture by are the words a later note names it with. Where the ladder runs out entirely
+        // the note falls back to the ref, which is why every rung has to be present on both sides.
+        var sessionId = $"test-{Guid.NewGuid():N}";
+        try
+        {
+            // Bytes that really arrive, so the assertion is about the label the fetch carries back
+            // rather than about a failure path.
+            await PrepareAsync(
+                sessionId,
+                $"""
+                 <img id="named" src="data:image/png;base64,{OnePixelPngBase64}"
+                      style="width:300px;height:300px">
+                 """);
+            await fixture.Browser.AnnotateImagesOnSessionAsync(sessionId);
+            // A data URI carries no filename, so give the element one the ladder can reach: the
+            // rung under test is the one below enclosing-link text.
+            await fixture.Browser.EvaluateOnSessionAsync(
+                sessionId,
+                """
+                () => document.getElementById('named').setAttribute('title', 'harbour-at-dusk.png')
+                """);
+
+            var fetched = await fixture.Browser.FetchImagesAsync(new ImageFetchRequest(sessionId, ["i-1"]));
+
+            var image = fetched.Images.ShouldHaveSingleItem();
+            image.Status.ShouldBe(ImageFetchStatus.Success);
+            image.Label.ShouldBe("harbour-at-dusk.png");
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
+    [Trait("Category", "External")]
+    [SkippableFact]
     public async Task ARefFromASessionThatIsGone_SaysTheSessionIsMissing()
     {
         Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");

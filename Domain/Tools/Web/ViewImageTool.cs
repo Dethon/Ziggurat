@@ -62,7 +62,7 @@ public class ViewImageTool(IWebBrowser browser)
 
         // A ref's shape is what says which tool it was meant for, so the other kind is turned away
         // by name here rather than failing to be found on the page.
-        if (refs.Where(r => !IsImageRef(r)).ToList() is { Count: > 0 } foreign)
+        if (refs.Where(r => !ImageRef.IsImageRef(r)).ToList() is { Count: > 0 } foreign)
         {
             return Refusal(
                 sessionId,
@@ -86,32 +86,15 @@ public class ViewImageTool(IWebBrowser browser)
                 + "Browse the page again and use the refs it lists.");
         }
 
-        var images = new List<ViewedImage>();
-        var notes = new List<string>();
+        var images = fetched.Images
+            .Where(i => i is { Status: ImageFetchStatus.Success, Bytes: not null, MediaType: not null })
+            .Select(ToViewed)
+            .ToList();
 
-        foreach (var image in fetched.Images)
-        {
-            if (image is { Status: ImageFetchStatus.Success, Bytes: not null, MediaType: not null })
-            {
-                images.Add(new ViewedImage(
-                    image.Ref,
-                    image.MediaType,
-                    image.Bytes,
-                    FsResultContract.ToNode(new PageImageResult
-                    {
-                        ImageRef = image.Ref,
-                        // The name the page gave it, so a note left in its place afterwards names
-                        // what the model actually asked to see rather than a handle that is gone.
-                        Label = image.Label ?? image.Ref,
-                        MediaType = image.MediaType,
-                        SizeBytes = image.Bytes.Length,
-                        Shown = true
-                    })));
-                continue;
-            }
-
-            notes.Add(NoteFor(image));
-        }
+        var notes = fetched.Images
+            .Where(i => i.Status != ImageFetchStatus.Success)
+            .Select(NoteFor)
+            .ToList();
 
         var envelope = new JsonObject
         {
@@ -137,6 +120,21 @@ public class ViewImageTool(IWebBrowser browser)
         return new ViewImageToolResult(envelope, images, notes);
     }
 
+    private static ViewedImage ToViewed(FetchedImage image) =>
+        new(image.Ref,
+            image.MediaType!,
+            image.Bytes!,
+            FsResultContract.ToNode(new PageImageResult
+            {
+                ImageRef = image.Ref,
+                // The name the page gave it, so a note left in its place afterwards names what the
+                // model actually asked to see rather than a handle that is gone.
+                Label = image.Label ?? image.Ref,
+                MediaType = image.MediaType!,
+                SizeBytes = image.Bytes!.Length,
+                Shown = true
+            }));
+
     private static string NoteFor(FetchedImage image) => image.Status switch
     {
         ImageFetchStatus.NotAnImageRef =>
@@ -148,11 +146,6 @@ public class ViewImageTool(IWebBrowser browser)
         _ =>
             $"{image.Ref} could not be shown."
     };
-
-    private static bool IsImageRef(string candidate) =>
-        candidate.StartsWith("i-", StringComparison.Ordinal)
-        && candidate.Length > 2
-        && candidate[2..].All(char.IsAsciiDigit);
 
     private static ViewImageToolResult Refusal(string sessionId, string code, string message)
     {

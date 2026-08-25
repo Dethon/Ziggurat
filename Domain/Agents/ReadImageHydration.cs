@@ -56,8 +56,10 @@ internal static class ReadImageHydration
                 : [];
         }
 
-        // Every envelope in the joined text, in order, so an index matches the key the bridge
-        // wrote under -- including the ones that were refused, which take a slot and no picture.
+        // Every JSON-looking block in the joined text counts, in order, so an index matches the
+        // key the bridge wrote under. Blocks that are not page-image envelopes -- the call's own
+        // envelope leads every real result -- take a slot and no picture, exactly as they do on
+        // the writing side. Counting only the image envelopes here would shift every key by one.
         return SplitEnvelopes(text)
             .Select((envelope, index) => (Envelope: envelope, Index: index))
             .Where(e => e.Envelope is { Shown: true })
@@ -135,6 +137,8 @@ internal static class ReadImageHydration
             return await RewriteOneAsync(envelope, reads[0], context, withinDepth, ct);
         }
 
+        // A loop because every iteration awaits the store, and the order the parts are appended in
+        // is the order the model reads them.
         var parts = new List<AIContent> { new TextContent(EnvelopeText(envelope)) };
         foreach (var read in reads)
         {

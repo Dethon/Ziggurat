@@ -35,18 +35,15 @@ public enum ImageFetchStatus
     // never listed. Distinct from a dead session: the page is alive and simply does not have it.
     NotAnImageRef,
 
-    // The session expired or was never opened. The page has to be browsed again for any ref to
-    // mean anything.
-    SessionExpired,
-
     // The site answered the fetch with a refusal or an error, through the very browser that was
     // just served the page.
-    SiteRefused,
-
-    // Past the per-call cap. The refs are named rather than fetched, so a greedy call makes
-    // progress and learns the rule instead of bouncing off it.
-    OverCap
+    SiteRefused
 }
+
+// The two other walls are not states of a fetch, because neither reaches one: a dead session is
+// answered by ImageFetchResult.SessionMissing before any ref is looked up, and a ref past the
+// per-call cap is named in the envelope rather than attempted. A status nothing can produce is a
+// refusal nobody can receive.
 
 public record ImageFetchResult(
     string SessionId,

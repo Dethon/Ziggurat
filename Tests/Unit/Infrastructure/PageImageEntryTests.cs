@@ -160,6 +160,19 @@ public class PageImageEntryTests
         entry[..entry.IndexOf(']')].Length.ShouldBeLessThan(140);
     }
 
+    [Fact]
+    public async Task TheFilenameRung_IsReachedOnBothSidesOfTheFetch()
+    {
+        // The entry's ladder and the fetch's ladder are separate implementations -- one in C#, one
+        // in the page's own JS -- so a rung present in one and missing from the other shows up as
+        // a picture listed by name that comes back nameless. This pins the C# half; the JS half is
+        // pinned in Tests/Integration/Clients/PageImageMeasurementTests.
+        var content = await ContentOf(Page(
+            """<img src="/gallery/harbour-at-dusk.png" data-img-w="300" data-img-h="300">"""));
+
+        content.ShouldContain("[image i-1: harbour-at-dusk.png]");
+    }
+
     private static async Task<string> ContentOf(string html) =>
         (await HtmlProcessor.ProcessAsync(Request(), html, CancellationToken.None)).Content!;
 

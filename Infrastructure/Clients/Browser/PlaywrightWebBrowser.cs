@@ -596,8 +596,9 @@ public class PlaywrightWebBrowser(
     }
 
     // The reading half of the escape hatch: what the page answers, for a test that has to ask the
-    // DOM what a step left behind rather than infer it from the markdown.
-    public async Task<T> EvaluateOnSessionAsync<T>(string sessionId, string script)
+    // DOM what a step left behind rather than infer it from the markdown. Internal for the same
+    // reason its void sibling is public only by history -- nothing outside needs it.
+    internal async Task<T> EvaluateOnSessionAsync<T>(string sessionId, string script)
     {
         var session = _sessions.Get(sessionId)
             ?? throw new InvalidOperationException($"Session '{sessionId}' not found");
@@ -618,6 +619,9 @@ public class PlaywrightWebBrowser(
             return new ImageFetchResult(request.SessionId, [], SessionMissing: true);
         }
 
+        // Sequential rather than a LINQ projection over tasks: these are real fetches out of one
+        // page, and firing eight at once through a single browser context buys nothing while
+        // making a rate-limiting site read the burst as exactly what it is.
         var images = new List<FetchedImage>(request.Refs.Count);
         foreach (var imageRef in request.Refs)
         {
@@ -642,12 +646,18 @@ public class PlaywrightWebBrowser(
                       const src = img.getAttribute('src');
                       if (!src) return null;
 
-                      // The same ladder the entry's label came from, so what the model asked for
-                      // and what a later note calls it are the same words.
+                      // The same ladder the entry's label came from, filename rung included, so
+                      // what the model asked for and what a later note calls it are the same
+                      // words. Stopping a rung short here would leave a picture the page named
+                      // logo.png coming back nameless, and its note would say "i-3".
+                      const fileName = src.startsWith('data:')
+                          ? ''
+                          : (src.split(/[?#]/)[0].split('/').pop() || '');
                       const label = (img.getAttribute('alt')
                           || img.closest('figure')?.querySelector('figcaption')?.textContent
                           || img.getAttribute('title')
                           || img.closest('a')?.textContent
+                          || (/^[^\s/]+\.[A-Za-z0-9]{1,5}$/.test(fileName) ? fileName : '')
                           || '').trim().replace(/\s+/g, ' ').slice(0, 120);
 
                       try {
@@ -884,10 +894,10 @@ public class PlaywrightWebBrowser(
         await page.EvaluateAsync("() => window.scrollTo(0, 0)");
     }
 
-    // The measure-and-strip step on a session's own page. Exposed because it is the one part of
-    // the catalogue that needs a real browser to be worth testing -- everything downstream of it
-    // reads plain attributes and is a pure function of an HTML string.
-    public async Task AnnotateImagesOnSessionAsync(string sessionId)
+    // The measure-and-strip step on a session's own page. Internal rather than public: it is the
+    // one part of the catalogue that needs a real browser to be worth testing, and nothing outside
+    // this assembly and its tests has any business running it out of band.
+    internal async Task AnnotateImagesOnSessionAsync(string sessionId)
     {
         var session = _sessions.Get(sessionId)
             ?? throw new InvalidOperationException($"Session '{sessionId}' not found");

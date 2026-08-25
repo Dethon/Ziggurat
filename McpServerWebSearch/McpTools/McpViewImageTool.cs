@@ -34,8 +34,6 @@ public class McpViewImageTool(IWebBrowser browser) : ViewImageTool(browser)
 
         return result.Images.Count == 0
             ? ToolResponse.Create(result.Envelope)
-            : ToolResponse.Create(
-                result.Envelope,
-                result.Images.Select(i => (i.Envelope, i.MediaType, i.Bytes)).ToList());
+            : ToolResponse.Create(result.Envelope, result.Images);
     }
 }
