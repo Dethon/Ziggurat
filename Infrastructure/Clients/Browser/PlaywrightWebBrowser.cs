@@ -604,6 +604,96 @@ public class PlaywrightWebBrowser(
         return await session.Page.EvaluateAsync<T>(script);
     }
 
+    // The fetch goes through the page that listed the picture. Camoufox holds the cookies, the
+    // referer and the fingerprint, and a great many images are served only to a request carrying
+    // them -- a bare HttpClient would answer 403 or a placeholder pixel on exactly the pages where
+    // this stack is earning its keep. It is also what makes the ref meaningful: it resolves
+    // against the live DOM, so no URL has to enter the model's context to be usable.
+    public async Task<ImageFetchResult> FetchImagesAsync(
+        ImageFetchRequest request, CancellationToken ct = default)
+    {
+        var session = _sessions.Get(request.SessionId);
+        if (session is null)
+        {
+            return new ImageFetchResult(request.SessionId, [], SessionMissing: true);
+        }
+
+        var images = new List<FetchedImage>(request.Refs.Count);
+        foreach (var imageRef in request.Refs)
+        {
+            ct.ThrowIfCancellationRequested();
+            images.Add(await FetchOneAsync(session.Page, imageRef));
+        }
+
+        return new ImageFetchResult(request.SessionId, images);
+    }
+
+    private async Task<FetchedImage> FetchOneAsync(IPage page, string imageRef)
+    {
+        try
+        {
+            // Fetched from inside the page so the request is the page's own. The bytes come back
+            // as base64 because the evaluate boundary carries text, not binary.
+            var payload = await page.EvaluateAsync<string?>(
+                $$"""
+                  async (ref) => {
+                      const img = document.querySelector(`[{{PageImageEntry.RefAttribute}}="${ref}"]`);
+                      if (!img) return null;
+                      const src = img.getAttribute('src');
+                      if (!src) return null;
+
+                      // The same ladder the entry's label came from, so what the model asked for
+                      // and what a later note calls it are the same words.
+                      const label = (img.getAttribute('alt')
+                          || img.closest('figure')?.querySelector('figcaption')?.textContent
+                          || img.getAttribute('title')
+                          || img.closest('a')?.textContent
+                          || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+
+                      try {
+                          const response = await fetch(new URL(src, location.href).toString(),
+                              { credentials: 'include' });
+                          if (!response.ok) return 'error';
+
+                          const buffer = await response.arrayBuffer();
+                          const bytes = new Uint8Array(buffer);
+                          let binary = '';
+                          for (let i = 0; i < bytes.length; i++) {
+                              binary += String.fromCharCode(bytes[i]);
+                          }
+                          return (response.headers.get('content-type') || 'image/jpeg').split(';')[0]
+                              + '|' + label + '|' + btoa(binary);
+                      } catch {
+                          return 'error';
+                      }
+                  }
+                  """,
+                imageRef);
+
+            if (payload is null)
+            {
+                return new FetchedImage(imageRef, null, null, ImageFetchStatus.NotAnImageRef);
+            }
+
+            var parts = payload.Split('|', 3);
+            if (payload == "error" || parts.Length < 3)
+            {
+                return new FetchedImage(imageRef, null, null, ImageFetchStatus.SiteRefused);
+            }
+
+            return new FetchedImage(
+                imageRef,
+                parts[0],
+                Convert.FromBase64String(parts[2]),
+                ImageFetchStatus.Success,
+                Label: parts[1].Length > 0 ? parts[1] : null);
+        }
+        catch (Exception ex) when (ex is PlaywrightException or FormatException)
+        {
+            return new FetchedImage(imageRef, null, null, ImageFetchStatus.SiteRefused);
+        }
+    }
+
     public async Task CloseSessionAsync(string sessionId, CancellationToken ct = default)
     {
         await _sessions.CloseAsync(sessionId);
@@ -834,13 +924,22 @@ public class PlaywrightWebBrowser(
                         };
                     });
 
+                    // Numbered over survivors only, in document order, so the ref the entry writes
+                    // is the ref this page answers to. The counter lives here rather than in the
+                    // extractor because the fetch resolves against this DOM, not against the text.
+                    let imageRefCounter = 0;
+
                     images.forEach((img, i) => {
                         const { w, h } = boxes[i];
                         const survives = w >= MIN_IMAGE_SIDE && h >= MIN_IMAGE_SIDE;
 
                         if (survives) {
+                            imageRefCounter++;
                             img.setAttribute('data-img-w', String(w));
                             img.setAttribute('data-img-h', String(h));
+                            img.setAttribute('data-img-ref', 'i-' + imageRefCounter);
+                        } else {
+                            img.removeAttribute('data-img-ref');
                         }
 
                         // The address is stripped for everything that did not survive, as before:

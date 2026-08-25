@@ -9,7 +9,49 @@ public interface IWebBrowser
     Task<SnapshotResult> SnapshotAsync(SnapshotRequest request, CancellationToken ct = default);
     Task<WebActionResult> ActionAsync(WebActionRequest request, CancellationToken ct = default);
     Task CloseSessionAsync(string sessionId, CancellationToken ct = default);
+
+    Task<ImageFetchResult> FetchImagesAsync(ImageFetchRequest request, CancellationToken ct = default);
 }
+
+public record ImageFetchRequest(string SessionId, IReadOnlyList<string> Refs);
+
+// One picture asked for, and either its bytes or the wall it hit. Every failure names its own,
+// because a model told only "unavailable" either retries a permanent failure or abandons a
+// retryable one.
+public record FetchedImage(
+    string Ref,
+    string? MediaType,
+    byte[]? Bytes,
+    ImageFetchStatus Status,
+    // What the entry called it. Carried back because it is the name a note left in the picture's
+    // place has to use -- the model chose this image by that label, not by its ref.
+    string? Label = null);
+
+public enum ImageFetchStatus
+{
+    Success,
+
+    // The ref parses but names no image on this page -- an element ref, or one the size filter
+    // never listed. Distinct from a dead session: the page is alive and simply does not have it.
+    NotAnImageRef,
+
+    // The session expired or was never opened. The page has to be browsed again for any ref to
+    // mean anything.
+    SessionExpired,
+
+    // The site answered the fetch with a refusal or an error, through the very browser that was
+    // just served the page.
+    SiteRefused,
+
+    // Past the per-call cap. The refs are named rather than fetched, so a greedy call makes
+    // progress and learns the rule instead of bouncing off it.
+    OverCap
+}
+
+public record ImageFetchResult(
+    string SessionId,
+    IReadOnlyList<FetchedImage> Images,
+    bool SessionMissing = false);
 
 public record StructuredData(
     string Type,

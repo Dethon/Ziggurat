@@ -23,11 +23,16 @@ public static partial class PageImageEntry
     public const string WidthAttribute = "data-img-w";
     public const string HeightAttribute = "data-img-h";
 
+    // The ref the page stamped while it measured. Read rather than re-derived, so the handle the
+    // model sees is the one the live DOM answers to -- a counter here could drift from the page's
+    // the moment either side's traversal differed.
+    public const string RefAttribute = "data-img-ref";
+
     // An entry is read as a menu item, not as prose. Past this the label stops helping the model
     // choose and only costs the browse -- every browse, whether or not it ever fetches.
     private const int MaxLabelLength = 120;
 
-    public static string Write(int number, string label) => $"{Open}{RefPrefix}{number}: {label}{Close}";
+    public static string Write(string imageRef, string label) => $"{Open}{imageRef}: {label}{Close}";
 
     public static string RefFor(int number) => $"{RefPrefix}{number}";
 
@@ -45,6 +50,12 @@ public static partial class PageImageEntry
         var label = FirstSpoken(img) ?? Dimensions(img);
         return Sanitize(label);
     }
+
+    // The ref the page assigned, where it assigned one. Falls back to the extractor's own count so
+    // hand-written HTML -- every unit test, and any path that never met a browser -- still lists
+    // its images rather than going silent.
+    public static string RefOn(IElement img, int fallbackNumber) =>
+        img.GetAttribute(RefAttribute) is { Length: > 0 } stamped ? stamped : RefFor(fallbackNumber);
 
     // Where a body cut short must back up to, so it never ends mid-entry. -1 when the tail carries
     // no partial entry at all.

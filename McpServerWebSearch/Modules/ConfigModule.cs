@@ -24,6 +24,7 @@ public static class ConfigModule
                 .WithTools<McpWebBrowseTool>()
                 .WithTools<McpWebSnapshotTool>()
                 .WithTools<McpWebActionTool>()
+                .WithTools<McpViewImageTool>()
                 .WithPrompts<McpSystemPrompt>();
 
             return services;

@@ -204,6 +204,10 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
                 request.SessionId, WebActionStatus.Success, "https://example.com", false, null, null, null));
         }
 
+        public Task<ImageFetchResult> FetchImagesAsync(
+            ImageFetchRequest request, CancellationToken ct = default) =>
+            Task.FromResult(new ImageFetchResult(request.SessionId, []));
+
         public Task CloseSessionAsync(string sessionId, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

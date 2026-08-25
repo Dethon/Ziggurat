@@ -13,7 +13,7 @@ public class TruncationImageEntryTests
         // The entry shares its line with the prose before it -- the case the newline rule cannot
         // rescue, because backing up to the last line boundary lands well before the cut and the
         // 70% guard declines it.
-        var text = "\n" + new string('a', 200) + " " + PageImageEntry.Write(1, "A harbour at dusk");
+        var text = "\n" + new string('a', 200) + " " + PageImageEntry.Write(PageImageEntry.RefFor(1), "A harbour at dusk");
 
         // Lands inside the entry: past its opening bracket, short of its closing one.
         var truncated = HtmlConverter.Truncate(text, 225);
@@ -25,7 +25,7 @@ public class TruncationImageEntryTests
     [Fact]
     public void AnEntryEndingExactlyAtTheCut_IsKeptIntact()
     {
-        var entry = PageImageEntry.Write(1, "A harbour at dusk");
+        var entry = PageImageEntry.Write(PageImageEntry.RefFor(1), "A harbour at dusk");
         var text = "\n" + new string('a', 200) + " " + entry;
 
         // maxLength reserves 20 for the suffix, so the cut lands exactly on the entry's close.
@@ -37,8 +37,8 @@ public class TruncationImageEntryTests
     [Fact]
     public void ABodyCutMidEntry_KeepsEveryEarlierEntryWhole()
     {
-        var first = PageImageEntry.Write(1, "First picture");
-        var second = PageImageEntry.Write(2, "Second picture");
+        var first = PageImageEntry.Write(PageImageEntry.RefFor(1), "First picture");
+        var second = PageImageEntry.Write(PageImageEntry.RefFor(2), "Second picture");
         var text = "\n" + first + " " + new string('a', 200) + " " + second;
 
         var truncated = HtmlConverter.Truncate(text, 250);

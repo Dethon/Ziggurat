@@ -109,6 +109,77 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
         }
     }
 
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task AnImageOnTheLivePage_IsFetchedByItsRefThroughThatSession()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var sessionId = $"test-{Guid.NewGuid():N}";
+        try
+        {
+            // A data URI, so the bytes are real image bytes and the assertion is about the fetch
+            // path rather than about what some remote host happens to serve today. The path under
+            // test is the same either way: the request goes out of the page, so it carries that
+            // page's cookies and fingerprint.
+            await PrepareAsync(
+                sessionId,
+                $"""
+                 <img id="live" src="data:image/png;base64,{OnePixelPngBase64}"
+                      style="width:300px;height:300px" alt="A logo">
+                 """);
+            await fixture.Browser.AnnotateImagesOnSessionAsync(sessionId);
+
+            var fetched = await fixture.Browser.FetchImagesAsync(new ImageFetchRequest(sessionId, ["i-1"]));
+
+            var image = fetched.Images.ShouldHaveSingleItem();
+            image.Status.ShouldBe(ImageFetchStatus.Success);
+            image.Bytes.ShouldNotBeNull().Length.ShouldBeGreaterThan(0);
+            image.MediaType.ShouldNotBeNullOrEmpty();
+            image.Label.ShouldBe("A logo");
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task ARefFromASessionThatIsGone_SaysTheSessionIsMissing()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var fetched = await fixture.Browser.FetchImagesAsync(
+            new ImageFetchRequest($"never-opened-{Guid.NewGuid():N}", ["i-1"]));
+
+        fetched.SessionMissing.ShouldBeTrue();
+        fetched.Images.ShouldBeEmpty();
+    }
+
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task ARefNamingNothingOnThePage_IsRefusedWithoutBeingConfusedForADeadSession()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var sessionId = $"test-{Guid.NewGuid():N}";
+        try
+        {
+            await PrepareAsync(sessionId, """<p>no pictures here</p>""");
+            await fixture.Browser.AnnotateImagesOnSessionAsync(sessionId);
+
+            var fetched = await fixture.Browser.FetchImagesAsync(new ImageFetchRequest(sessionId, ["i-7"]));
+
+            fetched.SessionMissing.ShouldBeFalse();
+            fetched.Images.ShouldHaveSingleItem().Status.ShouldBe(ImageFetchStatus.NotAnImageRef);
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
     private async Task<Dictionary<string, Measured>> MeasureAsync(string markup, params string[] ids)
     {
         var sessionId = $"test-{Guid.NewGuid():N}";
@@ -160,6 +231,9 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
         await fixture.Browser.EvaluateOnSessionAsync(
             sessionId, $"() => {{ document.body.innerHTML = {System.Text.Json.JsonSerializer.Serialize(markup)}; }}");
     }
+
+    private const string OnePixelPngBase64 =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
     private readonly record struct Measured(bool Survived, int Width, int Height, bool HasSrc);
 }

@@ -1,4 +1,4 @@
-# nabu — 11969 tokens across 17 sections
+# nabu — 12114 tokens across 17 sections
 
   core_directive           CoreDirective         250 / 350    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               80 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -8,7 +8,7 @@
   filesystem_mounts        FileSystem             49 / 500    The mounts this session actually has, and which one a path belongs under.
   vault_prompt             Client               1668 / 2000   Obsidian's conventions: frontmatter, wikilinks, where a new note belongs.
   sandbox_prompt           Client               1004 / 1400   The sandbox's layout, what may be run in it and what it refuses.
-  websearch_prompt         Client               1223 / 1500   Searching, loading and reading pages, and what to do when one refuses.
+  websearch_prompt         Client               1368 / 1500   Searching, loading and reading pages, and what to do when one refuses.
   idealista_guide          Client                317 / 600    Property search: the filters that exist and how a listing is read back.
   home_assistant_guide     Client               3095 / 5000   The house: its areas and entities, and how an intent becomes a service call.
   scheduling_prompt        Client               1360 / 2000   Scheduled tasks as files: creating, listing, editing and firing one.
@@ -201,6 +201,7 @@ interactions.
 - **web_browse** — load a URL and read its content as markdown.
 - **web_snapshot** — see the current page's interactive elements with refs.
 - **web_action** — interact with an element (or navigate back) by ref.
+- **view_image** — look at pictures on the page you browsed, by their image refs.
 
 See each tool's own description for arguments, action verbs, and defaults — don't restate them
 from memory.
@@ -212,6 +213,13 @@ region, narrow it (the tool description shows how) before falling back to a seco
 When the page you opened for an answer arrives truncated, read its remainder (offset)
 before opening a different page — the answer is usually in the tail you have not read,
 and another page's snippet is a promise, not the page.
+
+**Looking at a picture.** web_browse lists each image where it sits in the page text, as
+`[image i-1: what the page calls it]`. Pass those refs to view_image to see the pictures
+themselves — several in one call. Ask when the answer is in the picture rather than the
+prose: a chart's numbers, a scan with no text layer, what a product actually looks like.
+Image refs (i-1) and element refs (e-1) are separate: view_image takes the first, web_action
+the second, and each refuses the other by name.
 
 **Interacting with a page.** Load with web_browse using snapshot=true to get content and refs
 in a single call, then chain web_action calls. Each web_action returns a diff with new refs —

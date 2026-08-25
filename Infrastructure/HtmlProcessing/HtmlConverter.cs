@@ -158,7 +158,7 @@ public static partial class HtmlConverter
         {
             if (PageImageEntry.LabelFor(img) is { } label)
             {
-                sb.Append(PageImageEntry.Write(images.Next(), label));
+                sb.Append(PageImageEntry.Write(PageImageEntry.RefOn(img, images.Next()), label));
             }
         }
     }
@@ -212,7 +212,7 @@ public static partial class HtmlConverter
                     // context on every browse to buy nothing.
                     if (PageImageEntry.LabelFor(img) is { } label)
                     {
-                        sb.Append(PageImageEntry.Write(images.Next(), label));
+                        sb.Append(PageImageEntry.Write(PageImageEntry.RefOn(img, images.Next()), label));
                     }
 
                     break;
