@@ -205,7 +205,11 @@ public class PlaywrightWebBrowser(
             StructuredData: structuredData.Count > 0 ? structuredData : null,
             DismissedModals: dismissedModals,
             ErrorMessage: errorMessage
-        );
+        )
+        {
+            ImageCount = processed.ImageCount,
+            ImagesBeyondWindow = processed.ImagesBeyondWindow
+        };
     }
 
     public async Task<BrowseResult> GetCurrentPageAsync(string sessionId, CancellationToken ct = default)
@@ -246,7 +250,11 @@ public class PlaywrightWebBrowser(
                 StructuredData: null,
                 DismissedModals: null,
                 ErrorMessage: processed.ErrorMessage
-            );
+            )
+            {
+                ImageCount = processed.ImageCount,
+                ImagesBeyondWindow = processed.ImagesBeyondWindow
+            };
         }
         catch (Exception ex)
         {

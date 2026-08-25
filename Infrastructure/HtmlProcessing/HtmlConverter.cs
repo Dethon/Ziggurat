@@ -67,6 +67,14 @@ public static partial class HtmlConverter
             truncated = truncated[..lastNewline];
         }
 
+        // The same backing-up the newline rule does, for the other thing a cut must not land
+        // inside. A half-written entry hands the model a ref it can read and cannot use, and it
+        // has no way to tell that from a ref that simply failed -- so the entry goes whole.
+        if (PageImageEntry.PartialEntryStart(truncated) is var partial and >= 0)
+        {
+            truncated = truncated[..partial].TrimEnd();
+        }
+
         return truncated + "\n\n[Content truncated...]";
     }
 

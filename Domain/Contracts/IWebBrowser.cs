@@ -36,7 +36,13 @@ public record BrowseResult(
     WebPageMetadata? Metadata,
     IReadOnlyList<StructuredData>? StructuredData,
     IReadOnlyList<ModalDismissed>? DismissedModals,
-    string? ErrorMessage);
+    string? ErrorMessage)
+{
+    // How many pictures the body lists, and how many only paging forward would reach.
+    public int ImageCount { get; init; }
+
+    public int ImagesBeyondWindow { get; init; }
+}
 
 public record WebPageMetadata(
     string? Description,

@@ -91,6 +91,17 @@ public class WebBrowseTool(IWebBrowser browser)
             ["truncated"] = result.Truncated
         };
 
+        if (result.ImageCount > 0)
+        {
+            envelope["imageCount"] = result.ImageCount;
+        }
+
+        // Only worth saying when it changes what the model would do next.
+        if (result.ImagesBeyondWindow > 0)
+        {
+            envelope["imagesBeyondWindow"] = result.ImagesBeyondWindow;
+        }
+
         if (result.Metadata is not null)
         {
             envelope["metadata"] = new JsonObject
