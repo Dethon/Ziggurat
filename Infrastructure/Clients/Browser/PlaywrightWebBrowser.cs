@@ -595,6 +595,15 @@ public class PlaywrightWebBrowser(
         await session.Page.EvaluateAsync(script);
     }
 
+    // The reading half of the escape hatch: what the page answers, for a test that has to ask the
+    // DOM what a step left behind rather than infer it from the markdown.
+    public async Task<T> EvaluateOnSessionAsync<T>(string sessionId, string script)
+    {
+        var session = _sessions.Get(sessionId)
+            ?? throw new InvalidOperationException($"Session '{sessionId}' not found");
+        return await session.Page.EvaluateAsync<T>(script);
+    }
+
     public async Task CloseSessionAsync(string sessionId, CancellationToken ct = default)
     {
         await _sessions.CloseAsync(sessionId);
@@ -785,12 +794,69 @@ public class PlaywrightWebBrowser(
         await page.EvaluateAsync("() => window.scrollTo(0, 0)");
     }
 
+    // The measure-and-strip step on a session's own page. Exposed because it is the one part of
+    // the catalogue that needs a real browser to be worth testing -- everything downstream of it
+    // reads plain attributes and is a pure function of an HTML string.
+    public async Task AnnotateImagesOnSessionAsync(string sessionId)
+    {
+        var session = _sessions.Get(sessionId)
+            ?? throw new InvalidOperationException($"Session '{sessionId}' not found");
+        await StripDomNoiseAsync(session.Page);
+    }
+
     private static async Task StripDomNoiseAsync(IPage page)
     {
         try
         {
-            await page.EvaluateAsync("""
+            await page.EvaluateAsync($$"""
                 () => {
+                    const MIN_IMAGE_SIDE = {{PageImageEntry.MinRenderedSide}};
+                    // Measure every image as the reader would have seen it, then keep the address
+                    // only for the ones big enough to be about something. Markup width/height is
+                    // never consulted: it lies as often as it is absent, and a stylesheet-sized
+                    // image carries neither. One pass over the whole page, so measuring an
+                    // image-heavy page costs no round trip per image.
+                    //
+                    // This runs before anything below removes a node, and must stay there: with
+                    // <style> stripped first, a stylesheet-sized image measures at its intrinsic
+                    // size -- zero for one whose bytes have not arrived -- and every CSS-sized
+                    // content image on the page filters out as furniture.
+                    //
+                    // getBoundingClientRect is read for every image before any attribute is
+                    // written, because writing into the DOM between reads forces a reflow per
+                    // image -- the difference between one layout pass and hundreds.
+                    const images = Array.from(document.querySelectorAll('img'));
+                    const boxes = images.map(img => {
+                        const rect = img.getBoundingClientRect();
+                        return {
+                            w: Math.round(rect.width || img.naturalWidth || 0),
+                            h: Math.round(rect.height || img.naturalHeight || 0)
+                        };
+                    });
+
+                    images.forEach((img, i) => {
+                        const { w, h } = boxes[i];
+                        const survives = w >= MIN_IMAGE_SIDE && h >= MIN_IMAGE_SIDE;
+
+                        if (survives) {
+                            img.setAttribute('data-img-w', String(w));
+                            img.setAttribute('data-img-h', String(h));
+                        }
+
+                        // The address is stripped for everything that did not survive, as before:
+                        // long CDN URLs bloat the markdown and buy nothing. A survivor keeps its
+                        // src so the fetch can resolve the ref against it.
+                        if (!survives) {
+                            img.removeAttribute('src');
+                        }
+
+                        img.removeAttribute('srcset');
+                        img.removeAttribute('data-src');
+                        img.removeAttribute('data-image');
+                        img.removeAttribute('data-mediabook');
+                        img.removeAttribute('data-path');
+                    });
+
                     // Remove script/style/noscript — they contribute nothing to text content
                     document.querySelectorAll('script, style, noscript').forEach(el => el.remove());
 
@@ -799,17 +865,6 @@ public class PlaywrightWebBrowser(
 
                     // Remove SVGs — icons/graphics that bloat HTML without adding text value
                     document.querySelectorAll('svg').forEach(el => el.remove());
-
-                    // Strip image src attributes — long CDN URLs bloat markdown without adding value
-                    // Alt text is preserved for context
-                    document.querySelectorAll('img').forEach(img => {
-                        img.removeAttribute('src');
-                        img.removeAttribute('srcset');
-                        img.removeAttribute('data-src');
-                        img.removeAttribute('data-image');
-                        img.removeAttribute('data-mediabook');
-                        img.removeAttribute('data-path');
-                    });
 
                     // Compact link hrefs: strip tracking params and shorten same-site URLs
                     const currentHost = location.hostname;
