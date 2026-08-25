@@ -16,7 +16,7 @@ public class McpImageLiftTests
 {
     private const string Conversation = "conv-1";
     private const string CallId = "call-7";
-    private static readonly byte[] Bytes = [9, 8, 7, 6];
+    private static readonly byte[] _bytes = [9, 8, 7, 6];
 
     [Fact]
     public async Task AnImageBlock_HasItsBytesMovedIntoTheStore()
@@ -30,7 +30,7 @@ public class McpImageLiftTests
         // One call can answer with several pictures, so the index separates them under the call id
         // that keys them all rather than widening the store's one-image-per-key contract.
         written.CallId.ShouldBe(McpImageLift.KeyFor(CallId, 0));
-        written.Image.Bytes.ShouldBe(Bytes);
+        written.Image.Bytes.ShouldBe(_bytes);
         written.Image.MediaType.ShouldBe("image/jpeg");
     }
 
@@ -130,7 +130,7 @@ public class McpImageLiftTests
         object result = new AIContent[]
         {
             new TextContent(EnvelopeText("First picture")),
-            new DataContent(Bytes, "image/jpeg"),
+            new DataContent(_bytes, "image/jpeg"),
             new TextContent(EnvelopeText("Second picture")),
             new DataContent(new byte[] { 1, 1 }, "image/png")
         };
@@ -152,7 +152,7 @@ public class McpImageLiftTests
         {
             new TextContent("""{"status":"success","sessionId":"s","imageCount":2}"""),
             new TextContent(EnvelopeText("First picture")),
-            new DataContent(Bytes, "image/jpeg"),
+            new DataContent(_bytes, "image/jpeg"),
             new TextContent(EnvelopeText("Second picture")),
             new DataContent(new byte[] { 1, 1 }, "image/png")
         };
@@ -194,7 +194,7 @@ public class McpImageLiftTests
     private static object ResultWithImage() => new AIContent[]
     {
         new TextContent(EnvelopeText("A harbour at dusk")),
-        new DataContent(Bytes, "image/jpeg")
+        new DataContent(_bytes, "image/jpeg")
     };
 
     private static string EnvelopeText(string label) =>

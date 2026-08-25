@@ -18,7 +18,7 @@ public class OpenRouterChatClientPageImageTests
 {
     private const string Conversation = "conv-1";
     private const string Label = "A harbour at dusk";
-    private static readonly byte[] Bytes = [1, 2, 3, 4];
+    private static readonly byte[] _bytes = [1, 2, 3, 4];
 
     private readonly Mock<IChatClient> _innerClient = new();
     private readonly FakeReadImageStore _store = new();
@@ -257,7 +257,7 @@ public class OpenRouterChatClientPageImageTests
         public void Put(string conversationId, string callId, int index = 0) =>
             _entries[Key(conversationId, McpImageLift.KeyFor(callId, index))] = new ReadImage
             {
-                VirtualPath = Label, MediaType = "image/jpeg", Bytes = Bytes
+                VirtualPath = Label, MediaType = "image/jpeg", Bytes = _bytes
             };
 
         public Task PutAsync(string conversationId, string callId, ReadImage image, CancellationToken ct)
