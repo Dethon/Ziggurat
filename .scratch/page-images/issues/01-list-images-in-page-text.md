@@ -6,11 +6,11 @@ This ticket delivers the catalogue only. Handles do not resolve to anything yet;
 
 **Blocked by:** None — can start immediately.
 
-- [ ] An image that survives filtering appears in the page text at the position it occupies in the document, not gathered into a list elsewhere
-- [ ] Each entry carries an image ref, spelled in its own namespace and never mixed with the element refs the accessibility snapshot assigns
-- [ ] Labels resolve by falling back: alt text, then figcaption, then title, then enclosing link text, then filename
-- [ ] An image that survives all five fallbacks is listed with its rendered dimensions rather than a blank or generic label
-- [ ] An image under roughly 100px on either side gets no entry and no ref, and cannot be named by any later call
-- [ ] The size decision reads dimensions annotated onto the element, not markup width/height attributes
-- [ ] Image address information is preserved for images that pass the filter and still stripped for those that do not
-- [ ] Covered by unit tests at the existing page-text extraction seam, using hand-written HTML and no browser
+- [x] An image that survives filtering appears in the page text at the position it occupies in the document, not gathered into a list elsewhere
+- [x] Each entry carries an image ref, spelled in its own namespace and never mixed with the element refs the accessibility snapshot assigns
+- [x] Labels resolve by falling back: alt text, then figcaption, then title, then enclosing link text, then filename
+- [x] An image that survives all five fallbacks is listed with its rendered dimensions rather than a blank or generic label
+- [x] An image under roughly 100px on either side gets no entry and no ref, and cannot be named by any later call
+- [x] The size decision reads dimensions annotated onto the element, not markup width/height attributes
+- [x] Image address information is preserved for images that pass the filter and still stripped for those that do not
+- [x] Covered by unit tests at the existing page-text extraction seam, using hand-written HTML and no browser

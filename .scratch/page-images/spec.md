@@ -1,6 +1,6 @@
 # Page images in web browsing
 
-Status: ready-for-agent
+Status: implemented
 
 ## Problem Statement
 
@@ -125,6 +125,27 @@ Refusal messages are unit-tested at whichever of the above seams produces them, 
 - **Surviving session expiry.** A ref outliving its page was considered and declined.
 - **A byte-based cap.** Considered and declined in favour of a count.
 - **Video, audio and PDF on a page.** Images only.
+
+## Implementation Notes
+
+Two decisions taken during implementation, both confirmed with the user:
+
+- **Several pictures from one call are keyed `<callId>#<n>`**, rather than widening
+  `IReadImageStore`'s one-image-per-key contract that `file_read` depends on. `n` counts JSON blocks
+  in the result, not pictures — the call's own envelope leads every result and takes index 0. The
+  bridge and hydration compute it independently, so `PageImageRoundTripTests` drives both halves
+  over a real result to stop them drifting.
+- **The no-vision refusal is made agent-side.** The capability catalogue and the turn's resolved
+  model live hub-side, so the browse server cannot answer the question; hydration refuses with the
+  note instead. The cost is that a vision-less turn still fetches and stores the bytes.
+
+Two bugs the tests caught that the spec did not anticipate:
+
+- Measurement had to move ahead of `<style>` removal. Stripping stylesheets first makes a
+  CSS-sized image measure at its intrinsic size — zero while its bytes are in flight — so every
+  such content image filtered out as furniture.
+- A picture inside a link was swallowed whole: a link renders from its text, which no image
+  contributes to, and product photos are linked more often than not.
 
 ## Further Notes
 

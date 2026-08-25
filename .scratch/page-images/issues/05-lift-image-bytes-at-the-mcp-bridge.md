@@ -6,10 +6,10 @@ Every future server returning an image inherits this without asking for it.
 
 **Blocked by:** 04 — Recognise a page image as a read image.
 
-- [ ] An image block returned by an MCP tool has its bytes moved into the agent's read-image store
-- [ ] What the bridge returns in its place carries the envelope text and no bytes
-- [ ] The bytes are stored under the same conversation-and-call key the filesystem read tool uses, so hydration finds them unchanged
-- [ ] A host with no store configured passes the result through exactly as it does today, without failing
-- [ ] The lifting happens where the conversation context is already resolved, not in the pure flattening helper that has no access to it
-- [ ] Existing all-text multi-block results still flatten to a single string as before
-- [ ] Covered by unit tests constructing the bridge with a fake store and a stub inner tool, including the null-store path
+- [x] An image block returned by an MCP tool has its bytes moved into the agent's read-image store
+- [x] What the bridge returns in its place carries the envelope text and no bytes
+- [x] The bytes are stored under the same conversation-and-call key the filesystem read tool uses, so hydration finds them unchanged
+- [x] A host with no store configured passes the result through exactly as it does today, without failing
+- [x] The lifting happens where the conversation context is already resolved, not in the pure flattening helper that has no access to it
+- [x] Existing all-text multi-block results still flatten to a single string as before
+- [x] Covered by unit tests constructing the bridge with a fake store and a stub inner tool, including the null-store path

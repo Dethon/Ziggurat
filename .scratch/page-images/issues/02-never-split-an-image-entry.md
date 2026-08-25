@@ -4,9 +4,9 @@
 
 **Blocked by:** 01 — List images in browsed page text.
 
-- [ ] A body cut short backs up past a partial image entry the way it already backs up to a line boundary
-- [ ] An entry straddling the cut point is dropped whole rather than truncated
-- [ ] An entry ending exactly at the cut point is kept intact
-- [ ] The result reports how many images lie beyond the returned window
-- [ ] Existing paging arithmetic is unchanged — the reported total content length remains the pre-slice total
-- [ ] Covered by unit tests at the existing truncation seam, which is a pure string function with a single caller
+- [x] A body cut short backs up past a partial image entry the way it already backs up to a line boundary
+- [x] An entry straddling the cut point is dropped whole rather than truncated
+- [x] An entry ending exactly at the cut point is kept intact
+- [x] The result reports how many images lie beyond the returned window
+- [x] Existing paging arithmetic is unchanged — the reported total content length remains the pre-slice total
+- [x] Covered by unit tests at the existing truncation seam, which is a pure string function with a single caller

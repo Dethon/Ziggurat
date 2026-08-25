@@ -8,11 +8,11 @@ Note that the existing envelope shape is strict on purpose, so that a tool resul
 
 **Blocked by:** 03 — Measure images on the live page.
 
-- [ ] A page image envelope is recognised alongside the filesystem one, and both hydrate identically
-- [ ] The strictness of the existing filesystem envelope is unchanged — a result that is not an image read still does not parse as one
-- [ ] A page image falls out of view on the same message distance as a mount image
-- [ ] Bytes are forgotten on the send where the image leaves the window, as today
-- [ ] The note left in its place names what the picture was of and says it can be asked for again
-- [ ] A model that cannot accept images gets a note rather than a picture, and the bytes are kept for a turn that can
-- [ ] The envelope is read once per message, preserving the existing cost guarantee
-- [ ] Covered by unit tests with hand-built envelopes, no browser and no MCP server involved
+- [x] A page image envelope is recognised alongside the filesystem one, and both hydrate identically
+- [x] The strictness of the existing filesystem envelope is unchanged — a result that is not an image read still does not parse as one
+- [x] A page image falls out of view on the same message distance as a mount image
+- [x] Bytes are forgotten on the send where the image leaves the window, as today
+- [x] The note left in its place names what the picture was of and says it can be asked for again
+- [x] A model that cannot accept images gets a note rather than a picture, and the bytes are kept for a turn that can
+- [x] The envelope is read once per message, preserving the existing cost guarantee
+- [x] Covered by unit tests with hand-built envelopes, no browser and no MCP server involved
