@@ -227,11 +227,12 @@ reference whose bytes are gone hydrates to a placeholder naming the file.
 _Avoid_: rehydration, inlining, resolving, expansion
 
 **Read image**:
-An image the model read from a mount and was shown. It is not an attachment — nobody
-sent it, and the model asked for it — so it arrives inside the tool result that
-answered the read, never as part of what a person said. Its bytes rest with the agent
-rather than with a channel, on a clock of their own, and the file it came from stays
-on the mount: an image that is no longer in view can always be read again.
+An image the model asked for and was shown, whatever it was read from — a file on a
+mount, a picture on a page. It is not an attachment — nobody sent it, and the model
+asked for it — so it arrives inside the tool result that answered the read, never as
+part of what a person said. Its bytes rest with the agent rather than with a channel,
+on a clock of their own, and what it was read from outlives it: an image that is no
+longer in view can always be asked for again.
 _Avoid_: attachment, inline image, viewed file, screenshot
 
 **Landing**:
@@ -535,6 +536,38 @@ A mount's claim that attachments may be put into it. It is a separate claim from
 run commands: a mount can be somewhere work is done without being somewhere a person's files
 belong.
 _Avoid_: landing mount, attachment destination, sandbox mount
+
+## Web browsing
+
+**Browse session**:
+A page kept open on the model's behalf, with its cookies, its history and everything
+the page has been asked. It is what makes a second call to the same page cheaper than
+the first and what makes a sequence of actions add up, and it goes quiet on its own
+after long enough idle — so anything that only means something inside it stops meaning
+anything then.
+_Avoid_: browser session, tab, page handle, browsing context
+
+**Element ref**:
+A short handle standing for one thing on the page a person could act on. It is issued
+by the snapshot that found it and only means anything in the session that issued it,
+so it is a coordinate and not an address: nothing outside can be reached with one, and
+the same element in a later session is a different ref.
+_Avoid_: selector, element id, locator, node id
+
+**Image ref**:
+An element ref's counterpart for a picture: what `view_image` is asked for, spelled
+apart from the refs that name things to act on. The two are separate namespaces on the
+same page because a ref's shape is what says which tool it was meant for — a tool given
+the other kind can refuse it by name instead of failing to find it.
+_Avoid_: image id, image handle, picture ref
+
+**Image entry**:
+What a browsed page says about a picture in the place the picture sits: its ref, and
+the best name the page gives it. It stands where the image stood because position is
+part of what an image is about, and it is what the model reads to decide whether the
+picture is worth asking for. A picture too small to be about anything gets no entry
+and no ref.
+_Avoid_: image listing, image catalogue, thumbnail, image placeholder
 
 ## Outposts
 
