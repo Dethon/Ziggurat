@@ -136,13 +136,34 @@ public static partial class HtmlConverter
     private static string ConvertToMarkdown(IElement element)
     {
         var sb = new StringBuilder();
-        ConvertToMarkdownRecursive(element, sb, 0);
+        // Numbering runs across the whole conversion, so a ref is unique within the body the model
+        // is handed. A filtered image takes no number: every ref it can read is a ref it can use.
+        ConvertToMarkdownRecursive(element, sb, 0, new ImageNumberer());
         var md = sb.ToString();
         md = MultipleNewlinesRegex().Replace(md, "\n\n");
         return md.Trim();
     }
 
-    private static void ConvertToMarkdownRecursive(INode node, StringBuilder sb, int listDepth)
+    private static void ListImagesWithin(IElement element, StringBuilder sb, ImageNumberer images)
+    {
+        foreach (var img in element.QuerySelectorAll("img").OfType<IHtmlImageElement>())
+        {
+            if (PageImageEntry.LabelFor(img) is { } label)
+            {
+                sb.Append(PageImageEntry.Write(images.Next(), label));
+            }
+        }
+    }
+
+    private sealed class ImageNumberer
+    {
+        private int _issued;
+
+        public int Next() => ++_issued;
+    }
+
+    private static void ConvertToMarkdownRecursive(INode node, StringBuilder sb, int listDepth,
+        ImageNumberer images)
     {
         foreach (var child in node.ChildNodes)
         {
@@ -170,24 +191,32 @@ public static partial class HtmlConverter
                         sb.Append(linkText);
                     }
 
+                    // A link is rendered from its text, which no image contributes to -- so a
+                    // picture wrapped in one would be swallowed whole. Product photos and gallery
+                    // thumbnails are linked far more often than not, which would have made the
+                    // catalogue miss exactly the images worth asking for.
+                    ListImagesWithin(anchor, sb, images);
+
                     break;
                 case IHtmlImageElement img:
-                    var alt = img.GetAttribute("alt") ?? "";
-                    var src = img.GetAttribute("src") ?? "";
-                    if (!string.IsNullOrEmpty(src))
+                    // An entry, not a markdown image: the model reaches the picture by ref through
+                    // the session that listed it, and the address it would otherwise carry costs
+                    // context on every browse to buy nothing.
+                    if (PageImageEntry.LabelFor(img) is { } label)
                     {
-                        sb.Append($"![{alt}]({src})");
+                        sb.Append(PageImageEntry.Write(images.Next(), label));
                     }
 
                     break;
                 case IElement elem:
-                    ConvertElementToMarkdown(elem, sb, listDepth);
+                    ConvertElementToMarkdown(elem, sb, listDepth, images);
                     break;
             }
         }
     }
 
-    private static void ConvertElementToMarkdown(IElement elem, StringBuilder sb, int listDepth)
+    private static void ConvertElementToMarkdown(IElement elem, StringBuilder sb, int listDepth,
+        ImageNumberer images)
     {
         var tag = elem.TagName.ToUpperInvariant();
 
@@ -195,32 +224,32 @@ public static partial class HtmlConverter
         {
             case "H1":
                 sb.Append("\n\n# ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "H2":
                 sb.Append("\n\n## ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "H3":
                 sb.Append("\n\n### ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "H4":
                 sb.Append("\n\n#### ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "H5":
                 sb.Append("\n\n##### ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "H6":
                 sb.Append("\n\n###### ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "P":
@@ -233,7 +262,7 @@ public static partial class HtmlConverter
             case "FOOTER":
             case "NAV":
                 sb.Append("\n\n");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "BR":
@@ -245,13 +274,13 @@ public static partial class HtmlConverter
             case "STRONG":
             case "B":
                 sb.Append("**");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("**");
                 break;
             case "EM":
             case "I":
                 sb.Append('*');
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append('*');
                 break;
             case "CODE":
@@ -273,7 +302,7 @@ public static partial class HtmlConverter
             case "UL":
             case "OL":
                 sb.AppendLine();
-                ConvertToMarkdownRecursive(elem, sb, listDepth + 1);
+                ConvertToMarkdownRecursive(elem, sb, listDepth + 1, images);
                 sb.AppendLine();
                 break;
             case "LI":
@@ -281,7 +310,7 @@ public static partial class HtmlConverter
                 var parent = elem.ParentElement;
                 var bullet = parent?.TagName == "OL" ? "1." : "-";
                 sb.Append($"{indent}{bullet} ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth > 0 ? listDepth : 1);
+                ConvertToMarkdownRecursive(elem, sb, listDepth > 0 ? listDepth : 1, images);
                 sb.AppendLine();
                 break;
             case "TABLE":
@@ -291,15 +320,15 @@ public static partial class HtmlConverter
                 ConvertDefinitionListToMarkdown(elem, sb);
                 break;
             case "FIGURE":
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 break;
             case "FIGCAPTION":
                 sb.Append("\n*");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("*\n");
                 break;
             default:
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 break;
         }
     }

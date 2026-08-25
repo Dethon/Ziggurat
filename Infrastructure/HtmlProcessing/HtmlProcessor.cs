@@ -14,7 +14,14 @@ public record HtmlProcessingResult(
     bool Truncated,
     WebPageMetadata? Metadata,
     bool IsPartial,
-    string? ErrorMessage);
+    string? ErrorMessage)
+{
+    // How many images the returned body lists, and how many the model would only reach by paging
+    // forward. An image it cannot see is one it cannot know to ask for.
+    public int ImageCount { get; init; }
+
+    public int ImagesBeyondWindow { get; init; }
+}
 
 public static partial class HtmlProcessor
 {
@@ -189,6 +196,11 @@ public static partial class HtmlProcessor
 
         var hasMore = offset + content.Length < totalLength;
 
+        // Counted off the markdown rather than tracked through the walk: the entry shape is the
+        // one both this and truncation agree on, so counting what actually reached the model
+        // cannot disagree with what it can read.
+        var listed = PageImageEntry.Count(content);
+
         return new HtmlProcessingResult(
             Title: title,
             Content: content,
@@ -197,7 +209,11 @@ public static partial class HtmlProcessor
             Metadata: metadata,
             IsPartial: false,
             ErrorMessage: null
-        );
+        )
+        {
+            ImageCount = listed,
+            ImagesBeyondWindow = 0
+        };
     }
 
     private static HtmlProcessingResult CreatePartialResult(
