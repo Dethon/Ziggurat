@@ -121,10 +121,9 @@ Refusal messages are unit-tested at whichever of the above seams produces them, 
 - **Inlining images automatically.** Pictures arrive only when the model asks by ref. A page's images never enter the context unbidden.
 - **Fetching an image by bare URL.** Refs were chosen as the handle; a URL path would exist only for images the browse tool never listed, which is a separate need.
 - **Sending images onward to the person.** This is about what the model can see, not what gets delivered to a channel.
-- **Downscaling.** No image is made smaller to fit a budget; it arrives whole or is refused.
-  **Amended in implementation** for re-encoding: a cross-origin image cannot be read by a scripted
-  fetch at all (CORS), so it is read off a canvas and arrives re-encoded as PNG. Same-origin images
-  are still passed through exactly as served. See the 2026-08-26 refinement in `docs/adr/0033`.
+- **Downscaling and format conversion.** No image is made smaller or converted to fit a budget; it
+  arrives whole or is refused. A cross-origin image is re-encoded as PNG, but only because reading
+  it off a canvas is the sole way to reach its bytes at all — not to save anything.
 - **Surviving session expiry.** A ref outliving its page was considered and declined.
 - **A byte-based cap.** Considered and declined in favour of a count.
 - **Video, audio and PDF on a page.** Images only.

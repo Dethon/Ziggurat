@@ -81,6 +81,16 @@ fingerprint, and a great many images are served only to a request that carries t
 is earning its keep. This is also what makes the ref meaningful — it resolves against the live
 page, so a URL never has to enter the model's context to be usable.
 
+**Inside the page, how the bytes are reached depends on the origin.** A page's pictures usually
+come from somewhere else: `commons.wikimedia.org` serves its images from `upload.wikimedia.org`,
+`unsplash.com` from `images.unsplash.com`. A scripted `fetch` there is subject to CORS, and an
+image CDN sends no `Access-Control-Allow-Origin` because it serves `<img>` tags rather than XHR —
+so a fetch fails on precisely the images the page is displaying perfectly well, and fails in the
+shape of the site refusing. Same-origin therefore goes through `fetch`, which keeps the served
+bytes byte for byte; cross-origin draws the image the browser has already decoded onto a canvas
+and reads the pixels back. A canvas the browser will not let script read is a real refusal and is
+reported as one.
+
 **The MCP server answers with an image block, and the bridge lifts the bytes out.**
 `McpServerWebSearch` returns what the protocol says an image result is, and does not learn Redis,
 conversation keys or tool call ids. `QualifiedMcpTool` — the one place a tool result crosses from
@@ -130,26 +140,11 @@ permanent failure or abandons a retryable one.
   in this repo inherits without opting in.
 - `StripDomNoiseAsync` keeps `src` for images that pass the size filter, so the DOM the markdown is
   built from is no longer uniformly image-free.
+- A cross-origin image arrives re-encoded as PNG, and usually larger than the file the site served,
+  because a canvas holds pixels rather than a file. Passing the served bytes through would mean
+  refusing most of the pictures on the web, which is the feature.
 - The size filter needs rendered dimensions, not markup attributes, so listing images asks the page
   a question that reading its text did not.
-- **Refined 2026-08-26, when the fetch met CORS.** "The fetch goes through the page that listed
-  it" is unchanged and was chosen for the right reason — cookies, referer and fingerprint are what
-  get the bytes served at all. What it did not anticipate is that a page's pictures usually come
-  from *another* origin: `commons.wikimedia.org` serves its images from `upload.wikimedia.org`,
-  `unsplash.com` from `images.unsplash.com`. A scripted `fetch` there is subject to CORS, and an
-  image CDN sends no `Access-Control-Allow-Origin` because it serves `<img>` tags rather than XHR
-  — so the fetch failed on exactly the images the page was displaying perfectly well, and said the
-  site had refused. Same URL, same page, same browser: `fetch` throws `NetworkError` while `<img>`
-  loads.
-
-  Same-origin still goes through `fetch`, which keeps the served bytes byte for byte.
-  Cross-origin draws the image the browser has already decoded onto a canvas and reads the pixels
-  back. **This amends "an image is fetched as served or refused" for the cross-origin case**: a
-  canvas holds pixels, not a file, so those images arrive re-encoded as PNG and usually larger
-  than what the site served. The alternative was refusing the majority of pictures on the web,
-  which is the feature. A canvas the browser will not let script read — a genuinely tainted one —
-  still refuses, so that message now means what it always claimed to.
-
 - No eval scenario. The mechanism is unit-testable end to end and the fetch is covered against the
   real container; whether a model chooses to look at a picture when it should is a behavioural
   claim nobody has yet made a prompt claim about.

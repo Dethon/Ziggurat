@@ -24,7 +24,7 @@ McpServerWebSearch exposes the `web_*` browse tools over `PlaywrightWebBrowser`,
 
 **Labels fall back before going blank**: alt → figcaption → title → enclosing link text → filename → rendered dimensions. A list of entries all called "image" is not a menu.
 
-**A cross-origin picture is read off a canvas, not fetched.** Most pages serve their images from another host, and a scripted `fetch` there is blocked by CORS — image CDNs answer `<img>` tags, not XHR. Same-origin uses `fetch` and keeps the bytes exactly as served; cross-origin draws the already-decoded image to a canvas, which re-encodes it as PNG. Don't "fix" that back to a plain `fetch`: it fails on the majority of real pages, and it fails by reporting that the site refused. Only a genuinely tainted canvas refuses now (`docs/adr/0033`, 2026-08-26 refinement).
+**A cross-origin picture is read off a canvas, not fetched.** Most pages serve their images from another host, and a scripted `fetch` there is blocked by CORS — image CDNs answer `<img>` tags, not XHR. Same-origin uses `fetch` and keeps the bytes exactly as served; cross-origin draws the already-decoded image to a canvas, which re-encodes it as PNG. Don't "fix" that back to a plain `fetch`: it fails on the majority of real pages, and it fails by reporting that the site refused. Only a genuinely tainted canvas refuses (`docs/adr/0033`).
 
 **`view_image` takes a list, capped at 8.** Over the cap, the first eight are fetched and the rest named in the envelope — partial success, so a greedy call progresses. The cap counts images, not bytes; eight full-size images can still fail as an oversized request, and that is accepted (`docs/adr/0033`).
 
