@@ -145,6 +145,14 @@ public class ViewImageTool(IWebBrowser browser)
         ImageFetchStatus.SiteRefused =>
             $"The site refused to serve {image.Ref}, so its bytes never arrived. Trying again may "
             + "work; the picture itself is still on the page.",
+        // The two stale-ref walls. Superseded: the page is still open and refreshing it mints
+        // fresh refs. Closed: the tab is gone, and the wall names exactly what to browse again.
+        ImageFetchStatus.RefSuperseded =>
+            $"{image.Ref} is out of date — {image.Url} has moved on since that ref was stamped, "
+            + $"renumbering its refs. Browse {image.Url} again and use the fresh entries it lists.",
+        ImageFetchStatus.RefClosed =>
+            $"{image.Ref} belonged to {image.Url}, whose tab has since been closed. Browse "
+            + $"{image.Url} again to list its images anew.",
         _ =>
             $"{image.Ref} could not be shown."
     };

@@ -135,10 +135,10 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
             idleTimeout: TimeSpan.FromMinutes(30));
 
         var scopeA = ConversationScope.Build("nabu", "conv-a");
-        var first = await manager.GetOrCreateAsync(scopeA, context.Object);
-        var second = await manager.GetOrCreateAsync(scopeA, context.Object);
+        var first = await manager.AcquireTabForBrowseAsync(scopeA, "https://a.test/", context.Object);
+        var second = await manager.AcquireTabForBrowseAsync(scopeA, "https://a.test/", context.Object);
 
-        second.Page.ShouldBeSameAs(first.Page);
+        second.Tab.ShouldBeSameAs(first.Tab);
         context.Verify(c => c.NewPageAsync(), Times.Once);
 
         time.Advance(TimeSpan.FromMinutes(31));

@@ -141,10 +141,44 @@ public class ViewImageToolTests
     }
 
     [Fact]
+    public async Task ASupersededRef_SaysToSnapshotOrBrowseTheStillOpenPageAgain()
+    {
+        _browser
+            .Setup(b => b.FetchImagesAsync(It.IsAny<ImageFetchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ImageFetchResult("s",
+                [new FetchedImage("i-3", null, null, ImageFetchStatus.RefSuperseded,
+                    Url: "https://shop.test/product")]));
+
+        var result = await RunAsync(["i-3"]);
+
+        var note = result.Notes.ShouldHaveSingleItem();
+        note.ShouldContain("i-3");
+        note.ShouldContain("https://shop.test/product");
+        note.ShouldContain("browse", Case.Insensitive);
+    }
+
+    [Fact]
+    public async Task ARefWhoseTabWasClosed_NamesTheUrlItBelongedTo()
+    {
+        _browser
+            .Setup(b => b.FetchImagesAsync(It.IsAny<ImageFetchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ImageFetchResult("s",
+                [new FetchedImage("i-7", null, null, ImageFetchStatus.RefClosed,
+                    Url: "https://old.test/article")]));
+
+        var result = await RunAsync(["i-7"]);
+
+        var note = result.Notes.ShouldHaveSingleItem();
+        note.ShouldContain("i-7");
+        note.ShouldContain("https://old.test/article");
+        note.ShouldContain("closed");
+    }
+
+    [Fact]
     public async Task EveryRefusal_ReadsDifferentlyFromEveryOther()
     {
-        // The whole point of six sentences rather than one: a model can tell a retryable failure
-        // from a permanent one.
+        // The whole point of eight sentences rather than one: a model can tell a retryable failure
+        // from a permanent one, and a page it can refresh from a page that is gone.
         Answers(
             ("i-1", ImageFetchStatus.NotAnImageRef),
             ("i-2", ImageFetchStatus.SiteRefused));
@@ -155,10 +189,17 @@ public class ViewImageToolTests
 
         _browser
             .Setup(b => b.FetchImagesAsync(It.IsAny<ImageFetchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ImageFetchResult("s",
+                [new FetchedImage("i-1", null, null, ImageFetchStatus.RefSuperseded, Url: "https://a.test/"),
+                 new FetchedImage("i-2", null, null, ImageFetchStatus.RefClosed, Url: "https://a.test/")]));
+        var walls = (await RunAsync(["i-1", "i-2"])).Notes;
+
+        _browser
+            .Setup(b => b.FetchImagesAsync(It.IsAny<ImageFetchRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ImageFetchResult("s", [], SessionMissing: true));
         var deadSession = Message(await RunAsync(["i-1"]));
 
-        var sentences = mixed.Notes.Concat([noVision, wrongNamespace, deadSession]).ToList();
+        var sentences = mixed.Notes.Concat(walls).Concat([noVision, wrongNamespace, deadSession]).ToList();
         sentences.Distinct().Count().ShouldBe(sentences.Count);
     }
 

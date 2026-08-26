@@ -25,7 +25,10 @@ public record FetchedImage(
     ImageFetchStatus Status,
     // What the entry called it. Carried back because it is the name a note left in the picture's
     // place has to use -- the model chose this image by that label, not by its ref.
-    string? Label = null);
+    string? Label = null,
+    // For the two stale-ref walls: the address whose refs these were -- the page to browse again
+    // (closed) or to refresh (superseded).
+    string? Url = null);
 
 public enum ImageFetchStatus
 {
@@ -37,7 +40,14 @@ public enum ImageFetchStatus
 
     // The site answered the fetch with a refusal or an error, through the very browser that was
     // just served the page.
-    SiteRefused
+    SiteRefused,
+
+    // The ref's tab is still open, but a later stamp renumbered its refs -- snapshot or browse
+    // the page again for fresh ones.
+    RefSuperseded,
+
+    // The ref's tab is gone -- evicted at the cap. Url names the page to browse again.
+    RefClosed
 }
 
 // The two other walls are not states of a fetch, because neither reaches one: a dead session is
@@ -128,7 +138,13 @@ public record WebActionRequest(
 
 public enum WebActionStatus
 {
-    Success, Error, ElementNotFound, SessionNotFound, Timeout
+    Success, Error, ElementNotFound, SessionNotFound, Timeout,
+
+    // The ref's tab is still open, but a later snapshot renumbered its refs.
+    RefSuperseded,
+
+    // The ref's tab is gone -- evicted at the cap. RefUrl names the page to browse again.
+    RefClosed
 }
 
 public record WebActionResult(
@@ -138,4 +154,6 @@ public record WebActionResult(
     bool NavigationOccurred,
     string? Snapshot,
     string? DialogMessage,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    // For the two stale-ref walls: the address whose refs these were.
+    string? RefUrl = null);

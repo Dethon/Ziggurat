@@ -340,11 +340,11 @@ public class PlaywrightWebBrowserTests(
 
             snapshots.ShouldAllBe(s => s.RefCount > 0);
 
-            // Execute hover actions in parallel on e1 (lightweight page, fast element resolution)
+            // Execute hover actions in parallel on e-1 (lightweight page, fast element resolution)
             var actionTasks = sessions.Select(sid =>
                 fixture.Browser.ActionAsync(new WebActionRequest(
                     SessionId: sid,
-                    Ref: "e1",
+                    Ref: "e-1",
                     Action: WebActionType.Hover))).ToList();
 
             var actionResults = await Task.WhenAll(actionTasks);

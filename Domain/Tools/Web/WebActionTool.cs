@@ -67,22 +67,37 @@ public class WebActionTool(IWebBrowser browser)
     {
         if (result.Status is not WebActionStatus.Success)
         {
-            var (code, hint) = result.Status switch
+            // The two stale-ref walls each name their recovery: a superseded ref's page is still
+            // open and refreshing it mints fresh refs; a closed ref's wall names exactly what to
+            // browse again.
+            var (code, hint, wall) = result.Status switch
             {
                 WebActionStatus.SessionNotFound => (
                     ToolError.Codes.SessionNotFound,
-                    "The browser session has expired. Call web_browse to start a new session."),
+                    "The browser session has expired. Call web_browse to start a new session.",
+                    (string?)null),
                 WebActionStatus.ElementNotFound => (
                     ToolError.Codes.ElementNotFound,
-                    "Call web_snapshot to refresh element refs — the page or DOM may have changed."),
+                    "Call web_snapshot to refresh element refs — the page or DOM may have changed.",
+                    null),
                 WebActionStatus.Timeout => (
                     ToolError.Codes.Timeout,
-                    "Element may be obscured by an overlay. Retry once with force=true if you're certain the ref is correct."),
-                _ => (ToolError.Codes.InternalError, (string?)null)
+                    "Element may be obscured by an overlay. Retry once with force=true if you're certain the ref is correct.",
+                    null),
+                WebActionStatus.RefSuperseded => (
+                    ToolError.Codes.ElementNotFound,
+                    $"Call web_snapshot, or web_browse {result.RefUrl} again, and act with the fresh refs.",
+                    $"That ref is out of date: {result.RefUrl} has moved on since it was stamped, "
+                    + "renumbering its refs."),
+                WebActionStatus.RefClosed => (
+                    ToolError.Codes.NotFound,
+                    $"Browse {result.RefUrl} again and act with the refs it lists.",
+                    $"That ref belonged to {result.RefUrl}, whose tab has since been closed."),
+                _ => (ToolError.Codes.InternalError, null, null)
             };
             var error = ToolError.Create(
                 code,
-                result.ErrorMessage ?? "Action failed",
+                wall ?? result.ErrorMessage ?? "Action failed",
                 hint);
             error["sessionId"] = result.SessionId;
             error["url"] = result.Url;

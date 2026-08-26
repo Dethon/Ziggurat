@@ -114,7 +114,7 @@ public class BrowserJQueryWidgetCompatTests(
             open.Status.ShouldBe(WebActionStatus.Success);
             var optionRef = Regex.Match(
                 open.Snapshot!.Split('\n').First(l => l.Contains("option") && l.Contains("ref=")),
-                @"ref=(e\d+)").Groups[1].Value;
+                @"ref=(e-\d+)").Groups[1].Value;
 
             var select = await fixture.Browser.ActionAsync(
                 new WebActionRequest(sessionId, optionRef, WebActionType.Click));
@@ -149,9 +149,9 @@ public class BrowserJQueryWidgetCompatTests(
             // The suggestion list populates only if our typing fired the real jQuery input/keyup handler.
             var snapshot = await fixture.WaitForSnapshotAsync(
                 sessionId,
-                s => Regex.IsMatch(s, @"option ""Odawara"" \[ref=e\d+\]"),
+                s => Regex.IsMatch(s, @"option ""Odawara"" \[ref=e-\d+\]"),
                 "Odawara autocomplete suggestion");
-            var optionRef = Regex.Match(snapshot, @"option ""Odawara"" \[ref=(e\d+)\]").Groups[1].Value;
+            var optionRef = Regex.Match(snapshot, @"option ""Odawara"" \[ref=(e-\d+)\]").Groups[1].Value;
 
             var select = await fixture.Browser.ActionAsync(
                 new WebActionRequest(sessionId, optionRef, WebActionType.Click));
@@ -187,7 +187,7 @@ public class BrowserJQueryWidgetCompatTests(
         var snapshot = await fixture.Browser.SnapshotAsync(new SnapshotRequest(sessionId));
         snapshot.ErrorMessage.ShouldBeNull();
         var line = snapshot.Snapshot!.Split('\n').First(l => lineMatch(l) && l.Contains("ref="));
-        return Regex.Match(line, @"ref=(e\d+)").Groups[1].Value;
+        return Regex.Match(line, @"ref=(e-\d+)").Groups[1].Value;
     }
 
     private static string JQueryAssetPath()

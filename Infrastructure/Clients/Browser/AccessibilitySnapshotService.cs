@@ -9,6 +9,9 @@ public class AccessibilitySnapshotService
         (args) => {
             const selectorScope = typeof args === 'string' ? args : args?.scope;
             const preserveRefs = args?.preserveRefs === true;
+            // Numbers continue from where the session last stopped, so a ref stamped here is a
+            // number no earlier page or snapshot in the session ever answered to.
+            const startNumber = args?.startNumber ?? 1;
             if (!preserveRefs) {
                 document.querySelectorAll('[data-ref]').forEach(el => el.removeAttribute('data-ref'));
             }
@@ -179,7 +182,8 @@ public class AccessibilitySnapshotService
                     let ref = null;
                     if ((interactiveRoles.has(role) || clickableStructural.has(role)) && isVisible(el)) {
                         refCounter++;
-                        ref = preserveRefs ? (el.getAttribute('data-ref') || 'e' + refCounter) : 'e' + refCounter;
+                        const stamped = 'e-' + (startNumber + refCounter - 1);
+                        ref = preserveRefs ? (el.getAttribute('data-ref') || stamped) : stamped;
                         if (!preserveRefs) el.setAttribute('data-ref', ref);
                     }
 
@@ -249,10 +253,11 @@ public class AccessibilitySnapshotService
         """;
 
     public async Task<SnapshotCaptureResult> CaptureAsync(
-        IPage page, string? selectorScope, string sessionId, bool preserveRefs = false)
+        IPage page, string? selectorScope, string sessionId, bool preserveRefs = false,
+        int startNumber = 1)
     {
-        var args = selectorScope is not null || preserveRefs
-            ? new { scope = selectorScope, preserveRefs }
+        var args = selectorScope is not null || preserveRefs || startNumber != 1
+            ? new { scope = selectorScope, preserveRefs, startNumber }
             : null;
 
         var result = await page.EvaluateAsync<JsonElement>(SnapshotScript, args);

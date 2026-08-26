@@ -310,6 +310,17 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         return (browser, page);
     }
 
+    // The diff compares lines with their refs stripped, and the stamp is spelled e-1 — the strip
+    // rule moves in step with it, or every restamped line reads as removed-and-added noise.
+    [Theory]
+    [InlineData("- button \"Buy\" [ref=e-3]", "- button \"Buy\"")]
+    [InlineData("- link \"Docs\" [ref=e-127] [expanded]", "- link \"Docs\" [expanded]")]
+    [InlineData("- heading \"No refs here\"", "- heading \"No refs here\"")]
+    public void StripRefs_RemovesTheDashedRefTag(string line, string expected)
+    {
+        PlaywrightWebBrowser.StripRefs(line).ShouldBe(expected);
+    }
+
     // A DataDome loader must still be detected, but the probe used to be a bare "dd.js" substring
     // test, which matches any content-hashed bundle whose name happens to end in "dd" — github.com
     // ships marketing-navigation-ece1017251744ddd.js, and that alone made the whole site report
