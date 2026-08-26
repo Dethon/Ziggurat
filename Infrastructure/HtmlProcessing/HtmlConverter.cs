@@ -80,7 +80,13 @@ public static partial class HtmlConverter
         // has no way to tell that from a ref that simply failed -- so the entry goes whole.
         if (PageImageEntry.PartialEntryStart(truncated) is var partial and >= 0)
         {
-            truncated = truncated[..partial];
+            // Backing up to the very start of the window would consume nothing, and a window that
+            // consumes nothing is a page the model can never get past: it asks for the next
+            // offset, is handed the same one, and loops. An entry longer than the whole window
+            // goes out over its budget instead -- the cap is a safeguard, not an editor.
+            truncated = partial == 0
+                ? OverlongEntry(text)
+                : truncated[..partial];
         }
 
         // Measured after the trim, so the whitespace the trim drops is re-delivered by the next
@@ -89,6 +95,15 @@ public static partial class HtmlConverter
         var trimmed = truncated.TrimEnd();
         consumed = trimmed.Length > 0 ? trimmed.Length : truncated.Length;
         return trimmed + "\n\n[Content truncated...]";
+    }
+
+    // The entry the window opens on, whole, because a fraction of one is a ref the model cannot
+    // use and nothing of it is a window that never advances. Its closing bracket ends the slice;
+    // an entry that never closes is the rest of the text.
+    private static string OverlongEntry(string text)
+    {
+        var close = text.IndexOf(']');
+        return close < 0 ? text : text[..(close + 1)];
     }
 
     public static string TruncateHtml(string html, int maxLength)

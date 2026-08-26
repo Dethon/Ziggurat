@@ -320,6 +320,43 @@ public class HtmlProcessorTests
     }
 
     [Fact]
+    public async Task ProcessAsync_AnEntryLongerThanTheWindow_GoesOutWholeAndPagingAdvances()
+    {
+        // The cut backs up past a partial entry; when the window starts exactly at an entry whose
+        // text exceeds the window, backing up consumes nothing and nextOffset stood still — the
+        // model paged offset 20 → 20 → 20 forever while imagesBeyondWindow kept promising the
+        // entry ahead. The cap is a safeguard, not an editor: the entry goes out whole instead.
+        var longAlt = string.Join(" ", Enumerable.Repeat("word", 90));
+        var html = $"""
+            <html><body>
+            <p>Some opening text.</p>
+            <img src="/a.jpg" alt="{longAlt}" data-img-w="300" data-img-h="300" data-img-ref="i-1">
+            <p>Text after the picture.</p>
+            </body></html>
+            """;
+        var request = new BrowseRequest(SessionId: "t", Url: "http://example.com/", MaxLength: 300);
+
+        var offset = 0;
+        var listed = 0;
+        for (var hop = 0; hop < 20; hop++)
+        {
+            var window = await HtmlProcessor.ProcessAsync(
+                request with { Offset = offset }, html, CancellationToken.None);
+            listed += window.ImageCount;
+            if (window.NextOffset is not { } next)
+            {
+                break;
+            }
+
+            next.ShouldBeGreaterThan(offset);
+            offset = next;
+        }
+
+        // Paging reached the entry: it was listed in exactly one window, whole.
+        listed.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task ProcessAsync_APageThatFitsWhole_HasNoNextOffset()
     {
         var html = "<html><body><p>All of it.</p></body></html>";

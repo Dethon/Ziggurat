@@ -223,6 +223,12 @@ public class PlaywrightWebBrowser(
         html = await page.ContentAsync();
         var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
 
+        // The address the result reports is the one the tab must be findable by: a page that
+        // rewrote its URL while it was read — history.replaceState during an infinite scroll is
+        // the ordinary case — would otherwise leave the composed snapshot naming a page no tab
+        // admits to holding.
+        _sessions.NoteFinalUrl(request.SessionId, tab, page.Url);
+
         var status = navigationTimedOut || processed.IsPartial
             ? BrowseStatus.Partial
             : BrowseStatus.Success;
@@ -794,19 +800,28 @@ public class PlaywrightWebBrowser(
 
         try
         {
-            await popupTab.Page.WaitForLoadStateAsync(LoadState.DOMContentLoaded,
-                new() { Timeout = 10_000 });
+            try
+            {
+                await popupTab.Page.WaitForLoadStateAsync(LoadState.DOMContentLoaded,
+                    new() { Timeout = 10_000 });
+            }
+            catch (Exception ex) when (ex is TimeoutException or PlaywrightException)
+            {
+                // A slow popup still answers with whatever has rendered; the snapshot says the rest.
+            }
+
+            _sessions.NoteFinalUrl(sessionId, popupTab, popupTab.Page.Url);
+            var snapshot = await CaptureNumberedSnapshotAsync(sessionId, popupTab, null);
+
+            return new WebActionResult(sessionId, WebActionStatus.Success,
+                popupTab.Page.Url, true, snapshot.Snapshot, null, null);
         }
-        catch (Exception ex) when (ex is TimeoutException or PlaywrightException)
+        catch (PlaywrightException ex) when (IsConnectionClosed(ex) && popupTab.Page.IsClosed)
         {
-            // A slow popup still answers with whatever has rendered; the snapshot says the rest.
+            // A popup that closed itself while being read — an auto-closing OAuth or ad window.
+            // Its death is not the connection's: the action answers from the tab it acted on.
+            return null;
         }
-
-        _sessions.NoteFinalUrl(sessionId, popupTab, popupTab.Page.Url);
-        var snapshot = await CaptureNumberedSnapshotAsync(sessionId, popupTab, null);
-
-        return new WebActionResult(sessionId, WebActionStatus.Success,
-            popupTab.Page.Url, true, snapshot.Snapshot, null, null);
     }
 
     private async Task<WebActionResult> ExecuteBackAsync(
