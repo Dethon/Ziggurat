@@ -1,6 +1,6 @@
 # 01 — Every ref is session-unique, spelled one way
 
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** Ref numbers stop repeating within a browse session. Each namespace — element
 and image — keeps its own monotonic counter in session state, handed to the stamping scripts as a
@@ -15,9 +15,9 @@ once issued, is never issued again in the session.
 
 **Blocked by:** None — can start immediately.
 
-- [ ] A second browse in one session stamps image refs continuing from where the first stopped, never restarting at `i-1`
-- [ ] A second snapshot stamps element refs continuing from where the first stopped, even on the same unchanged page
-- [ ] A ref from an earlier page or snapshot no longer resolves to anything, on either tool, rather than resolving to the wrong target
-- [ ] Element refs are stamped, stripped and reported as `e-1`, `e-2` — the strip rule and the not-found copy move in step with the stamp
-- [ ] Image and element counters are independent — one namespace advancing never moves the other
-- [ ] Covered at the session-management unit seam (counters) and the string unit seam (spelling, strip rule), plus one integration check that a real second snapshot renumbers upward
+- [x] A second browse in one session stamps image refs continuing from where the first stopped, never restarting at `i-1`
+- [x] A second snapshot stamps element refs continuing from where the first stopped, even on the same unchanged page
+- [x] A ref from an earlier page or snapshot no longer resolves to anything, on either tool, rather than resolving to the wrong target
+- [x] Element refs are stamped, stripped and reported as `e-1`, `e-2` — the strip rule and the not-found copy move in step with the stamp
+- [x] Image and element counters are independent — one namespace advancing never moves the other
+- [x] Covered at the session-management unit seam (counters) and the string unit seam (spelling, strip rule), plus one integration check that a real second snapshot renumbers upward

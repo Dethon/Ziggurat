@@ -12,7 +12,6 @@ public class BrowserSessionManager : IAsyncDisposable
     public const int DefaultTabCap = 3;
 
     private readonly ConcurrentDictionary<string, BrowserSession> _sessions = new();
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _navigationLocks = new();
     private readonly SemaphoreSlim _createLock = new(1, 1);
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _idleTimeout;
@@ -243,14 +242,16 @@ public class BrowserSessionManager : IAsyncDisposable
         TouchTab(sessionId, tab);
     }
 
-    public async Task<IDisposable> AcquireSessionLockAsync(string sessionId, CancellationToken ct = default)
+    // One tab, one operation at a time: navigation, action, snapshot and image fetch all take this,
+    // so a mid-navigation read cannot answer with a half-replaced DOM. Different tabs of one
+    // session do not serialize against each other; pool mutation has its own session-level gate.
+    public async Task<IDisposable> LockTabAsync(BrowserTab tab, CancellationToken ct = default)
     {
-        var gate = _navigationLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(ct);
-        return new SessionLockReleaser(gate);
+        await tab.Gate.WaitAsync(ct);
+        return new LockReleaser(tab.Gate);
     }
 
-    private sealed class SessionLockReleaser(SemaphoreSlim gate) : IDisposable
+    private sealed class LockReleaser(SemaphoreSlim gate) : IDisposable
     {
         private SemaphoreSlim? _gate = gate;
 
@@ -353,7 +354,6 @@ public class BrowserSessionManager : IAsyncDisposable
 
     public async Task CloseAsync(string sessionId)
     {
-        _navigationLocks.TryRemove(sessionId, out _);
         if (_sessions.TryRemove(sessionId, out var session))
         {
             foreach (var tab in session.TabList.ToList())
@@ -367,7 +367,6 @@ public class BrowserSessionManager : IAsyncDisposable
     {
         // Why: the session's pages are dead (the connection dropped). Closing them is pointless
         // and would throw, so just drop the references — a fresh web_browse recreates them.
-        _navigationLocks.TryRemove(sessionId, out _);
         _sessions.TryRemove(sessionId, out _);
     }
 

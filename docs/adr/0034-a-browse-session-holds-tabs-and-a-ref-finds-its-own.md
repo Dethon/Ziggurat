@@ -2,7 +2,7 @@
 
 Status: accepted
 Date: 2026-08-26
-Implementation: pending
+Implementation: shipped 2026-08-26
 
 ## Context
 

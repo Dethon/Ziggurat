@@ -9,7 +9,9 @@ namespace Infrastructure.Clients.Browser;
 public class PlaywrightWebBrowser(
     ICaptchaSolver? captchaSolver = null,
     string? wsEndpoint = null,
-    Func<Task<IBrowser>>? browserFactory = null)
+    Func<Task<IBrowser>>? browserFactory = null,
+    int tabCap = BrowserSessionManager.DefaultTabCap,
+    TimeSpan? idleTimeout = null)
     : IWebBrowser, IAsyncDisposable
 {
     private IPlaywright? _playwright;
@@ -17,8 +19,9 @@ public class PlaywrightWebBrowser(
     private IBrowserContext? _context;
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private readonly BrowserSessionManager _sessions = new(
-        idleTimeout: TimeSpan.FromMinutes(30),
-        pruneInterval: TimeSpan.FromMinutes(5));
+        idleTimeout: idleTimeout ?? TimeSpan.FromMinutes(30),
+        pruneInterval: TimeSpan.FromMinutes(5),
+        tabCap: tabCap);
     private readonly ModalDismisser _modalDismisser = new();
     private readonly AccessibilitySnapshotService _snapshotService = new();
     private readonly Random _random = new();
@@ -47,14 +50,10 @@ public class PlaywrightWebBrowser(
 
         try
         {
-            // Why: all calls for one session share a single IPage, so concurrent navigations
-            // would interrupt each other ("Navigation to X is interrupted by another navigation
-            // to Y"). Serialize per-session work so parallel tool calls queue instead of clobber.
-            using var sessionLock = await _sessions.AcquireSessionLockAsync(request.SessionId, ct);
-
             // Why: the Camoufox WebSocket can drop mid-navigation. ExecuteWithReconnectAsync
             // reconnects and re-runs the navigation on a fresh page instead of leaking
-            // "Target page, context or browser has been closed" to the caller.
+            // "Target page, context or browser has been closed" to the caller. Serialization is
+            // per tab, inside NavigateOnceAsync — browses of different URLs run in parallel.
             return await ExecuteWithReconnectAsync(() => NavigateOnceAsync(request, ct));
         }
         catch (PlaywrightException ex) when (IsConnectionClosed(ex))
@@ -94,6 +93,11 @@ public class PlaywrightWebBrowser(
             request.SessionId, request.Url, _context!, ct);
         var tab = acquisition.Tab;
         var page = tab.Page;
+
+        // Same-tab work queues; another tab's navigation runs beside this one untouched. The lock
+        // spans the whole read — navigation through extraction — so nothing answers off a
+        // half-replaced document.
+        using var tabLock = await _sessions.LockTabAsync(tab, ct);
 
         await jitter;
 
@@ -239,6 +243,7 @@ public class PlaywrightWebBrowser(
 
         try
         {
+            using var tabLock = await _sessions.LockTabAsync(tab, ct);
             var html = await tab.Page.ContentAsync();
             var request = new BrowseRequest(SessionId: sessionId, Url: tab.FinalUrl);
             var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
@@ -277,6 +282,9 @@ public class PlaywrightWebBrowser(
 
         try
         {
+            // A snapshot racing a navigation on this tab waits rather than reading a
+            // half-replaced DOM.
+            using var tabLock = await _sessions.LockTabAsync(tab, ct);
             _sessions.TouchTab(request.SessionId, tab);
             var result = await CaptureNumberedSnapshotAsync(
                 request.SessionId, tab, request.Selector);
@@ -343,9 +351,9 @@ public class PlaywrightWebBrowser(
 
         try
         {
-            // Why: an action can trigger navigation; serialize it against other same-session
-            // calls so it cannot interrupt (or be interrupted by) a concurrent navigation.
-            using var sessionLock = await _sessions.AcquireSessionLockAsync(request.SessionId, ct);
+            // Why: an action can trigger navigation; serialize it against other work on this one
+            // tab so it cannot interrupt (or be interrupted by) a concurrent navigation there.
+            using var tabLock = await _sessions.LockTabAsync(tab, ct);
 
             _sessions.TouchTab(request.SessionId, tab);
 
@@ -726,7 +734,7 @@ public class PlaywrightWebBrowser(
             {
                 case RefRouting.Routed routed:
                     _sessions.TouchTab(request.SessionId, routed.Tab);
-                    images.Add(await FetchOneAsync(routed.Tab.Page, imageRef));
+                    images.Add(await FetchLockedAsync(routed.Tab, imageRef, ct));
                     break;
                 case RefRouting.Superseded superseded:
                     images.Add(new FetchedImage(imageRef, null, null,
@@ -738,12 +746,20 @@ public class PlaywrightWebBrowser(
                     break;
                 default:
                     // Never issued: the current tab answers not-found, as it always has.
-                    images.Add(await FetchOneAsync(session.CurrentTab.Page, imageRef));
+                    images.Add(await FetchLockedAsync(session.CurrentTab, imageRef, ct));
                     break;
             }
         }
 
         return new ImageFetchResult(request.SessionId, images);
+    }
+
+    // A fetch racing a navigation on the same tab waits its turn rather than resolving the ref
+    // against a half-replaced document.
+    private async Task<FetchedImage> FetchLockedAsync(BrowserTab tab, string imageRef, CancellationToken ct)
+    {
+        using var tabLock = await _sessions.LockTabAsync(tab, ct);
+        return await FetchOneAsync(tab.Page, imageRef);
     }
 
     private async Task<FetchedImage> FetchOneAsync(IPage page, string imageRef)

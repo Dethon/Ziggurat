@@ -12,6 +12,26 @@ paths:
 
 McpServerWebSearch exposes the `web_*` browse tools over `PlaywrightWebBrowser`, a WebSocket to Camoufox. The accessibility snapshot assigns interactive element refs (`e-1`, `e-2`, …) that `web_action` then addresses, pages are kept alive per session with cookie persistence, and cookie banners, newsletters and age gates are auto-dismissed.
 
+## Tabs
+
+A browse session holds up to three live tabs, and a ref finds its own (`docs/adr/0034`). The pool policy lives in `BrowserSessionManager` and is unit-tested in milliseconds against faked pages; `PlaywrightWebBrowser` only carries pages around.
+
+**Tabs are invisible.** No tab handles, no tab list, nothing in any envelope or prompt — routing is carried entirely by refs. A `t-` namespace was considered and declined.
+
+**Every ref is session-unique.** Each namespace (element `e-`, image `i-`) keeps its own monotonic counter in session state, handed to the stamping scripts as a starting number; a number is never reused within a session, which is what makes the silent wrong-picture answer unrepresentable. One shape rule — letter, dash, number — covers both namespaces (`ElementRef` / `ImageRef` in `Domain/Tools/Web`); the stamp spelling, the diff's strip regex and the not-found copy move together.
+
+**A ref routes to the tab that stamped it.** `web_action` and `view_image` act wherever their ref lives; the session's registry of ref range → tab is what answers. The ref-less operations — `web_snapshot` and `back` — address the **current tab**: the tab the last call of any kind touched, `view_image` included, so peeking at an old tab's picture refocuses it. `back` walks its tab's own history.
+
+**`web_browse` reuses before it opens.** A URL matching a live tab exactly — by the address asked for *or* the address landed on, since redirects split the two — reloads that tab in place and restamps its refs with fresh numbers; anything else opens a new tab, evicting the least-recently-touched at the cap. Parallel browses of different URLs get different tabs and genuinely run in parallel.
+
+**A popup is adopted as a tab.** `target=_blank` / `window.open` pages join the pool (popups of popups included), count against the cap, become current, and the action that spawned one answers from it — its URL, its content, its freshly stamped refs — instead of a stale diff of the page left behind.
+
+**A stale ref refuses through one of two walls, each naming its recovery.** *Superseded* — the tab is open but a later snapshot or in-tab navigation renumbered it — says to snapshot or browse the page again. *Closed* — evicted at the cap — names the URL the ref belonged to (the address the model asked for, so recovery works with the URL it knows). The registry is small, bounded, keeps tombstones past eviction, and dies with its session — an expired session keeps the existing dead-session refusal, never a third wall. Refs are not remapped onto a reloaded page.
+
+**One idle clock, one LRU rule.** The session-wide idle timeout is refreshed by every routed call, so an actively acting session cannot be pruned mid-use; tabs have no clock of their own and die individually only by eviction. The tab cap and the idle timeout are ordinary settings in the browse server's own `appsettings.json` (`Browsing:TabCap`, `Browsing:SessionIdleTimeoutMinutes`) — generic tunables, no compose entry.
+
+**Locking**: a per-tab lock serializes navigation, action, snapshot and image fetch on one tab, so a mid-navigation read cannot answer with a half-replaced DOM; tab-pool mutation (create, reuse, evict, adopt) happens under a session-level gate. Never acquire the pool gate while holding a tab lock.
+
 ## Images
 
 `web_browse` writes an entry into the markdown body where each image sits — its ref and the best label the page gives it — and `view_image` fetches by ref through the same page. See `docs/adr/0033`.

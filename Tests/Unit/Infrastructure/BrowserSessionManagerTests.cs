@@ -426,32 +426,60 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
-    public async Task AcquireSessionLockAsync_SameSession_BlocksUntilReleased()
+    public async Task ASessionDoingOnlyRoutedCalls_IsNeverIdlePruned()
     {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager(
+            timeProvider: time,
+            idleTimeout: TimeSpan.FromMinutes(30));
+
+        var tab = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+
+        // Fifty minutes of actions, snapshots and image fetches — every one a touch — with no
+        // navigation anywhere. The one clock is refreshed by all of them.
+        foreach (var _ in Enumerable.Range(0, 5))
+        {
+            time.Advance(TimeSpan.FromMinutes(10));
+            manager.TouchTab("s1", tab.Tab);
+        }
+
+        time.Advance(TimeSpan.FromMinutes(10));
+        await manager.PruneIdleAsync();
+
+        manager.Get("s1").ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task LockTabAsync_SameTab_BlocksUntilReleased()
+    {
+        var (ctx, _) = CreateContext();
         await using var manager = new BrowserSessionManager();
+        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
 
-        var first = await manager.AcquireSessionLockAsync("s1");
-        var second = manager.AcquireSessionLockAsync("s1");
+        var first = await manager.LockTabAsync(a.Tab);
+        var second = manager.LockTabAsync(a.Tab);
 
-        // A second acquisition for the same session must wait for the first to release.
+        // A snapshot or fetch racing a navigation on the same tab waits its turn.
         (await Task.WhenAny(second, Task.Delay(200))).ShouldNotBe(second);
 
         first.Dispose();
 
-        // Once released, the queued acquisition completes.
         (await Task.WhenAny(second, Task.Delay(1000))).ShouldBe(second);
         (await second).Dispose();
     }
 
     [Fact]
-    public async Task AcquireSessionLockAsync_DifferentSessions_DoNotBlockEachOther()
+    public async Task LockTabAsync_DifferentTabsOfOneSession_DoNotBlockEachOther()
     {
+        var (ctx, _) = CreateContext();
         await using var manager = new BrowserSessionManager();
+        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        var b = await BrowseAsync(manager, ctx, "s1", "https://b.test/");
 
-        using var first = await manager.AcquireSessionLockAsync("s1");
-        var second = manager.AcquireSessionLockAsync("s2");
+        using var first = await manager.LockTabAsync(a.Tab);
+        var second = manager.LockTabAsync(b.Tab);
 
-        // A different session must acquire immediately, even while another lock is held.
         (await Task.WhenAny(second, Task.Delay(1000))).ShouldBe(second);
         (await second).Dispose();
     }

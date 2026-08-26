@@ -56,7 +56,11 @@ public static class ConfigModule
             services.AddSingleton<IWebBrowser>(sp =>
             {
                 var captchaSolver = sp.GetService<ICaptchaSolver>();
-                return new PlaywrightWebBrowser(captchaSolver, settings.Camoufox?.WsEndpoint);
+                return new PlaywrightWebBrowser(
+                    captchaSolver,
+                    settings.Camoufox?.WsEndpoint,
+                    tabCap: settings.Browsing.TabCap,
+                    idleTimeout: TimeSpan.FromMinutes(settings.Browsing.SessionIdleTimeoutMinutes));
             });
 
             return services;
