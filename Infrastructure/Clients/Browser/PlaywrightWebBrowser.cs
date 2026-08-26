@@ -888,25 +888,29 @@ public class PlaywrightWebBrowser(
                       const src = img.getAttribute('src');
                       if (!src) return null;
 
-                      // The same ladder the entry's label came from, filename rung included, so
-                      // what the model asked for and what a later note calls it are the same
-                      // words. Stopping a rung short here would leave a picture the page named
-                      // logo.png coming back nameless, and its note would say "i-3".
+                      // The same ladder the entry's label came from, rung for rung — a blank rung
+                      // falls through instead of short-circuiting the chain to "", dimensions
+                      // close it, and the entry's own sanitizing (whitespace flattened, brackets
+                      // rounded) is applied the same way. Diverging here leaves the note calling
+                      // the picture different words than the entry the model chose it by.
+                      const nonEmpty = (t) => t && t.trim() ? t.trim() : null;
                       const fileName = src.startsWith('data:')
                           ? ''
                           : (src.split(/[?#]/)[0].split('/').pop() || '');
-                      const spoken = (img.getAttribute('alt')
-                          || img.closest('figure')?.querySelector('figcaption')?.textContent
-                          || img.getAttribute('title')
-                          || img.closest('a')?.textContent
-                          || (/^[^\s/]+\.[A-Za-z0-9]{1,5}$/.test(fileName) ? fileName : '')
-                          || '').trim().replace(/\s+/g, ' ');
+                      const spoken = nonEmpty(img.getAttribute('alt'))
+                          || nonEmpty(img.closest('figure')?.querySelector('figcaption')?.textContent)
+                          || nonEmpty(img.getAttribute('title'))
+                          || nonEmpty(img.closest('a')?.textContent)
+                          || (/^[^\s/]+\.[A-Za-z0-9]{1,5}$/.test(fileName) ? fileName : null)
+                          || `${img.getAttribute('{{PageImageEntry.WidthAttribute}}') || 0}x${img.getAttribute('{{PageImageEntry.HeightAttribute}}') || 0}`;
+                      const flat = spoken.replace(/\s+/g, ' ')
+                          .replace(/\[/g, '(').replace(/\]/g, ')').trim();
                       // The entry's own cut, spelled the same (PageImageEntry.Sanitize): a bare
                       // slice read as the tool breaking mid-word, and the entry and the note must
                       // name one picture with one set of words.
-                      const label = spoken.length <= 500
-                          ? spoken
-                          : spoken.slice(0, 500).trimEnd() + '…';
+                      const label = flat.length <= 500
+                          ? flat
+                          : flat.slice(0, 500).trimEnd() + '…';
 
                       const url = new URL(src, location.href).toString();
 

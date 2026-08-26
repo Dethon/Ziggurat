@@ -130,8 +130,9 @@ public class ViewImageTool(IWebBrowser browser)
             {
                 ImageRef = image.Ref,
                 // The name the page gave it, so a note left in its place afterwards names what the
-                // model actually asked to see rather than a handle that is gone.
-                Label = image.Label ?? image.Ref,
+                // model actually asked to see rather than a handle that is gone. Blank counts as
+                // absent: a note about the image "" names nothing.
+                Label = string.IsNullOrWhiteSpace(image.Label) ? image.Ref : image.Label,
                 MediaType = image.MediaType!,
                 SizeBytes = image.Bytes!.Length,
                 Shown = true

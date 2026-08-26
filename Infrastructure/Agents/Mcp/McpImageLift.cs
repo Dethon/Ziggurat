@@ -41,7 +41,7 @@ internal static class McpImageLift
             return result;
         }
 
-        if (result is not IList<AIContent> contents || !contents.Any(c => c is DataContent))
+        if (result is not IList<AIContent> contents || !contents.Any(IsImage))
         {
             return result;
         }
@@ -83,7 +83,9 @@ internal static class McpImageLift
                 continue;
             }
 
-            if (content is not DataContent image)
+            // The MCP client maps audio blocks and blob resources to DataContent too; only a
+            // picture is a read image, and anything else passes through exactly as it arrived.
+            if (content is not DataContent image || !IsImage(image))
             {
                 kept.Add(content);
                 continue;
@@ -117,6 +119,10 @@ internal static class McpImageLift
 
         return kept;
     }
+
+    private static bool IsImage(AIContent content) =>
+        content is DataContent data
+        && data.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
 
     private const string UnannouncedLabel = "an image the tool returned";
 

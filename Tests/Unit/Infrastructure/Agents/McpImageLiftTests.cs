@@ -240,6 +240,25 @@ public class McpImageLiftTests
         store.Written.Select(w => w.CallId).ShouldBeUnique();
     }
 
+    [Fact]
+    public async Task ADataBlockThatIsNotAnImage_PassesThroughUnlifted()
+    {
+        // The MCP client also maps audio blocks and blob resources to DataContent. Lifting one as
+        // an image would store it as a picture and later inline it as an image part the vision
+        // wire rejects whole — so anything that is not image/* is left exactly as it arrived.
+        var store = new RecordingReadImageStore();
+        object result = new AIContent[]
+        {
+            new TextContent("Some narration the server wrote."),
+            new DataContent(_bytes, "audio/wav")
+        };
+
+        var lifted = await McpImageLift.ApplyAsync(result, store, Conversation, CallId, CancellationToken.None);
+
+        store.Written.ShouldBeEmpty();
+        AllBytes(lifted).ShouldHaveSingleItem().MediaType.ShouldBe("audio/wav");
+    }
+
     private static object ResultWithImage() => new AIContent[]
     {
         new TextContent(EnvelopeText("A harbour at dusk")),

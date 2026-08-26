@@ -217,6 +217,21 @@ public class ViewImageToolTests
         sentences.Distinct().Count().ShouldBe(sentences.Count);
     }
 
+    [Fact]
+    public async Task ABlankFetchedLabel_FallsToTheRefRatherThanNamingNothing()
+    {
+        // The label names the picture in any later note; a fetch script that trimmed a
+        // whitespace-only alt to "" must not leave the note saying the image "" is gone.
+        _browser
+            .Setup(b => b.FetchImagesAsync(It.IsAny<ImageFetchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ImageFetchResult("s",
+                [new FetchedImage("i-4", "image/jpeg", [1, 2], ImageFetchStatus.Success, Label: "")]));
+
+        var result = await RunAsync(["i-4"]);
+
+        result.Images.ShouldHaveSingleItem().Envelope["label"]!.GetValue<string>().ShouldBe("i-4");
+    }
+
     private static string Message(ViewImageToolResult result) =>
         result.Envelope["message"]?.GetValue<string>()
         ?? string.Join(" ", result.Notes);
