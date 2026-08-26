@@ -10,8 +10,8 @@ namespace Tests.Integration.Clients;
 // 30-second wait on an event that cannot come and then answered "did not fully load" for a page
 // that was nothing but the fully loaded picture. The committed response names its type; an image
 // document waits for the image, not the event.
-[Collection(PlaywrightCollections.SharedBrowser)]
-public class ImageDocumentBrowseTests(PlaywrightWebBrowserFixture fixture)
+[Collection(PlaywrightCollections.IsolatedSessions)]
+public class ImageDocumentBrowseTests(IsolatedSessionBrowserFixture fixture)
 {
     [Trait("Category", "External")]
     [SkippableFact]

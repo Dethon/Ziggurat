@@ -30,7 +30,8 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
     public Task DisposeAsync() => CamoufoxBackend.ReleaseAsync(Pool);
 
     // Clears cookies on the one page context every fixture.Browser session shares, which is why
-    // the classes that call it stay in a single collection — see PlaywrightCollectionLayoutTests.
+    // the classes that call it stay serialised together in SharedBrowser — and why calling it is
+    // the marker that keeps them there. See PlaywrightCollectionLayoutTests.
     public Task ClearContextStateAsync() => Browser.ClearCookiesAsync();
 
     // JS-heavy live pages render form elements client-side after
@@ -79,24 +80,38 @@ public sealed class QuietBrowserFixture : PlaywrightWebBrowserFixture
     protected override string Pool => CamoufoxBackend.QuietPool;
 }
 
-// Two collections, so the browser-integration classes run at once rather than as a single serial
+// The classes that only ever drive sessions they opened themselves take this: same fixture, a third
+// backend. They share no state any other class can observe — each opens a GUID session and closes
+// it — so the only thing that ever forced them to wait for the cookie-clearing classes was being in
+// the same collection. On their own backend they run beside that chain, which is where the suite's
+// last twenty seconds went.
+public sealed class IsolatedSessionBrowserFixture : PlaywrightWebBrowserFixture
+{
+    protected override string Pool => CamoufoxBackend.IsolatedPool;
+}
+
+// Three collections, so the browser-integration classes run at once rather than as a single serial
 // chain — which was as long as all their spans added up to, and on a slow run was what the whole
 // suite finished behind.
 //
-// The line between them is whether a class asserts on elapsed time. Those go in Timing, which has
-// a backend to itself and stays serialised internally so the two of them do not measure each other.
-// The rest share the other backend: they assert on what came back rather than how quickly, and
-// several of them drive the fixture's one PlaywrightWebBrowser and clear its cookies between tests,
-// which is its own reason to keep them in one collection. PlaywrightCollectionLayoutTests holds
-// both halves of that rule.
+// Timing is whether a class asserts on elapsed time: those get a backend to themselves and stay
+// serialised internally so the two of them do not measure each other. The rest split on whether a
+// class clears the fixture's cookies, which reaches the one context every session on that backend
+// shares — those stay serialised together in SharedBrowser. Everything else opens a GUID session
+// and closes it, observing nothing another class can touch, so IsolatedSessions gives them a third
+// backend to run on beside that chain. PlaywrightCollectionLayoutTests holds all three rules.
 [CollectionDefinition(PlaywrightCollections.SharedBrowser)]
 public class PlaywrightWebBrowserIntegrationCollection : ICollectionFixture<PlaywrightWebBrowserFixture>;
 
 [CollectionDefinition(PlaywrightCollections.Timing)]
 public class PlaywrightTimingCollection : ICollectionFixture<QuietBrowserFixture>;
 
+[CollectionDefinition(PlaywrightCollections.IsolatedSessions)]
+public class PlaywrightIsolatedSessionsCollection : ICollectionFixture<IsolatedSessionBrowserFixture>;
+
 public static class PlaywrightCollections
 {
     public const string SharedBrowser = "PlaywrightWebBrowserIntegration";
     public const string Timing = "Playwright.Timing";
+    public const string IsolatedSessions = "Playwright.IsolatedSessions";
 }

@@ -17,8 +17,8 @@ namespace Tests.Integration.Clients;
 // masked "Script error." with no location — exactly the condition that crashed the server. It then
 // asserts the server is still alive and serving. Against an unpatched image this fails (the
 // connection drops); against the patched image the page error is delivered harmlessly.
-[Collection(PlaywrightCollections.SharedBrowser)]
-public class CamoufoxPageErrorCrashTests(PlaywrightWebBrowserFixture fixture)
+[Collection(PlaywrightCollections.IsolatedSessions)]
+public class CamoufoxPageErrorCrashTests(IsolatedSessionBrowserFixture fixture)
 {
     private const string LocationlessErrorPage =
         "<!doctype html><html><body><p>trigger</p>" +

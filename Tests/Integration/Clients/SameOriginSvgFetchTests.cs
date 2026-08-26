@@ -8,8 +8,8 @@ namespace Tests.Integration.Clients;
 // image/svg+xml the day Wikipedia's own site logo was fetched, and the vision provider answered
 // the whole request with HTTP 400. Only rasters the chat wire accepts may leave as-served;
 // anything else is read off the canvas and leaves as PNG, like every cross-origin picture.
-[Collection(PlaywrightCollections.SharedBrowser)]
-public class SameOriginSvgFetchTests(PlaywrightWebBrowserFixture fixture)
+[Collection(PlaywrightCollections.IsolatedSessions)]
+public class SameOriginSvgFetchTests(IsolatedSessionBrowserFixture fixture)
 {
     [Trait("Category", "External")]
     [SkippableFact]

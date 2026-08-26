@@ -7,8 +7,8 @@ namespace Tests.Integration.Clients;
 
 // The browser-dependent half of session-unique numbering: a real page restamped by a real second
 // pass hands out numbers above everything the first pass issued, in both namespaces.
-[Collection(PlaywrightCollections.SharedBrowser)]
-public partial class SessionUniqueRefTests(PlaywrightWebBrowserFixture fixture)
+[Collection(PlaywrightCollections.IsolatedSessions)]
+public partial class SessionUniqueRefTests(IsolatedSessionBrowserFixture fixture)
 {
     [Trait("Category", "External")]
     [SkippableFact]

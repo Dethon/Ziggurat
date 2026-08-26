@@ -16,17 +16,20 @@ namespace Tests.Integration.Fixtures;
 // backend — a browser server per collection would cost more in start-up than the serialisation ever
 // cost in waiting.
 //
-// There are two of them rather than one, because two classes here time production code paths and
-// assert on the milliseconds: the modal dismisser must clear a page with no modals in under 800ms,
-// and the stability wait must return in under 550ms. A browser server handing out pages to three
-// other collections at the same time does not answer in those budgets, and the run where it was
-// asked to failed all three of those assertions. So the timing classes take a server nothing else
-// is driving, and everything else shares the other. Which class belongs to which is held by
-// PlaywrightCollectionLayoutTests.
+// There are three of them rather than one. Two classes here time production code paths and assert
+// on the milliseconds: the modal dismisser must clear a page with no modals in under 800ms, and the
+// stability wait must return in under 550ms. A browser server handing out pages to three other
+// collections at the same time does not answer in those budgets, and the run where it was asked to
+// failed all three of those assertions — so the timing classes take a server nothing else is
+// driving. The rest are split again by whether they clear the shared context's cookies: the ones
+// that do stay on one server serialised together, and the ones that only drive their own GUID
+// sessions take the third, because serialising them behind that chain was the suite's last twenty
+// seconds. Which class belongs to which is held by PlaywrightCollectionLayoutTests.
 internal sealed class CamoufoxBackend
 {
     internal const string SharedPool = "shared";
     internal const string QuietPool = "quiet";
+    internal const string IsolatedPool = "isolated";
 
     private const string CamoufoxImageName = "camoufox:latest";
 

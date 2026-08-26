@@ -11,8 +11,8 @@ namespace Tests.Integration.Clients;
 //
 // NavigateAsync only accepts http/https, so a neutral anchor page is the canvas the fixture markup
 // is injected onto -- the same shape BrowserJQueryWidgetCompatTests uses.
-[Collection(PlaywrightCollections.SharedBrowser)]
-public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
+[Collection(PlaywrightCollections.IsolatedSessions)]
+public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
 {
     [Trait("Category", "External")]
     [SkippableFact]
@@ -22,11 +22,18 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
 
         // Neither image carries a markup dimension. The stylesheet is the only thing that says how
         // big they are, which is exactly the question attribute-reading cannot answer.
+        //
+        // The bytes are a data URI rather than a path nobody serves, and every case here that wants
+        // an image to survive does the same. A broken image keeps its styled box only until the 404
+        // lands: after that it falls back to its intrinsic size, which is zero, and the picture the
+        // case sized in pixels filters out as furniture. Whether the measure pass ran before that
+        // is a race, and it is the one the loaded machine loses. The dead link has its own case
+        // below, where the collapse is the subject rather than the hazard.
         var measured = await MeasureAsync(
-            """
+            $$"""
             <style>#big { width: 400px; height: 300px; } #small { width: 20px; height: 20px; }</style>
-            <img id="big" src="/big.png" alt="A wide chart">
-            <img id="small" src="/small.png" alt="A bullet">
+            <img id="big" src="data:image/png;base64,{{OnePixelPngBase64}}" alt="A wide chart">
+            <img id="small" src="data:image/png;base64,{{OnePixelPngBase64}}" alt="A bullet">
             """,
             "big", "small");
 
@@ -45,10 +52,11 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
         // Both markup claims are false in opposite directions. A filter reading width/height would
         // get both of these backwards.
         var measured = await MeasureAsync(
-            """
+            $$"""
             <style>#liar { width: 8px !important; height: 8px !important; }</style>
-            <img id="liar" src="/liar.png" width="800" height="600" alt="Claims to be large">
-            <img id="honest" src="/honest.png" width="10" height="10"
+            <img id="liar" src="data:image/png;base64,{{OnePixelPngBase64}}" width="800" height="600"
+                 alt="Claims to be large">
+            <img id="honest" src="data:image/png;base64,{{OnePixelPngBase64}}" width="10" height="10"
                  style="width:300px;height:300px" alt="Claims to be tiny">
             """,
             "liar", "honest");
@@ -65,9 +73,11 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
         Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
 
         var measured = await MeasureAsync(
-            """
-            <img id="shot" src="/shot.png" style="width:420px;height:240px" alt="A screenshot">
-            <img id="pixel" src="/track.gif" style="width:1px;height:1px" alt="Tracker">
+            $$"""
+            <img id="shot" src="data:image/png;base64,{{OnePixelPngBase64}}"
+                 style="width:420px;height:240px" alt="A screenshot">
+            <img id="pixel" src="data:image/png;base64,{{OnePixelPngBase64}}"
+                 style="width:1px;height:1px" alt="Tracker">
             """,
             "shot", "pixel");
 
@@ -83,8 +93,15 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
     {
         Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
 
+        // Bytes that really arrive, so the sixty boxes stay the size the style gives them. A src
+        // nobody serves measures at 200px right after injection and collapses to nothing once the
+        // 404 lands, because a broken image falls back to its intrinsic size — zero — and the
+        // inline width does not hold the box open. Whether the measure pass beat that collapse was
+        // a race the loaded machine lost: sixty stamped became fifty-eight, reported as the
+        // one-pass claim failing. What this case is about is the cost of the pass, not what a dead
+        // link renders as, which AnImageWhoseBytesNeverArrived_ReportsADeadLinkNotARefusal owns.
         var markup = string.Join("\n", Enumerable.Range(1, 60).Select(i =>
-            $"""<img id="i{i}" src="/p{i}.png" style="width:200px;height:200px" alt="Picture {i}">"""));
+            $"""<img id="i{i}" src="data:image/png;base64,{OnePixelPngBase64}" style="width:200px;height:200px" alt="Picture {i}">"""));
 
         var sessionId = $"test-{Guid.NewGuid():N}";
         try
@@ -427,13 +444,34 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
     // The images point at paths that answer 404 on the anchor origin, which is deliberate: an
     // image is laid out at its styled size whether or not its bytes ever arrive, and the filter
     // must read the box rather than the payload.
+
     private async Task PrepareAsync(string sessionId, string markup)
     {
+        // The canvas only has to be a document this markup can be injected into, so Partial counts.
+        // example.com is a live third party reached from inside the container, and when its
+        // DOMContentLoaded does not arrive the navigation spends the production 30s budget and
+        // comes back Partial — with a perfectly usable blank page. Insisting on Success made that
+        // a failure of whichever case ran first on a fresh browser, reported as an image assertion
+        // it never got far enough to make. Nothing here reads example.com's own content.
         var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.com"));
-        nav.Status.ShouldBe(BrowseStatus.Success);
+        nav.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
-        await fixture.Browser.EvaluateOnSessionAsync(
-            sessionId, $"() => {{ document.body.innerHTML = {System.Text.Json.JsonSerializer.Serialize(markup)}; }}");
+        // The markup goes in and the annotator measures what it rendered, so the write has to be
+        // laid out before the measurement reads it. Setting innerHTML only dirties layout; nothing
+        // computes a box until something asks for one. On a warm container the next round trip is
+        // slow enough to hide that, and every case here passed for it — on a cold one the measure
+        // arrived first and read zeros, and an image the case had sized in pixels filtered out as
+        // furniture. Reading offsetHeight forces the reflow in the same evaluation that wrote the
+        // markup, so the layout is done before the call returns rather than whenever the browser
+        // gets to it.
+        await fixture.Browser.EvaluateOnSessionAsync<int>(
+            sessionId,
+            $$"""
+              () => {
+                  document.body.innerHTML = {{System.Text.Json.JsonSerializer.Serialize(markup)}};
+                  return document.body.offsetHeight;
+              }
+              """);
     }
 
     private const string OnePixelPngBase64 =

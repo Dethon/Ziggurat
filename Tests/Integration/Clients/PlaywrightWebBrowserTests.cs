@@ -403,7 +403,14 @@ public class PlaywrightWebBrowserTests(
             Skip.If(
                 result.Status != BrowseStatus.Success,
                 $"reddit did not serve the thread ({result.Status}: {result.ErrorMessage})");
-            var content = result.Content.ShouldNotBeNull();
+
+            // Success with an empty body is the same non-answer as an unreachable page: reddit
+            // rate-limits by serving nothing rather than by failing the navigation, so the status
+            // alone does not separate "the thread arrived" from "reddit declined to send it". A
+            // full-suite run read that empty body as readability finding no comments, which is a
+            // claim about the extractor that an empty page cannot support.
+            var content = result.Content ?? "";
+            Skip.If(content.Length == 0, "reddit served the thread with an empty body.");
 
             // Deliberately NOT skipped on a consent-wall body: that is exactly the regression this
             // test exists to catch, and skipping it would hide the bug it was written for. Only an

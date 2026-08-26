@@ -8,8 +8,8 @@ namespace Tests.Integration.Clients;
 // from a CloudFront host that sends no ACAO header at all, so in-page reads are refused wholesale.
 // The fetch re-requests the address from outside the page — CORS binds script inside it, nothing
 // else — and only falls back to a screenshot when that fails too.
-[Collection(PlaywrightCollections.SharedBrowser)]
-public class NoAcaoCdnFetchTests(PlaywrightWebBrowserFixture fixture)
+[Collection(PlaywrightCollections.IsolatedSessions)]
+public class NoAcaoCdnFetchTests(IsolatedSessionBrowserFixture fixture)
 {
     [Trait("Category", "External")]
     [SkippableFact]

@@ -10,17 +10,19 @@ namespace Tests.Unit.E2E;
 // as their spans added up to — about a minute, and on a run where the browser tests were the slow
 // half, the whole suite finished behind it.
 //
-// They are two collections now, and the line between them is not free to move:
+// They are three collections now, and the lines between them are not free to move:
 //
 //   - A class holding a latency budget tighter than what a shared browser server adds under load
 //     needs one nothing else is driving. Sharing it is not a slower version of the same
 //     measurement; the run that tried it failed every such budget at once. Those take
 //     QuietBrowserFixture and its own backend.
-//   - Everything else shares the other backend. Several of them drive the fixture's one
-//     PlaywrightWebBrowser and clear its cookies between tests, so they also have to stay
-//     serialised with each other, which the one shared collection already does.
+//   - A class that clears the fixture's cookies is clearing the one context every session on that
+//     backend shares, so it stays serialised with the others that do.
+//   - Everything else opens its own GUID session and closes it, sharing no state any other class
+//     can observe. Those get a backend of their own so they run beside the clearing chain rather
+//     than behind it.
 //
-// Both halves are checked here rather than left to whoever adds the next class.
+// All three are checked here rather than left to whoever adds the next class.
 public class PlaywrightCollectionLayoutTests
 {
     private static IReadOnlyList<Type> BrowserTestClasses =>
@@ -68,15 +70,36 @@ public class PlaywrightCollectionLayoutTests
         inTiming.ShouldAllBe(t => HoldsATightBudget(t));
     }
 
-    // Two collections and no more: a third would be another set of pages on one of these two
-    // backends, which is what the timing budgets cannot survive and what the shared browser's
-    // cookie clearing cannot either.
-    [Fact]
-    public void EveryOtherClass_SharesTheOneCollectionThatSerialisesTheBrowserTheyPassAround()
-    {
-        var rest = BrowserTestClasses.Where(t => !HoldsATightBudget(t)).ToList();
+    // Clearing cookies reaches the one context every session on that backend shares, so a class
+    // that does it cannot run beside a class it would clear underneath. That — not "browser test" —
+    // is what SharedBrowser serialises, and it is why the marker is the call itself.
+    private static bool ClearsTheSharedContext(Type type) =>
+        File.ReadAllText(SourceOf(type))
+            .Contains(nameof(PlaywrightWebBrowserFixture.ClearContextStateAsync), StringComparison.Ordinal);
 
-        rest.ShouldNotBeEmpty();
-        rest.ShouldAllBe(t => CollectionOf(t) == PlaywrightCollections.SharedBrowser);
+    [Fact]
+    public void AClassThatClearsTheSharedContext_StaysSerialisedWithTheOthersThatDo()
+    {
+        var clearing = BrowserTestClasses.Where(t => !HoldsATightBudget(t)).Where(ClearsTheSharedContext).ToList();
+
+        clearing.ShouldNotBeEmpty("nothing clears the shared context any more — this rule has nothing left to hold");
+        clearing.ShouldAllBe(t => CollectionOf(t) == PlaywrightCollections.SharedBrowser);
+    }
+
+    // A class that opens its own GUID session and closes it touches nothing another class can see,
+    // so serialising it behind the cookie-clearing chain bought isolation nobody needed and cost
+    // the run its tail: eleven classes in one collection ran end to end for the last twenty seconds
+    // of the suite while the rest of the machine sat idle. These take a third backend and run
+    // beside that chain instead.
+    [Fact]
+    public void AClassThatOnlyDrivesItsOwnSessions_RunsBesideTheCookieClearingChain()
+    {
+        var isolated = BrowserTestClasses
+            .Where(t => !HoldsATightBudget(t))
+            .Where(t => !ClearsTheSharedContext(t))
+            .ToList();
+
+        isolated.ShouldNotBeEmpty();
+        isolated.ShouldAllBe(t => CollectionOf(t) == PlaywrightCollections.IsolatedSessions);
     }
 }

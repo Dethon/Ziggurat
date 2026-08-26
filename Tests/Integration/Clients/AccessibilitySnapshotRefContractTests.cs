@@ -12,8 +12,8 @@ namespace Tests.Integration.Clients;
 //
 // Playwright's Visible means a NON-EMPTY bounding box: width > 0 AND height > 0. The snapshot's own
 // visibility test must not be looser than that, or it advertises refs that cannot be acted on.
-[Collection(PlaywrightCollections.SharedBrowser)]
-public class AccessibilitySnapshotRefContractTests(PlaywrightWebBrowserFixture fixture) : IAsyncLifetime
+[Collection(PlaywrightCollections.IsolatedSessions)]
+public class AccessibilitySnapshotRefContractTests(IsolatedSessionBrowserFixture fixture) : IAsyncLifetime
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;

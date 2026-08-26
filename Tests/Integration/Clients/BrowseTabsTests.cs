@@ -6,8 +6,8 @@ namespace Tests.Integration.Clients;
 
 // The honestly browser-dependent claims of the tab pool: real pages side by side, each holding its
 // own DOM while the other is browsed.
-[Collection(PlaywrightCollections.SharedBrowser)]
-public class BrowseTabsTests(PlaywrightWebBrowserFixture fixture)
+[Collection(PlaywrightCollections.IsolatedSessions)]
+public class BrowseTabsTests(IsolatedSessionBrowserFixture fixture)
 {
     [Trait("Category", "External")]
     [SkippableFact]
