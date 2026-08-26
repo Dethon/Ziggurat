@@ -72,6 +72,9 @@ public class WebChatE2EChatCollection : ICollectionFixture<WebChatE2EFixture>;
 [CollectionDefinition(WebChatE2ECollections.Dictation)]
 public class WebChatE2EDictationCollection : ICollectionFixture<WebChatE2EFixture>;
 
+[CollectionDefinition(WebChatE2ECollections.DictationMicrophone)]
+public class WebChatE2EDictationMicrophoneCollection : ICollectionFixture<WebChatE2EFixture>;
+
 [CollectionDefinition(WebChatE2ECollections.Hearth)]
 public class WebChatE2EHearthCollection : ICollectionFixture<WebChatE2EFixture>;
 
@@ -100,4 +103,5 @@ public static class WebChatE2ECollections
     public const string HearthTap = "WebChatE2E.HearthTap";
     public const string Topics = "WebChatE2E.Topics";
     public const string Attachments = "WebChatE2E.Attachments";
+    public const string DictationMicrophone = "WebChatE2E.DictationMicrophone";
 }
