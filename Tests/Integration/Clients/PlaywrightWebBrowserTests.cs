@@ -422,15 +422,26 @@ public class PlaywrightWebBrowserTests(
             // reddit: twenty-five runs in a row came back whole on a quiet afternoon, and the short
             // bodies all arrived while the same test was being run back to back.
             var content = result.Content ?? "";
+            var looksLikeConsent = content.Contains("cookie", StringComparison.OrdinalIgnoreCase);
             var throttled = content.Length < 1000
                 && content.Contains("rdt=", StringComparison.OrdinalIgnoreCase)
-                && !content.Contains("cookie", StringComparison.OrdinalIgnoreCase);
+                && !looksLikeConsent;
             Skip.If(
                 throttled,
                 $"reddit served its throttling interstitial rather than the thread ({content.Length} chars).");
 
-            // The failure returned ~735 bytes that were entirely the consent notice.
-            content.Length.ShouldBeGreaterThan(5000);
+            // The failure returned ~735 bytes that were entirely the consent notice. Said as that
+            // rather than as a bare length mismatch, because the two ways this can go short want
+            // different work: a consent body means the dismisser lost its race — it polls for a
+            // 300ms window and reddit renders the wall late on a loaded machine — while any other
+            // short body is the extractor finding nothing where the comments should be.
+            content.Length.ShouldBeGreaterThan(
+                5000,
+                looksLikeConsent
+                    ? $"readability settled on the consent notice again ({content.Length} chars): "
+                      + "the wall rendered after ModalDismisser's detection window and was still "
+                      + "the only ordinary prose on the page."
+                    : $"the body came back at {content.Length} chars with no comments in it.");
             content.ShouldContain("Comments", Case.Insensitive);
         }
         finally
