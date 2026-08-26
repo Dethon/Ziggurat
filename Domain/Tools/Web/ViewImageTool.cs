@@ -60,9 +60,14 @@ public class ViewImageTool(IWebBrowser browser)
                 + "Ask again on a model that does rather than retrying on this one.");
         }
 
+        // The cap cuts before shape is examined: what it defers is answered when it is actually
+        // asked for, so one stray ref in the tail cannot refuse the eight ahead of it.
+        var asked = refs.Take(MaxPerCall).ToList();
+        var deferred = refs.Skip(MaxPerCall).ToList();
+
         // A ref's shape is what says which tool it was meant for, so the other kind is turned away
         // by name here rather than failing to be found on the page.
-        if (refs.Where(r => !ImageRef.IsImageRef(r)).ToList() is { Count: > 0 } foreign)
+        if (asked.Where(r => !ImageRef.IsImageRef(r)).ToList() is { Count: > 0 } foreign)
         {
             return Refusal(
                 sessionId,
@@ -71,9 +76,6 @@ public class ViewImageTool(IWebBrowser browser)
                 + "Image refs look like i-1 and come from the image entries in the page text; "
                 + "e-style refs belong to web_action.");
         }
-
-        var asked = refs.Take(MaxPerCall).ToList();
-        var deferred = refs.Skip(MaxPerCall).ToList();
 
         var fetched = await browser.FetchImagesAsync(new ImageFetchRequest(sessionId, asked), ct);
 

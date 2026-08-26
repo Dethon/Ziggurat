@@ -52,6 +52,23 @@ public class ViewImageToolTests
     }
 
     [Fact]
+    public async Task AForeignRefBeyondTheCap_IsDeferredRatherThanRefusingTheCall()
+    {
+        // The cap cuts before shape is examined: a greedy call with a stray e- ref past the cut
+        // still progresses on the eight it asked for first, and the stray gets its refusal when
+        // it is actually asked for.
+        var refs = Enumerable.Range(1, 8).Select(i => $"i-{i}").Append("e-3").ToList();
+        Answers(refs.Take(8).Select(r => (r, ImageFetchStatus.Success)).ToArray());
+
+        var result = await RunAsync(refs);
+
+        result.Images.Count.ShouldBe(8);
+        result.Envelope["status"]!.GetValue<string>().ShouldBe("success");
+        result.Envelope["deferredRefs"]!.AsArray().Select(n => n!.GetValue<string>())
+            .ShouldBe(["e-3"]);
+    }
+
+    [Fact]
     public async Task ARefFromAClosedSession_SaysToBrowseThePageAgain()
     {
         _browser
