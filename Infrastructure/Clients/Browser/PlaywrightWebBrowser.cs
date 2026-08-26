@@ -673,8 +673,15 @@ public class PlaywrightWebBrowser(
                                   for (let i = 0; i < bytes.length; i++) {
                                       binary += String.fromCharCode(bytes[i]);
                                   }
-                                  return (response.headers.get('content-type') || 'image/jpeg')
-                                      .split(';')[0] + '|' + label + '|' + btoa(binary);
+                                  // One JSON object rather than a delimited string: the label is
+                                  // somebody else's text and may carry any delimiter a hand-rolled
+                                  // shape would pick.
+                                  return JSON.stringify({
+                                      mediaType: (response.headers.get('content-type') || 'image/jpeg')
+                                          .split(';')[0],
+                                      label,
+                                      data: btoa(binary)
+                                  });
                               }
                           } catch { /* fall through to the canvas */ }
                       }
@@ -710,7 +717,11 @@ public class PlaywrightWebBrowser(
                           // Throws a SecurityError on a tainted canvas -- an image the browser
                           // will show but not let script read. That is a real refusal.
                           const dataUrl = canvas.toDataURL('image/png');
-                          return 'image/png|' + label + '|' + dataUrl.split(',')[1];
+                          return JSON.stringify({
+                              mediaType: 'image/png',
+                              label,
+                              data: dataUrl.split(',')[1]
+                          });
                       } catch {
                           return 'error';
                       }
@@ -718,25 +729,9 @@ public class PlaywrightWebBrowser(
                   """,
                 imageRef);
 
-            if (payload is null)
-            {
-                return new FetchedImage(imageRef, null, null, ImageFetchStatus.NotAnImageRef);
-            }
-
-            var parts = payload.Split('|', 3);
-            if (payload == "error" || parts.Length < 3)
-            {
-                return new FetchedImage(imageRef, null, null, ImageFetchStatus.SiteRefused);
-            }
-
-            return new FetchedImage(
-                imageRef,
-                parts[0],
-                Convert.FromBase64String(parts[2]),
-                ImageFetchStatus.Success,
-                Label: parts[1].Length > 0 ? parts[1] : null);
+            return ImageFetchPayload.Parse(imageRef, payload);
         }
-        catch (Exception ex) when (ex is PlaywrightException or FormatException)
+        catch (PlaywrightException)
         {
             return new FetchedImage(imageRef, null, null, ImageFetchStatus.SiteRefused);
         }
