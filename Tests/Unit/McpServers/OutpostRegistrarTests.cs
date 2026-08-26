@@ -63,6 +63,14 @@ public class OutpostRegistrarTests
         await registrar.StartAsync(CancellationToken.None);
         await Eventually.Until(() => hub.Registrations.Count == 1, "the attempt that times out");
 
+        // The hub records the attempt and only then throws, so a count of one says the registrar is
+        // inside RegisterAsync — not that it has come back out and parked on its retry. Clearing
+        // the flag against that count let a loaded run get the order backwards: the registrar armed
+        // and the advance fired while the old value was still what RegisterAsync saw, so the retry
+        // timed out too and the next wait was a two-second backoff this test never advances past.
+        // Waiting for the arm first is the difference between "the attempt started" and "the
+        // attempt is over and the code is ready to be interfered with".
+        await clock.WaitUntilArmedAsync(TimeSpan.FromSeconds(1));
         hub.TimeOutRequests = false;
         await clock.AdvancePastAsync(TimeSpan.FromSeconds(1));
 
@@ -84,6 +92,9 @@ public class OutpostRegistrarTests
         await clock.AdvancePastAsync(OutpostLifetime.KeepAliveInterval);
         await Eventually.Until(() => hub.KeepAlives.Count == 1, "the keepalive that times out");
 
+        // Same order as the registering case above: the count says the call started, the armed
+        // retry says it finished and parked.
+        await clock.WaitUntilArmedAsync(TimeSpan.FromSeconds(1));
         hub.TimeOutRequests = false;
         await clock.AdvancePastAsync(TimeSpan.FromSeconds(1));
 
