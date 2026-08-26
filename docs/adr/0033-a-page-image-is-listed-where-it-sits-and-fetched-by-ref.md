@@ -84,33 +84,34 @@ fingerprint, and a great many images are served only to a request that carries t
 is earning its keep. This is also what makes the ref meaningful — it resolves against the live
 page, so a URL never has to enter the model's context to be usable.
 
-**Inside the page, how the bytes are reached depends on the origin.** A page's pictures usually
+**Bytes as served first, pixels only when no fetch can obtain them.** A page's pictures usually
 come from somewhere else: `commons.wikimedia.org` serves its images from `upload.wikimedia.org`,
-`unsplash.com` from `images.unsplash.com`. Same-origin goes through `fetch` with the page's
-credentials, which keeps the served bytes byte for byte. Cross-origin, what broke the first
-implementation was not CORS in general but credentials in particular: the big image CDNs do send
+`unsplash.com` from `images.unsplash.com`. Both origins therefore start the same way, with a wire
+`fetch` that keeps the served bytes byte for byte — same-origin with the page's credentials,
+cross-origin anonymously (`credentials: 'omit'`). Anonymously, because the trap here is not CORS
+in general but credentials in particular: the big image CDNs do send
 `Access-Control-Allow-Origin: *`, and a wildcard is exactly what a credentialed request is
-rejected against — so a `credentials: 'include'` fetch failed on precisely the images the page
-was displaying perfectly well, in the shape of the site refusing. Cross-origin therefore fetches
-anonymously (`credentials: 'omit'`), which the ACAO the CDNs send admits, and keeps the served
-bytes byte for byte exactly as the same-origin branch does — a live test caught the canvas
-answering that case first and re-encoding every shared jpeg as a fatter PNG. Only when the wire
-fetch fails or answers a non-raster does the canvas run: load the image anonymously
-(`crossOrigin='anonymous'`, usually a cache hit on pixels the browser has already decoded), draw
-it and read the pixels back as PNG. That anonymous load is gated by the same
-`Access-Control-Allow-Origin` header the anonymous `fetch` was: a CDN that sends none fails the
-probe, and the fallback to the rendered element taints the canvas.
+rejected against, so a `credentials: 'include'` fetch fails on precisely the images the page is
+displaying perfectly well, in the misleading shape of the site refusing. Only wire rasters
+(png/jpeg/gif/webp) leave as served; an as-served `image/svg+xml` — Wikipedia's own site logo is
+one — makes the vision provider reject the entire request as an unsupported media type, which
+costs the turn rather than the picture.
 
-*Amended 2026-08-26.* A tainted canvas was originally reported as the site refusing, and a live
-test caught what that costs: JPL's own gallery serves every image from a CloudFront host that
-sends no ACAO header at all, so a page of pictures the browser was displaying perfectly answered
-nothing but refusals. CORS binds script inside the page and nothing else — so a tainted canvas
-now answers with the image's address, and the fetch re-requests it through the context's own
-request client (same cookies, no CORS), keeping the bytes exactly as served when they are a wire
-raster. Where that too fails — a host that blocks non-browser clients, a non-raster answer — the
-pixels are still painted, and a Playwright element screenshot reads the rendered box back as PNG
-at the size the page shows it. What remains a real refusal is an image the browser itself will
-not show.
+Where the wire fetch fails or answers a non-raster, the canvas runs: load the image anonymously
+(`crossOrigin='anonymous'`, usually a cache hit on pixels the browser has already decoded), draw
+it, read the pixels back as PNG. That anonymous load is gated by the same
+`Access-Control-Allow-Origin` header the anonymous `fetch` was, so a CDN sending none fails the
+probe too, and falling back to the rendered element taints the canvas.
+
+A tainted canvas is not a refusal, because CORS binds script inside the page and nothing else. It
+answers with the image's address instead, and two rungs remain: re-request that address through
+the context's own request client (same cookies, no CORS, bytes as served, wire rasters only),
+and failing that — a host that blocks non-browser clients, a non-raster answer — take a Playwright
+element screenshot of the pixels the compositor has already painted, reading the rendered box back
+as PNG at the size the page shows it. The rung order is not arbitrary: each step down trades
+fidelity for reach, so the picture arrives as the file the site served whenever that is possible at
+all, and as pixels only when nothing else can get it. What remains a real refusal is an image the
+browser itself will not show.
 
 **The MCP server answers with an image block, and the bridge lifts the bytes out.**
 `McpServerWebSearch` returns what the protocol says an image result is, and does not learn Redis,
@@ -131,16 +132,55 @@ the same placeholder shape. The glossary's definition widens to match — the mo
 and what defines a read image is that nobody sent it.
 
 **An entry is never split, and the envelope counts the rest.** Truncation already backs up to the
-last newline when the cut lands past seventy percent of target; it now also backs up past a
-partial image entry, so the body always ends on a whole one and every ref the model can see is a
-ref it can use. Beyond the window the envelope names how many images remain, because an image the
-model cannot see is one it cannot know to page forward for.
+last newline when the cut lands past seventy percent of target; it also backs up past a partial
+image entry, so the body ends on a whole one and every ref the model can see is a ref it can use.
+Beyond the window the envelope names how many images remain, because an image the model cannot
+see is one it cannot know to page forward for.
+
+**A window always advances, even when that costs the budget.** An entry longer than the whole
+window has nothing to back up to, and backing up to nothing consumes zero — a model paging by
+what it was told would page the same offset forever while `imagesBeyondWindow` kept promising the
+entry ahead. An oversized entry therefore goes out whole and over budget. The cap is a safeguard,
+not an editor, and a window that consumes nothing is a page paging can never get past.
+
+**Paging is by the offset the envelope names, not by the body's length.** Because the cut backs up
+and the body carries a suffix, the body's length says nothing about where the next window starts.
+A truncated envelope therefore carries `nextOffset`, measured by the truncation itself after the
+trim rather than inferred afterwards, with control characters stripped before any offset
+arithmetic so every position shares one coordinate space. Paging by `maxLength` instead would skip
+exactly what the back-up left — including the entries `imagesBeyondWindow` had just promised.
+`contentLength` remains the pre-slice total, so the arithmetic for "how much is there" is
+unchanged; what changes is that the model is told where to resume rather than computing it.
 
 **Every refusal says which wall it is.** No vision on the model, a ref from a dead session, a ref
-that was never an image, a fetch the site refused, an image past the per-call cap, bytes already
-forgotten — six sentences, not one. `file_read` already works this way, and `AttachmentCapability`
-goes as far as naming the model in the sentence. A model told only "unavailable" either retries a
-permanent failure or abandons a retryable one.
+that was never an image, a fetch the site refused, a dead-link image whose bytes never arrived, an
+image past the per-call cap, bytes already forgotten — seven sentences, not one. `file_read`
+already works this way, and `AttachmentCapability` goes as far as naming the model in the
+sentence. A model told only "unavailable" either retries a permanent failure or abandons a
+retryable one.
+
+The dead link earns its own wall rather than folding into the site's refusal, because the two
+recoveries are opposites. A page whose inline images point at a host that has since stopped
+serving them — a 2013 article whose image host now answers 405 — lays out the boxes while the
+bytes never arrive; telling the model the site refused invites a retry that can never work and
+promises a picture that is not there. `SiteRefused` therefore narrows to a CDN guarding pixels the
+page is visibly displaying, which is worth retrying, and a dead link says to pick a different
+picture.
+
+**The no-vision wall is answered agent-side.** The capability catalogue and the turn's resolved
+model both live hub-side, so `McpServerWebSearch` cannot answer the question at all: it reports
+the model accepts images and hydration leaves the note instead. `ViewImageTool` still implements
+and tests the refusal, which is what a direct domain-tool caller gets. The cost is that a
+vision-less turn fetches and stores bytes nobody will see — accepted, because the alternative is
+teaching the browse server a capability catalogue it has no business holding.
+
+Only three of the seven walls are states of a fetch — a ref that names no image, a site that
+refused, a dead link. A dead session and a ref past the cap are answered before any fetch is
+attempted; no vision and forgotten bytes are answered agent-side, after the result has crossed
+back. The fetch's own status type therefore carries those three and no more (alongside success,
+and later the two stale-ref walls, which are also decided at fetch time). A status nothing can
+produce is a refusal nobody can receive, and inventing one would invite a caller to switch on a
+case that never arrives.
 
 ## Consequences
 
@@ -148,8 +188,13 @@ permanent failure or abandons a retryable one.
   one. The filter and the terse entry shape are what keep that small; a heavily illustrated page
   still pays.
 - Images consume the pagination budget, so the text window a given `offset` and `maxLength` return
-  shifts on image-heavy pages. `contentLength` remains the pre-slice total, so paging arithmetic
-  is unchanged.
+  shifts on image-heavy pages. `contentLength` remains the pre-slice total, but a caller computing
+  its next offset from the body's length is wrong wherever the cut backed up, which is why the
+  envelope names that offset instead.
+- An oversized image entry defeats the budget rather than the budget defeating it: a window is
+  allowed to overrun so that it always advances.
+- The label ladder exists twice — once building the entry, once naming the picture in the note
+  that replaces it — and the two must be changed together. Nothing enforces it but a test.
 - A count cap cannot stop a large-byte call. Eight full-size images pass the cap, pass truncation's
   per-image estimate, and can still fail as an oversized request. Accepted on the same terms as
   ADR 0029's parallel reads: the model asked for those pictures.
@@ -163,10 +208,8 @@ permanent failure or abandons a retryable one.
 - `StripDomNoiseAsync` keeps `src` for images that pass the size filter, so the DOM the markdown is
   built from is no longer uniformly image-free.
 - A cross-origin image whose CDN sends `Access-Control-Allow-Origin` arrives byte for byte as
-  served (amended 2026-08-26 — the canvas used to answer first, and its PNG re-encode usually
-  outweighed the file the site served). Only the canvas and screenshot rungs re-encode, and what
-  they carry is pixels rather than the original file; that cost now falls only on images no fetch
-  could obtain.
+  served. Only the canvas and screenshot rungs re-encode, and what they carry is pixels rather
+  than the original file, so that cost falls only on images no fetch could obtain.
 - The size filter needs rendered dimensions, not markup attributes, so listing images asks the page
   a question that reading its text did not.
 - No eval scenario. The mechanism is unit-testable end to end and the fetch is covered against the

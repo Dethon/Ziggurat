@@ -1,12 +1,14 @@
 # 04 — Recognise a page image as a read image
 
+Status: resolved
+
 **What to build:** An image that came from a page is treated as the same kind of thing as an image read from a mount: the model asked for it, it rides in a tool result, and it can be asked for again. It gets the same window of visibility, the same forgetting when it falls out of view, and the same shape of note in its place afterwards.
 
 Nothing produces a page image yet — this ticket makes the agent ready to recognise one when it arrives.
 
 Note that the existing envelope shape is strict on purpose, so that a tool result merely carrying a path cannot be mistaken for an image read. That strictness must survive: this adds a second recognised shape rather than loosening the first.
 
-**Blocked by:** 03 — Measure images on the live page.
+Blocked by: 03
 
 - [x] A page image envelope is recognised alongside the filesystem one, and both hydrate identically
 - [x] The strictness of the existing filesystem envelope is unchanged — a result that is not an image read still does not parse as one

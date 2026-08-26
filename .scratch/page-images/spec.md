@@ -1,6 +1,6 @@
 # Page images in web browsing
 
-Status: implemented
+Status: resolved
 
 ## Problem Statement
 
@@ -93,12 +93,14 @@ images at the bottom of a result destroys the only signal the model has for choo
 
 ### Truncation
 
-- Body truncation never cuts an image entry in half — it backs up past a partial entry the way it already backs up to a newline.
-- The envelope reports how many images lie beyond the returned window.
+- Body truncation never cuts an image entry in half — it backs up past a partial entry the way it already backs up to a newline. One exception: an entry longer than the whole window goes out whole and over budget, because backing up to nothing leaves a window that consumes zero, and a model paging by the envelope would sit on one offset forever.
+- The envelope reports how many images lie beyond the returned window, and — when truncated — a `nextOffset` measured by the truncation itself. The body's own length cannot serve: the back-up and the suffix both make it a lie about where the next window starts.
 
 ### Refusals
 
-Six distinct messages, each naming its wall: no vision on the model; ref from a dead session; ref that was never an image; site refused the fetch; past the per-call cap; bytes already forgotten. Prior art: the filesystem read tool's refusal set, and the attachment capability refusal that names the model in its sentence.
+Seven distinct messages, each naming its wall: no vision on the model; ref from a dead session; ref that was never an image; site refused the fetch; a dead link whose bytes never arrived; past the per-call cap; bytes already forgotten. Prior art: the filesystem read tool's refusal set, and the attachment capability refusal that names the model in its sentence.
+
+Site-refused and dead link are separate because their recoveries are opposites: a CDN guarding pixels the page is visibly displaying is worth retrying, a host that has stopped serving the images a page still lays out boxes for is not. See `docs/adr/0033`.
 
 ## Testing Decisions
 
@@ -122,9 +124,10 @@ Refusal messages are unit-tested at whichever of the above seams produces them, 
 - **Fetching an image by bare URL.** Refs were chosen as the handle; a URL path would exist only for images the browse tool never listed, which is a separate need.
 - **Sending images onward to the person.** This is about what the model can see, not what gets delivered to a channel.
 - **Downscaling and format conversion.** No image is made smaller or converted to fit a budget; it
-  arrives whole or is refused. A cross-origin image is re-encoded as PNG — the cost of reading it
-  off a canvas rather than fetching it anonymously, a choice recorded in `docs/adr/0033` — not to
-  save anything.
+  arrives whole or is refused. Re-encoding happens only where no fetch could obtain the file:
+  both origins now start with a wire fetch that keeps the bytes exactly as served (cross-origin
+  anonymously), and only the canvas and screenshot rungs produce a PNG, carrying pixels rather
+  than the original file. Recorded in `docs/adr/0033`.
 - **Surviving session expiry.** A ref outliving its page was considered and declined.
 - **A byte-based cap.** Considered and declined in favour of a count.
 - **Video, audio and PDF on a page.** Images only.

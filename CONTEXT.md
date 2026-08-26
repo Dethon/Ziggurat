@@ -556,9 +556,10 @@ _Avoid_: window, page slot, browser tab
 **Element ref**:
 A short handle standing for one thing on the page a person could act on. It is issued
 by the snapshot that found it, finds its way back to the tab that stamped it, and is
-superseded by the next snapshot of that tab — so it is a coordinate and not an address:
-nothing outside can be reached with one, and the same element seen later is a different
-ref, never a reused one.
+superseded when that tab's page is replaced or read afresh — so it is a coordinate and
+not an address: nothing outside can be reached with one, and the same element seen later
+is a different ref, never a reused one. Acting on a page does not by itself unmake the
+handles on it, or a form could not be filled a field at a time.
 _Avoid_: selector, element id, locator, node id
 
 **Image ref**:

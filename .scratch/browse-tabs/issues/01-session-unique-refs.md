@@ -13,7 +13,7 @@ namespaces.
 This ticket still runs on a single live page. Nothing routes yet; what changes is that a number,
 once issued, is never issued again in the session.
 
-**Blocked by:** None — can start immediately.
+Blocked by: none
 
 - [x] A second browse in one session stamps image refs continuing from where the first stopped, never restarting at `i-1`
 - [x] A second snapshot stamps element refs continuing from where the first stopped, even on the same unchanged page
