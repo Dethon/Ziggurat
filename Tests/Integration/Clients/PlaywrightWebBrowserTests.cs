@@ -411,16 +411,19 @@ public class PlaywrightWebBrowserTests(
             // of it. It has no comments to find and no notice to mistake for them, so it says
             // nothing about the extractor in either direction.
             //
-            // Recognised by what it is rather than by how short it is, because the regression this
-            // case exists for is also short: ~735 bytes of consent prose that readability chose
-            // over the comments. Skipping on length alone would hide exactly the bug this test was
-            // written to catch, so that body still fails below.
+            // All three clauses earn their place. Length alone would hide the regression this case
+            // exists for, which is short too: ~735 bytes of consent prose readability chose over
+            // the comments. The ?rdt= token alone is worse than useless — reddit puts it in the
+            // links of a perfectly whole thread, and matching on it skipped a 19,935-character
+            // body that had every comment in it. Short, token-bearing, and saying nothing about
+            // cookies is the interstitial and nothing else.
             //
             // How often the interstitial appears tracks how hard this suite has been hitting
             // reddit: twenty-five runs in a row came back whole on a quiet afternoon, and the short
             // bodies all arrived while the same test was being run back to back.
             var content = result.Content ?? "";
-            var throttled = content.Contains("rdt=", StringComparison.OrdinalIgnoreCase)
+            var throttled = content.Length < 1000
+                && content.Contains("rdt=", StringComparison.OrdinalIgnoreCase)
                 && !content.Contains("cookie", StringComparison.OrdinalIgnoreCase);
             Skip.If(
                 throttled,
