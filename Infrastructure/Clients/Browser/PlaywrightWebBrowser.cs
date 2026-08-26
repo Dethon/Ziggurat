@@ -793,12 +793,18 @@ public class PlaywrightWebBrowser(
                       const fileName = src.startsWith('data:')
                           ? ''
                           : (src.split(/[?#]/)[0].split('/').pop() || '');
-                      const label = (img.getAttribute('alt')
+                      const spoken = (img.getAttribute('alt')
                           || img.closest('figure')?.querySelector('figcaption')?.textContent
                           || img.getAttribute('title')
                           || img.closest('a')?.textContent
                           || (/^[^\s/]+\.[A-Za-z0-9]{1,5}$/.test(fileName) ? fileName : '')
-                          || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+                          || '').trim().replace(/\s+/g, ' ');
+                      // The entry's own cut, spelled the same (PageImageEntry.Sanitize): a bare
+                      // slice read as the tool breaking mid-word, and the entry and the note must
+                      // name one picture with one set of words.
+                      const label = spoken.length <= 120
+                          ? spoken
+                          : spoken.slice(0, 120).trimEnd() + '…';
 
                       const url = new URL(src, location.href).toString();
 

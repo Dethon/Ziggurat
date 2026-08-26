@@ -185,6 +185,38 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
         }
     }
 
+    [SkippableFact]
+    public async Task ALongLabel_IsCutTheWayTheEntryCutIt()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        // The entry ends a long label with an ellipsis so the cut announces itself; the fetch
+        // used to slice the same 120 characters bare, and a live test read the mid-word stop
+        // as the tool breaking. Same ladder, same cut: one pair of eyes, one spelling.
+        var sessionId = $"test-{Guid.NewGuid():N}";
+        try
+        {
+            var longAlt = new string('x', 130);
+            await PrepareAsync(
+                sessionId,
+                $"""
+                 <img src="data:image/png;base64,{OnePixelPngBase64}" alt="{longAlt}"
+                      style="width:300px;height:300px">
+                 """);
+            await fixture.Browser.AnnotateImagesOnSessionAsync(sessionId);
+
+            var fetched = await fixture.Browser.FetchImagesAsync(new ImageFetchRequest(sessionId, ["i-1"]));
+
+            var image = fetched.Images.ShouldHaveSingleItem();
+            image.Status.ShouldBe(ImageFetchStatus.Success);
+            image.Label.ShouldBe(new string('x', 120) + "…");
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
     [Trait("Category", "External")]
     [SkippableFact]
     public async Task AnImageWhoseBytesNeverArrived_ReportsADeadLinkNotARefusal()
