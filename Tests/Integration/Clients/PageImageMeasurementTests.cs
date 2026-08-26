@@ -187,6 +187,34 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
 
     [Trait("Category", "External")]
     [SkippableFact]
+    public async Task AnImageWhoseBytesNeverArrived_ReportsADeadLinkNotARefusal()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        // Styled to survive the size filter, pointing at an address that answers 404: the page
+        // lays the box out, the bytes never arrive. Smithsonian's rotted 2012 blog images are the
+        // live case — the old "site refused, trying again may work" answer sent the model round
+        // two pointless retries.
+        var sessionId = $"test-{Guid.NewGuid():N}";
+        try
+        {
+            await PrepareAsync(
+                sessionId,
+                """<img id="gone" src="/no-such-picture.jpg" style="width:300px;height:300px" alt="A rotted link">""");
+            await fixture.Browser.AnnotateImagesOnSessionAsync(sessionId);
+
+            var fetched = await fixture.Browser.FetchImagesAsync(new ImageFetchRequest(sessionId, ["i-1"]));
+
+            fetched.Images.ShouldHaveSingleItem().Status.ShouldBe(ImageFetchStatus.NeverLoaded);
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
+    [Trait("Category", "External")]
+    [SkippableFact]
     public async Task ARefFromASessionThatIsGone_SaysTheSessionIsMissing()
     {
         Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");

@@ -42,6 +42,11 @@ public enum ImageFetchStatus
     // just served the page.
     SiteRefused,
 
+    // The picture's bytes never arrived at all -- the address on the page is a dead link, so the
+    // browser has nothing to read and retrying is wasted work. Distinct from SiteRefused, which
+    // is a picture the page displays but will not let script share.
+    NeverLoaded,
+
     // The ref's tab is still open, but a later stamp renumbered its refs -- snapshot or browse
     // the page again for fresh ones.
     RefSuperseded,

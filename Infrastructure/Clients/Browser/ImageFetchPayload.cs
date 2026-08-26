@@ -20,6 +20,11 @@ internal static class ImageFetchPayload
             return new FetchedImage(imageRef, null, null, ImageFetchStatus.NotAnImageRef);
         }
 
+        if (payload == "never-loaded")
+        {
+            return new FetchedImage(imageRef, null, null, ImageFetchStatus.NeverLoaded);
+        }
+
         try
         {
             var node = JsonNode.Parse(payload)?.AsObject();

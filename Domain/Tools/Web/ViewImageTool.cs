@@ -145,6 +145,9 @@ public class ViewImageTool(IWebBrowser browser)
         ImageFetchStatus.SiteRefused =>
             $"The site refused to serve {image.Ref}, so its bytes never arrived. Trying again may "
             + "work; the picture itself is still on the page.",
+        ImageFetchStatus.NeverLoaded =>
+            $"{image.Ref} never loaded — the address the page gives it is a dead link, so there "
+            + "are no bytes to fetch. Pick a different picture.",
         // The two stale-ref walls. Superseded: the page is still open and refreshing it mints
         // fresh refs. Closed: the tab is gone, and the wall names exactly what to browse again.
         ImageFetchStatus.RefSuperseded =>

@@ -120,6 +120,19 @@ public class ViewImageToolTests
     }
 
     [Fact]
+    public async Task AnImageThatNeverLoaded_SaysTheLinkIsDeadWithoutInvitingARetry()
+    {
+        Answers(("i-4", ImageFetchStatus.NeverLoaded));
+
+        var result = await RunAsync(["i-4"]);
+
+        var note = result.Notes.ShouldHaveSingleItem();
+        note.ShouldContain("i-4");
+        note.ShouldContain("never loaded");
+        note.ShouldNotContain("again");
+    }
+
+    [Fact]
     public async Task AModelThatCannotAcceptImages_IsToldSoAndNothingIsFetched()
     {
         var result = await RunAsync(["i-1"], acceptsImages: false);
@@ -181,9 +194,10 @@ public class ViewImageToolTests
         // from a permanent one, and a page it can refresh from a page that is gone.
         Answers(
             ("i-1", ImageFetchStatus.NotAnImageRef),
-            ("i-2", ImageFetchStatus.SiteRefused));
+            ("i-2", ImageFetchStatus.SiteRefused),
+            ("i-3", ImageFetchStatus.NeverLoaded));
 
-        var mixed = await RunAsync(["i-1", "i-2"]);
+        var mixed = await RunAsync(["i-1", "i-2", "i-3"]);
         var noVision = Message(await RunAsync(["i-1"], acceptsImages: false));
         var wrongNamespace = Message(await RunAsync(["e-1"]));
 

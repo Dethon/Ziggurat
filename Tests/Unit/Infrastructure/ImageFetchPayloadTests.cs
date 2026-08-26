@@ -38,6 +38,14 @@ public class ImageFetchPayloadTests
     }
 
     [Fact]
+    public void TheNeverLoadedSentinel_ReadsAsADeadLink()
+    {
+        // A picture whose bytes never arrived is not the site refusing to share pixels it shows —
+        // it is a broken address, and retrying it is wasted work.
+        ImageFetchPayload.Parse("i-1", "never-loaded").Status.ShouldBe(ImageFetchStatus.NeverLoaded);
+    }
+
+    [Fact]
     public void AMalformedPayload_ReadsAsTheSiteRefusing()
     {
         // The old delimited shape, and any other string the script never wrote: a refusal, not a

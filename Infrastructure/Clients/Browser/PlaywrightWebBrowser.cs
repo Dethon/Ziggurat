@@ -857,7 +857,9 @@ public class PlaywrightWebBrowser(
 
                           const source = drawn
                               || (img.complete && img.naturalWidth > 0 ? img : null);
-                          if (!source) return 'error';
+                          // No probe result and no decoded element either: the bytes never
+                          // arrived at all — a dead link, not a CDN guarding its pixels.
+                          if (!source) return 'never-loaded';
 
                           const canvas = document.createElement('canvas');
                           canvas.width = source.naturalWidth;

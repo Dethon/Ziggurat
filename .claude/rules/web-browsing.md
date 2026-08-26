@@ -52,7 +52,7 @@ A browse session holds up to three live tabs, and a ref finds its own (`docs/adr
 
 **One call can answer with several pictures, so a key carries an index.** `IReadImageStore` holds one image per key and `file_read` depends on that, so `view_image`'s pictures are keyed `<callId>#<n>` rather than widening the store. **`n` is the position of the picture's envelope among every JSON block in the result, not among the pictures** — the call's own envelope leads each result and takes index 0, and a refused image takes a slot with no bytes behind it. `McpImageLift` and `ReadImageHydration` compute that number independently on either side of the wire, so they must ask the same question the same way; `PageImageRoundTripTests` drives both halves over a real `ToolResponse.Create` result and is what stops them drifting. They already had: counting pictures on one side and blocks on the other put every image one key off its bytes, and every one of them hydrated as "no longer in view".
 
-**Every refusal names its wall**: no vision on the model, dead session ref, not-an-image ref, site refused the fetch, past the per-call cap, bytes already forgotten. One generic "unavailable" leaves the model unable to tell a retryable failure from a permanent one.
+**Every refusal names its wall**: no vision on the model, dead session ref, not-an-image ref, site refused the fetch, a dead-link image whose bytes never arrived (no retry invited — distinct from a CDN guarding pixels the page displays), past the per-call cap, bytes already forgotten, and the two stale-ref walls in the Tabs section. One generic "unavailable" leaves the model unable to tell a retryable failure from a permanent one.
 
 ## Camoufox
 
