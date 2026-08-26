@@ -376,11 +376,86 @@ public class BrowserSessionManagerTests
         var (ctx, _) = CreateContext();
         await using var manager = new BrowserSessionManager();
 
-        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        var adopted = await manager.AdoptPopupAsync("s1", CreatePopupPage().Object);
+        var opener = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        var adopted = await manager.AdoptPopupAsync("s1", CreatePopupPage().Object, opener.Tab);
 
-        manager.TakePendingPopup("s1").ShouldBeSameAs(adopted);
-        manager.TakePendingPopup("s1").ShouldBeNull();
+        manager.TakePendingPopup("s1", opener.Tab).ShouldBeSameAs(adopted);
+        manager.TakePendingPopup("s1", opener.Tab).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task APopup_IsPendingOnlyForItsOwnOpenerTab()
+    {
+        // Two parallel actions on two tabs of one session: the popup tab A's click spawned must
+        // answer A's action, never B's — a session-global handoff let B swallow A's popup and
+        // claim its URL and snapshot as B's own answer.
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        var b = await BrowseAsync(manager, ctx, "s1", "https://b.test/");
+        var adopted = await manager.AdoptPopupAsync("s1", CreatePopupPage().Object, a.Tab);
+
+        manager.TakePendingPopup("s1", b.Tab).ShouldBeNull();
+        manager.TakePendingPopup("s1", a.Tab).ShouldBeSameAs(adopted);
+    }
+
+    [Fact]
+    public async Task APopupAdoptedBeforeItsNavigation_BecomesKnownByWhereItLanded()
+    {
+        // window.open('') adopts at about:blank; the walls must name the address the popup landed
+        // on, because "Browse about:blank again" is a recovery nobody can use.
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        var opener = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        var blank = new Mock<IPage>();
+        blank.SetupGet(p => p.IsClosed).Returns(false);
+        blank.SetupGet(p => p.Url).Returns("about:blank");
+        var adopted = await manager.AdoptPopupAsync("s1", blank.Object, opener.Tab);
+
+        manager.NoteFinalUrl("s1", adopted!, "https://popup.test/landed");
+
+        adopted!.RequestedUrl.ShouldBe("https://popup.test/landed");
+    }
+
+    [Fact]
+    public async Task ARestampThatFoundNothing_StillSupersedesTheOldRefs()
+    {
+        // A restamping pass wipes every stamp off the document before it counts; finding nothing
+        // to stamp does not put them back. The old refs must refuse as superseded, not route to a
+        // page that no longer carries them.
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await StampAsync(manager, "s1", a.Tab, RefNamespace.Element, 3);
+
+        using (var lease = await manager.BeginStampAsync("s1", RefNamespace.Element, a.Tab))
+        {
+            lease.Commit(0);
+        }
+
+        manager.RouteRef("s1", "e-1").ShouldBe(new RefRouting.Superseded("https://a.test/"));
+    }
+
+    [Fact]
+    public async Task AFailedPageCreation_DoesNotEvictTheTabItWouldHaveReplaced()
+    {
+        // Eviction is committed only once the replacement page exists: a transient failure to open
+        // a page must not permanently kill an innocent tab and its refs.
+        var (ctx, pages) = CreateContext();
+        await using var manager = new BrowserSessionManager(tabCap: 1);
+
+        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        ctx.Setup(c => c.NewPageAsync()).ThrowsAsync(new PlaywrightException("boom"));
+
+        await Should.ThrowAsync<PlaywrightException>(
+            () => BrowseAsync(manager, ctx, "s1", "https://b.test/"));
+
+        manager.Get("s1")!.Tabs.ShouldBe([a.Tab]);
+        pages[0].Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
+        manager.RouteRef("s1", "e-1").ShouldBe(new RefRouting.Unknown());
     }
 
     [Fact]

@@ -433,8 +433,9 @@ public class PlaywrightWebBrowser(
                 page.Url, false, null, null, $"ref is required for {request.Action} action.");
         }
 
-        // A popup left over from an earlier, unrelated call must not divert this action's answer.
-        _sessions.TakePendingPopup(request.SessionId);
+        // A popup left over from an earlier, unrelated call on this tab must not divert this
+        // action's answer.
+        _sessions.TakePendingPopup(request.SessionId, tab);
 
         var locator = AccessibilitySnapshotService.ResolveRef(page, request.Ref);
         try
@@ -521,7 +522,7 @@ public class PlaywrightWebBrowser(
         // A click that opened a new tab answers from where the site actually took the model —
         // the popup's URL, content and freshly stamped refs — not a stale diff of the page left
         // behind.
-        if (_sessions.TakePendingPopup(request.SessionId) is { } popupTab)
+        if (_sessions.TakePendingPopup(request.SessionId, tab) is { } popupTab)
         {
             return await AnswerFromPopupAsync(request.SessionId, popupTab);
         }
