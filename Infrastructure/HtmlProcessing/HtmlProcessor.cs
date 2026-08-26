@@ -175,10 +175,6 @@ public static partial class HtmlProcessor
         int maxLength, int offset, string? title, string content, WebPageMetadata metadata)
     {
         var totalLength = content.Length;
-        // Counted on the whole body, before paging slices it: what lies past the window is the
-        // difference between this and what survived, and the model has no other way to learn that
-        // paging forward would show it more pictures.
-        var totalImages = PageImageEntry.Count(content);
 
         if (offset > 0 && offset < content.Length)
         {
@@ -188,6 +184,11 @@ public static partial class HtmlProcessor
         {
             content = "";
         }
+
+        // Counted from the offset on, before truncation slices the tail: "beyond the window"
+        // promises that paging forward reaches them, so entries already paged past must not be in
+        // the count -- they would send the model forward chasing pictures that are behind it.
+        var totalImages = PageImageEntry.Count(content);
 
         var truncated = content.Length > maxLength;
         if (truncated)

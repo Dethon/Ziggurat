@@ -84,6 +84,27 @@ public class TruncationImageEntryTests
     }
 
     [Fact]
+    public async Task ImagesBehindTheWindow_AreNotReportedAsBeyondIt()
+    {
+        // "Beyond" promises that paging forward reaches them. An offset mid-page has entries on
+        // both sides; counting the ones already paged past would send the model forward chasing
+        // pictures that are behind it.
+        var html = Page(string.Join("\n", Enumerable.Range(1, 12).Select(i =>
+            $"""<p>{new string('x', 200)}</p><img src="/p{i}.jpg" alt="Picture {i}" data-img-w="300" data-img-h="300">""")));
+
+        var whole = await HtmlProcessor.ProcessAsync(
+            new BrowseRequest("test", "http://example.com/test", MaxLength: 100000), html, CancellationToken.None);
+        var offset = whole.Content!.IndexOf("[image i-4", StringComparison.Ordinal);
+
+        var window = await HtmlProcessor.ProcessAsync(
+            new BrowseRequest("test", "http://example.com/test", MaxLength: 100000, Offset: offset),
+            html, CancellationToken.None);
+
+        window.ImageCount.ShouldBe(9);
+        window.ImagesBeyondWindow.ShouldBe(0);
+    }
+
+    [Fact]
     public async Task APageWhoseImagesAllFit_ReportsNoneBeyondTheWindow()
     {
         var html = Page("""<img src="/p.jpg" alt="Only picture" data-img-w="300" data-img-h="300">""");
