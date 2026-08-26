@@ -146,7 +146,15 @@ public static partial class HtmlConverter
         var sb = new StringBuilder();
         // Numbering runs across the whole conversion, so a ref is unique within the body the model
         // is handed. A filtered image takes no number: every ref it can read is a ref it can use.
-        ConvertToMarkdownRecursive(element, sb, 0, new ImageNumberer());
+        var images = new ImageNumberer();
+        // The walk below only meets an image as a child, but a selector can hand one over as the
+        // root itself — an "img"-scoped browse would otherwise answer with nothing at all.
+        if (element is IHtmlImageElement rootImage && PageImageEntry.LabelFor(rootImage) is { } rootLabel)
+        {
+            sb.Append(PageImageEntry.Write(PageImageEntry.RefOn(rootImage, images.Next()), rootLabel));
+        }
+
+        ConvertToMarkdownRecursive(element, sb, 0, images);
         var md = sb.ToString();
         md = MultipleNewlinesRegex().Replace(md, "\n\n");
         return md.Trim();

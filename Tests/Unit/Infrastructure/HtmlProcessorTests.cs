@@ -206,6 +206,36 @@ public class HtmlProcessorTests
     }
 
     [Fact]
+    public async Task ProcessAsync_WithAnImageSelector_ListsTheEntriesInsteadOfNothing()
+    {
+        // A live test scoped a browse to "img" hoping for the page's image catalogue and got
+        // an empty body: the converter renders an image where it meets one as a child, but a
+        // selector hands it the <img> itself as the root, and a root with no children wrote
+        // nothing at all.
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Test</title></head>
+                   <body>
+                       <img src="a.jpg" alt="A tall ship at anchor"
+                            data-img-w="300" data-img-h="200" data-img-ref="i-7">
+                       <img src="b.jpg" alt="The same ship under sail"
+                            data-img-w="300" data-img-h="200" data-img-ref="i-8">
+                   </body>
+                   </html>
+                   """;
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: "img");
+
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        result.IsPartial.ShouldBeFalse();
+        result.Content.ShouldNotBeNull();
+        result.Content.ShouldContain("[image i-7: A tall ship at anchor]");
+        result.Content.ShouldContain("[image i-8: The same ship under sail]");
+        result.ImageCount.ShouldBe(2);
+    }
+
+    [Fact]
     public async Task ProcessAsync_WithClassSelector_LinksInContentAreRendered()
     {
         // Arrange
