@@ -873,23 +873,49 @@ public class PlaywrightWebBrowser(
                           canvas.getContext('2d').drawImage(source, 0, 0);
 
                           // Throws a SecurityError on a tainted canvas -- an image the browser
-                          // will show but not let script read. That is a real refusal.
+                          // will show but not let script read. The pixels are on screen all the
+                          // same, so that answer goes back for a screenshot rather than a refusal.
                           const dataUrl = canvas.toDataURL('image/png');
                           return JSON.stringify({
                               mediaType: 'image/png',
                               label,
                               data: dataUrl.split(',')[1]
                           });
-                      } catch {
-                          return 'error';
+                      } catch (e) {
+                          return e && e.name === 'SecurityError'
+                              ? JSON.stringify({ tainted: true, label })
+                              : 'error';
                       }
                   }
                   """,
                 imageRef);
 
+            if (ImageFetchPayload.TaintedLabel(payload, out var taintedLabel))
+            {
+                return await ScreenshotAsync(page, imageRef, taintedLabel);
+            }
+
             return ImageFetchPayload.Parse(imageRef, payload);
         }
         catch (PlaywrightException)
+        {
+            return new FetchedImage(imageRef, null, null, ImageFetchStatus.SiteRefused);
+        }
+    }
+
+    // The last rung under a tainted canvas: the compositor already painted these pixels, and a
+    // screenshot of the element reads them back without CORS having a say. What leaves is the
+    // rendered box re-encoded as PNG — the JPL gallery, whose CDN sends no ACAO header at all,
+    // is the live page this bought back.
+    private static async Task<FetchedImage> ScreenshotAsync(IPage page, string imageRef, string? label)
+    {
+        try
+        {
+            var bytes = await page.Locator($"[{PageImageEntry.RefAttribute}='{imageRef}']")
+                .ScreenshotAsync(new() { Type = ScreenshotType.Png, Timeout = 10_000 });
+            return new FetchedImage(imageRef, "image/png", bytes, ImageFetchStatus.Success, Label: label);
+        }
+        catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
         {
             return new FetchedImage(imageRef, null, null, ImageFetchStatus.SiteRefused);
         }

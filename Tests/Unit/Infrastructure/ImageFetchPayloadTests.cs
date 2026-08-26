@@ -46,6 +46,33 @@ public class ImageFetchPayloadTests
     }
 
     [Fact]
+    public void ATaintedPayload_NamesTheScreenshotFallbackAndCarriesItsLabel()
+    {
+        // A canvas the browser will show but not let script read is not the end of the fetch:
+        // the pixels are on screen, and the C# side reads them off it with an element screenshot.
+        ImageFetchPayload.TaintedLabel("""{"tainted":true,"label":"A rover on Mars"}""", out var label)
+            .ShouldBeTrue();
+        label.ShouldBe("A rover on Mars");
+    }
+
+    [Fact]
+    public void ATaintedPayloadWithAnEmptyLabel_CarriesNoLabel()
+    {
+        ImageFetchPayload.TaintedLabel("""{"tainted":true,"label":""}""", out var label).ShouldBeTrue();
+        label.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("error")]
+    [InlineData("never-loaded")]
+    [InlineData("""{"mediaType":"image/png","label":"x","data":"AQID"}""")]
+    public void AnythingElse_IsNotTainted(string? payload)
+    {
+        ImageFetchPayload.TaintedLabel(payload, out _).ShouldBeFalse();
+    }
+
+    [Fact]
     public void AMalformedPayload_ReadsAsTheSiteRefusing()
     {
         // The old delimited shape, and any other string the script never wrote: a refusal, not a

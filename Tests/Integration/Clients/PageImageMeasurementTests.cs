@@ -217,6 +217,59 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
         }
     }
 
+    [SkippableFact]
+    public async Task AnImageCorsWontRelease_IsReadOffTheScreenInstead()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        // JPL's gallery, live: a CDN that sends no ACAO header at all fails the anonymous probe,
+        // the rendered element taints the canvas, and a picture the page plainly displays came
+        // back as the site refusing. The pixels are already painted — an element screenshot reads
+        // them without CORS having a say.
+        var sessionId = $"test-{Guid.NewGuid():N}";
+        try
+        {
+            await PrepareAsync(
+                sessionId,
+                """
+                <img id="guarded" src="https://no-acao-cdn.test/pic.png" alt="A rover on Mars"
+                     style="width:300px;height:300px">
+                """);
+
+            // Fulfilled from the test with no Access-Control-Allow-Origin: the element loads
+            // (a plain <img> needs no CORS) but every script-side read of its pixels is refused.
+            var page = fixture.Browser.Sessions.Get(sessionId)!.CurrentTab!.Page;
+            await page.RouteAsync("https://no-acao-cdn.test/pic.png", route =>
+                route.FulfillAsync(new()
+                {
+                    ContentType = "image/png",
+                    BodyBytes = Convert.FromBase64String(OnePixelPngBase64)
+                }));
+            await fixture.Browser.EvaluateOnSessionAsync(
+                sessionId,
+                """
+                async () => {
+                    const img = document.getElementById('guarded');
+                    img.src = img.src; // re-request now that the route answers
+                    await new Promise(r => { img.onload = r; img.onerror = r; });
+                }
+                """);
+            await fixture.Browser.AnnotateImagesOnSessionAsync(sessionId);
+
+            var fetched = await fixture.Browser.FetchImagesAsync(new ImageFetchRequest(sessionId, ["i-1"]));
+
+            var image = fetched.Images.ShouldHaveSingleItem();
+            image.Status.ShouldBe(ImageFetchStatus.Success);
+            image.MediaType.ShouldBe("image/png");
+            image.Bytes!.Length.ShouldBeGreaterThan(0);
+            image.Label.ShouldBe("A rover on Mars");
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
     [Trait("Category", "External")]
     [SkippableFact]
     public async Task AnImageWhoseBytesNeverArrived_ReportsADeadLinkNotARefusal()

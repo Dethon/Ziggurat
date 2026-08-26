@@ -95,9 +95,15 @@ was displaying perfectly well, in the shape of the site refusing. Cross-origin t
 the image anonymously (`crossOrigin='anonymous'`, usually a cache hit on pixels the browser has
 already decoded), draws it onto a canvas and reads the pixels back. That anonymous load is gated
 by the same `Access-Control-Allow-Origin` header an anonymous `fetch` would be: a CDN that sends
-none fails the probe, the fallback to the rendered element taints the canvas, and the read is
-refused — so a cookie-gated cross-origin image refuses even though the page shows it. A canvas
-the browser will not let script read is a real refusal and is reported as one.
+none fails the probe, and the fallback to the rendered element taints the canvas.
+
+*Amended 2026-08-26.* A tainted canvas was originally reported as the site refusing, and a live
+test caught what that costs: JPL's own gallery serves every image from a CloudFront host that
+sends no ACAO header at all, so a page of pictures the browser was displaying perfectly answered
+nothing but refusals. The pixels are already painted, and the compositor is not subject to CORS —
+so a tainted canvas now answers with a Playwright element screenshot instead: the rendered box,
+re-encoded as PNG, at the size the page shows it rather than the asset's own. What remains a real
+refusal is an image the browser itself will not show.
 
 **The MCP server answers with an image block, and the bridge lifts the bytes out.**
 `McpServerWebSearch` returns what the protocol says an image result is, and does not learn Redis,
