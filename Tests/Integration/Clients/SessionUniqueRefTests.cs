@@ -108,8 +108,12 @@ public partial class SessionUniqueRefTests(IsolatedSessionBrowserFixture fixture
 
     private async Task PrepareAsync(string sessionId, string markup)
     {
+        // Partial counts: example.com is a blank anchor to inject onto, not the subject. A
+        // DOMContentLoaded that never arrives spends the production 30s budget and returns Partial
+        // with a usable page, and demanding Success turned that into a failure of whatever the case
+        // was really asserting.
         var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.com"));
-        nav.Status.ShouldBe(BrowseStatus.Success);
+        nav.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
         await fixture.Browser.EvaluateOnSessionAsync(
             sessionId,

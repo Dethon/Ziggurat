@@ -173,8 +173,13 @@ public class BrowserJQueryWidgetCompatTests(
     // neutral anchor page is the canvas we inject onto.
     private async Task PrepareWidgetAsync(string sessionId, string widgetJs)
     {
+        // Partial counts: the canvas only has to be a document jQuery can be injected into. When
+        // example.com's DOMContentLoaded does not arrive the navigation spends the production 30s
+        // budget and comes back Partial with a usable blank page, and insisting on Success made
+        // that a failure of whichever widget case ran first. Nothing here reads example.com's own
+        // content.
         var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.com"));
-        nav.Status.ShouldBe(BrowseStatus.Success);
+        nav.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
         var jquery = await File.ReadAllTextAsync(JQueryAssetPath());
         var jqueryLiteral = JsonSerializer.Serialize(jquery);

@@ -18,10 +18,13 @@ public class BrowseTabsTests(IsolatedSessionBrowserFixture fixture)
         var sessionId = $"test-{Guid.NewGuid():N}";
         try
         {
+            // Partial counts here and in BrowseAsync below: these are two blank anchors chosen for
+            // being different origins, not for what they say. A DOMContentLoaded that never arrives
+            // spends the production 30s budget and returns Partial with a usable page.
             (await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.com/")))
-                .Status.ShouldBe(BrowseStatus.Success);
+                .Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
             (await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.org/")))
-                .Status.ShouldBe(BrowseStatus.Success);
+                .Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
             var session = fixture.Browser.Sessions.Get(sessionId).ShouldNotBeNull();
             session.Tabs.Count.ShouldBe(2);
@@ -174,7 +177,7 @@ public class BrowseTabsTests(IsolatedSessionBrowserFixture fixture)
     private async Task BrowseAsync(string sessionId, string url)
     {
         var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, url));
-        nav.Status.ShouldBe(BrowseStatus.Success);
+        nav.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
     }
 
     private async Task InjectAsync(string sessionId, string markup)

@@ -20,8 +20,12 @@ public class SameOriginSvgFetchTests(IsolatedSessionBrowserFixture fixture)
         var sessionId = $"test-{Guid.NewGuid():N}";
         try
         {
+            // Partial counts: example.com is a blank anchor to inject onto, not the subject. A
+            // DOMContentLoaded that never arrives spends the production 30s budget and returns
+            // Partial with a usable page, and demanding Success turned that into a failure of
+            // whatever the case was really asserting.
             var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.com/"));
-            nav.Status.ShouldBe(BrowseStatus.Success);
+            nav.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
             // A blob URL carries the page's own origin, so the fetch takes the same-origin
             // branch — the exact path that leaked SVG bytes through.
