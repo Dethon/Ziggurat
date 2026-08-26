@@ -38,7 +38,7 @@ subsequent turn, forever.
 
 ## Decision
 
-**A page image is listed where it sits in the page, and fetched by ref through the session that
+**A page image is listed where it sits in the page, and fetched by ref through the tab that
 found it.**
 
 `web_browse` writes each surviving image into the markdown body at the point it occurs, as a ref
@@ -62,10 +62,13 @@ dimensions alone still separate a photograph from a logo.
 **Image refs are their own namespace.** `i-1`, `i-2`, beside but never inside the `e-` refs the
 accessibility snapshot assigns. One page, two kinds of handle, because a ref's shape is what tells
 a tool whether the request was meant for it: `web_action` can refuse `i-3` by name instead of
-failing to find it, and `view_image` can do the same with `e-3`. They live in the browser session
-and die with it, at the same thirty-minute idle the page does. A ref that outlived its session
-refuses and says to browse the page again; keeping a second, longer clock for image refs alone
-would mean two expiry rules on one page, differing invisibly.
+failing to find it, and `view_image` can do the same with `e-3`. Numbers are session-unique —
+each namespace counts monotonically across every tab and every snapshot, so a number is never
+reused and a stale ref refuses instead of resolving against whatever page came later. A ref lives
+in the tab that stamped it and dies when that tab closes, reloads or renumbers — and with the
+whole session, at the same thirty-minute idle; a ref that outlived its page refuses and says to
+browse it again. Keeping a second, longer clock for image refs alone would mean two expiry rules
+on one page, differing invisibly.
 
 **`view_image` takes a list, capped at eight, and partial success is success.** Comparing pictures
 is the ordinary case and should not cost eight round trips. Over the cap, the first eight are
@@ -137,9 +140,10 @@ permanent failure or abandons a retryable one.
 - A count cap cannot stop a large-byte call. Eight full-size images pass the cap, pass truncation's
   per-image estimate, and can still fail as an oversized request. Accepted on the same terms as
   ADR 0029's parallel reads: the model asked for those pictures.
-- Refs die with the session, so an image the model wants again half an hour later costs a fresh
-  browse of the page. The alternative was carrying URLs in the model's context for every image on
-  every page against the chance that one is wanted late.
+- Refs die with their tab — closed to make room, reloaded, or idled out with the session — so an
+  image the model wants again later costs a fresh browse of the page. The alternative was carrying
+  URLs in the model's context for every image on every page against the chance that one is wanted
+  late.
 - `ToolResponse` grows an image result, and `QualifiedMcpTool` stops being a pure pass-through. It
   is now the seam where an MCP image becomes a read image, which is a behaviour every MCP server
   in this repo inherits without opting in.

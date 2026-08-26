@@ -540,25 +540,33 @@ _Avoid_: landing mount, attachment destination, sandbox mount
 ## Web browsing
 
 **Browse session**:
-A page kept open on the model's behalf, with its cookies, its history and everything
-the page has been asked. It is what makes a second call to the same page cheaper than
-the first and what makes a sequence of actions add up, and it goes quiet on its own
-after long enough idle — so anything that only means something inside it stops meaning
-anything then.
-_Avoid_: browser session, tab, page handle, browsing context
+The pages kept open on the model's behalf, with their history and everything they have
+been asked. It is what makes a second call to the same page cheaper than the first and
+what makes a sequence of actions add up, and it goes quiet on its own after long enough
+idle — so anything that only means something inside it stops meaning anything then.
+_Avoid_: browser session, page handle, browsing context
+
+**Tab**:
+One page a browse session holds open, reached only through the refs it stamped — the
+model never sees a tab, it names what it wants and the want finds its page. A session
+keeps a few and quietly lets go of the one longest untouched, so a tab closing is
+ordinary housekeeping rather than an error, and asking again is how it comes back.
+_Avoid_: window, page slot, browser tab
 
 **Element ref**:
 A short handle standing for one thing on the page a person could act on. It is issued
-by the snapshot that found it and only means anything in the session that issued it,
-so it is a coordinate and not an address: nothing outside can be reached with one, and
-the same element in a later session is a different ref.
+by the snapshot that found it, finds its way back to the tab that stamped it, and is
+superseded by the next snapshot of that tab — so it is a coordinate and not an address:
+nothing outside can be reached with one, and the same element seen later is a different
+ref, never a reused one.
 _Avoid_: selector, element id, locator, node id
 
 **Image ref**:
 An element ref's counterpart for a picture: what `view_image` is asked for, spelled
-apart from the refs that name things to act on. The two are separate namespaces on the
-same page because a ref's shape is what says which tool it was meant for — a tool given
-the other kind can refuse it by name instead of failing to find it.
+apart from the refs that name things to act on. The two are separate namespaces because
+a ref's shape is what says which tool it was meant for — a tool given the other kind can
+refuse it by name instead of failing to find it. It lives as long as the tab that
+stamped it still shows the page that was browsed.
 _Avoid_: image id, image handle, picture ref
 
 **Image entry**:
