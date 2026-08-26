@@ -803,11 +803,18 @@ public class PlaywrightWebBrowser(
                       const url = new URL(src, location.href).toString();
 
                       // Same-origin first: fetch keeps the bytes exactly as served, so no
-                      // re-encoding and no loss.
+                      // re-encoding and no loss — but only for a raster the chat wire accepts.
+                      // Anything else (an SVG site logo was the live case) falls through to the
+                      // canvas and leaves as PNG like every cross-origin picture; as-served SVG
+                      // bytes made the vision provider refuse the whole request with a 400.
                       if (new URL(url).origin === location.origin) {
                           try {
                               const response = await fetch(url, { credentials: 'include' });
-                              if (response.ok) {
+                              const mediaType = (response.headers.get('content-type') || 'image/jpeg')
+                                  .split(';')[0];
+                              const wireRasters =
+                                  ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+                              if (response.ok && wireRasters.includes(mediaType)) {
                                   const bytes = new Uint8Array(await response.arrayBuffer());
                                   let binary = '';
                                   for (let i = 0; i < bytes.length; i++) {
@@ -817,8 +824,7 @@ public class PlaywrightWebBrowser(
                                   // somebody else's text and may carry any delimiter a hand-rolled
                                   // shape would pick.
                                   return JSON.stringify({
-                                      mediaType: (response.headers.get('content-type') || 'image/jpeg')
-                                          .split(';')[0],
+                                      mediaType,
                                       label,
                                       data: btoa(binary)
                                   });
