@@ -331,7 +331,12 @@ public class PlaywrightWebBrowserTests(
             var setupResults = await Task.WhenAll(sessions.Select((sid, i) =>
                 fixture.Browser.NavigateAsync(new BrowseRequest(
                     SessionId: sid, Url: urls[i], MaxLength: 500))));
-            setupResults.ShouldAllBe(r => r.Status == BrowseStatus.Success);
+            // Partial counts, as it does for the sibling above: this is setup, and the subject is
+            // what the refs do afterwards. example.com is reached over the network from inside the
+            // container, and a DOMContentLoaded that does not arrive returns Partial with the page
+            // perfectly present — 167 characters of it — after spending the production 30s budget.
+            setupResults.ShouldAllBe(r =>
+                r.Status == BrowseStatus.Success || r.Status == BrowseStatus.Partial);
 
             // Snapshot to assign element refs
             var snapshotTasks = sessions.Select(sid =>
