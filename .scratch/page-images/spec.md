@@ -122,8 +122,9 @@ Refusal messages are unit-tested at whichever of the above seams produces them, 
 - **Fetching an image by bare URL.** Refs were chosen as the handle; a URL path would exist only for images the browse tool never listed, which is a separate need.
 - **Sending images onward to the person.** This is about what the model can see, not what gets delivered to a channel.
 - **Downscaling and format conversion.** No image is made smaller or converted to fit a budget; it
-  arrives whole or is refused. A cross-origin image is re-encoded as PNG, but only because reading
-  it off a canvas is the sole way to reach its bytes at all — not to save anything.
+  arrives whole or is refused. A cross-origin image is re-encoded as PNG — the cost of reading it
+  off a canvas rather than fetching it anonymously, a choice recorded in `docs/adr/0033` — not to
+  save anything.
 - **Surviving session expiry.** A ref outliving its page was considered and declined.
 - **A byte-based cap.** Considered and declined in favour of a count.
 - **Video, audio and PDF on a page.** Images only.

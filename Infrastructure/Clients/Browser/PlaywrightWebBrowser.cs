@@ -687,13 +687,17 @@ public class PlaywrightWebBrowser(
                       }
 
                       // Cross-origin, which is the ordinary case: a page's pictures usually come
-                      // from a CDN on another host. A scripted fetch there is subject to CORS and
-                      // image CDNs send no Access-Control-Allow-Origin -- they serve <img>, not
-                      // XHR -- so fetch fails on exactly the images the page is displaying
-                      // perfectly well. Read the pixels the browser already has instead.
+                      // from a CDN on another host. What fails there is a *credentialed* request:
+                      // image CDNs send Access-Control-Allow-Origin: *, and a wildcard is exactly
+                      // what credentials: 'include' is rejected against. So the image is loaded
+                      // anonymously and read off a canvas -- gated by the same ACAO header an
+                      // anonymous fetch would be, but reusing the pixels the browser has already
+                      // decoded. The canvas holds pixels rather than a file, so this re-encodes
+                      // as PNG; that is the choice's cost, not its purpose.
                       //
-                      // This re-encodes rather than passing the served bytes through, which is the
-                      // price of reaching them at all: a canvas has pixels, not a file.
+                      // A CDN sending no ACAO at all fails the anonymous probe, and the fallback
+                      // to the rendered element taints the canvas: a cookie-gated cross-origin
+                      // image refuses even though the page shows it. Accepted (docs/adr/0033).
                       try {
                           const drawn = await new Promise((resolve) => {
                               const probe = new Image();

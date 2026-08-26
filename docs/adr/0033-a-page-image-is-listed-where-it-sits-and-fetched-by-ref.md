@@ -83,13 +83,18 @@ page, so a URL never has to enter the model's context to be usable.
 
 **Inside the page, how the bytes are reached depends on the origin.** A page's pictures usually
 come from somewhere else: `commons.wikimedia.org` serves its images from `upload.wikimedia.org`,
-`unsplash.com` from `images.unsplash.com`. A scripted `fetch` there is subject to CORS, and an
-image CDN sends no `Access-Control-Allow-Origin` because it serves `<img>` tags rather than XHR —
-so a fetch fails on precisely the images the page is displaying perfectly well, and fails in the
-shape of the site refusing. Same-origin therefore goes through `fetch`, which keeps the served
-bytes byte for byte; cross-origin draws the image the browser has already decoded onto a canvas
-and reads the pixels back. A canvas the browser will not let script read is a real refusal and is
-reported as one.
+`unsplash.com` from `images.unsplash.com`. Same-origin goes through `fetch` with the page's
+credentials, which keeps the served bytes byte for byte. Cross-origin, what broke the first
+implementation was not CORS in general but credentials in particular: the big image CDNs do send
+`Access-Control-Allow-Origin: *`, and a wildcard is exactly what a credentialed request is
+rejected against — so a `credentials: 'include'` fetch failed on precisely the images the page
+was displaying perfectly well, in the shape of the site refusing. Cross-origin therefore loads
+the image anonymously (`crossOrigin='anonymous'`, usually a cache hit on pixels the browser has
+already decoded), draws it onto a canvas and reads the pixels back. That anonymous load is gated
+by the same `Access-Control-Allow-Origin` header an anonymous `fetch` would be: a CDN that sends
+none fails the probe, the fallback to the rendered element taints the canvas, and the read is
+refused — so a cookie-gated cross-origin image refuses even though the page shows it. A canvas
+the browser will not let script read is a real refusal and is reported as one.
 
 **The MCP server answers with an image block, and the bridge lifts the bytes out.**
 `McpServerWebSearch` returns what the protocol says an image result is, and does not learn Redis,
@@ -141,8 +146,11 @@ permanent failure or abandons a retryable one.
 - `StripDomNoiseAsync` keeps `src` for images that pass the size filter, so the DOM the markdown is
   built from is no longer uniformly image-free.
 - A cross-origin image arrives re-encoded as PNG, and usually larger than the file the site served,
-  because a canvas holds pixels rather than a file. Passing the served bytes through would mean
-  refusing most of the pictures on the web, which is the feature.
+  because a canvas holds pixels rather than a file. An anonymous `fetch` is gated by the same
+  `Access-Control-Allow-Origin` header and would keep the served bytes; the canvas read was kept
+  for reusing the pixels the browser already decoded, and the re-encode is that choice's cost.
+- A cross-origin image whose CDN sends no `Access-Control-Allow-Origin` — including one served
+  only to the session's cookies — reports as the site refusing, even though the page displays it.
 - The size filter needs rendered dimensions, not markup attributes, so listing images asks the page
   a question that reading its text did not.
 - No eval scenario. The mechanism is unit-testable end to end and the fetch is covered against the

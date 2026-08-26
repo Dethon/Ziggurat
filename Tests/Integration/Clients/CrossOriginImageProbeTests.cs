@@ -5,9 +5,10 @@ using Tests.Integration.Fixtures;
 namespace Tests.Integration.Clients;
 
 // A page's pictures usually come from another host: commons.wikimedia.org serves its images from
-// upload.wikimedia.org, unsplash.com from images.unsplash.com. A scripted fetch there is subject
-// to CORS, and image CDNs send no Access-Control-Allow-Origin -- they serve <img> tags, not XHR --
-// so a fetch fails on exactly the images the page is displaying perfectly well.
+// upload.wikimedia.org, unsplash.com from images.unsplash.com. A credentialed fetch there is
+// rejected against the wildcard Access-Control-Allow-Origin those CDNs serve, so it failed on
+// exactly the images the page was displaying perfectly well; the anonymous canvas read is gated
+// by the same header and passes where the CDN sends one.
 //
 // This shipped once as "the site refused to serve i-1", which reads as the site's doing and was
 // not: the same URL in the same page loads as an <img> without complaint.
