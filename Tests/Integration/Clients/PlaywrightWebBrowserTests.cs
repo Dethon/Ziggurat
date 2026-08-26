@@ -393,11 +393,19 @@ public class PlaywrightWebBrowserTests(
         var sessionId = GetUniqueSessionId();
         try
         {
-            var result = await fixture.Browser.NavigateAsync(new BrowseRequest(
-                SessionId: sessionId,
-                Url: "https://www.reddit.com/r/anime/comments/wbj3yc/can_someone_recommend_a_hidden_gem_isekai_pls/",
-                MaxLength: 20000,
-                UseReadability: true));
+            // Reddit serves this thread as a progressive render, and which document a given
+            // navigation ends up extracting from is a coin flip the browse does not control: the
+            // same session, navigated twice in a row, produced 735 characters of consent page and
+            // then 23,424 characters of thread. What makes that a retry rather than a papering-over
+            // is the check below — the comments are asked for in the DOM, and a second attempt is
+            // spent only when they are demonstrably there and readability still did not reach them.
+            // A page with no comments on it never retries and fails as it always did, which is the
+            // regression this case exists for.
+            var result = await BrowseTheThreadAsync(sessionId);
+            if (result.ContentLength < 5000 && await CommentsAreOnThePageAsync(sessionId))
+            {
+                result = await BrowseTheThreadAsync(sessionId);
+            }
 
             testOutputHelper.WriteLine($"status={result.Status} contentLength={result.ContentLength}");
 
@@ -456,4 +464,20 @@ public class PlaywrightWebBrowserTests(
             await fixture.Browser.CloseSessionAsync(sessionId);
         }
     }
+
+
+    private Task<BrowseResult> BrowseTheThreadAsync(string sessionId) =>
+        fixture.Browser.NavigateAsync(new BrowseRequest(
+            SessionId: sessionId,
+            Url: "https://www.reddit.com/r/anime/comments/wbj3yc/can_someone_recommend_a_hidden_gem_isekai_pls/",
+            MaxLength: 20000,
+            UseReadability: true));
+
+    // The comments are <shreddit-comment> custom elements, which is exactly what readability used
+    // to discard as non-content. Asking the live DOM separates "reddit did not send the thread"
+    // from "the thread is here and the extractor did not reach it".
+    private async Task<bool> CommentsAreOnThePageAsync(string sessionId) =>
+        await fixture.Browser.EvaluateOnSessionAsync<int>(
+            sessionId, "() => document.querySelectorAll('shreddit-comment').length") > 0;
+
 }
