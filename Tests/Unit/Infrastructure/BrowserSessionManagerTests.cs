@@ -291,6 +291,80 @@ public class BrowserSessionManagerTests
         manager.RouteRef("nobody", "e-1").ShouldBe(new RefRouting.NoSession());
     }
 
+    private static Mock<IPage> CreatePopupPage()
+    {
+        var page = new Mock<IPage>();
+        page.SetupGet(p => p.IsClosed).Returns(false);
+        page.SetupGet(p => p.Url).Returns("https://popup.test/window");
+        page.Setup(p => p.CloseAsync(It.IsAny<PageCloseOptions?>())).Returns(Task.CompletedTask);
+        return page;
+    }
+
+    [Fact]
+    public async Task AnAdoptedPopup_JoinsThePoolAndBecomesCurrent()
+    {
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        var popup = CreatePopupPage();
+
+        var adopted = await manager.AdoptPopupAsync("s1", popup.Object);
+
+        var session = manager.Get("s1")!;
+        session.Tabs.Count.ShouldBe(2);
+        session.CurrentTab.ShouldBeSameAs(adopted);
+        adopted!.RequestedUrl.ShouldBe("https://popup.test/window");
+    }
+
+    [Fact]
+    public async Task AdoptingAPopup_AtTheCap_EvictsTheLeastRecentlyTouched()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var (ctx, pages) = CreateContext();
+        await using var manager = new BrowserSessionManager(timeProvider: time);
+
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        time.Advance(TimeSpan.FromSeconds(1));
+        await BrowseAsync(manager, ctx, "s1", "https://b.test/");
+        time.Advance(TimeSpan.FromSeconds(1));
+        await BrowseAsync(manager, ctx, "s1", "https://c.test/");
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        await manager.AdoptPopupAsync("s1", CreatePopupPage().Object);
+
+        manager.Get("s1")!.Tabs.Count.ShouldBe(3);
+        pages[0].Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task AnAdoptedPopup_IsPendingForTheActionThatSpawnedIt_ExactlyOnce()
+    {
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        var adopted = await manager.AdoptPopupAsync("s1", CreatePopupPage().Object);
+
+        manager.TakePendingPopup("s1").ShouldBeSameAs(adopted);
+        manager.TakePendingPopup("s1").ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task AnAdoptedPopup_DiesWithItsSession()
+    {
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        var popup = CreatePopupPage();
+        await manager.AdoptPopupAsync("s1", popup.Object);
+
+        await manager.CloseAsync("s1");
+
+        popup.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
+    }
+
     [Fact]
     public async Task PruneIdleAsync_AfterAccess_ResetsIdleClock()
     {

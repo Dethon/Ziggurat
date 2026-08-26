@@ -393,6 +393,9 @@ public class PlaywrightWebBrowser(
                 page.Url, false, null, null, $"ref is required for {request.Action} action.");
         }
 
+        // A popup left over from an earlier, unrelated call must not divert this action's answer.
+        _sessions.TakePendingPopup(request.SessionId);
+
         var locator = AccessibilitySnapshotService.ResolveRef(page, request.Ref);
         try
         {
@@ -473,6 +476,14 @@ public class PlaywrightWebBrowser(
         else
         {
             await SmartWaitAsync(page, request, ct);
+        }
+
+        // A click that opened a new tab answers from where the site actually took the model —
+        // the popup's URL, content and freshly stamped refs — not a stale diff of the page left
+        // behind.
+        if (_sessions.TakePendingPopup(request.SessionId) is { } popupTab)
+        {
+            return await AnswerFromPopupAsync(request.SessionId, popupTab);
         }
 
         var navigationOccurred = page.Url != urlBefore;
@@ -622,6 +633,25 @@ public class PlaywrightWebBrowser(
                 return (container || el.parentElement || el).innerHTML.substring(0, 3000);
             }
         """, targetSelector);
+    }
+
+    private async Task<WebActionResult> AnswerFromPopupAsync(string sessionId, BrowserTab popupTab)
+    {
+        try
+        {
+            await popupTab.Page.WaitForLoadStateAsync(LoadState.DOMContentLoaded,
+                new() { Timeout = 10_000 });
+        }
+        catch (Exception ex) when (ex is TimeoutException or PlaywrightException)
+        {
+            // A slow popup still answers with whatever has rendered; the snapshot says the rest.
+        }
+
+        _sessions.NoteFinalUrl(sessionId, popupTab, popupTab.Page.Url);
+        var snapshot = await CaptureNumberedSnapshotAsync(sessionId, popupTab, null);
+
+        return new WebActionResult(sessionId, WebActionStatus.Success,
+            popupTab.Page.Url, true, snapshot.Snapshot, null, null);
     }
 
     private async Task<WebActionResult> ExecuteBackAsync(

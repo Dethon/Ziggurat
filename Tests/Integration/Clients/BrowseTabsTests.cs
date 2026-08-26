@@ -131,6 +131,46 @@ public class BrowseTabsTests(PlaywrightWebBrowserFixture fixture)
         }
     }
 
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task AClickThatOpensANewTab_AnswersFromThePopup()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var sessionId = $"test-{Guid.NewGuid():N}";
+        try
+        {
+            await BrowseAsync(sessionId, "https://example.com/");
+            await InjectAsync(sessionId,
+                """
+                <button id="open" onclick="window.open('https://example.org/')">Open elsewhere</button>
+                """);
+            var snapshot = await fixture.Browser.SnapshotAsync(new SnapshotRequest(sessionId));
+            var buttonRef = System.Text.RegularExpressions.Regex
+                .Match(snapshot.Snapshot!, @"button ""Open elsewhere"" \[ref=(e-\d+)\]").Groups[1].Value;
+            buttonRef.ShouldNotBeNullOrEmpty();
+
+            var result = await fixture.Browser.ActionAsync(new WebActionRequest(
+                sessionId, buttonRef, WebActionType.Click));
+
+            // The action answers from where the site actually took the model, not with a stale
+            // diff of the page left behind.
+            result.Status.ShouldBe(WebActionStatus.Success);
+            result.NavigationOccurred.ShouldBeTrue();
+            result.Url.ShouldContain("example.org");
+            result.Snapshot.ShouldNotBeNull();
+
+            // The popup joined the pool and is the tab the next ref-less call addresses.
+            var session = fixture.Browser.Sessions.Get(sessionId).ShouldNotBeNull();
+            session.Tabs.Count.ShouldBe(2);
+            session.CurrentTab!.FinalUrl.ShouldContain("example.org");
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
     private async Task BrowseAsync(string sessionId, string url)
     {
         var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, url));

@@ -112,9 +112,7 @@ public class BrowserSessionManager : IAsyncDisposable
             }
 
             var page = await context.NewPageAsync();
-
-            // Why: Playwright blocks the page until dialogs are handled
-            page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
+            HandlePageEvents(sessionId, page);
 
             var tab = new BrowserTab(page, url, _timeProvider.GetUtcNow());
             session.TabList.Add(tab);
@@ -128,6 +126,94 @@ public class BrowserSessionManager : IAsyncDisposable
             {
                 await CloseTabPageAsync(evicted);
             }
+        }
+    }
+
+    // A page the site itself opened — target=_blank, window.open — is adopted into the pool
+    // instead of leaking: it counts against the cap (evicting under it), becomes current, and is
+    // left pending so the action whose click spawned it can answer from it.
+    public async Task<BrowserTab?> AdoptPopupAsync(
+        string sessionId, IPage popup, CancellationToken ct = default)
+    {
+        var session = _sessions.GetValueOrDefault(sessionId);
+        if (session is null)
+        {
+            return null;
+        }
+
+        await _createLock.WaitAsync(ct);
+        BrowserTab? evicted = null;
+        try
+        {
+            session.DropClosedTabs();
+
+            if (session.TabList.Count >= _tabCap)
+            {
+                evicted = session.TabList.MinBy(t => t.LastTouchedAt);
+                session.TabList.Remove(evicted!);
+                session.CloseRangesOf(evicted!);
+            }
+
+            HandlePageEvents(sessionId, popup);
+            var tab = new BrowserTab(popup, SafeUrl(popup), _timeProvider.GetUtcNow());
+            session.TabList.Add(tab);
+            Touch(session, tab);
+            session.PendingPopup = tab;
+            return tab;
+        }
+        finally
+        {
+            _createLock.Release();
+            if (evicted is not null)
+            {
+                await CloseTabPageAsync(evicted);
+            }
+        }
+    }
+
+    private void HandlePageEvents(string sessionId, IPage page)
+    {
+        // Why: Playwright blocks the page until dialogs are handled
+        page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
+
+        // A page this page opens joins the pool too — popups of popups included — so nothing the
+        // site creates outlives the session unowned.
+        page.Popup += async (_, popup) =>
+        {
+            try
+            {
+                await AdoptPopupAsync(sessionId, popup);
+            }
+            catch
+            {
+                // An adoption race with a dying session must not take the event loop down.
+            }
+        };
+    }
+
+    // The popup the last adoption left for the action that spawned it, handed over exactly once.
+    public BrowserTab? TakePendingPopup(string sessionId)
+    {
+        var session = _sessions.GetValueOrDefault(sessionId);
+        if (session is null)
+        {
+            return null;
+        }
+
+        var pending = session.PendingPopup;
+        session.PendingPopup = null;
+        return pending;
+    }
+
+    private static string SafeUrl(IPage page)
+    {
+        try
+        {
+            return page.Url;
+        }
+        catch
+        {
+            return "about:blank";
         }
     }
 
@@ -406,6 +492,9 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
     public DateTimeOffset LastAccessedAt { get; internal set; } = createdAt;
     public BrowserTab? CurrentTab { get; internal set; }
     public SessionRefCounters Counters { get; } = new();
+
+    // The popup the last adoption left behind, for the action whose click spawned it.
+    internal BrowserTab? PendingPopup { get; set; }
 
     internal List<BrowserTab> TabList { get; } = [];
 
