@@ -38,11 +38,7 @@ public class BraveSearchClientTests : IAsyncLifetime
         Skip.IfNot(HasApiKey, "Brave Search API key not configured");
 
         // Arrange
-        var httpClient = new HttpClient
-        {
-            BaseAddress = new Uri("https://api.search.brave.com/res/v1/")
-        };
-        var client = new BraveSearchClient(httpClient, _apiKey!);
+        var client = new BraveSearchClient(Brave(), _apiKey!);
 
         // Act
         var query = new WebSearchQuery("Dune movie 2024", MaxResults: 5);
@@ -63,11 +59,7 @@ public class BraveSearchClientTests : IAsyncLifetime
         Skip.IfNot(HasApiKey, "Brave Search API key not configured");
 
         // Arrange
-        var httpClient = new HttpClient
-        {
-            BaseAddress = new Uri("https://api.search.brave.com/res/v1/")
-        };
-        var client = new BraveSearchClient(httpClient, _apiKey!);
+        var client = new BraveSearchClient(Brave(), _apiKey!);
 
         // Act
         var query = new WebSearchQuery("Oppenheimer", MaxResults: 5, Site: "imdb.com");
@@ -85,11 +77,7 @@ public class BraveSearchClientTests : IAsyncLifetime
         Skip.IfNot(HasApiKey, "Brave Search API key not configured");
 
         // Arrange
-        var httpClient = new HttpClient
-        {
-            BaseAddress = new Uri("https://api.search.brave.com/res/v1/")
-        };
-        var client = new BraveSearchClient(httpClient, _apiKey!);
+        var client = new BraveSearchClient(Brave(), _apiKey!);
 
         // Act
         var query = new WebSearchQuery(
@@ -102,4 +90,15 @@ public class BraveSearchClientTests : IAsyncLifetime
         result.ShouldNotBeNull();
         result.Results.ShouldNotBeEmpty();
     }
+
+    // HttpClient's default timeout is a hundred seconds, and a run where Brave stalled spent every
+    // one of them — on a suite that finishes in under a minute, one hung third party was the
+    // longest thing in it. Ten seconds is far past a healthy answer and short enough that a stall
+    // costs a failure rather than the run.
+    private static HttpClient Brave() => new()
+    {
+        BaseAddress = new Uri("https://api.search.brave.com/res/v1/"),
+        Timeout = TimeSpan.FromSeconds(10)
+    };
+
 }
