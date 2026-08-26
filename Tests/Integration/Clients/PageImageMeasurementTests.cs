@@ -190,13 +190,13 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
     {
         Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
 
-        // The entry ends a long label with an ellipsis so the cut announces itself; the fetch
-        // used to slice the same 120 characters bare, and a live test read the mid-word stop
-        // as the tool breaking. Same ladder, same cut: one pair of eyes, one spelling.
+        // The entry ends an over-cap label with an ellipsis so the cut announces itself; the
+        // fetch used to slice the same length bare, and a live test read the mid-word stop as
+        // the tool breaking. Same ladder, same cut: one pair of eyes, one spelling.
         var sessionId = $"test-{Guid.NewGuid():N}";
         try
         {
-            var longAlt = new string('x', 130);
+            var longAlt = new string('x', 700);
             await PrepareAsync(
                 sessionId,
                 $"""
@@ -209,7 +209,7 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
 
             var image = fetched.Images.ShouldHaveSingleItem();
             image.Status.ShouldBe(ImageFetchStatus.Success);
-            image.Label.ShouldBe(new string('x', 120) + "…");
+            image.Label.ShouldBe(new string('x', 500) + "…");
         }
         finally
         {

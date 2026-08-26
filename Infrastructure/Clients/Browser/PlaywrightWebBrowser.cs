@@ -802,9 +802,9 @@ public class PlaywrightWebBrowser(
                       // The entry's own cut, spelled the same (PageImageEntry.Sanitize): a bare
                       // slice read as the tool breaking mid-word, and the entry and the note must
                       // name one picture with one set of words.
-                      const label = spoken.length <= 120
+                      const label = spoken.length <= 500
                           ? spoken
-                          : spoken.slice(0, 120).trimEnd() + '…';
+                          : spoken.slice(0, 500).trimEnd() + '…';
 
                       const url = new URL(src, location.href).toString();
 

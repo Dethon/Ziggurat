@@ -149,15 +149,26 @@ public class PageImageEntryTests
     }
 
     [Fact]
-    public async Task AVeryLongLabel_IsShortened()
+    public async Task AThoroughLabel_ArrivesWhole()
     {
-        // The always-on cost is paid by every browse, fetch or not.
+        // The cap is a safeguard against a pathological attribute, not an editor: a carefully
+        // written alt -- APOD's run a few hundred characters -- is exactly what the model picks
+        // a picture by, and cutting it threw that work away on every browse.
         var html = Page($"""<img src="/p.jpg" alt="{new string('x', 400)}" data-img-w="300" data-img-h="300">""");
 
         var content = await ContentOf(html);
 
-        var entry = content[content.IndexOf("[image i-1", StringComparison.Ordinal)..];
-        entry[..entry.IndexOf(']')].Length.ShouldBeLessThan(140);
+        content.ShouldContain($"[image i-1: {new string('x', 400)}]");
+    }
+
+    [Fact]
+    public async Task APathologicalLabel_IsStillShortened()
+    {
+        var html = Page($"""<img src="/p.jpg" alt="{new string('x', 700)}" data-img-w="300" data-img-h="300">""");
+
+        var content = await ContentOf(html);
+
+        content.ShouldContain($"[image i-1: {new string('x', 500)}…]");
     }
 
     [Fact]

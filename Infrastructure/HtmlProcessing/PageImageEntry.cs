@@ -27,9 +27,10 @@ public static partial class PageImageEntry
     // the moment either side's traversal differed.
     public const string RefAttribute = "data-img-ref";
 
-    // An entry is read as a menu item, not as prose. Past this the label stops helping the model
-    // choose and only costs the browse -- every browse, whether or not it ever fetches.
-    private const int MaxLabelLength = 120;
+    // A safeguard against a pathological attribute, not an editor: a carefully written alt runs
+    // a few hundred characters and is exactly what the model picks a picture by, so a real label
+    // should never meet this. The fetch script mirrors the number and the cut.
+    private const int MaxLabelLength = 500;
 
     public static string Write(string imageRef, string label) => $"{Open}{imageRef}: {label}{Close}";
 
