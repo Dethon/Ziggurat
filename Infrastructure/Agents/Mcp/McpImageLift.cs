@@ -46,6 +46,15 @@ internal static class McpImageLift
             return result;
         }
 
+        // A result mixing a picture with other binary blocks (audio, a blob resource) goes
+        // through whole: lifting the picture while the rest stays would leave a non-text list
+        // hydration never recognises, and its stored bytes would sit unshown and unforgotten
+        // until the store's horizon.
+        if (contents.Any(c => c is DataContent && !IsImage(c)))
+        {
+            return result;
+        }
+
         var kept = new List<AIContent>(contents.Count);
 
         // Both sides count the same thing: a picture's index is the position of the envelope that
@@ -83,9 +92,9 @@ internal static class McpImageLift
                 continue;
             }
 
-            // The MCP client maps audio blocks and blob resources to DataContent too; only a
-            // picture is a read image, and anything else passes through exactly as it arrived.
-            if (content is not DataContent image || !IsImage(image))
+            // Only images remain by here: the guards above passed through any result carrying a
+            // non-image DataContent whole.
+            if (content is not DataContent image)
             {
                 kept.Add(content);
                 continue;

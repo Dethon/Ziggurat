@@ -259,6 +259,27 @@ public class McpImageLiftTests
         AllBytes(lifted).ShouldHaveSingleItem().MediaType.ShouldBe("audio/wav");
     }
 
+    [Fact]
+    public async Task AResultMixingAPictureWithOtherData_IsLeftWholeRatherThanHalfLifted()
+    {
+        // Lifting the picture while the audio stays would leave the result a non-text list that
+        // hydration never recognises: the stored bytes would never be shown, never forgotten, and
+        // the model would stare at a shown:true envelope forever. Passing the whole result through
+        // is the lesser cost.
+        var store = new RecordingReadImageStore();
+        object result = new AIContent[]
+        {
+            new TextContent(EnvelopeText("A picture beside a sound")),
+            new DataContent(_bytes, "image/jpeg"),
+            new DataContent(new byte[] { 2, 2 }, "audio/wav")
+        };
+
+        var lifted = await McpImageLift.ApplyAsync(result, store, Conversation, CallId, CancellationToken.None);
+
+        store.Written.ShouldBeEmpty();
+        lifted.ShouldBeSameAs(result);
+    }
+
     private static object ResultWithImage() => new AIContent[]
     {
         new TextContent(EnvelopeText("A harbour at dusk")),

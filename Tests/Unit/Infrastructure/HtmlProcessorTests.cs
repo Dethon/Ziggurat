@@ -296,6 +296,42 @@ public class HtmlProcessorTests
     }
 
     [Fact]
+    public async Task ProcessAsync_NextOffset_ContinuesExactlyWhereTheCutLanded()
+    {
+        // The truncated body carries a "[Content truncated...]" suffix and the cut backs up to a
+        // newline or past a partial image entry, so the body's length is not the consumed length.
+        // NextOffset must name the source position the cut actually landed on: paging with it
+        // reassembles the page with nothing skipped and nothing beyond whitespace repeated.
+        var longContent = string.Join("\n",
+            Enumerable.Range(1, 200).Select(i => $"<p>Paragraph {i} with some content.</p>"));
+        var html = $"<html><body>{longContent}</body></html>";
+        var request = new BrowseRequest(SessionId: "t", Url: "http://example.com/", MaxLength: 500);
+
+        var whole = await HtmlProcessor.ProcessAsync(
+            request with { MaxLength = 100000 }, html, CancellationToken.None);
+        var window1 = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+        var window2 = await HtmlProcessor.ProcessAsync(
+            request with { Offset = window1.NextOffset!.Value, MaxLength = 100000 },
+            html, CancellationToken.None);
+
+        window1.Truncated.ShouldBeTrue();
+        var body1 = window1.Content!.Replace("\n\n[Content truncated...]", "");
+        (body1 + window2.Content).ShouldBe(whole.Content);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_APageThatFitsWhole_HasNoNextOffset()
+    {
+        var html = "<html><body><p>All of it.</p></body></html>";
+        var request = new BrowseRequest(SessionId: "t", Url: "http://example.com/");
+
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        result.Truncated.ShouldBeFalse();
+        result.NextOffset.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task ProcessAsync_WithOffsetBeyondContent_ReturnsEmptyContent()
     {
         // Arrange

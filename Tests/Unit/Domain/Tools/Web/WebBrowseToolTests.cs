@@ -35,13 +35,14 @@ public class WebBrowseToolTests
         // Truncation backs the cut up past a partial image entry or to a newline, so the window
         // ends short of offset + maxLength. Paging by maxLength then skips what the back-up left —
         // including entries the envelope just promised lay ahead. The envelope names the exact
-        // continuation instead.
+        // continuation the processor measured.
         SetUpNavigate(Result("https://a.test/", Content: new string('x', 700),
-            ContentLength: 5000, Truncated: true));
+            ContentLength: 5000, Truncated: true) with
+        { NextOffset = 1680 });
 
         var result = await new TestableWebBrowseTool(_browser.Object).RunAsync(offset: 1000);
 
-        result.Envelope["nextOffset"]!.GetValue<int>().ShouldBe(1700);
+        result.Envelope["nextOffset"]!.GetValue<int>().ShouldBe(1680);
     }
 
     [Fact]

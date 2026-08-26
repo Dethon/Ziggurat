@@ -387,6 +387,26 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SnapshotAsync_NamingAPageNoTabHolds_RefusesInsteadOfReadingTheCurrentTab()
+    {
+        // A snapshot composed with a browse names the page the browse landed on. If that tab is
+        // already gone — evicted, or reused by another browse — falling back to the current tab
+        // would attach another page's refs to this page's text.
+        var (browser, page) = await CreateBrowserWithCachedSessionAsync("s", "https://a.test/");
+        await using var _ = browser;
+        var evaluated = false;
+        page.Setup(p => p.EvaluateAsync<JsonElement>(It.IsAny<string>(), It.IsAny<object?>()))
+            .Callback(() => evaluated = true)
+            .ThrowsAsync(new InvalidOperationException("stop"));
+
+        var result = await browser.SnapshotAsync(new SnapshotRequest("s", null, ForUrl: "https://gone.test/"));
+
+        result.ErrorMessage.ShouldNotBeNull();
+        result.ErrorMessage.ShouldContain("https://gone.test/");
+        evaluated.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task ActionAsync_WhenTheTabWasEvictedMidCall_AnswersTheClosedWallNotALostSession()
     {
         // The page dying is not the connection dying: an eviction that lands while the action is

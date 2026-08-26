@@ -96,6 +96,11 @@ public record BrowseResult(
     public int ImageCount { get; init; }
 
     public int ImagesBeyondWindow { get; init; }
+
+    // Where the next window starts, when the body was cut. The cut backs up — to a newline, past
+    // a partial image entry — and appends a suffix, so no arithmetic on the body's length finds
+    // this position.
+    public int? NextOffset { get; init; }
 }
 
 public record WebPageMetadata(

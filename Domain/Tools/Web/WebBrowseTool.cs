@@ -105,9 +105,9 @@ public class WebBrowseTool(IWebBrowser browser)
         // Truncation backs the cut up — past a partial image entry, or to a newline — so the
         // window ends short of offset + maxLength, and paging by maxLength would skip what the
         // back-up left. The envelope names the exact continuation instead.
-        if (result.Truncated && result.Content is { Length: > 0 })
+        if (result.NextOffset is { } nextOffset)
         {
-            envelope["nextOffset"] = offset + result.Content.Length;
+            envelope["nextOffset"] = nextOffset;
         }
 
         if (result.Metadata is not null)

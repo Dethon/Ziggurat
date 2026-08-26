@@ -249,7 +249,8 @@ public class PlaywrightWebBrowser(
         )
         {
             ImageCount = processed.ImageCount,
-            ImagesBeyondWindow = processed.ImagesBeyondWindow
+            ImagesBeyondWindow = processed.ImagesBeyondWindow,
+            NextOffset = processed.NextOffset
         };
     }
 
@@ -259,7 +260,11 @@ public class PlaywrightWebBrowser(
     private async Task<(BrowserTab Tab, IDisposable Lock)> AcquireLockedTabAsync(
         BrowseRequest request, CancellationToken ct)
     {
-        while (true)
+        // Bounded: each retry is a fresh acquisition, which at the cap evicts another tab — an
+        // unbounded spin under adversarial concurrency would churn tabs whose refs the model
+        // holds. Three misses in a row is a session replacing tabs faster than a browse can hold
+        // one, and saying so beats joining the churn.
+        for (var attempt = 0; attempt < 3; attempt++)
         {
             var acquisition = await _sessions.AcquireTabForBrowseAsync(
                 request.SessionId, request.Url, _context!, ct);
@@ -271,6 +276,9 @@ public class PlaywrightWebBrowser(
 
             tabLock.Dispose();
         }
+
+        throw new InvalidOperationException(
+            "The session is replacing tabs faster than this browse can hold one. Try again.");
     }
 
     public async Task<BrowseResult> GetCurrentPageAsync(string sessionId, CancellationToken ct = default)
@@ -315,7 +323,8 @@ public class PlaywrightWebBrowser(
             )
             {
                 ImageCount = processed.ImageCount,
-                ImagesBeyondWindow = processed.ImagesBeyondWindow
+                ImagesBeyondWindow = processed.ImagesBeyondWindow,
+                NextOffset = processed.NextOffset
             };
         }
         catch (Exception ex)
@@ -329,7 +338,29 @@ public class PlaywrightWebBrowser(
         // A snapshot naming its page reads that page's tab; only the ref-less, page-less form
         // falls to the tab last touched — which a parallel browse may have moved.
         var session = _sessions.Get(request.SessionId);
-        var tab = (request.ForUrl is { } url ? session?.FindByUrl(url) : null) ?? session?.CurrentTab;
+        if (session is null)
+        {
+            return new SnapshotResult(request.SessionId, null, null, 0, "Session not found. Use web_browse first.");
+        }
+
+        BrowserTab? tab;
+        if (request.ForUrl is { } url)
+        {
+            // The named page already gone — evicted, or its tab reused by another browse — must
+            // refuse rather than fall back to the current tab: that would attach another page's
+            // refs to this page's text, the silent wrong-target answer the name exists to prevent.
+            tab = session.FindByUrl(url);
+            if (tab is null)
+            {
+                return new SnapshotResult(request.SessionId, null, null, 0,
+                    $"The page at {url} is no longer open in this session. Browse it again for fresh refs.");
+            }
+        }
+        else
+        {
+            tab = session.CurrentTab;
+        }
+
         if (tab == null || tab.Page.IsClosed)
         {
             return new SnapshotResult(request.SessionId, null, null, 0, "Session not found. Use web_browse first.");
@@ -346,6 +377,13 @@ public class PlaywrightWebBrowser(
             {
                 return new SnapshotResult(request.SessionId, null, null, 0,
                     $"That tab has been closed. Browse {tab.RequestedUrl} again for fresh refs.");
+            }
+
+            // Re-navigated while this call queued: the tab no longer shows the named page.
+            if (request.ForUrl is { } named && tab.RequestedUrl != named && tab.FinalUrl != named)
+            {
+                return new SnapshotResult(request.SessionId, null, null, 0,
+                    $"The page at {named} is no longer open in this session. Browse it again for fresh refs.");
             }
 
             _sessions.TouchTab(request.SessionId, tab);
@@ -403,14 +441,21 @@ public class PlaywrightWebBrowser(
             }
         }
 
-        if (tab == null || tab.Page.IsClosed)
+        if (tab == null)
         {
             return new WebActionResult(request.SessionId, WebActionStatus.SessionNotFound,
                 null, false, null, null, "Session not found. Use web_browse first.");
         }
 
+        // A closed page under a live session is that one tab gone — evicted, or closed by the
+        // site — not the session dead: its wall names the page to browse again.
+        if (tab.Page.IsClosed)
+        {
+            return new WebActionResult(request.SessionId, WebActionStatus.RefClosed,
+                null, false, null, null, null, RefUrl: tab.RequestedUrl);
+        }
+
         var page = tab.Page;
-        var urlBefore = page.Url;
 
         try
         {
@@ -427,6 +472,11 @@ public class PlaywrightWebBrowser(
             }
 
             _sessions.TouchTab(request.SessionId, tab);
+
+            // Read under the lock: a navigation that was queued ahead of this action moved the
+            // tab, and a before-URL captured outside the queue would compare against a page that
+            // is no longer there.
+            var urlBefore = page.Url;
 
             return request.Action switch
             {
@@ -568,10 +618,12 @@ public class PlaywrightWebBrowser(
 
         // A click that opened a new tab answers from where the site actually took the model —
         // the popup's URL, content and freshly stamped refs — not a stale diff of the page left
-        // behind.
-        if (_sessions.TakePendingPopup(request.SessionId, tab) is { } popupTab)
+        // behind. A popup already evicted answers nothing; the action itself still succeeded, so
+        // it falls through to the ordinary diff of the page it acted on.
+        if (_sessions.TakePendingPopup(request.SessionId, tab) is { } popupTab
+            && await AnswerFromPopupAsync(request.SessionId, popupTab) is { } popupAnswer)
         {
-            return await AnswerFromPopupAsync(request.SessionId, popupTab);
+            return popupAnswer;
         }
 
         var navigationOccurred = page.Url != urlBefore;
@@ -726,12 +778,19 @@ public class PlaywrightWebBrowser(
         """, targetSelector);
     }
 
-    private async Task<WebActionResult> AnswerFromPopupAsync(string sessionId, BrowserTab popupTab)
+    private async Task<WebActionResult?> AnswerFromPopupAsync(string sessionId, BrowserTab popupTab)
     {
         // The popup's own lock, held on top of the acting tab's: the first read of an adopted
         // page keeps the same no-half-replaced-DOM promise as any other tab. A popup is always a
         // fresh page, never an existing tab, so the nesting cannot cycle.
         using var popupLock = await _sessions.LockTabAsync(popupTab);
+
+        // Evicted before it could answer — reading it would throw "Target closed", which upstream
+        // reads as the whole connection dying. Null lets the action answer from its own tab.
+        if (popupTab.Page.IsClosed)
+        {
+            return null;
+        }
 
         try
         {
@@ -894,9 +953,9 @@ public class PlaywrightWebBrowser(
                       // rounded) is applied the same way. Diverging here leaves the note calling
                       // the picture different words than the entry the model chose it by.
                       const nonEmpty = (t) => t && t.trim() ? t.trim() : null;
-                      const fileName = src.startsWith('data:')
+                      const fileName = /^data:/i.test(src)
                           ? ''
-                          : (src.split(/[?#]/)[0].split('/').pop() || '');
+                          : (src.split(/[?#]/)[0].split('/').pop() || '').trim();
                       const spoken = nonEmpty(img.getAttribute('alt'))
                           || nonEmpty(img.closest('figure')?.querySelector('figcaption')?.textContent)
                           || nonEmpty(img.getAttribute('title'))

@@ -45,10 +45,17 @@ public static partial class HtmlConverter
         return ConvertToMarkdown(body);
     }
 
-    public static string Truncate(string text, int maxLength)
+    public static string Truncate(string text, int maxLength) => Truncate(text, maxLength, out _);
+
+    // consumed: how many of text's characters the cut kept, before the trailing trim and the
+    // suffix — the position the next window's offset must land on. The body's own length says
+    // neither: the suffix lengthens it and the back-ups shorten it, and paging by either skips
+    // or repeats real content.
+    public static string Truncate(string text, int maxLength, out int consumed)
     {
         if (text.Length <= maxLength)
         {
+            consumed = text.Length;
             return text;
         }
 
@@ -56,6 +63,7 @@ public static partial class HtmlConverter
         var targetLength = Math.Max(0, maxLength - 20);
         if (targetLength == 0)
         {
+            consumed = 0;
             return "[Content truncated...]";
         }
 
@@ -72,10 +80,15 @@ public static partial class HtmlConverter
         // has no way to tell that from a ref that simply failed -- so the entry goes whole.
         if (PageImageEntry.PartialEntryStart(truncated) is var partial and >= 0)
         {
-            truncated = truncated[..partial].TrimEnd();
+            truncated = truncated[..partial];
         }
 
-        return truncated + "\n\n[Content truncated...]";
+        // Measured after the trim, so the whitespace the trim drops is re-delivered by the next
+        // window instead of falling between the two. A window that trims to nothing keeps its raw
+        // length: a next offset that stands still would page forever.
+        var trimmed = truncated.TrimEnd();
+        consumed = trimmed.Length > 0 ? trimmed.Length : truncated.Length;
+        return trimmed + "\n\n[Content truncated...]";
     }
 
     public static string TruncateHtml(string html, int maxLength)
