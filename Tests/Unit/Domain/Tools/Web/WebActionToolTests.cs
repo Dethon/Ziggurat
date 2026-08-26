@@ -65,6 +65,35 @@ public class WebActionToolTests
         refusals.Distinct().Count().ShouldBe(refusals.Count);
     }
 
+    [Fact]
+    public async Task AnImageRef_IsRefusedByNameWithoutTouchingThePage()
+    {
+        // The other namespace's promised half: view_image refuses e-3 by name, and web_action
+        // refuses i-3 the same way — not with "the page may have changed" for a ref that was
+        // never an element's.
+        var envelope = await new TestableWebActionTool(_browser.Object).RunAsync(@ref: "i-3");
+
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidArgument);
+        envelope["message"]!.GetValue<string>().ShouldContain("i-3");
+        envelope["message"]!.GetValue<string>().ShouldContain("view_image");
+        _browser.Verify(
+            b => b.ActionAsync(It.IsAny<WebActionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ADragWhoseTargetIsAnImageRef_IsRefusedByName()
+    {
+        var envelope = await new TestableWebActionTool(_browser.Object)
+            .RunAsync(@ref: "e-1", action: WebActionType.Drag, endRef: "i-2");
+
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidArgument);
+        envelope["message"]!.GetValue<string>().ShouldContain("i-2");
+        _browser.Verify(
+            b => b.ActionAsync(It.IsAny<WebActionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private async Task<JsonNode> RunAsync(WebActionResult result)
     {
         _browser
@@ -75,8 +104,11 @@ public class WebActionToolTests
 
     private sealed class TestableWebActionTool(IWebBrowser browser) : WebActionTool(browser)
     {
-        public async Task<JsonNode> RunAsync() =>
-            ToJson(await ExecuteAsync("s", "e-1", WebActionType.Click, null, null, false, false,
+        public async Task<JsonNode> RunAsync(
+            string? @ref = "e-1",
+            WebActionType action = WebActionType.Click,
+            string? endRef = null) =>
+            ToJson(await ExecuteAsync("s", @ref, action, null, endRef, false, false,
                 CancellationToken.None));
     }
 }

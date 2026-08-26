@@ -188,6 +188,20 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
+    public async Task ARefWhoseNumberOverflows_IsUnknownRatherThanAnException()
+    {
+        // The shape predicates accept any digit run, so a model-invented ref past int.MaxValue
+        // must fall to the unknown wall, not throw out of routing as a retryable internal error.
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+
+        manager.RouteRef("s1", "e-99999999999999999999").ShouldBe(new RefRouting.Unknown());
+        manager.RouteRef("s1", "i-99999999999999999999").ShouldBe(new RefRouting.Unknown());
+    }
+
+    [Fact]
     public async Task AnAdditiveStamp_LeavesTheEarlierRefsRouting()
     {
         var (ctx, _) = CreateContext();

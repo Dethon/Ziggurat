@@ -145,6 +145,11 @@ public enum WebActionStatus
 {
     Success, Error, ElementNotFound, SessionNotFound, Timeout,
 
+    // The ref is the other namespace's — an i- ref names a picture, and only view_image looks at
+    // those. Refused by name before any tab is touched, because routed to a page it could only
+    // fail as "element not found", which invites the wrong recovery.
+    NotAnElementRef,
+
     // The ref's tab is still open, but a later snapshot renumbered its refs.
     RefSuperseded,
 

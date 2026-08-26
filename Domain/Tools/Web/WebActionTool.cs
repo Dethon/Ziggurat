@@ -51,6 +51,18 @@ public class WebActionTool(IWebBrowser browser)
         bool force,
         CancellationToken ct)
     {
+        // A ref's shape says which tool it was meant for, so the other namespace is turned away by
+        // name here — the mirror of view_image refusing e-3 — rather than failing to be found.
+        if (new[] { @ref, endRef }.Where(ImageRef.IsImageRef).ToList() is { Count: > 0 } foreign)
+        {
+            return new WebActionResult(
+                sessionId, WebActionStatus.NotAnElementRef, null, false, null, null,
+                $"{string.Join(", ", foreign)} "
+                + $"{(foreign.Count == 1 ? "is not an element ref" : "are not element refs")}. "
+                + "Element refs look like e-1 and come from web_snapshot; "
+                + "i-style refs name pictures, and view_image is what looks at those.");
+        }
+
         var request = new WebActionRequest(
             SessionId: sessionId,
             Ref: @ref,
@@ -76,6 +88,10 @@ public class WebActionTool(IWebBrowser browser)
                     ToolError.Codes.SessionNotFound,
                     "The browser session has expired. Call web_browse to start a new session.",
                     (string?)null),
+                WebActionStatus.NotAnElementRef => (
+                    ToolError.Codes.InvalidArgument,
+                    "Act on the element's e- ref; to look at the picture, call view_image with its i- ref.",
+                    null),
                 WebActionStatus.ElementNotFound => (
                     ToolError.Codes.ElementNotFound,
                     "Call web_snapshot to refresh element refs — the page or DOM may have changed.",

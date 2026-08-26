@@ -365,14 +365,18 @@ public class BrowserSessionManager : IAsyncDisposable
 
     private static (RefNamespace Ns, int Number)? ParseRef(string refString)
     {
-        if (ElementRef.IsElementRef(refString))
+        // TryParse because the shape predicates accept any digit run: a number past int.MaxValue
+        // is an unknown ref, not an exception out of routing.
+        if (ElementRef.IsElementRef(refString)
+            && int.TryParse(refString[ElementRef.Prefix.Length..], out var element))
         {
-            return (RefNamespace.Element, int.Parse(refString[ElementRef.Prefix.Length..]));
+            return (RefNamespace.Element, element);
         }
 
-        if (ImageRef.IsImageRef(refString))
+        if (ImageRef.IsImageRef(refString)
+            && int.TryParse(refString[ImageRef.Prefix.Length..], out var image))
         {
-            return (RefNamespace.Image, int.Parse(refString[ImageRef.Prefix.Length..]));
+            return (RefNamespace.Image, image);
         }
 
         return null;
