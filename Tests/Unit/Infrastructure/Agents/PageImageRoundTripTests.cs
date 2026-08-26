@@ -67,6 +67,26 @@ public class PageImageRoundTripTests
         reads.ShouldHaveSingleItem().ShouldBe(store.Keys.ShouldHaveSingleItem());
     }
 
+    [Fact]
+    public async Task AForeignServersBareImage_IsStillFoundByHydration()
+    {
+        // A server that answers with nothing but an image block -- no envelope, no text at all.
+        // The bridge synthesizes the envelope, and the result is then a single text block, which
+        // Flatten leaves as a one-element list rather than a string: hydration has to read that
+        // shape too, or the picture is stored and never asked for.
+        var store = new RecordingStore();
+        object result = new AIContent[] { new DataContent(new byte[] { 4, 5 }, "image/png") };
+
+        var lifted = await McpImageLift.ApplyAsync(result, store, Conversation, CallId, CancellationToken.None);
+
+        var flattened = QualifiedMcpTool.Flatten(lifted);
+        var message = new ChatMessage(ChatRole.Tool, [new FunctionResultContent(CallId, flattened)]);
+
+        var reads = KeysHydrationWillAskFor(message);
+
+        reads.ShouldHaveSingleItem().ShouldBe(store.Keys.ShouldHaveSingleItem());
+    }
+
     // The store keys hydration derives from the message, which is the whole contract under test.
     private static IReadOnlyList<string> KeysHydrationWillAskFor(ChatMessage message) =>
         ReadImageHydration.Reads(message)

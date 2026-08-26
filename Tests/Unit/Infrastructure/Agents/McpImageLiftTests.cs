@@ -191,6 +191,55 @@ public class McpImageLiftTests
         }
     }
 
+    [Fact]
+    public async Task AnImageWithNoEnvelopeBeforeIt_GetsOneWrittenInItsPlace()
+    {
+        // A future MCP server that returns an image without speaking view_image's envelope shape.
+        // The bridge must not swallow it: bytes with no envelope are bytes hydration can never
+        // find, so the model would neither see the picture nor be told anything stood there.
+        var store = new RecordingReadImageStore();
+        object result = new AIContent[]
+        {
+            new TextContent("done"),
+            new DataContent(_bytes, "image/jpeg")
+        };
+
+        var lifted = await McpImageLift.ApplyAsync(result, store, Conversation, CallId, CancellationToken.None);
+
+        AllBytes(lifted).ShouldBeEmpty();
+        var written = store.Written.ShouldHaveSingleItem();
+        written.CallId.ShouldBe(McpImageLift.KeyFor(CallId, 0));
+
+        // The synthesized envelope must be one hydration recognises, at the block position the
+        // bytes were stored under -- otherwise the picture is stored and never asked for.
+        var envelopes = (lifted as IList<AIContent>)!
+            .OfType<TextContent>()
+            .Where(t => McpImageLift.LooksLikeEnvelope(t.Text))
+            .ToList();
+        var envelope = envelopes.ShouldHaveSingleItem();
+        PageImageResult.TryRead(System.Text.Json.Nodes.JsonNode.Parse(envelope.Text))
+            .ShouldNotBeNull().Shown.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task TwoPicturesAfterOneEnvelope_DoNotShareAKey()
+    {
+        // An envelope introduces exactly one picture. A second image block behind the same
+        // envelope must not overwrite the first in the store; it gets its own envelope and key.
+        var store = new RecordingReadImageStore();
+        object result = new AIContent[]
+        {
+            new TextContent(EnvelopeText("The only announced picture")),
+            new DataContent(_bytes, "image/jpeg"),
+            new DataContent(new byte[] { 1, 1 }, "image/png")
+        };
+
+        await McpImageLift.ApplyAsync(result, store, Conversation, CallId, CancellationToken.None);
+
+        store.Written.Count.ShouldBe(2);
+        store.Written.Select(w => w.CallId).ShouldBeUnique();
+    }
+
     private static object ResultWithImage() => new AIContent[]
     {
         new TextContent(EnvelopeText("A harbour at dusk")),

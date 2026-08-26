@@ -52,20 +52,21 @@ internal static class McpImageLift
         // introduces it among all the page-image envelopes in the result. Counting pictures here
         // and envelopes in hydration is what let the call's own envelope shift every key by one.
         var envelopesSeen = 0;
-        var currentIndex = -1;
-        string? currentLabel = null;
+
+        // The envelope waiting for its picture. Consumed when one arrives: an envelope introduces
+        // exactly one image, so a second image behind the same envelope must not share its key.
+        (int Index, string Label)? pending = null;
 
         // A loop because each block is read against state the blocks before it left -- the running
-        // envelope count and the label the last one carried. A projection would need that state
-        // threaded through it anyway.
+        // envelope count and the envelope still waiting for its picture. A projection would need
+        // that state threaded through it anyway.
         foreach (var content in contents)
         {
             if (content is TextContent text)
             {
                 if (LabelOf(text.Text) is { } label)
                 {
-                    currentIndex = envelopesSeen;
-                    currentLabel = label;
+                    pending = (envelopesSeen, label);
                 }
 
                 if (LooksLikeEnvelope(text.Text))
@@ -83,22 +84,49 @@ internal static class McpImageLift
                 continue;
             }
 
+            // An image nothing announced -- a server that never learned view_image's envelope
+            // shape -- gets one written here. Bytes with no envelope are bytes hydration can never
+            // find: the model would neither see the picture nor be told anything stood in its
+            // place, which is quieter than either passing it through or refusing it.
+            if (pending is null)
+            {
+                kept.Add(new TextContent(SynthesizedEnvelope(image)));
+                pending = (envelopesSeen, UnannouncedLabel);
+                envelopesSeen++;
+            }
+
             await store.PutAsync(
                 conversationId,
-                KeyFor(callId, currentIndex < 0 ? envelopesSeen : currentIndex),
+                KeyFor(callId, pending.Value.Index),
                 new ReadImage
                 {
                     // The label the entry gave this picture, taken off the envelope that precedes
                     // it, so a note left in its place names what the model actually asked for.
-                    VirtualPath = currentLabel ?? "a page image",
+                    VirtualPath = pending.Value.Label,
                     MediaType = image.MediaType,
                     Bytes = image.Data.ToArray()
                 },
                 ct);
+            pending = null;
         }
 
         return kept;
     }
+
+    private const string UnannouncedLabel = "an image the tool returned";
+
+    // The same shape view_image writes, so hydration recognises it without knowing it was the
+    // bridge speaking: the block position the bytes were stored under is the position this
+    // envelope occupies among the result's JSON blocks.
+    private static string SynthesizedEnvelope(DataContent image) =>
+        FsResultContract.ToNode(new PageImageResult
+        {
+            ImageRef = "(unlisted)",
+            Label = UnannouncedLabel,
+            MediaType = image.MediaType,
+            SizeBytes = image.Data.Length,
+            Shown = true
+        }).ToJsonString();
 
     // The envelope sits immediately before its picture, which is the order view_image writes them
     // in and the order the model reads them. A block that is not a page-image envelope yields no

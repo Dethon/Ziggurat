@@ -48,7 +48,9 @@ internal static class ReadImageHydration
 
     private static IEnumerable<ReadImageReference> PageImages(string callId, object? result)
     {
-        var text = result as string ?? (result is JsonNode node ? node.ToJsonString() : null);
+        var text = result as string
+            ?? (result is JsonNode node ? node.ToJsonString() : null)
+            ?? JoinedText(result);
         if (text is null)
         {
             return PageImageResult.TryRead(result) is { Shown: true } single
@@ -67,6 +69,15 @@ internal static class ReadImageHydration
                 callId, e.Envelope!.Label, ReadImageOrigin.Page, e.Index))
             .ToList();
     }
+
+    // The bridge's Flatten joins a multi-block text result with a blank line but leaves a single
+    // block as the list it arrived in -- a shape a bare image answered by a foreign server takes
+    // once its envelope is synthesized. Read it the way Flatten would have written it, or a
+    // one-picture result is stored and never asked for.
+    private static string? JoinedText(object? result) =>
+        result is IList<AIContent> contents && contents.All(c => c is TextContent)
+            ? string.Join("\n\n", contents.OfType<TextContent>().Select(c => c.Text))
+            : null;
 
     private static IEnumerable<PageImageResult?> SplitEnvelopes(string text) =>
         text.Split("\n\n")
