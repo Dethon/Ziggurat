@@ -404,43 +404,45 @@ public class PlaywrightWebBrowserTests(
                 result.Status != BrowseStatus.Success,
                 $"reddit did not serve the thread ({result.Status}: {result.ErrorMessage})");
 
-            // Reddit throttles by serving an interstitial rather than by failing the navigation, so
-            // the status alone does not separate "the thread arrived" from "reddit declined to send
-            // it". The throttled page is unmistakable: a single "skip to main content" link back to
-            // the thread carrying reddit's own ?rdt= token, and nothing else — about 140 characters
-            // of it. It has no comments to find and no notice to mistake for them, so it says
-            // nothing about the extractor in either direction.
+            // Reddit answers this URL with one of three documents, and only one of them is this
+            // test's subject. Which one arrives is decided by how hard the suite has been hitting
+            // reddit, not by anything in the browse.
             //
-            // All three clauses earn their place. Length alone would hide the regression this case
-            // exists for, which is short too: ~735 bytes of consent prose readability chose over
-            // the comments. The ?rdt= token alone is worse than useless — reddit puts it in the
-            // links of a perfectly whole thread, and matching on it skipped a 19,935-character
-            // body that had every comment in it. Short, token-bearing, and saying nothing about
-            // cookies is the interstitial and nothing else.
+            //   - The thread: 20-35k characters with the comments in it. What the case wants.
+            //   - A bot challenge: ~134 characters, "Complete the challenge below and let us know
+            //     you're a real person". No comments and no notice — it says nothing about the
+            //     extractor either way.
+            //   - A consent page: ~735 characters that are entirely cookie prose. This one IS the
+            //     regression: readability discarded the <shreddit-comment> elements as non-content
+            //     and settled on the only ordinary prose on the page.
             //
-            // How often the interstitial appears tracks how hard this suite has been hitting
-            // reddit: twenty-five runs in a row came back whole on a quiet afternoon, and the short
-            // bodies all arrived while the same test was being run back to back.
+            // The consent page is server-rendered — the wall is the whole document rather than an
+            // overlay over the comments — which is why DismissedModals comes back empty on it and
+            // why widening ModalDismisser's detection window would not change the outcome. There is
+            // nothing on the page to dismiss.
+            //
+            // Recognised by what each says rather than by how short it is, because two of the three
+            // are short and they want opposite treatment.
             var content = result.Content ?? "";
             var looksLikeConsent = content.Contains("cookie", StringComparison.OrdinalIgnoreCase);
-            var throttled = content.Length < 1000
-                && content.Contains("rdt=", StringComparison.OrdinalIgnoreCase)
-                && !looksLikeConsent;
+            var challenged = content.Contains("not for bots", StringComparison.OrdinalIgnoreCase)
+                || content.Contains("a real person", StringComparison.OrdinalIgnoreCase);
             Skip.If(
-                throttled,
+                challenged,
+                $"reddit served its bot challenge rather than the thread ({content.Length} chars).");
+            Skip.If(
+                content.Length < 1000
+                    && !looksLikeConsent
+                    && content.Contains("rdt=", StringComparison.OrdinalIgnoreCase),
                 $"reddit served its throttling interstitial rather than the thread ({content.Length} chars).");
 
-            // The failure returned ~735 bytes that were entirely the consent notice. Said as that
-            // rather than as a bare length mismatch, because the two ways this can go short want
-            // different work: a consent body means the dismisser lost its race — it polls for a
-            // 300ms window and reddit renders the wall late on a loaded machine — while any other
-            // short body is the extractor finding nothing where the comments should be.
+            // Deliberately NOT skipped on the consent page: that is the regression this test exists
+            // for, and skipping it would retire the case without saying so.
             content.Length.ShouldBeGreaterThan(
                 5000,
                 looksLikeConsent
-                    ? $"readability settled on the consent notice again ({content.Length} chars): "
-                      + "the wall rendered after ModalDismisser's detection window and was still "
-                      + "the only ordinary prose on the page."
+                    ? $"readability settled on reddit's consent page again ({content.Length} chars) "
+                      + "instead of the comments."
                     : $"the body came back at {content.Length} chars with no comments in it.");
             content.ShouldContain("Comments", Case.Insensitive);
         }
