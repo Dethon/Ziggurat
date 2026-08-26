@@ -115,9 +115,12 @@ public enum BrowseStatus
 
 public record ModalDismissed(ModalType Type, string Selector, string? ButtonText);
 
+// ForUrl: the page whose refs the caller wants, for a snapshot composed with a browse — without
+// it the snapshot reads the session's current tab, which a parallel browse may have moved.
 public record SnapshotRequest(
     string SessionId,
-    string? Selector = null);
+    string? Selector = null,
+    string? ForUrl = null);
 
 public record SnapshotResult(
     string SessionId,

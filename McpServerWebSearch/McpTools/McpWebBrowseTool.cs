@@ -21,7 +21,7 @@ public class McpWebBrowseTool(IWebBrowser browser)
         string url,
         [Description("Maximum characters to return (100-100000, default: 10000)")]
         int maxLength = 10000,
-        [Description("Character offset to start from (use 0 for beginning, increase to paginate)")]
+        [Description("Character offset to start from (0 for the beginning; to page forward, pass the nextOffset the previous call returned)")]
         int offset = 0,
         [Description("CSS selector to extract specific elements (e.g. '.product-card', '#main'). Returns ALL matches.")]
         string? selector = null,

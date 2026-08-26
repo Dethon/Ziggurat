@@ -326,7 +326,10 @@ public class PlaywrightWebBrowser(
 
     public async Task<SnapshotResult> SnapshotAsync(SnapshotRequest request, CancellationToken ct = default)
     {
-        var tab = _sessions.Get(request.SessionId)?.CurrentTab;
+        // A snapshot naming its page reads that page's tab; only the ref-less, page-less form
+        // falls to the tab last touched — which a parallel browse may have moved.
+        var session = _sessions.Get(request.SessionId);
+        var tab = (request.ForUrl is { } url ? session?.FindByUrl(url) : null) ?? session?.CurrentTab;
         if (tab == null || tab.Page.IsClosed)
         {
             return new SnapshotResult(request.SessionId, null, null, 0, "Session not found. Use web_browse first.");

@@ -9,125 +9,68 @@ namespace Tests.Unit.Domain.Tools.Web;
 public class WebBrowseToolTests
 {
     private readonly Mock<IWebBrowser> _browser = new();
-    private readonly TestableWebBrowseTool _tool;
 
-    public WebBrowseToolTests()
+    [Fact]
+    public async Task ASnapshotRequestedWithTheBrowse_AsksForThePageTheBrowseLandedOn()
     {
-        _tool = new TestableWebBrowseTool(_browser.Object);
+        // Parallel browses of one session land on different tabs; a follow-up snapshot that just
+        // takes "the current tab" can attach another browse's refs to this browse's text — the
+        // silent wrong-target answer routed refs exist to prevent. The snapshot names the page.
+        SetUpNavigate(Result("https://landed.test/final"));
+        SnapshotRequest? seen = null;
+        _browser
+            .Setup(b => b.SnapshotAsync(It.IsAny<SnapshotRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<SnapshotRequest, CancellationToken>((r, _) => seen = r)
+            .ReturnsAsync(new SnapshotResult("s", "https://landed.test/final", "- link", 1, null));
+
+        await new TestableWebBrowseTool(_browser.Object).RunAsync(snapshot: true);
+
+        seen.ShouldNotBeNull();
+        seen.ForUrl.ShouldBe("https://landed.test/final");
     }
 
     [Fact]
-    public async Task RunAsync_Success_BodySeparateFromEnvelope()
+    public async Task ATruncatedPage_NamesTheOffsetTheNextWindowStartsAt()
     {
-        var body = "# Heading\n\nLine with \"quotes\" and a \\ backslash.";
-        _browser.Setup(b => b.NavigateAsync(It.IsAny<BrowseRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new BrowseResult(
-                SessionId: "s1",
-                Url: "https://example.com",
-                Status: BrowseStatus.Success,
-                Title: "Example",
-                Content: body,
-                ContentLength: body.Length,
-                Truncated: false,
-                Metadata: null,
-                StructuredData: null,
-                DismissedModals: null,
-                ErrorMessage: null));
+        // Truncation backs the cut up past a partial image entry or to a newline, so the window
+        // ends short of offset + maxLength. Paging by maxLength then skips what the back-up left —
+        // including entries the envelope just promised lay ahead. The envelope names the exact
+        // continuation instead.
+        SetUpNavigate(Result("https://a.test/", Content: new string('x', 700),
+            ContentLength: 5000, Truncated: true));
 
-        var result = await _tool.TestRun("s1", "https://example.com", CancellationToken.None);
+        var result = await new TestableWebBrowseTool(_browser.Object).RunAsync(offset: 1000);
 
-        result.Body.ShouldBe(body);
-        var envelope = result.Envelope.AsObject();
-        envelope.ContainsKey("content").ShouldBeFalse();
-        envelope["status"]!.GetValue<string>().ShouldBe("success");
-        envelope["url"]!.GetValue<string>().ShouldBe("https://example.com");
-        envelope["title"]!.GetValue<string>().ShouldBe("Example");
-        envelope["contentLength"]!.GetValue<int>().ShouldBe(body.Length);
+        result.Envelope["nextOffset"]!.GetValue<int>().ShouldBe(1700);
     }
 
     [Fact]
-    public async Task RunAsync_Error_BodyIsNull()
+    public async Task APageThatFitsWhole_NamesNoNextOffset()
     {
-        _browser.Setup(b => b.NavigateAsync(It.IsAny<BrowseRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new BrowseResult(
-                SessionId: "s1",
-                Url: "https://example.com",
-                Status: BrowseStatus.Error,
-                Title: null,
-                Content: null,
-                ContentLength: 0,
-                Truncated: false,
-                Metadata: null,
-                StructuredData: null,
-                DismissedModals: null,
-                ErrorMessage: "boom"));
+        SetUpNavigate(Result("https://a.test/", Content: "all of it",
+            ContentLength: 9, Truncated: false));
 
-        var result = await _tool.TestRun("s1", "https://example.com", CancellationToken.None);
+        var result = await new TestableWebBrowseTool(_browser.Object).RunAsync();
 
-        result.Body.ShouldBeNull();
-        var envelope = result.Envelope.AsObject();
-        envelope["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result.Envelope["nextOffset"].ShouldBeNull();
     }
 
-    [Fact]
-    public async Task RunAsync_SnapshotTrue_IncludesSnapshotBodyAndRefCount()
+    private void SetUpNavigate(BrowseResult result) =>
+        _browser
+            .Setup(b => b.NavigateAsync(It.IsAny<BrowseRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(result);
+
+    private static BrowseResult Result(
+        string url, string Content = "body", int ContentLength = 4, bool Truncated = false) =>
+        new("s", url, BrowseStatus.Success, "Title", Content, ContentLength, Truncated,
+            null, null, null, null);
+
+    private sealed class TestableWebBrowseTool(IWebBrowser browser) : WebBrowseTool(browser)
     {
-        var body = "# Heading";
-        var snapshot = "main \"role=main\"\n  button \"Submit\" e-1";
-        _browser.Setup(b => b.NavigateAsync(It.IsAny<BrowseRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new BrowseResult(
-                SessionId: "s1",
-                Url: "https://example.com",
-                Status: BrowseStatus.Success,
-                Title: "Example",
-                Content: body,
-                ContentLength: body.Length,
-                Truncated: false,
-                Metadata: null,
-                StructuredData: null,
-                DismissedModals: null,
-                ErrorMessage: null));
-        _browser.Setup(b => b.SnapshotAsync(It.IsAny<SnapshotRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SnapshotResult("s1", "https://example.com", snapshot, 1, null));
-
-        var result = await _tool.TestRunWithSnapshot("s1", "https://example.com", snapshot: true, CancellationToken.None);
-
-        result.Body.ShouldBe(body);
-        result.Snapshot.ShouldBe(snapshot);
-        result.Envelope.AsObject()["refCount"]!.GetValue<int>().ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task RunAsync_SnapshotFalse_DoesNotInvokeSnapshot()
-    {
-        var body = "# Heading";
-        _browser.Setup(b => b.NavigateAsync(It.IsAny<BrowseRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new BrowseResult(
-                SessionId: "s1",
-                Url: "https://example.com",
-                Status: BrowseStatus.Success,
-                Title: "Example",
-                Content: body,
-                ContentLength: body.Length,
-                Truncated: false,
-                Metadata: null,
-                StructuredData: null,
-                DismissedModals: null,
-                ErrorMessage: null));
-
-        var result = await _tool.TestRunWithSnapshot("s1", "https://example.com", snapshot: false, CancellationToken.None);
-
-        result.Snapshot.ShouldBeNull();
-        result.Envelope.AsObject().ContainsKey("refCount").ShouldBeFalse();
-        _browser.Verify(b => b.SnapshotAsync(It.IsAny<SnapshotRequest>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    private class TestableWebBrowseTool(IWebBrowser browser) : WebBrowseTool(browser)
-    {
-        public Task<WebBrowseToolResult> TestRun(string sessionId, string url, CancellationToken ct)
-            => RunAsync(sessionId, url, null, 10000, 0, false, false, 3, false, ct);
-
-        public Task<WebBrowseToolResult> TestRunWithSnapshot(string sessionId, string url, bool snapshot, CancellationToken ct)
-            => RunAsync(sessionId, url, null, 10000, 0, false, false, 3, snapshot, ct);
+        public Task<WebBrowseToolResult> RunAsync(
+            int offset = 0, bool snapshot = false) =>
+            RunAsync("s", "https://a.test/", null, 10000, offset,
+                useReadability: false, scrollToLoad: false, scrollSteps: 3, snapshot,
+                CancellationToken.None);
     }
 }

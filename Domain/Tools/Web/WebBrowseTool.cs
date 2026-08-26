@@ -102,6 +102,14 @@ public class WebBrowseTool(IWebBrowser browser)
             envelope["imagesBeyondWindow"] = result.ImagesBeyondWindow;
         }
 
+        // Truncation backs the cut up — past a partial image entry, or to a newline — so the
+        // window ends short of offset + maxLength, and paging by maxLength would skip what the
+        // back-up left. The envelope names the exact continuation instead.
+        if (result.Truncated && result.Content is { Length: > 0 })
+        {
+            envelope["nextOffset"] = offset + result.Content.Length;
+        }
+
         if (result.Metadata is not null)
         {
             envelope["metadata"] = new JsonObject
@@ -146,7 +154,11 @@ public class WebBrowseTool(IWebBrowser browser)
         string? snapshotBody = null;
         if (snapshot && result.Status is BrowseStatus.Success or BrowseStatus.Partial)
         {
-            var snapshotResult = await browser.SnapshotAsync(new SnapshotRequest(sessionId, selector), ct);
+            // Named to the page this browse landed on: a parallel browse may have moved the
+            // session's current tab, and its refs on this page's text would be the silent
+            // wrong-target answer.
+            var snapshotResult = await browser.SnapshotAsync(
+                new SnapshotRequest(sessionId, selector, ForUrl: result.Url), ct);
             if (snapshotResult.ErrorMessage is null)
             {
                 envelope["refCount"] = snapshotResult.RefCount;
