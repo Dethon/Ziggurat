@@ -404,21 +404,27 @@ public class PlaywrightWebBrowserTests(
                 result.Status != BrowseStatus.Success,
                 $"reddit did not serve the thread ({result.Status}: {result.ErrorMessage})");
 
-            // Reddit rate-limits by serving a short page rather than by failing the navigation, so
+            // Reddit throttles by serving an interstitial rather than by failing the navigation, so
             // the status alone does not separate "the thread arrived" from "reddit declined to send
-            // it" — full-suite runs have seen Success with nothing in the body at all. A short body
-            // is therefore two different events, and only one of them is this test's subject.
+            // it". The throttled page is unmistakable: a single "skip to main content" link back to
+            // the thread carrying reddit's own ?rdt= token, and nothing else — about 140 characters
+            // of it. It has no comments to find and no notice to mistake for them, so it says
+            // nothing about the extractor in either direction.
             //
-            // The regression is readability settling on the cookie notice: it returned ~735 bytes
-            // that were entirely consent prose, and that IS caught below rather than skipped, since
-            // skipping it would hide the bug this case exists for. A short body that says nothing
-            // about cookies is reddit withholding the thread, which has no claim to make about the
-            // extractor either way.
+            // Recognised by what it is rather than by how short it is, because the regression this
+            // case exists for is also short: ~735 bytes of consent prose that readability chose
+            // over the comments. Skipping on length alone would hide exactly the bug this test was
+            // written to catch, so that body still fails below.
+            //
+            // How often the interstitial appears tracks how hard this suite has been hitting
+            // reddit: twenty-five runs in a row came back whole on a quiet afternoon, and the short
+            // bodies all arrived while the same test was being run back to back.
             var content = result.Content ?? "";
-            var looksLikeConsent = content.Contains("cookie", StringComparison.OrdinalIgnoreCase);
+            var throttled = content.Contains("rdt=", StringComparison.OrdinalIgnoreCase)
+                && !content.Contains("cookie", StringComparison.OrdinalIgnoreCase);
             Skip.If(
-                content.Length <= 5000 && !looksLikeConsent,
-                $"reddit did not serve the thread's body ({content.Length} chars, no consent text).");
+                throttled,
+                $"reddit served its throttling interstitial rather than the thread ({content.Length} chars).");
 
             // The failure returned ~735 bytes that were entirely the consent notice.
             content.Length.ShouldBeGreaterThan(5000);
