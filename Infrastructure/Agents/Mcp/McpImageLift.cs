@@ -64,13 +64,18 @@ internal static class McpImageLift
         {
             if (content is TextContent text)
             {
-                if (LabelOf(text.Text) is { } label)
+                // Counted paragraph by paragraph, not block by block: Flatten joins text blocks
+                // with a blank line and hydration splits the joined text on it, so a '{'-paragraph
+                // embedded inside one block is a candidate over there whether or not it was ever
+                // its own block. Counting whole blocks here shifted every key after such a
+                // paragraph by one.
+                foreach (var part in EnvelopeCandidates(text.Text))
                 {
-                    pending = (envelopesSeen, label);
-                }
+                    if (LabelOf(part) is { } label)
+                    {
+                        pending = (envelopesSeen, label);
+                    }
 
-                if (LooksLikeEnvelope(text.Text))
-                {
                     envelopesSeen++;
                 }
 
@@ -136,7 +141,8 @@ internal static class McpImageLift
 
     // Anything hydration's own split will count as a candidate. It has to be the same question,
     // asked the same way, or the two sides number the pictures differently again.
-    public static bool LooksLikeEnvelope(string text) => text.TrimStart().StartsWith('{');
+    public static IEnumerable<string> EnvelopeCandidates(string text) =>
+        text.Split("\n\n").Where(part => part.TrimStart().StartsWith('{'));
 
     private static PageImageResult? Parse(string text)
     {

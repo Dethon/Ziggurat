@@ -214,7 +214,7 @@ public class McpImageLiftTests
         // bytes were stored under -- otherwise the picture is stored and never asked for.
         var envelopes = (lifted as IList<AIContent>)!
             .OfType<TextContent>()
-            .Where(t => McpImageLift.LooksLikeEnvelope(t.Text))
+            .Where(t => McpImageLift.EnvelopeCandidates(t.Text).Any())
             .ToList();
         var envelope = envelopes.ShouldHaveSingleItem();
         PageImageResult.TryRead(System.Text.Json.Nodes.JsonNode.Parse(envelope.Text))

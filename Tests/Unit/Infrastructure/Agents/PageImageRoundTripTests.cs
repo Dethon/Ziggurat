@@ -87,6 +87,29 @@ public class PageImageRoundTripTests
         reads.ShouldHaveSingleItem().ShouldBe(store.Keys.ShouldHaveSingleItem());
     }
 
+    [Fact]
+    public async Task AForeignBlockWithAnEmbeddedJsonParagraph_DoesNotShiftTheKeys()
+    {
+        // Flatten joins text blocks with a blank line and hydration splits the joined text on it,
+        // so a '{'-paragraph embedded inside one block is a candidate over there whether or not it
+        // was ever its own block. The bridge has to count the same way, or everything after that
+        // paragraph is stored one key off its bytes.
+        var store = new RecordingStore();
+        object result = new AIContent[]
+        {
+            new TextContent("Some prose the server wrote.\n\n{\"anything\": 1}"),
+            new DataContent(new byte[] { 4, 5 }, "image/png")
+        };
+
+        var lifted = await McpImageLift.ApplyAsync(result, store, Conversation, CallId, CancellationToken.None);
+        var message = new ChatMessage(
+            ChatRole.Tool, [new FunctionResultContent(CallId, QualifiedMcpTool.Flatten(lifted))]);
+
+        var reads = KeysHydrationWillAskFor(message);
+
+        reads.ShouldHaveSingleItem().ShouldBe(store.Keys.ShouldHaveSingleItem());
+    }
+
     // The store keys hydration derives from the message, which is the whole contract under test.
     private static IReadOnlyList<string> KeysHydrationWillAskFor(ChatMessage message) =>
         ReadImageHydration.Reads(message)
