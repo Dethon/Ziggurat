@@ -188,6 +188,25 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
+    public async Task AnAdditiveStamp_LeavesTheEarlierRefsRouting()
+    {
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        // A non-navigating action stamps only the elements that appeared — the refs the model is
+        // mid-flow with keep resolving, or a four-field form dies after its first fill.
+        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await StampAsync(manager, "s1", a.Tab, RefNamespace.Element, 3);
+        using (var lease = await manager.BeginStampAsync("s1", RefNamespace.Element, a.Tab))
+        {
+            lease.Commit(2, supersede: false);
+        }
+
+        manager.RouteRef("s1", "e-2").ShouldBe(new RefRouting.Routed(a.Tab));
+        manager.RouteRef("s1", "e-5").ShouldBe(new RefRouting.Routed(a.Tab));
+    }
+
+    [Fact]
     public async Task ARefRenumberedByALaterStamp_AnswersSuperseded()
     {
         var (ctx, _) = CreateContext();
@@ -366,7 +385,7 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
-    public async Task PruneIdleAsync_AfterAccess_ResetsIdleClock()
+    public async Task ATouchJustBeforeTheThreshold_ResetsTheIdleClock()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var (ctx, pages) = CreateContext();
@@ -389,7 +408,7 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
-    public async Task PruneIdleAsync_OnlyRemovesIdleSessions()
+    public async Task OnlyIdleSessions_ArePruned()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var (ctx, pages) = CreateContext();
@@ -411,7 +430,7 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
-    public async Task Clear_DropsAllSessions()
+    public async Task ClearingTheManager_DropsEverySession()
     {
         var (ctx, _) = CreateContext();
         await using var manager = new BrowserSessionManager();
@@ -451,7 +470,7 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
-    public async Task LockTabAsync_SameTab_BlocksUntilReleased()
+    public async Task TwoCallsOnOneTab_SerializeOnItsLock()
     {
         var (ctx, _) = CreateContext();
         await using var manager = new BrowserSessionManager();
@@ -461,7 +480,7 @@ public class BrowserSessionManagerTests
         var second = manager.LockTabAsync(a.Tab);
 
         // A snapshot or fetch racing a navigation on the same tab waits its turn.
-        (await Task.WhenAny(second, Task.Delay(200))).ShouldNotBe(second);
+        (await Task.WhenAny(second, Eventually.Settle())).ShouldNotBe(second);
 
         first.Dispose();
 
@@ -470,7 +489,7 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
-    public async Task LockTabAsync_DifferentTabsOfOneSession_DoNotBlockEachOther()
+    public async Task TwoCallsOnDifferentTabsOfOneSession_DoNotSerialize()
     {
         var (ctx, _) = CreateContext();
         await using var manager = new BrowserSessionManager();
@@ -543,7 +562,7 @@ public class BrowserSessionManagerTests
         var second = manager.BeginStampAsync("s1", RefNamespace.Element);
 
         // The second stamp must wait: handing both the same start would reissue numbers.
-        (await Task.WhenAny(second, Task.Delay(200))).ShouldNotBe(second);
+        (await Task.WhenAny(second, Eventually.Settle())).ShouldNotBe(second);
 
         first.Commit(3);
         first.Dispose();
@@ -554,7 +573,7 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
-    public async Task BackgroundTimer_FiresPrune_OnPruneInterval()
+    public async Task TheBackgroundTimer_PrunesOnItsInterval()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var (ctx, pages) = CreateContext();

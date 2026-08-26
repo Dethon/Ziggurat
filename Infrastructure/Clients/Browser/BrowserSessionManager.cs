@@ -84,14 +84,15 @@ public class BrowserSessionManager : IAsyncDisposable
 
     // Where a browse lands: a live tab whose address — asked-for or landed-on — matches exactly is
     // reloaded in place; anything else opens a new tab, closing the least-recently-touched one
-    // when the pool is full. Pool mutation happens under the create lock, so two parallel browses
-    // of different URLs get two tabs rather than racing into one.
+    // when the pool is full. Pool mutation happens under the session's own gate, so two parallel
+    // browses of one session get two tabs rather than racing into one, and one session's pool work
+    // never queues behind another's.
     public async Task<TabAcquisition> AcquireTabForBrowseAsync(
         string sessionId, string url, IBrowserContext context, CancellationToken ct = default)
     {
         var session = await GetOrCreateAsync(sessionId, ct);
 
-        await _createLock.WaitAsync(ct);
+        await session.PoolGate.WaitAsync(ct);
         BrowserTab? evicted = null;
         try
         {
@@ -99,31 +100,23 @@ public class BrowserSessionManager : IAsyncDisposable
 
             if (session.FindByUrl(url) is { } match)
             {
+                // The address the model just asked with becomes the one the tab is known by, so
+                // a later closed-wall names the URL the model most recently used.
+                match.RequestedUrl = url;
                 Touch(session, match);
                 return new TabAcquisition(match, Reused: true);
             }
 
-            if (session.TabList.Count >= _tabCap)
-            {
-                evicted = session.TabList.MinBy(t => t.LastTouchedAt);
-                session.TabList.Remove(evicted!);
-                session.CloseRangesOf(evicted!);
-            }
-
+            evicted = EvictIfAtCap(session);
             var page = await context.NewPageAsync();
-            HandlePageEvents(sessionId, page);
-
-            var tab = new BrowserTab(page, url, _timeProvider.GetUtcNow());
-            session.TabList.Add(tab);
-            Touch(session, tab);
-            return new TabAcquisition(tab, Reused: false);
+            return new TabAcquisition(Admit(session, sessionId, page, url), Reused: false);
         }
         finally
         {
-            _createLock.Release();
+            session.PoolGate.Release();
             if (evicted is not null)
             {
-                await CloseTabPageAsync(evicted);
+                await CloseEvictedAsync(evicted);
             }
         }
     }
@@ -137,37 +130,74 @@ public class BrowserSessionManager : IAsyncDisposable
         var session = _sessions.GetValueOrDefault(sessionId);
         if (session is null)
         {
+            // Nothing owns the page and nothing will: close it rather than reviving the leak
+            // adoption exists to close.
+            if (!popup.IsClosed)
+            {
+                try
+                {
+                    await popup.CloseAsync();
+                }
+                catch (PlaywrightException)
+                {
+                    // Already gone.
+                }
+            }
+
             return null;
         }
 
-        await _createLock.WaitAsync(ct);
+        await session.PoolGate.WaitAsync(ct);
         BrowserTab? evicted = null;
         try
         {
             session.DropClosedTabs();
-
-            if (session.TabList.Count >= _tabCap)
-            {
-                evicted = session.TabList.MinBy(t => t.LastTouchedAt);
-                session.TabList.Remove(evicted!);
-                session.CloseRangesOf(evicted!);
-            }
-
-            HandlePageEvents(sessionId, popup);
-            var tab = new BrowserTab(popup, SafeUrl(popup), _timeProvider.GetUtcNow());
-            session.TabList.Add(tab);
-            Touch(session, tab);
+            evicted = EvictIfAtCap(session);
+            var tab = Admit(session, sessionId, popup, SafeUrl(popup));
             session.PendingPopup = tab;
             return tab;
         }
         finally
         {
-            _createLock.Release();
+            session.PoolGate.Release();
             if (evicted is not null)
             {
-                await CloseTabPageAsync(evicted);
+                await CloseEvictedAsync(evicted);
             }
         }
+    }
+
+    // An evicted tab may be mid-snapshot or mid-fetch; closing under its own lock lets the
+    // in-flight call finish instead of having its page pulled out from under it. The pool gate is
+    // already released here, so the gate-before-tab-lock order holds.
+    private async Task CloseEvictedAsync(BrowserTab evicted)
+    {
+        using (await LockTabAsync(evicted))
+        {
+            await CloseTabPageAsync(evicted);
+        }
+    }
+
+    private BrowserTab? EvictIfAtCap(BrowserSession session)
+    {
+        if (session.TabList.Count < _tabCap)
+        {
+            return null;
+        }
+
+        var evicted = session.TabList.MinBy(t => t.LastTouchedAt)!;
+        session.TabList.Remove(evicted);
+        session.CloseRangesOf(evicted);
+        return evicted;
+    }
+
+    private BrowserTab Admit(BrowserSession session, string sessionId, IPage page, string url)
+    {
+        HandlePageEvents(sessionId, page);
+        var tab = new BrowserTab(page, url, _timeProvider.GetUtcNow());
+        session.TabList.Add(tab);
+        Touch(session, tab);
+        return tab;
     }
 
     private void HandlePageEvents(string sessionId, IPage page)
@@ -293,7 +323,10 @@ public class BrowserSessionManager : IAsyncDisposable
 
         public int Start { get; }
 
-        public void Commit(int count)
+        // supersede: a restamping pass replaced every number the tab held, so earlier ranges stop
+        // routing. An additive pass — a non-navigating action stamping only what appeared —
+        // leaves them routing, or a multi-step flow dies after its first action.
+        public void Commit(int count, bool supersede = true)
         {
             if (_session is not { } session)
             {
@@ -303,7 +336,7 @@ public class BrowserSessionManager : IAsyncDisposable
             session.Counters.Advance(_namespace, Start + count);
             if (_tab is not null && count > 0)
             {
-                session.RegisterRange(_namespace, Start, Start + count - 1, _tab);
+                session.RegisterRange(_namespace, Start, Start + count - 1, _tab, supersede);
             }
         }
 
@@ -495,6 +528,9 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
     // The popup the last adoption left behind, for the action whose click spawned it.
     internal BrowserTab? PendingPopup { get; set; }
 
+    // Serializes this session's pool mutation — create, reuse, evict, adopt — and nothing else's.
+    internal SemaphoreSlim PoolGate { get; } = new(1, 1);
+
     internal List<BrowserTab> TabList { get; } = [];
 
     public IReadOnlyList<BrowserTab> Tabs => TabList;
@@ -516,14 +552,14 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
         }
     }
 
-    internal void RegisterRange(RefNamespace ns, int start, int end, BrowserTab tab)
+    internal void RegisterRange(RefNamespace ns, int start, int end, BrowserTab tab, bool supersede = true)
     {
         lock (_ranges)
         {
-            // A fresh stamp on a tab supersedes everything that namespace stamped there before —
-            // the old numbers are no longer on the document.
+            // A restamping pass supersedes everything that namespace stamped on the tab before —
+            // the old numbers are no longer on the document. An additive pass leaves them be.
             foreach (var range in _ranges.Where(r =>
-                         r.Tab == tab && r.Ns == ns && r.State == RefRangeState.Active))
+                         supersede && r.Tab == tab && r.Ns == ns && r.State == RefRangeState.Active))
             {
                 range.State = RefRangeState.Superseded;
             }

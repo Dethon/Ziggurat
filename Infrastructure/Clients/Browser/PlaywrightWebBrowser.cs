@@ -24,7 +24,6 @@ public class PlaywrightWebBrowser(
         tabCap: tabCap);
     private readonly ModalDismisser _modalDismisser = new();
     private readonly AccessibilitySnapshotService _snapshotService = new();
-    private readonly Random _random = new();
     private bool _initialized;
     // Bumped under _initLock each time a fresh browser connection is established. Lets the reconnect
     // path replace only the connection that actually failed, so concurrent callers don't tear down a
@@ -88,7 +87,7 @@ public class PlaywrightWebBrowser(
         // The pre-navigation jitter and acquiring the tab are independent, so the delay runs
         // alongside page creation (measured ~150ms) instead of after it. A random gap still precedes
         // GotoAsync — it just no longer costs anything on top of work already happening.
-        var jitter = Task.Delay(_random.Next(50, 150), ct);
+        var jitter = Task.Delay(Random.Shared.Next(50, 150), ct);
         var acquisition = await _sessions.AcquireTabForBrowseAsync(
             request.SessionId, request.Url, _context!, ct);
         var tab = acquisition.Tab;
@@ -504,7 +503,10 @@ public class PlaywrightWebBrowser(
 
         _sessions.NoteFinalUrl(request.SessionId, tab, page.Url);
 
-        var after = await CaptureNumberedSnapshotAsync(request.SessionId, tab, null);
+        // Same document: the refs the model holds stay valid, and only elements the action
+        // surfaced get fresh numbers. A navigation restamps the new document from scratch.
+        var after = await CaptureNumberedSnapshotAsync(
+            request.SessionId, tab, null, augment: !navigationOccurred);
 
         // On navigation the entire page changed — return the new snapshot directly
         // instead of a diff that would duplicate all content as removed + added lines
@@ -645,6 +647,11 @@ public class PlaywrightWebBrowser(
 
     private async Task<WebActionResult> AnswerFromPopupAsync(string sessionId, BrowserTab popupTab)
     {
+        // The popup's own lock, held on top of the acting tab's: the first read of an adopted
+        // page keeps the same no-half-replaced-DOM promise as any other tab. A popup is always a
+        // fresh page, never an existing tab, so the nesting cannot cycle.
+        using var popupLock = await _sessions.LockTabAsync(popupTab);
+
         try
         {
             await popupTab.Page.WaitForLoadStateAsync(LoadState.DOMContentLoaded,
@@ -675,17 +682,20 @@ public class PlaywrightWebBrowser(
             page.Url, page.Url != urlBefore, snapshot.Snapshot, null, null);
     }
 
-    // A restamping capture under the session's element-stamp lease, so the numbers written into
+    // A numbered capture under the session's element-stamp lease, so the numbers written into
     // the page continue from where the session stopped and are never issued twice. The committed
-    // range is registered against the tab, which is what routes each ref back here later. The
-    // before-diff capture (preserveRefs) writes no numbers and needs no lease.
+    // range is registered against the tab, which is what routes each ref back here later.
+    // Restamping (the default) renumbers the whole document and supersedes the tab's earlier
+    // ranges; augmenting keeps every ref already on the document — a non-navigating action stamps
+    // only what appeared, so the refs the model is mid-flow with keep resolving. The before-diff
+    // capture (preserveRefs) writes no numbers and needs no lease.
     private async Task<AccessibilitySnapshotService.SnapshotCaptureResult> CaptureNumberedSnapshotAsync(
-        string sessionId, BrowserTab tab, string? selector)
+        string sessionId, BrowserTab tab, string? selector, bool augment = false)
     {
         using var stamp = await _sessions.BeginStampAsync(sessionId, RefNamespace.Element, tab);
         var result = await _snapshotService.CaptureAsync(
-            tab.Page, selector, sessionId, startNumber: stamp.Start);
-        stamp.Commit(result.RefCount);
+            tab.Page, selector, sessionId, startNumber: stamp.Start, augmentRefs: augment);
+        stamp.Commit(result.RefCount, supersede: !augment);
         return result;
     }
 

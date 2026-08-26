@@ -117,7 +117,7 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         await firstGotoEntered.Task;
 
         var nav2 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://a.test/"));
-        var secondStarted = await Task.WhenAny(nav2, Task.Delay(300)) == nav2;
+        var secondStarted = await Task.WhenAny(nav2, Eventually.Settle()) == nav2;
 
         // While the first navigation holds the tab, the second must not have navigated.
         gotoCallCount.ShouldBe(1);
@@ -224,7 +224,7 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         await gotoEntered.Task;
 
         var snapshot = browser.SnapshotAsync(new SnapshotRequest("s"));
-        await Task.Delay(300);
+        await Eventually.Settle();
         snapshotRan.ShouldBeFalse();
 
         releaseGoto.TrySetResult();
