@@ -88,15 +88,13 @@ public class PlaywrightWebBrowser(
         // alongside page creation (measured ~150ms) instead of after it. A random gap still precedes
         // GotoAsync — it just no longer costs anything on top of work already happening.
         var jitter = Task.Delay(Random.Shared.Next(50, 150), ct);
-        var acquisition = await _sessions.AcquireTabForBrowseAsync(
-            request.SessionId, request.Url, _context!, ct);
-        var tab = acquisition.Tab;
-        var page = tab.Page;
 
         // Same-tab work queues; another tab's navigation runs beside this one untouched. The lock
         // spans the whole read — navigation through extraction — so nothing answers off a
         // half-replaced document.
-        using var tabLock = await _sessions.LockTabAsync(tab, ct);
+        var (tab, tabLock) = await AcquireLockedTabAsync(request, ct);
+        using var _ = tabLock;
+        var page = tab.Page;
 
         await jitter;
 
@@ -209,16 +207,18 @@ public class PlaywrightWebBrowser(
         // because StripDomNoiseAsync removes <script> tags including ld+json
         var structuredData = ExtractStructuredData(html);
 
-        // Strip hidden overlays, dismissed modals, and non-content noise from DOM
-        // to prevent them from consuming the content budget during HTML processing
-        await AnnotateAndStripAsync(request.SessionId, tab);
-
         if (request.ScrollToLoad)
         {
             await ScrollToLoadAsync(page, request.ScrollSteps, ct);
         }
 
         await WaitForDomStabilityAsync(page, ct: ct);
+
+        // Strip hidden overlays, dismissed modals, and non-content noise from DOM to prevent them
+        // from consuming the content budget during HTML processing. After the scroll and the
+        // stability wait, so images the scroll lazy-loaded are measured and stamped rather than
+        // left unlisted on exactly the pages scrollToLoad targets.
+        await AnnotateAndStripAsync(request.SessionId, tab);
 
         html = await page.ContentAsync();
         var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
@@ -251,6 +251,26 @@ public class PlaywrightWebBrowser(
             ImageCount = processed.ImageCount,
             ImagesBeyondWindow = processed.ImagesBeyondWindow
         };
+    }
+
+    // A tab can be evicted between being acquired and being locked — its closed page would then
+    // throw "Target closed" mid-navigation, which reads as the whole connection dying and tears
+    // down every session. Re-acquire instead: the pool drops the dead tab and opens a fresh one.
+    private async Task<(BrowserTab Tab, IDisposable Lock)> AcquireLockedTabAsync(
+        BrowseRequest request, CancellationToken ct)
+    {
+        while (true)
+        {
+            var acquisition = await _sessions.AcquireTabForBrowseAsync(
+                request.SessionId, request.Url, _context!, ct);
+            var tabLock = await _sessions.LockTabAsync(acquisition.Tab, ct);
+            if (!acquisition.Tab.Page.IsClosed)
+            {
+                return (acquisition.Tab, tabLock);
+            }
+
+            tabLock.Dispose();
+        }
     }
 
     public async Task<BrowseResult> GetCurrentPageAsync(string sessionId, CancellationToken ct = default)
@@ -317,6 +337,14 @@ public class PlaywrightWebBrowser(
             // A snapshot racing a navigation on this tab waits rather than reading a
             // half-replaced DOM.
             using var tabLock = await _sessions.LockTabAsync(tab, ct);
+
+            // Evicted while this call queued: the tab is gone, the session is not.
+            if (tab.Page.IsClosed)
+            {
+                return new SnapshotResult(request.SessionId, null, null, 0,
+                    $"That tab has been closed. Browse {tab.RequestedUrl} again for fresh refs.");
+            }
+
             _sessions.TouchTab(request.SessionId, tab);
             var result = await CaptureNumberedSnapshotAsync(
                 request.SessionId, tab, request.Selector);
@@ -387,6 +415,14 @@ public class PlaywrightWebBrowser(
             // tab so it cannot interrupt (or be interrupted by) a concurrent navigation there.
             using var tabLock = await _sessions.LockTabAsync(tab, ct);
 
+            // Evicted while this call queued on its lock: a closed page is the closed-ref wall,
+            // not a lost session — the browser connection is fine and the other tabs live on.
+            if (tab.Page.IsClosed)
+            {
+                return new WebActionResult(request.SessionId, WebActionStatus.RefClosed,
+                    null, false, null, null, null, RefUrl: tab.RequestedUrl);
+            }
+
             _sessions.TouchTab(request.SessionId, tab);
 
             return request.Action switch
@@ -397,6 +433,14 @@ public class PlaywrightWebBrowser(
         }
         catch (PlaywrightException ex) when (IsConnectionClosed(ex))
         {
+            // A closed page with the browser still up is this one tab evicted mid-call, not the
+            // connection dying — the session's other tabs live on and must not be dropped.
+            if (tab.Page.IsClosed)
+            {
+                return new WebActionResult(request.SessionId, WebActionStatus.RefClosed,
+                    null, false, null, null, null, RefUrl: tab.RequestedUrl);
+            }
+
             // The connection dropped — the page's state is gone. Drop the dead session and
             // tell the caller to web_browse again rather than leaking the raw Playwright error.
             _sessions.Remove(request.SessionId);
@@ -708,7 +752,14 @@ public class PlaywrightWebBrowser(
     {
         var page = tab.Page;
         await page.GoBackAsync(new() { WaitUntil = WaitUntilState.DOMContentLoaded });
-        _sessions.MarkTabNavigated(request.SessionId, tab);
+
+        // A back with no history navigates nothing: the document is unchanged, so the refs on it
+        // — the images' included — are not superseded by a page that never moved.
+        if (page.Url != urlBefore)
+        {
+            _sessions.MarkTabNavigated(request.SessionId, tab);
+        }
+
         _sessions.NoteFinalUrl(request.SessionId, tab, page.Url);
         var snapshot = await CaptureNumberedSnapshotAsync(request.SessionId, tab, null);
 
@@ -803,7 +854,21 @@ public class PlaywrightWebBrowser(
     private async Task<FetchedImage> FetchLockedAsync(BrowserTab tab, string imageRef, CancellationToken ct)
     {
         using var tabLock = await _sessions.LockTabAsync(tab, ct);
-        return await FetchOneAsync(tab.Page, imageRef);
+
+        // Evicted while this fetch queued on its lock: the closed-ref wall, not a site refusal.
+        if (tab.Page.IsClosed)
+        {
+            return new FetchedImage(imageRef, null, null,
+                ImageFetchStatus.RefClosed, Url: tab.RequestedUrl);
+        }
+
+        var fetched = await FetchOneAsync(tab.Page, imageRef);
+
+        // An eviction that lands mid-fetch surfaces as a Playwright error; the closed page says
+        // which wall it truly was.
+        return fetched.Status == ImageFetchStatus.SiteRefused && tab.Page.IsClosed
+            ? new FetchedImage(imageRef, null, null, ImageFetchStatus.RefClosed, Url: tab.RequestedUrl)
+            : fetched;
     }
 
     private async Task<FetchedImage> FetchOneAsync(IPage page, string imageRef)
@@ -910,6 +975,14 @@ public class PlaywrightWebBrowser(
                           // arrived at all — a dead link, not a CDN guarding its pixels.
                           if (!source) return 'never-loaded';
 
+                          // A source with no intrinsic size — a viewBox-only SVG reports
+                          // naturalWidth 0 — would size the canvas 0x0 and leave as a zero-byte
+                          // "success" the vision provider rejects whole. The pixels are on
+                          // screen, so hand it to the rungs below the canvas instead.
+                          if (!source.naturalWidth || !source.naturalHeight) {
+                              return JSON.stringify({ tainted: true, label, url });
+                          }
+
                           const canvas = document.createElement('canvas');
                           canvas.width = source.naturalWidth;
                           canvas.height = source.naturalHeight;
@@ -962,14 +1035,24 @@ public class PlaywrightWebBrowser(
         try
         {
             var response = await page.Context.APIRequest.GetAsync(url, new() { Timeout = 10_000 });
-            var mediaType = response.Headers.GetValueOrDefault("content-type")?.Split(';')[0].Trim();
-            if (!response.Ok || mediaType is null || !WireRasters.Contains(mediaType))
+            try
             {
-                return null;
-            }
+                var mediaType = response.Headers.GetValueOrDefault("content-type")?.Split(';')[0].Trim();
+                if (!response.Ok || mediaType is null || !WireRasters.Contains(mediaType))
+                {
+                    return null;
+                }
 
-            var bytes = await response.BodyAsync();
-            return new FetchedImage(imageRef, mediaType, bytes, ImageFetchStatus.Success, Label: label);
+                var bytes = await response.BodyAsync();
+                return new FetchedImage(imageRef, mediaType, bytes, ImageFetchStatus.Success, Label: label);
+            }
+            finally
+            {
+                // Playwright retains the body until the response is disposed or its context dies,
+                // and this context lives until reconnect — undisposed, every re-request kept its
+                // full image in memory for the life of the process.
+                await response.DisposeAsync();
+            }
         }
         catch (PlaywrightException)
         {
@@ -1593,14 +1676,21 @@ public class PlaywrightWebBrowser(
     {
         await _sessions.DisposeAsync();
 
-        if (_context != null)
+        try
         {
-            await _context.CloseAsync();
-        }
+            if (_context != null)
+            {
+                await _context.CloseAsync();
+            }
 
-        if (_browser != null)
+            if (_browser != null)
+            {
+                await _browser.CloseAsync();
+            }
+        }
+        catch (PlaywrightException)
         {
-            await _browser.CloseAsync();
+            // A Camoufox connection already dead at shutdown has nothing left to close.
         }
 
         _playwright?.Dispose();

@@ -386,6 +386,30 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         result.ErrorMessage.ShouldNotContain("has been closed");
     }
 
+    [Fact]
+    public async Task ActionAsync_WhenTheTabWasEvictedMidCall_AnswersTheClosedWallNotALostSession()
+    {
+        // The page dying is not the connection dying: an eviction that lands while the action is
+        // in flight throws the same "has been closed" text, but the session's other tabs live on.
+        // Tearing the whole session down here was the bug.
+        var closed = false;
+        var (browser, page) = await CreateBrowserWithCachedSessionAsync("s", "https://a.test/");
+        await using var _ = browser;
+
+        page.SetupGet(p => p.IsClosed).Returns(() => closed);
+        page.Setup(p => p.GoBackAsync(It.IsAny<PageGoBackOptions?>()))
+            .Returns(() =>
+            {
+                closed = true;
+                throw new PlaywrightException("Target page, context or browser has been closed");
+            });
+
+        var result = await browser.ActionAsync(new WebActionRequest("s", null, WebActionType.Back));
+
+        result.Status.ShouldBe(WebActionStatus.RefClosed);
+        result.RefUrl.ShouldBe("https://a.test/");
+    }
+
     // Primes a browser so a session is cached for sessionId. The navigation deliberately
     // aborts in the post-goto pipeline (ContentAsync throws), which still caches the session.
     private static async Task<(PlaywrightWebBrowser browser, Mock<IPage> page)>
