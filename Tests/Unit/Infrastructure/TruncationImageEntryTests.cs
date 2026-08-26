@@ -48,6 +48,22 @@ public class TruncationImageEntryTests
     }
 
     [Fact]
+    public void ACutInsideTheEntrysOpening_LeavesNoDanglingRef()
+    {
+        // "[image i-123: ..." cut to "[image i-12" is worse than a half-written label: it reads
+        // as a plausible ref that names a different picture. No newline anywhere, so the
+        // line-boundary rule cannot rescue it.
+        var text = new string('a', 200)
+                   + PageImageEntry.Write(PageImageEntry.RefFor(123), "A harbour at dusk");
+
+        // maxLength reserves 20 for the suffix, so the cut lands after "[image i-12".
+        var truncated = HtmlConverter.Truncate(text, 200 + "[image i-12".Length + 20);
+
+        truncated.ShouldNotContain("[image");
+        truncated.ShouldContain("[Content truncated...]");
+    }
+
+    [Fact]
     public void ACutLandingOnOrdinaryText_StillBacksUpToTheLineBoundaryAsBefore()
     {
         var text = string.Join("\n", Enumerable.Range(1, 200).Select(i => $"line {i} of the page"));

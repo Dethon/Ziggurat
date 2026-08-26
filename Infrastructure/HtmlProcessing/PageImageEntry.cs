@@ -61,7 +61,28 @@ public static partial class PageImageEntry
     public static int PartialEntryStart(string text)
     {
         var open = PartialOpenRegex().Match(text);
-        return open.Success && text.IndexOf(Close, open.Index) < 0 ? open.Index : -1;
+        return open.Success && text.IndexOf(Close, open.Index) < 0 ? open.Index : DanglingOpenStart(text);
+    }
+
+    // "[image i-" and whatever digits follow, before the colon that would let the opening regex
+    // see it. A tail cut there is worse than a half-written label: "[image i-12" out of
+    // "[image i-123: ..." reads as a plausible ref that names a different picture.
+    private const string OpenWithRef = $"{Open}{ImageRef.Prefix}";
+
+    private static int DanglingOpenStart(string text)
+    {
+        var last = text.LastIndexOf('[');
+        if (last < 0 || text.IndexOf(Close, last) >= 0)
+        {
+            return -1;
+        }
+
+        var tail = text[last..];
+        var isPartialOpen = tail.Length <= OpenWithRef.Length
+            ? OpenWithRef.StartsWith(tail, StringComparison.Ordinal)
+            : tail.StartsWith(OpenWithRef, StringComparison.Ordinal)
+              && tail[OpenWithRef.Length..].All(char.IsAsciiDigit);
+        return isPartialOpen ? last : -1;
     }
 
     public static int Count(string text) => EntryRegex().Count(text);
