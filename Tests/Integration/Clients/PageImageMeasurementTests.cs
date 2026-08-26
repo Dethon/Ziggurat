@@ -218,6 +218,56 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
     }
 
     [SkippableFact]
+    public async Task ACrossOriginImageTheCdnShares_ComesBackAsServedRatherThanReEncoded()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        // The common CDN case, live on Wikimedia: the host sends ACAO, so an anonymous fetch
+        // keeps the bytes exactly as served. The canvas used to answer first and re-encoded
+        // every cross-origin jpeg as a fatter PNG — the moon left at 1.3MB.
+        var sessionId = $"test-{Guid.NewGuid():N}";
+        try
+        {
+            await PrepareAsync(
+                sessionId,
+                """
+                <img id="shared" src="https://acao-cdn.test/pic.jpg" alt="A full moon"
+                     style="width:300px;height:300px">
+                """);
+
+            var page = fixture.Browser.Sessions.Get(sessionId)!.CurrentTab!.Page;
+            await page.RouteAsync("https://acao-cdn.test/pic.jpg", route =>
+                route.FulfillAsync(new()
+                {
+                    ContentType = "image/jpeg",
+                    Headers = new Dictionary<string, string> { ["Access-Control-Allow-Origin"] = "*" },
+                    BodyBytes = Convert.FromBase64String(OnePixelJpegBase64)
+                }));
+            await fixture.Browser.EvaluateOnSessionAsync(
+                sessionId,
+                """
+                async () => {
+                    const img = document.getElementById('shared');
+                    img.src = img.src; // re-request now that the route answers
+                    await new Promise(r => { img.onload = r; img.onerror = r; });
+                }
+                """);
+            await fixture.Browser.AnnotateImagesOnSessionAsync(sessionId);
+
+            var fetched = await fixture.Browser.FetchImagesAsync(new ImageFetchRequest(sessionId, ["i-1"]));
+
+            var image = fetched.Images.ShouldHaveSingleItem();
+            image.Status.ShouldBe(ImageFetchStatus.Success);
+            image.MediaType.ShouldBe("image/jpeg");
+            image.Bytes.ShouldBe(Convert.FromBase64String(OnePixelJpegBase64));
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
+    [SkippableFact]
     public async Task AnImageCorsWontRelease_IsReadOffTheScreenInstead()
     {
         Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
@@ -388,6 +438,9 @@ public class PageImageMeasurementTests(PlaywrightWebBrowserFixture fixture)
 
     private const string OnePixelPngBase64 =
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+    private const string OnePixelJpegBase64 =
+        "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3+iiigD//2Q==";
 
     private readonly record struct Measured(bool Survived, int Width, int Height, bool HasSrc);
 }

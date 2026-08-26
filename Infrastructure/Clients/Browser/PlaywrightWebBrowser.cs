@@ -841,14 +841,18 @@ public class PlaywrightWebBrowser(
 
                       const url = new URL(src, location.href).toString();
 
-                      // Same-origin first: fetch keeps the bytes exactly as served, so no
-                      // re-encoding and no loss — but only for a raster the chat wire accepts.
-                      // Anything else (an SVG site logo was the live case) falls through to the
-                      // canvas and leaves as PNG like every cross-origin picture; as-served SVG
-                      // bytes made the vision provider refuse the whole request with a 400.
-                      if (new URL(url).origin === location.origin) {
+                      // The wire fetch keeps the bytes exactly as served, so no re-encoding and
+                      // no loss — but only for a raster the chat wire accepts. Anything else (an
+                      // SVG site logo was the live case) falls through to the canvas and leaves
+                      // as PNG; as-served SVG bytes made the vision provider refuse the whole
+                      // request with a 400. Same-origin sends the page's own credentials;
+                      // cross-origin goes anonymous, because image CDNs answer ACAO * and a
+                      // wildcard is exactly what a credentialed request is rejected against —
+                      // the canvas used to answer the ACAO'd case first and re-encoded every
+                      // shared jpeg as a fatter PNG.
+                      const wireFetch = async (credentials) => {
                           try {
-                              const response = await fetch(url, { credentials: 'include' });
+                              const response = await fetch(url, { credentials });
                               const mediaType = (response.headers.get('content-type') || 'image/jpeg')
                                   .split(';')[0];
                               const wireRasters =
@@ -869,7 +873,12 @@ public class PlaywrightWebBrowser(
                                   });
                               }
                           } catch { /* fall through to the canvas */ }
-                      }
+                          return null;
+                      };
+
+                      const sameOrigin = new URL(url).origin === location.origin;
+                      const served = await wireFetch(sameOrigin ? 'include' : 'omit');
+                      if (served) return served;
 
                       // Cross-origin, which is the ordinary case: a page's pictures usually come
                       // from a CDN on another host. What fails there is a *credentialed* request:

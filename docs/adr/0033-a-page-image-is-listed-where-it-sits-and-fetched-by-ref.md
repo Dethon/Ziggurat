@@ -91,11 +91,15 @@ credentials, which keeps the served bytes byte for byte. Cross-origin, what brok
 implementation was not CORS in general but credentials in particular: the big image CDNs do send
 `Access-Control-Allow-Origin: *`, and a wildcard is exactly what a credentialed request is
 rejected against — so a `credentials: 'include'` fetch failed on precisely the images the page
-was displaying perfectly well, in the shape of the site refusing. Cross-origin therefore loads
-the image anonymously (`crossOrigin='anonymous'`, usually a cache hit on pixels the browser has
-already decoded), draws it onto a canvas and reads the pixels back. That anonymous load is gated
-by the same `Access-Control-Allow-Origin` header an anonymous `fetch` would be: a CDN that sends
-none fails the probe, and the fallback to the rendered element taints the canvas.
+was displaying perfectly well, in the shape of the site refusing. Cross-origin therefore fetches
+anonymously (`credentials: 'omit'`), which the ACAO the CDNs send admits, and keeps the served
+bytes byte for byte exactly as the same-origin branch does — a live test caught the canvas
+answering that case first and re-encoding every shared jpeg as a fatter PNG. Only when the wire
+fetch fails or answers a non-raster does the canvas run: load the image anonymously
+(`crossOrigin='anonymous'`, usually a cache hit on pixels the browser has already decoded), draw
+it and read the pixels back as PNG. That anonymous load is gated by the same
+`Access-Control-Allow-Origin` header the anonymous `fetch` was: a CDN that sends none fails the
+probe, and the fallback to the rendered element taints the canvas.
 
 *Amended 2026-08-26.* A tainted canvas was originally reported as the site refusing, and a live
 test caught what that costs: JPL's own gallery serves every image from a CloudFront host that
@@ -158,12 +162,11 @@ permanent failure or abandons a retryable one.
   in this repo inherits without opting in.
 - `StripDomNoiseAsync` keeps `src` for images that pass the size filter, so the DOM the markdown is
   built from is no longer uniformly image-free.
-- A cross-origin image arrives re-encoded as PNG, and usually larger than the file the site served,
-  because a canvas holds pixels rather than a file. An anonymous `fetch` is gated by the same
-  `Access-Control-Allow-Origin` header and would keep the served bytes; the canvas read was kept
-  for reusing the pixels the browser already decoded, and the re-encode is that choice's cost.
-- A cross-origin image whose CDN sends no `Access-Control-Allow-Origin` — including one served
-  only to the session's cookies — reports as the site refusing, even though the page displays it.
+- A cross-origin image whose CDN sends `Access-Control-Allow-Origin` arrives byte for byte as
+  served (amended 2026-08-26 — the canvas used to answer first, and its PNG re-encode usually
+  outweighed the file the site served). Only the canvas and screenshot rungs re-encode, and what
+  they carry is pixels rather than the original file; that cost now falls only on images no fetch
+  could obtain.
 - The size filter needs rendered dimensions, not markup attributes, so listing images asks the page
   a question that reading its text did not.
 - No eval scenario. The mechanism is unit-testable end to end and the fetch is covered against the
