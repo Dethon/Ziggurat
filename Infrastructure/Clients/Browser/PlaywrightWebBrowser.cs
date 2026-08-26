@@ -101,12 +101,13 @@ public class PlaywrightWebBrowser(
         await jitter;
 
         var navigationTimedOut = false;
+        IResponse? response = null;
 
         try
         {
-            await page.GotoAsync(request.Url, new PageGotoOptions
+            response = await page.GotoAsync(request.Url, new PageGotoOptions
             {
-                WaitUntil = WaitUntilState.DOMContentLoaded,
+                WaitUntil = WaitUntilState.Commit,
                 Timeout = 30000
             });
         }
@@ -133,6 +134,38 @@ public class PlaywrightWebBrowser(
             else
             {
                 throw;
+            }
+        }
+
+        // The commit says what arrived. An HTML document goes on to DOMContentLoaded as before;
+        // a URL that answers with the picture itself renders the browser's image-viewer document,
+        // and Camoufox's juggler never reports DOMContentLoaded for one — that wait burned its
+        // whole timeout on an event that cannot come and then called the page incomplete. An
+        // image document waits for its one image to decode instead.
+        var committedType = response?.Headers.GetValueOrDefault("content-type")?.Split(';')[0].Trim();
+        if (!navigationTimedOut)
+        {
+            try
+            {
+                if (committedType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) is true)
+                {
+                    await page.WaitForFunctionAsync(
+                        "() => { const i = document.querySelector('img'); return !!i && i.complete && i.naturalWidth > 0; }",
+                        null,
+                        new() { Timeout = 30000 });
+                }
+                else
+                {
+                    await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new() { Timeout = 30000 });
+                }
+            }
+            catch (TimeoutException)
+            {
+                navigationTimedOut = true;
+            }
+            catch (PlaywrightException ex) when (ex.Message.Contains("Timeout", StringComparison.OrdinalIgnoreCase))
+            {
+                navigationTimedOut = true;
             }
         }
 
