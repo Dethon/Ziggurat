@@ -48,9 +48,8 @@ internal static class ReadImageHydration
 
     private static IEnumerable<ReadImageReference> PageImages(string callId, object? result)
     {
-        var text = result as string
-            ?? (result is JsonNode node ? node.ToJsonString() : null)
-            ?? JoinedText(result);
+        var text = FlattenedText(result)
+            ?? (result is JsonNode node ? node.ToJsonString() : null);
         if (text is null)
         {
             return PageImageResult.TryRead(result) is { Shown: true } single
@@ -70,14 +69,34 @@ internal static class ReadImageHydration
             .ToList();
     }
 
-    // The bridge's Flatten joins a multi-block text result with a blank line but leaves a single
-    // block as the list it arrived in -- a shape a bare image answered by a foreign server takes
-    // once its envelope is synthesized. Read it the way Flatten would have written it, or a
-    // one-picture result is stored and never asked for.
+    // The text the bridge's Flatten left on the message, whichever shape carries it now. Live, a
+    // multi-block result is a joined string and a single block stays the list it arrived in; after
+    // the store's plain JsonSerializer round trip, both come back as a JsonElement — a string, or
+    // an array of serialized text contents. Read each the way Flatten would have written it, or a
+    // picture is recognised on the turn that fetched it and never again.
+    private static string? FlattenedText(object? result) =>
+        result as string
+            ?? (result is JsonElement { ValueKind: JsonValueKind.String } text ? text.GetString() : null)
+            ?? JoinedText(result)
+            ?? JoinedElementText(result);
+
     private static string? JoinedText(object? result) =>
         result is IList<AIContent> contents && contents.All(c => c is TextContent)
             ? string.Join("\n\n", contents.OfType<TextContent>().Select(c => c.Text))
             : null;
+
+    private static string? JoinedElementText(object? result) =>
+        result is JsonElement { ValueKind: JsonValueKind.Array } contents
+        && contents.EnumerateArray().All(IsSerializedTextContent)
+            ? string.Join("\n\n", contents.EnumerateArray().Select(c => c.GetProperty("Text").GetString()))
+            : null;
+
+    private static bool IsSerializedTextContent(JsonElement content) =>
+        content.ValueKind == JsonValueKind.Object
+        && content.TryGetProperty("$type", out var type)
+        && type.ValueEquals("text")
+        && content.TryGetProperty("Text", out var text)
+        && text.ValueKind == JsonValueKind.String;
 
     private static IEnumerable<PageImageResult?> SplitEnvelopes(string text) =>
         text.Split("\n\n")
@@ -211,8 +230,10 @@ internal static class ReadImageHydration
         };
     }
 
+    // The same flattened-text rule recognition used, so the model reads the envelope the bridge
+    // wrote rather than that text re-serialized as a JSON string.
     private static string EnvelopeText(object? envelope) =>
-        envelope as string ?? JsonSerializer.Serialize(envelope);
+        FlattenedText(envelope) ?? JsonSerializer.Serialize(envelope);
 
     // Honest in a way a lost attachment's placeholder cannot be: what the image was read from
     // outlives the image, so asking again really does bring it back. One answer for every way the

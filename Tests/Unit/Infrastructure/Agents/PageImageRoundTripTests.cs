@@ -110,6 +110,101 @@ public class PageImageRoundTripTests
         reads.ShouldHaveSingleItem().ShouldBe(store.Keys.ShouldHaveSingleItem());
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(8)]
+    public async Task EveryPicture_IsStillFoundAfterAHistoryReload(int pictures)
+    {
+        // Every turn's history comes back from Redis through a plain JsonSerializer round trip,
+        // which hands hydration a JsonElement where the live turn held a string or a content list.
+        // A picture that is only recognised on the turn that fetched it is a picture the model
+        // sees once and then stares at "shown": true envelopes with nothing behind them.
+        var store = new RecordingStore();
+        var result = await McpImageLift.ApplyAsync(
+            AsAgentSees(ServerResult(pictures)), store, Conversation, CallId, CancellationToken.None);
+
+        var message = Reloaded(new ChatMessage(
+            ChatRole.Tool, [new FunctionResultContent(CallId, QualifiedMcpTool.Flatten(result))]));
+
+        var reads = KeysHydrationWillAskFor(message);
+
+        reads.Count.ShouldBe(pictures);
+        reads.ShouldBeSubsetOf(store.Keys);
+    }
+
+    [Fact]
+    public async Task AForeignServersBareImage_IsStillFoundAfterAHistoryReload()
+    {
+        // The single-block shape Flatten leaves as a list comes back from the store as a JSON
+        // array of text contents, not as an IList<AIContent>.
+        var store = new RecordingStore();
+        object result = new AIContent[] { new DataContent(new byte[] { 4, 5 }, "image/png") };
+
+        var lifted = await McpImageLift.ApplyAsync(result, store, Conversation, CallId, CancellationToken.None);
+        var message = Reloaded(new ChatMessage(
+            ChatRole.Tool, [new FunctionResultContent(CallId, QualifiedMcpTool.Flatten(lifted))]));
+
+        var reads = KeysHydrationWillAskFor(message);
+
+        reads.ShouldHaveSingleItem().ShouldBe(store.Keys.ShouldHaveSingleItem());
+    }
+
+    [Fact]
+    public async Task AReloadedResult_RewritesWithTheEnvelopeTextItself()
+    {
+        // The envelope the model reads back must be the text the bridge left, not that text
+        // re-serialized as a JSON string with escaped quotes.
+        var store = new RecordingStore();
+        var result = await McpImageLift.ApplyAsync(
+            AsAgentSees(ServerResult(1)), store, Conversation, CallId, CancellationToken.None);
+        var flattened = QualifiedMcpTool.Flatten(result);
+        var message = Reloaded(new ChatMessage(
+            ChatRole.Tool, [new FunctionResultContent(CallId, flattened)]));
+
+        var expanded = await ExpandAsync(message, store);
+
+        var contents = (IList<AIContent>)((FunctionResultContent)expanded.Contents[0]).Result!;
+        contents.OfType<TextContent>().First().Text.ShouldBe(FlattenedTextOf(flattened));
+        contents.OfType<DataContent>().ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task AOneBlockListResult_RewritesWithTheBlocksTextNotItsContentJson()
+    {
+        // Flatten leaves a single text block as the list it arrived in; the rewrite must read it
+        // the way Flatten would have written it, not serialize the AIContent list raw.
+        var store = new RecordingStore();
+        object result = new AIContent[] { new DataContent(new byte[] { 4, 5 }, "image/png") };
+        var lifted = await McpImageLift.ApplyAsync(result, store, Conversation, CallId, CancellationToken.None);
+        var flattened = QualifiedMcpTool.Flatten(lifted);
+        var message = new ChatMessage(
+            ChatRole.Tool, [new FunctionResultContent(CallId, flattened)]);
+
+        var expanded = await ExpandAsync(message, store);
+
+        var contents = (IList<AIContent>)((FunctionResultContent)expanded.Contents[0]).Result!;
+        contents.OfType<TextContent>().First().Text.ShouldBe(FlattenedTextOf(flattened));
+        contents.OfType<DataContent>().ShouldHaveSingleItem();
+    }
+
+    // The plain JsonSerializer round trip RedisThreadStateStore puts every message through.
+    private static ChatMessage Reloaded(ChatMessage message) =>
+        System.Text.Json.JsonSerializer.Deserialize<ChatMessage>(
+            System.Text.Json.JsonSerializer.Serialize(message))!;
+
+    private static string FlattenedTextOf(object? flattened) =>
+        flattened as string
+        ?? string.Join("\n\n", ((IList<AIContent>)flattened!).OfType<TextContent>().Select(c => c.Text));
+
+    private static async Task<ChatMessage> ExpandAsync(ChatMessage message, RecordingStore store) =>
+        await ReadImageHydration.ExpandAsync(
+            message,
+            ReadImageHydration.Reads(message),
+            new ReadImageContext(store, Conversation),
+            withinDepth: true,
+            CancellationToken.None);
+
     // The store keys hydration derives from the message, which is the whole contract under test.
     private static IReadOnlyList<string> KeysHydrationWillAskFor(ChatMessage message) =>
         ReadImageHydration.Reads(message)
@@ -166,16 +261,19 @@ public class PageImageRoundTripTests
 
     private sealed class RecordingStore : IReadImageStore
     {
+        private readonly Dictionary<string, ReadImage> _images = [];
+
         public List<string> Keys { get; } = [];
 
         public Task PutAsync(string conversationId, string callId, ReadImage image, CancellationToken ct)
         {
             Keys.Add(callId);
+            _images[callId] = image;
             return Task.CompletedTask;
         }
 
         public Task<ReadImage?> GetAsync(string conversationId, string callId, CancellationToken ct) =>
-            Task.FromResult<ReadImage?>(null);
+            Task.FromResult(_images.GetValueOrDefault(callId));
 
         public Task DeleteAsync(string conversationId, string callId, CancellationToken ct) =>
             Task.CompletedTask;
