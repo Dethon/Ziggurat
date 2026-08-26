@@ -883,16 +883,17 @@ public class PlaywrightWebBrowser(
                           });
                       } catch (e) {
                           return e && e.name === 'SecurityError'
-                              ? JSON.stringify({ tainted: true, label })
+                              ? JSON.stringify({ tainted: true, label, url })
                               : 'error';
                       }
                   }
                   """,
                 imageRef);
 
-            if (ImageFetchPayload.TaintedLabel(payload, out var taintedLabel))
+            if (ImageFetchPayload.Tainted(payload, out var taintedLabel, out var taintedUrl))
             {
-                return await ScreenshotAsync(page, imageRef, taintedLabel);
+                return await FetchAsServedAsync(page, imageRef, taintedLabel, taintedUrl)
+                    ?? await ScreenshotAsync(page, imageRef, taintedLabel);
             }
 
             return ImageFetchPayload.Parse(imageRef, payload);
@@ -903,10 +904,44 @@ public class PlaywrightWebBrowser(
         }
     }
 
+    // CORS binds script inside the page and nothing else: the context's own request client pulls
+    // the same address with the same cookies and keeps the bytes exactly as served — the JPL
+    // gallery, whose CDN sends no ACAO header at all, is the live page this bought back. Null
+    // hands the miss to the screenshot rung rather than deciding refusal here.
+    private static async Task<FetchedImage?> FetchAsServedAsync(
+        IPage page, string imageRef, string? label, string? url)
+    {
+        if (url is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var response = await page.Context.APIRequest.GetAsync(url, new() { Timeout = 10_000 });
+            var mediaType = response.Headers.GetValueOrDefault("content-type")?.Split(';')[0].Trim();
+            if (!response.Ok || mediaType is null || !WireRasters.Contains(mediaType))
+            {
+                return null;
+            }
+
+            var bytes = await response.BodyAsync();
+            return new FetchedImage(imageRef, mediaType, bytes, ImageFetchStatus.Success, Label: label);
+        }
+        catch (PlaywrightException)
+        {
+            return null;
+        }
+    }
+
+    // The rasters the chat wire accepts — the same list the fetch script keeps for the
+    // same-origin branch. Anything else leaves through the canvas or the screenshot as PNG.
+    private static readonly string[] WireRasters =
+        ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
     // The last rung under a tainted canvas: the compositor already painted these pixels, and a
     // screenshot of the element reads them back without CORS having a say. What leaves is the
-    // rendered box re-encoded as PNG — the JPL gallery, whose CDN sends no ACAO header at all,
-    // is the live page this bought back.
+    // rendered box re-encoded as PNG at the size the page shows it.
     private static async Task<FetchedImage> ScreenshotAsync(IPage page, string imageRef, string? label)
     {
         try

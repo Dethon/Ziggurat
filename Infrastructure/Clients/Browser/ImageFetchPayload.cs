@@ -25,7 +25,7 @@ internal static class ImageFetchPayload
             return new FetchedImage(imageRef, null, null, ImageFetchStatus.NeverLoaded);
         }
 
-        if (TaintedLabel(payload, out _))
+        if (Tainted(payload, out _, out _))
         {
             // The fetch loop is meant to catch this before parsing and read the pixels off the
             // screen; a tainted payload reaching here uncaught is still a refusal, not a throw.
@@ -57,12 +57,14 @@ internal static class ImageFetchPayload
         }
     }
 
-    // A canvas the browser shows but will not let script read: the script answers tainted and
-    // hands back the label it already climbed the ladder for, and the C# side reads the pixels
-    // off the screen with an element screenshot instead.
-    public static bool TaintedLabel(string? payload, out string? label)
+    // A canvas the browser shows but will not let script read: the script answers tainted with
+    // the label it already climbed the ladder for and the address it resolved, and the C# side
+    // re-requests that address from outside the page — where CORS has no say — falling back to
+    // an element screenshot of the pixels already on screen.
+    public static bool Tainted(string? payload, out string? label, out string? url)
     {
         label = null;
+        url = null;
         if (payload is null || !payload.StartsWith('{'))
         {
             return false;
@@ -76,8 +78,8 @@ internal static class ImageFetchPayload
                 return false;
             }
 
-            var spoken = (string?)node?["label"];
-            label = string.IsNullOrEmpty(spoken) ? null : spoken;
+            label = NonEmpty((string?)node?["label"]);
+            url = NonEmpty((string?)node?["url"]);
             return true;
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
@@ -85,4 +87,6 @@ internal static class ImageFetchPayload
             return false;
         }
     }
+
+    private static string? NonEmpty(string? text) => string.IsNullOrEmpty(text) ? null : text;
 }

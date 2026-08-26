@@ -100,10 +100,13 @@ none fails the probe, and the fallback to the rendered element taints the canvas
 *Amended 2026-08-26.* A tainted canvas was originally reported as the site refusing, and a live
 test caught what that costs: JPL's own gallery serves every image from a CloudFront host that
 sends no ACAO header at all, so a page of pictures the browser was displaying perfectly answered
-nothing but refusals. The pixels are already painted, and the compositor is not subject to CORS —
-so a tainted canvas now answers with a Playwright element screenshot instead: the rendered box,
-re-encoded as PNG, at the size the page shows it rather than the asset's own. What remains a real
-refusal is an image the browser itself will not show.
+nothing but refusals. CORS binds script inside the page and nothing else — so a tainted canvas
+now answers with the image's address, and the fetch re-requests it through the context's own
+request client (same cookies, no CORS), keeping the bytes exactly as served when they are a wire
+raster. Where that too fails — a host that blocks non-browser clients, a non-raster answer — the
+pixels are still painted, and a Playwright element screenshot reads the rendered box back as PNG
+at the size the page shows it. What remains a real refusal is an image the browser itself will
+not show.
 
 **The MCP server answers with an image block, and the bridge lifts the bytes out.**
 `McpServerWebSearch` returns what the protocol says an image result is, and does not learn Redis,

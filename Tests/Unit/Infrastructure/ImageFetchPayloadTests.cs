@@ -46,20 +46,27 @@ public class ImageFetchPayloadTests
     }
 
     [Fact]
-    public void ATaintedPayload_NamesTheScreenshotFallbackAndCarriesItsLabel()
+    public void ATaintedPayload_CarriesItsLabelAndTheAddressToReFetch()
     {
-        // A canvas the browser will show but not let script read is not the end of the fetch:
-        // the pixels are on screen, and the C# side reads them off it with an element screenshot.
-        ImageFetchPayload.TaintedLabel("""{"tainted":true,"label":"A rover on Mars"}""", out var label)
+        // A canvas the browser will show but not let script read is not the end of the fetch: the
+        // C# side re-requests the address from outside the page, where CORS has no say, and falls
+        // back to an element screenshot of the pixels already on screen.
+        ImageFetchPayload
+            .Tainted(
+                """{"tainted":true,"label":"A rover on Mars","url":"https://cdn.test/pic.jpg"}""",
+                out var label, out var url)
             .ShouldBeTrue();
         label.ShouldBe("A rover on Mars");
+        url.ShouldBe("https://cdn.test/pic.jpg");
     }
 
     [Fact]
     public void ATaintedPayloadWithAnEmptyLabel_CarriesNoLabel()
     {
-        ImageFetchPayload.TaintedLabel("""{"tainted":true,"label":""}""", out var label).ShouldBeTrue();
+        ImageFetchPayload.Tainted("""{"tainted":true,"label":"","url":""}""", out var label, out var url)
+            .ShouldBeTrue();
         label.ShouldBeNull();
+        url.ShouldBeNull();
     }
 
     [Theory]
@@ -69,7 +76,7 @@ public class ImageFetchPayloadTests
     [InlineData("""{"mediaType":"image/png","label":"x","data":"AQID"}""")]
     public void AnythingElse_IsNotTainted(string? payload)
     {
-        ImageFetchPayload.TaintedLabel(payload, out _).ShouldBeFalse();
+        ImageFetchPayload.Tainted(payload, out _, out _).ShouldBeFalse();
     }
 
     [Fact]
