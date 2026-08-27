@@ -358,7 +358,7 @@ public static partial class HtmlConverter
                 sb.AppendLine();
                 break;
             case "TABLE":
-                ConvertTableToMarkdown(elem, sb);
+                ConvertTableToMarkdown(elem, sb, images);
                 break;
             case "DL":
                 ConvertDefinitionListToMarkdown(elem, sb);
@@ -377,17 +377,27 @@ public static partial class HtmlConverter
         }
     }
 
-    private static void ConvertTableToMarkdown(IElement table, StringBuilder sb)
+    // A cell is written as flat text rather than recursed into, so that a row stays on one line.
+    // That flattening reads TextContent, which an <img> contributes nothing to -- so a picture
+    // inside a table used to disappear entirely, and a page whose gallery is laid out in a table
+    // (commons.wikimedia.org's featured pictures: all 49 of them) answered as having no images at
+    // all. The entries are appended after the cell's own words, in cell order, so the refs still
+    // run in document order and the caller's numbering is untouched.
+    private static void ConvertTableToMarkdown(IElement table, StringBuilder sb, ImageNumberer images)
     {
         sb.Append("\n\n");
 
-        var rows = table.QuerySelectorAll("tr");
+        // Scoped to this table's own rows and each row's own cells. Both selectors are
+        // descendant-wide, so a table nested in a cell -- how commons.wikimedia.org frames its
+        // picture of the day -- had its rows rendered again by every table above it, and the
+        // pictures inside them repeated a ref that names exactly one picture.
+        var rows = table.QuerySelectorAll("tr").Where(row => row.Closest("table") == table);
         var isFirstRow = true;
 
         foreach (var row in rows)
         {
-            var cells = row.QuerySelectorAll("th, td");
-            if (cells.Length == 0)
+            var cells = row.QuerySelectorAll("th, td").Where(cell => cell.Closest("tr") == row).ToList();
+            if (cells.Count == 0)
             {
                 continue;
             }
@@ -396,7 +406,9 @@ public static partial class HtmlConverter
             foreach (var cell in cells)
             {
                 var cellText = cell.TextContent.Trim().Replace("|", "\\|").Replace("\n", " ");
-                sb.Append($" {cellText} |");
+                var entries = new StringBuilder();
+                ListImagesWithin(cell, entries, images);
+                sb.Append($" {Join(cellText, entries.ToString())} |");
             }
 
             sb.AppendLine();
@@ -416,6 +428,11 @@ public static partial class HtmlConverter
 
         sb.AppendLine();
     }
+
+    // Either half may be empty: a cell that is only a picture must not lead with a space, and a
+    // cell with no picture must render exactly as it did before.
+    private static string Join(string text, string entries) =>
+        text.Length == 0 ? entries : entries.Length == 0 ? text : text + " " + entries;
 
     private static void ConvertDefinitionListToMarkdown(IElement dl, StringBuilder sb)
     {

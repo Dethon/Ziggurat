@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Infrastructure.HtmlProcessing;
 using Shouldly;
@@ -233,6 +234,78 @@ public class HtmlProcessorTests
         result.Content.ShouldContain("[image i-7: A tall ship at anchor]");
         result.Content.ShouldContain("[image i-8: The same ship under sail]");
         result.ImageCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WithImagesInsideATable_ListsTheirEntries()
+    {
+        // A live browse of commons.wikimedia.org's featured pictures answered that the page shows
+        // no images at all. Every one of its 49 content pictures sits in a gallery laid out inside
+        // a <table>, and the table renderer wrote each cell as flat TextContent -- which an <img>
+        // contributes nothing to. The pictures were measured, stamped and kept their src, and then
+        // the one renderer that never recursed dropped every entry on the floor.
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Gallery</title></head>
+                   <body>
+                       <table>
+                           <tr><th>Recent</th></tr>
+                           <tr>
+                               <td>
+                                   <a href="/wiki/File:Gull.jpg">
+                                       <img src="gull.jpg" alt="Black-headed gull"
+                                            data-img-w="160" data-img-h="120" data-img-ref="i-2">
+                                   </a>
+                                   Caption text
+                               </td>
+                           </tr>
+                       </table>
+                   </body>
+                   </html>
+                   """;
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
+
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        result.Content.ShouldNotBeNull();
+        result.Content.ShouldContain("[image i-2: Black-headed gull]");
+        result.Content.ShouldContain("Caption text");
+        result.ImageCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WithImagesInNestedTables_ListsEachEntryOnce()
+    {
+        // commons.wikimedia.org lays its featured picture out in a table inside a table, and
+        // QuerySelectorAll("tr") is descendant-wide: the outer table re-rendered the inner
+        // table's rows, so the picture's entry was written three times. A ref names one picture,
+        // so a body offering the same ref three times is a body the model cannot count from.
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Nested</title></head>
+                   <body>
+                       <table>
+                           <tr><td>
+                               <table>
+                                   <tr><td>
+                                       <img src="p.jpg" alt="Picture of the day"
+                                            data-img-w="300" data-img-h="353" data-img-ref="i-1">
+                                   </td></tr>
+                               </table>
+                           </td></tr>
+                       </table>
+                   </body>
+                   </html>
+                   """;
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
+
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        result.Content.ShouldNotBeNull();
+        Regex.Matches(result.Content, @"\[image i-1: Picture of the day\]").Count.ShouldBe(1);
+        result.ImageCount.ShouldBe(1);
     }
 
     [Fact]
