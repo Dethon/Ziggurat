@@ -96,7 +96,7 @@ public class BrowseTabsTests(IsolatedSessionBrowserFixture fixture)
                 sessionId, buttonRef, WebActionType.Click));
 
             result.Status.ShouldBe(WebActionStatus.Success);
-            result.Url.ShouldContain("example.com");
+            result.Url.ShouldNotBeNull().ShouldContain("example.com");
 
             var title = await fixture.Browser.EvaluateOnSessionAsync<string>(
                 sessionId, "() => document.title");
@@ -121,12 +121,12 @@ public class BrowseTabsTests(IsolatedSessionBrowserFixture fixture)
             await BrowseAsync(sessionId, "https://example.org/");
 
             (await fixture.Browser.SnapshotAsync(new SnapshotRequest(sessionId)))
-                .Url.ShouldContain("example.org");
+                .Url.ShouldNotBeNull().ShouldContain("example.org");
 
             await fixture.Browser.FetchImagesAsync(new ImageFetchRequest(sessionId, [refA]));
 
             (await fixture.Browser.SnapshotAsync(new SnapshotRequest(sessionId)))
-                .Url.ShouldContain("example.com");
+                .Url.ShouldNotBeNull().ShouldContain("example.com");
         }
         finally
         {
@@ -160,7 +160,7 @@ public class BrowseTabsTests(IsolatedSessionBrowserFixture fixture)
             // diff of the page left behind.
             result.Status.ShouldBe(WebActionStatus.Success);
             result.NavigationOccurred.ShouldBeTrue();
-            result.Url.ShouldContain("example.org");
+            result.Url.ShouldNotBeNull().ShouldContain("example.org");
             result.Snapshot.ShouldNotBeNull();
 
             // The popup joined the pool and is the tab the next ref-less call addresses.
