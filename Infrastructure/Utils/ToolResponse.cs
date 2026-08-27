@@ -1,6 +1,8 @@
+using System.Text;
 using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
+using Domain.Tools.Web;
 using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Utils;
@@ -54,6 +56,35 @@ public static class ToolResponse
         content.AddRange(bodies
             .Where(b => b is not null)
             .Select(b => (ContentBlock)new TextContentBlock { Text = b! }));
+
+        return new CallToolResult
+        {
+            IsError = ToolErrorResult.IsErrorEnvelope(envelope),
+            Content = content
+        };
+    }
+
+    // An image result: the call's own envelope, then each picture preceded by the envelope that
+    // says which image it is. The server hands back what the protocol says an image result is and
+    // knows nothing of where the bytes end up -- QualifiedMcpTool lifts them out on the way in.
+    public static CallToolResult Create(JsonNode envelope, IReadOnlyList<ViewedImage> images)
+    {
+        var content = new List<ContentBlock> { new TextContentBlock { Text = envelope.ToJsonString() } };
+
+        content.AddRange(images.SelectMany(image => new ContentBlock[]
+        {
+            new TextContentBlock { Text = image.Envelope.ToJsonString() },
+            // `Data` is the base64 payload exactly as it travels the wire, not the picture's
+            // bytes -- `DecodedData` is those, and it is read-only. Assigning raw bytes here
+            // writes them as literal characters, and the receiving end then cannot parse the
+            // block at all: the call fails at the client before any result reaches the bridge,
+            // which is how this shipped once and sent the model to the sandbox instead.
+            new ImageContentBlock
+            {
+                MimeType = image.MediaType,
+                Data = Encoding.UTF8.GetBytes(Convert.ToBase64String(image.Bytes))
+            }
+        }));
 
         return new CallToolResult
         {

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 using Microsoft.Extensions.AI;
 
@@ -26,10 +27,98 @@ internal static class ReadImageHydration
             ? []
             : message.Contents
                 .OfType<FunctionResultContent>()
-                .Select(result => (result.CallId, Envelope: FsImageReadResult.TryRead(result.Result)))
-                .Where(read => read.Envelope is { Shown: true })
-                .Select(read => new ReadImageReference(read.CallId, read.Envelope!.FilePath))
+                .SelectMany(result => Recognise(result.CallId, result.Result))
                 .ToList();
+
+    // Two envelopes, each strict about its own shape. Asked in turn rather than merged into one
+    // looser parse: the filesystem envelope's strictness is what stops a result that merely carries
+    // a path being mistaken for an image read, and a shape that admitted both would spend it.
+    private static IEnumerable<ReadImageReference> Recognise(string callId, object? result)
+    {
+        if (FsImageReadResult.TryRead(result) is { Shown: true } file)
+        {
+            return [new ReadImageReference(callId, file.FilePath, ReadImageOrigin.Mount)];
+        }
+
+        // A page result can carry several envelopes: view_image takes a list, and the bridge joins
+        // what it leaves behind into one text. Each envelope is one picture, indexed in the order
+        // the bridge stored them.
+        return PageImages(callId, result);
+    }
+
+    private static IEnumerable<ReadImageReference> PageImages(string callId, object? result)
+    {
+        var text = FlattenedText(result)
+            ?? (result is JsonNode node ? node.ToJsonString() : null);
+        if (text is null)
+        {
+            return PageImageResult.TryRead(result) is { Shown: true } single
+                ? [new ReadImageReference(callId, single.Label, ReadImageOrigin.Page)]
+                : [];
+        }
+
+        // Every JSON-looking block in the joined text counts, in order, so an index matches the
+        // key the bridge wrote under. Blocks that are not page-image envelopes -- the call's own
+        // envelope leads every real result -- take a slot and no picture, exactly as they do on
+        // the writing side. Counting only the image envelopes here would shift every key by one.
+        return SplitEnvelopes(text)
+            .Select((envelope, index) => (Envelope: envelope, Index: index))
+            .Where(e => e.Envelope is { Shown: true })
+            .Select(e => new ReadImageReference(
+                callId, e.Envelope!.Label, ReadImageOrigin.Page, e.Index))
+            .ToList();
+    }
+
+    // The text the bridge's Flatten left on the message, whichever shape carries it now. Live, a
+    // multi-block result is a joined string and a single block stays the list it arrived in; after
+    // the store's plain JsonSerializer round trip, both come back as a JsonElement — a string, or
+    // an array of serialized text contents. Read each the way Flatten would have written it, or a
+    // picture is recognised on the turn that fetched it and never again.
+    private static string? FlattenedText(object? result) =>
+        result as string
+            ?? (result is JsonElement { ValueKind: JsonValueKind.String } text ? text.GetString() : null)
+            ?? JoinedText(result)
+            ?? JoinedElementText(result);
+
+    private static string? JoinedText(object? result) =>
+        result is IList<AIContent> contents && contents.All(c => c is TextContent)
+            ? string.Join("\n\n", contents.OfType<TextContent>().Select(c => c.Text))
+            : null;
+
+    private static string? JoinedElementText(object? result) =>
+        result is JsonElement { ValueKind: JsonValueKind.Array } contents
+        && contents.EnumerateArray().All(IsSerializedTextContent)
+            ? string.Join("\n\n", contents.EnumerateArray().Select(c => c.GetProperty("Text").GetString()))
+            : null;
+
+    private static bool IsSerializedTextContent(JsonElement content) =>
+        content.ValueKind == JsonValueKind.Object
+        && content.TryGetProperty("$type", out var type)
+        && type.ValueEquals("text")
+        && content.TryGetProperty("Text", out var text)
+        && text.ValueKind == JsonValueKind.String;
+
+    private static IEnumerable<PageImageResult?> SplitEnvelopes(string text) =>
+        text.Split("\n\n")
+            .Select(part => part.Trim())
+            .Where(part => part.StartsWith('{'))
+            .Select(part =>
+            {
+                try
+                {
+                    return PageImageResult.TryRead(JsonNode.Parse(part));
+                }
+                catch (JsonException)
+                {
+                    return null;
+                }
+            });
+
+    // Where a page image's bytes rest. One call can answer with several pictures, so the index
+    // within the call joins the call id that keys them all; a mount read is one image per call and
+    // keeps the bare id. The bridge writes under the same rule.
+    private static string StoreKey(ReadImageReference read) =>
+        read.Origin == ReadImageOrigin.Mount ? read.CallId : $"{read.CallId}#{read.Index}";
 
     // A copy of the tool message whose promised results carry their bytes — or, where the bytes
     // cannot or must not travel, a placeholder appended to the envelope. The original message is
@@ -41,20 +130,22 @@ internal static class ReadImageHydration
         bool withinDepth,
         CancellationToken ct)
     {
-        var byCallId = reads.ToDictionary(r => r.CallId);
+        // Grouped rather than keyed one-to-one: a single view_image call can promise several
+        // pictures, and they all answer under the same call id.
+        var byCallId = reads.GroupBy(r => r.CallId).ToDictionary(g => g.Key, g => g.ToList());
 
         var contents = new List<AIContent>(message.Contents.Count);
         foreach (var content in message.Contents)
         {
             if (content is not FunctionResultContent result ||
-                !byCallId.TryGetValue(result.CallId, out var read))
+                !byCallId.TryGetValue(result.CallId, out var group))
             {
                 contents.Add(content);
                 continue;
             }
 
             contents.Add(new FunctionResultContent(
-                result.CallId, await RewriteAsync(result.Result, read, context, withinDepth, ct)));
+                result.CallId, await RewriteAsync(result.Result, group, context, withinDepth, ct)));
         }
 
         var copy = message.Clone();
@@ -63,6 +154,47 @@ internal static class ReadImageHydration
     }
 
     private static async Task<object?> RewriteAsync(
+        object? envelope,
+        IReadOnlyList<ReadImageReference> reads,
+        ReadImageContext context,
+        bool withinDepth,
+        CancellationToken ct)
+    {
+        // The common case by far -- a mount read, or a call that asked for one picture -- keeps the
+        // single-envelope shape the wire and the truncator already estimate correctly.
+        if (reads.Count == 1)
+        {
+            return await RewriteOneAsync(envelope, reads[0], context, withinDepth, ct);
+        }
+
+        // A loop because every iteration awaits the store, and the order the parts are appended in
+        // is the order the model reads them.
+        var parts = new List<AIContent> { new TextContent(EnvelopeText(envelope)) };
+        foreach (var read in reads)
+        {
+            if (!withinDepth)
+            {
+                await context.ForgetAsync(StoreKey(read), ct);
+                parts.Add(new TextContent(Placeholder(read)));
+                continue;
+            }
+
+            if (!context.ModelAcceptsImages)
+            {
+                parts.Add(new TextContent(NoVisionPlaceholder(read)));
+                continue;
+            }
+
+            var picture = await context.FetchAsync(StoreKey(read), ct);
+            parts.Add(picture is null
+                ? new TextContent(Placeholder(read))
+                : new DataContent(picture.Bytes, picture.MediaType));
+        }
+
+        return parts;
+    }
+
+    private static async Task<object?> RewriteOneAsync(
         object? envelope,
         ReadImageReference read,
         ReadImageContext context,
@@ -74,21 +206,21 @@ internal static class ReadImageHydration
             // The send an image drops out of view is the send its bytes go. That makes the
             // message window the real bound and the store's own horizon only a backstop for a
             // conversation that went quiet.
-            await context.ForgetAsync(read.CallId, ct);
-            return $"{EnvelopeText(envelope)}\n{Placeholder(read.VirtualPath)}";
+            await context.ForgetAsync(StoreKey(read), ct);
+            return $"{EnvelopeText(envelope)}\n{Placeholder(read)}";
         }
 
         // The wire rejects a whole request carrying an image the model cannot take, rather than
         // stripping it — and a later turn may be back on a model that sees, so the bytes stay.
         if (!context.ModelAcceptsImages)
         {
-            return $"{EnvelopeText(envelope)}\n{NoVisionPlaceholder(read.VirtualPath)}";
+            return $"{EnvelopeText(envelope)}\n{NoVisionPlaceholder(read)}";
         }
 
-        var image = await context.FetchAsync(read.CallId, ct);
+        var image = await context.FetchAsync(StoreKey(read), ct);
         if (image is null)
         {
-            return $"{EnvelopeText(envelope)}\n{Placeholder(read.VirtualPath)}";
+            return $"{EnvelopeText(envelope)}\n{Placeholder(read)}";
         }
 
         return new List<AIContent>
@@ -98,21 +230,43 @@ internal static class ReadImageHydration
         };
     }
 
+    // The same flattened-text rule recognition used, so the model reads the envelope the bridge
+    // wrote rather than that text re-serialized as a JSON string.
     private static string EnvelopeText(object? envelope) =>
-        envelope as string ?? JsonSerializer.Serialize(envelope);
+        FlattenedText(envelope) ?? JsonSerializer.Serialize(envelope);
 
-    // Honest in a way a lost attachment's placeholder cannot be: the file never left the mount, so
-    // reading it again really does bring it back. One answer for every way the bytes can be missing —
-    // out of depth, expired, evicted, or a host with no store at all.
-    private static string Placeholder(string virtualPath) =>
-        $"[The image you read from {virtualPath} is no longer in view. Read the file again if you "
-        + "still need to look at it — it is still on the mount. Don't describe what it contained "
-        + "from memory.]";
+    // Honest in a way a lost attachment's placeholder cannot be: what the image was read from
+    // outlives the image, so asking again really does bring it back. One answer for every way the
+    // bytes can be missing — out of depth, expired, evicted, or a host with no store at all.
+    //
+    // Where to ask again differs by origin, and that is the whole difference: a mount still holds
+    // the file, while a page's refs died with the session that issued them.
+    private static string Placeholder(ReadImageReference read) =>
+        read.Origin == ReadImageOrigin.Mount
+            ? $"[The image you read from {read.Name} is no longer in view. Read the file again if "
+              + "you still need to look at it — it is still on the mount. Don't describe what it "
+              + "contained from memory.]"
+            : $"[The image \"{read.Name}\" is no longer in view. Browse the page again and ask for "
+              + "it by its new ref if you still need to look at it. Don't describe what it "
+              + "contained from memory.]";
 
-    private static string NoVisionPlaceholder(string virtualPath) =>
-        $"[The image you read from {virtualPath} was not shown: the model running this turn does "
-        + "not accept images. Don't describe what it contained from memory.]";
+    private static string NoVisionPlaceholder(ReadImageReference read) =>
+        $"[The image {Describe(read)} was not shown: the model running this turn does not accept "
+        + "images. Don't describe what it contained from memory.]";
+
+    private static string Describe(ReadImageReference read) =>
+        read.Origin == ReadImageOrigin.Mount ? $"you read from {read.Name}" : $"\"{read.Name}\"";
 }
 
-// One image a tool result promised the model, and the path to name if the bytes cannot be found.
-internal sealed record ReadImageReference(string CallId, string VirtualPath);
+// Where an image came from, which decides only what its note tells the model to do to see it
+// again. Everything else about a read image is the same either way.
+internal enum ReadImageOrigin
+{
+    Mount,
+    Page
+}
+
+// One image a tool result promised the model, and what to name if the bytes cannot be found — a
+// mount path, or the label the page's entry gave the picture.
+internal sealed record ReadImageReference(
+    string CallId, string Name, ReadImageOrigin Origin, int Index = 0);

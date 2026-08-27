@@ -459,6 +459,15 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
     private static async Task AssertComposerGapsMatchAsync(ILocator left, ILocator field, ILocator right)
     {
+        // BoundingBoxAsync does not wait: it answers null for a control that is not on screen yet,
+        // and the assertion then blames the gap rather than the render. The right-hand control is
+        // the one that moves — the microphone holds that place until there is something to send and
+        // the send button takes it over — so a measurement taken mid-swap reads one box from before
+        // it and one from after.
+        await Assertions.Expect(left).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        await Assertions.Expect(field).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        await Assertions.Expect(right).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+
         var leftBox = await left.BoundingBoxAsync();
         var fieldBox = await field.BoundingBoxAsync();
         var rightBox = await right.BoundingBoxAsync();

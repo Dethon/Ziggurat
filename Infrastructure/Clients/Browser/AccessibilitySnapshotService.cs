@@ -9,7 +9,14 @@ public class AccessibilitySnapshotService
         (args) => {
             const selectorScope = typeof args === 'string' ? args : args?.scope;
             const preserveRefs = args?.preserveRefs === true;
-            if (!preserveRefs) {
+            // Augment keeps every ref already on the document and stamps fresh numbers only onto
+            // elements that have none — a non-navigating action must not invalidate the refs the
+            // model is mid-flow with.
+            const augmentRefs = args?.augmentRefs === true;
+            // Numbers continue from where the session last stopped, so a ref stamped here is a
+            // number no earlier page or snapshot in the session ever answered to.
+            const startNumber = args?.startNumber ?? 1;
+            if (!preserveRefs && !augmentRefs) {
                 document.querySelectorAll('[data-ref]').forEach(el => el.removeAttribute('data-ref'));
             }
             let refCounter = 0;
@@ -178,9 +185,14 @@ public class AccessibilitySnapshotService
                 if (isKnown) {
                     let ref = null;
                     if ((interactiveRoles.has(role) || clickableStructural.has(role)) && isVisible(el)) {
-                        refCounter++;
-                        ref = preserveRefs ? (el.getAttribute('data-ref') || 'e' + refCounter) : 'e' + refCounter;
-                        if (!preserveRefs) el.setAttribute('data-ref', ref);
+                        const existing = el.getAttribute('data-ref');
+                        if ((preserveRefs || augmentRefs) && existing) {
+                            ref = existing;
+                        } else {
+                            refCounter++;
+                            ref = 'e-' + (startNumber + refCounter - 1);
+                            if (!preserveRefs) el.setAttribute('data-ref', ref);
+                        }
                     }
 
                     return { role, name: getName(el), state: getState(el),
@@ -249,10 +261,11 @@ public class AccessibilitySnapshotService
         """;
 
     public async Task<SnapshotCaptureResult> CaptureAsync(
-        IPage page, string? selectorScope, string sessionId, bool preserveRefs = false)
+        IPage page, string? selectorScope, string sessionId, bool preserveRefs = false,
+        int startNumber = 1, bool augmentRefs = false)
     {
-        var args = selectorScope is not null || preserveRefs
-            ? new { scope = selectorScope, preserveRefs }
+        var args = selectorScope is not null || preserveRefs || augmentRefs || startNumber != 1
+            ? new { scope = selectorScope, preserveRefs, augmentRefs, startNumber }
             : null;
 
         var result = await page.EvaluateAsync<JsonElement>(SnapshotScript, args);

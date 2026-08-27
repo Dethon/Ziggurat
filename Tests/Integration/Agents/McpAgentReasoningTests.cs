@@ -90,6 +90,58 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
             "McpAgent should propagate reasoningEffort='low' to OpenRouter so the provider streams reasoning tokens back.");
     }
 
+    // The Responses wire hands an OpenAI model's reasoning back encrypted and empty unless the
+    // request asks for a summary; OpenRouter's translation for other providers (the deepseek test
+    // above) streams it regardless, so only an untranslated OpenAI endpoint can catch the summary
+    // request going missing.
+    private const string PinnedOpenAiModel = "openai/gpt-5.6-luna";
+
+    private static readonly ProviderRouting _pinnedOpenAiProvider = new() { Only = ["openai"] };
+
+    [SkippableFact]
+    public async Task Agent_OnTheUntranslatedOpenAiWire_StreamsReasoningContent()
+    {
+        var (apiUrl, apiKey, _) = GetConfig();
+
+        using var openRouter = new OpenRouterChatClient(
+            apiUrl, apiKey, PinnedOpenAiModel, providerRouting: _pinnedOpenAiProvider);
+        var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(10) }, TimeProvider.System);
+
+        await using var agent = new McpAgent(
+            TestAgentSpec.Default with
+            {
+                DisplayName = "openai-reasoning-agent",
+                UserId = "openai-reasoning-test-user",
+                ReasoningEffort = "medium"
+            },
+            openRouter,
+            stateStore,
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
+            [],
+            []);
+
+        var reasoning = await LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct =>
+        {
+            var reasoningChunks = new List<string>();
+            await foreach (var update in agent.RunStreamingAsync(
+                "Compare 9.11 and 9.9. Which is larger? Show your reasoning.",
+                cancellationToken: ct))
+            {
+                foreach (var content in update.Contents.OfType<TextReasoningContent>())
+                {
+                    reasoningChunks.Add(content.Text);
+                }
+            }
+
+            return string.Concat(reasoningChunks);
+        });
+
+        reasoning.ShouldNotBeNullOrWhiteSpace(
+            "An OpenAI model on the Responses wire returns readable reasoning only when the request " +
+            "asks for a summary; McpAgent should ask for one whenever reasoning is enabled.");
+    }
+
     [SkippableFact]
     public async Task Agent_WithReasoningEffortNone_StreamsNoReasoningContent()
     {
@@ -220,6 +272,26 @@ public class McpAgentReasoningTestsConfigPatch
         options.Reasoning.ShouldNotBeNull();
         options.Reasoning.Effort.ShouldBe(ReasoningEffort.Low);
         warnings.ShouldContain(m => m.Contains("reasoningEffort") && m.Contains("turbo") && m.Contains("Low"));
+    }
+
+    [Fact]
+    public async Task RunStreaming_WithReasoningEffort_AsksForTheReasoningSummary()
+    {
+        var (options, warnings) = await RunWithPatchAsync(null, reasoningEffort: "low");
+
+        options.Reasoning.ShouldNotBeNull();
+        options.Reasoning.Output.ShouldBe(ReasoningOutput.Summary);
+        warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task RunStreaming_WithReasoningEffortNone_AsksForNoSummary()
+    {
+        var (options, warnings) = await RunWithPatchAsync(null, reasoningEffort: "none");
+
+        options.Reasoning.ShouldNotBeNull();
+        options.Reasoning.Output.ShouldBeNull();
+        warnings.ShouldBeEmpty();
     }
 
     [Fact]

@@ -1,11 +1,17 @@
 using System.Text.Json;
+using Domain.Contracts;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 
 namespace Infrastructure.Agents.Mcp;
 
-internal sealed class QualifiedMcpTool(string serverName, McpClientTool innerTool) : AIFunction
+// The store is constructor-injected and nullable: a host without one passes an image result
+// through exactly as before rather than failing, the same bargain IAttachmentSource makes.
+internal sealed class QualifiedMcpTool(
+    string serverName,
+    McpClientTool innerTool,
+    IReadImageStore? readImageStore = null) : AIFunction
 {
     private const string McpPrefix = "mcp";
     private const string Separator = "__";
@@ -17,17 +23,29 @@ internal sealed class QualifiedMcpTool(string serverName, McpClientTool innerToo
 
     public QualifiedMcpTool WithProgress(IProgress<ProgressNotificationValue> progress)
     {
-        return new QualifiedMcpTool(serverName, innerTool.WithProgress(progress));
+        return new QualifiedMcpTool(serverName, innerTool.WithProgress(progress), readImageStore);
     }
 
     protected override async ValueTask<object?> InvokeCoreAsync(
         AIFunctionArguments arguments,
         CancellationToken cancellationToken)
     {
+        var context = ConversationContextMeta.TryRead(FunctionInvokingChatClient.CurrentContext?.Options);
         var meta = ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options);
         var tool = meta is null ? innerTool : innerTool.WithMeta(meta);
         var result = await tool.InvokeAsync(arguments, cancellationToken);
-        return Flatten(result);
+
+        // Lifted here rather than inside Flatten: this is where the conversation is already
+        // resolved, and Flatten is a pure shape rule with no access to ids or storage. Bytes must
+        // not survive past this line -- everything downstream serializes a turn into the history.
+        var lifted = await McpImageLift.ApplyAsync(
+            result,
+            readImageStore,
+            context?.ConversationId,
+            FunctionInvokingChatClient.CurrentContext?.CallContent.CallId,
+            cancellationToken);
+
+        return Flatten(lifted);
     }
 
     // Multi-block tool results from MCP arrive here as AIContent[]. The downstream

@@ -51,6 +51,18 @@ public class WebActionTool(IWebBrowser browser)
         bool force,
         CancellationToken ct)
     {
+        // A ref's shape says which tool it was meant for, so the other namespace is turned away by
+        // name here — the mirror of view_image refusing e-3 — rather than failing to be found.
+        if (new[] { @ref, endRef }.Where(ImageRef.IsImageRef).ToList() is { Count: > 0 } foreign)
+        {
+            return new WebActionResult(
+                sessionId, WebActionStatus.NotAnElementRef, null, false, null, null,
+                $"{string.Join(", ", foreign)} "
+                + $"{(foreign.Count == 1 ? "is not an element ref" : "are not element refs")}. "
+                + "Element refs look like e-1 and come from web_snapshot; "
+                + "i-style refs name pictures, and view_image is what looks at those.");
+        }
+
         var request = new WebActionRequest(
             SessionId: sessionId,
             Ref: @ref,
@@ -67,22 +79,41 @@ public class WebActionTool(IWebBrowser browser)
     {
         if (result.Status is not WebActionStatus.Success)
         {
-            var (code, hint) = result.Status switch
+            // The two stale-ref walls each name their recovery: a superseded ref's page is still
+            // open and refreshing it mints fresh refs; a closed ref's wall names exactly what to
+            // browse again.
+            var (code, hint, wall) = result.Status switch
             {
                 WebActionStatus.SessionNotFound => (
                     ToolError.Codes.SessionNotFound,
-                    "The browser session has expired. Call web_browse to start a new session."),
+                    "The browser session has expired. Call web_browse to start a new session.",
+                    (string?)null),
+                WebActionStatus.NotAnElementRef => (
+                    ToolError.Codes.InvalidArgument,
+                    "Act on the element's e- ref; to look at the picture, call view_image with its i- ref.",
+                    null),
                 WebActionStatus.ElementNotFound => (
                     ToolError.Codes.ElementNotFound,
-                    "Call web_snapshot to refresh element refs — the page or DOM may have changed."),
+                    "Call web_snapshot to refresh element refs — the page or DOM may have changed.",
+                    null),
                 WebActionStatus.Timeout => (
                     ToolError.Codes.Timeout,
-                    "Element may be obscured by an overlay. Retry once with force=true if you're certain the ref is correct."),
-                _ => (ToolError.Codes.InternalError, (string?)null)
+                    "Element may be obscured by an overlay. Retry once with force=true if you're certain the ref is correct.",
+                    null),
+                WebActionStatus.RefSuperseded => (
+                    ToolError.Codes.ElementNotFound,
+                    $"Call web_snapshot, or web_browse {result.RefUrl} again, and act with the fresh refs.",
+                    $"That ref is out of date: {result.RefUrl} has moved on since it was stamped, "
+                    + "renumbering its refs."),
+                WebActionStatus.RefClosed => (
+                    ToolError.Codes.NotFound,
+                    $"Browse {result.RefUrl} again and act with the refs it lists.",
+                    $"That ref belonged to {result.RefUrl}, whose tab has since been closed."),
+                _ => (ToolError.Codes.InternalError, null, null)
             };
             var error = ToolError.Create(
                 code,
-                result.ErrorMessage ?? "Action failed",
+                wall ?? result.ErrorMessage ?? "Action failed",
                 hint);
             error["sessionId"] = result.SessionId;
             error["url"] = result.Url;

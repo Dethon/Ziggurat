@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Infrastructure.HtmlProcessing;
 using Shouldly;
@@ -206,6 +207,108 @@ public class HtmlProcessorTests
     }
 
     [Fact]
+    public async Task ProcessAsync_WithAnImageSelector_ListsTheEntriesInsteadOfNothing()
+    {
+        // A live test scoped a browse to "img" hoping for the page's image catalogue and got
+        // an empty body: the converter renders an image where it meets one as a child, but a
+        // selector hands it the <img> itself as the root, and a root with no children wrote
+        // nothing at all.
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Test</title></head>
+                   <body>
+                       <img src="a.jpg" alt="A tall ship at anchor"
+                            data-img-w="300" data-img-h="200" data-img-ref="i-7">
+                       <img src="b.jpg" alt="The same ship under sail"
+                            data-img-w="300" data-img-h="200" data-img-ref="i-8">
+                   </body>
+                   </html>
+                   """;
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: "img");
+
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        result.IsPartial.ShouldBeFalse();
+        result.Content.ShouldNotBeNull();
+        result.Content.ShouldContain("[image i-7: A tall ship at anchor]");
+        result.Content.ShouldContain("[image i-8: The same ship under sail]");
+        result.ImageCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WithImagesInsideATable_ListsTheirEntries()
+    {
+        // A live browse of commons.wikimedia.org's featured pictures answered that the page shows
+        // no images at all. Every one of its 49 content pictures sits in a gallery laid out inside
+        // a <table>, and the table renderer wrote each cell as flat TextContent -- which an <img>
+        // contributes nothing to. The pictures were measured, stamped and kept their src, and then
+        // the one renderer that never recursed dropped every entry on the floor.
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Gallery</title></head>
+                   <body>
+                       <table>
+                           <tr><th>Recent</th></tr>
+                           <tr>
+                               <td>
+                                   <a href="/wiki/File:Gull.jpg">
+                                       <img src="gull.jpg" alt="Black-headed gull"
+                                            data-img-w="160" data-img-h="120" data-img-ref="i-2">
+                                   </a>
+                                   Caption text
+                               </td>
+                           </tr>
+                       </table>
+                   </body>
+                   </html>
+                   """;
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
+
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        result.Content.ShouldNotBeNull();
+        result.Content.ShouldContain("[image i-2: Black-headed gull]");
+        result.Content.ShouldContain("Caption text");
+        result.ImageCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WithImagesInNestedTables_ListsEachEntryOnce()
+    {
+        // commons.wikimedia.org lays its featured picture out in a table inside a table, and
+        // QuerySelectorAll("tr") is descendant-wide: the outer table re-rendered the inner
+        // table's rows, so the picture's entry was written three times. A ref names one picture,
+        // so a body offering the same ref three times is a body the model cannot count from.
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Nested</title></head>
+                   <body>
+                       <table>
+                           <tr><td>
+                               <table>
+                                   <tr><td>
+                                       <img src="p.jpg" alt="Picture of the day"
+                                            data-img-w="300" data-img-h="353" data-img-ref="i-1">
+                                   </td></tr>
+                               </table>
+                           </td></tr>
+                       </table>
+                   </body>
+                   </html>
+                   """;
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
+
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        result.Content.ShouldNotBeNull();
+        Regex.Matches(result.Content, @"\[image i-1: Picture of the day\]").Count.ShouldBe(1);
+        result.ImageCount.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task ProcessAsync_WithClassSelector_LinksInContentAreRendered()
     {
         // Arrange
@@ -263,6 +366,79 @@ public class HtmlProcessorTests
         result2.Content.ShouldNotBeNull();
         result1.Content.ShouldNotBe(result2.Content);
         result1.ContentLength.ShouldBe(result2.ContentLength);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_NextOffset_ContinuesExactlyWhereTheCutLanded()
+    {
+        // The truncated body carries a "[Content truncated...]" suffix and the cut backs up to a
+        // newline or past a partial image entry, so the body's length is not the consumed length.
+        // NextOffset must name the source position the cut actually landed on: paging with it
+        // reassembles the page with nothing skipped and nothing beyond whitespace repeated.
+        var longContent = string.Join("\n",
+            Enumerable.Range(1, 200).Select(i => $"<p>Paragraph {i} with some content.</p>"));
+        var html = $"<html><body>{longContent}</body></html>";
+        var request = new BrowseRequest(SessionId: "t", Url: "http://example.com/", MaxLength: 500);
+
+        var whole = await HtmlProcessor.ProcessAsync(
+            request with { MaxLength = 100000 }, html, CancellationToken.None);
+        var window1 = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+        var window2 = await HtmlProcessor.ProcessAsync(
+            request with { Offset = window1.NextOffset!.Value, MaxLength = 100000 },
+            html, CancellationToken.None);
+
+        window1.Truncated.ShouldBeTrue();
+        var body1 = window1.Content!.Replace("\n\n[Content truncated...]", "");
+        (body1 + window2.Content).ShouldBe(whole.Content);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_AnEntryLongerThanTheWindow_GoesOutWholeAndPagingAdvances()
+    {
+        // The cut backs up past a partial entry; when the window starts exactly at an entry whose
+        // text exceeds the window, backing up consumes nothing and nextOffset stood still — the
+        // model paged offset 20 → 20 → 20 forever while imagesBeyondWindow kept promising the
+        // entry ahead. The cap is a safeguard, not an editor: the entry goes out whole instead.
+        var longAlt = string.Join(" ", Enumerable.Repeat("word", 90));
+        var html = $"""
+            <html><body>
+            <p>Some opening text.</p>
+            <img src="/a.jpg" alt="{longAlt}" data-img-w="300" data-img-h="300" data-img-ref="i-1">
+            <p>Text after the picture.</p>
+            </body></html>
+            """;
+        var request = new BrowseRequest(SessionId: "t", Url: "http://example.com/", MaxLength: 300);
+
+        var offset = 0;
+        var listed = 0;
+        for (var hop = 0; hop < 20; hop++)
+        {
+            var window = await HtmlProcessor.ProcessAsync(
+                request with { Offset = offset }, html, CancellationToken.None);
+            listed += window.ImageCount;
+            if (window.NextOffset is not { } next)
+            {
+                break;
+            }
+
+            next.ShouldBeGreaterThan(offset);
+            offset = next;
+        }
+
+        // Paging reached the entry: it was listed in exactly one window, whole.
+        listed.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_APageThatFitsWhole_HasNoNextOffset()
+    {
+        var html = "<html><body><p>All of it.</p></body></html>";
+        var request = new BrowseRequest(SessionId: "t", Url: "http://example.com/");
+
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        result.Truncated.ShouldBeFalse();
+        result.NextOffset.ShouldBeNull();
     }
 
     [Fact]

@@ -14,7 +14,19 @@ public record HtmlProcessingResult(
     bool Truncated,
     WebPageMetadata? Metadata,
     bool IsPartial,
-    string? ErrorMessage);
+    string? ErrorMessage)
+{
+    // How many images the returned body lists, and how many the model would only reach by paging
+    // forward. An image it cannot see is one it cannot know to ask for.
+    public int ImageCount { get; init; }
+
+    public int ImagesBeyondWindow { get; init; }
+
+    // Where the next window starts, when there is one: the position the cut actually landed on,
+    // which the body's length does not reveal — the suffix lengthens it and the back-ups (to a
+    // newline, past a partial image entry) shorten it.
+    public int? NextOffset { get; init; }
+}
 
 public static partial class HtmlProcessor
 {
@@ -167,6 +179,11 @@ public static partial class HtmlProcessor
     private static HtmlProcessingResult CreateSuccessResult(
         int maxLength, int offset, string? title, string content, WebPageMetadata metadata)
     {
+        // Stripped before any offset math, so every position — the caller's offset, the total,
+        // the next offset — lives in one coordinate space. Stripping the window after slicing
+        // made a control-char page report itself truncated with a next offset already read.
+        content = ControlCharsRegex().Replace(content, "");
+
         var totalLength = content.Length;
 
         if (offset > 0 && offset < content.Length)
@@ -178,26 +195,37 @@ public static partial class HtmlProcessor
             content = "";
         }
 
+        // Counted from the offset on, before truncation slices the tail: "beyond the window"
+        // promises that paging forward reaches them, so entries already paged past must not be in
+        // the count -- they would send the model forward chasing pictures that are behind it.
+        var totalImages = PageImageEntry.Count(content);
+
         var truncated = content.Length > maxLength;
+        var consumed = content.Length;
         if (truncated)
         {
-            content = HtmlConverter.Truncate(content, maxLength);
+            content = HtmlConverter.Truncate(content, maxLength, out consumed);
         }
 
-        // Strip control characters that cause LLM API 422 errors (keep \t, \n, \r)
-        content = ControlCharsRegex().Replace(content, "");
-
-        var hasMore = offset + content.Length < totalLength;
+        // Counted off the markdown rather than tracked through the walk: the entry shape is the
+        // one both this and truncation agree on, so counting what actually reached the model
+        // cannot disagree with what it can read.
+        var listed = PageImageEntry.Count(content);
 
         return new HtmlProcessingResult(
             Title: title,
             Content: content,
             ContentLength: totalLength,
-            Truncated: truncated || hasMore,
+            Truncated: truncated,
             Metadata: metadata,
             IsPartial: false,
             ErrorMessage: null
-        );
+        )
+        {
+            ImageCount = listed,
+            ImagesBeyondWindow = Math.Max(0, totalImages - listed),
+            NextOffset = truncated ? offset + consumed : null
+        };
     }
 
     private static HtmlProcessingResult CreatePartialResult(

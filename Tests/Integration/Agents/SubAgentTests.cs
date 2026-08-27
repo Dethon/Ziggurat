@@ -132,15 +132,24 @@ public class SubAgentTests(RedisFixture redisFixture)
             subAgentDef, approvalHandler,
             new SpawnContext("conv-1", "test-user", [], UsesOutposts: false));
         var userMessage = new ChatMessage(ChatRole.User, "Say done");
-        var response = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => agent
-            .RunStreamingAsync([userMessage], cancellationToken: ct)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(ct)
-            .AsTask());
 
-        var result = string.Join("", response.Select(r => r.Content).Where(c => !string.IsNullOrEmpty(c)));
+        // Two different provider failures, and each has its own retry here. WithinAsync covers a
+        // stream that stops sending bytes; UntilAsync covers a turn that completes promptly with
+        // nothing in it, which is what a full-suite run met — the subject is that the subagent
+        // writes no Redis keys, and a model that answered with silence says nothing either way.
+        var result = await LlmAttempt.UntilAsync(
+            async () =>
+            {
+                var response = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => agent
+                    .RunStreamingAsync([userMessage], cancellationToken: ct)
+                    .ToUpdateAiResponsePairs()
+                    .Where(x => x.Item2 is not null)
+                    .Select(x => x.Item2!)
+                    .ToListAsync(ct)
+                    .AsTask());
+                return string.Join("", response.Select(r => r.Content).Where(c => !string.IsNullOrEmpty(c)));
+            },
+            usable: text => !string.IsNullOrEmpty(text));
 
         var keysAfter = server.Keys(pattern: "*").ToList();
         keysAfter.Count.ShouldBe(keysBefore.Count,

@@ -73,10 +73,10 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task NavigateAsync_ConcurrentRequestsForSameSession_DoNotNavigateSimultaneously()
+    public async Task NavigateAsync_ConcurrentRequestsForOneUrl_ShareTheTabWithoutClobbering()
     {
-        // Reproduces "Navigation to X is interrupted by another navigation to Y": two browse
-        // calls share one IPage per session, so concurrent GotoAsync calls clobber each other.
+        // Reproduces "Navigation to X is interrupted by another navigation to Y": two browses of
+        // the same URL reuse one tab, so their GotoAsync calls must queue on it, not interleave.
         var firstGotoEntered = new TaskCompletionSource();
         var releaseFirstGoto = new TaskCompletionSource();
         var gotoCallCount = 0;
@@ -116,10 +116,10 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         var nav1 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://a.test/"));
         await firstGotoEntered.Task;
 
-        var nav2 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://b.test/"));
-        var secondStarted = await Task.WhenAny(nav2, Task.Delay(300)) == nav2;
+        var nav2 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://a.test/"));
+        var secondStarted = await Task.WhenAny(nav2, Eventually.Settle()) == nav2;
 
-        // While the first navigation holds the session, the second must not have navigated.
+        // While the first navigation holds the tab, the second must not have navigated.
         gotoCallCount.ShouldBe(1);
         secondStarted.ShouldBeFalse();
 
@@ -127,6 +127,110 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         await nav1;
         await nav2;
         gotoCallCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task NavigateAsync_ConcurrentRequestsForDifferentUrls_RunOnTwoTabsInParallel()
+    {
+        // The reason tabs exist at all: two browses of different URLs must not queue behind one
+        // another the way one page forced them to.
+        var firstGotoEntered = new TaskCompletionSource();
+        var releaseFirstGoto = new TaskCompletionSource();
+
+        var pages = new List<Mock<IPage>>();
+        var context = new Mock<IBrowserContext>();
+        context.Setup(c => c.NewPageAsync()).ReturnsAsync(() =>
+        {
+            var page = new Mock<IPage>();
+            var isFirst = pages.Count == 0;
+            page.SetupGet(p => p.Url).Returns(isFirst ? "https://a.test/" : "https://b.test/");
+            page.SetupGet(p => p.IsClosed).Returns(false);
+            page.Setup(p => p.GotoAsync(It.IsAny<string>(), It.IsAny<PageGotoOptions?>()))
+                .Returns(async () =>
+                {
+                    if (isFirst)
+                    {
+                        firstGotoEntered.TrySetResult();
+                        await releaseFirstGoto.Task;
+                    }
+
+                    return Mock.Of<IResponse>();
+                });
+            page.Setup(p => p.ContentAsync()).ThrowsAsync(new InvalidOperationException("stop"));
+            pages.Add(page);
+            return page.Object;
+        });
+
+        var browserMock = new Mock<IBrowser>();
+        browserMock.SetupGet(b => b.IsConnected).Returns(true);
+        browserMock
+            .Setup(b => b.NewContextAsync(It.IsAny<BrowserNewContextOptions?>()))
+            .ReturnsAsync(context.Object);
+
+        await using var browser = new PlaywrightWebBrowser(
+            wsEndpoint: "ws://dummy:9377/browser",
+            browserFactory: () => Task.FromResult(browserMock.Object));
+
+        var nav1 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://a.test/"));
+        await firstGotoEntered.Task;
+
+        var nav2 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://b.test/"));
+
+        // The second browse lands on its own tab and finishes while the first still navigates.
+        (await Task.WhenAny(nav2, Task.Delay(2000))).ShouldBe(nav2);
+
+        releaseFirstGoto.TrySetResult();
+        await nav1;
+        pages.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task SnapshotAsync_RacingANavigationOnTheSameTab_WaitsForTheDocument()
+    {
+        // A mid-navigation snapshot answering a half-replaced DOM is the bug; waiting is the fix.
+        var gotoEntered = new TaskCompletionSource();
+        var releaseGoto = new TaskCompletionSource();
+
+        var page = new Mock<IPage>();
+        page.SetupGet(p => p.Url).Returns("https://a.test/");
+        page.SetupGet(p => p.IsClosed).Returns(false);
+        page.Setup(p => p.GotoAsync(It.IsAny<string>(), It.IsAny<PageGotoOptions?>()))
+            .Returns(async () =>
+            {
+                gotoEntered.TrySetResult();
+                await releaseGoto.Task;
+                return Mock.Of<IResponse>();
+            });
+        page.Setup(p => p.ContentAsync()).ThrowsAsync(new InvalidOperationException("stop"));
+        var snapshotRan = false;
+        page.Setup(p => p.EvaluateAsync<JsonElement>(It.IsAny<string>(), It.IsAny<object?>()))
+            .Callback(() => snapshotRan = true)
+            .ThrowsAsync(new InvalidOperationException("snapshot-stop"));
+
+        var context = new Mock<IBrowserContext>();
+        context.Setup(c => c.NewPageAsync()).ReturnsAsync(page.Object);
+
+        var browserMock = new Mock<IBrowser>();
+        browserMock.SetupGet(b => b.IsConnected).Returns(true);
+        browserMock
+            .Setup(b => b.NewContextAsync(It.IsAny<BrowserNewContextOptions?>()))
+            .ReturnsAsync(context.Object);
+
+        await using var browser = new PlaywrightWebBrowser(
+            wsEndpoint: "ws://dummy:9377/browser",
+            browserFactory: () => Task.FromResult(browserMock.Object));
+
+        var nav = browser.NavigateAsync(new BrowseRequest(SessionId: "s", Url: "https://a.test/"));
+        await gotoEntered.Task;
+
+        var snapshot = browser.SnapshotAsync(new SnapshotRequest("s"));
+        await Eventually.Settle();
+        snapshotRan.ShouldBeFalse();
+
+        releaseGoto.TrySetResult();
+        await nav;
+        await snapshot;
+        snapshotRan.ShouldBeTrue();
     }
 
     [Fact]
@@ -282,6 +386,50 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         result.ErrorMessage.ShouldNotContain("has been closed");
     }
 
+    [Fact]
+    public async Task SnapshotAsync_NamingAPageNoTabHolds_RefusesInsteadOfReadingTheCurrentTab()
+    {
+        // A snapshot composed with a browse names the page the browse landed on. If that tab is
+        // already gone — evicted, or reused by another browse — falling back to the current tab
+        // would attach another page's refs to this page's text.
+        var (browser, page) = await CreateBrowserWithCachedSessionAsync("s", "https://a.test/");
+        await using var _ = browser;
+        var evaluated = false;
+        page.Setup(p => p.EvaluateAsync<JsonElement>(It.IsAny<string>(), It.IsAny<object?>()))
+            .Callback(() => evaluated = true)
+            .ThrowsAsync(new InvalidOperationException("stop"));
+
+        var result = await browser.SnapshotAsync(new SnapshotRequest("s", null, ForUrl: "https://gone.test/"));
+
+        result.ErrorMessage.ShouldNotBeNull();
+        result.ErrorMessage.ShouldContain("https://gone.test/");
+        evaluated.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ActionAsync_WhenTheTabWasEvictedMidCall_AnswersTheClosedWallNotALostSession()
+    {
+        // The page dying is not the connection dying: an eviction that lands while the action is
+        // in flight throws the same "has been closed" text, but the session's other tabs live on.
+        // Tearing the whole session down here was the bug.
+        var closed = false;
+        var (browser, page) = await CreateBrowserWithCachedSessionAsync("s", "https://a.test/");
+        await using var _ = browser;
+
+        page.SetupGet(p => p.IsClosed).Returns(() => closed);
+        page.Setup(p => p.GoBackAsync(It.IsAny<PageGoBackOptions?>()))
+            .Returns(() =>
+            {
+                closed = true;
+                throw new PlaywrightException("Target page, context or browser has been closed");
+            });
+
+        var result = await browser.ActionAsync(new WebActionRequest("s", null, WebActionType.Back));
+
+        result.Status.ShouldBe(WebActionStatus.RefClosed);
+        result.RefUrl.ShouldBe("https://a.test/");
+    }
+
     // Primes a browser so a session is cached for sessionId. The navigation deliberately
     // aborts in the post-goto pipeline (ContentAsync throws), which still caches the session.
     private static async Task<(PlaywrightWebBrowser browser, Mock<IPage> page)>
@@ -308,6 +456,17 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
 
         await browser.NavigateAsync(new BrowseRequest(SessionId: sessionId, Url: url));
         return (browser, page);
+    }
+
+    // The diff compares lines with their refs stripped, and the stamp is spelled e-1 — the strip
+    // rule moves in step with it, or every restamped line reads as removed-and-added noise.
+    [Theory]
+    [InlineData("- button \"Buy\" [ref=e-3]", "- button \"Buy\"")]
+    [InlineData("- link \"Docs\" [ref=e-127] [expanded]", "- link \"Docs\" [expanded]")]
+    [InlineData("- heading \"No refs here\"", "- heading \"No refs here\"")]
+    public void StripRefs_RemovesTheDashedRefTag(string line, string expected)
+    {
+        PlaywrightWebBrowser.StripRefs(line).ShouldBe(expected);
     }
 
     // A DataDome loader must still be detected, but the probe used to be a bare "dd.js" substring

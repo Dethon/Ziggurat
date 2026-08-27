@@ -45,10 +45,17 @@ public static partial class HtmlConverter
         return ConvertToMarkdown(body);
     }
 
-    public static string Truncate(string text, int maxLength)
+    public static string Truncate(string text, int maxLength) => Truncate(text, maxLength, out _);
+
+    // consumed: how many of text's characters the cut kept, before the trailing trim and the
+    // suffix — the position the next window's offset must land on. The body's own length says
+    // neither: the suffix lengthens it and the back-ups shorten it, and paging by either skips
+    // or repeats real content.
+    public static string Truncate(string text, int maxLength, out int consumed)
     {
         if (text.Length <= maxLength)
         {
+            consumed = text.Length;
             return text;
         }
 
@@ -56,6 +63,7 @@ public static partial class HtmlConverter
         var targetLength = Math.Max(0, maxLength - 20);
         if (targetLength == 0)
         {
+            consumed = 0;
             return "[Content truncated...]";
         }
 
@@ -67,7 +75,35 @@ public static partial class HtmlConverter
             truncated = truncated[..lastNewline];
         }
 
-        return truncated + "\n\n[Content truncated...]";
+        // The same backing-up the newline rule does, for the other thing a cut must not land
+        // inside. A half-written entry hands the model a ref it can read and cannot use, and it
+        // has no way to tell that from a ref that simply failed -- so the entry goes whole.
+        if (PageImageEntry.PartialEntryStart(truncated) is var partial and >= 0)
+        {
+            // Backing up to the very start of the window would consume nothing, and a window that
+            // consumes nothing is a page the model can never get past: it asks for the next
+            // offset, is handed the same one, and loops. An entry longer than the whole window
+            // goes out over its budget instead -- the cap is a safeguard, not an editor.
+            truncated = partial == 0
+                ? OverlongEntry(text)
+                : truncated[..partial];
+        }
+
+        // Measured after the trim, so the whitespace the trim drops is re-delivered by the next
+        // window instead of falling between the two. A window that trims to nothing keeps its raw
+        // length: a next offset that stands still would page forever.
+        var trimmed = truncated.TrimEnd();
+        consumed = trimmed.Length > 0 ? trimmed.Length : truncated.Length;
+        return trimmed + "\n\n[Content truncated...]";
+    }
+
+    // The entry the window opens on, whole, because a fraction of one is a ref the model cannot
+    // use and nothing of it is a window that never advances. Its closing bracket ends the slice;
+    // an entry that never closes is the rest of the text.
+    private static string OverlongEntry(string text)
+    {
+        var close = text.IndexOf(']');
+        return close < 0 ? text : text[..(close + 1)];
     }
 
     public static string TruncateHtml(string html, int maxLength)
@@ -136,13 +172,42 @@ public static partial class HtmlConverter
     private static string ConvertToMarkdown(IElement element)
     {
         var sb = new StringBuilder();
-        ConvertToMarkdownRecursive(element, sb, 0);
+        // Numbering runs across the whole conversion, so a ref is unique within the body the model
+        // is handed. A filtered image takes no number: every ref it can read is a ref it can use.
+        var images = new ImageNumberer();
+        // The walk below only meets an image as a child, but a selector can hand one over as the
+        // root itself — an "img"-scoped browse would otherwise answer with nothing at all.
+        if (element is IHtmlImageElement rootImage && PageImageEntry.LabelFor(rootImage) is { } rootLabel)
+        {
+            sb.Append(PageImageEntry.Write(PageImageEntry.RefOn(rootImage, images.Next()), rootLabel));
+        }
+
+        ConvertToMarkdownRecursive(element, sb, 0, images);
         var md = sb.ToString();
         md = MultipleNewlinesRegex().Replace(md, "\n\n");
         return md.Trim();
     }
 
-    private static void ConvertToMarkdownRecursive(INode node, StringBuilder sb, int listDepth)
+    private static void ListImagesWithin(IElement element, StringBuilder sb, ImageNumberer images)
+    {
+        foreach (var img in element.QuerySelectorAll("img").OfType<IHtmlImageElement>())
+        {
+            if (PageImageEntry.LabelFor(img) is { } label)
+            {
+                sb.Append(PageImageEntry.Write(PageImageEntry.RefOn(img, images.Next()), label));
+            }
+        }
+    }
+
+    private sealed class ImageNumberer
+    {
+        private int _issued;
+
+        public int Next() => ++_issued;
+    }
+
+    private static void ConvertToMarkdownRecursive(INode node, StringBuilder sb, int listDepth,
+        ImageNumberer images)
     {
         foreach (var child in node.ChildNodes)
         {
@@ -170,24 +235,32 @@ public static partial class HtmlConverter
                         sb.Append(linkText);
                     }
 
+                    // A link is rendered from its text, which no image contributes to -- so a
+                    // picture wrapped in one would be swallowed whole. Product photos and gallery
+                    // thumbnails are linked far more often than not, which would have made the
+                    // catalogue miss exactly the images worth asking for.
+                    ListImagesWithin(anchor, sb, images);
+
                     break;
                 case IHtmlImageElement img:
-                    var alt = img.GetAttribute("alt") ?? "";
-                    var src = img.GetAttribute("src") ?? "";
-                    if (!string.IsNullOrEmpty(src))
+                    // An entry, not a markdown image: the model reaches the picture by ref through
+                    // the session that listed it, and the address it would otherwise carry costs
+                    // context on every browse to buy nothing.
+                    if (PageImageEntry.LabelFor(img) is { } label)
                     {
-                        sb.Append($"![{alt}]({src})");
+                        sb.Append(PageImageEntry.Write(PageImageEntry.RefOn(img, images.Next()), label));
                     }
 
                     break;
                 case IElement elem:
-                    ConvertElementToMarkdown(elem, sb, listDepth);
+                    ConvertElementToMarkdown(elem, sb, listDepth, images);
                     break;
             }
         }
     }
 
-    private static void ConvertElementToMarkdown(IElement elem, StringBuilder sb, int listDepth)
+    private static void ConvertElementToMarkdown(IElement elem, StringBuilder sb, int listDepth,
+        ImageNumberer images)
     {
         var tag = elem.TagName.ToUpperInvariant();
 
@@ -195,32 +268,32 @@ public static partial class HtmlConverter
         {
             case "H1":
                 sb.Append("\n\n# ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "H2":
                 sb.Append("\n\n## ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "H3":
                 sb.Append("\n\n### ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "H4":
                 sb.Append("\n\n#### ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "H5":
                 sb.Append("\n\n##### ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "H6":
                 sb.Append("\n\n###### ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "P":
@@ -233,7 +306,7 @@ public static partial class HtmlConverter
             case "FOOTER":
             case "NAV":
                 sb.Append("\n\n");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("\n\n");
                 break;
             case "BR":
@@ -245,13 +318,13 @@ public static partial class HtmlConverter
             case "STRONG":
             case "B":
                 sb.Append("**");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("**");
                 break;
             case "EM":
             case "I":
                 sb.Append('*');
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append('*');
                 break;
             case "CODE":
@@ -273,7 +346,7 @@ public static partial class HtmlConverter
             case "UL":
             case "OL":
                 sb.AppendLine();
-                ConvertToMarkdownRecursive(elem, sb, listDepth + 1);
+                ConvertToMarkdownRecursive(elem, sb, listDepth + 1, images);
                 sb.AppendLine();
                 break;
             case "LI":
@@ -281,40 +354,50 @@ public static partial class HtmlConverter
                 var parent = elem.ParentElement;
                 var bullet = parent?.TagName == "OL" ? "1." : "-";
                 sb.Append($"{indent}{bullet} ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth > 0 ? listDepth : 1);
+                ConvertToMarkdownRecursive(elem, sb, listDepth > 0 ? listDepth : 1, images);
                 sb.AppendLine();
                 break;
             case "TABLE":
-                ConvertTableToMarkdown(elem, sb);
+                ConvertTableToMarkdown(elem, sb, images);
                 break;
             case "DL":
                 ConvertDefinitionListToMarkdown(elem, sb);
                 break;
             case "FIGURE":
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 break;
             case "FIGCAPTION":
                 sb.Append("\n*");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 sb.Append("*\n");
                 break;
             default:
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth, images);
                 break;
         }
     }
 
-    private static void ConvertTableToMarkdown(IElement table, StringBuilder sb)
+    // A cell is written as flat text rather than recursed into, so that a row stays on one line.
+    // That flattening reads TextContent, which an <img> contributes nothing to -- so a picture
+    // inside a table used to disappear entirely, and a page whose gallery is laid out in a table
+    // (commons.wikimedia.org's featured pictures: all 49 of them) answered as having no images at
+    // all. The entries are appended after the cell's own words, in cell order, so the refs still
+    // run in document order and the caller's numbering is untouched.
+    private static void ConvertTableToMarkdown(IElement table, StringBuilder sb, ImageNumberer images)
     {
         sb.Append("\n\n");
 
-        var rows = table.QuerySelectorAll("tr");
+        // Scoped to this table's own rows and each row's own cells. Both selectors are
+        // descendant-wide, so a table nested in a cell -- how commons.wikimedia.org frames its
+        // picture of the day -- had its rows rendered again by every table above it, and the
+        // pictures inside them repeated a ref that names exactly one picture.
+        var rows = table.QuerySelectorAll("tr").Where(row => row.Closest("table") == table);
         var isFirstRow = true;
 
         foreach (var row in rows)
         {
-            var cells = row.QuerySelectorAll("th, td");
-            if (cells.Length == 0)
+            var cells = row.QuerySelectorAll("th, td").Where(cell => cell.Closest("tr") == row).ToList();
+            if (cells.Count == 0)
             {
                 continue;
             }
@@ -323,7 +406,9 @@ public static partial class HtmlConverter
             foreach (var cell in cells)
             {
                 var cellText = cell.TextContent.Trim().Replace("|", "\\|").Replace("\n", " ");
-                sb.Append($" {cellText} |");
+                var entries = new StringBuilder();
+                ListImagesWithin(cell, entries, images);
+                sb.Append($" {Join(cellText, entries.ToString())} |");
             }
 
             sb.AppendLine();
@@ -343,6 +428,11 @@ public static partial class HtmlConverter
 
         sb.AppendLine();
     }
+
+    // Either half may be empty: a cell that is only a picture must not lead with a space, and a
+    // cell with no picture must render exactly as it did before.
+    private static string Join(string text, string entries) =>
+        text.Length == 0 ? entries : entries.Length == 0 ? text : text + " " + entries;
 
     private static void ConvertDefinitionListToMarkdown(IElement dl, StringBuilder sb)
     {

@@ -345,9 +345,18 @@ public sealed class McpAgent : DisposableAgent
             ModelId = turnConfig.ModelOverride,
             Tools = [.. session.Tools],
             Instructions = BuildInstructions(session),
+            // The summary is asked for because an OpenAI model on the Responses wire returns its
+            // reasoning encrypted and empty without one; providers OpenRouter translates stream
+            // theirs regardless, so this is what makes reasoning visible at all on that wire.
             Reasoning = turnConfig.Effort is null
                 ? null
-                : new ReasoningOptions { Effort = turnConfig.Effort.Value },
+                : new ReasoningOptions
+                {
+                    Effort = turnConfig.Effort.Value,
+                    Output = turnConfig.Effort.Value == ReasoningEffort.None
+                        ? null
+                        : ReasoningOutput.Summary
+                },
             AdditionalProperties = BuildConversationContextProperties(conversationContext)
         });
     }

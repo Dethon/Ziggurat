@@ -22,6 +22,7 @@ public static class WebBrowsingPrompt
         - **web_browse** — load a URL and read its content as markdown.
         - **web_snapshot** — see the current page's interactive elements with refs.
         - **web_action** — interact with an element (or navigate back) by ref.
+        - **view_image** — look at pictures on the page you browsed, by their image refs.
 
         See each tool's own description for arguments, action verbs, and defaults — don't restate them
         from memory.
@@ -33,6 +34,13 @@ public static class WebBrowsingPrompt
         When the page you opened for an answer arrives truncated, read its remainder (offset)
         before opening a different page — the answer is usually in the tail you have not read,
         and another page's snippet is a promise, not the page.
+
+        **Looking at a picture.** web_browse lists each image where it sits in the page text, as
+        `[image i-1: what the page calls it]`. Pass those refs to view_image to see the pictures
+        themselves — several in one call. Ask when the answer is in the picture rather than the
+        prose: a chart's numbers, a scan with no text layer, what a product actually looks like.
+        Image refs (i-1) and element refs (e-1) are separate: view_image takes the first, web_action
+        the second, and each refuses the other by name.
 
         **Interacting with a page.** Load with web_browse using snapshot=true to get content and refs
         in a single call, then chain web_action calls. Each web_action returns a diff with new refs —

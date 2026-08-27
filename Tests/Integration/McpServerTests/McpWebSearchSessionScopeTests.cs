@@ -135,10 +135,10 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
             idleTimeout: TimeSpan.FromMinutes(30));
 
         var scopeA = ConversationScope.Build("nabu", "conv-a");
-        var first = await manager.GetOrCreateAsync(scopeA, context.Object);
-        var second = await manager.GetOrCreateAsync(scopeA, context.Object);
+        var first = await manager.AcquireTabForBrowseAsync(scopeA, "https://a.test/", context.Object);
+        var second = await manager.AcquireTabForBrowseAsync(scopeA, "https://a.test/", context.Object);
 
-        second.Page.ShouldBeSameAs(first.Page);
+        second.Tab.ShouldBeSameAs(first.Tab);
         context.Verify(c => c.NewPageAsync(), Times.Once);
 
         time.Advance(TimeSpan.FromMinutes(31));
@@ -203,6 +203,10 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
             return Task.FromResult(new WebActionResult(
                 request.SessionId, WebActionStatus.Success, "https://example.com", false, null, null, null));
         }
+
+        public Task<ImageFetchResult> FetchImagesAsync(
+            ImageFetchRequest request, CancellationToken ct = default) =>
+            Task.FromResult(new ImageFetchResult(request.SessionId, []));
 
         public Task CloseSessionAsync(string sessionId, CancellationToken ct = default) => Task.CompletedTask;
     }
