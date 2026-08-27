@@ -2,6 +2,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0
 WORKDIR /src
 
+# Pins the SDK band for every downstream image: each service Dockerfile builds FROM this one
+# and runs its restore/publish under /src, so they all resolve the same SDK the host does.
+COPY ["global.json", "./"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
 COPY ["Mcp.Hosting/Mcp.Hosting.csproj", "Mcp.Hosting/"]
