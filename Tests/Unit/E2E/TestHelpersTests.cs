@@ -33,6 +33,30 @@ public class TestHelpersTests
         command.Arguments.ShouldEndWith($"\"{solutionRoot}\"");
     }
 
+    // A watched entry that names a file, not a directory, still has to move the timestamp.
+    // global.json pins the SDK band for every image built from base-sdk, so an edit to it must
+    // force a rebuild the same way an edit to Domain/ does.
+    [Fact]
+    public void GetNewestSourceTimestamp_WatchedEntryNamingAFile_TracksThatFilesEdits()
+    {
+        var root = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            var watchedFile = Path.Combine(root, "global.json");
+            File.WriteAllText(watchedFile, "{}");
+            var editedAt = DateTime.UtcNow.AddDays(1);
+            File.SetLastWriteTimeUtc(watchedFile, editedAt);
+
+            var newest = TestHelpers.GetNewestSourceTimestamp(root, ["global.json"], "Dockerfile.absent");
+
+            newest.ShouldBe(new DateTimeOffset(editedAt, TimeSpan.Zero));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void IsImageFresh_SourceNewerThanTheRecordedBuild_IsStale()
     {

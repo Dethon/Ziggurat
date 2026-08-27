@@ -6,8 +6,11 @@ internal sealed record E2EImageSpec(string Dockerfile, string ImageName, IReadOn
 
 internal static class E2EImages
 {
+    // global.json is a file rather than a directory: it pins the SDK band this image resolves,
+    // so an edit to it has to rebuild base-sdk and everything layered on it.
     internal static E2EImageSpec BaseSdk { get; } = new(
-        "Dockerfile.base-sdk", "base-sdk:latest", ["Domain", "Infrastructure", "Mcp.Hosting"]);
+        "Dockerfile.base-sdk", "base-sdk:latest",
+        ["Domain", "Infrastructure", "Mcp.Hosting", "global.json"]);
 
     internal static E2EImageSpec McpVault { get; } = new(
         "McpServerVault/Dockerfile", "mcp-vault:latest", ["Domain", "Infrastructure", "McpServerVault"]);

@@ -208,17 +208,21 @@ internal static class TestHelpers
 
     private static readonly string[] _buildOutputDirs = ["bin", "obj"];
 
-    private static DateTimeOffset GetNewestSourceTimestamp(
+    internal static DateTimeOffset GetNewestSourceTimestamp(
         string solutionRoot,
         IReadOnlyList<string> watchedDirs,
         string dockerfile)
     {
+        // A watched entry is usually a directory, but global.json is a single file the base-sdk
+        // image copies in. Without the File.Exists arm it would be silently dropped here, and
+        // the E2EImages guard test would pass while edits to it never forced a rebuild.
         var dirTimestamps = watchedDirs
             .Select(d => Path.Combine(solutionRoot, d))
-            .Where(Directory.Exists)
-            .SelectMany(d => Directory.EnumerateFiles(d, "*", SearchOption.AllDirectories)
-                .Where(f => !_buildOutputDirs.Any(b =>
-                    f.Contains($"{Path.DirectorySeparatorChar}{b}{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))))
+            .SelectMany(p => Directory.Exists(p)
+                ? Directory.EnumerateFiles(p, "*", SearchOption.AllDirectories)
+                    .Where(f => !_buildOutputDirs.Any(b =>
+                        f.Contains($"{Path.DirectorySeparatorChar}{b}{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)))
+                : File.Exists(p) ? [p] : [])
             .Select(f => new DateTimeOffset(File.GetLastWriteTimeUtc(f), TimeSpan.Zero));
 
         var dockerfilePath = Path.Combine(solutionRoot, dockerfile);
