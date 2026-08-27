@@ -108,7 +108,7 @@ public class OutpostRegistrarTests
     {
         var (registrar, hub, clock) = Registrar();
         await registrar.StartAsync(CancellationToken.None);
-        await Eventually.Until(() => hub.Registrations.Count == 1, "the machine announces itself");
+        await AnnouncedAndParkedAsync(hub, clock);
 
         await clock.AdvancePastAsync(OutpostLifetime.KeepAliveInterval);
         await Eventually.Until(() => hub.KeepAlives.Count == 1, "the first keepalive");
@@ -127,7 +127,7 @@ public class OutpostRegistrarTests
         var (registrar, hub, clock) = Registrar();
         hub.Answer = KeepAliveAnswer.Lapsed;
         await registrar.StartAsync(CancellationToken.None);
-        await Eventually.Until(() => hub.Registrations.Count == 1, "the machine announces itself");
+        await AnnouncedAndParkedAsync(hub, clock);
 
         await clock.AdvancePastAsync(OutpostLifetime.KeepAliveInterval);
         await Eventually.Until(() => hub.KeepAlives.Count == 1, "the keepalive the hub refuses");
@@ -172,7 +172,7 @@ public class OutpostRegistrarTests
         var (registrar, hub, clock, logs) = ReportingRegistrar();
         hub.Answer = new KeepAliveAnswer(KeepAliveOutcome.Refreshed, OutpostVerdict.Shadowed);
         await registrar.StartAsync(CancellationToken.None);
-        await Eventually.Until(() => hub.Registrations.Count == 1, "the machine announces itself");
+        await AnnouncedAndParkedAsync(hub, clock);
 
         await clock.AdvancePastAsync(OutpostLifetime.KeepAliveInterval);
 
@@ -190,7 +190,7 @@ public class OutpostRegistrarTests
     {
         var (registrar, hub, clock, logs) = ReportingRegistrar();
         await registrar.StartAsync(CancellationToken.None);
-        await Eventually.Until(() => hub.Registrations.Count == 1, "the machine announces itself");
+        await AnnouncedAndParkedAsync(hub, clock);
 
         await clock.AdvancePastAsync(OutpostLifetime.KeepAliveInterval);
         await Eventually.Until(() => hub.KeepAlives.Count == 1, "the keepalive");
@@ -208,7 +208,7 @@ public class OutpostRegistrarTests
         var (registrar, hub, clock, logs) = ReportingRegistrar();
         hub.Answer = new KeepAliveAnswer(KeepAliveOutcome.Refreshed, OutpostVerdict.Mounted);
         await registrar.StartAsync(CancellationToken.None);
-        await Eventually.Until(() => hub.Registrations.Count == 1, "the machine announces itself");
+        await AnnouncedAndParkedAsync(hub, clock);
 
         await clock.AdvancePastAsync(OutpostLifetime.KeepAliveInterval);
         await Eventually.Until(() => hub.KeepAlives.Count == 1, "the first keepalive");
@@ -319,4 +319,16 @@ public class OutpostRegistrarTests
             }
         }
     }
+
+    // The hub records the attempt before it answers, so a registration count of one says the
+    // registrar is inside RegisterAsync — not that it has come back out and parked on the keepalive
+    // that the next advance is about to fire. Advancing into that gap fires nothing, and the loop
+    // then waits out a clock already past its due time: a hang, reported as whichever keepalive
+    // never arrived. Waiting for the keepalive interval to be armed is what makes the advance land.
+    private static async Task AnnouncedAndParkedAsync(RecordingHub hub, ArmedClock clock)
+    {
+        await Eventually.Until(() => hub.Registrations.Count == 1, "the machine announces itself");
+        await clock.WaitUntilArmedAsync(OutpostLifetime.KeepAliveInterval);
+    }
+
 }
