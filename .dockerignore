@@ -42,7 +42,6 @@ DockerCompose
 **/Properties/launchSettings.json
 *.sln
 .editorconfig
-global.json
 nuget.config
 
 # Unused projects (not in docker-compose)
