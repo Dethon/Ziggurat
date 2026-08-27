@@ -99,8 +99,13 @@ public class PlaywrightWebBrowserTests(
                 SessionId: sessionId,
                 Url: "https://example.com",
                 MaxLength: 1000);
+            // Partial counts throughout this case: what it pins is that the session survives two
+            // navigations and ends up on the second URL, and a DOMContentLoaded that does not
+            // arrive returns Partial with the page present and the session perfectly intact. The
+            // hosts are reached over the network from inside the container, so demanding Success
+            // made a slow third party read as the session failing to persist.
             var result1 = await fixture.Browser.NavigateAsync(request1);
-            result1.Status.ShouldBe(BrowseStatus.Success);
+            result1.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
             var request2 = new BrowseRequest(
                 SessionId: sessionId,
@@ -109,12 +114,12 @@ public class PlaywrightWebBrowserTests(
             var result2 = await fixture.Browser.NavigateAsync(request2);
 
             // Assert - both navigations should work and session should persist
-            result2.Status.ShouldBe(BrowseStatus.Success);
+            result2.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
             result2.SessionId.ShouldBe(sessionId);
             result2.Url.ShouldContain("example.org");
 
             var currentPage = await fixture.Browser.GetCurrentPageAsync(sessionId);
-            currentPage.Status.ShouldBe(BrowseStatus.Success);
+            currentPage.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
             currentPage.Url.ShouldContain("example.org");
         }
         finally
