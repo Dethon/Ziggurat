@@ -519,6 +519,38 @@ public class TabProtocolTests
     }
 
     [Fact]
+    public async Task AnActThatNavigatesTheActingTabAndOpensAPopup_StillSupersedesTheActingTabsRanges()
+    {
+        // The popup's answer replaces the acting tab's, not its bookkeeping: a click that moved
+        // the acting tab too must still unmake the refs stamped on the document it left.
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 2);
+        var popupPage = FakePage.Create("https://popup.test/window");
+
+        var outcome = await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            ActThat(_ =>
+            {
+                pages[0].Url = "https://a.test/moved";
+                pages[0].RaisePopup(popupPage);
+                return Task.CompletedTask;
+            }),
+            answer: _ => Task.FromResult("from the acting tab"),
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("from the popup")));
+
+        outcome.ShouldBeOfType<TabOutcome<string>.Ran>().PopupAnswered.ShouldBeTrue();
+        (await RouteAsync(manager, "s1", "e-1")).ShouldBeOfType<TabOutcome<IPage>.Superseded>();
+
+        // The popup answered, so the popup — not the re-touched acting tab — stays current.
+        (await manager.OnCurrentTabAsync("s1", StampPolicy.None, cx => Task.FromResult(cx.Page)))
+            .ShouldBeOfType<TabOutcome<IPage>.Ran>().Result.ShouldBeSameAs(popupPage.Mock.Object);
+    }
+
+    [Fact]
     public async Task AStalePendingPopupFromAnEarlierCall_DoesNotDivertTheAction()
     {
         var (ctx, pages) = TabPoolFakes.CreateContext();

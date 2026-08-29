@@ -281,12 +281,17 @@ public class BrowserSessionManager : IAsyncDisposable
                 result = await act(ctx);
                 if (result is null)
                 {
-                    if (TakePendingPopup(session.SessionId, tab) is { } popupTab
-                        && await AnswerFromPopupAsync(session, popupTab, popup, ct) is { } popupResult)
+                    if (TakePendingPopup(session.SessionId, tab) is { } popupTab)
                     {
-                        // The acting tab's own tail is skipped on purpose: the answer — URL,
-                        // content, refs — is the popup's, and the acting tab was not read.
-                        return new TabOutcome<T>.Ran(popupResult, PopupAnswered: true);
+                        // The popup replaces the acting tab's answer, never its bookkeeping: an
+                        // act that moved the acting tab too must still unmake the refs stamped
+                        // on the document it left. Committed before the popup answers, so the
+                        // popup's own tail touches last and stays current.
+                        CommitTail(session, tab, ctx, supersedeAlways: false);
+                        if (await AnswerFromPopupAsync(session, popupTab, popup, ct) is { } popupResult)
+                        {
+                            return new TabOutcome<T>.Ran(popupResult, PopupAnswered: true);
+                        }
                     }
 
                     result = await answer(ctx);
