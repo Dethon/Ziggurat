@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture review — Ziggurat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 5 4; }
+      .mod { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+      .rule { background-image: repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(0,0,0,.035) 5px,rgba(0,0,0,.035) 10px); }
+      pre.mermaid { background: transparent; }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans antialiased">
+    <main class="max-w-5xl mx-auto px-6 py-14 space-y-14">
+
+      <header class="space-y-6">
+        <div>
+          <h1 class="font-serif text-4xl tracking-tight">Architecture review</h1>
+          <p class="text-slate-500 mt-1">Ziggurat · 29 August 2026 · HEAD <span class="font-mono text-xs">7ea4c7f7</span></p>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          <div class="rounded border border-slate-200 bg-white p-3">
+            <div class="text-2xl font-serif">84<span class="text-slate-400 text-base"> / 56</span></div>
+            <div class="text-xs text-slate-500 mt-1">fixes vs features, last 200 commits</div>
+          </div>
+          <div class="rounded border border-slate-200 bg-white p-3">
+            <div class="text-2xl font-serif">1780</div>
+            <div class="text-xs text-slate-500 mt-1">lines in <span class="font-mono">PlaywrightWebBrowser</span> — 2.3× the next file</div>
+          </div>
+          <div class="rounded border border-slate-200 bg-white p-3">
+            <div class="text-2xl font-serif">34</div>
+            <div class="text-xs text-slate-500 mt-1">test reaches past the browse seam, 8 files</div>
+          </div>
+          <div class="rounded border border-slate-200 bg-white p-3">
+            <div class="text-2xl font-serif">3.4×</div>
+            <div class="text-xs text-slate-500 mt-1">test churn over production churn</div>
+          </div>
+        </div>
+
+        <div class="rounded border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 flex flex-wrap gap-x-6 gap-y-2">
+          <span><span class="inline-block w-4 h-3 align-middle border border-slate-400 bg-white"></span> module</span>
+          <span><svg class="inline align-middle" width="26" height="8"><line class="seam" x1="0" y1="4" x2="26" y2="4" stroke="#64748b" stroke-width="1.5"/></svg> seam</span>
+          <span><svg class="inline align-middle" width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#dc2626" stroke-width="2"/></svg> leakage</span>
+          <span><span class="inline-block w-4 h-3 align-middle border-2 border-slate-900 bg-slate-900"></span> deep module</span>
+          <span><span class="inline-block w-4 h-3 align-middle rule border border-slate-300"></span> duplicated definition</span>
+        </div>
+
+        <p class="text-sm text-slate-600 leading-relaxed border-l-2 border-slate-300 pl-4">
+          Scoped by churn. The web-browsing subsystem and the eval harness carry the recent history;
+          the agent core was swept for comparison. Findings below were produced by three explorers and
+          then re-verified against the code line by line. Counts in this report are the verified ones.
+        </p>
+      </header>
+
+      <!-- ===================== HOT SPOT ===================== -->
+      <section class="space-y-4">
+        <h2 class="font-serif text-2xl">Where the work has been</h2>
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+          <pre class="mermaid">
+flowchart LR
+  subgraph W["web-browsing · 44 commits"]
+    A["PlaywrightWebBrowser<br/>1780 lines"]
+    B["BrowserSessionManager<br/>712 lines"]
+    C["HtmlProcessing<br/>862 lines"]
+  end
+  subgraph E["eval harness · 47 commits"]
+    D["Scenario + checks"]
+    F["ClaimExemptions"]
+  end
+  G["agent / channel core<br/>swept, largely healthy"]
+  classDef hot fill:#fef2f2,stroke:#dc2626,stroke-width:2px;
+  classDef warm fill:#fffbeb,stroke:#d97706;
+  classDef cool fill:#f8fafc,stroke:#94a3b8;
+  class A,B,C hot
+  class D,F warm
+  class G cool
+          </pre>
+          <p class="text-xs text-slate-500 mt-3">
+            The three modules in red account for ~30 consecutive <span class="font-mono">fix(web):</span> commits.
+            Grouped by cause, ~11 are sequencing mistakes at a call site, ~7 are two copies of one definition drifting,
+            ~6 are one coordinate system disagreeing with itself. None are policy bugs.
+          </p>
+        </div>
+      </section>
+
+      <section id="candidates" class="space-y-12">
+        <h2 class="font-serif text-2xl">Candidates</h2>
+
+        <!-- ===================== CANDIDATE 1 ===================== -->
+        <article id="c1" class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+          <div class="px-6 pt-6 pb-4 border-b border-slate-100">
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+              <h3 class="font-serif text-2xl">1 · Give the tab protocol a module</h3>
+              <div class="flex gap-2 shrink-0">
+                <span class="text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+                <span class="text-xs px-2 py-1 rounded bg-slate-100 text-slate-600">in-process</span>
+              </div>
+            </div>
+            <p class="font-mono text-xs text-slate-500 mt-3 leading-relaxed">
+              Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs · 1780<br />
+              Infrastructure/Clients/Browser/BrowserSessionManager.cs · 712<br />
+              Tests/Unit/Infrastructure/BrowserSessionManagerTests.cs · 682 &nbsp;|&nbsp; Tests/Integration/Clients/BrowseTabsTests.cs · 231
+            </p>
+          </div>
+
+          <div class="px-6 py-5 grid md:grid-cols-2 gap-5 bg-stone-50/60">
+            <!-- BEFORE -->
+            <div class="rounded border border-slate-200 bg-white p-4">
+              <div class="mod text-slate-400 mb-3">Before — 33 call sites, ordering by hand</div>
+              <svg viewBox="0 0 300 300" class="w-full" style="height:300px">
+                <rect x="8" y="8" width="284" height="120" fill="#fff" stroke="#dc2626" stroke-width="2"/>
+                <text x="18" y="26" class="mod" fill="#0f172a">PlaywrightWebBrowser</text>
+                <text x="18" y="40" font-size="9" fill="#64748b">1780 lines · 5 operations</text>
+                <g font-size="8" fill="#334155">
+                  <rect x="18" y="50" width="60" height="14" fill="#f1f5f9" stroke="#cbd5e1"/><text x="22" y="60">Navigate</text>
+                  <rect x="83" y="50" width="60" height="14" fill="#f1f5f9" stroke="#cbd5e1"/><text x="87" y="60">Snapshot</text>
+                  <rect x="148" y="50" width="60" height="14" fill="#f1f5f9" stroke="#cbd5e1"/><text x="152" y="60">Action</text>
+                  <rect x="213" y="50" width="45" height="14" fill="#f1f5f9" stroke="#cbd5e1"/><text x="217" y="60">Back</text>
+                  <rect x="18" y="70" width="60" height="14" fill="#f1f5f9" stroke="#cbd5e1"/><text x="22" y="80">Fetch</text>
+                </g>
+                <text x="18" y="103" font-size="8.5" fill="#dc2626">each re-derives: route→lock→re-check IsClosed→touch</text>
+                <text x="18" y="115" font-size="8.5" fill="#dc2626">→read url→work→MarkTabNavigated→NoteFinalUrl→stamp</text>
+
+                <g stroke="#dc2626" stroke-width="1">
+                  <line x1="40" y1="128" x2="30" y2="176"/><line x1="75" y1="128" x2="72" y2="176"/>
+                  <line x1="110" y1="128" x2="114" y2="176"/><line x1="145" y1="128" x2="156" y2="176"/>
+                  <line x1="180" y1="128" x2="198" y2="176"/><line x1="215" y1="128" x2="240" y2="176"/>
+                  <line x1="250" y1="128" x2="268" y2="176"/>
+                </g>
+                <text x="152" y="150" font-size="9" fill="#dc2626" font-weight="600">33 call sites</text>
+
+                <rect x="8" y="178" width="284" height="112" fill="#fff" stroke="#94a3b8" stroke-width="1.5"/>
+                <text x="18" y="195" class="mod" fill="#0f172a">BrowserSessionManager</text>
+                <text x="18" y="207" font-size="9" fill="#64748b">712 lines · 47 public members — a bag of verbs</text>
+                <g font-size="7.5" fill="#334155">
+                  <rect x="18" y="215" width="78" height="13" fill="#fff" stroke="#cbd5e1"/><text x="21" y="224">AcquireTabForBrowse</text>
+                  <rect x="100" y="215" width="55" height="13" fill="#fff" stroke="#cbd5e1"/><text x="103" y="224">LockTabAsync</text>
+                  <rect x="159" y="215" width="45" height="13" fill="#fff" stroke="#cbd5e1"/><text x="162" y="224">TouchTab</text>
+                  <rect x="208" y="215" width="55" height="13" fill="#fff" stroke="#cbd5e1"/><text x="211" y="224">NoteFinalUrl</text>
+                  <rect x="18" y="232" width="72" height="13" fill="#fff" stroke="#cbd5e1"/><text x="21" y="241">MarkTabNavigated</text>
+                  <rect x="94" y="232" width="60" height="13" fill="#fff" stroke="#cbd5e1"/><text x="97" y="241">BeginStamp</text>
+                  <rect x="158" y="232" width="45" height="13" fill="#fff" stroke="#cbd5e1"/><text x="161" y="241">RouteRef</text>
+                  <rect x="207" y="232" width="66" height="13" fill="#fff" stroke="#cbd5e1"/><text x="210" y="241">TakePopup</text>
+                </g>
+                <line class="seam" x1="18" y1="254" x2="282" y2="254" stroke="#64748b"/>
+                <text x="18" y="267" font-size="8.5" fill="#475569">ordering lives in 8 prose comments + rules file</text>
+                <text x="18" y="280" font-size="8.5" fill="#dc2626">policy tests (36 facts) are the caller — blind to ordering</text>
+              </svg>
+            </div>
+
+            <!-- AFTER -->
+            <div class="rounded border border-slate-200 bg-white p-4">
+              <div class="mod text-slate-400 mb-3">After — one intent, one arrow</div>
+              <svg viewBox="0 0 300 300" class="w-full" style="height:300px">
+                <rect x="8" y="8" width="284" height="86" fill="#fff" stroke="#94a3b8" stroke-width="1.5"/>
+                <text x="18" y="26" class="mod" fill="#0f172a">PlaywrightWebBrowser</text>
+                <text x="18" y="40" font-size="9" fill="#64748b">~1500 lines · Playwright choreography only</text>
+                <text x="18" y="56" font-size="8.5" fill="#475569">goto · wait · dismiss · extract · act · screenshot</text>
+                <text x="18" y="72" font-size="8.5" fill="#059669">no session bookkeeping</text>
+                <text x="18" y="86" font-size="8.5" fill="#059669">no ordering to remember</text>
+
+                <line x1="150" y1="94" x2="150" y2="126" stroke="#0f172a" stroke-width="2.5"/>
+                <polygon points="150,132 146,124 154,124" fill="#0f172a"/>
+                <text x="158" y="116" font-size="9" fill="#0f172a">RunOnTab(intent, work)</text>
+
+                <rect x="8" y="134" width="284" height="156" fill="#0f172a" stroke="#0f172a" stroke-width="2"/>
+                <text x="18" y="152" class="mod" fill="#fff">BrowserSessionManager</text>
+                <text x="18" y="165" font-size="9" fill="#94a3b8">deep · one entry point, policy + protocol inside</text>
+                <g font-size="7.5" fill="#64748b">
+                  <rect x="18" y="175" width="78" height="13" fill="#1e293b" stroke="#334155"/><text x="21" y="184" fill="#94a3b8">acquire / route</text>
+                  <rect x="100" y="175" width="55" height="13" fill="#1e293b" stroke="#334155"/><text x="103" y="184" fill="#94a3b8">lock</text>
+                  <rect x="159" y="175" width="60" height="13" fill="#1e293b" stroke="#334155"/><text x="162" y="184" fill="#94a3b8">closed re-check</text>
+                  <rect x="223" y="175" width="50" height="13" fill="#1e293b" stroke="#334155"/><text x="226" y="184" fill="#94a3b8">touch</text>
+                  <rect x="18" y="192" width="78" height="13" fill="#1e293b" stroke="#334155"/><text x="21" y="201" fill="#94a3b8">navigation detect</text>
+                  <rect x="100" y="192" width="60" height="13" fill="#1e293b" stroke="#334155"/><text x="103" y="201" fill="#94a3b8">NoteFinalUrl</text>
+                  <rect x="164" y="192" width="55" height="13" fill="#1e293b" stroke="#334155"/><text x="167" y="201" fill="#94a3b8">stamp lease</text>
+                  <rect x="223" y="192" width="50" height="13" fill="#1e293b" stroke="#334155"/><text x="226" y="201" fill="#94a3b8">walls</text>
+                  <rect x="18" y="209" width="90" height="13" fill="#1e293b" stroke="#334155"/><text x="21" y="218" fill="#94a3b8">popup adoption</text>
+                </g>
+                <line class="seam" x1="18" y1="234" x2="282" y2="234" stroke="#64748b"/>
+                <text x="18" y="248" font-size="8.5" fill="#34d399">interface = test surface</text>
+                <text x="18" y="261" font-size="8.5" fill="#94a3b8">ordering assertable against a faked page, in ms</text>
+                <text x="18" y="274" font-size="8.5" fill="#94a3b8">Sessions accessor + 2 EnsureInitialized reaches gone</text>
+              </svg>
+            </div>
+          </div>
+
+          <div class="px-6 py-5 space-y-4">
+            <div>
+              <div class="mod text-slate-400 mb-1">Problem</div>
+              <p class="text-sm leading-relaxed">
+                <span class="font-mono text-xs">BrowserSessionManager</span> is deep inside and shallow at its edge: 47 public members,
+                33 call sites, and a nine-step ordering every operation re-derives by hand. The ordering <em>is</em> the interface, and it exists only in prose.
+              </p>
+            </div>
+            <div>
+              <div class="mod text-slate-400 mb-1">Solution</div>
+              <p class="text-sm leading-relaxed">
+                Move the seam from "nine verbs the caller sequences" to "one entry point that takes what the operation is and the work to do."
+                The manager owns acquisition, locking, the closed re-check, touch, navigation detection, the stamp lease and the wall disambiguation — once each.
+              </p>
+            </div>
+            <div class="grid sm:grid-cols-2 gap-x-8 gap-y-1">
+              <div>
+                <div class="mod text-slate-400 mb-1">Wins</div>
+                <ul class="text-sm space-y-1 list-disc list-inside marker:text-emerald-500">
+                  <li>Locality: one ordering, one file</li>
+                  <li>Three <span class="font-mono text-xs">IsClosed</span> spellings become one</li>
+                  <li>Interface becomes the test surface</li>
+                  <li>~11 sequencing fixes become unit tests</li>
+                </ul>
+              </div>
+              <div>
+                <div class="mod text-slate-400 mb-1">Evidence</div>
+                <ul class="text-sm space-y-1 list-disc list-inside marker:text-slate-400">
+                  <li>34 test reaches past the seam, 8 files</li>
+                  <li><span class="font-mono text-xs">Sessions</span>: "Nothing in production reads this"</li>
+                  <li>36 policy facts, zero caught these bugs</li>
+                </ul>
+              </div>
+            </div>
+            <div class="rounded bg-emerald-50 border border-emerald-200 px-4 py-2 text-sm text-emerald-900">
+              <strong>ADR-0034 asks for this.</strong> It already states the pool policy lives in <span class="font-mono text-xs">BrowserSessionManager</span> and
+              "<span class="font-mono text-xs">PlaywrightWebBrowser</span> only carries pages around." Today that sentence is aspirational; this makes it true. No decided behaviour changes.
+            </div>
+          </div>
+        </article>
+
+        <!-- ===================== CANDIDATE 2 ===================== -->
+        <article id="c2" class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+          <div class="px-6 pt-6 pb-4 border-b border-slate-100">
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+              <h3 class="font-serif text-2xl">2 · One label ladder, two renderers</h3>
+              <div class="flex gap-2 shrink-0">
+                <span class="text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+                <span class="text-xs px-2 py-1 rounded bg-slate-100 text-slate-600">ports &amp; adapters</span>
+              </div>
+            </div>
+            <p class="font-mono text-xs text-slate-500 mt-3 leading-relaxed">
+              Infrastructure/HtmlProcessing/PageImageEntry.cs · 145 &nbsp;<span class="text-slate-400">(FirstSpoken 97–102, Sanitize 128–132)</span><br />
+              Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs · 961–987 <span class="text-slate-400">(the same ladder, in JavaScript)</span>
+            </p>
+          </div>
+
+          <div class="px-6 py-5 grid md:grid-cols-2 gap-5 bg-stone-50/60">
+            <div class="rounded border border-slate-200 bg-white p-4">
+              <div class="mod text-slate-400 mb-3">Before — one rule, two languages</div>
+              <svg viewBox="0 0 300 300" class="w-full" style="height:300px">
+                <rect x="10" y="20" width="120" height="150" fill="#fff" stroke="#94a3b8" stroke-width="1.5" class="rule"/>
+                <text x="20" y="38" class="mod" fill="#0f172a">PageImageEntry</text>
+                <text x="20" y="50" font-size="8" fill="#64748b">C# · 145 lines</text>
+                <g font-size="8" fill="#334155">
+                  <text x="20" y="68">1 alt</text><text x="20" y="82">2 figcaption</text>
+                  <text x="20" y="96">3 title</text><text x="20" y="110">4 link text</text>
+                  <text x="20" y="124">5 filename</text><text x="20" y="138">6 WxH</text>
+                </g>
+                <text x="20" y="156" font-size="8" fill="#dc2626">cut at 500 · [ → (</text>
+
+                <rect x="170" y="20" width="120" height="150" fill="#fff" stroke="#94a3b8" stroke-width="1.5" class="rule"/>
+                <text x="180" y="38" class="mod" fill="#0f172a">fetch script</text>
+                <text x="180" y="50" font-size="8" fill="#64748b">JS · inside a string literal</text>
+                <g font-size="8" fill="#334155">
+                  <text x="180" y="68">1 alt</text><text x="180" y="82">2 figcaption</text>
+                  <text x="180" y="96">3 title</text><text x="180" y="110">4 link text</text>
+                  <text x="180" y="124">5 filename</text><text x="180" y="138">6 WxH</text>
+                </g>
+                <text x="180" y="156" font-size="8" fill="#dc2626">cut at 500 · [ → (</text>
+
+                <line class="seam" x1="130" y1="95" x2="170" y2="95" stroke="#dc2626" stroke-width="2"/>
+                <text x="118" y="88" font-size="8" fill="#dc2626" font-weight="600">"must move as one"</text>
+                <text x="132" y="112" font-size="7.5" fill="#dc2626">(a comment)</text>
+
+                <rect x="10" y="190" width="280" height="45" fill="#fef2f2" stroke="#dc2626"/>
+                <text x="20" y="207" font-size="9" fill="#991b1b" font-weight="600">Already broken twice on record</text>
+                <text x="20" y="221" font-size="8" fill="#991b1b">b43dab5e — fetch sliced bare where entry ellipsised</text>
+                <text x="20" y="231" font-size="8" fill="#991b1b">|| vs blank — a whitespace alt killed every later rung</text>
+
+                <rect x="10" y="245" width="280" height="45" fill="#fffbeb" stroke="#d97706"/>
+                <text x="20" y="262" font-size="9" fill="#92400e" font-weight="600">Byte ladder: 3 of 4 rungs live in the string</text>
+                <text x="20" y="276" font-size="8" fill="#92400e">only coverage = live JPL / Wikipedia / Reddit, behind Skip.If</text>
+                <text x="20" y="286" font-size="8" fill="#92400e">stringly payload: null | "never-loaded" | "error" | {tainted} | {data}</text>
+              </svg>
+            </div>
+
+            <div class="rounded border border-slate-200 bg-white p-4">
+              <div class="mod text-slate-400 mb-3">After — one definition, two renderings</div>
+              <svg viewBox="0 0 300 300" class="w-full" style="height:300px">
+                <rect x="70" y="18" width="160" height="96" fill="#0f172a" stroke="#0f172a" stroke-width="2"/>
+                <text x="82" y="36" class="mod" fill="#fff">PageImageLabel</text>
+                <text x="82" y="48" font-size="8" fill="#94a3b8">deep · the ladder, stated once</text>
+                <g font-size="7.5" fill="#94a3b8">
+                  <text x="82" y="64">alt → figcaption → title →</text>
+                  <text x="82" y="76">link → filename → WxH</text>
+                  <text x="82" y="92">sanitiser · cap · data-URI rule</text>
+                </g>
+                <text x="82" y="106" font-size="8" fill="#34d399">one place to change</text>
+
+                <line x1="110" y1="114" x2="70" y2="150" stroke="#0f172a" stroke-width="2"/>
+                <polygon points="66,154 71,146 76,152" fill="#0f172a"/>
+                <line x1="190" y1="114" x2="230" y2="150" stroke="#0f172a" stroke-width="2"/>
+                <polygon points="234,154 224,152 229,146" fill="#0f172a"/>
+                <text x="20" y="132" font-size="8" fill="#475569">call</text>
+                <text x="238" y="132" font-size="8" fill="#475569">render to JS</text>
+
+                <rect x="10" y="156" width="115" height="46" fill="#fff" stroke="#94a3b8"/>
+                <text x="20" y="173" class="mod" fill="#0f172a">HtmlConverter</text>
+                <text x="20" y="188" font-size="8" fill="#64748b">markdown entries</text>
+
+                <rect x="175" y="156" width="115" height="46" fill="#fff" stroke="#94a3b8"/>
+                <text x="185" y="173" class="mod" fill="#0f172a">page script</text>
+                <text x="185" y="188" font-size="8" fill="#64748b">the note on fetch</text>
+
+                <rect x="10" y="214" width="280" height="76" fill="#0f172a" stroke="#0f172a" stroke-width="2"/>
+                <text x="20" y="232" class="mod" fill="#fff">ImageAcquisition</text>
+                <text x="20" y="244" font-size="8" fill="#94a3b8">owns the rung order · typed outcome</text>
+                <g font-size="7.5">
+                  <rect x="20" y="252" width="60" height="26" fill="#1e293b" stroke="#334155"/><text x="24" y="262" fill="#94a3b8">wire fetch</text><text x="24" y="272" fill="#64748b">in-page</text>
+                  <rect x="84" y="252" width="60" height="26" fill="#1e293b" stroke="#334155"/><text x="88" y="262" fill="#94a3b8">canvas</text><text x="88" y="272" fill="#64748b">in-page</text>
+                  <rect x="148" y="252" width="60" height="26" fill="#1e293b" stroke="#334155"/><text x="152" y="262" fill="#94a3b8">as-served</text><text x="152" y="272" fill="#64748b">context</text>
+                  <rect x="212" y="252" width="60" height="26" fill="#1e293b" stroke="#334155"/><text x="216" y="262" fill="#94a3b8">screenshot</text><text x="216" y="272" fill="#64748b">element</text>
+                </g>
+                <text x="196" y="234" font-size="8" fill="#34d399">4 adapters = a real seam</text>
+              </svg>
+            </div>
+          </div>
+
+          <div class="px-6 py-5 space-y-4">
+            <div>
+              <div class="mod text-slate-400 mb-1">Problem</div>
+              <p class="text-sm leading-relaxed">
+                The label ladder is implemented twice — six rungs, the same bracket rounding, the same 500-character cut — in C# and in a JavaScript
+                string literal 800 lines away. Nothing but a comment holds them together, and it has failed twice. Delete the JS copy and complexity
+                does not vanish; it reappears in the C# ladder that already exists. That is a pass-through duplicate.
+              </p>
+            </div>
+            <div>
+              <div class="mod text-slate-400 mb-1">Solution</div>
+              <p class="text-sm leading-relaxed">
+                State the ladder once and <em>emit</em> the page-side script from it. The mechanism is already proven: the JS block interpolates
+                <span class="font-mono text-xs">{{PageImageEntry.WidthAttribute}}</span> from C# today — the attribute names were taken along, the ladder was not.
+                Separately, pull the whole byte-acquisition sequence to C# and let the page answer only facts.
+              </p>
+            </div>
+            <div class="grid sm:grid-cols-2 gap-x-8 gap-y-1">
+              <div>
+                <div class="mod text-slate-400 mb-1">Wins</div>
+                <ul class="text-sm space-y-1 list-disc list-inside marker:text-emerald-500">
+                  <li>Two-sided edit hazard stops existing</li>
+                  <li>~130-line JS block becomes a probe</li>
+                  <li>Rung ladder unit-testable both sides</li>
+                  <li>Acquisition order assertable with fakes</li>
+                </ul>
+              </div>
+              <div>
+                <div class="mod text-slate-400 mb-1">Evidence</div>
+                <ul class="text-sm space-y-1 list-disc list-inside marker:text-slate-400">
+                  <li>~7 of 30 web fixes are this drift</li>
+                  <li>Coverage depends on JPL being up</li>
+                  <li>Rules file spends a paragraph policing it</li>
+                </ul>
+              </div>
+            </div>
+            <div class="rounded bg-emerald-50 border border-emerald-200 px-4 py-2 text-sm text-emerald-900">
+              <strong>No ADR conflict.</strong> ADR-0033 decides the rung <em>order</em> and the credentials rule — both survive verbatim.
+              This changes only how many times each is written. The "don't use <span class="font-mono text-xs">credentials: 'include'</span>" warning stays load-bearing.
+            </div>
+          </div>
+        </article>
+
+        <!-- ===================== CANDIDATE 3 ===================== -->
+        <article id="c3" class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+          <div class="px-6 pt-6 pb-4 border-b border-slate-100">
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+              <h3 class="font-serif text-2xl">3 · Move the guard onto the scenario</h3>
+              <div class="flex gap-2 shrink-0">
+                <span class="text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+                <span class="text-xs px-2 py-1 rounded bg-slate-100 text-slate-600">in-process</span>
+              </div>
+            </div>
+            <p class="font-mono text-xs text-slate-500 mt-3 leading-relaxed">
+              Tests/Eval/ClaimExemptions.cs · 208 <span class="text-slate-400">(159-line dictionary literal)</span><br />
+              Tests/Eval/ClaimCoverageTests.cs · 92 &nbsp;|&nbsp; Tests/Eval/ScorecardLedger.cs · 122 &nbsp;|&nbsp; Tests/Eval/Scenarios/*.cs
+            </p>
+          </div>
+
+          <div class="px-6 py-5 grid md:grid-cols-2 gap-5 bg-stone-50/60">
+            <div class="rounded border border-slate-200 bg-white p-4">
+              <div class="mod text-slate-400 mb-3">Before — a table a file away from both ends</div>
+              <svg viewBox="0 0 300 280" class="w-full" style="height:280px">
+                <rect x="10" y="14" width="120" height="60" fill="#fff" stroke="#94a3b8"/>
+                <text x="20" y="32" class="mod" fill="#0f172a">Scenario</text>
+                <text x="20" y="46" font-size="8" fill="#64748b">Claims / Judged</text>
+                <text x="20" y="58" font-size="8" fill="#64748b">IfDelegated</text>
+                <text x="20" y="69" font-size="8" fill="#dc2626">+ 16 prose comments</text>
+
+                <rect x="170" y="14" width="120" height="60" fill="#fff" stroke="#94a3b8"/>
+                <text x="180" y="32" class="mod" fill="#0f172a">PromptManifest</text>
+                <text x="180" y="46" font-size="8" fill="#64748b">87 claims</text>
+                <text x="180" y="58" font-size="8" fill="#64748b">8 prompt sections</text>
+
+                <rect x="40" y="105" width="220" height="72" fill="#fff" stroke="#dc2626" stroke-width="2"/>
+                <text x="52" y="123" class="mod" fill="#0f172a">ClaimExemptions</text>
+                <text x="52" y="136" font-size="8" fill="#64748b">208 lines · 3 members · a flat slab</text>
+                <text x="52" y="151" font-size="8.5" fill="#dc2626" font-weight="600">29 of 29 entries = ExemptionKind.Guard</text>
+                <text x="52" y="163" font-size="8" fill="#dc2626">5 of 6 enum values dead, still spelled in scorecard</text>
+                <text x="52" y="173" font-size="7.5" fill="#64748b">+658 / −449 over 25 touches</text>
+
+                <line class="seam" x1="70" y1="74" x2="90" y2="105" stroke="#dc2626" stroke-width="1.5"/>
+                <text x="8" y="96" font-size="7.5" fill="#dc2626">"see ClaimExemptions"</text>
+                <text x="30" y="196" font-size="7.5" fill="#dc2626">uncheckable prose link ×16</text>
+
+                <rect x="10" y="210" width="130" height="42" fill="#fff" stroke="#94a3b8"/>
+                <text x="20" y="227" class="mod" fill="#0f172a">ClaimCoverage</text>
+                <text x="20" y="241" font-size="8" fill="#64748b">policing contradictions</text>
+
+                <rect x="160" y="210" width="130" height="42" fill="#fff" stroke="#94a3b8"/>
+                <text x="170" y="227" class="mod" fill="#0f172a">ScorecardLedger</text>
+                <text x="170" y="241" font-size="8" fill="#64748b">maps 5 kinds that never occur</text>
+
+                <line x1="110" y1="177" x2="70" y2="210" stroke="#94a3b8"/>
+                <line x1="190" y1="177" x2="220" y2="210" stroke="#94a3b8"/>
+              </svg>
+            </div>
+
+            <div class="rounded border border-slate-200 bg-white p-4">
+              <div class="mod text-slate-400 mb-3">After — the compiler holds the link</div>
+              <svg viewBox="0 0 300 280" class="w-full" style="height:280px">
+                <rect x="40" y="14" width="220" height="92" fill="#0f172a" stroke="#0f172a" stroke-width="2"/>
+                <text x="52" y="32" class="mod" fill="#fff">Scenario</text>
+                <text x="52" y="46" font-size="8" fill="#94a3b8">one place a scenario is declared</text>
+                <g font-size="8" fill="#94a3b8">
+                  <rect x="52" y="54" width="46" height="14" fill="#1e293b" stroke="#334155"/><text x="56" y="64">Claims</text>
+                  <rect x="102" y="54" width="46" height="14" fill="#1e293b" stroke="#334155"/><text x="106" y="64">Judged</text>
+                  <rect x="152" y="54" width="60" height="14" fill="#1e293b" stroke="#334155"/><text x="156" y="64">IfDelegated</text>
+                  <rect x="52" y="72" width="60" height="14" fill="#064e3b" stroke="#34d399"/><text x="56" y="82" fill="#34d399">Guards</text>
+                </g>
+                <text x="118" y="82" font-size="8" fill="#34d399">claim id is a compile-time symbol</text>
+                <text x="52" y="100" font-size="8" fill="#34d399">a withdrawn claim breaks its own guard</text>
+
+                <line x1="110" y1="106" x2="80" y2="150" stroke="#0f172a" stroke-width="2"/>
+                <polygon points="76,154 81,146 86,152" fill="#0f172a"/>
+                <line x1="190" y1="106" x2="220" y2="150" stroke="#0f172a" stroke-width="2"/>
+                <polygon points="224,154 214,152 219,146" fill="#0f172a"/>
+
+                <rect x="10" y="158" width="130" height="46" fill="#fff" stroke="#94a3b8"/>
+                <text x="20" y="175" class="mod" fill="#0f172a">ClaimCoverage</text>
+                <text x="20" y="189" font-size="8" fill="#059669">contradiction unrepresentable</text>
+                <text x="20" y="199" font-size="7.5" fill="#64748b">one test deleted, not maintained</text>
+
+                <rect x="160" y="158" width="130" height="46" fill="#fff" stroke="#94a3b8"/>
+                <text x="170" y="175" class="mod" fill="#0f172a">ScorecardLedger</text>
+                <text x="170" y="189" font-size="8" fill="#64748b">cited / judged / conditional</text>
+                <text x="170" y="199" font-size="8" fill="#059669">/ guarded — one walk</text>
+
+                <rect x="60" y="222" width="180" height="42" fill="#f8fafc" stroke="#cbd5e1" stroke-dasharray="4 3"/>
+                <text x="72" y="239" class="mod" fill="#64748b">ClaimExemptions</text>
+                <text x="72" y="253" font-size="8" fill="#94a3b8">a stub: untouched claims only (today, empty)</text>
+              </svg>
+            </div>
+          </div>
+
+          <div class="px-6 py-5 space-y-4">
+            <div>
+              <div class="mod text-slate-400 mb-1">Problem</div>
+              <p class="text-sm leading-relaxed">
+                A guard is a property of the <em>relationship between a scenario and a claim</em>, stored a file away from both and linked only by
+                16 "see ClaimExemptions" comments. The taxonomy has been outlived by its own success: every non-<span class="font-mono text-xs">Guard</span>
+                kind was closed by backlog commits, leaving one kind — and one kind is not a taxonomy.
+              </p>
+            </div>
+            <div>
+              <div class="mod text-slate-400 mb-1">Solution</div>
+              <p class="text-sm leading-relaxed">
+                Give <span class="font-mono text-xs">Scenario</span> a second list beside <span class="font-mono text-xs">Claims</span>: the claim it guards
+                and the note on why it cannot cite. The claim id is already a compile-time symbol, so a renamed or withdrawn claim breaks the file that guards it.
+              </p>
+            </div>
+            <div class="grid sm:grid-cols-2 gap-x-8 gap-y-1">
+              <div>
+                <div class="mod text-slate-400 mb-1">Wins</div>
+                <ul class="text-sm space-y-1 list-disc list-inside marker:text-emerald-500">
+                  <li>Locality: guard prose beside its scenario</li>
+                  <li>One concept, one type, not two</li>
+                  <li>A contradiction test gets deleted</li>
+                  <li>Five dead enum values stop being decoration</li>
+                </ul>
+              </div>
+              <div>
+                <div class="mod text-slate-400 mb-1">Evidence</div>
+                <ul class="text-sm space-y-1 list-disc list-inside marker:text-slate-400">
+                  <li>29/29 entries verified as one kind</li>
+                  <li>Hottest non-browser file: 25 touches</li>
+                  <li>Scenario edits force a second-file edit</li>
+                </ul>
+              </div>
+            </div>
+            <div class="rounded bg-amber-50 border border-amber-300 px-4 py-2 text-sm text-amber-900">
+              <strong>Touches ADR-0031, does not contradict it.</strong> A guard is not an uncovered claim — a scenario runs and asserts it — so this is a distinction
+              0031 did not draw rather than one it settled. Every claim still needs a scenario or a written reason, and the backlog stays visible in the scorecard.
+              Worth a short amending ADR, since 0031's "either a scenario or a line in the exemption list" reads literally as today's shape.
+            </div>
+          </div>
+        </article>
+
+        <!-- ===================== CANDIDATE 4 ===================== -->
+        <article id="c4" class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+          <div class="px-6 pt-6 pb-4 border-b border-slate-100">
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+              <h3 class="font-serif text-2xl">4 · Make the conversation identity a type</h3>
+              <div class="flex gap-2 shrink-0">
+                <span class="text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+                <span class="text-xs px-2 py-1 rounded bg-rose-100 text-rose-800 font-medium">live defect</span>
+              </div>
+            </div>
+            <p class="font-mono text-xs text-slate-500 mt-3 leading-relaxed">
+              McpChannelSignalR/Hubs/ChatHub.cs · 139, 221, 309, 407 &nbsp;|&nbsp; Services/StreamService.cs · 33, 130<br />
+              Services/ApprovalService.cs · 22, 63 &nbsp;|&nbsp; McpChannelTelegram/McpTools/{SendReply,RequestApproval}Tool.cs · 118, 109
+            </p>
+          </div>
+
+          <div class="px-6 py-5 bg-stone-50/60">
+            <div class="rounded border border-slate-200 bg-white p-4">
+              <div class="mod text-slate-400 mb-3">The identity changes name twice on one round trip</div>
+              <pre class="mermaid">
+sequenceDiagram
+  participant B as Browser
+  participant H as ChatHub
+  participant A as Agent (≈40 hops)
+  participant S as StreamService
+  B->>H: topicId (UUID)
+  Note over H: :221 discards topicId,<br/>composes "chatId:threadId"
+  H->>A: conversationId
+  A-->>S: conversationId
+  Note over S: :33 maps back to topicId<br/>— the exact inverse
+  S-->>B: chunk
+  Note over S: on miss: ?? conversationId<br/>→ :130 logs, drops chunk
+              </pre>
+              <div class="grid sm:grid-cols-3 gap-3 mt-4 text-xs">
+                <div class="rounded border border-slate-200 p-3">
+                  <div class="text-xl font-serif">8</div>
+                  <div class="text-slate-500 mt-1">production sites composing the spelling by hand — 4 in <span class="font-mono">ChatHub</span> alone</div>
+                </div>
+                <div class="rounded border border-slate-200 p-3">
+                  <div class="text-xl font-serif">4</div>
+                  <div class="text-slate-500 mt-1">independent copies of the inverse mapping</div>
+                </div>
+                <div class="rounded border border-rose-200 bg-rose-50 p-3">
+                  <div class="text-xl font-serif text-rose-900">1</div>
+                  <div class="text-rose-800 mt-1">silent chunk drop — a reply vanishes with only a warning</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="px-6 py-5 space-y-4">
+            <div>
+              <div class="mod text-slate-400 mb-1">Problem</div>
+              <p class="text-sm leading-relaxed">
+                One identity is spelled as a string at 8 sites and mapped back at 4 more, across a process boundary and ~40 hops.
+                The round trip is only correct because a dictionary stays alive across it. When it doesn't,
+                <span class="font-mono text-xs">?? conversationId</span> hands a raw <span class="font-mono text-xs">chatId:threadId</span> to a lookup that cannot match —
+                the chunk is dropped and a reply silently disappears.
+              </p>
+            </div>
+            <div>
+              <div class="mod text-slate-400 mb-1">Solution</div>
+              <p class="text-sm leading-relaxed">
+                Let the identity cross signatures as a type that carries both spellings, authored once. The composition and its inverse become
+                its implementation; the fallback that drops chunks becomes unrepresentable rather than untested.
+              </p>
+            </div>
+            <div class="grid sm:grid-cols-2 gap-x-8 gap-y-1">
+              <div>
+                <div class="mod text-slate-400 mb-1">Wins</div>
+                <ul class="text-sm space-y-1 list-disc list-inside marker:text-emerald-500">
+                  <li>Closes a live silent-drop defect</li>
+                  <li>8 composition sites become one</li>
+                  <li>4 inverse mappings become one</li>
+                  <li>Locality: the round trip reads as one thing</li>
+                </ul>
+              </div>
+              <div>
+                <div class="mod text-slate-400 mb-1">Also in this sweep</div>
+                <ul class="text-sm space-y-1 list-disc list-inside marker:text-slate-400">
+                  <li><span class="font-mono text-xs">ReplyContentType.ToolCall</span>: no producer, 4 unreachable case arms, 9 tests that exist only to enter them</li>
+                  <li><span class="font-mono text-xs">RegisterAgentsTool</span> ×5, identical but for prose (87 lines)</li>
+                  <li>MCP host boilerplate: leave alone — 5.4% ceremony, any abstraction would be shallow</li>
+                </ul>
+              </div>
+            </div>
+            <div class="rounded bg-emerald-50 border border-emerald-200 px-4 py-2 text-sm text-emerald-900">
+              <strong>No ADR conflict.</strong> ADR-0018 is working as designed — one route, correctly — which is exactly why
+              <span class="font-mono text-xs">ToolCall</span> is now residue from the route 0018 deleted. Removing it completes that decision rather than reopening it.
+            </div>
+          </div>
+        </article>
+
+        <!-- ===================== CANDIDATE 5 ===================== -->
+        <article id="c5" class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+          <div class="px-6 pt-6 pb-4 border-b border-slate-100">
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+              <h3 class="font-serif text-2xl">5 · Give the body window an owner</h3>
+              <div class="flex gap-2 shrink-0">
+                <span class="text-xs px-2 py-1 rounded bg-amber-100 text-amber-800 font-medium">Worth exploring</span>
+              </div>
+            </div>
+            <p class="font-mono text-xs text-slate-500 mt-3 leading-relaxed">
+              Infrastructure/HtmlProcessing/HtmlProcessor.cs · 179–229 &nbsp;|&nbsp; HtmlConverter.cs · 54–107 &nbsp;|&nbsp; PageImageEntry.cs · 62–89<br />
+              Infrastructure/Agents/Mcp/McpImageLift.cs · 159 &nbsp;|&nbsp; Domain/Agents/ReadImageHydration.cs · 101
+            </p>
+          </div>
+
+          <div class="px-6 py-5 grid md:grid-cols-2 gap-5 bg-stone-50/60">
+            <div class="rounded border border-slate-200 bg-white p-4">
+              <div class="mod text-slate-400 mb-3">Before — positions ride on an <span class="font-mono normal-case">out int</span></div>
+              <svg viewBox="0 0 300 250" class="w-full" style="height:250px">
+                <rect x="10" y="14" width="280" height="52" fill="#fff" stroke="#94a3b8"/>
+                <text x="20" y="31" class="mod" fill="#0f172a">HtmlProcessor</text>
+                <text x="20" y="45" font-size="8" fill="#64748b">strip → slice offset → count → truncate → count</text>
+                <text x="20" y="58" font-size="8" fill="#dc2626">NextOffset = offset + consumed</text>
+
+                <line x1="90" y1="66" x2="70" y2="98" stroke="#dc2626"/>
+                <line x1="200" y1="66" x2="220" y2="98" stroke="#dc2626"/>
+                <text x="96" y="86" font-size="7.5" fill="#dc2626">out consumed</text>
+
+                <rect x="10" y="100" width="130" height="56" fill="#fff" stroke="#94a3b8"/>
+                <text x="20" y="117" class="mod" fill="#0f172a">HtmlConverter</text>
+                <text x="20" y="130" font-size="8" fill="#64748b">70% newline back-up</text>
+                <text x="20" y="142" font-size="8" fill="#64748b">overlong escape hatch</text>
+                <text x="20" y="152" font-size="8" fill="#dc2626">measures after trim</text>
+
+                <rect x="160" y="100" width="130" height="56" fill="#fff" stroke="#94a3b8"/>
+                <text x="170" y="117" class="mod" fill="#0f172a">PageImageEntry</text>
+                <text x="170" y="130" font-size="8" fill="#64748b">PartialEntryStart</text>
+                <text x="170" y="142" font-size="8" fill="#64748b">DanglingOpenStart</text>
+                <text x="170" y="152" font-size="7.5" fill="#dc2626">two detectors</text>
+
+                <rect x="10" y="172" width="280" height="66" fill="#fef2f2" stroke="#dc2626"/>
+                <text x="20" y="189" font-size="9" fill="#991b1b" font-weight="600">The invariant nobody owns</text>
+                <text x="20" y="203" font-size="8" fill="#991b1b">offset + consumed lands in the same coordinate space,</text>
+                <text x="20" y="213" font-size="8" fill="#991b1b">and the window holds exactly ImageCount whole entries</text>
+                <text x="20" y="229" font-size="8" fill="#991b1b">4 fixes, each patched wherever it surfaced</text>
+              </svg>
+            </div>
+
+            <div class="rounded border border-slate-200 bg-white p-4">
+              <div class="mod text-slate-400 mb-3">After — one module whose interface is a window</div>
+              <svg viewBox="0 0 300 250" class="w-full" style="height:250px">
+                <rect x="10" y="14" width="280" height="40" fill="#fff" stroke="#94a3b8"/>
+                <text x="20" y="31" class="mod" fill="#0f172a">HtmlProcessor</text>
+                <text x="20" y="46" font-size="8" fill="#059669">produces markdown, asks for a window — no arithmetic</text>
+
+                <line x1="150" y1="54" x2="150" y2="76" stroke="#0f172a" stroke-width="2"/>
+                <polygon points="150,82 146,74 154,74" fill="#0f172a"/>
+
+                <rect x="10" y="84" width="280" height="72" fill="#0f172a" stroke="#0f172a" stroke-width="2"/>
+                <text x="20" y="102" class="mod" fill="#fff">BodyWindow</text>
+                <text x="20" y="115" font-size="8" fill="#94a3b8">(markdown, offset, maxLength) → window + 4 facts</text>
+                <g font-size="7.5" fill="#64748b">
+                  <rect x="20" y="122" width="58" height="13" fill="#1e293b" stroke="#334155"/><text x="23" y="131" fill="#94a3b8">contentLength</text>
+                  <rect x="82" y="122" width="52" height="13" fill="#1e293b" stroke="#334155"/><text x="85" y="131" fill="#94a3b8">nextOffset</text>
+                  <rect x="138" y="122" width="52" height="13" fill="#1e293b" stroke="#334155"/><text x="141" y="131" fill="#94a3b8">imageCount</text>
+                  <rect x="194" y="122" width="76" height="13" fill="#1e293b" stroke="#334155"/><text x="197" y="131" fill="#94a3b8">imagesBeyond</text>
+                </g>
+                <text x="20" y="149" font-size="8" fill="#34d399">truncation + entry detectors become private detail</text>
+
+                <rect x="10" y="172" width="280" height="66" fill="#ecfdf5" stroke="#059669"/>
+                <text x="20" y="189" font-size="9" fill="#065f46" font-weight="600">The test that becomes possible</text>
+                <text x="20" y="203" font-size="8" fill="#065f46">a paging loop terminates and visits every entry once —</text>
+                <text x="20" y="213" font-size="8" fill="#065f46">one property test over generated bodies,</text>
+                <text x="20" y="223" font-size="8" fill="#065f46">replacing 11 example facts split across two files</text>
+              </svg>
+            </div>
+          </div>
+
+          <div class="px-6 py-5 space-y-4">
+            <div>
+              <div class="mod text-slate-400 mb-1">Problem</div>
+              <p class="text-sm leading-relaxed">
+                Paging coordinates are spread over three modules with no owner. Separately, the picture-index rule is written twice —
+                <span class="font-mono text-xs">McpImageLift</span> and <span class="font-mono text-xs">ReadImageHydration</span> each split paragraphs independently,
+                across an assembly split, held together by a comment reading "It has to be the same question, asked the same way." They have already disagreed once,
+                putting every image one key off its bytes.
+              </p>
+            </div>
+            <div>
+              <div class="mod text-slate-400 mb-1">Solution</div>
+              <p class="text-sm leading-relaxed">
+                One module owning the window and its four facts, with truncation and the entry detectors as private detail. For the index rule:
+                put the paragraph split in <span class="font-mono text-xs">Domain</span> — it is pure text with no infrastructure in it — and have the bridge call it,
+                the way <span class="font-mono text-xs">ImageRef</span> is already shared for exactly this reason. Note the dependency direction forces this way round.
+              </p>
+            </div>
+            <div class="rounded bg-emerald-50 border border-emerald-200 px-4 py-2 text-sm text-emerald-900">
+              <strong>No ADR conflict.</strong> ADR-0033's four decisions — nextOffset measured not inferred, an entry never split, a window always advances,
+              the index counts <span class="font-mono text-xs">{</span>-paragraphs — all survive verbatim. Only which module states them changes, and the measurement must stay at the cut.
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <!-- ===================== HEALTHY ===================== -->
+      <section class="space-y-4">
+        <h2 class="font-serif text-2xl">Checked and working — leave alone</h2>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <div class="rounded border border-emerald-200 bg-emerald-50/50 p-4">
+            <div class="font-medium text-sm">ScenarioChecks</div>
+            <p class="text-xs text-slate-600 mt-1">368 lines behind a two-argument function; ten checks composed in a ten-line table. The deepest module in the suite. Do not split.</p>
+          </div>
+          <div class="rounded border border-emerald-200 bg-emerald-50/50 p-4">
+            <div class="font-medium text-sm">ModalDismisser</div>
+            <p class="text-xs text-slate-600 mt-1">638 lines, one entry point, a real result type. Took four fixes — every one a policy fix inside it, none a sequencing fix at its caller. What the rest should look like.</p>
+          </div>
+          <div class="rounded border border-emerald-200 bg-emerald-50/50 p-4">
+            <div class="font-medium text-sm">IWebBrowser</div>
+            <p class="text-xs text-slate-600 mt-1">6 methods, 4 adapters. A real seam, and the tools test cleanly through it. No change proposed.</p>
+          </div>
+          <div class="rounded border border-emerald-200 bg-emerald-50/50 p-4">
+            <div class="font-medium text-sm">The eval harness's own tests</div>
+            <p class="text-xs text-slate-600 mt-1">Drive real recordings through the same entry point the runner calls. No test reaches around the seam — exactly what ADR-0030 asks for.</p>
+          </div>
+        </div>
+        <div class="rounded border border-amber-200 bg-amber-50/60 p-4">
+          <div class="font-medium text-sm">Scenario is wide (22 members, 18 reachable types, 81 hand-written permissions) — but hold off</div>
+          <p class="text-xs text-slate-700 mt-1">
+            A named tolerance profile would cut ~36 declaration lines per scenario. Real friction, and one drift already exists:
+            <span class="font-mono">MountScenarios</span> and <span class="font-mono">VoiceScenarios</span> allow delegation without setting
+            <span class="font-mono">WorkerAnswer</span>, silently taking a default that is a <em>success</em> string — the thing
+            <span class="font-mono">WebScenarios</span> documents as harmful. Worth doing after candidate 3, which touches the same type.
+            Any profile must stay an exhaustive named set — never a wildcard — or ADR-0030's permitted-set guarantee is lost.
+          </p>
+        </div>
+      </section>
+
+      <!-- ===================== TOP REC ===================== -->
+      <section id="top-recommendation">
+        <div class="rounded-lg border-2 border-slate-900 bg-white overflow-hidden">
+          <div class="bg-slate-900 px-6 py-3">
+            <div class="mod text-slate-400">Top recommendation</div>
+            <h2 class="font-serif text-2xl text-white mt-1">Start with <a href="#c1" class="underline decoration-slate-600 hover:decoration-white">the tab protocol</a></h2>
+          </div>
+          <div class="px-6 py-5 space-y-3 text-sm leading-relaxed">
+            <p>
+              It is the largest module, the hottest by churn, and the one whose bugs the existing tests structurally cannot catch.
+              Thirty-six policy facts pass while eleven sequencing bugs ship, because the tests are the caller — they perform the ordering
+              rather than checking it. That is the signature of a seam in the wrong place, and
+              <span class="font-mono text-xs">Sessions</span> being commented "Nothing in production reads this" is the codebase saying so out loud.
+            </p>
+            <p>
+              It also has the least argument against it: ADR-0034 already asserts this shape.
+              The work makes a decided sentence true rather than reopening anything.
+            </p>
+            <p class="text-slate-600">
+              Then <a href="#c2" class="underline decoration-slate-300">candidate 2</a> — it shares files, and the interpolation mechanism it needs is already
+              working in that same JS block. <a href="#c4" class="underline decoration-slate-300">Candidate 4</a> can go independently and in parallel; it closes a live
+              defect where a reply silently vanishes, and it is the smallest of the five.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <footer class="text-xs text-slate-400 pt-4 border-t border-slate-200">
+        Vocabulary: module · interface · implementation · depth · seam · adapter · leverage · locality.
+        Findings verified against the working tree at <span class="font-mono">7ea4c7f7</span>; no files were modified.
+      </footer>
+
+    </main>
+  </body>
+</html>
