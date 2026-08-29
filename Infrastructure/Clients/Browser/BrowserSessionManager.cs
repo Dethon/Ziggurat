@@ -125,8 +125,11 @@ public class BrowserSessionManager : IAsyncDisposable
 
             using (tabLock)
             {
+                // The acquisition's own session, not a dictionary lookup: a Clear or prune landing
+                // while this browse queued must not turn into a thrown key, only a quiet commit
+                // into a session nothing routes to any more.
                 return await RunOnLockedTabAsync(
-                    _sessions[sessionId], acquisition.Tab,
+                    acquisition.Session, acquisition.Tab,
                     StampPolicy.Restamp(RefNamespace.Image), supersedeAlways: true, work, ct);
             }
         }
@@ -456,14 +459,14 @@ public class BrowserSessionManager : IAsyncDisposable
                 // a later closed-wall names the URL the model most recently used.
                 match.RequestedUrl = url;
                 Touch(session, match);
-                return new TabAcquisition(match, Reused: true);
+                return new TabAcquisition(session, match, Reused: true);
             }
 
             // The page first, the eviction after: a transient failure to open one must not have
             // already killed an innocent tab and its refs.
             var page = await context.NewPageAsync();
             evicted = session.EvictLruIfAtCap(_tabCap);
-            return new TabAcquisition(Admit(session, sessionId, page, url), Reused: false);
+            return new TabAcquisition(session, Admit(session, sessionId, page, url), Reused: false);
         }
         finally
         {
@@ -820,7 +823,7 @@ public class BrowserSessionManager : IAsyncDisposable
     }
 }
 
-internal record TabAcquisition(BrowserTab Tab, bool Reused);
+internal record TabAcquisition(BrowserSession Session, BrowserTab Tab, bool Reused);
 
 // What a run through the tab protocol answers: the work's result, or a named wall. One arm per
 // way the protocol can refuse, so a caller maps walls to its own statuses in one switch and can

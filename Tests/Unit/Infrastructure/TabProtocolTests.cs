@@ -598,6 +598,27 @@ public class TabProtocolTests
     }
 
     [Fact]
+    public async Task ASessionRemovedWhileABrowseQueuedOnItsTab_StillAnswersRatherThanThrowing()
+    {
+        // The session dying under a queued browse — a reconnect's Clear, a prune — is the same
+        // family of race as an eviction: it must answer through the outcome union, never throw.
+        var (ctx, _) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+
+        var (release, holder) = await HoldCurrentTabAsync(manager, "s1");
+        var queued = manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await Eventually.Settle();
+
+        manager.Remove("s1");
+        release.SetResult();
+        await holder;
+
+        (await queued).ShouldBeOfType<TabOutcome<bool>.Ran>();
+    }
+
+    [Fact]
     public async Task AStampAbandonedByAThrowingWork_DoesNotWedgeTheNextStamp()
     {
         // The lease's lock is released by the pipeline even when the work dies after opening it.
