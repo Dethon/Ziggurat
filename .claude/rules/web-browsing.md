@@ -14,7 +14,7 @@ McpServerWebSearch exposes the `web_*` browse tools over `PlaywrightWebBrowser`,
 
 ## Tabs
 
-A browse session holds up to three live tabs, and a ref finds its own (`docs/adr/0034`). The pool policy lives in `BrowserSessionManager` and is unit-tested in milliseconds against faked pages; `PlaywrightWebBrowser` only carries pages around.
+A browse session holds up to three live tabs, and a ref finds its own (`docs/adr/0034`). The tab protocol — everything that happens to a tab when a call touches it — lives in `BrowserSessionManager`, whose interface is four per-intent methods plus pool lifecycle: `BrowseAsync` (browse a URL; always supersedes the tab's refs), `OnRefAsync` (routed by ref; answers the routing walls), `OnCurrentTabAsync` (the ref-less default), `OnUrlAsync` (the composed-snapshot exception). A caller hands over the work to do on the page and receives the work's result or a named wall (`TabOutcome<T>`); the ordering, the locks, the stamp leases and the closed-vs-disconnected disambiguation never cross the seam, and the whole protocol is unit-tested in milliseconds against faked pages (`TabProtocolTests`). `PlaywrightWebBrowser` only carries pages around. Read the module top to bottom for the ordering — this file deliberately does not restate it.
 
 **Tabs are invisible.** No tab handles, no tab list, nothing in any envelope or prompt — routing is carried entirely by refs. A `t-` namespace was considered and declined.
 
@@ -30,9 +30,7 @@ A browse session holds up to three live tabs, and a ref finds its own (`docs/adr
 
 **The registry is bounded, and overflow degrades quietly.** `BrowserSession.MaxRanges` is 128, dropped oldest-first. A ref whose range has aged out routes as *unknown* and falls through to the current tab's ordinary not-found — a third outcome, weaker than either wall, and the one place the registry stops answering "which tab stamped this". It cannot resolve to the wrong target (a number is never reused, so it matches nothing), but it does produce the vague refusal the two walls exist to replace. Raising the bound trades memory for how far back a ref can still name its page.
 
-**One idle clock, one LRU rule.** The session-wide idle timeout is refreshed by every routed call, so an actively acting session cannot be pruned mid-use; tabs have no clock of their own and die individually only by eviction. The tab cap and the idle timeout are ordinary settings in the browse server's own `appsettings.json` (`Browsing:TabCap`, `Browsing:SessionIdleTimeoutMinutes`) — generic tunables, no compose entry.
-
-**Locking**: a per-tab lock serializes navigation, action, snapshot and image fetch on one tab, so a mid-navigation read cannot answer with a half-replaced DOM; tab-pool mutation (create, reuse, evict, adopt) happens under a session-level gate. Never acquire the pool gate while holding a tab lock.
+**One idle clock, one LRU rule.** The session-wide idle timeout is refreshed by every routed call, so an actively acting session cannot be pruned mid-use; tabs have no clock of their own and die individually only by eviction. The tab cap and the idle timeout are ordinary settings in the browse server's own `appsettings.json` (`Browsing:TabCap`, `Browsing:SessionIdleTimeoutMinutes`) — generic tunables, no compose entry. Locking and lock ordering are the module's own invariants now, held by code and its tests rather than by this file.
 
 ## Images
 

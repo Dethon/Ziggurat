@@ -439,7 +439,7 @@ public class BrowserSessionManager : IAsyncDisposable
     // when the pool is full. Pool mutation happens under the session's own gate, so two parallel
     // browses of one session get two tabs rather than racing into one, and one session's pool work
     // never queues behind another's.
-    public async Task<TabAcquisition> AcquireTabForBrowseAsync(
+    private async Task<TabAcquisition> AcquireTabForBrowseAsync(
         string sessionId, string url, IBrowserContext context, CancellationToken ct = default)
     {
         var session = await GetOrCreateAsync(sessionId, ct);
@@ -478,7 +478,7 @@ public class BrowserSessionManager : IAsyncDisposable
     // A page the site itself opened — target=_blank, window.open — is adopted into the pool
     // instead of leaking: it counts against the cap (evicting under it), becomes current, and is
     // left pending so the action whose click spawned it can answer from it.
-    public async Task<BrowserTab?> AdoptPopupAsync(
+    private async Task<BrowserTab?> AdoptPopupAsync(
         string sessionId, IPage popup, BrowserTab? opener = null, CancellationToken ct = default)
     {
         var session = _sessions.GetValueOrDefault(sessionId);
@@ -572,7 +572,7 @@ public class BrowserSessionManager : IAsyncDisposable
 
     // The popup the tab's last adoption left for the action that spawned it, handed over exactly
     // once — and only to an action on the tab whose click opened it.
-    public BrowserTab? TakePendingPopup(string sessionId, BrowserTab tab)
+    private BrowserTab? TakePendingPopup(string sessionId, BrowserTab tab)
     {
         if (!_sessions.ContainsKey(sessionId))
         {
@@ -598,7 +598,7 @@ public class BrowserSessionManager : IAsyncDisposable
 
     // Touch is any tool call routed to a tab, view_image included: it refreshes the tab's place in
     // the LRU order, makes it the session's current tab, and resets the session's one idle clock.
-    public void TouchTab(string sessionId, BrowserTab tab)
+    private void TouchTab(string sessionId, BrowserTab tab)
     {
         if (_sessions.TryGetValue(sessionId, out var session))
         {
@@ -616,7 +616,7 @@ public class BrowserSessionManager : IAsyncDisposable
 
     // Where the tab actually landed, recorded beside the address it was asked for — redirects
     // split the two, and reuse matches either.
-    public void NoteFinalUrl(string sessionId, BrowserTab tab, string url)
+    private void NoteFinalUrl(string sessionId, BrowserTab tab, string url)
     {
         // A popup adopted before its navigation committed is known only as about:blank; once it
         // lands somewhere real, that address is the one its walls can name — "Browse about:blank
@@ -633,7 +633,7 @@ public class BrowserSessionManager : IAsyncDisposable
     // One tab, one operation at a time: navigation, action, snapshot and image fetch all take this,
     // so a mid-navigation read cannot answer with a half-replaced DOM. Different tabs of one
     // session do not serialize against each other; pool mutation has its own session-level gate.
-    public async Task<IDisposable> LockTabAsync(BrowserTab tab, CancellationToken ct = default)
+    private async Task<IDisposable> LockTabAsync(BrowserTab tab, CancellationToken ct = default)
     {
         await tab.Gate.WaitAsync(ct);
         return new LockReleaser(tab.Gate);
@@ -656,7 +656,7 @@ public class BrowserSessionManager : IAsyncDisposable
     // same start would reissue every number the slower one writes. A stamp naming its tab also
     // records the committed range in the session's registry, which is what later routes each ref
     // back to the tab that stamped it.
-    public async Task<RefStampLease> BeginStampAsync(
+    internal async Task<RefStampLease> BeginStampAsync(
         string sessionId, RefNamespace ns, BrowserTab? tab = null, CancellationToken ct = default)
     {
         var session = _sessions.GetValueOrDefault(sessionId)
@@ -665,7 +665,7 @@ public class BrowserSessionManager : IAsyncDisposable
         return new RefStampLease(session, ns, tab);
     }
 
-    public sealed class RefStampLease : IDisposable
+    internal sealed class RefStampLease : IDisposable
     {
         private BrowserSession? _session;
         private readonly RefNamespace _namespace;
@@ -710,7 +710,7 @@ public class BrowserSessionManager : IAsyncDisposable
 
     // Which tab a ref belongs to, or which wall it hits. Reads the session's registry: an Active
     // range whose tab is still in the pool routes; anything else names its recovery.
-    public RefRouting RouteRef(string sessionId, string refString)
+    private RefRouting RouteRef(string sessionId, string refString)
     {
         var session = _sessions.GetValueOrDefault(sessionId);
         if (session is null)
@@ -744,13 +744,6 @@ public class BrowserSessionManager : IAsyncDisposable
         }
 
         return null;
-    }
-
-    // An in-tab navigation replaced the document: every ref stamped on the old document is now
-    // superseded — the tab is open, and snapshotting or browsing it again mints fresh ones.
-    public void MarkTabNavigated(string sessionId, BrowserTab tab)
-    {
-        _sessions.GetValueOrDefault(sessionId)?.SupersedeRangesOf(tab);
     }
 
     public async Task CloseAsync(string sessionId)
@@ -827,7 +820,7 @@ public class BrowserSessionManager : IAsyncDisposable
     }
 }
 
-public record TabAcquisition(BrowserTab Tab, bool Reused);
+internal record TabAcquisition(BrowserTab Tab, bool Reused);
 
 // What a run through the tab protocol answers: the work's result, or a named wall. One arm per
 // way the protocol can refuse, so a caller maps walls to its own statuses in one switch and can
@@ -968,7 +961,7 @@ public sealed class TabWorkContext
 
 // One live page in a session's pool. The model never sees it: a tab is addressed only through the
 // refs it stamped, or by being the tab last touched.
-public class BrowserTab(IPage page, string requestedUrl, DateTimeOffset createdAt)
+internal class BrowserTab(IPage page, string requestedUrl, DateTimeOffset createdAt)
 {
     public IPage Page { get; } = page;
 
@@ -990,14 +983,14 @@ public class BrowserTab(IPage page, string requestedUrl, DateTimeOffset createdA
 // One issued run of numbers: which tab stamped them, the address the model knows that tab by, and
 // whether the run still resolves. A tombstone (Closed) outlives its tab so the refusal can name
 // the page to browse again.
-public enum RefRangeState
+internal enum RefRangeState
 {
     Active,
     Superseded,
     Closed
 }
 
-public abstract record RefRouting
+internal abstract record RefRouting
 {
     public sealed record NoSession : RefRouting;
 
@@ -1030,8 +1023,8 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
     public string SessionId { get; } = sessionId;
     public DateTimeOffset CreatedAt { get; } = createdAt;
     public DateTimeOffset LastAccessedAt { get; internal set; } = createdAt;
-    public BrowserTab? CurrentTab { get; internal set; }
-    public SessionRefCounters Counters { get; } = new();
+    internal BrowserTab? CurrentTab { get; set; }
+    internal SessionRefCounters Counters { get; } = new();
 
     // Serializes this session's pool mutation — create, reuse, evict, adopt — and nothing else's.
     internal SemaphoreSlim PoolGate { get; } = new(1, 1);
@@ -1041,7 +1034,7 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
     // while it resizes.
     private readonly List<BrowserTab> _tabs = [];
 
-    public IReadOnlyList<BrowserTab> Tabs
+    internal IReadOnlyList<BrowserTab> Tabs
     {
         get
         {
@@ -1188,7 +1181,7 @@ public enum RefNamespace
 // move forward; a number handed out is never handed out again within the session. Each namespace
 // carries its own stamping lock — the counters are independent, and one lock across both would
 // deadlock a caller stamping images while it still holds an element lease.
-public class SessionRefCounters
+internal class SessionRefCounters
 {
     private readonly int[] _next = [1, 1];
     private readonly SemaphoreSlim[] _stampLocks = [new(1, 1), new(1, 1)];

@@ -1114,10 +1114,6 @@ public class PlaywrightWebBrowser(
 
     internal Task<long> EnsureInitializedAsync() => EnsureConnectionAsync(replaceGeneration: null);
 
-    // The pool as the policy layer sees it, for integration tests that assert on which tabs are
-    // alive rather than inferring it from tool results. Nothing in production reads this.
-    internal BrowserSessionManager Sessions => _sessions;
-
     // replaceGeneration: when set, the caller's connection (that generation) failed mid-operation, so
     // replace it even though IsConnectionHealthy() may still report true — a closed page/context can
     // leave IBrowser.IsConnected == true. If another caller already advanced the generation, the
