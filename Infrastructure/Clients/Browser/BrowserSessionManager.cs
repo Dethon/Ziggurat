@@ -966,6 +966,13 @@ public sealed class TabWorkContext
             throw new InvalidOperationException("This intent's stamping policy is None.");
         }
 
+        // One work, one stamp: a second ask would wait on the very lock its first lease holds.
+        // Refused by name rather than deadlocking the tab.
+        if (_lease is not null)
+        {
+            throw new InvalidOperationException("This work already stamped; one stamp per run.");
+        }
+
         _lease = await _manager.BeginStampAsync(_session.SessionId, ns, _tab, _ct);
         _stampedCount = await stamp(_lease.Start);
     }

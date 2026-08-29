@@ -692,6 +692,33 @@ public class TabProtocolTests
     }
 
     [Fact]
+    public async Task ASecondStampInOneWork_IsRefusedByName_NotDeadlockedOnItsOwnLease()
+    {
+        // One work, one stamp: a second ask would wait on the very lock its first lease holds.
+        // The seam refuses it by name instead of hanging the tab.
+        var (ctx, _) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await Should.ThrowAsync<InvalidOperationException>(() =>
+            manager.BrowseAsync<bool>("s1", "https://a.test/", ctx.Object, async cx =>
+            {
+                await cx.StampAsync(_ => Task.FromResult(1));
+                await cx.StampAsync(_ => Task.FromResult(1));
+                return true;
+            }));
+
+        // The refused work's abandoned lease is still released; the next stamp proceeds.
+        var next = await manager.BrowseAsync("s1", "https://a.test/", ctx.Object,
+            async cx =>
+            {
+                await cx.StampAsync(_ => Task.FromResult(1));
+                return true;
+            });
+
+        next.ShouldBeOfType<TabOutcome<bool>.Ran>();
+    }
+
+    [Fact]
     public async Task AStampAbandonedByAThrowingWork_DoesNotWedgeTheNextStamp()
     {
         // The lease's lock is released by the pipeline even when the work dies after opening it.
