@@ -252,8 +252,7 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
                      style="width:300px;height:300px">
                 """);
 
-            var page = fixture.Browser.Sessions.Get(sessionId)!.CurrentTab!.Page;
-            await page.RouteAsync("https://acao-cdn.test/pic.jpg", route =>
+            await fixture.Browser.RouteOnSessionAsync(sessionId, "https://acao-cdn.test/pic.jpg", route =>
                 route.FulfillAsync(new()
                 {
                     ContentType = "image/jpeg",
@@ -305,8 +304,7 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
 
             // Fulfilled from the test with no Access-Control-Allow-Origin: the element loads
             // (a plain <img> needs no CORS) but every script-side read of its pixels is refused.
-            var page = fixture.Browser.Sessions.Get(sessionId)!.CurrentTab!.Page;
-            await page.RouteAsync("https://no-acao-cdn.test/pic.png", route =>
+            await fixture.Browser.RouteOnSessionAsync(sessionId, "https://no-acao-cdn.test/pic.png", route =>
                 route.FulfillAsync(new()
                 {
                     ContentType = "image/png",

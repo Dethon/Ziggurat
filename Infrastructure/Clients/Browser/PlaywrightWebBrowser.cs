@@ -763,19 +763,36 @@ public class PlaywrightWebBrowser(
 
     public async Task EvaluateOnSessionAsync(string sessionId, string script)
     {
-        var tab = _sessions.Get(sessionId)?.CurrentTab
-            ?? throw new InvalidOperationException($"Session '{sessionId}' not found");
-        await tab.Page.EvaluateAsync(script);
+        await EvaluateOnSessionAsync<object?>(sessionId, script);
     }
 
-    // The reading half of the escape hatch: what the page answers, for a test that has to ask the
-    // DOM what a step left behind rather than infer it from the markdown. Internal for the same
-    // reason its void sibling is public only by history -- nothing outside needs it.
+    // The reading half of the escape hatch: what the page answers, for a test that has to arrange
+    // a page or ask the DOM what a step left behind. Internal for the same reason its void sibling
+    // is public only by history -- nothing outside needs it. Rides the current-tab intent so even
+    // the escape hatch performs no session bookkeeping of its own.
     internal async Task<T> EvaluateOnSessionAsync<T>(string sessionId, string script)
     {
-        var tab = _sessions.Get(sessionId)?.CurrentTab
-            ?? throw new InvalidOperationException($"Session '{sessionId}' not found");
-        return await tab.Page.EvaluateAsync<T>(script);
+        var outcome = await _sessions.OnCurrentTabAsync(sessionId, StampPolicy.None,
+            ctx => ctx.Page.EvaluateAsync<T>(script));
+        return outcome is TabOutcome<T>.Ran ran
+            ? ran.Result
+            : throw new InvalidOperationException($"Session '{sessionId}' not found");
+    }
+
+    // The arranging half of the escape hatch: lets a test answer a fake CDN address from inside
+    // the session's page without reaching into the pool for the page handle.
+    internal async Task RouteOnSessionAsync(string sessionId, string url, Func<IRoute, Task> handler)
+    {
+        var outcome = await _sessions.OnCurrentTabAsync(sessionId, StampPolicy.None,
+            async ctx =>
+            {
+                await ctx.Page.RouteAsync(url, handler);
+                return true;
+            });
+        if (outcome is not TabOutcome<bool>.Ran)
+        {
+            throw new InvalidOperationException($"Session '{sessionId}' not found");
+        }
     }
 
     // The fetch goes through the page that listed the picture. Camoufox holds the cookies, the
@@ -1046,6 +1063,10 @@ public class PlaywrightWebBrowser(
     {
         await _sessions.CloseAsync(sessionId);
     }
+
+    // Pool lifecycle, surfaced for tests that assert the idle policy through the contract without
+    // waiting out the real prune timer. Production pruning runs on the interval timer alone.
+    internal Task PruneIdleAsync() => _sessions.PruneIdleAsync();
 
     public async Task ClearCookiesAsync()
     {
