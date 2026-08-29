@@ -15,6 +15,7 @@ public class TabProtocolTests
     {
         public required Mock<IPage> Mock { get; init; }
         public bool Closed { get; set; }
+        public string Url { get; set; } = "about:blank";
     }
 
     // A context that hands out a fresh page per NewPageAsync call, recorded in order, with a
@@ -29,7 +30,7 @@ public class TabProtocolTests
             var page = new Mock<IPage>();
             var fake = new FakePage { Mock = page, Closed = pagesStartClosed };
             page.SetupGet(p => p.IsClosed).Returns(() => fake.Closed);
-            page.SetupGet(p => p.Url).Returns("about:blank");
+            page.SetupGet(p => p.Url).Returns(() => fake.Url);
             page.Setup(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()))
                 .Returns(Task.CompletedTask);
             pages.Add(fake);
@@ -210,6 +211,144 @@ public class TabProtocolTests
         await Should.ThrowAsync<PlaywrightException>(() =>
             manager.BrowseAsync<bool>("s1", "https://a.test/", ctx.Object,
                 _ => throw new PlaywrightException("Target page, context or browser has been closed")));
+    }
+
+    [Fact]
+    public async Task ARefLessCallWithNoSession_AnswersNoSession()
+    {
+        await using var manager = new BrowserSessionManager();
+
+        var outcome = await manager.OnCurrentTabAsync(
+            "nobody", StampPolicy.None, _ => Task.FromResult(true));
+
+        outcome.ShouldBe(new TabOutcome<bool>.NoSession());
+    }
+
+    [Fact]
+    public async Task ACurrentTabAlreadyClosed_AnswersTheClosedWall_NotNoSession()
+    {
+        // The session is alive; only the tab died. Answering "no session" here was one of the
+        // three drifted spellings — the wall names the page to browse again instead.
+        var (ctx, pages) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        pages[0].Closed = true;
+
+        var outcome = await manager.OnCurrentTabAsync(
+            "s1", StampPolicy.None, _ => Task.FromResult(true));
+
+        outcome.ShouldBe(new TabOutcome<bool>.Closed("https://a.test/"));
+    }
+
+    [Fact]
+    public async Task ACallAddressedToAUrlNoTabHolds_AnswersAddressedTabGone()
+    {
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+
+        var ran = false;
+        var outcome = await manager.OnUrlAsync("s1", "https://gone.test/", StampPolicy.None, _ =>
+        {
+            ran = true;
+            return Task.FromResult(true);
+        });
+
+        // Never silently built from another page: the work must not have run anywhere.
+        outcome.ShouldBe(new TabOutcome<bool>.AddressedTabGone("https://gone.test/"));
+        ran.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ACallAddressedToATabReNavigatedWhileQueued_RefusesRatherThanAnsweringTheWrongPage()
+    {
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        var tab = manager.Get("s1")!.CurrentTab!;
+
+        var hold = await manager.LockTabAsync(tab);
+        var ran = false;
+        var queued = manager.OnUrlAsync("s1", "https://a.test/", StampPolicy.None, _ =>
+        {
+            ran = true;
+            return Task.FromResult(true);
+        });
+
+        // While the call queues on the lock, the tab is re-navigated away from the named page —
+        // both the address it was asked with and the one it landed on now say something else.
+        await Eventually.Settle();
+        tab.RequestedUrl = "https://b.test/";
+        tab.FinalUrl = "https://b.test/";
+        hold.Dispose();
+
+        (await queued).ShouldBe(new TabOutcome<bool>.AddressedTabGone("https://a.test/"));
+        ran.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ANonNavigatingWork_LeavesTheOtherNamespacesRangesRouting()
+    {
+        // A snapshot restamps its own namespace, but a work that does not move the URL must not
+        // unmake the tab's other handles — the image refs stay routable.
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object,
+            async cx =>
+            {
+                await cx.StampAsync(_ => Task.FromResult(2));
+                return true;
+            });
+
+        var snapshot = await manager.OnCurrentTabAsync(
+            "s1", StampPolicy.Restamp(RefNamespace.Element),
+            async cx =>
+            {
+                await cx.StampAsync(_ => Task.FromResult(3));
+                return true;
+            });
+
+        snapshot.ShouldBeOfType<TabOutcome<bool>.Ran>();
+        manager.RouteRef("s1", "i-1").ShouldBeOfType<RefRouting.Routed>();
+        manager.RouteRef("s1", "e-1").ShouldBeOfType<RefRouting.Routed>();
+
+        // A second restamp renumbers its own namespace — and only its own.
+        await manager.OnCurrentTabAsync(
+            "s1", StampPolicy.Restamp(RefNamespace.Element),
+            async cx =>
+            {
+                await cx.StampAsync(_ => Task.FromResult(3));
+                return true;
+            });
+
+        manager.RouteRef("s1", "e-1").ShouldBeOfType<RefRouting.Superseded>();
+        manager.RouteRef("s1", "i-1").ShouldBeOfType<RefRouting.Routed>();
+    }
+
+    [Fact]
+    public async Task AWorkThatMovesTheUrl_SupersedesEverythingTheTabStamped()
+    {
+        var (ctx, pages) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object,
+            async cx =>
+            {
+                await cx.StampAsync(_ => Task.FromResult(2));
+                return true;
+            });
+
+        await manager.OnCurrentTabAsync("s1", StampPolicy.None, _ =>
+        {
+            pages[0].Url = "https://a.test/other";
+            return Task.FromResult(true);
+        });
+
+        manager.RouteRef("s1", "i-1").ShouldBeOfType<RefRouting.Superseded>();
     }
 
     [Fact]

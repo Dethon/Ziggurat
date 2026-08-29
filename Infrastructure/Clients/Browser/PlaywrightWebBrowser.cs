@@ -260,113 +260,75 @@ public class PlaywrightWebBrowser(
 
     public async Task<BrowseResult> GetCurrentPageAsync(string sessionId, CancellationToken ct = default)
     {
-        var tab = _sessions.Get(sessionId)?.CurrentTab;
-        if (tab == null)
-        {
-            return new BrowseResult(
-                sessionId,
-                "",
-                BrowseStatus.SessionNotFound,
-                null,
-                null,
-                0,
-                false,
-                null,
-                null,
-                null,
-                "No active browser session found"
-            );
-        }
-
         try
         {
-            using var tabLock = await _sessions.LockTabAsync(tab, ct);
-            var html = await tab.Page.ContentAsync();
-            var request = new BrowseRequest(SessionId: sessionId, Url: tab.FinalUrl);
-            var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
+            var outcome = await _sessions.OnCurrentTabAsync(sessionId, StampPolicy.None,
+                async ctx =>
+                {
+                    var html = await ctx.Page.ContentAsync();
+                    var request = new BrowseRequest(SessionId: sessionId, Url: ctx.UrlBefore);
+                    var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
 
-            return new BrowseResult(
-                SessionId: sessionId,
-                Url: tab.Page.Url,
-                Status: processed.IsPartial ? BrowseStatus.Partial : BrowseStatus.Success,
-                Title: processed.Title,
-                Content: processed.Content,
-                ContentLength: processed.ContentLength,
-                Truncated: processed.Truncated,
-                Metadata: processed.Metadata,
-                StructuredData: null,
-                DismissedModals: null,
-                ErrorMessage: processed.ErrorMessage
-            )
+                    return new BrowseResult(
+                        SessionId: sessionId,
+                        Url: ctx.Page.Url,
+                        Status: processed.IsPartial ? BrowseStatus.Partial : BrowseStatus.Success,
+                        Title: processed.Title,
+                        Content: processed.Content,
+                        ContentLength: processed.ContentLength,
+                        Truncated: processed.Truncated,
+                        Metadata: processed.Metadata,
+                        StructuredData: null,
+                        DismissedModals: null,
+                        ErrorMessage: processed.ErrorMessage
+                    )
+                    {
+                        ImageCount = processed.ImageCount,
+                        ImagesBeyondWindow = processed.ImagesBeyondWindow,
+                        NextOffset = processed.NextOffset
+                    };
+                }, ct);
+
+            return outcome switch
             {
-                ImageCount = processed.ImageCount,
-                ImagesBeyondWindow = processed.ImagesBeyondWindow,
-                NextOffset = processed.NextOffset
+                TabOutcome<BrowseResult>.Ran ran => ran.Result,
+                TabOutcome<BrowseResult>.Closed closed => CreateErrorResult(sessionId, closed.Url,
+                    $"That tab has been closed. Browse {closed.Url} again."),
+                _ => new BrowseResult(sessionId, "", BrowseStatus.SessionNotFound,
+                    null, null, 0, false, null, null, null, "No active browser session found")
             };
         }
         catch (Exception ex)
         {
-            return CreateErrorResult(sessionId, tab.FinalUrl, $"Error: {ex.Message}");
+            return CreateErrorResult(sessionId, "", $"Error: {ex.Message}");
         }
     }
 
     public async Task<SnapshotResult> SnapshotAsync(SnapshotRequest request, CancellationToken ct = default)
     {
-        // A snapshot naming its page reads that page's tab; only the ref-less, page-less form
-        // falls to the tab last touched — which a parallel browse may have moved.
-        var session = _sessions.Get(request.SessionId);
-        if (session is null)
-        {
-            return new SnapshotResult(request.SessionId, null, null, 0, "Session not found. Use web_browse first.");
-        }
-
-        BrowserTab? tab;
-        if (request.ForUrl is { } url)
-        {
-            // The named page already gone — evicted, or its tab reused by another browse — must
-            // refuse rather than fall back to the current tab: that would attach another page's
-            // refs to this page's text, the silent wrong-target answer the name exists to prevent.
-            tab = session.FindByUrl(url);
-            if (tab is null)
-            {
-                return new SnapshotResult(request.SessionId, null, null, 0,
-                    $"The page at {url} is no longer open in this session. Browse it again for fresh refs.");
-            }
-        }
-        else
-        {
-            tab = session.CurrentTab;
-        }
-
-        if (tab == null || tab.Page.IsClosed)
-        {
-            return new SnapshotResult(request.SessionId, null, null, 0, "Session not found. Use web_browse first.");
-        }
-
         try
         {
-            // A snapshot racing a navigation on this tab waits rather than reading a
-            // half-replaced DOM.
-            using var tabLock = await _sessions.LockTabAsync(tab, ct);
+            // A snapshot naming its page reads that page's tab; only the ref-less, page-less form
+            // falls to the tab last touched — which a parallel browse may have moved.
+            Task<SnapshotResult> Capture(TabWorkContext ctx) => CaptureSnapshotAsync(request, ctx);
+            var outcome = request.ForUrl is { } url
+                ? await _sessions.OnUrlAsync(
+                    request.SessionId, url, StampPolicy.Restamp(RefNamespace.Element), Capture, ct)
+                : await _sessions.OnCurrentTabAsync(
+                    request.SessionId, StampPolicy.Restamp(RefNamespace.Element), Capture, ct);
 
-            // Evicted while this call queued: the tab is gone, the session is not.
-            if (tab.Page.IsClosed)
+            return outcome switch
             {
-                return new SnapshotResult(request.SessionId, null, null, 0,
-                    $"That tab has been closed. Browse {tab.RequestedUrl} again for fresh refs.");
-            }
-
-            // Re-navigated while this call queued: the tab no longer shows the named page.
-            if (request.ForUrl is { } named && tab.RequestedUrl != named && tab.FinalUrl != named)
-            {
-                return new SnapshotResult(request.SessionId, null, null, 0,
-                    $"The page at {named} is no longer open in this session. Browse it again for fresh refs.");
-            }
-
-            _sessions.TouchTab(request.SessionId, tab);
-            var result = await CaptureNumberedSnapshotAsync(
-                request.SessionId, tab, request.Selector);
-            return new SnapshotResult(request.SessionId, tab.Page.Url, result.Snapshot, result.RefCount, null);
+                TabOutcome<SnapshotResult>.Ran ran => ran.Result,
+                TabOutcome<SnapshotResult>.Closed closed => new SnapshotResult(
+                    request.SessionId, null, null, 0,
+                    $"That tab has been closed. Browse {closed.Url} again for fresh refs."),
+                TabOutcome<SnapshotResult>.AddressedTabGone gone => new SnapshotResult(
+                    request.SessionId, null, null, 0,
+                    $"The page at {gone.Url} is no longer open in this session. Browse it again for fresh refs."),
+                _ => new SnapshotResult(request.SessionId, null, null, 0,
+                    "Session not found. Use web_browse first.")
+            };
         }
         catch (Exception ex) when (IsConnectionClosed(ex))
         {
@@ -378,8 +340,23 @@ public class PlaywrightWebBrowser(
         }
         catch (Exception ex)
         {
-            return new SnapshotResult(request.SessionId, tab.Page.Url, null, 0, ex.Message);
+            return new SnapshotResult(request.SessionId, null, null, 0, ex.Message);
         }
+    }
+
+    private async Task<SnapshotResult> CaptureSnapshotAsync(SnapshotRequest request, TabWorkContext ctx)
+    {
+        AccessibilitySnapshotService.SnapshotCaptureResult? captured = null;
+        await ctx.StampAsync(async start =>
+        {
+            captured = await _snapshotService.CaptureAsync(
+                ctx.Page, request.Selector, request.SessionId,
+                startNumber: start, augmentRefs: ctx.AugmentRefs);
+            return captured.RefCount;
+        });
+
+        return new SnapshotResult(
+            request.SessionId, ctx.Page.Url, captured!.Snapshot, captured.RefCount, null);
     }
 
     public async Task<WebActionResult> ActionAsync(WebActionRequest request, CancellationToken ct = default)
@@ -1331,18 +1308,18 @@ public class PlaywrightWebBrowser(
     // this assembly and its tests has any business running it out of band.
     internal async Task AnnotateImagesOnSessionAsync(string sessionId)
     {
-        var tab = _sessions.Get(sessionId)?.CurrentTab
-            ?? throw new InvalidOperationException($"Session '{sessionId}' not found");
-        await AnnotateAndStripAsync(sessionId, tab);
-    }
+        var outcome = await _sessions.OnCurrentTabAsync(
+            sessionId, StampPolicy.Restamp(RefNamespace.Image),
+            async ctx =>
+            {
+                await ctx.StampAsync(start => StripDomNoiseAsync(ctx.Page, start));
+                return true;
+            });
 
-    // The measure-and-strip pass under the session's image-stamp lease: refs stamped here continue
-    // from where the session stopped, so no picture ever answers to a number an earlier page used.
-    private async Task AnnotateAndStripAsync(string sessionId, BrowserTab tab)
-    {
-        using var stamp = await _sessions.BeginStampAsync(sessionId, RefNamespace.Image, tab);
-        var count = await StripDomNoiseAsync(tab.Page, stamp.Start);
-        stamp.Commit(count);
+        if (outcome is not TabOutcome<bool>.Ran)
+        {
+            throw new InvalidOperationException($"Session '{sessionId}' not found");
+        }
     }
 
     private static async Task<int> StripDomNoiseAsync(IPage page, int startImageNumber)

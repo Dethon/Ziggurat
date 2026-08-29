@@ -134,6 +134,66 @@ public class BrowserSessionManager : IAsyncDisposable
         return new TabOutcome<T>.AcquireExhausted();
     }
 
+    // The ref-less default: the tab the last call of any kind touched. A closed current tab is
+    // that one tab gone under a live session — the closed wall, never a lost session.
+    public async Task<TabOutcome<T>> OnCurrentTabAsync<T>(
+        string sessionId,
+        StampPolicy stamping,
+        Func<TabWorkContext, Task<T>> work,
+        CancellationToken ct = default)
+    {
+        var session = _sessions.GetValueOrDefault(sessionId);
+        if (session?.CurrentTab is not { } tab)
+        {
+            return new TabOutcome<T>.NoSession();
+        }
+
+        using var tabLock = await LockTabAsync(tab, ct);
+        if (tab.Page.IsClosed)
+        {
+            return new TabOutcome<T>.Closed(tab.RequestedUrl);
+        }
+
+        return await RunOnLockedTabAsync(session, tab, stamping, supersedeAlways: false, work, ct);
+    }
+
+    // The composed-snapshot exception: addressed to the tab holding that URL, refusing when the
+    // session no longer holds it — falling back to another tab would attach that page's refs to
+    // this page's text, the silent wrong-target answer the address exists to prevent.
+    public async Task<TabOutcome<T>> OnUrlAsync<T>(
+        string sessionId,
+        string url,
+        StampPolicy stamping,
+        Func<TabWorkContext, Task<T>> work,
+        CancellationToken ct = default)
+    {
+        var session = _sessions.GetValueOrDefault(sessionId);
+        if (session is null)
+        {
+            return new TabOutcome<T>.NoSession();
+        }
+
+        if (session.FindByUrl(url) is not { } tab)
+        {
+            return new TabOutcome<T>.AddressedTabGone(url);
+        }
+
+        using var tabLock = await LockTabAsync(tab, ct);
+        if (tab.Page.IsClosed)
+        {
+            return new TabOutcome<T>.Closed(tab.RequestedUrl);
+        }
+
+        // Re-navigated while this call queued: neither the address the tab was asked with nor the
+        // one it landed on names the page any more.
+        if (tab.RequestedUrl != url && tab.FinalUrl != url)
+        {
+            return new TabOutcome<T>.AddressedTabGone(url);
+        }
+
+        return await RunOnLockedTabAsync(session, tab, stamping, supersedeAlways: false, work, ct);
+    }
+
     // The shared pipeline under an already-held tab lock: touch, read the URL before the work, run
     // the work, decide supersede, note where the tab landed, commit the lease — and answer the
     // closed wall over anything the work said when the page died along the way.
