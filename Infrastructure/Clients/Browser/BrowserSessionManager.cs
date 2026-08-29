@@ -194,6 +194,174 @@ public class BrowserSessionManager : IAsyncDisposable
         return await RunOnLockedTabAsync(session, tab, stamping, supersedeAlways: false, work, ct);
     }
 
+    // Routed by ref: the work runs on the tab that stamped the ref, or the routing wall answers
+    // before any DOM is asked. The under-lock re-check catches an eviction landing between routing
+    // and locking.
+    public async Task<TabOutcome<T>> OnRefAsync<T>(
+        string sessionId,
+        string refString,
+        StampPolicy stamping,
+        Func<TabWorkContext, Task<T>> work,
+        CancellationToken ct = default)
+    {
+        if (RouteToWall<T>(sessionId, refString, out var session, out var tab) is { } wall)
+        {
+            return wall;
+        }
+
+        using var tabLock = await LockTabAsync(tab!, ct);
+        if (tab!.Page.IsClosed)
+        {
+            return new TabOutcome<T>.Closed(tab.RequestedUrl);
+        }
+
+        return await RunOnLockedTabAsync(session!, tab, stamping, supersedeAlways: false, work, ct);
+    }
+
+    // The action shape of the by-ref intent: `act` performs the gesture (a non-null result
+    // short-circuits — a refusal decided before or during the act), then a popup the act opened
+    // answers via `popup` under its own nested lock, and otherwise `answer` reads the acting tab.
+    // The class constraint is what lets a null act result mean "carry on".
+    public async Task<TabOutcome<T>> OnRefAsync<T>(
+        string sessionId,
+        string refString,
+        StampPolicy stamping,
+        Func<TabWorkContext, Task<T?>> act,
+        Func<TabWorkContext, Task<T>> answer,
+        PopupAnswer<T> popup,
+        CancellationToken ct = default) where T : class
+    {
+        if (RouteToWall<T>(sessionId, refString, out var session, out var tab) is { } wall)
+        {
+            return wall;
+        }
+
+        using var tabLock = await LockTabAsync(tab!, ct);
+        if (tab!.Page.IsClosed)
+        {
+            return new TabOutcome<T>.Closed(tab.RequestedUrl);
+        }
+
+        Touch(session!, tab);
+        var ctx = new TabWorkContext(this, session!, tab, stamping, SafeUrl(tab.Page), ct);
+        try
+        {
+            T? result;
+            try
+            {
+                // A popup left over from an earlier, unrelated call on this tab must not divert
+                // this action's answer.
+                TakePendingPopup(session!.SessionId, tab);
+
+                result = await act(ctx);
+                if (result is null)
+                {
+                    if (TakePendingPopup(session.SessionId, tab) is { } popupTab
+                        && await AnswerFromPopupAsync(session, popupTab, popup, ct) is { } popupResult)
+                    {
+                        // The acting tab's own tail is skipped on purpose: the answer — URL,
+                        // content, refs — is the popup's, and the acting tab was not read.
+                        return new TabOutcome<T>.Ran(popupResult, PopupAnswered: true);
+                    }
+
+                    result = await answer(ctx);
+                }
+            }
+            catch (Exception ex) when (IsConnectionClosed(ex) && tab.Page.IsClosed)
+            {
+                return new TabOutcome<T>.Closed(tab.RequestedUrl);
+            }
+
+            if (tab.Page.IsClosed)
+            {
+                return new TabOutcome<T>.Closed(tab.RequestedUrl);
+            }
+
+            CommitTail(session, tab, ctx, supersedeAlways: false);
+            return new TabOutcome<T>.Ran(result);
+        }
+        finally
+        {
+            ctx.ReleaseLease();
+        }
+    }
+
+    // The popup's own pipeline, nested inside the acting tab's lock — a popup is always a fresh
+    // page, never an existing tab, so the nesting cannot cycle. Null hands the answer back to the
+    // acting tab: a popup evicted (or self-closed) before it could answer is not a failure.
+    private async Task<T?> AnswerFromPopupAsync<T>(
+        BrowserSession session, BrowserTab popupTab, PopupAnswer<T> popup, CancellationToken ct)
+        where T : class
+    {
+        using var popupLock = await LockTabAsync(popupTab, ct);
+        if (popupTab.Page.IsClosed)
+        {
+            return null;
+        }
+
+        var ctx = new TabWorkContext(this, session, popupTab, popup.Stamping, SafeUrl(popupTab.Page), ct);
+        try
+        {
+            T result;
+            try
+            {
+                result = await popup.Answer(ctx);
+            }
+            catch (Exception ex) when (IsConnectionClosed(ex) && popupTab.Page.IsClosed)
+            {
+                // An auto-closing OAuth or ad window: its death is not the connection's.
+                return null;
+            }
+
+            if (popupTab.Page.IsClosed)
+            {
+                return null;
+            }
+
+            CommitTail(session, popupTab, ctx, supersedeAlways: false);
+            return result;
+        }
+        finally
+        {
+            ctx.ReleaseLease();
+        }
+    }
+
+    // Which tab a by-ref run lands on, or which wall answers instead. A ref whose range aged out
+    // of the bounded registry (or was never issued) falls to the current tab, whose DOM answers
+    // the ordinary not-found — the decided third outcome, weaker than either wall (ADR-0034); the
+    // Unknown wall surfaces only when no current tab remains to fall to.
+    private TabOutcome<T>? RouteToWall<T>(
+        string sessionId, string refString, out BrowserSession? session, out BrowserTab? tab)
+    {
+        session = _sessions.GetValueOrDefault(sessionId);
+        switch (RouteRef(sessionId, refString))
+        {
+            case RefRouting.NoSession:
+                tab = null;
+                return new TabOutcome<T>.NoSession();
+            case RefRouting.Superseded superseded:
+                tab = null;
+                return new TabOutcome<T>.Superseded(superseded.Url);
+            case RefRouting.Closed closed:
+                tab = null;
+                return new TabOutcome<T>.Closed(closed.Url);
+            case RefRouting.Routed routed:
+                tab = routed.Tab;
+                break;
+            default:
+                tab = session?.CurrentTab;
+                break;
+        }
+
+        if (session is null)
+        {
+            return new TabOutcome<T>.NoSession();
+        }
+
+        return tab is null ? new TabOutcome<T>.Unknown() : null;
+    }
+
     // The shared pipeline under an already-held tab lock: touch, read the URL before the work, run
     // the work, decide supersede, note where the tab landed, commit the lease — and answer the
     // closed wall over anything the work said when the page died along the way.
@@ -666,7 +834,9 @@ public record TabAcquisition(BrowserTab Tab, bool Reused);
 // never meet an unnamed refusal.
 public abstract record TabOutcome<T>
 {
-    public sealed record Ran(T Result) : TabOutcome<T>;
+    // PopupAnswered: the action's work opened a page the site itself created, and the answer came
+    // from that popup rather than the acting tab.
+    public sealed record Ran(T Result, bool PopupAnswered = false) : TabOutcome<T>;
 
     public sealed record NoSession : TabOutcome<T>;
 
@@ -688,6 +858,10 @@ public abstract record TabOutcome<T>
     // The tab addressed by URL (the composed-snapshot exception) is no longer in the session.
     public sealed record AddressedTabGone(string Url) : TabOutcome<T>;
 }
+
+// How an action answers when its click opened a popup: the popup's own stamping policy and the
+// work that reads it. The pickup timing and the nested lock stay inside the module.
+public sealed record PopupAnswer<T>(StampPolicy Stamping, Func<TabWorkContext, Task<T>> Answer);
 
 // What an intent's work is allowed to stamp, and how a restamp differs from an additive pass. The
 // namespace and mode travel here so the lease's supersede flag and the capture's augment choice

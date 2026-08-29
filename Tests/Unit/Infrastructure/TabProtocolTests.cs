@@ -351,6 +351,288 @@ public class TabProtocolTests
         manager.RouteRef("s1", "i-1").ShouldBeOfType<RefRouting.Superseded>();
     }
 
+    private static async Task StampElementsAsync(BrowserSessionManager manager, string sessionId, int count)
+    {
+        var stamped = await manager.OnCurrentTabAsync(
+            sessionId, StampPolicy.Restamp(RefNamespace.Element),
+            async cx =>
+            {
+                await cx.StampAsync(_ => Task.FromResult(count));
+                return true;
+            });
+        stamped.ShouldBeOfType<TabOutcome<bool>.Ran>();
+    }
+
+    [Fact]
+    public async Task ARef_RunsItsWorkOnTheTabThatStampedIt_NotTheCurrentOne()
+    {
+        var (ctx, pages) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 2);
+        await manager.BrowseAsync("s1", "https://b.test/", ctx.Object, _ => Task.FromResult(true));
+
+        IPage? ranOn = null;
+        var outcome = await manager.OnRefAsync("s1", "e-1", StampPolicy.None, cx =>
+        {
+            ranOn = cx.Page;
+            return Task.FromResult(true);
+        });
+
+        outcome.ShouldBeOfType<TabOutcome<bool>.Ran>();
+        ranOn.ShouldBeSameAs(pages[0].Mock.Object);
+    }
+
+    [Fact]
+    public async Task ASupersededRef_AnswersItsWall_WithoutRunningTheWork()
+    {
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 2);
+        await StampElementsAsync(manager, "s1", 2);
+
+        var ran = false;
+        var outcome = await manager.OnRefAsync("s1", "e-1", StampPolicy.None, _ =>
+        {
+            ran = true;
+            return Task.FromResult(true);
+        });
+
+        outcome.ShouldBe(new TabOutcome<bool>.Superseded("https://a.test/"));
+        ran.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ARefWhoseTabWasEvictedBetweenRoutingAndLocking_AnswersTheClosedWall()
+    {
+        // The historical race: routing found a live tab, and the eviction landed before the lock.
+        // The under-lock re-check answers the closed wall — never a crash, never a wrong page.
+        var (ctx, pages) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 2);
+        var tab = manager.Get("s1")!.CurrentTab!;
+
+        var hold = await manager.LockTabAsync(tab);
+        var ran = false;
+        var queued = manager.OnRefAsync("s1", "e-1", StampPolicy.None, _ =>
+        {
+            ran = true;
+            return Task.FromResult(true);
+        });
+
+        await Eventually.Settle();
+        pages[0].Closed = true;
+        hold.Dispose();
+
+        (await queued).ShouldBe(new TabOutcome<bool>.Closed("https://a.test/"));
+        ran.ShouldBeFalse();
+    }
+
+    private static (Func<TabWorkContext, Task<string?>> Act, List<string> Log) ActThat(
+        Func<TabWorkContext, Task>? effect = null)
+    {
+        var log = new List<string>();
+        return (async cx =>
+        {
+            log.Add("act");
+            if (effect is not null)
+            {
+                await effect(cx);
+            }
+
+            return null;
+        }, log);
+    }
+
+    [Fact]
+    public async Task AnActionThatDoesNotMoveTheUrl_LeavesEarlierRangesRouting()
+    {
+        // The augment pass: same-URL DOM churn keeps the refs the model is mid-flow with alive,
+        // so a four-field form survives its first fill.
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 3);
+
+        var (act, _) = ActThat();
+        var outcome = await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            act,
+            answer: async cx =>
+            {
+                cx.AugmentRefs.ShouldBeTrue();
+                await cx.StampAsync(_ => Task.FromResult(2));
+                return "acted";
+            },
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("popup")));
+
+        outcome.ShouldBeOfType<TabOutcome<string>.Ran>().PopupAnswered.ShouldBeFalse();
+        manager.RouteRef("s1", "e-1").ShouldBeOfType<RefRouting.Routed>();
+        manager.RouteRef("s1", "e-4").ShouldBeOfType<RefRouting.Routed>();
+    }
+
+    [Fact]
+    public async Task AnActionThatMovesTheUrl_SupersedesTheTabsEarlierRanges()
+    {
+        var (ctx, pages) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 3);
+
+        var (act, _) = ActThat(cx =>
+        {
+            pages[0].Url = "https://a.test/next";
+            return Task.CompletedTask;
+        });
+        var outcome = await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            act,
+            answer: async cx =>
+            {
+                cx.AugmentRefs.ShouldBeFalse();
+                await cx.StampAsync(_ => Task.FromResult(2));
+                return "acted";
+            },
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("popup")));
+
+        outcome.ShouldBeOfType<TabOutcome<string>.Ran>();
+        manager.RouteRef("s1", "e-1").ShouldBeOfType<RefRouting.Superseded>();
+        manager.RouteRef("s1", "e-4").ShouldBeOfType<RefRouting.Routed>();
+    }
+
+    private static FakePage CreatePopupPage()
+    {
+        var fake = new FakePage { Mock = new Mock<IPage>(), Url = "https://popup.test/window" };
+        fake.Mock.SetupGet(p => p.IsClosed).Returns(() => fake.Closed);
+        fake.Mock.SetupGet(p => p.Url).Returns(() => fake.Url);
+        fake.Mock.Setup(p => p.CloseAsync(It.IsAny<PageCloseOptions?>())).Returns(Task.CompletedTask);
+        return fake;
+    }
+
+    [Fact]
+    public async Task AnActionThatOpenedAPopup_AnswersFromThePopup()
+    {
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 1);
+        var actingTab = manager.Get("s1")!.CurrentTab!;
+        var popupPage = CreatePopupPage();
+
+        var (act, _) = ActThat(async _ =>
+        {
+            // The click's popup event fires mid-act, adopting the page against the acting tab.
+            await manager.AdoptPopupAsync("s1", popupPage.Mock.Object, actingTab);
+        });
+        IPage? answeredFrom = null;
+        var outcome = await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            act,
+            answer: _ => Task.FromResult("from the acting tab"),
+            popup: new PopupAnswer<string>(StampPolicy.Restamp(RefNamespace.Element), cx =>
+            {
+                answeredFrom = cx.Page;
+                return Task.FromResult("from the popup");
+            }));
+
+        var ran = outcome.ShouldBeOfType<TabOutcome<string>.Ran>();
+        ran.PopupAnswered.ShouldBeTrue();
+        ran.Result.ShouldBe("from the popup");
+        answeredFrom.ShouldBeSameAs(popupPage.Mock.Object);
+    }
+
+    [Fact]
+    public async Task AStalePendingPopupFromAnEarlierCall_DoesNotDivertTheAction()
+    {
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 1);
+        var actingTab = manager.Get("s1")!.CurrentTab!;
+
+        // A popup adopted by an earlier, unrelated call is still pending on the tab.
+        await manager.AdoptPopupAsync("s1", CreatePopupPage().Mock.Object, actingTab);
+
+        var (act, _) = ActThat();
+        var outcome = await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            act,
+            answer: _ => Task.FromResult("from the acting tab"),
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("from the popup")));
+
+        var ran = outcome.ShouldBeOfType<TabOutcome<string>.Ran>();
+        ran.PopupAnswered.ShouldBeFalse();
+        ran.Result.ShouldBe("from the acting tab");
+    }
+
+    [Fact]
+    public async Task APopupClosedBeforeItCouldAnswer_FallsBackToTheActingTab()
+    {
+        var (ctx, _) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 1);
+        var actingTab = manager.Get("s1")!.CurrentTab!;
+        var popupPage = CreatePopupPage();
+
+        var (act, _) = ActThat(async _ =>
+        {
+            await manager.AdoptPopupAsync("s1", popupPage.Mock.Object, actingTab);
+            popupPage.Closed = true;
+        });
+        var outcome = await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            act,
+            answer: _ => Task.FromResult("from the acting tab"),
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("from the popup")));
+
+        var ran = outcome.ShouldBeOfType<TabOutcome<string>.Ran>();
+        ran.PopupAnswered.ShouldBeFalse();
+        ran.Result.ShouldBe("from the acting tab");
+    }
+
+    [Fact]
+    public async Task OneTabDyingMidAction_IsThatTabsClosedWall_NeverTheConnectionDying()
+    {
+        var (ctx, pages) = CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 1);
+        await manager.BrowseAsync("s1", "https://b.test/", ctx.Object, _ => Task.FromResult(true));
+
+        var outcome = await manager.OnRefAsync<string>(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            act: _ =>
+            {
+                pages[0].Closed = true;
+                throw new PlaywrightException("Target page, context or browser has been closed");
+            },
+            answer: _ => Task.FromResult("never"),
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("never")));
+
+        outcome.ShouldBe(new TabOutcome<string>.Closed("https://a.test/"));
+
+        // The session's other tab lives on and still answers.
+        (await manager.OnUrlAsync("s1", "https://b.test/", StampPolicy.None, _ => Task.FromResult("alive")))
+            .ShouldBeOfType<TabOutcome<string>.Ran>();
+    }
+
     [Fact]
     public async Task AStampAbandonedByAThrowingWork_DoesNotWedgeTheNextStamp()
     {

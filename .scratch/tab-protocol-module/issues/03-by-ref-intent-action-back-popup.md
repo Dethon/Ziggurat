@@ -4,12 +4,27 @@
 
 **Blocked by:** 01 — Pipeline + browse intent.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `OnRefAsync` exists; action and back call the new methods and perform no session bookkeeping of their own
-- [ ] Each routing wall surfaces through the outcome union and maps to its existing action status in one switch
-- [ ] Ordering fact: a ref whose tab was evicted between routing and locking answers the closed wall (the under-lock re-check, previously hand-written per site)
-- [ ] Ordering fact: an action that moves the URL supersedes; one that does not leaves earlier ranges routing (red first — this unifies the two divergent conditionals)
-- [ ] Ordering fact: an action that opened a popup answers from the popup; no pending-popup pickup or popup locking remains in the browser
-- [ ] Ordering fact: one tab dying mid-action is answered as that tab's closed wall, never as the connection dying
-- [ ] Existing suites stay green; image fetch still drives the old verbs
+- [x] `OnRefAsync` exists; action and back call the new methods and perform no session bookkeeping of their own
+- [x] Each routing wall surfaces through the outcome union and maps to its existing action status in one switch
+- [x] Ordering fact: a ref whose tab was evicted between routing and locking answers the closed wall (the under-lock re-check, previously hand-written per site)
+- [x] Ordering fact: an action that moves the URL supersedes; one that does not leaves earlier ranges routing (red first — this unifies the two divergent conditionals)
+- [x] Ordering fact: an action that opened a popup answers from the popup; no pending-popup pickup or popup locking remains in the browser
+- [x] Ordering fact: one tab dying mid-action is answered as that tab's closed wall, never as the connection dying
+- [x] Existing suites stay green; image fetch still drives the old verbs
+
+## Comments
+
+Implemented 2026-08-29. Notes:
+
+- `OnRefAsync` has two shapes for the one intent: the plain work form (image fetch, ticket 04) and
+  the action form (act / answer / `PopupAnswer<T>`), because popup pickup must land between the
+  gesture and the read while both stay caller-supplied page choreography.
+- The aged-out/never-issued ref keeps ADR-0034's decided third outcome by falling to the current
+  tab *inside the module* (its DOM answers the ordinary not-found); the `Unknown` wall surfaces
+  only when no current tab remains to fall to, and the action maps it to session-not-found exactly
+  as the old `tab == null` path did.
+- Back rode `OnCurrentTabAsync` directly (ticket 02 had landed), as the ticket anticipated.
+- When a popup answers, the acting tab's tail (supersede/note/commit) is skipped on purpose —
+  today's behaviour: the acting tab was never read, so nothing is stamped or noted there.
