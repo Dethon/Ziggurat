@@ -786,65 +786,45 @@ public class PlaywrightWebBrowser(
     public async Task<ImageFetchResult> FetchImagesAsync(
         ImageFetchRequest request, CancellationToken ct = default)
     {
-        var session = _sessions.Get(request.SessionId);
-        if (session?.CurrentTab is null)
+        if (request.Refs.Count == 0)
         {
-            return new ImageFetchResult(request.SessionId, [], SessionMissing: true);
+            return new ImageFetchResult(request.SessionId, [],
+                SessionMissing: _sessions.Get(request.SessionId) is null);
         }
 
         // Sequential rather than a LINQ projection over tasks: these are real fetches out of one
         // context, and firing eight at once buys nothing while making a rate-limiting site read
-        // the burst as exactly what it is. Each ref fetches through the tab that stamped it —
-        // refs from two tabs answer from two pages in one call — and each routed fetch is a
-        // touch, so peeking at an old tab's picture refocuses that tab.
+        // the burst as exactly what it is. One routed run per ref — no batch semantics: each ref
+        // fetches through the tab that stamped it, each ref's wall falls out per image, and each
+        // routed fetch is a touch, so peeking at an old tab's picture refocuses that tab.
         var images = new List<FetchedImage>(request.Refs.Count);
         foreach (var imageRef in request.Refs)
         {
             ct.ThrowIfCancellationRequested();
-            switch (_sessions.RouteRef(request.SessionId, imageRef))
+            var outcome = await _sessions.OnRefAsync(request.SessionId, imageRef, StampPolicy.None,
+                ctx => FetchOneAsync(ctx.Page, imageRef), ct);
+
+            switch (outcome)
             {
-                case RefRouting.Routed routed:
-                    _sessions.TouchTab(request.SessionId, routed.Tab);
-                    images.Add(await FetchLockedAsync(routed.Tab, imageRef, ct));
+                case TabOutcome<FetchedImage>.Ran ran:
+                    images.Add(ran.Result);
                     break;
-                case RefRouting.Superseded superseded:
+                case TabOutcome<FetchedImage>.Superseded superseded:
                     images.Add(new FetchedImage(imageRef, null, null,
                         ImageFetchStatus.RefSuperseded, Url: superseded.Url));
                     break;
-                case RefRouting.Closed closed:
+                case TabOutcome<FetchedImage>.Closed closed:
                     images.Add(new FetchedImage(imageRef, null, null,
                         ImageFetchStatus.RefClosed, Url: closed.Url));
                     break;
                 default:
-                    // Never issued: the current tab answers not-found, as it always has.
-                    images.Add(await FetchLockedAsync(session.CurrentTab, imageRef, ct));
-                    break;
+                    // No session, or none of its tabs left to answer from: the whole request is
+                    // missing its session, as it always was.
+                    return new ImageFetchResult(request.SessionId, [], SessionMissing: true);
             }
         }
 
         return new ImageFetchResult(request.SessionId, images);
-    }
-
-    // A fetch racing a navigation on the same tab waits its turn rather than resolving the ref
-    // against a half-replaced document.
-    private async Task<FetchedImage> FetchLockedAsync(BrowserTab tab, string imageRef, CancellationToken ct)
-    {
-        using var tabLock = await _sessions.LockTabAsync(tab, ct);
-
-        // Evicted while this fetch queued on its lock: the closed-ref wall, not a site refusal.
-        if (tab.Page.IsClosed)
-        {
-            return new FetchedImage(imageRef, null, null,
-                ImageFetchStatus.RefClosed, Url: tab.RequestedUrl);
-        }
-
-        var fetched = await FetchOneAsync(tab.Page, imageRef);
-
-        // An eviction that lands mid-fetch surfaces as a Playwright error; the closed page says
-        // which wall it truly was.
-        return fetched.Status == ImageFetchStatus.SiteRefused && tab.Page.IsClosed
-            ? new FetchedImage(imageRef, null, null, ImageFetchStatus.RefClosed, Url: tab.RequestedUrl)
-            : fetched;
     }
 
     private async Task<FetchedImage> FetchOneAsync(IPage page, string imageRef)

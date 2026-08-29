@@ -430,6 +430,31 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         result.RefUrl.ShouldBe("https://a.test/");
     }
 
+    [Fact]
+    public async Task FetchImagesAsync_WhenTheTabClosedMidFetch_AnswersTheClosedWallNotTheSitesRefusal()
+    {
+        // An eviction landing mid-fetch surfaces as a Playwright error the fetch reads as the
+        // site refusing; the closed page says which wall it truly was.
+        var closed = false;
+        var (browser, page) = await CreateBrowserWithCachedSessionAsync("s", "https://a.test/");
+        await using var _ = browser;
+
+        page.SetupGet(p => p.IsClosed).Returns(() => closed);
+        page.Setup(p => p.EvaluateAsync<string?>(It.IsAny<string>(), It.IsAny<object?>()))
+            .Returns(() =>
+            {
+                closed = true;
+                throw new PlaywrightException("Target page, context or browser has been closed");
+            });
+
+        var result = await browser.FetchImagesAsync(new ImageFetchRequest("s", ["i-1"]));
+
+        result.SessionMissing.ShouldBeFalse();
+        var image = result.Images.ShouldHaveSingleItem();
+        image.Status.ShouldBe(ImageFetchStatus.RefClosed);
+        image.Url.ShouldBe("https://a.test/");
+    }
+
     // Primes a browser so a session is cached for sessionId. The navigation deliberately
     // aborts in the post-goto pipeline (ContentAsync throws), which still caches the session.
     private static async Task<(PlaywrightWebBrowser browser, Mock<IPage> page)>
