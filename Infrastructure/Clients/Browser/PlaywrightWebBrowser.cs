@@ -31,11 +31,6 @@ public class PlaywrightWebBrowser(
     private long _connectionGeneration;
     private const int MaxCaptchaRetries = 2;
     private const int DefaultOperationTimeoutMs = 15_000;
-
-    // Resolving a ref is an existence check, not a wait for something in flight: the element was in
-    // the snapshot the agent is holding, so either it is still there or the page moved on. Kept
-    // generous enough to ride out an in-progress re-render, but far below the operation timeout.
-    private const int RefResolutionTimeoutMs = 2_000;
     private const int ConnectionRetryAttempts = 3;
     private const int ConnectionRetryDelayMs = 2_000;
 
@@ -89,15 +84,29 @@ public class PlaywrightWebBrowser(
         // GotoAsync — it just no longer costs anything on top of work already happening.
         var jitter = Task.Delay(Random.Shared.Next(50, 150), ct);
 
-        // Same-tab work queues; another tab's navigation runs beside this one untouched. The lock
-        // spans the whole read — navigation through extraction — so nothing answers off a
-        // half-replaced document.
-        var (tab, tabLock) = await AcquireLockedTabAsync(request, ct);
-        using var _ = tabLock;
-        var page = tab.Page;
+        var outcome = await _sessions.BrowseAsync(request.SessionId, request.Url, _context!,
+            async ctx =>
+            {
+                await jitter;
+                return await BrowsePageAsync(request, ctx, ct);
+            }, ct);
 
-        await jitter;
+        return outcome switch
+        {
+            TabOutcome<BrowseResult>.Ran ran => ran.Result,
+            TabOutcome<BrowseResult>.Closed closed => CreateErrorResult(request.SessionId, closed.Url,
+                "The page's tab was closed while it was being read. Browse it again."),
+            TabOutcome<BrowseResult>.AcquireExhausted => CreateErrorResult(request.SessionId, request.Url,
+                "The session is replacing tabs faster than this browse can hold one. Try again."),
+            _ => CreateErrorResult(request.SessionId, request.Url,
+                $"Unexpected tab outcome: {outcome.GetType().Name}")
+        };
+    }
 
+    private async Task<BrowseResult> BrowsePageAsync(
+        BrowseRequest request, TabWorkContext ctx, CancellationToken ct)
+    {
+        var page = ctx.Page;
         var navigationTimedOut = false;
         IResponse? response = null;
 
@@ -167,11 +176,6 @@ public class PlaywrightWebBrowser(
             }
         }
 
-        // The navigation replaced whatever document the tab held, so every ref stamped there is
-        // superseded; the annotation below then registers the fresh image range.
-        _sessions.MarkTabNavigated(request.SessionId, tab);
-        _sessions.NoteFinalUrl(request.SessionId, tab, page.Url);
-
         var html = await page.ContentAsync();
         var captchaRetries = 0;
         while (ContainsCaptcha(html) && captchaRetries < MaxCaptchaRetries)
@@ -218,16 +222,10 @@ public class PlaywrightWebBrowser(
         // from consuming the content budget during HTML processing. After the scroll and the
         // stability wait, so images the scroll lazy-loaded are measured and stamped rather than
         // left unlisted on exactly the pages scrollToLoad targets.
-        await AnnotateAndStripAsync(request.SessionId, tab);
+        await ctx.StampAsync(start => StripDomNoiseAsync(page, start));
 
         html = await page.ContentAsync();
         var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
-
-        // The address the result reports is the one the tab must be findable by: a page that
-        // rewrote its URL while it was read — history.replaceState during an infinite scroll is
-        // the ordinary case — would otherwise leave the composed snapshot naming a page no tab
-        // admits to holding.
-        _sessions.NoteFinalUrl(request.SessionId, tab, page.Url);
 
         var status = navigationTimedOut || processed.IsPartial
             ? BrowseStatus.Partial
@@ -258,33 +256,6 @@ public class PlaywrightWebBrowser(
             ImagesBeyondWindow = processed.ImagesBeyondWindow,
             NextOffset = processed.NextOffset
         };
-    }
-
-    // A tab can be evicted between being acquired and being locked — its closed page would then
-    // throw "Target closed" mid-navigation, which reads as the whole connection dying and tears
-    // down every session. Re-acquire instead: the pool drops the dead tab and opens a fresh one.
-    private async Task<(BrowserTab Tab, IDisposable Lock)> AcquireLockedTabAsync(
-        BrowseRequest request, CancellationToken ct)
-    {
-        // Bounded: each retry is a fresh acquisition, which at the cap evicts another tab — an
-        // unbounded spin under adversarial concurrency would churn tabs whose refs the model
-        // holds. Three misses in a row is a session replacing tabs faster than a browse can hold
-        // one, and saying so beats joining the churn.
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            var acquisition = await _sessions.AcquireTabForBrowseAsync(
-                request.SessionId, request.Url, _context!, ct);
-            var tabLock = await _sessions.LockTabAsync(acquisition.Tab, ct);
-            if (!acquisition.Tab.Page.IsClosed)
-            {
-                return (acquisition.Tab, tabLock);
-            }
-
-            tabLock.Dispose();
-        }
-
-        throw new InvalidOperationException(
-            "The session is replacing tabs faster than this browse can hold one. Try again.");
     }
 
     public async Task<BrowseResult> GetCurrentPageAsync(string sessionId, CancellationToken ct = default)
@@ -544,7 +515,11 @@ public class PlaywrightWebBrowser(
         try
         {
             await locator.WaitForAsync(
-                new() { State = WaitForSelectorState.Visible, Timeout = RefResolutionTimeoutMs });
+                new()
+                {
+                    State = WaitForSelectorState.Visible,
+                    Timeout = BrowserSessionManager.RefResolutionTimeoutMs
+                });
         }
         catch (TimeoutException)
         {
@@ -1210,13 +1185,7 @@ public class PlaywrightWebBrowser(
     }
 
     private static bool IsConnectionClosed(Exception ex) =>
-        ex is PlaywrightException &&
-        (ex.Message.Contains("has been closed", StringComparison.OrdinalIgnoreCase) ||
-         ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase) ||
-         ex.Message.Contains("Connection closed", StringComparison.OrdinalIgnoreCase) ||
-         ex.Message.Contains("Browser closed", StringComparison.OrdinalIgnoreCase) ||
-         ex.Message.Contains("disconnected", StringComparison.OrdinalIgnoreCase) ||
-         ex.Message.Contains("WebSocket", StringComparison.OrdinalIgnoreCase));
+        BrowserSessionManager.IsConnectionClosed(ex);
 
     internal Task<long> EnsureInitializedAsync() => EnsureConnectionAsync(replaceGeneration: null);
 
