@@ -28,3 +28,8 @@ Implemented 2026-08-29. Notes:
 - Back rode `OnCurrentTabAsync` directly (ticket 02 had landed), as the ticket anticipated.
 - When a popup answers, the acting tab's tail (supersede/note/commit) is skipped on purpose —
   today's behaviour: the acting tab was never read, so nothing is stamped or noted there.
+
+Review note (2026-08-29): the ticket body's "the browser's only remaining popup duty is
+registering the page's popup event" was already stale when written — `Popup +=` registration
+(`HandlePageEvents`) lived in `BrowserSessionManager` on master before this branch. The browser
+has no popup duty at all; nothing needed changing for it.
