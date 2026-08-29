@@ -218,8 +218,25 @@ public class BrowserSessionManager : IAsyncDisposable
             return new TabOutcome<T>.Closed(tab.RequestedUrl);
         }
 
+        if (ReRouteUnderLock<T>(sessionId, refString) is { } lateWall)
+        {
+            return lateWall;
+        }
+
         return await RunOnLockedTabAsync(session!, tab, stamping, supersedeAlways: false, work, ct);
     }
+
+    // The routing decision is asked again once the lock is held: a restamp or re-browse that
+    // finished while this call queued has already superseded the ref, and running anyway would
+    // land on the vague not-found the walls exist to replace. Anything still routing — or fallen
+    // to unknown — proceeds on the tab already chosen.
+    private TabOutcome<T>? ReRouteUnderLock<T>(string sessionId, string refString) =>
+        RouteRef(sessionId, refString) switch
+        {
+            RefRouting.Superseded superseded => new TabOutcome<T>.Superseded(superseded.Url),
+            RefRouting.Closed closed => new TabOutcome<T>.Closed(closed.Url),
+            _ => null
+        };
 
     // The action shape of the by-ref intent: `act` performs the gesture (a non-null result
     // short-circuits — a refusal decided before or during the act), then a popup the act opened
@@ -243,6 +260,11 @@ public class BrowserSessionManager : IAsyncDisposable
         if (tab!.Page.IsClosed)
         {
             return new TabOutcome<T>.Closed(tab.RequestedUrl);
+        }
+
+        if (ReRouteUnderLock<T>(sessionId, refString) is { } lateWall)
+        {
+            return lateWall;
         }
 
         Touch(session!, tab);

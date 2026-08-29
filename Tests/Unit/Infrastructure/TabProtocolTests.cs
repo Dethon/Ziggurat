@@ -598,6 +598,47 @@ public class TabProtocolTests
     }
 
     [Fact]
+    public async Task ARefSupersededBetweenRoutingAndLocking_AnswersTheSupersededWall()
+    {
+        // The supersede half of the routing race: the ref routed while still active, and a
+        // restamp finished while the call queued on the lock. Running anyway lands on the vague
+        // not-found the walls exist to replace — the routing decision is re-asked under the lock.
+        var (ctx, _) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 2);
+
+        // The holder itself restamps as its work's last breath, so its commit supersedes e-1
+        // in the instant before the lock is released to the queued call.
+        var entered = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        var holder = manager.OnCurrentTabAsync(
+            "s1", StampPolicy.Restamp(RefNamespace.Element),
+            async cx =>
+            {
+                entered.SetResult();
+                await release.Task;
+                await cx.StampAsync(_ => Task.FromResult(2));
+                return true;
+            });
+        await entered.Task;
+
+        var ran = false;
+        var queued = manager.OnRefAsync("s1", "e-1", StampPolicy.None, _ =>
+        {
+            ran = true;
+            return Task.FromResult(true);
+        });
+        await Eventually.Settle();
+        release.SetResult();
+        await holder;
+
+        (await queued).ShouldBe(new TabOutcome<bool>.Superseded("https://a.test/"));
+        ran.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task ASessionRemovedWhileABrowseQueuedOnItsTab_StillAnswersRatherThanThrowing()
     {
         // The session dying under a queued browse — a reconnect's Clear, a prune — is the same
