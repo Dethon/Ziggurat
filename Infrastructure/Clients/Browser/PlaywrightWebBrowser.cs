@@ -844,10 +844,40 @@ public class PlaywrightWebBrowser(
         return new ImageFetchResult(request.SessionId, images);
     }
 
+    // The strings the page offers about the picture, verbatim -- no rung order, no sanitising,
+    // no cap. The one ladder in C# turns them into the label, so the note that replaces a fetched
+    // picture uses the entry's own words by construction rather than by a mirrored script.
+    private static readonly string LocateFactsScript =
+        $$"""
+          (ref) => {
+              const img = document.querySelector(`[{{PageImageEntry.RefAttribute}}="${ref}"]`);
+              if (!img) return null;
+              const src = img.getAttribute('src');
+              if (!src) return null;
+              return JSON.stringify({
+                  alt: img.getAttribute('alt'),
+                  caption: img.closest('figure')?.querySelector('figcaption')?.textContent ?? null,
+                  title: img.getAttribute('title'),
+                  linkText: img.closest('a')?.textContent ?? null,
+                  src,
+                  w: parseInt(img.getAttribute('{{PageImageEntry.WidthAttribute}}') ?? '0', 10) || 0,
+                  h: parseInt(img.getAttribute('{{PageImageEntry.HeightAttribute}}') ?? '0', 10) || 0
+              });
+          }
+          """;
+
     private async Task<FetchedImage> FetchOneAsync(IPage page, string imageRef)
     {
         try
         {
+            var factsJson = await page.EvaluateAsync<string?>(LocateFactsScript, imageRef);
+            if (factsJson is null)
+            {
+                return new FetchedImage(imageRef, null, null, ImageFetchStatus.NotAnImageRef);
+            }
+
+            var label = ImageLabel.From(ImageFetchPayload.Facts(factsJson));
+
             // Fetched from inside the page so the request is the page's own. The bytes come back
             // as base64 because the evaluate boundary carries text, not binary.
             var payload = await page.EvaluateAsync<string?>(
@@ -857,30 +887,6 @@ public class PlaywrightWebBrowser(
                       if (!img) return null;
                       const src = img.getAttribute('src');
                       if (!src) return null;
-
-                      // The same ladder the entry's label came from, rung for rung — a blank rung
-                      // falls through instead of short-circuiting the chain to "", dimensions
-                      // close it, and the entry's own sanitizing (whitespace flattened, brackets
-                      // rounded) is applied the same way. Diverging here leaves the note calling
-                      // the picture different words than the entry the model chose it by.
-                      const nonEmpty = (t) => t && t.trim() ? t.trim() : null;
-                      const fileName = /^data:/i.test(src)
-                          ? ''
-                          : (src.split(/[?#]/)[0].split('/').pop() || '').trim();
-                      const spoken = nonEmpty(img.getAttribute('alt'))
-                          || nonEmpty(img.closest('figure')?.querySelector('figcaption')?.textContent)
-                          || nonEmpty(img.getAttribute('title'))
-                          || nonEmpty(img.closest('a')?.textContent)
-                          || (/^[^\s/]+\.[A-Za-z0-9]{1,5}$/.test(fileName) ? fileName : null)
-                          || `${img.getAttribute('{{PageImageEntry.WidthAttribute}}') || 0}x${img.getAttribute('{{PageImageEntry.HeightAttribute}}') || 0}`;
-                      const flat = spoken.replace(/\s+/g, ' ')
-                          .replace(/\[/g, '(').replace(/\]/g, ')').trim();
-                      // The entry's own cut, spelled the same (PageImageEntry.Sanitize): a bare
-                      // slice read as the tool breaking mid-word, and the entry and the note must
-                      // name one picture with one set of words.
-                      const label = flat.length <= 500
-                          ? flat
-                          : flat.slice(0, 500).trimEnd() + '…';
 
                       const url = new URL(src, location.href).toString();
 
@@ -906,12 +912,8 @@ public class PlaywrightWebBrowser(
                                   for (let i = 0; i < bytes.length; i++) {
                                       binary += String.fromCharCode(bytes[i]);
                                   }
-                                  // One JSON object rather than a delimited string: the label is
-                                  // somebody else's text and may carry any delimiter a hand-rolled
-                                  // shape would pick.
                                   return JSON.stringify({
                                       mediaType,
-                                      label,
                                       data: btoa(binary)
                                   });
                               }
@@ -957,7 +959,7 @@ public class PlaywrightWebBrowser(
                           // "success" the vision provider rejects whole. The pixels are on
                           // screen, so hand it to the rungs below the canvas instead.
                           if (!source.naturalWidth || !source.naturalHeight) {
-                              return JSON.stringify({ tainted: true, label, url });
+                              return JSON.stringify({ tainted: true, url });
                           }
 
                           const canvas = document.createElement('canvas');
@@ -971,25 +973,24 @@ public class PlaywrightWebBrowser(
                           const dataUrl = canvas.toDataURL('image/png');
                           return JSON.stringify({
                               mediaType: 'image/png',
-                              label,
                               data: dataUrl.split(',')[1]
                           });
                       } catch (e) {
                           return e && e.name === 'SecurityError'
-                              ? JSON.stringify({ tainted: true, label, url })
+                              ? JSON.stringify({ tainted: true, url })
                               : 'error';
                       }
                   }
                   """,
                 imageRef);
 
-            if (ImageFetchPayload.Tainted(payload, out var taintedLabel, out var taintedUrl))
+            if (ImageFetchPayload.Tainted(payload, out var taintedUrl))
             {
-                return await FetchAsServedAsync(page, imageRef, taintedLabel, taintedUrl)
-                    ?? await ScreenshotAsync(page, imageRef, taintedLabel);
+                return await FetchAsServedAsync(page, imageRef, label, taintedUrl)
+                    ?? await ScreenshotAsync(page, imageRef, label);
             }
 
-            return ImageFetchPayload.Parse(imageRef, payload);
+            return ImageFetchPayload.Parse(imageRef, payload, label);
         }
         catch (PlaywrightException)
         {

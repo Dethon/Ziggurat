@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.Contracts;
 using Infrastructure.Clients.Browser;
+using Infrastructure.HtmlProcessing;
 using Shouldly;
 
 namespace Tests.Unit.Infrastructure;
@@ -8,16 +9,18 @@ namespace Tests.Unit.Infrastructure;
 // The page's fetch script answers in one string, and this is the C# side reading it. The two
 // halves used to meet on a hand-delimited "mediaType|label|base64" -- so an alt text carrying a
 // pipe ("Photo | Getty Images") shifted its own tail into the base64 field, the decode threw, and
-// the picture came back as the site refusing. A label is somebody else's text: the payload shape
-// may not have characters a label can also have.
+// the picture came back as the site refusing. The strings the script carries are somebody else's
+// text: the payload shape may not have characters they can also have.
 public class ImageFetchPayloadTests
 {
     private static readonly byte[] _bytes = [1, 2, 3, 4];
 
     [Fact]
-    public void ALabelCarryingAPipe_DoesNotCorruptTheBytes()
+    public void TheLadderComputedLabel_RidesTheParsedAnswer()
     {
-        var fetched = ImageFetchPayload.Parse("i-1", Payload("image/jpeg", "Photo | Getty Images"));
+        // The label no longer travels in the payload at all: the script answers facts, the one
+        // C# ladder names the picture, and the parse attaches that name to the bytes.
+        var fetched = ImageFetchPayload.Parse("i-1", Payload("image/jpeg"), "Photo | Getty Images");
 
         fetched.Status.ShouldBe(ImageFetchStatus.Success);
         fetched.Label.ShouldBe("Photo | Getty Images");
@@ -26,15 +29,35 @@ public class ImageFetchPayloadTests
     }
 
     [Fact]
+    public void TheFactsAnswer_CarriesEveryStringThePageOffers()
+    {
+        var facts = ImageFetchPayload.Facts(
+            """
+            {"alt":"Alt","caption":"Cap","title":"Title","linkText":"Link","src":"/p.jpg","w":640,"h":480}
+            """);
+
+        facts.ShouldBe(new ImageLabelFacts(
+            "Alt", "Cap", "Title", "Link", "/p.jpg", 640, 480));
+    }
+
+    [Fact]
+    public void AGarbledFactsAnswer_ReadsAsAPageWithNothingToSay()
+    {
+        var facts = ImageFetchPayload.Facts("not json at all");
+
+        facts.ShouldBe(new ImageLabelFacts(null, null, null, null, null, 0, 0));
+    }
+
+    [Fact]
     public void AMissingImage_IsNotAnImageRef()
     {
-        ImageFetchPayload.Parse("i-9", null).Status.ShouldBe(ImageFetchStatus.NotAnImageRef);
+        ImageFetchPayload.Parse("i-9", null, null).Status.ShouldBe(ImageFetchStatus.NotAnImageRef);
     }
 
     [Fact]
     public void TheErrorSentinel_ReadsAsTheSiteRefusing()
     {
-        ImageFetchPayload.Parse("i-1", "error").Status.ShouldBe(ImageFetchStatus.SiteRefused);
+        ImageFetchPayload.Parse("i-1", "error", null).Status.ShouldBe(ImageFetchStatus.SiteRefused);
     }
 
     [Fact]
@@ -42,30 +65,25 @@ public class ImageFetchPayloadTests
     {
         // A picture whose bytes never arrived is not the site refusing to share pixels it shows —
         // it is a broken address, and retrying it is wasted work.
-        ImageFetchPayload.Parse("i-1", "never-loaded").Status.ShouldBe(ImageFetchStatus.NeverLoaded);
+        ImageFetchPayload.Parse("i-1", "never-loaded", null).Status.ShouldBe(ImageFetchStatus.NeverLoaded);
     }
 
     [Fact]
-    public void ATaintedPayload_CarriesItsLabelAndTheAddressToReFetch()
+    public void ATaintedPayload_CarriesTheAddressToReFetch()
     {
         // A canvas the browser will show but not let script read is not the end of the fetch: the
         // C# side re-requests the address from outside the page, where CORS has no say, and falls
         // back to an element screenshot of the pixels already on screen.
         ImageFetchPayload
-            .Tainted(
-                """{"tainted":true,"label":"A rover on Mars","url":"https://cdn.test/pic.jpg"}""",
-                out var label, out var url)
+            .Tainted("""{"tainted":true,"url":"https://cdn.test/pic.jpg"}""", out var url)
             .ShouldBeTrue();
-        label.ShouldBe("A rover on Mars");
         url.ShouldBe("https://cdn.test/pic.jpg");
     }
 
     [Fact]
-    public void ATaintedPayloadWithAnEmptyLabel_CarriesNoLabel()
+    public void ATaintedPayloadWithAnEmptyAddress_CarriesNoAddress()
     {
-        ImageFetchPayload.Tainted("""{"tainted":true,"label":"","url":""}""", out var label, out var url)
-            .ShouldBeTrue();
-        label.ShouldBeNull();
+        ImageFetchPayload.Tainted("""{"tainted":true,"url":""}""", out var url).ShouldBeTrue();
         url.ShouldBeNull();
     }
 
@@ -73,10 +91,10 @@ public class ImageFetchPayloadTests
     [InlineData(null)]
     [InlineData("error")]
     [InlineData("never-loaded")]
-    [InlineData("""{"mediaType":"image/png","label":"x","data":"AQID"}""")]
+    [InlineData("""{"mediaType":"image/png","data":"AQID"}""")]
     public void AnythingElse_IsNotTainted(string? payload)
     {
-        ImageFetchPayload.Tainted(payload, out _, out _).ShouldBeFalse();
+        ImageFetchPayload.Tainted(payload, out _).ShouldBeFalse();
     }
 
     [Fact]
@@ -84,28 +102,21 @@ public class ImageFetchPayloadTests
     {
         // The old delimited shape, and any other string the script never wrote: a refusal, not a
         // throw out of the fetch loop.
-        ImageFetchPayload.Parse("i-1", "image/png|A label|%%not-base64%%")
+        ImageFetchPayload.Parse("i-1", "image/png|A label|%%not-base64%%", null)
             .Status.ShouldBe(ImageFetchStatus.SiteRefused);
     }
 
     [Fact]
     public void APayloadWithoutItsBytes_ReadsAsTheSiteRefusing()
     {
-        ImageFetchPayload.Parse("i-1", """{"mediaType":"image/png","label":"A label"}""")
+        ImageFetchPayload.Parse("i-1", """{"mediaType":"image/png"}""", null)
             .Status.ShouldBe(ImageFetchStatus.SiteRefused);
     }
 
-    [Fact]
-    public void AnEmptyLabel_ComesBackAsNoLabel()
-    {
-        ImageFetchPayload.Parse("i-1", Payload("image/png", "")).Label.ShouldBeNull();
-    }
-
-    private static string Payload(string mediaType, string label) =>
+    private static string Payload(string mediaType) =>
         JsonSerializer.Serialize(new
         {
             mediaType,
-            label,
             data = Convert.ToBase64String(_bytes)
         });
 }

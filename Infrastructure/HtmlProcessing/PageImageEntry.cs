@@ -27,26 +27,24 @@ public static partial class PageImageEntry
     // the moment either side's traversal differed.
     public const string RefAttribute = "data-img-ref";
 
-    // A safeguard against a pathological attribute, not an editor: a carefully written alt runs
-    // a few hundred characters and is exactly what the model picks a picture by, so a real label
-    // should never meet this. The fetch script mirrors the number and the cut.
-    private const int MaxLabelLength = 500;
-
     public static string Write(string imageRef, string label) => $"{Open}{imageRef}: {label}{Close}";
 
     public static string RefFor(int number) => ImageRef.For(number);
 
-    // Null when the image is page furniture rather than content.
-    public static string? LabelFor(IHtmlImageElement img)
-    {
-        if (!Survives(img))
-        {
-            return null;
-        }
+    // Null when the image is page furniture rather than content. The label itself comes from the
+    // one ladder, over facts read off the parsed page -- the same ladder the fetch side names
+    // the note with, which is what keeps the two speaking the same words.
+    public static string? LabelFor(IHtmlImageElement img) =>
+        Survives(img) ? ImageLabel.From(FactsFor(img)) : null;
 
-        var label = FirstSpoken(img) ?? Dimensions(img);
-        return Sanitize(label);
-    }
+    private static ImageLabelFacts FactsFor(IHtmlImageElement img) => new(
+        Alt: img.GetAttribute("alt"),
+        Caption: img.Closest("figure")?.QuerySelector("figcaption")?.TextContent,
+        Title: img.GetAttribute("title"),
+        LinkText: img.Closest("a")?.TextContent,
+        Src: img.GetAttribute("src"),
+        Width: Side(img, WidthAttribute),
+        Height: Side(img, HeightAttribute));
 
     // The ref the page assigned, where it assigned one. Falls back to the extractor's own count so
     // hand-written HTML -- every unit test, and any path that never met a browser -- still lists
@@ -94,53 +92,10 @@ public static partial class PageImageEntry
     private static int Side(IElement img, string attribute) =>
         int.TryParse(img.GetAttribute(attribute), out var side) ? side : 0;
 
-    private static string? FirstSpoken(IHtmlImageElement img) =>
-        NonEmpty(img.GetAttribute("alt"))
-        ?? NonEmpty(img.Closest("figure")?.QuerySelector("figcaption")?.TextContent)
-        ?? NonEmpty(img.GetAttribute("title"))
-        ?? NonEmpty(img.Closest("a")?.TextContent)
-        ?? FileName(img);
-
-    private static string Dimensions(IHtmlImageElement img) =>
-        $"{Side(img, WidthAttribute)}x{Side(img, HeightAttribute)}";
-
-    // A name only where the address actually carries one. A data URI has no filename, and the
-    // tail of its payload read as one is worse than no label at all.
-    private static string? FileName(IElement img)
-    {
-        var src = img.GetAttribute("src");
-        if (string.IsNullOrWhiteSpace(src) || src.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var path = src.Split('?', '#')[0];
-        var name = NonEmpty(path[(path.LastIndexOf('/') + 1)..]);
-        return name is not null && FileNameRegex().IsMatch(name) ? name : null;
-    }
-
-    private static string? NonEmpty(string? text) =>
-        string.IsNullOrWhiteSpace(text) ? null : text.Trim();
-
-    // A label is somebody else's text sitting inside a delimited entry, so it may not carry the
-    // delimiters: a bracket or a newline in an alt attribute would otherwise end the entry early
-    // and hand the model a ref it cannot use.
-    private static string Sanitize(string label)
-    {
-        var flat = WhitespaceRegex().Replace(label, " ").Replace('[', '(').Replace(']', ')').Trim();
-        return flat.Length <= MaxLabelLength ? flat : flat[..MaxLabelLength].TrimEnd() + "…";
-    }
-
     [GeneratedRegex(@"\[image i-\d+: [^\]]*\]")]
     private static partial Regex EntryRegex();
 
     // The last entry opening in the text, whether or not it ever closes.
     [GeneratedRegex(@"\[image i-\d+:", RegexOptions.RightToLeft)]
     private static partial Regex PartialOpenRegex();
-
-    [GeneratedRegex(@"\s+")]
-    private static partial Regex WhitespaceRegex();
-
-    [GeneratedRegex(@"^[^\s/]+\.[A-Za-z0-9]{1,5}$")]
-    private static partial Regex FileNameRegex();
 }
