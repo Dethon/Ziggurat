@@ -163,6 +163,25 @@ public class ScorecardLedgerTests : IDisposable
         };
 
     [Fact]
+    public void TheResidualExemptions_ReadTheKindTheirProseEarns()
+    {
+        // The three claims no scenario owns: the probe rule is deliberately not required, the
+        // two reply-shape rules await a scenario about them. Each is diffusely asserted
+        // meanwhile, which the reasons record — but the coverage string is the backlog's triage.
+        _ledger.Record(EvalTier.Full, _first, new ScenarioResult(true, 1, 1, []));
+        _ledger.WriteAll(_output, Unresolved);
+
+        var claims = Read("scorecard-full.json").GetProperty("claims");
+
+        claims.GetProperty(Domain.Prompts.WebBrowsingPrompt.NoProbeCalls.Id)
+            .GetProperty("coverage").GetString().ShouldBe("unfalsifiable");
+        claims.GetProperty(Domain.Prompts.VoicePrompt.OneSentenceTwelveWords.Id)
+            .GetProperty("coverage").GetString().ShouldBe("unwritten");
+        claims.GetProperty(Domain.Prompts.VoicePrompt.NothingIsNarrated.Id)
+            .GetProperty("coverage").GetString().ShouldBe("unwritten");
+    }
+
+    [Fact]
     public void ALaterWrite_HandsTheResolverTheRouteAlreadyResolved()
     {
         // One paid lookup per run: the resolved route is kept, so every dispose after the first

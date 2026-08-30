@@ -123,11 +123,7 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
                                 : "uncovered");
     }
 
-    private static string Spelled(ExemptionKind kind) => kind switch
-    {
-        ExemptionKind.NeedsFixture => "needs-fixture",
-        _ => kind.ToString().ToLowerInvariant()
-    };
+    private static string Spelled(ExemptionKind kind) => kind.ToString().ToLowerInvariant();
 
     private sealed record TierState(List<ClaimOutcome> Outcomes, List<ScenarioOutcome> Scenarios);
 }
