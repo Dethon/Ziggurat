@@ -90,12 +90,16 @@ public class ImageAcquisitionTests
         fetched.Bytes.ShouldBe(_served);
     }
 
-    [Fact]
-    public async Task AWireAnswerWithNoContentType_LeavesAsAJpeg()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task AWireAnswerWithNoContentType_LeavesAsAJpeg(string? mediaType)
     {
-        // A CDN that sends no content-type at all has always been taken at the wire's word as a
-        // jpeg on this rung; the module preserves that rather than paying the canvas re-encode.
-        var probe = Probe() with { Wire = new WireRungAnswer(true, null, _served) };
+        // A CDN that sends no content-type at all -- header absent or blank -- has always been
+        // taken at the wire's word as a jpeg on this rung; the module preserves that rather than
+        // paying the canvas re-encode. The blank spelling is how the old in-page script saw an
+        // absent header, so it stays a named fact rather than becoming a quiet re-encode.
+        var probe = Probe() with { Wire = new WireRungAnswer(true, mediaType, _served) };
 
         var fetched = await ImageAcquisition.FetchAsync(probe, "i-1");
 
@@ -288,6 +292,22 @@ public class ImageAcquisitionTests
     // every step down".
     private sealed record FakeProbe : IImagePageProbe
     {
+        public FakeProbe() { }
+
+        // The synthesized copy constructor would hand every `with` clone the original's Rungs
+        // list, so two probes forked from one seed would record into shared state. Each clone
+        // starts its own recording instead -- assigned here because a copy constructor skips
+        // the field initializers.
+        private FakeProbe(FakeProbe original)
+        {
+            Located = original.Located;
+            Wire = original.Wire;
+            Canvas = original.Canvas;
+            Context = original.Context;
+            Screenshot = original.Screenshot;
+            Rungs = [];
+        }
+
         public LocatedImage? Located { get; init; }
         public WireRungAnswer? Wire { get; init; }
         public CanvasRungAnswer Canvas { get; init; } = new(CanvasOutcome.Failed, null);

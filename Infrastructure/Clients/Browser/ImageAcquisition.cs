@@ -74,12 +74,14 @@ internal static class ImageAcquisition
         // rejected against. This broke the first implementation; do not "fix" it.
         var wire = await probe.WireFetchAsync(located.Url, withCredentials: located.SameOrigin);
 
-        // A wire answer with no content-type at all has always been taken at the wire's word as a
+        // A wire answer with no content-type at all -- absent or blank, which is how the old
+        // in-page script saw an absent header -- has always been taken at the wire's word as a
         // jpeg on this rung, rather than paying the canvas re-encode for a header a lazy CDN
         // omitted. The context-request rung takes no such word: by then the anonymous fetch has
         // already failed, and a nameless answer there falls to the screenshot.
         if (wire is { Ok: true, Bytes: not null }
-            && AcceptedAsServed(wire.MediaType ?? "image/jpeg") is { } wireType)
+            && AcceptedAsServed(string.IsNullOrEmpty(wire.MediaType) ? "image/jpeg" : wire.MediaType)
+                is { } wireType)
         {
             return new FetchedImage(imageRef, wireType, wire.Bytes, ImageFetchStatus.Success, Label: label);
         }
