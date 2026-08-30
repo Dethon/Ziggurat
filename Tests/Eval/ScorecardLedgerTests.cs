@@ -144,24 +144,6 @@ public class ScorecardLedgerTests : IDisposable
             .GetProperty("coverage").GetString().ShouldBe("conditional");
     }
 
-    private static Scenario Synthetic(
-        IReadOnlyList<string>? cites = null,
-        IReadOnlyList<string>? guards = null,
-        IReadOnlyList<string>? conditionals = null) => new()
-        {
-            Name = $"synthetic {Guid.NewGuid():N}",
-            AgentId = "nabu",
-            Turn = new EvalTurn { Text = "hola", Sender = "fran" },
-            Instant = EvalInstant.Evening,
-            CallCeiling = 1,
-            Claims = cites ?? [],
-            Guards = [.. (guards ?? []).Select(claim => new Guard(claim, "note"))],
-            IfDelegated = conditionals is null
-            ? []
-            : [new ConditionalDelegation { Profile = "research", Claims = conditionals }],
-            MayDelegateTo = conditionals is null ? [] : ["research"]
-        };
-
     [Fact]
     public void TheResidualExemptions_ReadTheKindTheirProseEarns()
     {
@@ -206,6 +188,24 @@ public class ScorecardLedgerTests : IDisposable
         seen[1]!.Provider.ShouldBe("Fireworks");
         Read("scorecard-full.json").GetProperty("provider").GetString().ShouldBe("Fireworks");
     }
+
+    private static Scenario Synthetic(
+        IReadOnlyList<string>? cites = null,
+        IReadOnlyList<string>? guards = null,
+        IReadOnlyList<string>? conditionals = null) => new()
+        {
+            Name = $"synthetic {Guid.NewGuid():N}",
+            AgentId = "nabu",
+            Turn = new EvalTurn { Text = "hola", Sender = "fran" },
+            Instant = EvalInstant.Evening,
+            CallCeiling = 1,
+            Claims = cites ?? [],
+            Guards = [.. (guards ?? []).Select(claim => new Guard(claim, "note"))],
+            IfDelegated = conditionals is null
+            ? []
+            : [new ConditionalDelegation { Profile = "research", Claims = conditionals }],
+            MayDelegateTo = conditionals is null ? [] : ["research"]
+        };
 
     private static Task<ServedRoute?> Unresolved(ServedRoute? route) => Task.FromResult(route);
 

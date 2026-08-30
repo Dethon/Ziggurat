@@ -27,6 +27,14 @@ public static class WebScenarios
         "No he podido completar la tarea: mi sesión de navegación ha fallado antes de cargar "
         + "la página.";
 
+    // Declared by both halves — the spoken research scenario and the written chronicle one —
+    // because neither declaration may lie about being the only witness.
+    private static Guard RawContentIsNeverDumped => new(WebBrowsingPrompt.RawContentIsNeverDumped.Id,
+        "Asserted as a side condition on both halves now: the spoken research scenario is "
+        + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "
+        + "against a thirty-thousand-character page. No scenario's subject is the dumping "
+        + "itself, so it guards rather than cites.");
+
     // The answer is in the article and nowhere else: the search snippet describes the recipe
     // without giving the number. A model that answered from the result list has nothing to answer
     // with, and a model that guessed the url never finds the page.
@@ -75,14 +83,7 @@ public static class WebScenarios
         },
         // No citation: searching is forced by the fixture rather than by the prose — a loopback
         // port cannot be guessed.
-        Guards =
-        [
-            new Guard(WebBrowsingPrompt.RawContentIsNeverDumped.Id,
-                "Asserted as a side condition on both halves now: the spoken research scenario is "
-                + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "
-                + "against a thirty-thousand-character page. No scenario's subject is the dumping "
-                + "itself, so it guards rather than cites.")
-        ],
+        Guards = [RawContentIsNeverDumped],
         Policy = new RunPolicy(2, 3),
         // This family's canary: search, open, read, answer is the shape the other two vary.
         Tier = EvalTier.Smoke
@@ -292,14 +293,7 @@ public static class WebScenarios
             // the no-unspeakables check already forbids a url there.
             WebBrowsingPrompt.UrlsAreCitedOnlyInWriting.Id
         ],
-        Guards =
-        [
-            new Guard(WebBrowsingPrompt.RawContentIsNeverDumped.Id,
-                "Asserted as a side condition on both halves now: the spoken research scenario is "
-                + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "
-                + "against a thirty-thousand-character page. No scenario's subject is the dumping "
-                + "itself, so it guards rather than cites.")
-        ],
+        Guards = [RawContentIsNeverDumped],
         Policy = new RunPolicy(2, 3)
     };
 
