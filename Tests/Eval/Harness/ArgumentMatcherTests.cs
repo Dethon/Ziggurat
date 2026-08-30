@@ -48,6 +48,17 @@ public class ArgumentMatcherTests
             .ShouldBe("/vault");
     }
 
+    [Fact]
+    public void APathSpelledWithATrailingSlash_SatisfiesTheSameExpectation()
+    {
+        // Glob returns directories with a trailing slash, and a model that removes exactly what
+        // the glob handed it is honouring the contract — the slash is the tool's spelling, not a
+        // different place.
+        Arg.Path("/timers/pasta").Matches(Args("""{"path":"/timers/pasta/"}""")).ShouldBeTrue();
+        Arg.Path("/timers/pasta/").Matches(Args("""{"path":"/timers/pasta"}""")).ShouldBeTrue();
+        Arg.Path("/timers/pasta").Matches(Args("""{"path":"/timers/pastas"}""")).ShouldBeFalse();
+    }
+
     private static JsonElement Args(string json) => JsonDocument.Parse(json).RootElement;
 
     [Fact]
