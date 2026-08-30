@@ -4,10 +4,10 @@
 
 **Blocked by:** 01 — The identity type composes and parses itself.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Red-first: a tool test hands a non-conforming id and asserts the named error instead of the exception it gets today.
-- [ ] Both tools parse via the type; no split-on-colon parsing remains in the Telegram server.
-- [ ] The non-forum case (equal thread and chat) still sends without a thread — existing tests green.
-- [ ] The inbound composition site (Telegram message to conversation identity) constructs the type rather than interpolating.
-- [ ] All existing Telegram tool tests pass, reworded only where they asserted the old exception.
+- [x] Red-first: a tool test hands a non-conforming id and asserts the named error instead of the exception it gets today.
+- [x] Both tools parse via the type; no split-on-colon parsing remains in the Telegram server.
+- [x] The non-forum case (equal thread and chat) still sends without a thread — existing tests green.
+- [x] The inbound composition site (Telegram message to conversation identity) constructs the type rather than interpolating.
+- [x] All existing Telegram tool tests pass, reworded only where they asserted the old exception.

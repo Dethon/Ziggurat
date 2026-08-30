@@ -4,9 +4,9 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] All index-member composition sites go through the named helper; no inline chat-and-topic interpolation remains in the stores.
-- [ ] The helper's name and comment distinguish it from a conversation identity.
-- [ ] Existing state-manager and topic-search tests green untouched — the spelling on the wire is unchanged.
-- [ ] The channel rules carry the hot-path exception with the byte-identical obligation; no code change rides the doc edit.
+- [x] All index-member composition sites go through the named helper; no inline chat-and-topic interpolation remains in the stores.
+- [x] The helper's name and comment distinguish it from a conversation identity.
+- [x] Existing state-manager and topic-search tests green untouched — the spelling on the wire is unchanged.
+- [x] The channel rules carry the hot-path exception with the byte-identical obligation; no code change rides the doc edit.

@@ -4,11 +4,11 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Red-first: a test for the shared tool asserts it replaces the catalog and returns the registered count.
-- [ ] Telegram, voice and scheduling register the shared tool; their local copies are deleted.
-- [ ] The SignalR and library tools are unchanged, their tests untouched.
-- [ ] The one server table's contract tests stay green — every server still resolves its settings, registers the host, and holds exactly one call-tool filter.
-- [ ] Telegram's catalog-purpose comment lives at its registration site.
-- [ ] The hosting assembly's dependency rule holds: Domain and the MCP packages only, no Infrastructure.
+- [x] Red-first: a test for the shared tool asserts it replaces the catalog and returns the registered count.
+- [x] Telegram, voice and scheduling register the shared tool; their local copies are deleted.
+- [x] The SignalR and library tools are unchanged, their tests untouched.
+- [x] The one server table's contract tests stay green — every server still resolves its settings, registers the host, and holds exactly one call-tool filter.
+- [x] Telegram's catalog-purpose comment lives at its registration site.
+- [x] The hosting assembly's dependency rule holds: Domain and the MCP packages only, no Infrastructure.

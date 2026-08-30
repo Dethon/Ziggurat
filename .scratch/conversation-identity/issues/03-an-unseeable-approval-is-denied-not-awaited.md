@@ -4,10 +4,10 @@
 
 **Blocked by:** 02 — The SignalR server carries the identity.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Red-first: a test drives a request-mode approval with no live session and fails today by never completing (bounded by the test, not the code); it passes by receiving the denial.
-- [ ] The denial's text names the reason (no live session to approve in) so the persisted reply explains itself.
-- [ ] No pending-approval entry is left behind on the miss path — nothing to leak, nothing for the cancellation sweep to miss.
-- [ ] Notify-mode on the same miss path still returns without waiting and renders nothing.
-- [ ] Approvals with a live session behave exactly as before — existing approval tests green untouched.
+- [x] Red-first: a test drives a request-mode approval with no live session and fails today by never completing (bounded by the test, not the code); it passes by receiving the denial.
+- [x] The denial's text names the reason (no live session to approve in) so the persisted reply explains itself.
+- [x] No pending-approval entry is left behind on the miss path — nothing to leak, nothing for the cancellation sweep to miss.
+- [x] Notify-mode on the same miss path still returns without waiting and renders nothing.
+- [x] Approvals with a live session behave exactly as before — existing approval tests green untouched.

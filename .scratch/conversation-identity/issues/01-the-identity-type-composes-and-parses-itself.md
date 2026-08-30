@@ -4,11 +4,19 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Red-first: compose/parse tests beside the generator and key tests fail before the reshape, pass after.
-- [ ] Rendering an identity and parsing it back round-trips, including the non-forum case.
-- [ ] Parsing a satellite id, a correlation id, an eval-prefixed id, and a colon-free GUID each returns null — no throw, no coercion.
-- [ ] The conversation spelling is derived from the parts; the record stores no redundant copy that could disagree.
-- [ ] The browser client and the factory compile and their tests stay green with the reshaped type.
-- [ ] `dotnet test` (unit) green; no signature outside the conversations area changes yet.
+- [x] Red-first: compose/parse tests beside the generator and key tests fail before the reshape, pass after.
+- [x] Rendering an identity and parsing it back round-trips, including the non-forum case.
+- [x] Parsing a satellite id, a correlation id, an eval-prefixed id, and a colon-free GUID each returns null — no throw, no coercion.
+- [x] The conversation spelling is derived from the parts; the record stores no redundant copy that could disagree.
+- [x] The browser client and the factory compile and their tests stay green with the reshaped type.
+- [x] `dotnet test` (unit) green; no signature outside the conversations area changes yet.
+
+## Comments
+
+Implemented 2026-08-30 (872b7b1b). The reshaped type dropped `TopicId` from the record: Telegram
+constructs the identity with no topic in existence, so the topic spelling lives with the callers
+that mint topics (`ConversationIdGenerator.NewTopicId()` beside `CreateFor`). `Parse` is the exact
+inverse of the render — a value whose canonical re-render differs (whitespace, signs, extra parts)
+returns null.

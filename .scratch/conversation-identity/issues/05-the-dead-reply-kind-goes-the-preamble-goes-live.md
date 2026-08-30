@@ -4,11 +4,17 @@
 
 **Blocked by:** None — can start immediately. (Touches the same Telegram reply tool as ticket 04 — coordinate merge order, no logical gate.)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Red-first: a voice approval-tool test asserts the notify branch speaks buffered text once per turn under the preamble playback kind — it fails today (every call speaks, approval kind).
-- [ ] The seven reply-speaker preamble tests migrate to the public entry point, asserting the same contracts: no turn resolution, separate utterances, nothing spoken on an empty buffer, second tool call keeps narration buffered, dispatch stamp survives.
-- [ ] The redial test that used the dead kind incidentally is re-expressed without it, asserting the same settle behaviour.
-- [ ] The enum member, the formatter, and all four channel arms are gone; no reference to the dead kind remains anywhere.
-- [ ] The live tool-call rendering path (the approval flow's own formatting) is untouched and its tests green.
-- [ ] Full unit suite green with no suppressions added.
+- [x] Red-first: a voice approval-tool test asserts the notify branch speaks buffered text once per turn under the preamble playback kind — it fails today (every call speaks, approval kind).
+- [x] The seven reply-speaker preamble tests migrate to the public entry point, asserting the same contracts: no turn resolution, separate utterances, nothing spoken on an empty buffer, second tool call keeps narration buffered, dispatch stamp survives.
+- [x] The redial test that used the dead kind incidentally is re-expressed without it, asserting the same settle behaviour.
+- [x] The enum member, the formatter, and all four channel arms are gone; no reference to the dead kind remains anywhere.
+- [x] The live tool-call rendering path (the approval flow's own formatting) is untouched and its tests green.
+- [x] Full unit suite green with no suppressions added.
+
+## Comments
+
+Implemented 2026-08-30. The redial test re-expresses "the answer is still being written" as a
+Reasoning chunk (the remaining non-terminal no-op kind). The playback-kind assertion observes the
+job through the sink's per-job error hook — the one place the queue hands the job back.

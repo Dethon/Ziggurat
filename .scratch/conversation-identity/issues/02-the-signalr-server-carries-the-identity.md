@@ -4,11 +4,19 @@
 
 **Blocked by:** 01 — The identity type composes and parses itself.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Red-first where behaviour changes: a stream-service test asserts the miss path returns early and logs at debug, not warning.
-- [ ] No hand-interpolated conversation spelling remains in the hub or the session service; construction goes through the type.
-- [ ] The inverse-map sites take the explicit null shape; the coercing fallback is gone from all of them.
-- [ ] The upload-minting signature takes the identity; swapping its former two string arguments is now a compile error.
-- [ ] All existing hub, session, stream, approval and attachment tests pass untouched — the assertion that a connected client sees no change.
-- [ ] An offline turn (no live session) produces no warnings — verified by test on the write path.
+- [x] Red-first where behaviour changes: a stream-service test asserts the miss path returns early and logs at debug, not warning.
+- [x] No hand-interpolated conversation spelling remains in the hub or the session service; construction goes through the type.
+- [x] The inverse-map sites take the explicit null shape; the coercing fallback is gone from all of them.
+- [x] The upload-minting signature takes the identity; swapping its former two string arguments is now a compile error.
+- [x] All existing hub, session, stream, approval and attachment tests pass untouched — the assertion that a connected client sees no change.
+- [x] An offline turn (no live session) produces no warnings — verified by test on the write path.
+
+## Comments
+
+Implemented 2026-08-30 (037eca34). One reading of "tests pass untouched" bent by the signature
+change itself: `AttachmentEndpointTests`/`DictationEndpointTests` call `MintUpload` directly, so
+their call sites now spell `new ConversationIdentity(7, 42)` — assertions unchanged. The
+`WriteMessageAsync` warning also dropped to debug: every caller reaching it has already resolved a
+live topic, so a missing response channel there is the same designed no-audience miss.
