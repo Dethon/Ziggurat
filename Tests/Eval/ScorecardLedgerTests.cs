@@ -97,6 +97,73 @@ public class ScorecardLedgerTests : IDisposable
     }
 
     [Fact]
+    public void AClaimGuardedAndCitedByNothing_IsCoveredAsGuarded()
+    {
+        // "guarded" is what tells the reader a null rate on an uncited claim means "asserted
+        // every run, never proven to earn the citation" rather than "nothing tests this". It
+        // outranks the exemption spelling: a guard is not backlog.
+        var claim = Domain.Prompts.TimerPrompt.DurationIsACountdown.Id;
+        var ledger = new ScorecardLedger([Synthetic(guards: [claim])]);
+
+        ledger.Record(EvalTier.Full, _first, new ScenarioResult(true, 1, 1, []));
+        ledger.WriteAll(_output, Unresolved);
+
+        Read("scorecard-full.json").GetProperty("claims").GetProperty(claim)
+            .GetProperty("coverage").GetString().ShouldBe("guarded");
+    }
+
+    [Fact]
+    public void AClaimBothCitedAndGuarded_IsCoveredAsCited()
+    {
+        // The pair is a truth — one scenario demonstrated red, another asserts the same
+        // behaviour as a side condition — so the strongest true statement wins.
+        var claim = Domain.Prompts.TimerPrompt.CreatedAtItsOwnPath.Id;
+        var ledger = new ScorecardLedger(
+            [Synthetic(cites: [claim]), Synthetic(guards: [claim])]);
+
+        ledger.Record(EvalTier.Full, _first, new ScenarioResult(true, 1, 1, []));
+        ledger.WriteAll(_output, Unresolved);
+
+        Read("scorecard-full.json").GetProperty("claims").GetProperty(claim)
+            .GetProperty("coverage").GetString().ShouldBe("cited");
+    }
+
+    [Fact]
+    public void AClaimGuardedAndConditionallyCited_IsCoveredAsConditional()
+    {
+        // Guard ranks below every citation flavour: a conditional citation still tests the
+        // claim on every run that produces its material, which a guard never claims to.
+        var claim = Domain.Prompts.SubAgentPrompt.PromptIsSelfContained.Id;
+        var ledger = new ScorecardLedger(
+            [Synthetic(conditionals: [claim]), Synthetic(guards: [claim])]);
+
+        ledger.Record(EvalTier.Full, _first, new ScenarioResult(true, 1, 1, []));
+        ledger.WriteAll(_output, Unresolved);
+
+        Read("scorecard-full.json").GetProperty("claims").GetProperty(claim)
+            .GetProperty("coverage").GetString().ShouldBe("conditional");
+    }
+
+    [Fact]
+    public void TheResidualExemptions_ReadTheKindTheirProseEarns()
+    {
+        // The three claims no scenario owns: the probe rule is deliberately not required, the
+        // two reply-shape rules await a scenario about them. Each is diffusely asserted
+        // meanwhile, which the reasons record — but the coverage string is the backlog's triage.
+        _ledger.Record(EvalTier.Full, _first, new ScenarioResult(true, 1, 1, []));
+        _ledger.WriteAll(_output, Unresolved);
+
+        var claims = Read("scorecard-full.json").GetProperty("claims");
+
+        claims.GetProperty(Domain.Prompts.WebBrowsingPrompt.NoProbeCalls.Id)
+            .GetProperty("coverage").GetString().ShouldBe("unfalsifiable");
+        claims.GetProperty(Domain.Prompts.VoicePrompt.OneSentenceTwelveWords.Id)
+            .GetProperty("coverage").GetString().ShouldBe("unwritten");
+        claims.GetProperty(Domain.Prompts.VoicePrompt.NothingIsNarrated.Id)
+            .GetProperty("coverage").GetString().ShouldBe("unwritten");
+    }
+
+    [Fact]
     public void ALaterWrite_HandsTheResolverTheRouteAlreadyResolved()
     {
         // One paid lookup per run: the resolved route is kept, so every dispose after the first
@@ -121,6 +188,24 @@ public class ScorecardLedgerTests : IDisposable
         seen[1]!.Provider.ShouldBe("Fireworks");
         Read("scorecard-full.json").GetProperty("provider").GetString().ShouldBe("Fireworks");
     }
+
+    private static Scenario Synthetic(
+        IReadOnlyList<string>? cites = null,
+        IReadOnlyList<string>? guards = null,
+        IReadOnlyList<string>? conditionals = null) => new()
+        {
+            Name = $"synthetic {Guid.NewGuid():N}",
+            AgentId = "nabu",
+            Turn = new EvalTurn { Text = "hola", Sender = "fran" },
+            Instant = EvalInstant.Evening,
+            CallCeiling = 1,
+            Claims = cites ?? [],
+            Guards = [.. (guards ?? []).Select(claim => new Guard(claim, "note"))],
+            IfDelegated = conditionals is null
+            ? []
+            : [new ConditionalDelegation { Profile = "research", Claims = conditionals }],
+            MayDelegateTo = conditionals is null ? [] : ["research"]
+        };
 
     private static Task<ServedRoute?> Unresolved(ServedRoute? route) => Task.FromResult(route);
 

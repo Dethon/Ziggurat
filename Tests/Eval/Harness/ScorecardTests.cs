@@ -52,8 +52,9 @@ public class ScorecardTests : IDisposable
     [Fact]
     public void AClaimRow_SaysHowItIsCovered()
     {
-        // "cited", "judged", or the exemption kind — so the file itself answers how much of the
-        // prompt surface is under test, instead of a null rate meaning three different things.
+        // "cited", "judged", "guarded", or the exemption kind — so the file itself answers how
+        // much of the prompt surface is under test, instead of a null rate meaning three
+        // different things.
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
             [
                 new ClaimOutcome("timers.duration-under-4h", 2, 3),
@@ -62,7 +63,7 @@ public class ScorecardTests : IDisposable
             coverage: new Dictionary<string, string>
             {
                 ["timers.duration-under-4h"] = "cited",
-                ["mounts.exec-work-goes-where-exec-lives"] = "needs-fixture"
+                ["mounts.exec-work-goes-where-exec-lives"] = "guarded"
             });
 
         var claims = Read(Path.Combine(_output, "scorecard-full.json")).GetProperty("claims");
@@ -70,7 +71,7 @@ public class ScorecardTests : IDisposable
         claims.GetProperty("timers.duration-under-4h").GetProperty("coverage").GetString()
             .ShouldBe("cited");
         claims.GetProperty("mounts.exec-work-goes-where-exec-lives").GetProperty("coverage").GetString()
-            .ShouldBe("needs-fixture");
+            .ShouldBe("guarded");
     }
 
     [Fact]

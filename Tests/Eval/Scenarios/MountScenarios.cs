@@ -1,3 +1,4 @@
+using Domain.Prompts;
 using Domain.Tools.FileSystem;
 using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
@@ -47,8 +48,13 @@ public static class MountScenarios
         ],
         CallCeiling = 5,
         Tier = EvalTier.Smoke,
-        // No citation: with the must-start-at-a-mount sentence deleted the model still resolved
-        // the note to the vault. The mount list alone is enough to place a path.
+        Guards =
+        [
+            new Guard(FileSystemToolFeature.PathStartsAtAMount.Id,
+                "Demonstrated on 2026-08-18 with the sentence deleted: the model still resolved an "
+                + "unprefixed note to the vault. The mount list that follows the sentence is enough on "
+                + "its own, and it cannot be deleted without removing the mounts from the prompt.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -97,6 +103,16 @@ public static class MountScenarios
             ]
         },
         Claims = [FileSystemToolFeature.AnUnmountedPathIsAnswered.Id],
+        Guards =
+        [
+            new Guard(FileSystemToolFeature.AnEnvelopeIsDataNotAReasonToRetry.Id,
+                "Cited on 2026-08-18 and withdrawn the same day. The first demonstration turned red "
+                + "because the model handed the impossible listing to two workers, but a later run "
+                + "showed it does that about half the time with the prose still in place — so the "
+                + "scenario now tolerates one worker and measures the storm through its ceiling, and "
+                + "with that tolerance the demonstration is green again. The retry rule needs a turn "
+                + "where retrying is the only thing left to do.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -159,6 +175,18 @@ public static class MountScenarios
         [
             FileSystemToolFeature.ExecWorkGoesWhereExecLives.Id,
             FileSystemToolFeature.TransferIsOneCall.Id
+        ],
+        Guards =
+        [
+            new Guard(FileSystemToolFeature.CapabilitiesAreAdvertised.Id,
+                "The sandbox is hosted now, and the checksum scenario asserts this as a side condition: "
+                + "an exec against a mount that does not advertise it is an unnecessary call there. A "
+                + "scenario whose subject is the choice itself — tempted toward the wrong mount — is "
+                + "not written."),
+            new Guard(VaultPrompt.TransferIsOneCall.Id,
+                "The checksum scenario transfers out of the vault with a single copy and permits no "
+                + "create; what it cites is the mounts section's transfer rule, and the vault prompt's "
+                + "own copy of the sentence rides along uncited.")
         ],
         Policy = new RunPolicy(2, 4)
     };

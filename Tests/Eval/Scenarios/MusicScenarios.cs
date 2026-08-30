@@ -61,10 +61,18 @@ public static class MusicScenarios
         CallCeiling = 5,
         // The playlist rule alone. Demonstrated red by deleting it: the model played "mis
         // favoritos", took the 500, and spent the rest of the turn on an empty browse and a
-        // --help. Which player it targets is asserted above as a side condition — deleting the
-        // paragraph that teaches it changed nothing, because the speaker and the television in
-        // that kitchen are named after what they are.
+        // --help.
         Claims = [HomeAssistantPrompt.PlaylistIsBrowsedBeforeItIsPlayed.Id],
+        Guards =
+        [
+            new Guard(HomeAssistantPrompt.MusicPlaysOnTheMusicAssistantPlayer.Id,
+                "Demonstrated on 2026-08-19 with the whole MA-player paragraph deleted, in a kitchen "
+                + "holding both a Music Assistant speaker and a television that lists the same "
+                + "actions: the playlist still went to the speaker. A player called 'Altavoz Cocina' "
+                + "beside one called 'TV Cocina' teaches the choice, and the model reads state.json "
+                + "anyway. The scenario asserts the target as a side condition and cites the browse "
+                + "rule instead.")
+        ],
         Policy = new RunPolicy(2, 3),
         // This family's canary: the browse-then-play pair is the rule the other two are variations
         // of, and the one whose absence is invisible until somebody notices the wrong list playing.
@@ -123,7 +131,7 @@ public static class MusicScenarios
         Claims = [HomeAssistantPrompt.EpisodePlaysOnlyByItsUri.Id],
         // Two of four rather than two of three: on about a third of runs the model hands the
         // episode lookup to a worker instead of doing it, which is the reflex the delegation
-        // exemptions record. The threshold says the behaviour has to hold at least half the time
+        // guards record. The threshold says the behaviour has to hold at least half the time
         // rather than retrying until it does.
         Policy = new RunPolicy(2, 4)
     };
@@ -161,8 +169,15 @@ public static class MusicScenarios
         // exactly the mistake the rule names. Reading an action's manual is not running it.
         Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
         CallCeiling = 4,
-        // No citation: with the restart bullet deleted the seek still happened. Working out that
-        // "from the beginning" is a seek rather than a second play is this model's default.
+        Guards =
+        [
+            new Guard(HomeAssistantPrompt.RestartIsASeek.Id,
+                "Demonstrated on 2026-08-19 with the 'play it from the beginning' bullet deleted: "
+                + "'ponlo otra vez desde el principio' still came out as media_seek on the player that "
+                + "was playing, and not as another play. The first attempt at this demonstration was "
+                + "red for the wrong reason — the model read `media_seek.sh --help`, which the "
+                + "scenario did not tolerate — which is what CallPermission.Manual now exists for.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 

@@ -91,6 +91,13 @@ public sealed record Scenario
 
     public IReadOnlyList<string> Claims { get; init; } = [];
 
+    // Claims this scenario asserts without evidencing: the demonstrated-red bar was tried and
+    // deleting the prose stayed green, so the behaviour is the model's own rather than the
+    // prompt's. The note records how that demonstration went. Declared here rather than in a
+    // table keyed by claim id so that a renamed or withdrawn claim breaks this file at compile
+    // time; more than one scenario may guard the same claim.
+    public IReadOnlyList<Guard> Guards { get; init; } = [];
+
     // Judgements the deterministic checks cannot make — whether an id is descriptive, whether a
     // reply narrates its steps — graded by a pinned judge model against each rubric. A verdict
     // failure fails the run like any other check; the claim is tallied in the scorecard as
@@ -190,6 +197,11 @@ public sealed record CallPermission(string Tool, string Path = "*", string Comma
 }
 
 public sealed record OrderingConstraint(string Before, string After);
+
+// One guarded claim: asserted every run, never cited. The note is mandatory — it is the record
+// of the demonstration that decided this claim cannot earn the citation, and the date stays a
+// convention inside it rather than a field.
+public sealed record Guard(string Claim, string Note);
 
 // One judgement, aimed by the claim it grades. The rubric is the whole instruction: it has to
 // say what passes and what fails in terms of the material the judge is shown, because the judge

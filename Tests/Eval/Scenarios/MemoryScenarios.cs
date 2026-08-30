@@ -62,8 +62,19 @@ public static class MemoryScenarios
             // number came from. Silence about it is the whole contract here.
             NeverSays = ["memoria", "recuerd", "según lo que sé"]
         },
-        // No citation: with the silent-application sentence deleted the timer still came out at
-        // nine minutes and the reply still did not read the preference back — see ClaimExemptions.
+        Guards =
+        [
+            new Guard(MemoryPrompts.RecallShapesTheAnswer.Id,
+                "Demonstrated on 2026-08-19 with the silent-application sentence deleted: a remembered "
+                + "'cuece la pasta nueve minutos' still came back as a 540-second timer. A fact in the "
+                + "recall block is used because it is in the context, not because a sentence says to "
+                + "use it. The scenario stays as a regression guard against a model that starts "
+                + "ignoring the block."),
+            new Guard(MemoryPrompts.MemoriesAreNotRestated.Id,
+                "Demonstrated with the same deletion and stayed green: the reply applied the "
+                + "preference without reading it back. Restating a memory is not something this model "
+                + "does on a one-sentence voice turn, so the prose defends against a habit it lacks.")
+        ],
         Policy = new RunPolicy(2, 3),
         // This family's canary: a fact reaching the model and being used without being spoken is
         // the half of memory that every other scenario here depends on.
@@ -104,9 +115,16 @@ public static class MemoryScenarios
             // turn, so what the reply must not do is announce either half as bookkeeping.
             NeverSays = ["memoria", "memory", "recuerd"]
         },
-        // No citation: demonstrated with the correction bullet deleted from the prompt, then from
-        // the tool description as well, then with the whole 'When to forget' section gone. The
-        // employer memory went every time. Deleting a corrected fact is the model's own default.
+        Guards =
+        [
+            new Guard(MemoryPrompts.CorrectionDeletesTheStaleFact.Id,
+                "Demonstrated on 2026-08-19 in three steps, all green: with the correction bullet "
+                + "deleted from the prompt, then with it deleted from the forget tool's description "
+                + "too, then with the whole 'When to forget' section gone. 'Ya no trabajo en Acme' "
+                + "still deleted the employer memory and left the one beside it. Proactive deletion on "
+                + "a correction is this model's default, so the scenario is a guard rather than "
+                + "evidence — and the wording is worth keeping for a model that has no such default.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -143,8 +161,13 @@ public static class MemoryScenarios
         ],
         CallCeiling = 2,
         Reply = new ReplyExpectation { NeverSays = ["memory_forget", "memoria"] },
-        // No citation: with the whole 'When to forget' section deleted the flat was still
-        // forgotten. What teaches this is the tool's description, which cannot be deleted.
+        Guards =
+        [
+            new Guard(MemoryPrompts.ExplicitForgetIsObeyed.Id,
+                "Demonstrated on 2026-08-19 with the whole 'When to forget' section deleted: 'olvida "
+                + "lo del piso' still removed exactly that memory. The tool's own description says "
+                + "what it is for, and a tool cannot be offered without one.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 

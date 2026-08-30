@@ -21,14 +21,21 @@ public class ClaimCoverageTests
             .Concat(scenario.IfDelegated.SelectMany(condition =>
                 condition.Claims.Concat(condition.Judged.Select(check => check.Claim))));
 
+    // A guard covers without citing: the scenario asserts the behaviour every run, it just
+    // never demonstrated the prose red.
+    private static HashSet<string> Guarded() =>
+        EvalSuite.All.SelectMany(s => s.Guards.Select(guard => guard.Claim)).ToHashSet();
+
     [Fact]
     public void EveryDeclaredClaim_HasEitherAScenarioOrAnExemption()
     {
         var cited = Cited();
+        var guarded = Guarded();
 
         var uncovered = PromptManifest.Claims
             .Select(claim => claim.Id)
-            .Where(id => !cited.Contains(id) && !ClaimExemptions.Reasons.ContainsKey(id))
+            .Where(id => !cited.Contains(id) && !guarded.Contains(id)
+                && !ClaimExemptions.Reasons.ContainsKey(id))
             .ToList();
 
         uncovered.ShouldBeEmpty(
@@ -72,6 +79,35 @@ public class ClaimCoverageTests
     }
 
     [Fact]
+    public void EveryGuard_NamesADeclaredClaim()
+    {
+        var declared = PromptManifest.Claims.Select(c => c.Id).ToHashSet();
+
+        var invented = EvalSuite.All
+            .SelectMany(s => s.Guards.Select(guard => (s.Name, guard.Claim)))
+            .Where(g => !declared.Contains(g.Claim))
+            .Select(g => $"'{g.Name}' guards '{g.Claim}'")
+            .ToList();
+
+        invented.ShouldBeEmpty(
+            "a scenario guards a claim no section declares: " + string.Join(", ", invented));
+    }
+
+    [Fact]
+    public void EveryGuard_RecordsItsDemonstration()
+    {
+        // The note is the record of how the demonstration went — why this claim asserts without
+        // citing. A blank one loses that the same way a blank exemption reason would.
+        var unrecorded = EvalSuite.All
+            .SelectMany(s => s.Guards
+                .Where(guard => string.IsNullOrWhiteSpace(guard.Note))
+                .Select(guard => $"'{s.Name}' guards '{guard.Claim}' with no note"))
+            .ToList();
+
+        unrecorded.ShouldBeEmpty(string.Join(", ", unrecorded));
+    }
+
+    [Fact]
     public void EveryExemption_NamesADeclaredClaim_AndGivesAReason()
     {
         var declared = PromptManifest.Claims.Select(c => c.Id).ToHashSet();
@@ -86,8 +122,10 @@ public class ClaimCoverageTests
     [Fact]
     public void NoClaim_IsBothCoveredAndExcused()
     {
-        // The exemption list is the backlog. A claim that has a scenario and is still excused
-        // means the backlog is lying about how much is left.
-        ClaimExemptions.Reasons.Keys.Where(Cited().Contains).ShouldBeEmpty();
+        // The exemption list is the backlog — the claims no scenario touches at all. An entry
+        // any scenario cites or guards means the backlog is lying about how much is left.
+        var watched = Cited().Concat(Guarded()).ToHashSet();
+
+        ClaimExemptions.Reasons.Keys.Where(watched.Contains).ShouldBeEmpty();
     }
 }
