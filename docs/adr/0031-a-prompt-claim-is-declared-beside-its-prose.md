@@ -1,6 +1,6 @@
 # 0031 — A prompt claim is declared beside its prose and cited by the scenario that tests it
 
-Status: accepted
+Status: accepted, amended in place on 2026-08-30 (a guard is a third coverage state — see below)
 Date: 2026-08-18
 
 ## Context
@@ -42,3 +42,41 @@ assertion.
 Adding a rule to a prompt now costs a declared claim, and either a scenario or a line in the
 exemption list. That is the friction the decision is buying: the exemption list is the backlog,
 and it is visible.
+
+## Amendment (2026-08-30) — a guard is a third coverage state
+
+The two states above turned out not to be enough. 26 of the 29 exemption entries described the
+same third thing: a scenario runs and asserts the claim's behaviour but cannot earn the citation,
+because the demonstrated-red bar was tried and deleting the prose stayed green — the behaviour is
+the model's own rather than the prompt's. Those facts lived in a static table keyed by claim id,
+a file away from both the claim and the scenario, restated on the scenario side as a comment
+ending in a hyperlink; neither statement could check the other, and every scenario change dragged
+an edit through the table.
+
+A **guard** is now the scenario's own declaration: `Scenario.Guards` lists the claims it asserts
+without evidencing, each with a mandatory note recording the demonstration. The claim id is a
+compile-time symbol, so a renamed or withdrawn claim breaks the scenario that guards it, in the
+file that guards it. More than one scenario may guard the same claim. The guard lives on the
+scenario and not on the claim because the dependency direction allows nothing else: claims are
+declared in `Domain`, scenarios in `Tests.Eval`, and a claim-side back-reference could only ever
+be prose — which is the shape being removed.
+
+Coverage becomes a precedence, not a partition: `cited > judged > conditional > guarded >
+exemption > uncovered`. A claim both cited and guarded is a truth — one scenario demonstrated
+red, another asserts the same claim as a side condition — so no test forbids the pair; the
+citation simply outranks the guard in the scorecard.
+
+The exemption list survives for what no scenario touches at all, and that list is not empty: a
+claim can be guarded *diffusely* — asserted by every scenario's exhaustive permitted set, or by
+every spoken scenario's reply limit — and owned by none, and assigning such a guard to one
+scenario would be arbitrary. Those entries stay exemptions under the kind their prose earns.
+Kinds with no entries are deleted rather than kept as documentation; a kind returns with its
+first user.
+
+"Either a scenario or a line in the exemption list" above now reads: cited, guarded, or exempted.
+Everything else stands — every claim still costs a scenario or a written reason, a citation still
+costs a demonstration red, and the exemption list is still the backlog in the open. What changed
+is that a guard is not backlog: the claim is tested every run, it just proves the model rather
+than the prompt. The exemption-versus-cited contradiction test survives shrunk, policing only the
+residual list, and `CONTEXT.md` pins **Guard** and **Exemption** so the two stop being called by
+each other's names.

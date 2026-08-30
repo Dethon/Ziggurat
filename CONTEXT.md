@@ -668,6 +668,19 @@ definition, together with everything that must hold afterwards. It names the
 claims it exercises, so the claim and its witness are linked in both directions.
 _Avoid_: test case, eval, example, fixture
 
+**Guard**:
+A scenario's declaration that it asserts a claim it cannot evidence: the behaviour
+held with the teaching prose deleted, so passing proves the model rather than the
+prose. A guarded claim is tested — the scenario reddens if the behaviour drifts —
+but is never cited.
+_Avoid_: regression guard, exemption, watch
+
+**Exemption**:
+A declared claim nothing tests, with the reason as a kind the scorecard can count.
+It is the backlog in the open: closing one costs whatever its kind names, and a
+claim any scenario touches — citing or guarding — never sits here.
+_Avoid_: waiver, exclusion, skip list
+
 **Recording**:
 What one run of a scenario produced: every tool invocation in sequence with its
 arguments and result, and the final reply. Every assertion reads the recording and
