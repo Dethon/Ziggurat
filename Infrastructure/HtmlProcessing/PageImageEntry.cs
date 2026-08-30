@@ -46,11 +46,14 @@ public static partial class PageImageEntry
         Width: Side(img, WidthAttribute),
         Height: Side(img, HeightAttribute));
 
-    // The ref the page assigned, where it assigned one. Falls back to the extractor's own count so
-    // hand-written HTML -- every unit test, and any path that never met a browser -- still lists
-    // its images rather than going silent.
-    public static string RefOn(IElement img, int fallbackNumber) =>
-        img.GetAttribute(RefAttribute) is { Length: > 0 } stamped ? stamped : RefFor(fallbackNumber);
+    // The entry a picture gets, or null when it gets none. The stamped ref is the only source of
+    // an entry's ref: the fetch resolves refs against the live DOM, so a number invented here --
+    // the old fallback counter, which only hand-written test markup ever took -- would be a
+    // handle the model acts on and is refused by. An unstamped picture is a non-survivor.
+    public static string? EntryFor(IHtmlImageElement img) =>
+        LabelFor(img) is { } label && img.GetAttribute(RefAttribute) is { Length: > 0 } stamped
+            ? Write(stamped, label)
+            : null;
 
     // Where a body cut short must back up to, so it never ends mid-entry. -1 when the tail carries
     // no partial entry at all.
