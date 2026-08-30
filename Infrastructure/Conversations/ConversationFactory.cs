@@ -9,9 +9,10 @@ public sealed class ConversationFactory(IThreadStateStore store, TimeProvider ti
 {
     public async Task<ConversationCreation> CreateAsync(CreateConversationParams p, CancellationToken ct = default)
     {
-        var identity = ConversationIdGenerator.Create();
+        var topicId = ConversationIdGenerator.NewTopicId();
+        var identity = ConversationIdGenerator.CreateFor(topicId);
         var topic = new TopicMetadata(
-            identity.TopicId,
+            topicId,
             identity.ChatId,
             identity.ThreadId,
             p.AgentId,

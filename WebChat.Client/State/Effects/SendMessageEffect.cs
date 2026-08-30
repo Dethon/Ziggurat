@@ -120,10 +120,11 @@ public sealed class SendMessageEffect : IDisposable
         if (string.IsNullOrEmpty(action.TopicId))
         {
             var topicName = TopicName(action.Message, attached);
-            var identity = ConversationIdGenerator.Create();
+            var topicId = ConversationIdGenerator.NewTopicId();
+            var identity = ConversationIdGenerator.CreateFor(topicId);
             topic = new StoredTopic
             {
-                TopicId = identity.TopicId,
+                TopicId = topicId,
                 ChatId = identity.ChatId,
                 ThreadId = identity.ThreadId,
                 AgentId = state.SelectedAgentId!,

@@ -13,9 +13,10 @@ public sealed class SessionService : ISessionService
 
     public Task<string> CreateConversationAsync(CreateConversationParams p)
     {
-        var id = ConversationIdGenerator.Create();
-        StartSession(id.TopicId, p.AgentId, id.ChatId, id.ThreadId, spaceSlug: "default", topicName: p.TopicName);
-        return Task.FromResult(id.ConversationId);
+        var topicId = ConversationIdGenerator.NewTopicId();
+        var identity = ConversationIdGenerator.CreateFor(topicId);
+        StartSession(topicId, p.AgentId, identity.ChatId, identity.ThreadId, spaceSlug: "default", topicName: p.TopicName);
+        return Task.FromResult(identity.ConversationId);
     }
 
     public bool StartSession(string topicId, string agentId, long chatId, long threadId, string? spaceSlug = null, string? topicName = null)
