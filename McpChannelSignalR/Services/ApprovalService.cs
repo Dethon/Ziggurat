@@ -19,7 +19,19 @@ public sealed class ApprovalService(
 
     public async Task<string> RequestApprovalAsync(RequestApprovalParams p)
     {
-        var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId) ?? p.ConversationId;
+        // A question nobody can see must not hold the turn (ADR-0035). With no live session the
+        // prompt renders to nobody, and a registration under the unresolved spelling could never
+        // be answered — not even deleting the topic released it. Deny at once, naming the reason,
+        // so the run continues and the persisted reply explains itself.
+        var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId);
+        if (topicId is null)
+        {
+            logger.LogDebug(
+                "RequestApproval: no live session for conversation {ConversationId}; denying immediately",
+                p.ConversationId);
+            return "rejected: no live session to approve in";
+        }
+
         var requests = p.Requests;
         var approvalId = Guid.NewGuid().ToString("N")[..8];
 

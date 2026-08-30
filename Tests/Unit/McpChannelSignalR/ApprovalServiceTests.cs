@@ -72,6 +72,40 @@ public class ApprovalServiceTests : IDisposable
         result.ShouldBe("rejected");
     }
 
+    // ADR-0035: a question nobody can see must not hold the turn. A request-mode approval with
+    // no live session used to register under a value matching nothing and await an answer no
+    // deletion could release; it is denied at once, naming the reason.
+    [Fact]
+    public async Task RequestApprovalAsync_NoLiveSession_IsDeniedImmediatelyWithTheReason()
+    {
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "tool", new Dictionary<string, object?>())];
+
+        var approvalTask = _sut.RequestApprovalAsync(
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
+
+        // Bounded by the test, not the code: today this never completes.
+        var completed = await Task.WhenAny(approvalTask, Task.Delay(TimeSpan.FromSeconds(5)));
+
+        completed.ShouldBeSameAs(approvalTask);
+        (await approvalTask).ShouldBe("rejected: no live session to approve in");
+    }
+
+    [Fact]
+    public async Task RequestApprovalAsync_NoLiveSession_LeavesNoPendingApprovalBehind()
+    {
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "tool", new Dictionary<string, object?>())];
+
+        var approvalTask = _sut.RequestApprovalAsync(
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
+        await Task.WhenAny(approvalTask, Task.Delay(TimeSpan.FromSeconds(5)));
+
+        // Nothing to leak and nothing for the cancellation sweep to miss — under the old
+        // coercion the request registered itself under the conversation spelling.
+        _sut.GetPendingApprovalForTopic("100:200").ShouldBeNull();
+    }
+
     // ADR-0035: an auto-approval notification into a conversation nobody has open renders
     // nothing, costs nothing and blocks nothing — and never warns.
     [Fact]
