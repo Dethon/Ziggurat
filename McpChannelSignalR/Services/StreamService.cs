@@ -48,7 +48,6 @@ public sealed class StreamService(
         {
             ReplyContentType.Text => new ChatStreamMessage { Content = content, MessageId = effectiveMessageId },
             ReplyContentType.Reasoning => new ChatStreamMessage { Reasoning = content, MessageId = effectiveMessageId },
-            ReplyContentType.ToolCall => new ChatStreamMessage { ToolCalls = ToolCallFormatter.Format(content), MessageId = effectiveMessageId },
             ReplyContentType.Error => new ChatStreamMessage { Error = content, IsComplete = true },
             ReplyContentType.StreamComplete => new ChatStreamMessage { IsComplete = true, MessageId = effectiveMessageId },
             _ => new ChatStreamMessage { Content = content, MessageId = effectiveMessageId }

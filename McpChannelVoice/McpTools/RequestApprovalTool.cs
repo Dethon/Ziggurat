@@ -36,7 +36,6 @@ public sealed class RequestApprovalTool
         var tts = services.GetRequiredService<ITextToSpeech>();
         var settings = services.GetRequiredService<VoiceSettings>();
         var metrics = services.GetRequiredService<IMetricsPublisher>();
-        var accumulator = services.GetRequiredService<ReplyTextAccumulator>();
 
         var satelliteId = manager.ResolveSatelliteId(p.ConversationId);
         var session = satelliteId is null ? null : sessions.Get(satelliteId);
@@ -47,15 +46,10 @@ public sealed class RequestApprovalTool
 
         if (p.Mode == ApprovalMode.Notify)
         {
-            // The tool name itself is never narrated. But if the agent wrote an
-            // acknowledgement before this auto-approved tool call, speak it now so the
-            // user hears that work is happening while the tool runs (instead of it being
-            // buffered with the final answer until the turn completes).
-            var pending = accumulator.Flush(p.ConversationId);
-            if (!string.IsNullOrWhiteSpace(pending))
-            {
-                Speak(session, pending, tts, settings, AnnouncePriority.Normal);
-            }
+            // The tool name itself is never narrated. An acknowledgement the agent wrote before
+            // this auto-approved call is the turn's preamble, and the preamble is the reply
+            // speaker's to deliver — once per turn, under its own playback kind.
+            services.GetRequiredService<ReplySpeaker>().SpeakPreamble(session, p.ConversationId);
             return "notified";
         }
 
@@ -108,19 +102,6 @@ public sealed class RequestApprovalTool
         }
 
         return "rejected";
-    }
-
-    private static void Speak(
-        SatelliteSession session, string text, ITextToSpeech tts, VoiceSettings settings,
-        AnnouncePriority priority = AnnouncePriority.High)
-    {
-        var options = new SynthesisOptions { Voice = session.ResolveVoice(settings) };
-        var job = new PlaybackJob(
-            Label: $"approval:{session.SatelliteId}",
-            Kind: PlaybackKind.Approval,
-            Priority: priority,
-            Audio: tts.SynthesizeAsync(text, options, default));
-        session.Playback.Enqueue(job);
     }
 
     private static async Task<bool> SpeakAndAwaitAsync(

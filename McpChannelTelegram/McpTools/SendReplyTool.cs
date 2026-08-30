@@ -49,14 +49,6 @@ public sealed class SendReplyTool
                 // Telegram doesn't show reasoning — ignore
                 return "ok";
 
-            case ReplyContentType.ToolCall:
-                await botClient.SendMessage(
-                    chatId,
-                    ToolCallFormatter.Format(p.Content),
-                    messageThreadId: threadId,
-                    cancellationToken: CancellationToken.None);
-                return "ok";
-
             case ReplyContentType.Error:
                 await SendAccumulatedAsync(botClient, accumulator, p.ConversationId, chatId, threadId);
                 await botClient.SendMessage(

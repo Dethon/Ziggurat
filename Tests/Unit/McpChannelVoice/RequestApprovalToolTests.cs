@@ -98,6 +98,8 @@ public class RequestApprovalToolTests : IDisposable
             .AddSingleton(gates)
             .AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>())
             .AddSingleton<ILogger<RequestApprovalTool>>(NullLogger<RequestApprovalTool>.Instance)
+            .AddSingleton<ILogger<ReplySpeaker>>(NullLogger<ReplySpeaker>.Instance)
+            .AddSingleton<ReplySpeaker>()
             .AddSingleton(time ?? TimeProvider.System)
             .BuildServiceProvider();
     }
@@ -412,6 +414,78 @@ public class RequestApprovalToolTests : IDisposable
         _tts.Verify(
             t => t.SynthesizeAsync("Dame un momento", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    // The acknowledgement before slow tool work is the turn's preamble, and the preamble is owed
+    // once per turn: the first tool call flushes it, mid-run narration stays buffered for the
+    // answer. The notify branch used to speak on every call.
+    [Fact]
+    public async Task NotifyMode_SecondCallOfTheTurn_KeepsNarrationBuffered()
+    {
+        _accumulator.Append(_conversationId, "Dame un momento");
+        await RequestApprovalTool.McpRun(_conversationId, ApprovalMode.Notify, [MakeRequest()], _services);
+
+        _accumulator.Append(_conversationId, "Ahora miro el termostato");
+        var result = await RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Notify, [MakeRequest()], _services);
+
+        result.ShouldBe("notified");
+        _tts.Verify(
+            t => t.SynthesizeAsync("Ahora miro el termostato", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // An acknowledgement is an acknowledgement, not an approval prompt: the queue reads the kind
+    // for its depth allowance and routing, so the cue must carry the preamble kind. The per-job
+    // error hook is the one place the queue hands the job itself back, so a throwing synthesis is
+    // how the kind is observed.
+    [Fact]
+    public async Task NotifyMode_SpeaksThePreambleUnderItsOwnPlaybackKind()
+    {
+        var session = new SatelliteSession("office-01",
+            new SatelliteConfig { Identity = "household", Room = "Office" });
+        _sessions.Register(session);
+        var conversationId = await _manager.GetOrCreateAsync(session, "agent-1", "hi", default);
+        _accumulator.Append(conversationId, "Dame un momento");
+        _tts.Setup(t => t.SynthesizeAsync("Dame un momento", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
+            .Returns(ThrowingAudio());
+
+        var seen = new TaskCompletionSource<PlaybackJob>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var pump = new CancellationTokenSource();
+        var pumpTask = session.Playback.RunAsync(
+            new PlaybackSink(
+                async (_, _) => await Task.Yield(),
+                OnError: (job, _) =>
+                {
+                    seen.TrySetResult(job);
+                    return Task.CompletedTask;
+                }),
+            pump.Token);
+
+        try
+        {
+            (await RequestApprovalTool.McpRun(conversationId, ApprovalMode.Notify, [MakeRequest()], _services))
+                .ShouldBe("notified");
+
+            var job = await seen.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            job.Kind.ShouldBe(PlaybackKind.Preamble);
+        }
+        finally
+        {
+            pump.Cancel();
+            try
+            { await pumpTask; }
+            catch { /* OCE on teardown */ }
+        }
+    }
+
+    private static async IAsyncEnumerable<AudioChunk> ThrowingAudio()
+    {
+        await Task.Yield();
+        throw new InvalidOperationException("Wyoming TTS error: piper crashed");
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
     }
 
     [Fact]
