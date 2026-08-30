@@ -29,8 +29,17 @@ public sealed class StreamService(
         var isComplete = p.IsComplete;
         var messageId = p.MessageId;
 
-        // Resolve conversationId ("chatId:threadId") to topicId (client-generated UUID)
-        var topicId = sessionService.GetTopicIdByConversationId(conversationId) ?? conversationId;
+        // A turn with no live session delivers by persistence alone (ADR-0035): streaming is a
+        // live-audience concern, the agent's history store already holds the reply, and the
+        // browser catches up from it. The miss is designed, so it is quiet.
+        var topicId = sessionService.GetTopicIdByConversationId(conversationId);
+        if (topicId is null)
+        {
+            logger.LogDebug(
+                "WriteReply: no live session for conversation {ConversationId}; delivering by persistence alone",
+                conversationId);
+            return;
+        }
 
         // Use agent-provided messageId (from AgentResponseUpdate.MessageId) for proper bubble grouping
         var effectiveMessageId = messageId ?? topicId;
@@ -127,7 +136,9 @@ public sealed class StreamService(
         // ReSharper disable once InconsistentlySynchronizedField
         if (!_responseChannels.TryGetValue(topicId, out var channel))
         {
-            logger.LogWarning("WriteMessage: topicId {TopicId} not found in _responseChannels", topicId);
+            // No subscriber means no stream was ever created — the same designed miss as above,
+            // one map further down.
+            logger.LogDebug("WriteMessage: topicId {TopicId} not found in _responseChannels", topicId);
             return;
         }
 

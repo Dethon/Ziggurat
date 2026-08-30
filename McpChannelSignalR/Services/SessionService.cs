@@ -24,7 +24,7 @@ public sealed class SessionService : ISessionService
         var session = new ChannelSession(agentId, chatId, threadId, spaceSlug, topicName);
         _sessions[topicId] = session;
         _chatToTopic[chatId] = topicId;
-        _conversationToTopic[$"{chatId}:{threadId}"] = topicId;
+        _conversationToTopic[session.Identity.ConversationId] = topicId;
         return true;
     }
 
@@ -41,7 +41,7 @@ public sealed class SessionService : ISessionService
         }
 
         _chatToTopic.TryRemove(session.ChatId, out _);
-        _conversationToTopic.TryRemove($"{session.ChatId}:{session.ThreadId}", out _);
+        _conversationToTopic.TryRemove(session.Identity.ConversationId, out _);
     }
 
     public string? GetTopicIdByChatId(long chatId)

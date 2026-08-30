@@ -14,6 +14,7 @@ public class ApprovalServiceTests : IDisposable
     private readonly SessionService _sessionService = new();
     private readonly StreamService _streamService;
     private readonly Mock<IHubNotificationSender> _hubSender = new();
+    private readonly Mock<ILogger<StreamService>> _streamLogger = new();
     private readonly ApprovalService _sut;
 
     public ApprovalServiceTests()
@@ -21,7 +22,7 @@ public class ApprovalServiceTests : IDisposable
         _streamService = new StreamService(
             _sessionService,
             new Mock<IPushNotificationService>().Object,
-            new Mock<ILogger<StreamService>>().Object);
+            _streamLogger.Object);
 
         _sut = new ApprovalService(
             _streamService,
@@ -69,6 +70,26 @@ public class ApprovalServiceTests : IDisposable
 
         var result = await approvalTask;
         result.ShouldBe("rejected");
+    }
+
+    // ADR-0035: an auto-approval notification into a conversation nobody has open renders
+    // nothing, costs nothing and blocks nothing — and never warns.
+    [Fact]
+    public async Task NotifyAutoApprovedAsync_NoLiveSession_ReturnsWithoutWritingOrWarning()
+    {
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "tool", new Dictionary<string, object?>())];
+
+        await _sut.NotifyAutoApprovedAsync(
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Notify, Requests = requests });
+
+        _streamLogger.Verify(l => l.Log(
+            LogLevel.Warning,
+            It.IsAny<EventId>(),
+            It.IsAny<It.IsAnyType>(),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Never);
+        _streamService.GetStreamState("100:200").ShouldBeNull();
     }
 
     [Fact]

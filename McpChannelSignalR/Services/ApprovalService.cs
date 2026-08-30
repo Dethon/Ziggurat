@@ -58,10 +58,21 @@ public sealed class ApprovalService(
         }
     }
 
-    public Task NotifyAutoApprovedAsync(RequestApprovalParams p) =>
-        WriteToolCallsAsync(
-            sessionService.GetTopicIdByConversationId(p.ConversationId) ?? p.ConversationId,
-            p.Requests);
+    public Task NotifyAutoApprovedAsync(RequestApprovalParams p)
+    {
+        // A notification nobody can see costs nothing and blocks nothing (ADR-0035): the tool
+        // calls it would render are in the persisted reply already.
+        var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId);
+        if (topicId is null)
+        {
+            logger.LogDebug(
+                "NotifyAutoApproved: no live session for conversation {ConversationId}; nothing to render to",
+                p.ConversationId);
+            return Task.CompletedTask;
+        }
+
+        return WriteToolCallsAsync(topicId, p.Requests);
+    }
 
     // The one route a tool call reaches the browser by. It is buffered with the rest of the reply,
     // so a reload replays it and it arrives in order; a hub push beside it would be the same text a

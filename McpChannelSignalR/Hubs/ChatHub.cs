@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
@@ -136,7 +137,7 @@ public sealed class ChatHub(
         }
 
         return attachmentService.MintUpload(
-            topicId, $"{session.ChatId}:{session.ThreadId}", CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
+            topicId, session.Identity, CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
     }
 
     // Minted when the transcript renders an attachment, not published: one upload store serves
@@ -218,7 +219,7 @@ public sealed class ChatHub(
         }
 
         var userId = GetRegisteredUserId() ?? "Anonymous";
-        var conversationId = $"{session.ChatId}:{session.ThreadId}";
+        var conversationId = session.Identity.ConversationId;
 
         var (broadcastChannel, linkedToken) =
             streamService.GetOrCreateStream(topicId, message, userId, cancellationToken);
@@ -306,7 +307,7 @@ public sealed class ChatHub(
         }
 
         var userId = GetRegisteredUserId() ?? "Anonymous";
-        var conversationId = $"{session.ChatId}:{session.ThreadId}";
+        var conversationId = session.Identity.ConversationId;
 
         if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
         {
@@ -404,7 +405,7 @@ public sealed class ChatHub(
         {
             await notificationEmitter.EmitCancelAsync(new ChannelCancelNotification
             {
-                ConversationId = $"{session.ChatId}:{session.ThreadId}",
+                ConversationId = session.Identity.ConversationId,
                 AgentId = session.AgentId,
                 Timestamp = DateTimeOffset.UtcNow
             });
@@ -478,9 +479,10 @@ public sealed class ChatHub(
 
     public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
     {
+        var identity = new ConversationIdentity(chatId, threadId);
         await notificationEmitter.EmitCancelAsync(new ChannelCancelNotification
         {
-            ConversationId = $"{chatId}:{threadId}",
+            ConversationId = identity.ConversationId,
             AgentId = agentId,
             Timestamp = DateTimeOffset.UtcNow
         });
@@ -489,12 +491,12 @@ public sealed class ChatHub(
         streamService.CancelStream(topicId);
         await approvalService.CancelPendingApprovalsForTopicAsync(topicId);
 
-        await threadStore.DeleteAsync(new AgentKey($"{chatId}:{threadId}", agentId));
+        await threadStore.DeleteAsync(new AgentKey(identity.ConversationId, agentId));
         await threadStore.DeleteTopicAsync(agentId, chatId, topicId);
 
         // Removing a conversation removes what was in it. The sweep would reach these eventually;
         // deleting a topic is the person saying they want them gone now.
-        attachmentService.DeleteConversation($"{chatId}:{threadId}");
+        attachmentService.DeleteConversation(identity.ConversationId);
 
         // Said to the space rather than to this caller: another tab holds a row for a
         // conversation that no longer exists, and paging only ever fetches backwards, so nothing

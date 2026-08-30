@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
@@ -23,7 +24,7 @@ namespace Tests.Unit.McpChannelSignalR;
 public sealed class AttachmentEndpointTests : IAsyncLifetime
 {
     private const string TopicId = "topic-1";
-    private const string ConversationId = "7:42";
+    private static readonly ConversationIdentity ConversationId = new(7, 42);
 
     private readonly string _root = Path.Combine(
         Path.GetTempPath(), $"attachments-{Guid.NewGuid():N}");
@@ -124,7 +125,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Fact]
     public async Task AnUploadWithATicketForAnotherTopic_IsRefused()
     {
-        var ticket = _tickets.MintUpload("some-other-topic", "9:9", "default");
+        var ticket = _tickets.MintUpload("some-other-topic", new ConversationIdentity(9, 9), "default");
 
         var response = await UploadAsync(ticket.Token, TopicId, "x"u8.ToArray(), "photo.png", "image/png");
 
