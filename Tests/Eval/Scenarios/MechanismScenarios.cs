@@ -153,7 +153,7 @@ public static class MechanismScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.Path(FakeHomeAssistant.AlarmsDirectory),
+                    Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
                     Arg.Matches("command", @"^create_event\.sh\b"),
                     Arg.Matches("command", @"2026-08-18[ T]07:00"),
                     // The description's JSON shape: without insistent the event is a one-shot
@@ -169,7 +169,7 @@ public static class MechanismScenarios
         Permitted =
         [
             .. CallPermission.Looking("/ha*"),
-            new CallPermission(EvalTools.Exec, FakeHomeAssistant.AlarmsDirectory)
+            new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
         CallCeiling = 6,
         // What is cited is the description's shape: target and insistent are only in the prose,
@@ -211,7 +211,7 @@ public static class MechanismScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.Path(FakeHomeAssistant.AlarmsDirectory),
+                    Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
                     Arg.Matches("command", @"^create_event\.sh\b"),
                     Arg.Matches("command", @"2026-08-18[ T]02:00")
                 ]
@@ -220,7 +220,7 @@ public static class MechanismScenarios
         Permitted =
         [
             .. CallPermission.Looking("/ha*"),
-            new CallPermission(EvalTools.Exec, FakeHomeAssistant.AlarmsDirectory)
+            new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
         CallCeiling = 6,
         Claims = [TimerPrompt.DurationCappedAtFourHours.Id],
