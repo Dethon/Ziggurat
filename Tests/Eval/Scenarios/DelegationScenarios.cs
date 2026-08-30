@@ -51,8 +51,17 @@ public static class DelegationScenarios
         Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
         Tier = EvalTier.Smoke,
-        // No citation: with the do-it-yourself bullet deleted the model still read the status
-        // itself. Delegating a one-call lookup is not a temptation it has.
+        Guards =
+        [
+            new Guard(SubAgentPrompt.ASingleCallIsDoneInPlace.Id,
+                "Demonstrated on 2026-08-18 with the do-it-yourself bullet deleted: the model still read "
+                + "the timer's status itself rather than handing it to a worker. The scenario stays as a "
+                + "guard — the same model delegates readily in other shapes, so this is worth watching. "
+                + "Watching paid on 2026-08-20: a flake dump showed the invented-station scenario handing "
+                + "the play action itself to a worker and voicing the canned 'Hecho' as success — a false "
+                + "confirmation the reply checks alone could not catch. The single-action bullet in the "
+                + "prose is the answer to that run.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -184,10 +193,22 @@ public static class DelegationScenarios
             new CallPermission(EvalTools.WebBrowse)
         ],
         // Either honest shape fits with one call of slack; delegating and then re-running the
-        // whole research (the redo reflex the trust-the-result rule targets) does not. A partial
-        // redo — one stray search after delegating — still fits, which is why the
-        // the-result-is-not-redone claim guards here rather than being cited.
+        // whole research (the redo reflex the trust-the-result rule targets) does not.
         CallCeiling = 4,
+        Guards =
+        [
+            new Guard(SubAgentPrompt.TheResultIsNotRedone.Id,
+                "Written on 2026-08-20 against an observed redo reflex: nine armed "
+                + "runs of the research scenario showed the model delegating and then searching, "
+                + "fetching the page twice, and browsing the very url its worker cited. The research "
+                + "scenario's ceiling now leaves no room for that wholesale redo, but a partial one — "
+                + "a single stray search after delegating — still fits under it, so the ceiling "
+                + "guards rather than cites. A citation needs a conditional call-forbiddance (if a "
+                + "delegation happened, no web call may follow it) that IfDelegated does not "
+                + "express: a delegation is recorded without a sequence, so 'after' is not "
+                + "decidable, and forbidding the calls outright on delegating runs would red the "
+                + "stray search the ceiling deliberately tolerates.")
+        ],
         Reply = new ReplyExpectation
         {
             MaxSentences = 5,

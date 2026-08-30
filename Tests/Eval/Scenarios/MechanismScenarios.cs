@@ -46,10 +46,23 @@ public static class MechanismScenarios
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
-        // No deterministic citation: both rules were deleted from every prompt that teaches them
-        // and this still passed. It runs as a regression guard rather than as evidence — see
-        // ClaimExemptions. The judged check is separate: whether the id is descriptive is a
-        // judgement about a word, and this is the scenario whose create call carries one.
+        Guards =
+        [
+            new Guard(TimerPrompt.DurationIsACountdown.Id,
+                "Demonstrated twice and stayed green both times, most recently on 2026-08-18 with all three "
+                + "mounts hosted: deleting the countdown rule from the timer, Home Assistant and scheduling "
+                + "prompts still left 'recuérdame en diez minutos' in /timers. The timers mount description "
+                + "teaches it too, and deleting that takes the create path with it — so this claim cannot be "
+                + "falsified by deleting prose. The scenario is kept as a regression guard against a model "
+                + "that stops discriminating; it just cannot earn the citation."),
+            new Guard(TimerPrompt.SchedulesAreNeverHumanReminders.Id,
+                "Demonstrated on 2026-08-18 with the rule deleted from all three prompts: a ten-minute "
+                + "reminder still went to /timers rather than /schedules. Nothing tempts the model into "
+                + "/schedules for a human reminder, so the negative half of the discrimination has no "
+                + "turn that witnesses it yet.")
+        ],
+        // The judged check is separate: whether the id is descriptive is a judgement about a
+        // word, and this is the scenario whose create call carries one.
         Judged =
         [
             new JudgedCheck(TimerPrompt.IdIsDescriptive.Id,
@@ -107,8 +120,14 @@ public static class MechanismScenarios
             new CallPermission(EvalTools.Info, "/ha*")
         ],
         CallCeiling = 6,
-        // No citation, for the same reason: with the two-step choice deleted from all three
-        // prompts the model still worked out that a timer cannot switch anything off.
+        Guards =
+        [
+            new Guard(TimerPrompt.AgentActsIsAScheduledTask.Id,
+                "Demonstrated on 2026-08-18: with the two-step choice deleted from the timer, scheduling and "
+                + "Home Assistant prompts, 'apaga el aire dentro de una hora' still became a /schedules "
+                + "one-shot at the right absolute time. The model works out on its own that a timer only "
+                + "speaks, so the prose is redundant on this turn shape.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -153,11 +172,17 @@ public static class MechanismScenarios
             new CallPermission(EvalTools.Exec, FakeHomeAssistant.AlarmsDirectory)
         ],
         CallCeiling = 6,
-        // Which calendar carries no citation — the entity is called Assistant Alarms, which
-        // teaches what the prose teaches and cannot be deleted without deleting the calendar.
         // What is cited is the description's shape: target and insistent are only in the prose,
         // and an event without them is an announce pretending to be an alarm.
         Claims = [HomeAssistantPrompt.AlarmCarriesTargetAndInsistent.Id],
+        Guards =
+        [
+            new Guard(TimerPrompt.ClockTimeIsACalendarAlarm.Id,
+                "Demonstrated on 2026-08-18 with the rule deleted from the timer prompt, the Home Assistant "
+                + "prompt and the timers mount description: 'despiértame mañana a las siete' still went to "
+                + "the alarms calendar. The calendar entity is called Assistant Alarms, which teaches the "
+                + "same thing and cannot be deleted without deleting the calendar.")
+        ],
         Policy = new RunPolicy(2, 3),
         // This family's canary: the three-way choice on the one turn where the wrong answer is a
         // countdown that a restart would silently lose.
@@ -233,8 +258,14 @@ public static class MechanismScenarios
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
         CallCeiling = 4,
-        // No citation: the office won even with the rule deleted from the prompt and the mount.
-        // A turn whose decoration names a room is answered with that room by default.
+        Guards =
+        [
+            new Guard(TimerPrompt.VoiceTargetsTheSpeakingRoom.Id,
+                "Demonstrated on 2026-08-18 with the rule deleted from the prompt and the mount, on a turn "
+                + "where the words point at another room (pasta, asked from the office): the model still "
+                + "targeted the office. Targeting the speaking room is its default whenever the decorated "
+                + "turn names a room, so nothing short of removing the room from the turn discriminates.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 

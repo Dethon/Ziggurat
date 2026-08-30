@@ -54,8 +54,14 @@ public static class HomeAssistantScenarios
         ],
         Changes = [new StateChange(FakeHomeAssistant.AirConditionerEntityId, "on")],
         CallCeiling = 5,
-        // No citation: the Scope paragraph was deleted and this still passed. What earns its place
-        // is the diff, which is the only thing in the suite that can see a cascade.
+        Guards =
+        [
+            new Guard(HomeAssistantPrompt.ExactlyWhatWasAsked.Id,
+                "Demonstrated on 2026-08-18 with the whole Scope paragraph deleted: 'enciende el aire' "
+                + "still turned the air conditioning on and touched nothing else. Doing only what was "
+                + "asked is the model's default here, so the scenario runs as a regression guard and the "
+                + "state diff it introduced is what actually earns its place.")
+        ],
         Policy = new RunPolicy(2, 3),
         Tier = EvalTier.Smoke
     };
@@ -101,8 +107,13 @@ public static class HomeAssistantScenarios
             new StateChange($"{FakeHomeAssistant.AirConditionerEntityId}#temperature", "22")
         ],
         CallCeiling = 5,
-        // No citation, for the same reason: with the never-re-read rule gone the model still did
-        // not check its own work.
+        Guards =
+        [
+            new Guard(HomeAssistantPrompt.ExitCodeIsTheConfirmation.Id,
+                "Demonstrated on 2026-08-18 with the never-re-read rule deleted from both places it is "
+                + "written: the model set the temperature and stopped. It does not check its own work "
+                + "unprompted, so the prose defends against a habit this model does not have.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 

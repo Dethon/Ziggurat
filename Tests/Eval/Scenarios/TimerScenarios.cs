@@ -13,7 +13,7 @@ public static class TimerScenarios
 
     // The tracer bullet: one voice turn, one countdown, at the path the contract names. It cites
     // one claim rather than the three it looks like it exercises — the other two were demonstrated
-    // and stayed green without their prose, so they are exemptions with that finding written down
+    // and stayed green without their prose, so they are guards declared by the mechanism scenarios
     // rather than citations this scenario cannot support.
     public static Scenario PastaTimer => new()
     {

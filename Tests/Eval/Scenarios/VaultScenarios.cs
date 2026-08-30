@@ -64,10 +64,21 @@ public static class VaultScenarios
             new FileExpectation { Path = $"{EvalVault.Mount}/.obsidian/workspace.json", Unchanged = true }
         ],
         CallCeiling = 6,
-        // No deterministic citation: both syntax rules were deleted from the prompt and the note
-        // came out intact anyway. The scenario stays because a model that starts tidying links
-        // would be caught by nothing else, and the file's own text is the only place that shows
-        // it. The judged check reads the diff itself: the substring assertions above would pass a
+        Guards =
+        [
+            new Guard(VaultPrompt.WikilinksAreNeverFixed.Id,
+                "Demonstrated on 2026-08-18 with the wikilink rule deleted: the edit landed and every "
+                + "link came out untouched. This model does not tidy syntax it was not asked about, so "
+                + "the scenario guards against a future one rather than evidencing the prose."),
+            new Guard(VaultPrompt.EmbedsBlockIdsAndCalloutsSurvive.Id,
+                "Demonstrated on 2026-08-18 with the embed, block-id, tag and callout bullets deleted: "
+                + "an append left all four alone. Appending is a surgical edit by nature, so witnessing "
+                + "this needs a turn that rewrites the middle of a note."),
+            new Guard(VaultPrompt.ConfigurationIsOffLimits.Id,
+                "Asserted as a side condition of the edit scenario — the configuration files must come "
+                + "out unchanged — but no scenario's subject is a turn that tempts the agent into them.")
+        ],
+        // The judged check reads the diff itself: the substring assertions above would pass a
         // whole-file rewrite that preserved every listed piece of syntax.
         Judged =
         [
@@ -151,8 +162,16 @@ public static class VaultScenarios
         ],
         Permitted = [.. CallPermission.Looking("/vault*")],
         CallCeiling = 6,
-        // No citation: with the fit-into-the-tree bullet deleted the recipe still landed in
-        // Cocina. A folder called Cocina holding two recipes is its own instruction.
+        Guards =
+        [
+            new Guard(VaultPrompt.NewNoteFitsTheTree.Id,
+                "Demonstrated on 2026-08-18 with the fit-into-the-tree bullet deleted: the recipe still "
+                + "landed in Cocina beside the other two. A folder whose contents match the note is a "
+                + "stronger instruction than the sentence telling the model to look for one."),
+            new Guard(VaultPrompt.MarkdownIsTheNoteFormat.Id,
+                "The create scenario pins a .md path, but as part of where the note lands rather than as "
+                + "a choice between accepted formats; a turn that tempts another extension is not written.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 

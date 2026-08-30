@@ -73,10 +73,16 @@ public static class WebScenarios
             MaxSentences = 2,
             Mentions = [new SpokenValue("the resting time", "90", "noventa")]
         },
-        // No citation. Searching is forced by the fixture rather than by the prose — a loopback
-        // port cannot be guessed — and the two rules about where the answer comes from were both
-        // deleted without changing the answer. See ClaimExemptions.
-
+        // No citation: searching is forced by the fixture rather than by the prose — a loopback
+        // port cannot be guessed.
+        Guards =
+        [
+            new Guard(WebBrowsingPrompt.RawContentIsNeverDumped.Id,
+                "Asserted as a side condition on both halves now: the spoken research scenario is "
+                + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "
+                + "against a thirty-thousand-character page. No scenario's subject is the dumping "
+                + "itself, so it guards rather than cites.")
+        ],
         Policy = new RunPolicy(2, 3),
         // This family's canary: search, open, read, answer is the shape the other two vary.
         Tier = EvalTier.Smoke
@@ -115,9 +121,15 @@ public static class WebScenarios
             // diez y media" is a good answer. What cannot be missing is the time that is true.
             Mentions = [new SpokenValue("the current opening time", "10:30", "10.30")]
         },
-        // No citation: with the read-the-page paragraph and the answer-from-what-you-found bullet
-        // both deleted, the reply still carried the page's time rather than the snippet's.
-        //
+        Guards =
+        [
+            new Guard(WebBrowsingPrompt.AnswerComesFromWhatWasRead.Id,
+                "Demonstrated on 2026-08-19 with both sentences deleted — the paragraph telling it to "
+                + "read the page and the bullet telling it to answer from what it found: the museum's "
+                + "opening time still came back as the page's 10:30 rather than the snippet's 9:00. "
+                + "Preferring the page it opened over the summary it was shown is this model's own "
+                + "behaviour; the scenario stays as the guard against a model that stops.")
+        ],
         // Two of four rather than two of three, because this one is genuinely borderline: on the
         // first full run it answered "abre a las 09:00" straight from the stale snippet, twice out
         // of three. Prompt prose saying a snippet is not a source measurably changed nothing, so
@@ -192,7 +204,7 @@ public static class WebScenarios
         // Demonstrated red on both runs by deleting the interaction workflow — the snapshot=true
         // paragraph, the one-snapshot-then-chain principle and the re-snapshot recovery row. What
         // the model did instead of snapshotting was hand the whole booking to a worker, which is
-        // the same reflex the delegation exemptions record: without the prose it does not attempt
+        // the same reflex the delegation guards record: without the prose it does not attempt
         // the interaction at all.
         Claims = [WebBrowsingPrompt.RefsComeFromASnapshot.Id],
         // The reply of the one scenario that takes many steps is where narrating them tempts.
@@ -248,7 +260,7 @@ public static class WebScenarios
             new CallPermission(EvalTools.WebSearch),
             new CallPermission(EvalTools.WebBrowse)
         ],
-        // One worker tolerated, not required — the reflex the exemptions record reaches this
+        // One worker tolerated, not required — the reflex the delegation guards record reaches this
         // turn shape too, and a declined worker reads no page, so the parent still pays for the
         // tail itself. Search, open, one recovery fetch, the possible worker and one spare: a
         // model that keeps paging past the answer still breaks the ceiling, which is the "once"
@@ -279,6 +291,14 @@ public static class WebScenarios
             // The written half; the spoken half is asserted wherever a reply is Spoken, because
             // the no-unspeakables check already forbids a url there.
             WebBrowsingPrompt.UrlsAreCitedOnlyInWriting.Id
+        ],
+        Guards =
+        [
+            new Guard(WebBrowsingPrompt.RawContentIsNeverDumped.Id,
+                "Asserted as a side condition on both halves now: the spoken research scenario is "
+                + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "
+                + "against a thirty-thousand-character page. No scenario's subject is the dumping "
+                + "itself, so it guards rather than cites.")
         ],
         Policy = new RunPolicy(2, 3)
     };
@@ -318,7 +338,7 @@ public static class WebScenarios
         ],
         Ordering = [new OrderingConstraint("search", "open")],
         Permitted = [new CallPermission(EvalTools.WebSearch)],
-        // One worker tolerated, not required — the delegation reflex the exemptions record; a
+        // One worker tolerated, not required — the delegation reflex the guards record; a
         // declined worker reads no page, so the parent still has to search and open.
         MayDelegateTo = ["jonas-worker"],
         WorkerAnswer = WorkerCannotBrowse,
@@ -378,7 +398,7 @@ public static class WebScenarios
             new CallPermission(EvalTools.WebSnapshot),
             new CallPermission(EvalTools.WebAction)
         ],
-        // One worker is tolerated, not required — the delegation reflex the exemptions record
+        // One worker is tolerated, not required — the delegation reflex the guards record
         // lands here too, and a declined worker cannot produce the code, so the parent still has
         // to do the flow itself. The ceiling absorbs the reflex plus one false start; a model
         // that keeps wandering breaks it.
