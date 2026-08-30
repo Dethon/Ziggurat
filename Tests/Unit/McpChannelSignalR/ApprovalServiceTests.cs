@@ -99,10 +99,11 @@ public class ApprovalServiceTests : IDisposable
 
         var approvalTask = _sut.RequestApprovalAsync(
             new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
-        await Task.WhenAny(approvalTask, Task.Delay(TimeSpan.FromSeconds(5)));
+        var completed = await Task.WhenAny(approvalTask, Task.Delay(TimeSpan.FromSeconds(5)));
 
         // Nothing to leak and nothing for the cancellation sweep to miss — under the old
         // coercion the request registered itself under the conversation spelling.
+        completed.ShouldBeSameAs(approvalTask);
         _sut.GetPendingApprovalForTopic("100:200").ShouldBeNull();
     }
 
