@@ -310,12 +310,12 @@ public class PlaywrightWebBrowser(
         {
             // A snapshot naming its page reads that page's tab; only the ref-less, page-less form
             // falls to the tab last touched — which a parallel browse may have moved.
-            Task<SnapshotResult> Capture(TabWorkContext ctx) => CaptureSnapshotAsync(request, ctx);
+            Task<SnapshotResult> capture(TabWorkContext ctx) => CaptureSnapshotAsync(request, ctx);
             var outcome = request.ForUrl is { } url
                 ? await _sessions.OnUrlAsync(
-                    request.SessionId, url, StampPolicy.Restamp(RefNamespace.Element), Capture, ct)
+                    request.SessionId, url, StampPolicy.Restamp(RefNamespace.Element), capture, ct)
                 : await _sessions.OnCurrentTabAsync(
-                    request.SessionId, StampPolicy.Restamp(RefNamespace.Element), Capture, ct);
+                    request.SessionId, StampPolicy.Restamp(RefNamespace.Element), capture, ct);
 
             return outcome switch
             {
