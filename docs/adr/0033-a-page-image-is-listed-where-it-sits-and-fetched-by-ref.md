@@ -195,6 +195,10 @@ case that never arrives.
   allowed to overrun so that it always advances.
 - The label ladder exists twice — once building the entry, once naming the picture in the note
   that replaces it — and the two must be changed together. Nothing enforces it but a test.
+  *Retired 2026-08-30*: decided that the in-page copy goes. The fetch script answers only
+  facts — the strings the page offers about a picture — and the one ladder in
+  `PageImageEntry` names both the entry and the note, so no second copy is left to change
+  together. The rung order and the credentials rule decided above are untouched.
 - A count cap cannot stop a large-byte call. Eight full-size images pass the cap, pass truncation's
   per-image estimate, and can still fail as an oversized request. Accepted on the same terms as
   ADR 0029's parallel reads: the model asked for those pictures.

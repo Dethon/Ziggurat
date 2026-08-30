@@ -578,6 +578,14 @@ picture is worth asking for. A picture too small to be about anything gets no en
 and no ref.
 _Avoid_: image listing, image catalogue, thumbnail, image placeholder
 
+**Label**:
+The best name a page gives a picture: the words its image entry speaks, and the words
+the note that replaces a fetched picture uses. One picture, one label — the entry and
+the note must say the same words, or the tool reads as having fetched something else.
+It is chosen from what the page offers about the picture — a description, a caption, a
+link's words, a filename — none of which is the label itself, only where one may come from.
+_Avoid_: caption, alt text, image name
+
 ## Outposts
 
 **Outpost**:
