@@ -37,6 +37,10 @@ public static class ConfigModule
             .AddMcpHost(settings)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
+            // Telegram has no agent picker and no per-message model override, so this catalogue
+            // exists for one reason: the attachment capability resolution needs something to ask
+            // about the model a turn will run on. It arrives through the registration the agent
+            // already performs on connect and on every reconnect, so no new protocol call is added.
             .WithTools<RegisterAgentsTool>()
             .WithTools<FetchAttachmentTool>()
             // Buffer-always: Telegram has no channel-level way to tell a sender "try again later",

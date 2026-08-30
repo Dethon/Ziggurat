@@ -37,8 +37,10 @@ public static class ConfigModule
             .AddToolServer(settings, ToolResponse.Create)
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
-            // A channel-protocol tool (invoked by the agent's channel connection, hidden from the LLM)
-            .WithTools<RegisterAgentsTool>()
+            // A channel-protocol tool (invoked by the agent's channel connection, hidden from the
+            // LLM). This server's own no-op, not the shared catalog-writing one: the library
+            // channel does not target agents, so the set is ignored.
+            .WithTools<McpTools.RegisterAgentsTool>()
             // Gate-on-live: the completion watcher drops a routing entry only on a confirmed
             // delivery, so a disconnected-but-still-buffering subscriber must not read as delivered.
             .AddChannelServer(DeliveryPolicy.GateOnLive, noOutboundSurface: true)

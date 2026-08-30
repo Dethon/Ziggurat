@@ -7,7 +7,6 @@ using Infrastructure.Utils;
 using Infrastructure.Validation;
 using Mcp.Hosting;
 using McpServerScheduling.McpPrompts;
-using McpServerScheduling.McpTools;
 using McpServerScheduling.Services;
 using McpServerScheduling.Settings;
 using Microsoft.Extensions.DependencyInjection;
