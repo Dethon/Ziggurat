@@ -1,3 +1,4 @@
+using Domain.Conversations;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Settings;
 
@@ -14,8 +15,8 @@ public sealed class AttachmentService(
 {
     public AttachmentLimits Limits { get; } = settings.Limits;
 
-    public UploadTicket MintUpload(string topicId, string conversationId, string? spaceSlug) =>
-        tickets.MintUpload(topicId, conversationId, spaceSlug);
+    public UploadTicket MintUpload(string topicId, ConversationIdentity conversation, string? spaceSlug) =>
+        tickets.MintUpload(topicId, conversation, spaceSlug);
 
     public AttachmentTickets.UploadScope? ResolveUploadScope(string token, string topicId) =>
         tickets.ResolveUpload(token, topicId);

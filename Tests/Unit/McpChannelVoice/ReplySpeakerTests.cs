@@ -101,6 +101,11 @@ public class ReplySpeakerTests
         });
     }
 
+    // The public preamble entry: what the voice approval tool's notify branch calls on the
+    // first tool call of a turn.
+    private void Preamble(ReplySpeaker speaker) =>
+        speaker.SpeakPreamble(_sessions.Get("kitchen-01")!, _conversationId);
+
     private static async IAsyncEnumerable<AudioChunk> EmptyAudio(string label)
     {
         yield return new AudioChunk
@@ -242,7 +247,7 @@ public class ReplySpeakerTests
     }
 
     [Fact]
-    public async Task SpeakUtteranceReply_ToolCall_SpeaksBufferedPreambleWithoutResolvingTheTurn()
+    public async Task SpeakPreamble_SpeaksBufferedTextWithoutResolvingTheTurn()
     {
         // nabu is told to emit a one-word acknowledgement ("Buscando.") before slow multi-tool work
         // so the user hears that something started. Text chunks are buffered and StreamComplete used
@@ -254,7 +259,7 @@ public class ReplySpeakerTests
         var turn = _session.Turn.AwaitSpoken();
 
         Say(_speaker, "Buscando.", ReplyContentType.Text, false);
-        Say(_speaker, "", ReplyContentType.ToolCall, false);
+        Preamble(_speaker);
 
         _tts.Verify(t => t.SynthesizeAsync("Buscando.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
 
@@ -269,12 +274,12 @@ public class ReplySpeakerTests
     }
 
     [Fact]
-    public async Task SpeakUtteranceReply_PreambleThenAnswer_SpeaksThemAsSeparateUtterances()
+    public async Task SpeakPreamble_ThenAnswer_SpeaksThemAsSeparateUtterances()
     {
-        // ReplyTextAccumulator concatenates with no separator, so before the tool-call flush the
+        // ReplyTextAccumulator concatenates with no separator, so before the preamble flush the
         // satellite spoke a single "Buscando.Veintiún grados." utterance at the end of the turn.
         Say(_speaker, "Buscando.", ReplyContentType.Text, false);
-        Say(_speaker, "", ReplyContentType.ToolCall, false);
+        Preamble(_speaker);
         Say(_speaker, "Veintiún grados.", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
@@ -283,26 +288,26 @@ public class ReplySpeakerTests
     }
 
     [Fact]
-    public async Task SpeakUtteranceReply_ToolCall_NothingBuffered_SpeaksNothing()
+    public void SpeakPreamble_NothingBuffered_SpeaksNothing()
     {
         // The overwhelmingly common case: the model went straight to a tool without a preamble.
-        Say(_speaker, "", ReplyContentType.ToolCall, false);
+        Preamble(_speaker);
 
         _tts.VerifyNoOtherCalls();
     }
 
     [Fact]
-    public async Task SpeakUtteranceReply_SecondToolCall_KeepsMidRunNarrationBufferedForTheAnswer()
+    public void SpeakPreamble_SecondClaimOfTheTurn_KeepsMidRunNarrationBufferedForTheAnswer()
     {
-        // Only the FIRST tool call of a turn flushes. Anything the model says between later tool
+        // Only the FIRST claim of a turn flushes. Anything the model says between later tool
         // rounds stays buffered and is spoken with the answer, so mid-run chatter can never become a
         // second utterance racing the reply into the playback queue.
         _session.Turn.Reset();
 
         Say(_speaker, "Buscando.", ReplyContentType.Text, false);
-        Say(_speaker, "", ReplyContentType.ToolCall, false);
+        Preamble(_speaker);
         Say(_speaker, "Ahora miro el termostato.", ReplyContentType.Text, false);
-        Say(_speaker, "", ReplyContentType.ToolCall, false);
+        Preamble(_speaker);
 
         _tts.Verify(t => t.SynthesizeAsync("Ahora miro el termostato.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -408,7 +413,7 @@ public class ReplySpeakerTests
         _clock.Advance(TimeSpan.FromSeconds(2));
 
         Say(_speaker, "Buscando.", ReplyContentType.Text, false);
-        Say(_speaker, "", ReplyContentType.ToolCall, false);
+        Preamble(_speaker);
         Say(_speaker, "Veintiún grados.", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
@@ -807,7 +812,7 @@ public class ReplySpeakerTests
         // user hears nothing at all and has to ask again.
         _session.Turn.Reset();
         _session.Turn.StampTurnKey("turn-1");
-        SayFor("turn-1", "", ReplyContentType.ToolCall, false); // the answer is still being written
+        SayFor("turn-1", "", ReplyContentType.Reasoning, false); // the answer is still being written
 
         _sessions.Register(new SatelliteSession("kitchen-01", _session.Config));
         var session = _sessions.Get("kitchen-01")!;

@@ -150,6 +150,14 @@ conversation someone can open, so a scheduled task fires under the conversation 
 delivered into and not under the schedule.
 _Avoid_: conversation id, target conversation, delivery key
 
+**Conversation identity**:
+The one identity a conversation goes by, in every spelling at once: the topic a
+client opens and the address the agent's replies come back under are the same
+identity written two ways. It is authored in one place, so translating between its
+spellings is never a caller's job, and a value that does not parse as one is not a
+broken identity — it is some other channel's address passing through.
+_Avoid_: conversation id, composite key, chat-and-thread pair
+
 **Topic**:
 The lasting record of one conversation: what it is called, when it began, when it was
 last written to, and how much of it has been read. It is what a row in the chat client

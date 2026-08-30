@@ -155,7 +155,7 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
     internal static string CursorFor(TopicSearchHit hit) =>
         $"{hit.Score.ToString(CultureInfo.InvariantCulture)}:{Member(hit)}";
 
-    private static string Member(TopicSearchHit hit) => $"{hit.ChatId}:{hit.TopicId}";
+    private static string Member(TopicSearchHit hit) => TopicIndexMember.Compose(hit.ChatId, hit.TopicId);
 
     private static (double Score, string Member)? ParseCursor(string? cursor)
     {

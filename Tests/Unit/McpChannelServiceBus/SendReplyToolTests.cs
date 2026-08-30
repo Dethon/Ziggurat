@@ -32,13 +32,11 @@ public class SendReplyToolTests
     }
 
     [Fact]
-    public async Task Run_WithNonTextContentType_ReturnsOkWithoutSending()
+    public async Task Run_WithReasoningContentType_ReturnsOkWithoutSending()
     {
         var reasoningResult = await SendReplyTool.McpRun("corr-1", "thinking...", ReplyContentType.Reasoning, false, null, _services);
-        var toolCallResult = await SendReplyTool.McpRun("corr-1", "{}", ReplyContentType.ToolCall, false, null, _services);
 
         reasoningResult.ShouldBe("ok");
-        toolCallResult.ShouldBe("ok");
         _busSender.Verify(s => s.SendMessageAsync(
             It.IsAny<ServiceBusMessage>(),
             It.IsAny<CancellationToken>()), Times.Never);

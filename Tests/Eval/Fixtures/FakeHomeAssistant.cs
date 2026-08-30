@@ -69,6 +69,12 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public static readonly string WashingMachinePathPattern =
         $@"(^|/)({HaCatalog.ClassOf(WashingMachineEntityId)}\.)?{HaCatalog.ObjectOf(WashingMachineEntityId)}_\(";
 
+    // The alarms calendar reached under /ha/entities or under its area, like the speaker below —
+    // an armed run snoozed correctly through /ha/areas/unassigned and a pinned directory read
+    // that as a behavioural failure.
+    public static readonly string AlarmsPathPattern =
+        $@"(^|/)({HaCatalog.ClassOf(AlarmsEntityId)}\.)?{HaCatalog.ObjectOf(AlarmsEntityId)}_\(";
+
     // The vacuum reached under /ha/entities or under its area, like the speaker below.
     public static readonly string VacuumPathPattern =
         $@"(^|/)({HaCatalog.ClassOf(VacuumEntityId)}\.)?{HaCatalog.ObjectOf(VacuumEntityId)}_\(";

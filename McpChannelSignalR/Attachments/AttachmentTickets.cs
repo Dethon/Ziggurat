@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using Domain.Conversations;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Settings;
 
@@ -39,12 +40,14 @@ public sealed class AttachmentTickets(AttachmentSettings settings, TimeProvider 
     // picking a file does.
     private sealed record DictationScope(string SpaceSlug, DateTimeOffset ExpiresAt);
 
-    public UploadTicket MintUpload(string topicId, string conversationId, string? spaceSlug)
+    // The identity, not two adjacent same-typed strings: swapping the topic and the conversation
+    // spelling used to compile.
+    public UploadTicket MintUpload(string topicId, ConversationIdentity conversation, string? spaceSlug)
     {
         Prune();
         var token = NewToken();
         var expiresAt = timeProvider.GetUtcNow().AddSeconds(settings.TicketTtlSeconds);
-        _uploads[token] = new UploadScope(topicId, conversationId, spaceSlug, expiresAt);
+        _uploads[token] = new UploadScope(topicId, conversation.ConversationId, spaceSlug, expiresAt);
         return new UploadTicket(token, expiresAt);
     }
 

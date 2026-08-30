@@ -39,7 +39,6 @@ public class ConversationFactoryTests
         saved.LastMessageAt.ShouldBeNull();
 
         creation.Topic.ShouldBe(saved);
-        creation.Identity.TopicId.ShouldBe(saved.TopicId);
         creation.Identity.ChatId.ShouldBe(saved.ChatId);
         creation.Identity.ThreadId.ShouldBe(saved.ThreadId);
         creation.Identity.ConversationId.ShouldBe($"{saved.ChatId}:{saved.ThreadId}");

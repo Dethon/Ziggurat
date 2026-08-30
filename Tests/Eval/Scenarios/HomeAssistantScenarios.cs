@@ -298,7 +298,7 @@ public static class HomeAssistantScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.Path(FakeHomeAssistant.AlarmsDirectory),
+                    Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
                     Arg.Matches("command", @"^create_event\.sh\b"),
                     Arg.Matches("command", @"2026-08-17[ T]20:05"),
                     Arg.Matches("command", "(?i)basura"),
@@ -310,7 +310,7 @@ public static class HomeAssistantScenarios
         [
             .. CallPermission.LookingAndManuals("/ha*"),
             .. CallPermission.Looking("/timers*"),
-            new CallPermission(EvalTools.Exec, FakeHomeAssistant.AlarmsDirectory)
+            new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
         CallCeiling = 6,
         Claims = [HomeAssistantPrompt.SnoozeIsANewEvent.Id, BasePrompt.NoPlaceholderToolCalls.Id],

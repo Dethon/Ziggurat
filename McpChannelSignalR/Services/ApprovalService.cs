@@ -19,7 +19,19 @@ public sealed class ApprovalService(
 
     public async Task<string> RequestApprovalAsync(RequestApprovalParams p)
     {
-        var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId) ?? p.ConversationId;
+        // A question nobody can see must not hold the turn (ADR-0035). With no live session the
+        // prompt renders to nobody, and a registration under the unresolved spelling could never
+        // be answered — not even deleting the topic released it. Deny at once, naming the reason,
+        // so the run continues and the persisted reply explains itself.
+        var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId);
+        if (topicId is null)
+        {
+            logger.LogDebug(
+                "RequestApproval: no live session for conversation {ConversationId}; denying immediately",
+                p.ConversationId);
+            return "rejected: no live session to approve in";
+        }
+
         var requests = p.Requests;
         var approvalId = Guid.NewGuid().ToString("N")[..8];
 
@@ -58,10 +70,21 @@ public sealed class ApprovalService(
         }
     }
 
-    public Task NotifyAutoApprovedAsync(RequestApprovalParams p) =>
-        WriteToolCallsAsync(
-            sessionService.GetTopicIdByConversationId(p.ConversationId) ?? p.ConversationId,
-            p.Requests);
+    public Task NotifyAutoApprovedAsync(RequestApprovalParams p)
+    {
+        // A notification nobody can see costs nothing and blocks nothing (ADR-0035): the tool
+        // calls it would render are in the persisted reply already.
+        var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId);
+        if (topicId is null)
+        {
+            logger.LogDebug(
+                "NotifyAutoApproved: no live session for conversation {ConversationId}; nothing to render to",
+                p.ConversationId);
+            return Task.CompletedTask;
+        }
+
+        return WriteToolCallsAsync(topicId, p.Requests);
+    }
 
     // The one route a tool call reaches the browser by. It is buffered with the rest of the reply,
     // so a reload replays it and it arrives in order; a hub push beside it would be the same text a

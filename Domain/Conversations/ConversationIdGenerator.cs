@@ -2,13 +2,13 @@ namespace Domain.Conversations;
 
 public static class ConversationIdGenerator
 {
-    public static ConversationIdentity Create() => CreateFor(Guid.NewGuid().ToString("N"));
+    public static string NewTopicId() => Guid.NewGuid().ToString("N");
 
     public static ConversationIdentity CreateFor(string topicId)
     {
         var chatId = GetDeterministicHash(topicId, seed: 0x1234);
         var threadId = GetDeterministicHash(topicId, seed: 0x5678) & 0x7FFFFFFF;
-        return new ConversationIdentity(topicId, chatId, threadId, $"{chatId}:{threadId}");
+        return new ConversationIdentity(chatId, threadId);
     }
 
     private static long GetDeterministicHash(string input, long seed)

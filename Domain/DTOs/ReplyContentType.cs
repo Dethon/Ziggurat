@@ -4,7 +4,6 @@ public enum ReplyContentType
 {
     Text,
     Reasoning,
-    ToolCall,
     Error,
     StreamComplete
 }

@@ -1,5 +1,5 @@
 using Domain.DTOs.Channel;
-using McpChannelTelegram.McpTools;
+using Mcp.Hosting;
 using Shouldly;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;

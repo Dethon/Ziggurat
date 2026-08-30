@@ -115,4 +115,18 @@ public class RequestApprovalToolTests
         await Should.ThrowAsync<InvalidOperationException>(
             () => RequestApprovalTool.McpRun("999:999", ApprovalMode.Notify, requests, _services));
     }
+
+    // A Telegram tool should never receive another channel's address; when it does, the error
+    // names the value instead of an unguarded parse throwing whatever it throws.
+    [Fact]
+    public async Task McpRun_SomeOtherChannelsAddress_IsRefusedNamingTheValue()
+    {
+        IReadOnlyList<ToolApprovalRequest> requests = [new ToolApprovalRequest(null, "tool", new Dictionary<string, object?>())];
+
+        var ex = await Should.ThrowAsync<InvalidOperationException>(
+            () => RequestApprovalTool.McpRun("kitchen-satellite", ApprovalMode.Notify, requests, _services));
+
+        ex.Message.ShouldContain("kitchen-satellite");
+        ex.Message.ShouldContain("conversation identity");
+    }
 }

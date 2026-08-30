@@ -40,7 +40,6 @@ public sealed class SendReplyTool
         switch (p.ContentType)
         {
             case ReplyContentType.Reasoning:
-            case ReplyContentType.ToolCall:
                 // ServiceBus doesn't need intermediate updates
                 return "ok";
 

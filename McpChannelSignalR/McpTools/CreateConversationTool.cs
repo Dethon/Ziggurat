@@ -42,20 +42,20 @@ public sealed class CreateConversationTool
         // Register the in-memory session so send_reply/request_approval can resolve it.
         var sessionService = services.GetRequiredService<SessionService>();
         sessionService.StartSession(
-            creation.Identity.TopicId, agentId, creation.Identity.ChatId, creation.Identity.ThreadId,
+            creation.Topic.TopicId, agentId, creation.Identity.ChatId, creation.Identity.ThreadId,
             spaceSlug: "default", topicName: topicName);
 
         // Notify WebChat clients so the topic appears without refresh.
         var hubSender = services.GetRequiredService<IHubNotificationSender>();
         var notification = new TopicChangedNotification(
-            TopicChangeType.Created, creation.Identity.TopicId, creation.Topic, SpaceSlug: "default");
+            TopicChangeType.Created, creation.Topic.TopicId, creation.Topic, SpaceSlug: "default");
         await hubSender.SendToGroupAsync("space:default", "OnTopicChanged", notification);
 
         // Create a stream so send_reply chunks have somewhere to go. The stream's
         // currentPrompt seeds the user-role bubble on WebChat, so it must be the
         // originating prompt — falling back to topicName for legacy callers.
         var streamService = services.GetRequiredService<StreamService>();
-        streamService.GetOrCreateStream(creation.Identity.TopicId, initialPrompt ?? topicName, sender, CancellationToken.None);
+        streamService.GetOrCreateStream(creation.Topic.TopicId, initialPrompt ?? topicName, sender, CancellationToken.None);
 
         return creation.Identity.ConversationId;
     }

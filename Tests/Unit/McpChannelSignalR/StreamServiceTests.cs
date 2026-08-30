@@ -13,6 +13,7 @@ public class StreamServiceTests : IDisposable
 {
     private readonly SessionService _sessionService = new();
     private readonly Mock<IPushNotificationService> _pushNotification = new();
+    private readonly Mock<ILogger<StreamService>> _logger = new();
     private readonly StreamService _sut;
 
     public StreamServiceTests()
@@ -20,7 +21,7 @@ public class StreamServiceTests : IDisposable
         _sut = new StreamService(
             _sessionService,
             _pushNotification.Object,
-            new Mock<ILogger<StreamService>>().Object);
+            _logger.Object);
     }
 
     [Fact]
@@ -47,6 +48,41 @@ public class StreamServiceTests : IDisposable
         var msg = await reader.ReadAsync();
         msg.Content.ShouldBe("hello");
         msg.MessageId.ShouldBe("msg-1");
+    }
+
+    // ADR-0035: a turn that finds no live session delivers by persistence alone. The miss is
+    // the designed offline path, so it returns early and stays quiet — debug, never a warning
+    // per chunk.
+    [Fact]
+    public async Task WriteReplyAsync_NoLiveSession_ReturnsEarlyAndLogsDebugNotWarning()
+    {
+        await _sut.WriteReplyAsync(new SendReplyParams
+        { ConversationId = "100:200", Content = "hello", ContentType = ReplyContentType.Text, IsComplete = false });
+
+        _logger.Verify(l => l.Log(
+            LogLevel.Warning,
+            It.IsAny<EventId>(),
+            It.IsAny<It.IsAnyType>(),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Never);
+        _logger.Verify(l => l.Log(
+            LogLevel.Debug,
+            It.IsAny<EventId>(),
+            It.IsAny<It.IsAnyType>(),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    // The coercion this replaces keyed stream state under the conversation spelling, a key no
+    // topic lookup could ever answer. The miss must leave nothing behind.
+    [Fact]
+    public async Task WriteReplyAsync_NoLiveSession_LeavesNoStreamStateBehind()
+    {
+        await _sut.WriteReplyAsync(new SendReplyParams
+        { ConversationId = "100:200", Content = "hello", ContentType = ReplyContentType.Text, IsComplete = false });
+
+        _sut.GetStreamState("100:200").ShouldBeNull();
+        _sut.IsStreaming("100:200").ShouldBeFalse();
     }
 
     [Fact]

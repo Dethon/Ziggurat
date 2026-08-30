@@ -36,10 +36,11 @@ public sealed class ComposerTopic(
             return null;
         }
 
-        var identity = ConversationIdGenerator.Create();
+        var newTopicId = ConversationIdGenerator.NewTopicId();
+        var identity = ConversationIdGenerator.CreateFor(newTopicId);
         var topic = new StoredTopic
         {
-            TopicId = identity.TopicId,
+            TopicId = newTopicId,
             ChatId = identity.ChatId,
             ThreadId = identity.ThreadId,
             AgentId = state.SelectedAgentId,

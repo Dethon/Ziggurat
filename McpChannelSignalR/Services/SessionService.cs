@@ -13,9 +13,10 @@ public sealed class SessionService : ISessionService
 
     public Task<string> CreateConversationAsync(CreateConversationParams p)
     {
-        var id = ConversationIdGenerator.Create();
-        StartSession(id.TopicId, p.AgentId, id.ChatId, id.ThreadId, spaceSlug: "default", topicName: p.TopicName);
-        return Task.FromResult(id.ConversationId);
+        var topicId = ConversationIdGenerator.NewTopicId();
+        var identity = ConversationIdGenerator.CreateFor(topicId);
+        StartSession(topicId, p.AgentId, identity.ChatId, identity.ThreadId, spaceSlug: "default", topicName: p.TopicName);
+        return Task.FromResult(identity.ConversationId);
     }
 
     public bool StartSession(string topicId, string agentId, long chatId, long threadId, string? spaceSlug = null, string? topicName = null)
@@ -23,7 +24,7 @@ public sealed class SessionService : ISessionService
         var session = new ChannelSession(agentId, chatId, threadId, spaceSlug, topicName);
         _sessions[topicId] = session;
         _chatToTopic[chatId] = topicId;
-        _conversationToTopic[$"{chatId}:{threadId}"] = topicId;
+        _conversationToTopic[session.Identity.ConversationId] = topicId;
         return true;
     }
 
@@ -40,7 +41,7 @@ public sealed class SessionService : ISessionService
         }
 
         _chatToTopic.TryRemove(session.ChatId, out _);
-        _conversationToTopic.TryRemove($"{session.ChatId}:{session.ThreadId}", out _);
+        _conversationToTopic.TryRemove(session.Identity.ConversationId, out _);
     }
 
     public string? GetTopicIdByChatId(long chatId)

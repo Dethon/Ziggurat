@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.HomeAssistant.Vfs;
@@ -20,6 +21,24 @@ public class FakeHomeAssistantTests
         var files = await Mount().GlobAsync(Relative("/ha/entities/calendar"), "**", CancellationToken.None);
 
         Paths(files).ShouldContain(Relative(FakeHomeAssistant.AlarmsDirectory) + "/create_event.sh");
+    }
+
+    [Fact]
+    public async Task TheAlarmsCalendar_IsServedUnderItsAreaToo_AndThePatternAcceptsBothViews()
+    {
+        // The mount serves the calendar again under its area (unassigned — it belongs to none),
+        // and both are the deployment's own paths: the snooze scenario pinned the entities view
+        // and an armed run that wrote the correct event through the area view went red on it.
+        var files = await Mount().GlobAsync(Relative("/ha/areas"), "**", CancellationToken.None);
+        var areaView = Paths(files).Single(p => p.EndsWith("/create_event.sh"));
+        var areaDirectory = "/ha/" + areaView[..areaView.LastIndexOf('/')];
+
+        Regex.IsMatch(areaDirectory, FakeHomeAssistant.AlarmsPathPattern, RegexOptions.IgnoreCase)
+            .ShouldBeTrue(areaDirectory);
+        Regex.IsMatch(
+                FakeHomeAssistant.AlarmsDirectory, FakeHomeAssistant.AlarmsPathPattern,
+                RegexOptions.IgnoreCase)
+            .ShouldBeTrue(FakeHomeAssistant.AlarmsDirectory);
     }
 
     [Fact]

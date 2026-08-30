@@ -21,10 +21,10 @@ public class ConversationIdGeneratorTests
     }
 
     [Fact]
-    public void Create_GeneratesDistinctConversations()
+    public void NewTopicId_GeneratesDistinctConversations()
     {
-        var a = ConversationIdGenerator.Create();
-        var b = ConversationIdGenerator.Create();
+        var a = ConversationIdGenerator.CreateFor(ConversationIdGenerator.NewTopicId());
+        var b = ConversationIdGenerator.CreateFor(ConversationIdGenerator.NewTopicId());
 
         a.ConversationId.ShouldNotBe(b.ConversationId);
     }

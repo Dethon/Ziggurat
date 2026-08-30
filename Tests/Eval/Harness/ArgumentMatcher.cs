@@ -67,9 +67,13 @@ public static class Arg
     // The path, whatever this tool calls it. Create and read say `filePath`, remove and info say
     // `path`, glob says `basePath`, search says `directoryPath` when it is scoped to a tree — and
     // what a scenario is asking about is the same question in every case, because for most of this
-    // suite "which tool was selected" is "which path was written to".
+    // suite "which tool was selected" is "which path was written to". A trailing slash is glob's
+    // spelling of a directory, not a different place, so both sides shed it before comparing.
     public static ArgumentMatcher Path(string value) =>
-        new($"path = '{value}'", args => PathOf(args) == value);
+        new($"path = '{value}'", args => Undecorated(PathOf(args)) == Undecorated(value));
+
+    private static string? Undecorated(string? path) =>
+        path is { Length: > 1 } ? path.TrimEnd('/') : path;
 
     public static ArgumentMatcher PathMatches(string pattern) =>
         new($"path matches /{pattern}/",
