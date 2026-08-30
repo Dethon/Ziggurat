@@ -82,12 +82,394 @@ public class BrowserSessionManager : IAsyncDisposable
         return _sessions.GetValueOrDefault(sessionId);
     }
 
+    // ---- The tab protocol ----------------------------------------------------------------------
+    // One method per operation intent. A caller states what the operation is — a browse of a URL,
+    // a call routed by a ref, a ref-less call on the current tab, a call addressed to a tab by URL
+    // — hands over the work to do on the page, and receives the work's result or a named wall. The
+    // ordering (acquire or route, lock, re-check open under the lock, touch, read the URL before
+    // the work, run the work, supersede per intent, note the final URL, commit the stamp lease,
+    // override with the closed wall, tell a dead tab from a dead connection) lives here, once.
+
+    // Bounded: each retry is a fresh acquisition, which at the cap evicts another tab — an
+    // unbounded spin under adversarial concurrency would churn tabs whose refs the model holds.
+    // Three misses in a row is a session replacing tabs faster than a browse can hold one, and
+    // the retryable wall beats joining the churn.
+    public const int AcquireRetryBound = 3;
+
+    // Resolving a ref is an existence check, not a wait for something in flight: the element was
+    // in the snapshot the agent is holding, so either it is still there or the page moved on.
+    // Kept generous enough to ride out an in-progress re-render, far below operation timeouts.
+    public const int RefResolutionTimeoutMs = 2_000;
+
+    // Browsing a URL: reuse-or-open under the pool gate, with the bounded retry for a tab evicted
+    // between acquisition and locking. A browse always supersedes the tab's refs — a same-URL
+    // re-browse reloads the DOM, so the old numbers are no longer on the document.
+    public async Task<TabOutcome<T>> BrowseAsync<T>(
+        string sessionId,
+        string url,
+        IBrowserContext context,
+        Func<TabWorkContext, Task<T>> work,
+        CancellationToken ct = default)
+    {
+        foreach (var _ in Enumerable.Range(0, AcquireRetryBound))
+        {
+            var acquisition = await AcquireTabForBrowseAsync(sessionId, url, context, ct);
+            var tabLock = await LockTabAsync(acquisition.Tab, ct);
+            if (acquisition.Tab.Page.IsClosed)
+            {
+                // Evicted in the instant between acquisition and locking: the pool drops the dead
+                // tab on the next acquisition and opens a fresh one.
+                tabLock.Dispose();
+                continue;
+            }
+
+            using (tabLock)
+            {
+                // The acquisition's own session, not a dictionary lookup: a Clear or prune landing
+                // while this browse queued must not turn into a thrown key, only a quiet commit
+                // into a session nothing routes to any more.
+                return await RunOnLockedTabAsync(
+                    acquisition.Session, acquisition.Tab,
+                    StampPolicy.Restamp(RefNamespace.Image), supersedeAlways: true, work, ct);
+            }
+        }
+
+        return new TabOutcome<T>.AcquireExhausted();
+    }
+
+    // The ref-less default: the tab the last call of any kind touched. A closed current tab is
+    // that one tab gone under a live session — the closed wall, never a lost session.
+    public async Task<TabOutcome<T>> OnCurrentTabAsync<T>(
+        string sessionId,
+        StampPolicy stamping,
+        Func<TabWorkContext, Task<T>> work,
+        CancellationToken ct = default)
+    {
+        var session = _sessions.GetValueOrDefault(sessionId);
+        if (session?.CurrentTab is not { } tab)
+        {
+            return new TabOutcome<T>.NoSession();
+        }
+
+        using var tabLock = await LockTabAsync(tab, ct);
+        if (tab.Page.IsClosed)
+        {
+            return new TabOutcome<T>.Closed(tab.RequestedUrl);
+        }
+
+        return await RunOnLockedTabAsync(session, tab, stamping, supersedeAlways: false, work, ct);
+    }
+
+    // The composed-snapshot exception: addressed to the tab holding that URL, refusing when the
+    // session no longer holds it — falling back to another tab would attach that page's refs to
+    // this page's text, the silent wrong-target answer the address exists to prevent.
+    public async Task<TabOutcome<T>> OnUrlAsync<T>(
+        string sessionId,
+        string url,
+        StampPolicy stamping,
+        Func<TabWorkContext, Task<T>> work,
+        CancellationToken ct = default)
+    {
+        var session = _sessions.GetValueOrDefault(sessionId);
+        if (session is null)
+        {
+            return new TabOutcome<T>.NoSession();
+        }
+
+        if (session.FindByUrl(url) is not { } tab)
+        {
+            return new TabOutcome<T>.AddressedTabGone(url);
+        }
+
+        using var tabLock = await LockTabAsync(tab, ct);
+        if (tab.Page.IsClosed)
+        {
+            return new TabOutcome<T>.Closed(tab.RequestedUrl);
+        }
+
+        // Re-navigated while this call queued: neither the address the tab was asked with nor the
+        // one it landed on names the page any more.
+        if (tab.RequestedUrl != url && tab.FinalUrl != url)
+        {
+            return new TabOutcome<T>.AddressedTabGone(url);
+        }
+
+        return await RunOnLockedTabAsync(session, tab, stamping, supersedeAlways: false, work, ct);
+    }
+
+    // Routed by ref: the work runs on the tab that stamped the ref, or the routing wall answers
+    // before any DOM is asked. The under-lock re-check catches an eviction landing between routing
+    // and locking.
+    public async Task<TabOutcome<T>> OnRefAsync<T>(
+        string sessionId,
+        string refString,
+        StampPolicy stamping,
+        Func<TabWorkContext, Task<T>> work,
+        CancellationToken ct = default)
+    {
+        if (RouteToWall<T>(sessionId, refString, out var session, out var tab) is { } wall)
+        {
+            return wall;
+        }
+
+        using var tabLock = await LockTabAsync(tab!, ct);
+        if (tab!.Page.IsClosed)
+        {
+            return new TabOutcome<T>.Closed(tab.RequestedUrl);
+        }
+
+        if (ReRouteUnderLock<T>(sessionId, refString) is { } lateWall)
+        {
+            return lateWall;
+        }
+
+        return await RunOnLockedTabAsync(session!, tab, stamping, supersedeAlways: false, work, ct);
+    }
+
+    // The routing decision is asked again once the lock is held: a restamp or re-browse that
+    // finished while this call queued has already superseded the ref, and running anyway would
+    // land on the vague not-found the walls exist to replace. Anything still routing — or fallen
+    // to unknown — proceeds on the tab already chosen.
+    private TabOutcome<T>? ReRouteUnderLock<T>(string sessionId, string refString) =>
+        RouteRef(sessionId, refString) switch
+        {
+            RefRouting.Superseded superseded => new TabOutcome<T>.Superseded(superseded.Url),
+            RefRouting.Closed closed => new TabOutcome<T>.Closed(closed.Url),
+            _ => null
+        };
+
+    // The action shape of the by-ref intent: `act` performs the gesture (a non-null result
+    // short-circuits — a refusal decided before or during the act), then a popup the act opened
+    // answers via `popup` under its own nested lock, and otherwise `answer` reads the acting tab.
+    // The class constraint is what lets a null act result mean "carry on".
+    public async Task<TabOutcome<T>> OnRefAsync<T>(
+        string sessionId,
+        string refString,
+        StampPolicy stamping,
+        Func<TabWorkContext, Task<T?>> act,
+        Func<TabWorkContext, Task<T>> answer,
+        PopupAnswer<T> popup,
+        CancellationToken ct = default) where T : class
+    {
+        if (RouteToWall<T>(sessionId, refString, out var session, out var tab) is { } wall)
+        {
+            return wall;
+        }
+
+        using var tabLock = await LockTabAsync(tab!, ct);
+        if (tab!.Page.IsClosed)
+        {
+            return new TabOutcome<T>.Closed(tab.RequestedUrl);
+        }
+
+        if (ReRouteUnderLock<T>(sessionId, refString) is { } lateWall)
+        {
+            return lateWall;
+        }
+
+        Touch(session!, tab);
+        var ctx = new TabWorkContext(this, session!, tab, stamping, SafeUrl(tab.Page), ct);
+        try
+        {
+            T? result;
+            try
+            {
+                // A popup left over from an earlier, unrelated call on this tab must not divert
+                // this action's answer.
+                TakePendingPopup(session!.SessionId, tab);
+
+                result = await act(ctx);
+                if (result is null)
+                {
+                    if (TakePendingPopup(session.SessionId, tab) is { } popupTab)
+                    {
+                        // The popup replaces the acting tab's answer, never its bookkeeping: an
+                        // act that moved the acting tab too must still unmake the refs stamped
+                        // on the document it left. Committed before the popup answers, so the
+                        // popup's own tail touches last and stays current.
+                        CommitTail(session, tab, ctx, supersedeAlways: false);
+                        if (await AnswerFromPopupAsync(session, popupTab, popup, ct) is { } popupResult)
+                        {
+                            return new TabOutcome<T>.Ran(popupResult, PopupAnswered: true);
+                        }
+                    }
+
+                    result = await answer(ctx);
+                }
+            }
+            catch (Exception ex) when (IsConnectionClosed(ex) && tab.Page.IsClosed)
+            {
+                return new TabOutcome<T>.Closed(tab.RequestedUrl);
+            }
+
+            if (tab.Page.IsClosed)
+            {
+                return new TabOutcome<T>.Closed(tab.RequestedUrl);
+            }
+
+            CommitTail(session, tab, ctx, supersedeAlways: false);
+            return new TabOutcome<T>.Ran(result);
+        }
+        finally
+        {
+            ctx.ReleaseLease();
+        }
+    }
+
+    // The popup's own pipeline, nested inside the acting tab's lock — a popup is always a fresh
+    // page, never an existing tab, so the nesting cannot cycle. Null hands the answer back to the
+    // acting tab: a popup evicted (or self-closed) before it could answer is not a failure.
+    private async Task<T?> AnswerFromPopupAsync<T>(
+        BrowserSession session, BrowserTab popupTab, PopupAnswer<T> popup, CancellationToken ct)
+        where T : class
+    {
+        using var popupLock = await LockTabAsync(popupTab, ct);
+        if (popupTab.Page.IsClosed)
+        {
+            return null;
+        }
+
+        var ctx = new TabWorkContext(this, session, popupTab, popup.Stamping, SafeUrl(popupTab.Page), ct);
+        try
+        {
+            T result;
+            try
+            {
+                result = await popup.Answer(ctx);
+            }
+            catch (Exception ex) when (IsConnectionClosed(ex) && popupTab.Page.IsClosed)
+            {
+                // An auto-closing OAuth or ad window: its death is not the connection's.
+                return null;
+            }
+
+            if (popupTab.Page.IsClosed)
+            {
+                return null;
+            }
+
+            CommitTail(session, popupTab, ctx, supersedeAlways: false);
+            return result;
+        }
+        finally
+        {
+            ctx.ReleaseLease();
+        }
+    }
+
+    // Which tab a by-ref run lands on, or which wall answers instead. A ref whose range aged out
+    // of the bounded registry (or was never issued) falls to the current tab, whose DOM answers
+    // the ordinary not-found — the decided third outcome, weaker than either wall (ADR-0034); the
+    // Unknown wall surfaces only when no current tab remains to fall to.
+    private TabOutcome<T>? RouteToWall<T>(
+        string sessionId, string refString, out BrowserSession? session, out BrowserTab? tab)
+    {
+        session = _sessions.GetValueOrDefault(sessionId);
+        switch (RouteRef(sessionId, refString))
+        {
+            case RefRouting.NoSession:
+                tab = null;
+                return new TabOutcome<T>.NoSession();
+            case RefRouting.Superseded superseded:
+                tab = null;
+                return new TabOutcome<T>.Superseded(superseded.Url);
+            case RefRouting.Closed closed:
+                tab = null;
+                return new TabOutcome<T>.Closed(closed.Url);
+            case RefRouting.Routed routed:
+                tab = routed.Tab;
+                break;
+            default:
+                tab = session?.CurrentTab;
+                break;
+        }
+
+        if (session is null)
+        {
+            return new TabOutcome<T>.NoSession();
+        }
+
+        return tab is null ? new TabOutcome<T>.Unknown() : null;
+    }
+
+    // The shared pipeline under an already-held tab lock: touch, read the URL before the work, run
+    // the work, decide supersede, note where the tab landed, commit the lease — and answer the
+    // closed wall over anything the work said when the page died along the way.
+    private async Task<TabOutcome<T>> RunOnLockedTabAsync<T>(
+        BrowserSession session,
+        BrowserTab tab,
+        StampPolicy stamping,
+        bool supersedeAlways,
+        Func<TabWorkContext, Task<T>> work,
+        CancellationToken ct)
+    {
+        Touch(session, tab);
+        var ctx = new TabWorkContext(this, session, tab, stamping, SafeUrl(tab.Page), ct);
+        try
+        {
+            T result;
+            try
+            {
+                result = await work(ctx);
+            }
+            catch (Exception ex) when (IsConnectionClosed(ex) && tab.Page.IsClosed)
+            {
+                // One tab dying mid-work throws the same text as the whole connection dying; the
+                // closed page says which it truly was, and the session's other tabs live on.
+                return new TabOutcome<T>.Closed(tab.RequestedUrl);
+            }
+
+            if (tab.Page.IsClosed)
+            {
+                // The closed wall wins over the work's own answer: whatever the work produced, it
+                // read a page that is gone.
+                return new TabOutcome<T>.Closed(tab.RequestedUrl);
+            }
+
+            CommitTail(session, tab, ctx, supersedeAlways);
+            return new TabOutcome<T>.Ran(result);
+        }
+        finally
+        {
+            ctx.ReleaseLease();
+        }
+    }
+
+    private void CommitTail(BrowserSession session, BrowserTab tab, TabWorkContext ctx, bool supersedeAlways)
+    {
+        var finalUrl = SafeUrl(tab.Page);
+
+        // Browse always supersedes; every other intent supersedes iff the URL moved across the
+        // work — same-URL client-side re-renders deliberately keep refs alive (ADR-0034's "acting
+        // does not unmake handles"). Superseding before the commit registers the work's fresh
+        // range, so a restamp never kills its own numbers.
+        if (supersedeAlways || finalUrl != ctx.UrlBefore)
+        {
+            session.SupersedeRangesOf(tab);
+        }
+
+        NoteFinalUrl(session.SessionId, tab, finalUrl);
+        ctx.CommitLease();
+    }
+
+    // A "has been closed" out of Playwright is definitive proof a page, context or connection is
+    // unusable; whether it was one tab or the whole connection is decided by Page.IsClosed at the
+    // catch site.
+    internal static bool IsConnectionClosed(Exception ex) =>
+        ex is PlaywrightException &&
+        (ex.Message.Contains("has been closed", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("Connection closed", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("Browser closed", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("disconnected", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("WebSocket", StringComparison.OrdinalIgnoreCase));
+
     // Where a browse lands: a live tab whose address — asked-for or landed-on — matches exactly is
     // reloaded in place; anything else opens a new tab, closing the least-recently-touched one
     // when the pool is full. Pool mutation happens under the session's own gate, so two parallel
     // browses of one session get two tabs rather than racing into one, and one session's pool work
     // never queues behind another's.
-    public async Task<TabAcquisition> AcquireTabForBrowseAsync(
+    private async Task<TabAcquisition> AcquireTabForBrowseAsync(
         string sessionId, string url, IBrowserContext context, CancellationToken ct = default)
     {
         var session = await GetOrCreateAsync(sessionId, ct);
@@ -104,14 +486,14 @@ public class BrowserSessionManager : IAsyncDisposable
                 // a later closed-wall names the URL the model most recently used.
                 match.RequestedUrl = url;
                 Touch(session, match);
-                return new TabAcquisition(match, Reused: true);
+                return new TabAcquisition(session, match, Reused: true);
             }
 
             // The page first, the eviction after: a transient failure to open one must not have
             // already killed an innocent tab and its refs.
             var page = await context.NewPageAsync();
             evicted = session.EvictLruIfAtCap(_tabCap);
-            return new TabAcquisition(Admit(session, sessionId, page, url), Reused: false);
+            return new TabAcquisition(session, Admit(session, sessionId, page, url), Reused: false);
         }
         finally
         {
@@ -126,7 +508,7 @@ public class BrowserSessionManager : IAsyncDisposable
     // A page the site itself opened — target=_blank, window.open — is adopted into the pool
     // instead of leaking: it counts against the cap (evicting under it), becomes current, and is
     // left pending so the action whose click spawned it can answer from it.
-    public async Task<BrowserTab?> AdoptPopupAsync(
+    private async Task<BrowserTab?> AdoptPopupAsync(
         string sessionId, IPage popup, BrowserTab? opener = null, CancellationToken ct = default)
     {
         var session = _sessions.GetValueOrDefault(sessionId);
@@ -220,7 +602,7 @@ public class BrowserSessionManager : IAsyncDisposable
 
     // The popup the tab's last adoption left for the action that spawned it, handed over exactly
     // once — and only to an action on the tab whose click opened it.
-    public BrowserTab? TakePendingPopup(string sessionId, BrowserTab tab)
+    private BrowserTab? TakePendingPopup(string sessionId, BrowserTab tab)
     {
         if (!_sessions.ContainsKey(sessionId))
         {
@@ -232,7 +614,7 @@ public class BrowserSessionManager : IAsyncDisposable
         return pending;
     }
 
-    private static string SafeUrl(IPage page)
+    internal static string SafeUrl(IPage page)
     {
         try
         {
@@ -246,7 +628,7 @@ public class BrowserSessionManager : IAsyncDisposable
 
     // Touch is any tool call routed to a tab, view_image included: it refreshes the tab's place in
     // the LRU order, makes it the session's current tab, and resets the session's one idle clock.
-    public void TouchTab(string sessionId, BrowserTab tab)
+    private void TouchTab(string sessionId, BrowserTab tab)
     {
         if (_sessions.TryGetValue(sessionId, out var session))
         {
@@ -264,7 +646,7 @@ public class BrowserSessionManager : IAsyncDisposable
 
     // Where the tab actually landed, recorded beside the address it was asked for — redirects
     // split the two, and reuse matches either.
-    public void NoteFinalUrl(string sessionId, BrowserTab tab, string url)
+    private void NoteFinalUrl(string sessionId, BrowserTab tab, string url)
     {
         // A popup adopted before its navigation committed is known only as about:blank; once it
         // lands somewhere real, that address is the one its walls can name — "Browse about:blank
@@ -281,7 +663,7 @@ public class BrowserSessionManager : IAsyncDisposable
     // One tab, one operation at a time: navigation, action, snapshot and image fetch all take this,
     // so a mid-navigation read cannot answer with a half-replaced DOM. Different tabs of one
     // session do not serialize against each other; pool mutation has its own session-level gate.
-    public async Task<IDisposable> LockTabAsync(BrowserTab tab, CancellationToken ct = default)
+    private async Task<IDisposable> LockTabAsync(BrowserTab tab, CancellationToken ct = default)
     {
         await tab.Gate.WaitAsync(ct);
         return new LockReleaser(tab.Gate);
@@ -304,7 +686,7 @@ public class BrowserSessionManager : IAsyncDisposable
     // same start would reissue every number the slower one writes. A stamp naming its tab also
     // records the committed range in the session's registry, which is what later routes each ref
     // back to the tab that stamped it.
-    public async Task<RefStampLease> BeginStampAsync(
+    internal async Task<RefStampLease> BeginStampAsync(
         string sessionId, RefNamespace ns, BrowserTab? tab = null, CancellationToken ct = default)
     {
         var session = _sessions.GetValueOrDefault(sessionId)
@@ -313,7 +695,7 @@ public class BrowserSessionManager : IAsyncDisposable
         return new RefStampLease(session, ns, tab);
     }
 
-    public sealed class RefStampLease : IDisposable
+    internal sealed class RefStampLease : IDisposable
     {
         private BrowserSession? _session;
         private readonly RefNamespace _namespace;
@@ -358,7 +740,7 @@ public class BrowserSessionManager : IAsyncDisposable
 
     // Which tab a ref belongs to, or which wall it hits. Reads the session's registry: an Active
     // range whose tab is still in the pool routes; anything else names its recovery.
-    public RefRouting RouteRef(string sessionId, string refString)
+    private RefRouting RouteRef(string sessionId, string refString)
     {
         var session = _sessions.GetValueOrDefault(sessionId);
         if (session is null)
@@ -392,13 +774,6 @@ public class BrowserSessionManager : IAsyncDisposable
         }
 
         return null;
-    }
-
-    // An in-tab navigation replaced the document: every ref stamped on the old document is now
-    // superseded — the tab is open, and snapshotting or browsing it again mints fresh ones.
-    public void MarkTabNavigated(string sessionId, BrowserTab tab)
-    {
-        _sessions.GetValueOrDefault(sessionId)?.SupersedeRangesOf(tab);
     }
 
     public async Task CloseAsync(string sessionId)
@@ -475,11 +850,155 @@ public class BrowserSessionManager : IAsyncDisposable
     }
 }
 
-public record TabAcquisition(BrowserTab Tab, bool Reused);
+internal record TabAcquisition(BrowserSession Session, BrowserTab Tab, bool Reused);
+
+// What a run through the tab protocol answers: the work's result, or a named wall. One arm per
+// way the protocol can refuse, so a caller maps walls to its own statuses in one switch and can
+// never meet an unnamed refusal.
+public abstract record TabOutcome<T>
+{
+    // PopupAnswered: the action's work opened a page the site itself created, and the answer came
+    // from that popup rather than the acting tab.
+    public sealed record Ran(T Result, bool PopupAnswered = false) : TabOutcome<T>;
+
+    public sealed record NoSession : TabOutcome<T>;
+
+    // The ref's tab is open; a later stamp renumbered its refs. Url is the address to browse or
+    // snapshot for fresh ones.
+    public sealed record Superseded(string Url) : TabOutcome<T>;
+
+    // The tab is gone — evicted, or closed by the site. Url names the page to browse again.
+    public sealed record Closed(string Url) : TabOutcome<T>;
+
+    // The ref's range aged out of the bounded registry and no current tab remains to answer the
+    // ordinary not-found.
+    public sealed record Unknown : TabOutcome<T>;
+
+    // The session replaced tabs faster than the acquisition could hold one — retryable, not an
+    // error.
+    public sealed record AcquireExhausted : TabOutcome<T>;
+
+    // The tab addressed by URL (the composed-snapshot exception) is no longer in the session.
+    public sealed record AddressedTabGone(string Url) : TabOutcome<T>;
+}
+
+// How an action answers when its click opened a popup: the popup's own stamping policy and the
+// work that reads it. The pickup timing and the nested lock stay inside the module.
+public sealed record PopupAnswer<T>(StampPolicy Stamping, Func<TabWorkContext, Task<T>> Answer);
+
+// What an intent's work is allowed to stamp, and how a restamp differs from an additive pass. The
+// namespace and mode travel here so the lease's supersede flag and the capture's augment choice
+// cannot come apart.
+public abstract record StampPolicy
+{
+    public static readonly StampPolicy None = new NoStamp();
+
+    public static StampPolicy Restamp(RefNamespace ns) => new Restamping(ns);
+
+    public static StampPolicy AugmentUnlessNavigated(RefNamespace ns) => new Augmenting(ns);
+
+    internal sealed record NoStamp : StampPolicy;
+
+    internal sealed record Restamping(RefNamespace Ns) : StampPolicy;
+
+    internal sealed record Augmenting(RefNamespace Ns) : StampPolicy;
+
+    internal RefNamespace? Namespace => this switch
+    {
+        Restamping r => r.Ns,
+        Augmenting a => a.Ns,
+        _ => null
+    };
+}
+
+// What the work sees: the page, the address the tab held before the work, and — where the
+// intent's stamping policy says so — the stamp start. The lease itself never crosses the seam:
+// the module opens it when the work asks and commits it in the pipeline's tail, so a work
+// callback cannot hold the counters wrong.
+public sealed class TabWorkContext
+{
+    private readonly BrowserSessionManager _manager;
+    private readonly BrowserSession _session;
+    private readonly BrowserTab _tab;
+    private readonly StampPolicy _stamping;
+    private readonly CancellationToken _ct;
+    private BrowserSessionManager.RefStampLease? _lease;
+    private int _stampedCount;
+    private bool? _augment;
+
+    internal TabWorkContext(
+        BrowserSessionManager manager,
+        BrowserSession session,
+        BrowserTab tab,
+        StampPolicy stamping,
+        string urlBefore,
+        CancellationToken ct)
+    {
+        _manager = manager;
+        _session = session;
+        _tab = tab;
+        _stamping = stamping;
+        UrlBefore = urlBefore;
+        _ct = ct;
+    }
+
+    // The raw Playwright page. Convention, not the type system, keeps it from escaping the lock.
+    public IPage Page => _tab.Page;
+
+    // The tab's address as it was when the work started, read under the lock — a navigation
+    // queued ahead of this call already moved the tab, and a URL captured outside the queue would
+    // compare against a page that is no longer there.
+    public string UrlBefore { get; }
+
+    // Whether a capture should augment (keep existing refs, number only what appeared) rather
+    // than restamp. Latched on first read so the capture's choice and the lease's supersede flag
+    // answer "did the work navigate" the same way.
+    public bool AugmentRefs => _augment ??=
+        _stamping is StampPolicy.Augmenting && BrowserSessionManager.SafeUrl(_tab.Page) == UrlBefore;
+
+    // Runs the work's stamping script under the session's lease for this intent's namespace: the
+    // script receives the start number and answers how many refs it wrote. The module commits the
+    // count after the work, with the supersede flag the intent decided.
+    public async Task StampAsync(Func<int, Task<int>> stamp)
+    {
+        if (_stamping.Namespace is not { } ns)
+        {
+            throw new InvalidOperationException("This intent's stamping policy is None.");
+        }
+
+        // One work, one stamp: a second ask would wait on the very lock its first lease holds.
+        // Refused by name rather than deadlocking the tab.
+        if (_lease is not null)
+        {
+            throw new InvalidOperationException("This work already stamped; one stamp per run.");
+        }
+
+        _lease = await _manager.BeginStampAsync(_session.SessionId, ns, _tab, _ct);
+        _stampedCount = await stamp(_lease.Start);
+    }
+
+    internal void CommitLease()
+    {
+        if (_lease is null)
+        {
+            return;
+        }
+
+        _lease.Commit(_stampedCount, supersede: !AugmentRefs);
+        _lease.Dispose();
+        _lease = null;
+    }
+
+    internal void ReleaseLease()
+    {
+        _lease?.Dispose();
+        _lease = null;
+    }
+}
 
 // One live page in a session's pool. The model never sees it: a tab is addressed only through the
 // refs it stamped, or by being the tab last touched.
-public class BrowserTab(IPage page, string requestedUrl, DateTimeOffset createdAt)
+internal class BrowserTab(IPage page, string requestedUrl, DateTimeOffset createdAt)
 {
     public IPage Page { get; } = page;
 
@@ -501,14 +1020,14 @@ public class BrowserTab(IPage page, string requestedUrl, DateTimeOffset createdA
 // One issued run of numbers: which tab stamped them, the address the model knows that tab by, and
 // whether the run still resolves. A tombstone (Closed) outlives its tab so the refusal can name
 // the page to browse again.
-public enum RefRangeState
+internal enum RefRangeState
 {
     Active,
     Superseded,
     Closed
 }
 
-public abstract record RefRouting
+internal abstract record RefRouting
 {
     public sealed record NoSession : RefRouting;
 
@@ -541,8 +1060,8 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
     public string SessionId { get; } = sessionId;
     public DateTimeOffset CreatedAt { get; } = createdAt;
     public DateTimeOffset LastAccessedAt { get; internal set; } = createdAt;
-    public BrowserTab? CurrentTab { get; internal set; }
-    public SessionRefCounters Counters { get; } = new();
+    internal BrowserTab? CurrentTab { get; set; }
+    internal SessionRefCounters Counters { get; } = new();
 
     // Serializes this session's pool mutation — create, reuse, evict, adopt — and nothing else's.
     internal SemaphoreSlim PoolGate { get; } = new(1, 1);
@@ -552,7 +1071,7 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
     // while it resizes.
     private readonly List<BrowserTab> _tabs = [];
 
-    public IReadOnlyList<BrowserTab> Tabs
+    internal IReadOnlyList<BrowserTab> Tabs
     {
         get
         {
@@ -699,7 +1218,7 @@ public enum RefNamespace
 // move forward; a number handed out is never handed out again within the session. Each namespace
 // carries its own stamping lock — the counters are independent, and one lock across both would
 // deadlock a caller stamping images while it still holds an element lease.
-public class SessionRefCounters
+internal class SessionRefCounters
 {
     private readonly int[] _next = [1, 1];
     private readonly SemaphoreSlim[] _stampLocks = [new(1, 1), new(1, 1)];

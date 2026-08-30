@@ -135,10 +135,20 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
             idleTimeout: TimeSpan.FromMinutes(30));
 
         var scopeA = ConversationScope.Build("nabu", "conv-a");
-        var first = await manager.AcquireTabForBrowseAsync(scopeA, "https://a.test/", context.Object);
-        var second = await manager.AcquireTabForBrowseAsync(scopeA, "https://a.test/", context.Object);
+        IPage? firstPage = null;
+        IPage? secondPage = null;
+        (await manager.BrowseAsync(scopeA, "https://a.test/", context.Object, cx =>
+        {
+            firstPage = cx.Page;
+            return Task.FromResult(true);
+        })).ShouldBeOfType<TabOutcome<bool>.Ran>();
+        (await manager.BrowseAsync(scopeA, "https://a.test/", context.Object, cx =>
+        {
+            secondPage = cx.Page;
+            return Task.FromResult(true);
+        })).ShouldBeOfType<TabOutcome<bool>.Ran>();
 
-        second.Tab.ShouldBeSameAs(first.Tab);
+        secondPage.ShouldBeSameAs(firstPage);
         context.Verify(c => c.NewPageAsync(), Times.Once);
 
         time.Advance(TimeSpan.FromMinutes(31));

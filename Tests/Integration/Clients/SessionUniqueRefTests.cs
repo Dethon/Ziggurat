@@ -63,19 +63,19 @@ public partial class SessionUniqueRefTests(IsolatedSessionBrowserFixture fixture
             await WaitForImageToLoadAsync(sessionId, "pic");
 
             await fixture.Browser.AnnotateImagesOnSessionAsync(sessionId);
-            var firstRef = await StampedRefAsync(sessionId, "pic");
-
             await fixture.Browser.AnnotateImagesOnSessionAsync(sessionId);
-            var secondRef = await StampedRefAsync(sessionId, "pic");
 
-            // Named rather than sliced blind: an unstamped image answers "", and slicing that
-            // throws an index error that says nothing about what went wrong.
-            firstRef.ShouldStartWith("i-", customMessage: "the first pass stamped no ref");
-            secondRef.ShouldStartWith("i-", customMessage: "the second pass stamped no ref");
+            // A fresh session's first pass stamps i-1; a second pass over the same one-picture
+            // page must number above it, never reissue it. Observed through the contract: the
+            // first number answers the superseded wall (renumbered, not reused) and the second
+            // answers the picture.
+            var fetched = await fixture.Browser.FetchImagesAsync(
+                new ImageFetchRequest(sessionId, ["i-1", "i-2"]));
 
-            var firstNumber = int.Parse(firstRef["i-".Length..]);
-            var secondNumber = int.Parse(secondRef["i-".Length..]);
-            secondNumber.ShouldBeGreaterThan(firstNumber);
+            fetched.Images.Count.ShouldBe(2);
+            fetched.Images[0].Status.ShouldBe(ImageFetchStatus.RefSuperseded);
+            fetched.Images[1].Status.ShouldBe(ImageFetchStatus.Success);
+            fetched.Images[1].Label.ShouldBe("A chart");
         }
         finally
         {
@@ -100,11 +100,6 @@ public partial class SessionUniqueRefTests(IsolatedSessionBrowserFixture fixture
                   await new Promise(r => { img.onload = r; img.onerror = r; });
               }
               """);
-
-    private async Task<string> StampedRefAsync(string sessionId, string elementId) =>
-        await fixture.Browser.EvaluateOnSessionAsync<string>(
-            sessionId,
-            $"() => document.getElementById('{elementId}').getAttribute('data-img-ref') ?? ''");
 
     private async Task PrepareAsync(string sessionId, string markup)
     {

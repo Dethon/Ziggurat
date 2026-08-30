@@ -6,260 +6,263 @@ using Shouldly;
 
 namespace Tests.Unit.Infrastructure;
 
+// The tab-pool policy facts — LRU, reuse-before-open, ranges, tombstones, counters, idle pruning —
+// asserted through the four per-intent methods and the pool lifecycle, against faked pages. The
+// old suite drove the protocol verbs directly, which made it the caller: it performed the
+// sequencing instead of checking it, and stayed green through eleven sequencing bugs.
 public class BrowserSessionManagerTests
 {
-    // A context that hands out a fresh page per NewPageAsync call, recorded in order, so a test
-    // can say which tab's page was closed and which stayed alive.
-    private static (Mock<IBrowserContext> Context, List<Mock<IPage>> Pages) CreateContext()
+    private static Task<TabOutcome<IPage>> BrowseAsync(
+        BrowserSessionManager manager, Mock<IBrowserContext> ctx, string sessionId, string url) =>
+        manager.BrowseAsync(sessionId, url, ctx.Object, cx => Task.FromResult(cx.Page));
+
+    private static IPage RanOn(TabOutcome<IPage> outcome) =>
+        outcome.ShouldBeOfType<TabOutcome<IPage>.Ran>().Result;
+
+    // Stamps a range on the current tab, the way a snapshot or the browse's annotate pass does.
+    private static async Task StampAsync(
+        BrowserSessionManager manager, string sessionId, RefNamespace ns, int count)
     {
-        var pages = new List<Mock<IPage>>();
-        var ctx = new Mock<IBrowserContext>();
-        ctx.Setup(c => c.NewPageAsync()).ReturnsAsync(() =>
-        {
-            var page = new Mock<IPage>();
-            page.SetupGet(p => p.IsClosed).Returns(false);
-            page.Setup(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()))
-                .Returns(Task.CompletedTask);
-            pages.Add(page);
-            return page.Object;
-        });
-        return (ctx, pages);
+        var outcome = await manager.OnCurrentTabAsync(
+            sessionId, StampPolicy.Restamp(ns),
+            async cx =>
+            {
+                await cx.StampAsync(_ => Task.FromResult(count));
+                return true;
+            });
+        outcome.ShouldBeOfType<TabOutcome<bool>.Ran>();
     }
 
-    private static Task<TabAcquisition> BrowseAsync(
-        BrowserSessionManager manager, Mock<IBrowserContext> ctx, string sessionId, string url) =>
-        manager.AcquireTabForBrowseAsync(sessionId, url, ctx.Object);
+    // Where a ref lands, observed as the model would: the wall, or the page the work ran on.
+    private static Task<TabOutcome<IPage>> RouteAsync(
+        BrowserSessionManager manager, string sessionId, string refString) =>
+        manager.OnRefAsync(sessionId, refString, StampPolicy.None, cx => Task.FromResult(cx.Page));
+
+    // The page a ref-less call lands on — the pool's idea of the current tab.
+    private static async Task<IPage> CurrentPageAsync(BrowserSessionManager manager, string sessionId)
+    {
+        var outcome = await manager.OnCurrentTabAsync(
+            sessionId, StampPolicy.None, cx => Task.FromResult(cx.Page));
+        return RanOn(outcome);
+    }
 
     [Fact]
     public async Task BrowsingASecondUrl_LeavesTheFirstTabAlive()
     {
-        var (ctx, pages) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
         await BrowseAsync(manager, ctx, "s1", "https://a.test/");
         await BrowseAsync(manager, ctx, "s1", "https://b.test/");
 
-        manager.Get("s1")!.Tabs.Count.ShouldBe(2);
         pages.Count.ShouldBe(2);
-        pages[0].Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
+        pages[0].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
+
+        // The first page still answers a call addressed to its URL.
+        var onFirst = await manager.OnUrlAsync(
+            "s1", "https://a.test/", StampPolicy.None, cx => Task.FromResult(cx.Page));
+        RanOn(onFirst).ShouldBeSameAs(pages[0].Mock.Object);
     }
 
     [Fact]
     public async Task BrowsingAUrlAlreadyOpen_ReusesItsTabRatherThanOpeningAnother()
     {
-        var (ctx, pages) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
         var first = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
         var again = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
 
-        again.Reused.ShouldBeTrue();
-        again.Tab.ShouldBeSameAs(first.Tab);
         pages.Count.ShouldBe(1);
+        RanOn(again).ShouldBeSameAs(RanOn(first));
     }
 
     [Fact]
     public async Task ReuseMatchesAcrossARedirect_ByEitherAddress()
     {
-        var (ctx, pages) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
         // Asked for a.test, landed on b.test — a redirect splits the two addresses.
-        var first = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        manager.NoteFinalUrl("s1", first.Tab, "https://b.test/landing");
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, cx =>
+        {
+            pages[0].Url = "https://b.test/landing";
+            return Task.FromResult(true);
+        });
 
         var byRequested = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
         var byFinal = await BrowseAsync(manager, ctx, "s1", "https://b.test/landing");
 
-        byRequested.Reused.ShouldBeTrue();
-        byRequested.Tab.ShouldBeSameAs(first.Tab);
-        byFinal.Reused.ShouldBeTrue();
-        byFinal.Tab.ShouldBeSameAs(first.Tab);
         pages.Count.ShouldBe(1);
+        RanOn(byRequested).ShouldBeSameAs(pages[0].Mock.Object);
+        RanOn(byFinal).ShouldBeSameAs(pages[0].Mock.Object);
     }
 
     [Fact]
     public async Task AFourthDistinctPage_ClosesTheLeastRecentlyTouchedTab_NotTheOldestCreated()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var (ctx, pages) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager(timeProvider: time);
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
         time.Advance(TimeSpan.FromSeconds(1));
         await BrowseAsync(manager, ctx, "s1", "https://b.test/");
         time.Advance(TimeSpan.FromSeconds(1));
         await BrowseAsync(manager, ctx, "s1", "https://c.test/");
         time.Advance(TimeSpan.FromSeconds(1));
 
-        // The oldest-created tab is touched again, so the least-recently-touched is now b.
-        manager.TouchTab("s1", a.Tab);
+        // The oldest-created tab is touched again by a routed call, so the least-recently-touched
+        // is now b.
+        await manager.OnUrlAsync("s1", "https://a.test/", StampPolicy.None, _ => Task.FromResult(true));
         time.Advance(TimeSpan.FromSeconds(1));
 
         await BrowseAsync(manager, ctx, "s1", "https://d.test/");
 
-        manager.Get("s1")!.Tabs.Count.ShouldBe(3);
-        pages[1].Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
-        pages[0].Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
+        pages[1].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
+        pages[0].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
     }
 
     [Fact]
     public async Task TheTabCap_IsASettingOnTheManager()
     {
-        var (ctx, pages) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager(tabCap: 2);
 
         await BrowseAsync(manager, ctx, "s1", "https://a.test/");
         await BrowseAsync(manager, ctx, "s1", "https://b.test/");
         await BrowseAsync(manager, ctx, "s1", "https://c.test/");
 
-        manager.Get("s1")!.Tabs.Count.ShouldBe(2);
-        pages[0].Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
+        pages[0].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
+        pages[1].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
     }
 
     [Fact]
     public async Task AnyRoutedCall_MakesItsTabTheCurrentOne()
     {
-        var (ctx, _) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        var b = await BrowseAsync(manager, ctx, "s1", "https://b.test/");
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await BrowseAsync(manager, ctx, "s1", "https://b.test/");
 
-        manager.Get("s1")!.CurrentTab.ShouldBeSameAs(b.Tab);
+        (await CurrentPageAsync(manager, "s1")).ShouldBeSameAs(pages[1].Mock.Object);
 
         // A routed call to the older tab — a view_image, an action — refocuses it.
-        manager.TouchTab("s1", a.Tab);
+        await manager.OnUrlAsync("s1", "https://a.test/", StampPolicy.None, _ => Task.FromResult(true));
 
-        manager.Get("s1")!.CurrentTab.ShouldBeSameAs(a.Tab);
+        (await CurrentPageAsync(manager, "s1")).ShouldBeSameAs(pages[0].Mock.Object);
     }
 
     [Fact]
     public async Task TwoParallelBrowsesOfDifferentUrls_LandOnTwoTabs()
     {
-        var (ctx, pages) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
         var results = await Task.WhenAll(
             BrowseAsync(manager, ctx, "s1", "https://a.test/"),
             BrowseAsync(manager, ctx, "s1", "https://b.test/"));
 
-        results[0].Tab.ShouldNotBeSameAs(results[1].Tab);
-        manager.Get("s1")!.Tabs.Count.ShouldBe(2);
         pages.Count.ShouldBe(2);
-    }
-
-    private static async Task StampAsync(
-        BrowserSessionManager manager, string sessionId, BrowserTab tab, RefNamespace ns, int count)
-    {
-        using var lease = await manager.BeginStampAsync(sessionId, ns, tab);
-        lease.Commit(count);
+        RanOn(results[0]).ShouldNotBeSameAs(RanOn(results[1]));
     }
 
     [Fact]
     public async Task ARef_RoutesToTheTabThatStampedIt()
     {
-        var (ctx, _) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        await StampAsync(manager, "s1", a.Tab, RefNamespace.Element, 3);
-        var b = await BrowseAsync(manager, ctx, "s1", "https://b.test/");
-        await StampAsync(manager, "s1", b.Tab, RefNamespace.Element, 2);
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await StampAsync(manager, "s1", RefNamespace.Element, 3);
+        await BrowseAsync(manager, ctx, "s1", "https://b.test/");
+        await StampAsync(manager, "s1", RefNamespace.Element, 2);
 
-        manager.RouteRef("s1", "e-2").ShouldBe(new RefRouting.Routed(a.Tab));
-        manager.RouteRef("s1", "e-5").ShouldBe(new RefRouting.Routed(b.Tab));
+        RanOn(await RouteAsync(manager, "s1", "e-2")).ShouldBeSameAs(pages[0].Mock.Object);
+        RanOn(await RouteAsync(manager, "s1", "e-5")).ShouldBeSameAs(pages[1].Mock.Object);
     }
 
     [Fact]
     public async Task AnImageRef_RoutesThroughItsOwnNamespace()
     {
-        var (ctx, _) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        await StampAsync(manager, "s1", a.Tab, RefNamespace.Image, 4);
-        var b = await BrowseAsync(manager, ctx, "s1", "https://b.test/");
-        await StampAsync(manager, "s1", b.Tab, RefNamespace.Element, 4);
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await StampAsync(manager, "s1", RefNamespace.Image, 4);
+        await BrowseAsync(manager, ctx, "s1", "https://b.test/");
+        await StampAsync(manager, "s1", RefNamespace.Element, 4);
 
         // The same number lives in both namespaces; each ref finds its own.
-        manager.RouteRef("s1", "i-3").ShouldBe(new RefRouting.Routed(a.Tab));
-        manager.RouteRef("s1", "e-3").ShouldBe(new RefRouting.Routed(b.Tab));
+        RanOn(await RouteAsync(manager, "s1", "i-3")).ShouldBeSameAs(pages[0].Mock.Object);
+        RanOn(await RouteAsync(manager, "s1", "e-3")).ShouldBeSameAs(pages[1].Mock.Object);
     }
 
     [Fact]
-    public async Task ARefWhoseNumberOverflows_IsUnknownRatherThanAnException()
+    public async Task ARefWhoseNumberOverflows_FallsToTheCurrentTab_NotAnException()
     {
         // The shape predicates accept any digit run, so a model-invented ref past int.MaxValue
-        // must fall to the unknown wall, not throw out of routing as a retryable internal error.
-        var (ctx, _) = CreateContext();
+        // must land on the current tab's ordinary not-found, not throw out of routing.
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
         await BrowseAsync(manager, ctx, "s1", "https://a.test/");
 
-        manager.RouteRef("s1", "e-99999999999999999999").ShouldBe(new RefRouting.Unknown());
-        manager.RouteRef("s1", "i-99999999999999999999").ShouldBe(new RefRouting.Unknown());
-    }
-
-    [Fact]
-    public async Task AnAdditiveStamp_LeavesTheEarlierRefsRouting()
-    {
-        var (ctx, _) = CreateContext();
-        await using var manager = new BrowserSessionManager();
-
-        // A non-navigating action stamps only the elements that appeared — the refs the model is
-        // mid-flow with keep resolving, or a four-field form dies after its first fill.
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        await StampAsync(manager, "s1", a.Tab, RefNamespace.Element, 3);
-        using (var lease = await manager.BeginStampAsync("s1", RefNamespace.Element, a.Tab))
-        {
-            lease.Commit(2, supersede: false);
-        }
-
-        manager.RouteRef("s1", "e-2").ShouldBe(new RefRouting.Routed(a.Tab));
-        manager.RouteRef("s1", "e-5").ShouldBe(new RefRouting.Routed(a.Tab));
+        RanOn(await RouteAsync(manager, "s1", "e-99999999999999999999"))
+            .ShouldBeSameAs(pages[0].Mock.Object);
+        RanOn(await RouteAsync(manager, "s1", "i-99999999999999999999"))
+            .ShouldBeSameAs(pages[0].Mock.Object);
     }
 
     [Fact]
     public async Task ARefRenumberedByALaterStamp_AnswersSuperseded()
     {
-        var (ctx, _) = CreateContext();
+        var (ctx, _) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        await StampAsync(manager, "s1", a.Tab, RefNamespace.Element, 3);
-        await StampAsync(manager, "s1", a.Tab, RefNamespace.Element, 3);
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await StampAsync(manager, "s1", RefNamespace.Element, 3);
+        await StampAsync(manager, "s1", RefNamespace.Element, 3);
 
         // The tab is open; only the numbers moved on.
-        manager.RouteRef("s1", "e-2").ShouldBe(new RefRouting.Superseded("https://a.test/"));
-        manager.RouteRef("s1", "e-5").ShouldBe(new RefRouting.Routed(a.Tab));
+        (await RouteAsync(manager, "s1", "e-2"))
+            .ShouldBe(new TabOutcome<IPage>.Superseded("https://a.test/"));
+        (await RouteAsync(manager, "s1", "e-5")).ShouldBeOfType<TabOutcome<IPage>.Ran>();
     }
 
     [Fact]
     public async Task AnInTabNavigation_SupersedesEverythingTheTabStamped()
     {
-        var (ctx, _) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        await StampAsync(manager, "s1", a.Tab, RefNamespace.Image, 2);
-        await StampAsync(manager, "s1", a.Tab, RefNamespace.Element, 2);
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await StampAsync(manager, "s1", RefNamespace.Image, 2);
+        await StampAsync(manager, "s1", RefNamespace.Element, 2);
 
-        manager.MarkTabNavigated("s1", a.Tab);
+        // A work that moves the URL is an in-tab navigation: the document was replaced.
+        await manager.OnCurrentTabAsync("s1", StampPolicy.None, _ =>
+        {
+            pages[0].Url = "https://a.test/next";
+            return Task.FromResult(true);
+        });
 
-        manager.RouteRef("s1", "i-1").ShouldBe(new RefRouting.Superseded("https://a.test/"));
-        manager.RouteRef("s1", "e-1").ShouldBe(new RefRouting.Superseded("https://a.test/"));
+        (await RouteAsync(manager, "s1", "i-1"))
+            .ShouldBe(new TabOutcome<IPage>.Superseded("https://a.test/"));
+        (await RouteAsync(manager, "s1", "e-1"))
+            .ShouldBe(new TabOutcome<IPage>.Superseded("https://a.test/"));
     }
 
     [Fact]
     public async Task ARefFromAnEvictedTab_AnswersClosed_NamingTheUrlItBelongedTo()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var (ctx, _) = CreateContext();
+        var (ctx, _) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager(timeProvider: time);
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/product");
-        await StampAsync(manager, "s1", a.Tab, RefNamespace.Image, 2);
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/product");
+        await StampAsync(manager, "s1", RefNamespace.Image, 2);
         time.Advance(TimeSpan.FromSeconds(1));
         await BrowseAsync(manager, ctx, "s1", "https://b.test/");
         time.Advance(TimeSpan.FromSeconds(1));
@@ -268,52 +271,58 @@ public class BrowserSessionManagerTests
         await BrowseAsync(manager, ctx, "s1", "https://d.test/");
 
         // The tombstone survives the tab: the wall names the page to browse again.
-        manager.RouteRef("s1", "i-1").ShouldBe(new RefRouting.Closed("https://a.test/product"));
+        (await RouteAsync(manager, "s1", "i-1"))
+            .ShouldBe(new TabOutcome<IPage>.Closed("https://a.test/product"));
     }
 
     [Fact]
     public async Task TheRegistry_HoldsNothingAfterItsSessionCloses()
     {
-        var (ctx, _) = CreateContext();
+        var (ctx, _) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        await StampAsync(manager, "s1", a.Tab, RefNamespace.Element, 3);
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await StampAsync(manager, "s1", RefNamespace.Element, 3);
 
         await manager.CloseAsync("s1");
 
         // Session death is not a third wall: the existing dead-session refusal answers.
-        manager.RouteRef("s1", "e-1").ShouldBe(new RefRouting.NoSession());
+        (await RouteAsync(manager, "s1", "e-1")).ShouldBe(new TabOutcome<IPage>.NoSession());
     }
 
     [Fact]
-    public async Task TheRegistry_IsBounded_AndAnAgedOutRefRoutesNowhere()
+    public async Task TheRegistry_IsBounded_AndAnAgedOutRefFallsToTheCurrentTab()
     {
-        var (ctx, _) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
         foreach (var _ in Enumerable.Range(0, 200))
         {
-            await StampAsync(manager, "s1", a.Tab, RefNamespace.Element, 1);
+            await StampAsync(manager, "s1", RefNamespace.Element, 1);
         }
 
-        // The newest entry still routes; the oldest fell off rather than growing without limit.
-        manager.RouteRef("s1", "e-200").ShouldBe(new RefRouting.Routed(a.Tab));
-        manager.RouteRef("s1", "e-1").ShouldBe(new RefRouting.Unknown());
+        await BrowseAsync(manager, ctx, "s1", "https://b.test/");
+
+        // The oldest entry fell off rather than growing without limit, so it lands on the current
+        // tab's ordinary not-found; the newest still routes to its own tab. The aged-out ref is
+        // asked first, because routing e-200 touches its tab and would move "current".
+        RanOn(await RouteAsync(manager, "s1", "e-1")).ShouldBeSameAs(pages[1].Mock.Object);
+        RanOn(await RouteAsync(manager, "s1", "e-200")).ShouldBeSameAs(pages[0].Mock.Object);
     }
 
     [Fact]
-    public async Task ARefNeverIssued_RoutesNowhere()
+    public async Task ARefNeverIssued_FallsToTheCurrentTab()
     {
-        var (ctx, _) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        await StampAsync(manager, "s1", a.Tab, RefNamespace.Element, 2);
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await StampAsync(manager, "s1", RefNamespace.Element, 2);
+        await BrowseAsync(manager, ctx, "s1", "https://b.test/");
 
-        manager.RouteRef("s1", "e-99").ShouldBe(new RefRouting.Unknown());
-        manager.RouteRef("s1", "not-a-ref").ShouldBe(new RefRouting.Unknown());
+        RanOn(await RouteAsync(manager, "s1", "e-99")).ShouldBeSameAs(pages[1].Mock.Object);
+        RanOn(await RouteAsync(manager, "s1", "not-a-ref")).ShouldBeSameAs(pages[1].Mock.Object);
     }
 
     [Fact]
@@ -321,40 +330,32 @@ public class BrowserSessionManagerTests
     {
         await using var manager = new BrowserSessionManager();
 
-        manager.RouteRef("nobody", "e-1").ShouldBe(new RefRouting.NoSession());
-    }
-
-    private static Mock<IPage> CreatePopupPage()
-    {
-        var page = new Mock<IPage>();
-        page.SetupGet(p => p.IsClosed).Returns(false);
-        page.SetupGet(p => p.Url).Returns("https://popup.test/window");
-        page.Setup(p => p.CloseAsync(It.IsAny<PageCloseOptions?>())).Returns(Task.CompletedTask);
-        return page;
+        (await RouteAsync(manager, "nobody", "e-1")).ShouldBe(new TabOutcome<IPage>.NoSession());
     }
 
     [Fact]
     public async Task AnAdoptedPopup_JoinsThePoolAndBecomesCurrent()
     {
-        var (ctx, _) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
         await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        var popup = CreatePopupPage();
+        var popup = FakePage.Create("https://popup.test/window");
 
-        var adopted = await manager.AdoptPopupAsync("s1", popup.Object);
+        pages[0].RaisePopup(popup);
 
-        var session = manager.Get("s1")!;
-        session.Tabs.Count.ShouldBe(2);
-        session.CurrentTab.ShouldBeSameAs(adopted);
-        adopted!.RequestedUrl.ShouldBe("https://popup.test/window");
+        // It became the tab the next ref-less call addresses, and it answers by its URL.
+        (await CurrentPageAsync(manager, "s1")).ShouldBeSameAs(popup.Mock.Object);
+        var byUrl = await manager.OnUrlAsync(
+            "s1", "https://popup.test/window", StampPolicy.None, cx => Task.FromResult(cx.Page));
+        RanOn(byUrl).ShouldBeSameAs(popup.Mock.Object);
     }
 
     [Fact]
     public async Task AdoptingAPopup_AtTheCap_EvictsTheLeastRecentlyTouched()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var (ctx, pages) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager(timeProvider: time);
 
         await BrowseAsync(manager, ctx, "s1", "https://a.test/");
@@ -364,40 +365,42 @@ public class BrowserSessionManagerTests
         await BrowseAsync(manager, ctx, "s1", "https://c.test/");
         time.Advance(TimeSpan.FromSeconds(1));
 
-        await manager.AdoptPopupAsync("s1", CreatePopupPage().Object);
+        pages[2].RaisePopup(FakePage.Create("https://popup.test/window"));
 
-        manager.Get("s1")!.Tabs.Count.ShouldBe(3);
-        pages[0].Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
+        await Eventually.Until(
+            () => pages[0].Mock.Invocations.Any(i => i.Method.Name == nameof(IPage.CloseAsync)),
+            "the least-recently-touched tab to be evicted for the popup");
+        pages[1].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
     }
 
     [Fact]
-    public async Task AnAdoptedPopup_IsPendingForTheActionThatSpawnedIt_ExactlyOnce()
+    public async Task APopupPendingOnAnotherTab_DoesNotAnswerThisTabsAction()
     {
-        var (ctx, _) = CreateContext();
+        // Two tabs of one session: the popup tab A's click spawned must answer A's action, never
+        // one on B — a session-global handoff let B swallow A's popup and claim its URL and
+        // snapshot as its own answer.
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
-        var opener = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        var adopted = await manager.AdoptPopupAsync("s1", CreatePopupPage().Object, opener.Tab);
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await StampAsync(manager, "s1", RefNamespace.Element, 1);
+        await BrowseAsync(manager, ctx, "s1", "https://b.test/");
+        await StampAsync(manager, "s1", RefNamespace.Element, 1);
 
-        manager.TakePendingPopup("s1", opener.Tab).ShouldBeSameAs(adopted);
-        manager.TakePendingPopup("s1", opener.Tab).ShouldBeNull();
-    }
+        // A popup lands pending on tab a outside any action.
+        pages[0].RaisePopup(FakePage.Create("https://popup.test/window"));
 
-    [Fact]
-    public async Task APopup_IsPendingOnlyForItsOwnOpenerTab()
-    {
-        // Two parallel actions on two tabs of one session: the popup tab A's click spawned must
-        // answer A's action, never B's — a session-global handoff let B swallow A's popup and
-        // claim its URL and snapshot as B's own answer.
-        var (ctx, _) = CreateContext();
-        await using var manager = new BrowserSessionManager();
+        // The action on tab b answers from its own tab.
+        var onB = await manager.OnRefAsync(
+            "s1", "e-2", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            act: _ => Task.FromResult<string?>(null),
+            answer: _ => Task.FromResult("from b"),
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("from the popup")));
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        var b = await BrowseAsync(manager, ctx, "s1", "https://b.test/");
-        var adopted = await manager.AdoptPopupAsync("s1", CreatePopupPage().Object, a.Tab);
-
-        manager.TakePendingPopup("s1", b.Tab).ShouldBeNull();
-        manager.TakePendingPopup("s1", a.Tab).ShouldBeSameAs(adopted);
+        var ran = onB.ShouldBeOfType<TabOutcome<string>.Ran>();
+        ran.PopupAnswered.ShouldBeFalse();
+        ran.Result.ShouldBe("from b");
     }
 
     [Fact]
@@ -405,18 +408,49 @@ public class BrowserSessionManagerTests
     {
         // window.open('') adopts at about:blank; the walls must name the address the popup landed
         // on, because "Browse about:blank again" is a recovery nobody can use.
-        var (ctx, _) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
-        var opener = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        var blank = new Mock<IPage>();
-        blank.SetupGet(p => p.IsClosed).Returns(false);
-        blank.SetupGet(p => p.Url).Returns("about:blank");
-        var adopted = await manager.AdoptPopupAsync("s1", blank.Object, opener.Tab);
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await StampAsync(manager, "s1", RefNamespace.Element, 1);
+        var popup = FakePage.Create();
 
-        manager.NoteFinalUrl("s1", adopted!, "https://popup.test/landed");
+        var outcome = await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            act: _ =>
+            {
+                pages[0].RaisePopup(popup);
+                return Task.FromResult<string?>(null);
+            },
+            answer: _ => Task.FromResult("from the acting tab"),
+            popup: new PopupAnswer<string>(StampPolicy.Restamp(RefNamespace.Element), _ =>
+            {
+                // The popup's navigation lands while it is being read.
+                popup.Url = "https://popup.test/landed";
+                return Task.FromResult("from the popup");
+            }));
 
-        adopted!.RequestedUrl.ShouldBe("https://popup.test/landed");
+        outcome.ShouldBeOfType<TabOutcome<string>.Ran>().PopupAnswered.ShouldBeTrue();
+
+        // The landed address is the one the popup is now known by.
+        var byUrl = await manager.OnUrlAsync(
+            "s1", "https://popup.test/landed", StampPolicy.None, cx => Task.FromResult(cx.Page));
+        RanOn(byUrl).ShouldBeSameAs(popup.Mock.Object);
+    }
+
+    [Fact]
+    public async Task AnAdoptedPopup_DiesWithItsSession()
+    {
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        var popup = FakePage.Create("https://popup.test/window");
+        pages[0].RaisePopup(popup);
+
+        await manager.CloseAsync("s1");
+
+        popup.Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
     }
 
     [Fact]
@@ -425,18 +459,15 @@ public class BrowserSessionManagerTests
         // A restamping pass wipes every stamp off the document before it counts; finding nothing
         // to stamp does not put them back. The old refs must refuse as superseded, not route to a
         // page that no longer carries them.
-        var (ctx, _) = CreateContext();
+        var (ctx, _) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        await StampAsync(manager, "s1", a.Tab, RefNamespace.Element, 3);
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await StampAsync(manager, "s1", RefNamespace.Element, 3);
+        await StampAsync(manager, "s1", RefNamespace.Element, 0);
 
-        using (var lease = await manager.BeginStampAsync("s1", RefNamespace.Element, a.Tab))
-        {
-            lease.Commit(0);
-        }
-
-        manager.RouteRef("s1", "e-1").ShouldBe(new RefRouting.Superseded("https://a.test/"));
+        (await RouteAsync(manager, "s1", "e-1"))
+            .ShouldBe(new TabOutcome<IPage>.Superseded("https://a.test/"));
     }
 
     [Fact]
@@ -444,63 +475,48 @@ public class BrowserSessionManagerTests
     {
         // Eviction is committed only once the replacement page exists: a transient failure to open
         // a page must not permanently kill an innocent tab and its refs.
-        var (ctx, pages) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager(tabCap: 1);
 
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await StampAsync(manager, "s1", RefNamespace.Element, 1);
         ctx.Setup(c => c.NewPageAsync()).ThrowsAsync(new PlaywrightException("boom"));
 
         await Should.ThrowAsync<PlaywrightException>(
             () => BrowseAsync(manager, ctx, "s1", "https://b.test/"));
 
-        manager.Get("s1")!.Tabs.ShouldBe([a.Tab]);
-        pages[0].Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
-        manager.RouteRef("s1", "e-1").ShouldBe(new RefRouting.Unknown());
-    }
-
-    [Fact]
-    public async Task AnAdoptedPopup_DiesWithItsSession()
-    {
-        var (ctx, _) = CreateContext();
-        await using var manager = new BrowserSessionManager();
-
-        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        var popup = CreatePopupPage();
-        await manager.AdoptPopupAsync("s1", popup.Object);
-
-        await manager.CloseAsync("s1");
-
-        popup.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
+        pages[0].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
+        RanOn(await RouteAsync(manager, "s1", "e-1")).ShouldBeSameAs(pages[0].Mock.Object);
     }
 
     [Fact]
     public async Task ATouchJustBeforeTheThreshold_ResetsTheIdleClock()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var (ctx, pages) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager(
             timeProvider: time,
             idleTimeout: TimeSpan.FromMinutes(30));
 
-        var tab = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
         time.Advance(TimeSpan.FromMinutes(25));
 
-        // Re-touch just before threshold
-        manager.TouchTab("s1", tab.Tab);
+        // Any routed call just before the threshold resets the one clock.
+        await manager.OnCurrentTabAsync("s1", StampPolicy.None, _ => Task.FromResult(true));
         time.Advance(TimeSpan.FromMinutes(10));
 
         await manager.PruneIdleAsync();
 
-        // Total elapsed since last touch = 10 min < 30 min threshold
+        // Total elapsed since the last touch = 10 min < 30 min threshold.
         manager.Get("s1").ShouldNotBeNull();
-        pages[0].Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
+        pages[0].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
     }
 
     [Fact]
     public async Task OnlyIdleSessions_ArePruned()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var (ctx, pages) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager(
             timeProvider: time,
             idleTimeout: TimeSpan.FromMinutes(30));
@@ -514,14 +530,14 @@ public class BrowserSessionManagerTests
 
         manager.Get("idle").ShouldBeNull();
         manager.Get("active").ShouldNotBeNull();
-        pages[0].Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
-        pages[1].Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
+        pages[0].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
+        pages[1].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
     }
 
     [Fact]
     public async Task ClearingTheManager_DropsEverySession()
     {
-        var (ctx, _) = CreateContext();
+        var (ctx, _) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
 
         await BrowseAsync(manager, ctx, "s1", "https://a.test/");
@@ -537,19 +553,19 @@ public class BrowserSessionManagerTests
     public async Task ASessionDoingOnlyRoutedCalls_IsNeverIdlePruned()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var (ctx, _) = CreateContext();
+        var (ctx, _) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager(
             timeProvider: time,
             idleTimeout: TimeSpan.FromMinutes(30));
 
-        var tab = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
 
         // Fifty minutes of actions, snapshots and image fetches — every one a touch — with no
         // navigation anywhere. The one clock is refreshed by all of them.
         foreach (var _ in Enumerable.Range(0, 5))
         {
             time.Advance(TimeSpan.FromMinutes(10));
-            manager.TouchTab("s1", tab.Tab);
+            await manager.OnCurrentTabAsync("s1", StampPolicy.None, _ => Task.FromResult(true));
         }
 
         time.Advance(TimeSpan.FromMinutes(10));
@@ -561,111 +577,165 @@ public class BrowserSessionManagerTests
     [Fact]
     public async Task TwoCallsOnOneTab_SerializeOnItsLock()
     {
-        var (ctx, _) = CreateContext();
+        var (ctx, _) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
 
-        var first = await manager.LockTabAsync(a.Tab);
-        var second = manager.LockTabAsync(a.Tab);
+        var firstEntered = new TaskCompletionSource();
+        var releaseFirst = new TaskCompletionSource();
+        var first = manager.OnCurrentTabAsync("s1", StampPolicy.None, async _ =>
+        {
+            firstEntered.SetResult();
+            await releaseFirst.Task;
+            return true;
+        });
+        await firstEntered.Task;
+
+        var secondEntered = false;
+        var second = manager.OnCurrentTabAsync("s1", StampPolicy.None, _ =>
+        {
+            secondEntered = true;
+            return Task.FromResult(true);
+        });
 
         // A snapshot or fetch racing a navigation on the same tab waits its turn.
-        (await Task.WhenAny(second, Eventually.Settle())).ShouldNotBe(second);
+        await Eventually.Settle();
+        secondEntered.ShouldBeFalse();
 
-        first.Dispose();
-
-        (await Task.WhenAny(second, Task.Delay(1000))).ShouldBe(second);
-        (await second).Dispose();
+        releaseFirst.SetResult();
+        await first;
+        await second;
+        secondEntered.ShouldBeTrue();
     }
 
     [Fact]
     public async Task TwoCallsOnDifferentTabsOfOneSession_DoNotSerialize()
     {
-        var (ctx, _) = CreateContext();
+        var (ctx, _) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
-        var a = await BrowseAsync(manager, ctx, "s1", "https://a.test/");
-        var b = await BrowseAsync(manager, ctx, "s1", "https://b.test/");
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await BrowseAsync(manager, ctx, "s1", "https://b.test/");
 
-        using var first = await manager.LockTabAsync(a.Tab);
-        var second = manager.LockTabAsync(b.Tab);
+        var releaseFirst = new TaskCompletionSource();
+        var first = manager.OnUrlAsync("s1", "https://a.test/", StampPolicy.None, async _ =>
+        {
+            await releaseFirst.Task;
+            return true;
+        });
+
+        var second = manager.OnUrlAsync("s1", "https://b.test/", StampPolicy.None, _ => Task.FromResult(true));
 
         (await Task.WhenAny(second, Task.Delay(1000))).ShouldBe(second);
-        (await second).Dispose();
+
+        releaseFirst.SetResult();
+        await first;
+    }
+
+    private static async Task<int> StampStartAsync(
+        BrowserSessionManager manager, string sessionId, RefNamespace ns, int count)
+    {
+        var start = 0;
+        var outcome = await manager.OnCurrentTabAsync(
+            sessionId, StampPolicy.Restamp(ns),
+            async cx =>
+            {
+                await cx.StampAsync(s =>
+                {
+                    start = s;
+                    return Task.FromResult(count);
+                });
+                return true;
+            });
+        outcome.ShouldBeOfType<TabOutcome<bool>.Ran>();
+        return start;
     }
 
     [Fact]
     public async Task ASecondStamp_ContinuesWhereTheFirstStopped()
     {
+        var (ctx, _) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
-        await manager.GetOrCreateAsync("s1");
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
 
-        using (var first = await manager.BeginStampAsync("s1", RefNamespace.Element))
-        {
-            first.Start.ShouldBe(1);
-            first.Commit(5);
-        }
-
-        using var second = await manager.BeginStampAsync("s1", RefNamespace.Element);
-        second.Start.ShouldBe(6);
+        (await StampStartAsync(manager, "s1", RefNamespace.Element, 5)).ShouldBe(1);
+        (await StampStartAsync(manager, "s1", RefNamespace.Element, 0)).ShouldBe(6);
     }
 
     [Fact]
     public async Task AStampThatCommitsNothing_MovesNoNumber()
     {
+        var (ctx, _) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
-        await manager.GetOrCreateAsync("s1");
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
 
-        using (var first = await manager.BeginStampAsync("s1", RefNamespace.Image))
-        {
-            first.Start.ShouldBe(1);
-        }
-
-        using var second = await manager.BeginStampAsync("s1", RefNamespace.Image);
-        second.Start.ShouldBe(1);
+        (await StampStartAsync(manager, "s1", RefNamespace.Image, 0)).ShouldBe(1);
+        (await StampStartAsync(manager, "s1", RefNamespace.Image, 0)).ShouldBe(1);
     }
 
     [Fact]
     public async Task TheTwoNamespaces_CountIndependently()
     {
+        var (ctx, _) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
-        await manager.GetOrCreateAsync("s1");
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
 
-        using (var images = await manager.BeginStampAsync("s1", RefNamespace.Image))
-        {
-            images.Commit(7);
-        }
-
-        using var elements = await manager.BeginStampAsync("s1", RefNamespace.Element);
-        elements.Start.ShouldBe(1);
-
-        using var moreImages = await manager.BeginStampAsync("s1", RefNamespace.Image);
-        moreImages.Start.ShouldBe(8);
+        (await StampStartAsync(manager, "s1", RefNamespace.Image, 7)).ShouldBe(1);
+        (await StampStartAsync(manager, "s1", RefNamespace.Element, 0)).ShouldBe(1);
+        (await StampStartAsync(manager, "s1", RefNamespace.Image, 0)).ShouldBe(8);
     }
 
     [Fact]
     public async Task TwoStampsOnOneSession_NeverShareNumbers()
     {
+        // Two tabs stamping the one namespace: the second lease must wait for the first to commit,
+        // or both would peek the same start and reissue every number the slower one writes.
+        var (ctx, _) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager();
-        await manager.GetOrCreateAsync("s1");
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        await BrowseAsync(manager, ctx, "s1", "https://b.test/");
 
-        var first = await manager.BeginStampAsync("s1", RefNamespace.Element);
-        var second = manager.BeginStampAsync("s1", RefNamespace.Element);
+        var firstStamping = new TaskCompletionSource();
+        var releaseFirst = new TaskCompletionSource();
+        var first = manager.OnUrlAsync(
+            "s1", "https://a.test/", StampPolicy.Restamp(RefNamespace.Element),
+            async cx =>
+            {
+                await cx.StampAsync(async _ =>
+                {
+                    firstStamping.SetResult();
+                    await releaseFirst.Task;
+                    return 3;
+                });
+                return true;
+            });
+        await firstStamping.Task;
 
-        // The second stamp must wait: handing both the same start would reissue numbers.
+        var secondStart = 0;
+        var second = manager.OnUrlAsync(
+            "s1", "https://b.test/", StampPolicy.Restamp(RefNamespace.Element),
+            async cx =>
+            {
+                await cx.StampAsync(s =>
+                {
+                    secondStart = s;
+                    return Task.FromResult(2);
+                });
+                return true;
+            });
+
         (await Task.WhenAny(second, Eventually.Settle())).ShouldNotBe(second);
 
-        first.Commit(3);
-        first.Dispose();
-
-        (await Task.WhenAny(second, Task.Delay(1000))).ShouldBe(second);
-        using var released = await second;
-        released.Start.ShouldBe(4);
+        releaseFirst.SetResult();
+        await first;
+        await second;
+        secondStart.ShouldBe(4);
     }
 
     [Fact]
     public async Task TheBackgroundTimer_PrunesOnItsInterval()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var (ctx, pages) = CreateContext();
+        var (ctx, pages) = TabPoolFakes.CreateContext();
         await using var manager = new BrowserSessionManager(
             timeProvider: time,
             idleTimeout: TimeSpan.FromMinutes(30),
@@ -677,6 +747,6 @@ public class BrowserSessionManagerTests
         // The prune runs from a timer callback, so a hundred milliseconds was a bet that the
         // callback got a thread inside them rather than a statement about pruning.
         await Eventually.Until(() => manager.Get("s1") is null, "the idle session to be pruned");
-        pages[0].Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
+        pages[0].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
     }
 }
