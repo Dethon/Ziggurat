@@ -6,12 +6,14 @@ Spec: `.scratch/scenario-guards/spec.md`.
 
 **Blocked by:** 03 — The data moves.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The exemption kind enum holds exactly `Unwritten` and `Unfalsifiable`
-- [ ] The probe-call claim's coverage reads `unfalsifiable`; the two reply-shape claims read `unwritten`
-- [ ] Each reclassified reason still records that the claim is diffusely asserted (every scenario's permitted set / every spoken scenario's reply limit) and why no single scenario owns it
-- [ ] The scorecard's kind-spelling handles only the surviving kinds
-- [ ] Bare `dotnet test` green; the scorecard's coverage strings are the observable contract, asserted through the existing ledger seam
+- [x] The exemption kind enum holds exactly `Unwritten` and `Unfalsifiable`
+- [x] The probe-call claim's coverage reads `unfalsifiable`; the two reply-shape claims read `unwritten`
+- [x] Each reclassified reason still records that the claim is diffusely asserted (every scenario's permitted set / every spoken scenario's reply limit) and why no single scenario owns it
+- [x] The scorecard's kind-spelling handles only the surviving kinds
+- [x] Bare `dotnet test` green; the scorecard's coverage strings are the observable contract, asserted through the existing ledger seam
 
 ## Comments
+
+- 2026-08-30 — Done in 1a5e5770: NoProbeCalls → Unfalsifiable, the two reply-shape claims → Unwritten (reasons keep the diffuse-assertion note); enum shrunk to the two survivors; Spelled() is a plain lowercase now.
