@@ -1,4 +1,5 @@
 using Domain.Prompts;
+using Domain.Tools.Web;
 using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
 
@@ -34,6 +35,10 @@ public static class WebScenarios
         + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "
         + "against a thirty-thousand-character page. No scenario's subject is the dumping "
         + "itself, so it guards rather than cites.");
+
+    // The shape a snapshot stamps, spelled from the prefix the stamping code owns: a hardcoded
+    // copy here failed every correct run when the session-unique rename turned 'e1' into 'e-1'.
+    private static readonly string ASnapshotRef = $"^{ElementRef.Prefix}\\d+$";
 
     // The answer is in the article and nowhere else: the search snippet describes the recipe
     // without giving the number. A model that answered from the result list has nothing to answer
@@ -180,7 +185,7 @@ public static class WebScenarios
                 Label = "name",
                 Tool = EvalTools.WebAction,
                 // A ref that came out of that snapshot, and the name the user gave.
-                Arguments = [Arg.Matches("ref", @"^e\d+$"), Arg.Matches("value", "(?i)fran")]
+                Arguments = [Arg.Matches("ref", ASnapshotRef), Arg.Matches("value", "(?i)fran")]
             }
         ],
         // The page has to be open before an element on it can be named.
@@ -379,7 +384,7 @@ public static class WebScenarios
                 Arguments =
                 [
                     Arg.Matches("action", "(?i)^type$"),
-                    Arg.Matches("ref", @"^e\d+$"),
+                    Arg.Matches("ref", ASnapshotRef),
                     Arg.Matches("value", "(?i)astro")
                 ]
             }
