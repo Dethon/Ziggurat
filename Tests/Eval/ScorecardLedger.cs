@@ -9,8 +9,12 @@ namespace Tests.Eval;
 // xUnit collections, each disposing its own fixture whenever its last theory finishes — so every
 // write is a rewrite of everything recorded so far, and the last fixture to finish leaves the
 // whole run behind, never its own slice.
-public sealed class ScorecardLedger
+// The suite defaults to the real one; the ledger tests hand in a synthetic suite because the
+// coverage precedence has pairs (a claim both cited and guarded) the real data does not draw.
+public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
 {
+    private IReadOnlyList<Scenario> Suite => suite ?? EvalSuite.All;
+
     private readonly Dictionary<EvalTier, TierState> _tiers = [];
     private readonly Lock _gate = new();
     private ServedRoute? _route;
@@ -74,7 +78,7 @@ public sealed class ScorecardLedger
 
                 // Scenarios the same way as claims: one that did not run appears at a null rate
                 // rather than being absent, so a filtered pass is legible as a filtered pass.
-                var scenarios = EvalSuite.All
+                var scenarios = Suite
                     .Select(scenario => new ScenarioOutcome(scenario.Name, 0, 0))
                     .Concat(state.Scenarios)
                     .ToList();
@@ -88,17 +92,21 @@ public sealed class ScorecardLedger
     // scenario citing it, or its typed exemption. The scorecard row then says what a null rate
     // means — never tested, waiting on a fixture, a judgement, or a rule the deployment does not
     // follow — instead of leaving the reader to guess.
-    private static IReadOnlyDictionary<string, string> Coverage()
+    private IReadOnlyDictionary<string, string> Coverage()
     {
-        var cited = EvalSuite.All.SelectMany(s => s.Claims).ToHashSet();
-        var judged = EvalSuite.All.SelectMany(s => s.Judged.Select(check => check.Claim)).ToHashSet();
+        var cited = Suite.SelectMany(s => s.Claims).ToHashSet();
+        var judged = Suite.SelectMany(s => s.Judged.Select(check => check.Claim)).ToHashSet();
         // "conditional" is a citation with a smaller denominator: the claim is tested on every
         // run that produces its material, so its null rate means "no run delegated this pass"
         // rather than "nothing tests this".
-        var conditional = EvalSuite.All
+        var conditional = Suite
             .SelectMany(s => s.IfDelegated.SelectMany(c =>
                 c.Claims.Concat(c.Judged.Select(check => check.Claim))))
             .ToHashSet();
+        // "guarded" ranks below every citation flavour and above the exemptions: the claim is
+        // asserted every run, it just proves the model rather than the prompt. A claim both
+        // cited and guarded is a truth, and the strongest true statement wins.
+        var guarded = Suite.SelectMany(s => s.Guards.Select(guard => guard.Claim)).ToHashSet();
 
         return PromptManifest.Claims.ToDictionary(
             claim => claim.Id,
@@ -108,9 +116,11 @@ public sealed class ScorecardLedger
                     ? "judged"
                     : conditional.Contains(claim.Id)
                         ? "conditional"
-                        : ClaimExemptions.Reasons.TryGetValue(claim.Id, out var exemption)
-                            ? Spelled(exemption.Kind)
-                            : "uncovered");
+                        : guarded.Contains(claim.Id)
+                            ? "guarded"
+                            : ClaimExemptions.Reasons.TryGetValue(claim.Id, out var exemption)
+                                ? Spelled(exemption.Kind)
+                                : "uncovered");
     }
 
     private static string Spelled(ExemptionKind kind) => kind switch
