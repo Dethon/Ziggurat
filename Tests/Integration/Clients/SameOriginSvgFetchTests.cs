@@ -11,7 +11,6 @@ namespace Tests.Integration.Clients;
 [Collection(PlaywrightCollections.IsolatedSessions)]
 public class SameOriginSvgFetchTests(IsolatedSessionBrowserFixture fixture)
 {
-    [Trait("Category", "External")]
     [SkippableFact]
     public async Task ASameOriginSvg_LeavesAsPngRatherThanAFormatNoProviderTakes()
     {
@@ -20,24 +19,30 @@ public class SameOriginSvgFetchTests(IsolatedSessionBrowserFixture fixture)
         var sessionId = $"test-{Guid.NewGuid():N}";
         try
         {
-            // Partial counts: example.com is a blank anchor to inject onto, not the subject. A
-            // DOMContentLoaded that never arrives spends the production 30s budget and returns
-            // Partial with a usable page, and demanding Success turned that into a failure of
-            // whatever the case was really asserting.
-            var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.com/"));
-            nav.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
+            await HermeticPage.PrepareAsync(fixture.Browser, sessionId, "<p>anchor</p>");
 
             // A blob URL carries the page's own origin, so the fetch takes the same-origin
-            // branch — the exact path that leaked SVG bytes through.
-            await fixture.Browser.EvaluateOnSessionAsync(
+            // branch — the exact path that leaked SVG bytes through. Route-fulfilled anchor,
+            // blob-served bytes: this is the hermetic twin of the vector rule, no third party
+            // involved.
+            // Awaited to onload: a fixture image must actually load before the measurement, or
+            // the stamp is a race the cold container loses.
+            await fixture.Browser.EvaluateOnSessionAsync<int>(
                 sessionId,
                 """
-                () => {
+                async () => {
                     const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">'
                         + '<rect width="200" height="200" fill="tomato"/></svg>';
                     const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
                     document.body.innerHTML =
                         `<img id="vector" src="${url}" style="width:200px;height:200px" alt="A vector logo">`;
+                    const img = document.getElementById('vector');
+                    await new Promise(r => {
+                        if (img.complete) return r();
+                        img.onload = r;
+                        img.onerror = r;
+                    });
+                    return document.body.offsetHeight;
                 }
                 """);
             await fixture.Browser.AnnotateImagesOnSessionAsync(sessionId);

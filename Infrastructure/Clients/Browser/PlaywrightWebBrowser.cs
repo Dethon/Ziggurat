@@ -310,12 +310,12 @@ public class PlaywrightWebBrowser(
         {
             // A snapshot naming its page reads that page's tab; only the ref-less, page-less form
             // falls to the tab last touched — which a parallel browse may have moved.
-            Task<SnapshotResult> Capture(TabWorkContext ctx) => CaptureSnapshotAsync(request, ctx);
+            Task<SnapshotResult> capture(TabWorkContext ctx) => CaptureSnapshotAsync(request, ctx);
             var outcome = request.ForUrl is { } url
                 ? await _sessions.OnUrlAsync(
-                    request.SessionId, url, StampPolicy.Restamp(RefNamespace.Element), Capture, ct)
+                    request.SessionId, url, StampPolicy.Restamp(RefNamespace.Element), capture, ct)
                 : await _sessions.OnCurrentTabAsync(
-                    request.SessionId, StampPolicy.Restamp(RefNamespace.Element), Capture, ct);
+                    request.SessionId, StampPolicy.Restamp(RefNamespace.Element), capture, ct);
 
             return outcome switch
             {
@@ -779,6 +779,15 @@ public class PlaywrightWebBrowser(
             : throw new InvalidOperationException($"Session '{sessionId}' not found");
     }
 
+    // The context-level arranging half: answers an address before any page asks for it, so a
+    // hermetic test can navigate to a route-fulfilled page instead of borrowing a live third
+    // party as its anchor. Routes die with the context on reconnect; register before navigating.
+    internal async Task RouteOnContextAsync(string url, Func<IRoute, Task> handler)
+    {
+        await EnsureInitializedAsync();
+        await _context!.RouteAsync(url, handler);
+    }
+
     // The arranging half of the escape hatch: lets a test answer a fake CDN address from inside
     // the session's page without reaching into the pool for the page handle.
     internal async Task RouteOnSessionAsync(string sessionId, string url, Func<IRoute, Task> handler)
@@ -844,216 +853,16 @@ public class PlaywrightWebBrowser(
         return new ImageFetchResult(request.SessionId, images);
     }
 
-    private async Task<FetchedImage> FetchOneAsync(IPage page, string imageRef)
+    // The whole descent runs against the probe for this page, inside the locked tab work
+    // callback the caller already holds -- the page cannot change between rungs. The label the
+    // answer carries comes from the one ladder, over the facts the locate rung observed.
+    private static async Task<FetchedImage> FetchOneAsync(IPage page, string imageRef)
     {
         try
         {
-            // Fetched from inside the page so the request is the page's own. The bytes come back
-            // as base64 because the evaluate boundary carries text, not binary.
-            var payload = await page.EvaluateAsync<string?>(
-                $$"""
-                  async (ref) => {
-                      const img = document.querySelector(`[{{PageImageEntry.RefAttribute}}="${ref}"]`);
-                      if (!img) return null;
-                      const src = img.getAttribute('src');
-                      if (!src) return null;
-
-                      // The same ladder the entry's label came from, rung for rung — a blank rung
-                      // falls through instead of short-circuiting the chain to "", dimensions
-                      // close it, and the entry's own sanitizing (whitespace flattened, brackets
-                      // rounded) is applied the same way. Diverging here leaves the note calling
-                      // the picture different words than the entry the model chose it by.
-                      const nonEmpty = (t) => t && t.trim() ? t.trim() : null;
-                      const fileName = /^data:/i.test(src)
-                          ? ''
-                          : (src.split(/[?#]/)[0].split('/').pop() || '').trim();
-                      const spoken = nonEmpty(img.getAttribute('alt'))
-                          || nonEmpty(img.closest('figure')?.querySelector('figcaption')?.textContent)
-                          || nonEmpty(img.getAttribute('title'))
-                          || nonEmpty(img.closest('a')?.textContent)
-                          || (/^[^\s/]+\.[A-Za-z0-9]{1,5}$/.test(fileName) ? fileName : null)
-                          || `${img.getAttribute('{{PageImageEntry.WidthAttribute}}') || 0}x${img.getAttribute('{{PageImageEntry.HeightAttribute}}') || 0}`;
-                      const flat = spoken.replace(/\s+/g, ' ')
-                          .replace(/\[/g, '(').replace(/\]/g, ')').trim();
-                      // The entry's own cut, spelled the same (PageImageEntry.Sanitize): a bare
-                      // slice read as the tool breaking mid-word, and the entry and the note must
-                      // name one picture with one set of words.
-                      const label = flat.length <= 500
-                          ? flat
-                          : flat.slice(0, 500).trimEnd() + '…';
-
-                      const url = new URL(src, location.href).toString();
-
-                      // The wire fetch keeps the bytes exactly as served, so no re-encoding and
-                      // no loss — but only for a raster the chat wire accepts. Anything else (an
-                      // SVG site logo was the live case) falls through to the canvas and leaves
-                      // as PNG; as-served SVG bytes made the vision provider refuse the whole
-                      // request with a 400. Same-origin sends the page's own credentials;
-                      // cross-origin goes anonymous, because image CDNs answer ACAO * and a
-                      // wildcard is exactly what a credentialed request is rejected against —
-                      // the canvas used to answer the ACAO'd case first and re-encoded every
-                      // shared jpeg as a fatter PNG.
-                      const wireFetch = async (credentials) => {
-                          try {
-                              const response = await fetch(url, { credentials });
-                              const mediaType = (response.headers.get('content-type') || 'image/jpeg')
-                                  .split(';')[0];
-                              const wireRasters =
-                                  ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
-                              if (response.ok && wireRasters.includes(mediaType)) {
-                                  const bytes = new Uint8Array(await response.arrayBuffer());
-                                  let binary = '';
-                                  for (let i = 0; i < bytes.length; i++) {
-                                      binary += String.fromCharCode(bytes[i]);
-                                  }
-                                  // One JSON object rather than a delimited string: the label is
-                                  // somebody else's text and may carry any delimiter a hand-rolled
-                                  // shape would pick.
-                                  return JSON.stringify({
-                                      mediaType,
-                                      label,
-                                      data: btoa(binary)
-                                  });
-                              }
-                          } catch { /* fall through to the canvas */ }
-                          return null;
-                      };
-
-                      const sameOrigin = new URL(url).origin === location.origin;
-                      const served = await wireFetch(sameOrigin ? 'include' : 'omit');
-                      if (served) return served;
-
-                      // Cross-origin, which is the ordinary case: a page's pictures usually come
-                      // from a CDN on another host. What fails there is a *credentialed* request:
-                      // image CDNs send Access-Control-Allow-Origin: *, and a wildcard is exactly
-                      // what credentials: 'include' is rejected against. So the image is loaded
-                      // anonymously and read off a canvas -- gated by the same ACAO header an
-                      // anonymous fetch would be, but reusing the pixels the browser has already
-                      // decoded. The canvas holds pixels rather than a file, so this re-encodes
-                      // as PNG; that is the choice's cost, not its purpose.
-                      //
-                      // A CDN sending no ACAO at all fails the anonymous probe, and the fallback
-                      // to the rendered element taints the canvas: a cookie-gated cross-origin
-                      // image refuses even though the page shows it. Accepted (docs/adr/0033).
-                      try {
-                          const drawn = await new Promise((resolve) => {
-                              const probe = new Image();
-                              probe.crossOrigin = 'anonymous';
-                              probe.onload = () => resolve(probe);
-                              probe.onerror = () => resolve(null);
-                              // Already in the page and decoded: this is a cache hit, not a
-                              // second download, whenever the element itself has loaded.
-                              probe.src = url;
-                          });
-
-                          const source = drawn
-                              || (img.complete && img.naturalWidth > 0 ? img : null);
-                          // No probe result and no decoded element either: the bytes never
-                          // arrived at all — a dead link, not a CDN guarding its pixels.
-                          if (!source) return 'never-loaded';
-
-                          // A source with no intrinsic size — a viewBox-only SVG reports
-                          // naturalWidth 0 — would size the canvas 0x0 and leave as a zero-byte
-                          // "success" the vision provider rejects whole. The pixels are on
-                          // screen, so hand it to the rungs below the canvas instead.
-                          if (!source.naturalWidth || !source.naturalHeight) {
-                              return JSON.stringify({ tainted: true, label, url });
-                          }
-
-                          const canvas = document.createElement('canvas');
-                          canvas.width = source.naturalWidth;
-                          canvas.height = source.naturalHeight;
-                          canvas.getContext('2d').drawImage(source, 0, 0);
-
-                          // Throws a SecurityError on a tainted canvas -- an image the browser
-                          // will show but not let script read. The pixels are on screen all the
-                          // same, so that answer goes back for a screenshot rather than a refusal.
-                          const dataUrl = canvas.toDataURL('image/png');
-                          return JSON.stringify({
-                              mediaType: 'image/png',
-                              label,
-                              data: dataUrl.split(',')[1]
-                          });
-                      } catch (e) {
-                          return e && e.name === 'SecurityError'
-                              ? JSON.stringify({ tainted: true, label, url })
-                              : 'error';
-                      }
-                  }
-                  """,
-                imageRef);
-
-            if (ImageFetchPayload.Tainted(payload, out var taintedLabel, out var taintedUrl))
-            {
-                return await FetchAsServedAsync(page, imageRef, taintedLabel, taintedUrl)
-                    ?? await ScreenshotAsync(page, imageRef, taintedLabel);
-            }
-
-            return ImageFetchPayload.Parse(imageRef, payload);
+            return await ImageAcquisition.FetchAsync(new PlaywrightImageProbe(page), imageRef);
         }
         catch (PlaywrightException)
-        {
-            return new FetchedImage(imageRef, null, null, ImageFetchStatus.SiteRefused);
-        }
-    }
-
-    // CORS binds script inside the page and nothing else: the context's own request client pulls
-    // the same address with the same cookies and keeps the bytes exactly as served — the JPL
-    // gallery, whose CDN sends no ACAO header at all, is the live page this bought back. Null
-    // hands the miss to the screenshot rung rather than deciding refusal here.
-    private static async Task<FetchedImage?> FetchAsServedAsync(
-        IPage page, string imageRef, string? label, string? url)
-    {
-        if (url is null)
-        {
-            return null;
-        }
-
-        try
-        {
-            var response = await page.Context.APIRequest.GetAsync(url, new() { Timeout = 10_000 });
-            try
-            {
-                var mediaType = response.Headers.GetValueOrDefault("content-type")?.Split(';')[0].Trim();
-                if (!response.Ok || mediaType is null || !WireRasters.Contains(mediaType))
-                {
-                    return null;
-                }
-
-                var bytes = await response.BodyAsync();
-                return new FetchedImage(imageRef, mediaType, bytes, ImageFetchStatus.Success, Label: label);
-            }
-            finally
-            {
-                // Playwright retains the body until the response is disposed or its context dies,
-                // and this context lives until reconnect — undisposed, every re-request kept its
-                // full image in memory for the life of the process.
-                await response.DisposeAsync();
-            }
-        }
-        catch (PlaywrightException)
-        {
-            return null;
-        }
-    }
-
-    // The rasters the chat wire accepts — the same list the fetch script keeps for the
-    // same-origin branch. Anything else leaves through the canvas or the screenshot as PNG.
-    private static readonly string[] WireRasters =
-        ["image/png", "image/jpeg", "image/gif", "image/webp"];
-
-    // The last rung under a tainted canvas: the compositor already painted these pixels, and a
-    // screenshot of the element reads them back without CORS having a say. What leaves is the
-    // rendered box re-encoded as PNG at the size the page shows it.
-    private static async Task<FetchedImage> ScreenshotAsync(IPage page, string imageRef, string? label)
-    {
-        try
-        {
-            var bytes = await page.Locator($"[{PageImageEntry.RefAttribute}='{imageRef}']")
-                .ScreenshotAsync(new() { Type = ScreenshotType.Png, Timeout = 10_000 });
-            return new FetchedImage(imageRef, "image/png", bytes, ImageFetchStatus.Success, Label: label);
-        }
-        catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
         {
             return new FetchedImage(imageRef, null, null, ImageFetchStatus.SiteRefused);
         }

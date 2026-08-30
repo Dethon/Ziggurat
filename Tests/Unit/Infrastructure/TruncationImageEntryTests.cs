@@ -89,7 +89,7 @@ public class TruncationImageEntryTests
     public async Task ImagesBeyondTheReturnedWindow_AreCounted()
     {
         var html = Page(string.Join("\n", Enumerable.Range(1, 12).Select(i =>
-            $"""<p>{new string('x', 200)}</p><img src="/p{i}.jpg" alt="Picture {i}" data-img-w="300" data-img-h="300">""")));
+            $"""<p>{new string('x', 200)}</p><img src="/p{i}.jpg" alt="Picture {i}" data-img-w="300" data-img-h="300" data-img-ref="i-{i}">""")));
         var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", MaxLength: 900);
 
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -106,7 +106,7 @@ public class TruncationImageEntryTests
         // both sides; counting the ones already paged past would send the model forward chasing
         // pictures that are behind it.
         var html = Page(string.Join("\n", Enumerable.Range(1, 12).Select(i =>
-            $"""<p>{new string('x', 200)}</p><img src="/p{i}.jpg" alt="Picture {i}" data-img-w="300" data-img-h="300">""")));
+            $"""<p>{new string('x', 200)}</p><img src="/p{i}.jpg" alt="Picture {i}" data-img-w="300" data-img-h="300" data-img-ref="i-{i}">""")));
 
         var whole = await HtmlProcessor.ProcessAsync(
             new BrowseRequest("test", "http://example.com/test", MaxLength: 100000), html, CancellationToken.None);
@@ -123,7 +123,7 @@ public class TruncationImageEntryTests
     [Fact]
     public async Task APageWhoseImagesAllFit_ReportsNoneBeyondTheWindow()
     {
-        var html = Page("""<img src="/p.jpg" alt="Only picture" data-img-w="300" data-img-h="300">""");
+        var html = Page("""<img src="/p.jpg" alt="Only picture" data-img-w="300" data-img-h="300" data-img-ref="i-1">""");
         var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", MaxLength: 100000);
 
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -138,7 +138,7 @@ public class TruncationImageEntryTests
         // contentLength stays the pre-slice total, so an offset the model computes from it still
         // lands where it expects even though entries shifted the text window.
         var html = Page(string.Join("\n", Enumerable.Range(1, 10).Select(i =>
-            $"""<p>{new string('x', 200)}</p><img src="/p{i}.jpg" alt="Picture {i}" data-img-w="300" data-img-h="300">""")));
+            $"""<p>{new string('x', 200)}</p><img src="/p{i}.jpg" alt="Picture {i}" data-img-w="300" data-img-h="300" data-img-ref="i-{i}">""")));
 
         var whole = await HtmlProcessor.ProcessAsync(
             new BrowseRequest("test", "http://example.com/test", MaxLength: 100000), html, CancellationToken.None);
