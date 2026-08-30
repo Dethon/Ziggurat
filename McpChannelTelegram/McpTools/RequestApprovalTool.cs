@@ -31,7 +31,7 @@ public sealed class RequestApprovalTool
 
         var registry = services.GetRequiredService<BotRegistry>();
         var router = services.GetRequiredService<ApprovalCallbackRouter>();
-        var (chatId, threadId) = ParseConversationId(p.ConversationId);
+        var (chatId, threadId) = TelegramConversation.Resolve(p.ConversationId);
         var botClient = registry.GetBotForChat(chatId)
                         ?? throw new InvalidOperationException($"No bot registered for chat {chatId}");
 
@@ -102,16 +102,5 @@ public sealed class RequestApprovalTool
             .Replace("&", "&amp;")
             .Replace("<", "&lt;")
             .Replace(">", "&gt;");
-    }
-
-    private static (long ChatId, int? ThreadId) ParseConversationId(string conversationId)
-    {
-        var parts = conversationId.Split(':');
-        var chatId = long.Parse(parts[0]);
-        var threadIdVal = long.Parse(parts[1]);
-
-        return threadIdVal == chatId
-            ? (chatId, null)
-            : (chatId, Convert.ToInt32(threadIdVal));
     }
 }

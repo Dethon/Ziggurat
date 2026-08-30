@@ -100,6 +100,32 @@ public class SendReplyToolTests
             () => SendReplyTool.McpRun("999:999", "hello", ReplyContentType.Text, true, null, _services));
     }
 
+    // A Telegram tool should never receive another channel's address; when it does, the error
+    // names the value instead of an unguarded parse throwing whatever it throws.
+    [Fact]
+    public async Task McpRun_SomeOtherChannelsAddress_IsRefusedNamingTheValue()
+    {
+        var ex = await Should.ThrowAsync<InvalidOperationException>(
+            () => SendReplyTool.McpRun("kitchen-satellite", "hello", ReplyContentType.Text, true, null, _services));
+
+        ex.Message.ShouldContain("kitchen-satellite");
+        ex.Message.ShouldContain("conversation identity");
+    }
+
+    // The forum case: an unequal thread rides along to the Telegram API, narrowed to its int.
+    [Fact]
+    public async Task McpRun_ForumThread_SendsIntoTheThread()
+    {
+        _accumulator.Append("100:42", "hola");
+
+        var result = await SendReplyTool.McpRun("100:42", "", ReplyContentType.StreamComplete, true, null, _services);
+
+        result.ShouldBe("ok");
+        _botClient.Verify(b => b.SendRequest(
+            It.Is<SendMessageRequest>(r => r.MessageThreadId == 42),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task McpRun_StreamComplete_NoAccumulated_DoesNotSend()
     {

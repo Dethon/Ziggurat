@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs.Channel;
 using Mcp.Hosting;
 using McpChannelTelegram.Settings;
@@ -180,8 +181,7 @@ public sealed class TelegramBotService : BackgroundService
         }
 
         var chatId = first.Chat.Id;
-        var threadId = first.MessageThreadId ?? chatId;
-        var conversationId = $"{chatId}:{threadId}";
+        var conversationId = ConversationIdentity.ForChat(chatId, first.MessageThreadId).ConversationId;
 
         _botRegistry.RegisterChatAgent(chatId, agentId);
 
