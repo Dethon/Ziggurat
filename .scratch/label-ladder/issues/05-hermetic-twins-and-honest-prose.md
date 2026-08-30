@@ -6,10 +6,12 @@
 
 **Status:** ready-for-agent
 
-- [ ] A hermetic twin proves the same-origin credentialed wire fetch rung against a route-fulfilled page, no third party involved.
-- [ ] A hermetic twin proves an as-served vector image is answered as pixels, not as the file, no third party involved.
-- [ ] All three live-site tests carry the external category and skip — never fail — on any third-party precondition (unreachable site, changed gallery, missing picture).
-- [ ] The rules file no longer claims the ladder exists twice; its rewritten section states the one-label invariant, the cap rationale, and the credentials trap, and points at the module for the rest.
-- [ ] A bare test run is green with the network's third parties unreachable.
+- [x] A hermetic twin proves the same-origin credentialed wire fetch rung against a route-fulfilled page, no third party involved.
+- [x] A hermetic twin proves an as-served vector image is answered as pixels, not as the file, no third party involved.
+- [x] All three live-site tests carry the external category and skip — never fail — on any third-party precondition (unreachable site, changed gallery, missing picture).
+- [x] The rules file no longer claims the ladder exists twice; its rewritten section states the one-label invariant, the cap rationale, and the credentials trap, and points at the module for the rest.
+- [x] A bare test run is green with the network's third parties unreachable.
 
 ## Comments
+
+- 2026-08-30: Implemented on feat/label-ladder. All checklist items verified by the unit and hermetic integration suites.

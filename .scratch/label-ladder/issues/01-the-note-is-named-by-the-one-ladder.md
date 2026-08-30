@@ -6,11 +6,13 @@
 
 **Status:** ready-for-agent
 
-- [ ] The ladder is a pure facts-in/label-out function; the extraction path and the fetch path both call it and nothing else computes a label.
-- [ ] The fetch script contains no label logic — no rung order, no sanitising, no cap; it returns the raw strings and stamped dimensions.
-- [ ] Rung order, data-URI exclusion, blank-not-falsy fallback, bracket rounding, whitespace flattening, and the cap are each stated exactly once.
-- [ ] The formerly-divergent Unicode edges (the whitespace set on U+0085 and U+FEFF; the filename gate's end-anchoring against a trailing newline) are named unit facts on the surviving ladder, landed red-first, with C# semantics the surviving behaviour.
-- [ ] The existing entry-shape unit tests pass re-aimed at the unified function; the integration fact "a long label is cut the way the entry cut it" still holds.
-- [ ] No caller above the browser observes any change beyond label wording on the divergent edges.
+- [x] The ladder is a pure facts-in/label-out function; the extraction path and the fetch path both call it and nothing else computes a label.
+- [x] The fetch script contains no label logic — no rung order, no sanitising, no cap; it returns the raw strings and stamped dimensions.
+- [x] Rung order, data-URI exclusion, blank-not-falsy fallback, bracket rounding, whitespace flattening, and the cap are each stated exactly once.
+- [x] The formerly-divergent Unicode edges (the whitespace set on U+0085 and U+FEFF; the filename gate's end-anchoring against a trailing newline) are named unit facts on the surviving ladder, landed red-first, with C# semantics the surviving behaviour.
+- [x] The existing entry-shape unit tests pass re-aimed at the unified function; the integration fact "a long label is cut the way the entry cut it" still holds.
+- [x] No caller above the browser observes any change beyond label wording on the divergent edges.
 
 ## Comments
+
+- 2026-08-30: Implemented on feat/label-ladder. All checklist items verified by the unit and hermetic integration suites.

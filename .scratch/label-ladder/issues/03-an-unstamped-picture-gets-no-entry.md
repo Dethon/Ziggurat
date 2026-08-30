@@ -6,10 +6,12 @@
 
 **Status:** ready-for-agent
 
-- [ ] The fallback numbering path no longer exists; the stamped ref is the only source of an entry's ref.
-- [ ] An image with no stamped ref yields no entry and no ref, landed red-first — in body position, inside a table, and inside a link alike.
-- [ ] Every converter unit fixture that expects an entry stamps a ref and dimensions the way the page does.
-- [ ] The nested-table regression (one picture never listed twice) still holds on the single numbering path.
-- [ ] Existing entry-position and entry-shape facts pass unchanged in what they assert.
+- [x] The fallback numbering path no longer exists; the stamped ref is the only source of an entry's ref.
+- [x] An image with no stamped ref yields no entry and no ref, landed red-first — in body position, inside a table, and inside a link alike.
+- [x] Every converter unit fixture that expects an entry stamps a ref and dimensions the way the page does.
+- [x] The nested-table regression (one picture never listed twice) still holds on the single numbering path.
+- [x] Existing entry-position and entry-shape facts pass unchanged in what they assert.
 
 ## Comments
+
+- 2026-08-30: Implemented on feat/label-ladder. All checklist items verified by the unit and hermetic integration suites.

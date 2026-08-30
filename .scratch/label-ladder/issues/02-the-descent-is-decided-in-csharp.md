@@ -6,11 +6,13 @@
 
 **Status:** ready-for-agent
 
-- [ ] The descent module's ordering is asserted against a faked probe: wire fails → canvas; canvas taints → context request; context request refused → element screenshot; never-loaded answers its own wall, not the site-refused one.
-- [ ] The credentials rule is preserved verbatim and unit-asserted: same-origin with the page's credentials, cross-origin anonymously — never credentialed cross-origin.
-- [ ] The wire-raster set exists as one constant with one comparison; a media type with stray whitespace is judged the same on every path.
-- [ ] The browser retains page choreography only — no acquisition ordering, no per-rung decisions remain in it or in the page script.
-- [ ] Every existing fetch status and wall is produced by the module exactly as before; callers observe no contract change.
-- [ ] The existing hermetic fake-CDN integration facts (shared-CDN wire fetch; CORS-withheld falling to screenshot) still pass unmodified in what they assert.
+- [x] The descent module's ordering is asserted against a faked probe: wire fails → canvas; canvas taints → context request; context request refused → element screenshot; never-loaded answers its own wall, not the site-refused one.
+- [x] The credentials rule is preserved verbatim and unit-asserted: same-origin with the page's credentials, cross-origin anonymously — never credentialed cross-origin.
+- [x] The wire-raster set exists as one constant with one comparison; a media type with stray whitespace is judged the same on every path.
+- [x] The browser retains page choreography only — no acquisition ordering, no per-rung decisions remain in it or in the page script.
+- [x] Every existing fetch status and wall is produced by the module exactly as before; callers observe no contract change.
+- [x] The existing hermetic fake-CDN integration facts (shared-CDN wire fetch; CORS-withheld falling to screenshot) still pass unmodified in what they assert.
 
 ## Comments
+
+- 2026-08-30: Implemented on feat/label-ladder. All checklist items verified by the unit and hermetic integration suites.

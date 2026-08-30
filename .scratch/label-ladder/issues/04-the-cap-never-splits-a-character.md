@@ -6,9 +6,11 @@
 
 **Status:** ready-for-agent
 
-- [ ] A failing test first: an over-cap label whose cut point lands inside a surrogate pair currently yields a lone high surrogate.
-- [ ] The cut backs off to the nearest text-element boundary at or below the cap, then trims trailing whitespace and appends the ellipsis, as today.
-- [ ] Labels at or under the cap are byte-for-byte unchanged; the existing long-label facts still pass.
-- [ ] Entry and note agree on the cut label, by construction — one function, one cut.
+- [x] A failing test first: an over-cap label whose cut point lands inside a surrogate pair currently yields a lone high surrogate.
+- [x] The cut backs off to the nearest text-element boundary at or below the cap, then trims trailing whitespace and appends the ellipsis, as today.
+- [x] Labels at or under the cap are byte-for-byte unchanged; the existing long-label facts still pass.
+- [x] Entry and note agree on the cut label, by construction — one function, one cut.
 
 ## Comments
+
+- 2026-08-30: Implemented on feat/label-ladder. All checklist items verified by the unit and hermetic integration suites.

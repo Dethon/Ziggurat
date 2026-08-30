@@ -9,12 +9,11 @@ namespace Tests.Integration.Clients;
 // reads plain attributes and is unit-tested without a browser, so this is the layer that has to
 // prove the attributes are there and say what the reader would have seen.
 //
-// NavigateAsync only accepts http/https, so a neutral anchor page is the canvas the fixture markup
-// is injected onto -- the same shape BrowserJQueryWidgetCompatTests uses.
+// NavigateAsync only accepts http/https, so a route-fulfilled anchor page (HermeticPage) is the
+// canvas the fixture markup is injected onto -- no third party involved anywhere in this file.
 [Collection(PlaywrightCollections.IsolatedSessions)]
 public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
 {
-    [Trait("Category", "External")]
     [SkippableFact]
     public async Task AnImageSizedOnlyByStylesheet_IsFilteredOnWhatItRendered()
     {
@@ -43,7 +42,6 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
         measured["small"].Survived.ShouldBeFalse();
     }
 
-    [Trait("Category", "External")]
     [SkippableFact]
     public async Task AnImageWhoseMarkupDisagreesWithItsRendering_IsFilteredOnTheRendering()
     {
@@ -66,7 +64,6 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
         measured["honest"].Width.ShouldBe(300);
     }
 
-    [Trait("Category", "External")]
     [SkippableFact]
     public async Task ASurvivingImage_KeepsItsAddressAndAFilteredOneLosesIt()
     {
@@ -87,7 +84,6 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
         measured["pixel"].HasSrc.ShouldBeFalse();
     }
 
-    [Trait("Category", "External")]
     [SkippableFact]
     public async Task MeasuringManyImages_CostsOneEvaluationRatherThanOnePerImage()
     {
@@ -126,7 +122,6 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
         }
     }
 
-    [Trait("Category", "External")]
     [SkippableFact]
     public async Task AnImageOnTheLivePage_IsFetchedByItsRefThroughThatSession()
     {
@@ -161,15 +156,14 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
         }
     }
 
-    [Trait("Category", "External")]
     [SkippableFact]
     public async Task ALabelThePageCarries_ComesBackWithTheFetchedPicture()
     {
         Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
 
-        // The fetch runs the same label ladder the entry did, so the words the model chose the
-        // picture by are the words a later note names it with. Where the ladder runs out entirely
-        // the note falls back to the ref, which is why every rung has to be present on both sides.
+        // The fetch reads the page's facts and the one ladder names the picture, so the words
+        // the model chose it by are the words a later note names it with -- by construction now,
+        // not by a mirrored script.
         var sessionId = $"test-{Guid.NewGuid():N}";
         try
         {
@@ -182,8 +176,8 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
                       style="width:300px;height:300px">
                  """);
             await fixture.Browser.AnnotateImagesOnSessionAsync(sessionId);
-            // A data URI carries no filename, so give the element one the ladder can reach: the
-            // rung under test is the one below enclosing-link text.
+            // A data URI carries no filename, so give the element a title the ladder can reach --
+            // proving the fetch-side facts builder feeds the rungs below the description.
             await fixture.Browser.EvaluateOnSessionAsync(
                 sessionId,
                 """
@@ -209,7 +203,7 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
 
         // The entry ends an over-cap label with an ellipsis so the cut announces itself; the
         // fetch used to slice the same length bare, and a live test read the mid-word stop as
-        // the tool breaking. Same ladder, same cut: one pair of eyes, one spelling.
+        // the tool breaking. One ladder, one cut -- this pins the integration end of it.
         var sessionId = $"test-{Guid.NewGuid():N}";
         try
         {
@@ -335,7 +329,6 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
         }
     }
 
-    [Trait("Category", "External")]
     [SkippableFact]
     public async Task AnImageWhoseBytesNeverArrived_ReportsADeadLinkNotARefusal()
     {
@@ -363,7 +356,6 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
         }
     }
 
-    [Trait("Category", "External")]
     [SkippableFact]
     public async Task ARefFromASessionThatIsGone_SaysTheSessionIsMissing()
     {
@@ -376,7 +368,6 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
         fetched.Images.ShouldBeEmpty();
     }
 
-    [Trait("Category", "External")]
     [SkippableFact]
     public async Task ARefNamingNothingOnThePage_IsRefusedWithoutBeingConfusedForADeadSession()
     {
@@ -439,38 +430,12 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
         }
     }
 
-    // The images point at paths that answer 404 on the anchor origin, which is deliberate: an
-    // image is laid out at its styled size whether or not its bytes ever arrive, and the filter
-    // must read the box rather than the payload.
+    // Some images point at addresses nothing answers, which is deliberate: an image is laid out
+    // at its styled size whether or not its bytes ever arrive, and the filter must read the box
+    // rather than the payload.
 
-    private async Task PrepareAsync(string sessionId, string markup)
-    {
-        // The canvas only has to be a document this markup can be injected into, so Partial counts.
-        // example.com is a live third party reached from inside the container, and when its
-        // DOMContentLoaded does not arrive the navigation spends the production 30s budget and
-        // comes back Partial — with a perfectly usable blank page. Insisting on Success made that
-        // a failure of whichever case ran first on a fresh browser, reported as an image assertion
-        // it never got far enough to make. Nothing here reads example.com's own content.
-        var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.com"));
-        nav.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
-
-        // The markup goes in and the annotator measures what it rendered, so the write has to be
-        // laid out before the measurement reads it. Setting innerHTML only dirties layout; nothing
-        // computes a box until something asks for one. On a warm container the next round trip is
-        // slow enough to hide that, and every case here passed for it — on a cold one the measure
-        // arrived first and read zeros, and an image the case had sized in pixels filtered out as
-        // furniture. Reading offsetHeight forces the reflow in the same evaluation that wrote the
-        // markup, so the layout is done before the call returns rather than whenever the browser
-        // gets to it.
-        await fixture.Browser.EvaluateOnSessionAsync<int>(
-            sessionId,
-            $$"""
-              () => {
-                  document.body.innerHTML = {{System.Text.Json.JsonSerializer.Serialize(markup)}};
-                  return document.body.offsetHeight;
-              }
-              """);
-    }
+    private Task PrepareAsync(string sessionId, string markup) =>
+        HermeticPage.PrepareAsync(fixture.Browser, sessionId, markup);
 
     private const string OnePixelPngBase64 =
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
