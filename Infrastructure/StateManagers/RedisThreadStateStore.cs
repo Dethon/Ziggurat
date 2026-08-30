@@ -425,11 +425,9 @@ public sealed class RedisThreadStateStore(
         return $"topics:{agentId}:{spaceSlug}";
     }
 
-    // Carries the chat id because the topic key needs it, so reading a page never costs a lookup
-    // to find out where each member's record lives.
     private static string IndexMember(TopicMetadata topic)
     {
-        return $"{topic.ChatId}:{topic.TopicId}";
+        return TopicIndexMember.Compose(topic.ChatId, topic.TopicId);
     }
 
     // Shared with the search documents, so a topic sorts identically in the index and in a
