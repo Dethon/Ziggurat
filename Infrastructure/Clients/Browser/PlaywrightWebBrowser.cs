@@ -779,8 +779,6 @@ public class PlaywrightWebBrowser(
             : throw new InvalidOperationException($"Session '{sessionId}' not found");
     }
 
-    // The arranging half of the escape hatch: lets a test answer a fake CDN address from inside
-    // the session's page without reaching into the pool for the page handle.
     // The context-level arranging half: answers an address before any page asks for it, so a
     // hermetic test can navigate to a route-fulfilled page instead of borrowing a live third
     // party as its anchor. Routes die with the context on reconnect; register before navigating.
@@ -790,6 +788,8 @@ public class PlaywrightWebBrowser(
         await _context!.RouteAsync(url, handler);
     }
 
+    // The arranging half of the escape hatch: lets a test answer a fake CDN address from inside
+    // the session's page without reaching into the pool for the page handle.
     internal async Task RouteOnSessionAsync(string sessionId, string url, Func<IRoute, Task> handler)
     {
         var outcome = await _sessions.OnCurrentTabAsync(sessionId, StampPolicy.None,

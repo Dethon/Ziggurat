@@ -62,11 +62,12 @@ internal static class ImageAcquisition
             return new FetchedImage(imageRef, null, null, ImageFetchStatus.NotAnImageRef);
         }
 
-        var label = ImageLabel.From(located.Facts);
         if (located.Url is null)
         {
             return new FetchedImage(imageRef, null, null, ImageFetchStatus.SiteRefused);
         }
+
+        var label = ImageLabel.From(located.Facts);
 
         // Same-origin sends the page's own credentials; cross-origin goes anonymous, because the
         // big image CDNs answer ACAO * and a wildcard is exactly what a credentialed request is
