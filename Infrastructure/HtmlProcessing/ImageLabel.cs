@@ -61,7 +61,29 @@ public static partial class ImageLabel
     private static string Sanitize(string label)
     {
         var flat = WhitespaceRegex().Replace(label, " ").Replace('[', '(').Replace(']', ')').Trim();
-        return flat.Length <= MaxLength ? flat : flat[..MaxLength].TrimEnd() + "…";
+        return flat.Length <= MaxLength ? flat : Cut(flat).TrimEnd() + "…";
+    }
+
+    // The cut lands between characters, never inside one: it backs off to the nearest text-element
+    // boundary at or below the cap, so a label ending in an emoji -- a surrogate pair, or a whole
+    // ZWJ sequence -- arrives whole-minus-the-tail rather than as a lone surrogate half. A bare
+    // slice produced exactly that mojibake.
+    private static string Cut(string flat)
+    {
+        var end = 0;
+        var elements = System.Globalization.StringInfo.GetTextElementEnumerator(flat);
+        while (elements.MoveNext())
+        {
+            var next = elements.ElementIndex + ((string)elements.Current).Length;
+            if (next > MaxLength)
+            {
+                break;
+            }
+
+            end = next;
+        }
+
+        return flat[..end];
     }
 
     [GeneratedRegex(@"\s+")]

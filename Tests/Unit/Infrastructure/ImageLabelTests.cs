@@ -93,6 +93,47 @@ public class ImageLabelTests
     }
 
     [Fact]
+    public void ALabelWhoseEmojiStraddlesTheCap_IsCutBeforeItNotThroughIt()
+    {
+        // The cut lands between characters, never inside one: both halves of the old ladder
+        // sliced by UTF-16 units, so an astral character on the boundary left as a lone high
+        // surrogate -- mojibake in the entry, and different final bytes per side.
+        var label = Label(alt: new string('x', 499) + "😀" + new string('y', 300));
+
+        label.ShouldBe(new string('x', 499) + "…");
+        label.Any(char.IsSurrogate).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void AFamilyEmojiStraddlingTheCap_IsDroppedWholeNotDismembered()
+    {
+        // A ZWJ sequence is one drawn character; cutting inside it leaves whichever family
+        // members fit. The cut backs off to the text-element boundary.
+        var family = "👨‍👩‍👧";
+        var label = Label(alt: new string('x', 498) + family + new string('y', 300));
+
+        label.ShouldBe(new string('x', 498) + "…");
+    }
+
+    [Fact]
+    public void AnEmojiEndingExactlyAtTheCap_IsKept()
+    {
+        var label = Label(alt: new string('x', 498) + "😀" + new string('y', 300));
+
+        label.ShouldBe(new string('x', 498) + "😀…");
+    }
+
+    [Fact]
+    public void TheCutStillTrimsTrailingWhitespaceBeforeTheEllipsis()
+    {
+        // The flattened space sits at position 500 and the emoji straddles the cap: the cut keeps
+        // the space, the trim drops it, and the ellipsis follows the last visible character.
+        var label = Label(alt: new string('x', 499) + " 😀" + new string('y', 300));
+
+        label.ShouldBe(new string('x', 499) + "…");
+    }
+
+    [Fact]
     public void ANextLineCharacter_IsFlattenedLikeAnyOtherWhitespace()
     {
         // U+0085 is whitespace to .NET and not to JavaScript's \s -- the surviving semantics
