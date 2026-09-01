@@ -4,7 +4,7 @@ using System.Text;
 namespace Tests.Unit.Infrastructure;
 
 // Terminal HttpMessageHandler for driving a real OpenRouterChatClient pipeline offline:
-// captures the outgoing request body and answers with a minimal valid SSE completion.
+// captures the outgoing request and answers with a minimal valid SSE completion.
 internal sealed class CapturingSseHandler : HttpMessageHandler
 {
     private const string Sse =
@@ -16,10 +16,14 @@ internal sealed class CapturingSseHandler : HttpMessageHandler
         """;
 
     public string? CapturedBody { get; private set; }
+    public Uri? CapturedUri { get; private set; }
+    public string? CapturedAuthorization { get; private set; }
 
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        CapturedUri = request.RequestUri;
+        CapturedAuthorization = request.Headers.Authorization?.ToString();
         CapturedBody = request.Content is null
             ? null
             : await request.Content.ReadAsStringAsync(cancellationToken);

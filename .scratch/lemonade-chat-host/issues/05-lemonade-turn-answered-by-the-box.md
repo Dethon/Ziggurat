@@ -4,12 +4,12 @@
 
 **Blocked by:** 03 — The patchable whitelist resolves per turn from a source; 04 — Lemonade models appear in the selector.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A turn whose override is a Lemonade model reaches the Lemonade chat host's Responses endpoint with the bare id, the agent's tools, and the reasoning options exactly as an OpenRouter turn would carry them
-- [ ] A turn with an OpenRouter override, or none, reaches the OpenRouter endpoint with a body identical to today's, and provider routing advisories do not run for Lemonade turns
-- [ ] A discovered Lemonade id is honoured by the whitelist; one that has vanished from discovery is refused with the existing warning and fallback
-- [ ] A connection failure, timeout or non-2xx from the host surfaces in WebChat as a toast and a red bubble whose text names the Lemonade chat host and its address, and the transient-error filter does not swallow it
-- [ ] No fallback and no pre-flight: the failed turn is not re-sent anywhere, and a second Lemonade turn while the box is busy fails the same way
-- [ ] Subagents, memory extraction and dreaming still use their configured OpenRouter models
-- [ ] Tests: the routing client over a stubbed transport following the OpenRouter chat client tests, and the multi-agent factory tests for the whitelist
+- [x] A turn whose override is a Lemonade model reaches the Lemonade chat host's Responses endpoint with the bare id, the agent's tools, and the reasoning options exactly as an OpenRouter turn would carry them
+- [x] A turn with an OpenRouter override, or none, reaches the OpenRouter endpoint with a body identical to today's, and provider routing advisories do not run for Lemonade turns
+- [x] A discovered Lemonade id is honoured by the whitelist; one that has vanished from discovery is refused with the existing warning and fallback
+- [x] A connection failure, timeout or non-2xx from the host surfaces in WebChat as a toast and a red bubble whose text names the Lemonade chat host and its address, and the transient-error filter does not swallow it
+- [x] No fallback and no pre-flight: the failed turn is not re-sent anywhere, and a second Lemonade turn while the box is busy fails the same way
+- [x] Subagents, memory extraction and dreaming still use their configured OpenRouter models
+- [x] Tests: the routing client over a stubbed transport following the OpenRouter chat client tests, and the multi-agent factory tests for the whitelist

@@ -28,9 +28,19 @@ public sealed class MultiAgentFactory(
 
     private readonly ILogger? _logger = loggerFactory?.CreateLogger<MultiAgentFactory>();
 
+    // Absent in a host with no Lemonade chat host configured, and in every factory built without a
+    // container: then the whitelist is the configured list and every turn goes to OpenRouter.
+    private readonly ILemonadeModelSource _lemonadeModels = LemonadeModelsOf(serviceProvider);
+
+    private readonly LemonadeChatHostOptions? _lemonadeHost =
+        serviceProvider?.GetService<LemonadeChatHostOptions>();
+
     // One source for every agent this factory builds, read on each turn that carries a patch.
-    private readonly IPatchableModelSource _patchableModels =
-        new FixedPatchableModelSource(openRouterConfig.PatchableModelIds ?? []);
+    private readonly IPatchableModelSource _patchableModels = new PatchableModelWhitelist(
+        openRouterConfig.PatchableModelIds ?? [], LemonadeModelsOf(serviceProvider));
+
+    private static ILemonadeModelSource LemonadeModelsOf(IServiceProvider? serviceProvider) =>
+        serviceProvider?.GetService<ILemonadeModelSource>() ?? FixedLemonadeModelSource.None;
 
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
@@ -161,20 +171,43 @@ public sealed class MultiAgentFactory(
 
     // Permissive wherever the catalogue is silent, the same rule AttachmentCapability states: model
     // capability is discovered from the provider, and a lookup that has not answered yet must not
-    // remove the feature from everyone.
-    private bool AcceptsImages(string model) =>
-        serviceProvider?.GetService<IModelCapabilityCatalog>() is not { } catalog
-        || catalog.GetAcceptedAttachmentKinds(model).Contains(AttachmentKind.Image);
+    // remove the feature from everyone. A Lemonade model is answered by the host that has it.
+    private bool AcceptsImages(string model)
+    {
+        if (LemonadeModelId.IsLemonade(model))
+        {
+            return LemonadeModelOf(model)?.AcceptedAttachmentKinds.Contains(AttachmentKind.Image) ?? true;
+        }
 
+        return serviceProvider?.GetService<IModelCapabilityCatalog>() is not { } catalog
+               || catalog.GetAcceptedAttachmentKinds(model).Contains(AttachmentKind.Image);
+    }
+
+    private LemonadeModel? LemonadeModelOf(string model) =>
+        _lemonadeModels.Current.FirstOrDefault(m =>
+            string.Equals(LemonadeModelId.Namespaced(m.Id), model, StringComparison.OrdinalIgnoreCase));
+
+    // The OpenRouter client is built exactly as before. With a Lemonade chat host configured it is
+    // one side of a routing client, the other being a client for the box; without one it is the
+    // whole client, and no turn can reach a Lemonade model because none is ever whitelisted.
     internal IChatClient CreateChatClient(
         string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null,
         string? sessionId = null, ProviderRouting? providerRouting = null,
-        HttpMessageHandler? transportHandler = null)
+        HttpMessageHandler? transportHandler = null, HttpMessageHandler? lemonadeTransportHandler = null)
     {
         var effectivePublisher = publisher ?? metricsPublisher;
         var effectiveContext = maxContextTokens ?? openRouterConfig.MaxContextTokens;
+        // Optional in both senses: a host with no channel connections registers none, and a
+        // client built without a container has no way to ask. Neither is an error — the turn
+        // simply reaches the model with no bytes put back.
+        var attachmentSource = serviceProvider?.GetService<IAttachmentSource>();
+        // The other half of the same pass: the tool writes the bytes here and this send reads
+        // them back, so both ends have to be handed the one store or neither works. The
+        // capability lookup rides along, because the send must not put an image part in front
+        // of a patched model that cannot take it — the wire rejects the whole request.
+        var readImageStore = serviceProvider?.GetService<IReadImageStore>();
 
-        return new OpenRouterChatClient(
+        var openRouter = new OpenRouterChatClient(
             openRouterConfig.ApiUrl,
             openRouterConfig.ApiKey,
             model,
@@ -183,17 +216,27 @@ public sealed class MultiAgentFactory(
             sessionId,
             providerRouting: providerRouting,
             transportHandler: transportHandler,
-            // Optional in both senses: a host with no channel connections registers none, and a
-            // client built without a container has no way to ask. Neither is an error — the turn
-            // simply reaches the model with no bytes put back.
-            attachmentSource: serviceProvider?.GetService<IAttachmentSource>(),
+            attachmentSource: attachmentSource,
             hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
-            // The other half of the same pass: the tool writes the bytes here and this send reads
-            // them back, so both ends have to be handed the one store or neither works. The
-            // capability lookup rides along, because the send must not put an image part in front
-            // of a patched model that cannot take it — the wire rejects the whole request.
-            readImageStore: serviceProvider?.GetService<IReadImageStore>(),
+            readImageStore: readImageStore,
             modelAcceptsImages: AcceptsImages);
+
+        if (_lemonadeHost is not { IsConfigured: true } host)
+        {
+            return openRouter;
+        }
+
+        var lemonade = new LemonadeChatClient(
+            host,
+            effectivePublisher,
+            sessionId,
+            transportHandler: lemonadeTransportHandler,
+            attachmentSource: attachmentSource,
+            hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
+            readImageStore: readImageStore,
+            modelAcceptsImages: AcceptsImages);
+
+        return new HostRoutingChatClient(openRouter, lemonade);
     }
 }
 
