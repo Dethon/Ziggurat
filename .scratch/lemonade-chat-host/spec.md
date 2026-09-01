@@ -64,7 +64,7 @@ the feature does not exist.
 ### Configuration
 
 - A new top-level settings section, `lemonadeChat`, in the agent host's appsettings, holding `apiUrl` and an optional `apiKey`. `apiUrl` defaults to empty, and empty means the feature is off: no discovery, no whitelist entries, no probe, no warning.
-- The address is a per-deployment value, so it gets a placeholder `environment` entry in compose for the agent container and, for the health probe, the observability container. It gets no compose service, no `.env` line unless an API key is set, and no shared policy file. The key is a secret and, when used, follows the secrets rule.
+- The address is a per-deployment value, set once in `.env` as `LemonadeChat__ApiUrl`, which `env_file` delivers to the agent container and, for the health probe, the observability container. A literal placeholder in a compose `environment` block was tried first and found to override the `.env` line, so it is gone. It gets no compose service and no shared policy file. The key is a secret and, when used, follows the secrets rule.
 - The observability dashboard's HTTP probe list gains one entry for the host's health endpoint, read from the same address. Absent address, absent probe.
 - The optional API key is sent as a bearer token when set and the header is omitted when blank, following the precedent of the memory embedding client.
 
@@ -126,6 +126,8 @@ The agent host's appsettings test pins the section's default (empty address) so 
 - The box's `response.completed` carries a response id that the Responses adapter surfaces as a conversation id, and the agent refuses a turn that offers one because the history is its own. The Lemonade client clears it on every update; the id has already become the message id by then. Found against the real box during implementation.
 - "Names no cloud provider" is read as any of: a `cloud` label, a `cloud` recipe, or a `provider` field on the model entry, which is how Lemonade's cloud offload marks the models it proxies.
 - Zero cost is a property of the wire, not an override: the box reports no `usage.cost`, so the cost tap drains nothing and the event carries zero. A box that ever reported a cost would be charted with it.
+
+- The box must listen on the LAN: Lemonade's `host` defaults to `localhost`, so a fresh install answers only on loopback and the agent logs the unreachable-host warning once per outage. `"host": "0.0.0.0"` in the box's `config.json`, plus a firewall rule for the port, is part of pointing a deployment at a box. Found on first deployment.
 
 ## Out of Scope
 
