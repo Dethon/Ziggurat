@@ -2616,11 +2616,9 @@ select:focus:not(:focus-visible) {
 .agent-config-item:hover { background: var(--bg-tertiary); }
 .agent-config-item.on { background: var(--accent-subtle); }
 .agent-config-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* The lemon marks a model on the Lemonade chat host, in the list and on the gear summary. A
-   colour of its own rather than currentColor, so it reads as a lemon on a muted trigger too;
-   the dark theme lifts it so it keeps its weight on the darker plate. */
-.model-lemon { flex: 0 0 auto; color: #d9a400; }
-[data-theme="dark"] .model-lemon { color: #f3c53a; }
+/* The lemon marks a model on the Lemonade chat host, in the list and on the gear summary. It is
+   Lemonade's own mark and brings its own colours, so no theme rule paints it. */
+.model-lemon { flex: 0 0 auto; }
 .agent-activity-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
     box-shadow: 0 0 8px 1px color-mix(in srgb, var(--accent) 70%, transparent); }
 .is-streaming .agent-activity-dot, .agent-seg .agent-activity-dot { animation: emberPulse 1.6s ease-in-out infinite; }
