@@ -4,10 +4,10 @@
 
 **Blocked by:** 02 — The truncation window is decided per turn; 05 — A Lemonade turn is answered by the box.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A Lemonade turn whose history exceeds the model's discovered window is truncated to that window before it is sent, and the truncation event reports that window
-- [ ] A Lemonade model with no discovered window truncates to the agent's window
-- [ ] An OpenRouter turn truncates to the agent's window exactly as before
-- [ ] Token, latency and truncation events for a Lemonade turn carry `lemonade/<id>` as the model and a cost of zero; the dashboard's model dimension shows them under that name
-- [ ] Tests: the routing client over a stubbed transport with the recording metrics publisher, following the existing truncation and chat client tests
+- [x] A Lemonade turn whose history exceeds the model's discovered window is truncated to that window before it is sent, and the truncation event reports that window
+- [x] A Lemonade model with no discovered window truncates to the agent's window
+- [x] An OpenRouter turn truncates to the agent's window exactly as before
+- [x] Token, latency and truncation events for a Lemonade turn carry `lemonade/<id>` as the model and a cost of zero; the dashboard's model dimension shows them under that name
+- [x] Tests: the routing client over a stubbed transport with the recording metrics publisher, following the existing truncation and chat client tests

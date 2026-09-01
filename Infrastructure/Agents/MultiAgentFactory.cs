@@ -183,6 +183,16 @@ public sealed class MultiAgentFactory(
                || catalog.GetAcceptedAttachmentKinds(model).Contains(AttachmentKind.Image);
     }
 
+    // The smaller of the agent's window and the one the box loaded the model with; a model whose
+    // window the box did not report fits the agent's, as an OpenRouter turn does.
+    private int? LemonadeWindow(string model, int? agentWindow) =>
+        (agentWindow, LemonadeModelOf(model)?.ContextWindow) switch
+        {
+            ({ } agent, { } discovered) => Math.Min(agent, discovered),
+            (var agent, null) => agent,
+            (null, var discovered) => discovered
+        };
+
     private LemonadeModel? LemonadeModelOf(string model) =>
         _lemonadeModels.Current.FirstOrDefault(m =>
             string.Equals(LemonadeModelId.Namespaced(m.Id), model, StringComparison.OrdinalIgnoreCase));
@@ -234,7 +244,8 @@ public sealed class MultiAgentFactory(
             attachmentSource: attachmentSource,
             hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
             readImageStore: readImageStore,
-            modelAcceptsImages: AcceptsImages);
+            modelAcceptsImages: AcceptsImages,
+            contextWindowFor: model => LemonadeWindow(model, effectiveContext));
 
         return new HostRoutingChatClient(openRouter, lemonade);
     }

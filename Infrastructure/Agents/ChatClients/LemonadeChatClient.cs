@@ -88,6 +88,10 @@ public sealed class LemonadeChatClient : IChatClient
                 throw LemonadeChatHostException.From(_address, ex);
             }
 
+            // The adapter reads the box's response id as a server-side conversation to continue,
+            // and the agent refuses a turn that offers one because the history is its own. The box
+            // keeps nothing between turns; the id stays as the message id it already became.
+            updates.Current.ConversationId = null;
             yield return updates.Current;
         }
     }
