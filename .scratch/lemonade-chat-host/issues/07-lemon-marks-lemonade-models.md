@@ -4,10 +4,10 @@
 
 **Blocked by:** 01 — The model dropdown becomes a custom listbox; 04 — Lemonade models appear in the selector.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Each listbox entry whose id carries the Lemonade prefix renders the lemon glyph before its display name; other entries render no glyph
-- [ ] The gear summary renders the lemon before the model name when the active override is a Lemonade model, and not otherwise
-- [ ] The lemon exists only as a glyph in the icon table and is drawn through the icon component; the drawn-icon conformance test stays green
-- [ ] Selector or store tests pin the marker as a pure function of the id, following the agent settings selector tests
-- [ ] The listbox on a phone-width layout and in dark theme keeps the glyph legible beside the name
+- [x] Each listbox entry whose id carries the Lemonade prefix renders the lemon glyph before its display name; other entries render no glyph
+- [x] The gear summary renders the lemon before the model name when the active override is a Lemonade model, and not otherwise
+- [x] The lemon exists only as a glyph in the icon table and is drawn through the icon component; the drawn-icon conformance test stays green
+- [x] Selector or store tests pin the marker as a pure function of the id, following the agent settings selector tests
+- [x] The listbox on a phone-width layout and in dark theme keeps the glyph legible beside the name

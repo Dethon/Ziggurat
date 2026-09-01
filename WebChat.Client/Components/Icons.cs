@@ -36,6 +36,15 @@ public static class Icons
         + "2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 "
         + "0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z");
 
+    // A lemon on its side with a nub at each end, marking a model that runs on the Lemonade chat
+    // host. Filled like the gear beside it, so the two read as one family.
+    public static readonly IconGlyph Lemon = new(
+        """
+        <ellipse cx="12" cy="12" rx="8" ry="5.4" transform="rotate(-35 12 12)" />
+        <circle cx="4.9" cy="16.9" r="1.7" />
+        <circle cx="19.1" cy="7.1" r="1.7" />
+        """);
+
     // Points right when shut and is turned by CSS when open, so a toggle is one drawing rather than
     // two that have to agree about weight.
     public static readonly IconGlyph Triangle = Filled("M9 6l6 6-6 6Z");

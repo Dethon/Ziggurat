@@ -1,9 +1,19 @@
+using Domain.Agents;
 using Domain.DTOs.Channel;
 
 namespace WebChat.Client.State.AgentSettings;
 
 public static class AgentSettingsSelectors
 {
+    // Whether a model runs on the Lemonade chat host, read off the id's namespace: the catalogue
+    // carries no provider field, and the marker a person sees is the same convention routing uses.
+    public static bool IsLemonadeModel(string? modelId) => LemonadeModelId.IsLemonade(modelId);
+
+    public static string? ModelNameFor(AgentCatalogEntry agent, string? modelId) =>
+        modelId is null
+            ? null
+            : agent.PatchableModels?.FirstOrDefault(m => m.Id == modelId)?.Name ?? modelId;
+
     public static AgentConfigPatch? GetConfigPatch(
         AgentSettingsState state, IReadOnlyList<AgentCatalogEntry> agents, string agentId)
     {

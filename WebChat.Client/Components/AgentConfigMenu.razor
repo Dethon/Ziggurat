@@ -21,6 +21,10 @@
             <Icon Glyph="Icons.Gear" Size="16" Class="agent-config-gear" />
             @if (patch is not null)
             {
+                @if (AgentSettingsSelectors.IsLemonadeModel(patch.Model))
+                {
+                    <Icon Glyph="Icons.Lemon" Size="14" Class="model-lemon" />
+                }
                 <span class="agent-config-summary">@SummaryFor(agent, patch)</span>
             }
         </button>
@@ -38,6 +42,10 @@
                                 @onkeydown="OnModelKeyDown"
                                 aria-haspopup="listbox" aria-expanded="@_modelOpen"
                                 aria-labelledby="agent-config-model-label">
+                            @if (AgentSettingsSelectors.IsLemonadeModel(CurrentModel(agent)))
+                            {
+                                <Icon Glyph="Icons.Lemon" Size="14" Class="model-lemon" />
+                            }
                             <span class="agent-config-combo-name">@(ModelNameFor(agent, CurrentModel(agent)) ?? "default")</span>
                             <Icon Glyph="Icons.CaretDown" Size="12" Class="agent-config-combo-caret" />
                         </button>
@@ -51,6 +59,10 @@
                                             role="option" aria-selected="@selected"
                                             @onclick="() => SetModel(agent, model.Id)" @onclick:stopPropagation="true"
                                             @onkeydown="OnModelKeyDown">
+                                        @if (AgentSettingsSelectors.IsLemonadeModel(model.Id))
+                                        {
+                                            <Icon Glyph="Icons.Lemon" Size="14" Class="model-lemon" />
+                                        }
                                         <span class="agent-config-item-name">@model.Name</span>
                                     </button>
                                 }
@@ -138,9 +150,7 @@
         $"Reasoning effort: {CurrentEffort(agent) ?? "default"}";
 
     private static string? ModelNameFor(AgentCatalogEntry agent, string? modelId) =>
-        modelId is null
-            ? null
-            : agent.PatchableModels?.FirstOrDefault(m => m.Id == modelId)?.Name ?? modelId;
+        AgentSettingsSelectors.ModelNameFor(agent, modelId);
 
     private string? CurrentModel(AgentCatalogEntry agent) =>
         _settings.ByAgent.GetValueOrDefault(agent.Id)?.Model ?? agent.DefaultModel;
