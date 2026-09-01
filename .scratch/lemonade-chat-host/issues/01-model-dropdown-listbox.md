@@ -4,10 +4,10 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The gear menu's model picker renders every patchable model the catalog offers, in the same order as before, and picking one produces the same config patch as before
-- [ ] The picker is keyboard operable and carries listbox and option roles, matching the agent selector's pattern
-- [ ] The reasoning effort picker and the gear summary behave exactly as before
-- [ ] The drawn-icon conformance test and every existing WebChat unit and E2E test stay green
-- [ ] No new icon, no Lemonade behaviour: this ticket changes structure only
+- [x] The gear menu's model picker renders every patchable model the catalog offers, in the same order as before, and picking one produces the same config patch as before
+- [x] The picker is keyboard operable and carries listbox and option roles, matching the agent selector's pattern
+- [x] The reasoning effort picker and the gear summary behave exactly as before
+- [x] The drawn-icon conformance test and every existing WebChat unit and E2E test stay green
+- [x] No new icon, no Lemonade behaviour: this ticket changes structure only

@@ -28,16 +28,36 @@
         @if (_open)
         {
             <div class="agent-config-menu" role="dialog" aria-label="Agent model and reasoning effort">
-                <label class="agent-config-row">
-                    <span class="agent-config-label">Model</span>
-                    <select class="agent-config-select"
-                            value="@CurrentModel(agent)" @onchange="e => SetModel(agent, e)">
-                        @foreach (var model in agent.PatchableModels!)
+                @* A listbox rather than a native select, on the agent combo's pattern beside it: a
+                   native option cannot hold an icon, and an entry here may need one. *@
+                <div class="agent-config-row">
+                    <span class="agent-config-label" id="agent-config-model-label">Model</span>
+                    <div class="agent-config-combo @(_modelOpen ? "open" : "")">
+                        <button type="button" class="agent-config-combo-trigger"
+                                @onclick="ToggleModels" @onclick:stopPropagation="true"
+                                @onkeydown="OnModelKeyDown"
+                                aria-haspopup="listbox" aria-expanded="@_modelOpen"
+                                aria-labelledby="agent-config-model-label">
+                            <span class="agent-config-combo-name">@(ModelNameFor(agent, CurrentModel(agent)) ?? "default")</span>
+                            <Icon Glyph="Icons.CaretDown" Size="12" Class="agent-config-combo-caret" />
+                        </button>
+                        @if (_modelOpen)
                         {
-                            <option value="@model.Id">@model.Name</option>
+                            <div class="agent-config-combo-menu" role="listbox" aria-labelledby="agent-config-model-label">
+                                @foreach (var model in agent.PatchableModels!)
+                                {
+                                    var selected = string.Equals(model.Id, CurrentModel(agent), StringComparison.OrdinalIgnoreCase);
+                                    <button type="button" class="agent-config-item @(selected ? "on" : "")"
+                                            role="option" aria-selected="@selected"
+                                            @onclick="() => SetModel(agent, model.Id)" @onclick:stopPropagation="true"
+                                            @onkeydown="OnModelKeyDown">
+                                        <span class="agent-config-item-name">@model.Name</span>
+                                    </button>
+                                }
+                            </div>
                         }
-                    </select>
-                </label>
+                    </div>
+                </div>
                 <label class="agent-config-row">
                     <span class="agent-config-label">Reasoning effort</span>
                     <select class="agent-config-select"
@@ -58,12 +78,14 @@
     private string? _selectedAgentId;
     private AgentSettingsState _settings = AgentSettingsState.Initial;
     private bool _open;
+    private bool _modelOpen;
     private ElementReference _root;
     private OutsidePressWatcher? _watcher;
 
     private OutsidePressWatcher Watcher => _watcher ??= new OutsidePressWatcher(Js, () =>
     {
         _open = false;
+        _modelOpen = false;
         StateHasChanged();
     });
 
@@ -77,7 +99,22 @@
         Subscribe(SettingsStore.StateObservable, s => s, s => _settings = s);
     }
 
-    private void Toggle() => _open = !_open;
+    private void Toggle()
+    {
+        _open = !_open;
+        _modelOpen = false;
+    }
+
+    private void ToggleModels() => _modelOpen = !_modelOpen;
+
+    // Escape shuts the list and nothing else: the dialog around it stays where it was.
+    private void OnModelKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _modelOpen = false;
+        }
+    }
 
     // This menu deliberately stays open after a pick, so the press that finally dismisses it is
     // the one a person makes on their way somewhere else — it has to reach that somewhere.
@@ -111,8 +148,11 @@
     private string? CurrentEffort(AgentCatalogEntry agent) =>
         _settings.ByAgent.GetValueOrDefault(agent.Id)?.ReasoningEffort ?? agent.DefaultReasoningEffort;
 
-    private void SetModel(AgentCatalogEntry agent, ChangeEventArgs e) =>
-        Dispatcher.Dispatch(new SetAgentModel(agent.Id, e.Value?.ToString()));
+    private void SetModel(AgentCatalogEntry agent, string modelId)
+    {
+        _modelOpen = false;
+        Dispatcher.Dispatch(new SetAgentModel(agent.Id, modelId));
+    }
 
     private void SetEffort(AgentCatalogEntry agent, ChangeEventArgs e) =>
         Dispatcher.Dispatch(new SetAgentReasoningEffort(agent.Id, e.Value?.ToString()));
