@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Infrastructure.Agents;
 
 namespace Tests;
@@ -30,6 +31,6 @@ internal static class TestAgentSpec
         PromptSections = [],
         KeepsHistory = true,
         RecordsOutpostVerdicts = true,
-        PatchableModelIds = []
+        PatchableModels = FixedPatchableModelSource.None
     };
 }

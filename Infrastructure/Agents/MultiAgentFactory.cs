@@ -28,6 +28,10 @@ public sealed class MultiAgentFactory(
 
     private readonly ILogger? _logger = loggerFactory?.CreateLogger<MultiAgentFactory>();
 
+    // One source for every agent this factory builds, read on each turn that carries a patch.
+    private readonly IPatchableModelSource _patchableModels =
+        new FixedPatchableModelSource(openRouterConfig.PatchableModelIds ?? []);
+
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
         var agents = definitionProvider.GetAll(userId);
@@ -61,7 +65,8 @@ public sealed class MultiAgentFactory(
     private DisposableAgent CreateFromDefinition(
         AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
     {
-        var spec = AgentSpecProjection.ForAgent(definition, agentKey, userId, openRouterConfig, _logger);
+        var spec = AgentSpecProjection.ForAgent(
+            definition, agentKey, userId, openRouterConfig, _patchableModels, _logger);
 
         return Build(spec, approvalHandler);
     }

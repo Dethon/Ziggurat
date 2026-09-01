@@ -43,7 +43,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly TimeProvider _timeProvider;
     private readonly IMetricsPublisher _metricsPublisher;
     private readonly string _model;
-    private readonly IReadOnlyList<string> _patchableModelIds;
+    private readonly IPatchableModelSource _patchableModels;
     private readonly string _conversationId;
     private readonly McpPromptCache? _promptCache;
     private readonly ReadImageSupport? _readImages;
@@ -97,7 +97,7 @@ public sealed class McpAgent : DisposableAgent
         _timeProvider = timeProvider;
         _metricsPublisher = metricsPublisher;
         _model = spec.Model;
-        _patchableModelIds = spec.PatchableModelIds;
+        _patchableModels = spec.PatchableModels;
         _conversationId = spec.ConversationId;
         _promptCache = promptCache;
         _readImages = readImages;
@@ -302,7 +302,7 @@ public sealed class McpAgent : DisposableAgent
         // Return the whitelist's own casing, not the patch's: OpenRouter model IDs are lowercase
         // slugs, and stamping the patch's casing verbatim can turn a valid override into a
         // model-not-found error.
-        var resolved = _patchableModelIds
+        var resolved = _patchableModels.Ids
             .FirstOrDefault(id => string.Equals(id, patchedModel, StringComparison.OrdinalIgnoreCase));
 
         if (resolved is null)

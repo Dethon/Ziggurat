@@ -4,9 +4,9 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A patch naming a configured patchable model is honoured on a turn even if the agent was built before the source last changed
-- [ ] A patch naming a model the source no longer offers is refused with the existing warning and falls back to the agent's model
-- [ ] Subagents still offer no patchable models
-- [ ] The multi-agent factory and agent tests stay green, with any test that pinned the construction-time list moved to the source shape
+- [x] A patch naming a configured patchable model is honoured on a turn even if the agent was built before the source last changed
+- [x] A patch naming a model the source no longer offers is refused with the existing warning and falls back to the agent's model
+- [x] Subagents still offer no patchable models
+- [x] The multi-agent factory and agent tests stay green, with any test that pinned the construction-time list moved to the source shape

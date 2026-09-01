@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Prompts;
 
@@ -48,5 +49,8 @@ public sealed record AgentSpec
     // delegated task is not the operator's to be told about. Its own field rather than a second
     // meaning for KeepsHistory, which is about thread state and would answer this by coincidence.
     public required bool RecordsOutpostVerdicts { get; init; }
-    public required IReadOnlyList<string> PatchableModelIds { get; init; }
+
+    // Asked per turn rather than copied here: part of the list is discovered while the agent
+    // runs, so a spec holding the ids would refuse a model that appeared after it was built.
+    public required IPatchableModelSource PatchableModels { get; init; }
 }

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Domain.Agents;
+using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Agents;
 using Shouldly;
@@ -52,7 +53,8 @@ public sealed class AgentSpecProjectionTests
     };
 
     private static AgentSpec AgentSpec() => AgentSpecProjection.ForAgent(
-        _agentDefinition, new AgentKey("conv-1", "jack"), "fran", _openRouter, null);
+        _agentDefinition, new AgentKey("conv-1", "jack"), "fran", _openRouter,
+        new FixedPatchableModelSource(["model-a", "model-b"]), null);
 
     private static AgentSpec SubAgentSpec() => AgentSpecProjection.ForSubAgent(
         _subAgentDefinition, new SpawnContext("conv-1", "fran", ["allow-*"], UsesOutposts: false),
@@ -72,7 +74,9 @@ public sealed class AgentSpecProjectionTests
         // A mount verdict answers "did the agent you registered with mount you", so a delegated
         // task's collision set is nobody's business at the machine.
         Row("records outpost verdicts", s => s.RecordsOutpostVerdicts, true, false),
-        Row("patchable model ids", s => s.PatchableModelIds,
+        // The agent's list is whatever source the factory hands it; a subagent's is empty by
+        // construction, so no patch copied down from a parent's message ever wins there.
+        Row("patchable model ids", s => s.PatchableModels.Ids,
             new[] { "model-a", "model-b" }, Array.Empty<string>()),
         Row("enabled features", s => s.EnabledFeatures,
             new[] { "memory", "subagents", "filesystem.text_read" },
