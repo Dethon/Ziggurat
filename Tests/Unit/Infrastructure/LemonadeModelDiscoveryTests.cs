@@ -179,7 +179,7 @@ public sealed class LemonadeModelDiscoveryTests : IDisposable
         await Discovery(_server.Url!, apiKey: "").RefreshAsync(CancellationToken.None);
 
         var headers = _server.LogEntries
-            .Select(e => e.RequestMessage.Headers is { } h && h.TryGetValue("Authorization", out var value)
+            .Select(e => e.RequestMessage!.Headers is { } h && h.TryGetValue("Authorization", out var value)
                 ? value.FirstOrDefault()
                 : null)
             .ToList();
