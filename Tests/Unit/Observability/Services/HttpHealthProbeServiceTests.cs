@@ -101,4 +101,35 @@ public class HttpHealthProbeServiceTests
 
         _db.Invocations.ShouldNotContain(i => i.Method.Name == "SetAddAsync");
     }
+
+    // The Lemonade chat host is somebody's own box outside the stack, reached by an address that
+    // is configuration and nothing else; the same address that discovers its models probes its
+    // health, and no address means no probe rather than a red tile for a box nobody has.
+    [Fact]
+    public void Targets_WithALemonadeChatHostAddress_ProbeItsHealthEndpoint()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["HttpProbes:lemonade"] = "http://lemonade:13305/api/v1/health",
+            ["LemonadeChat:ApiUrl"] = "http://192.168.5.40:13305/api/v1/"
+        }).Build();
+
+        HttpHealthProbeService.Targets(configuration).ShouldBe([
+            ("lemonade", "http://lemonade:13305/api/v1/health"),
+            ("lemonade-chat-host", "http://192.168.5.40:13305/api/v1/health")
+        ]);
+    }
+
+    [Fact]
+    public void Targets_WithoutALemonadeChatHostAddress_ProbeNothingForIt()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["HttpProbes:lemonade"] = "http://lemonade:13305/api/v1/health",
+            ["LemonadeChat:ApiUrl"] = ""
+        }).Build();
+
+        HttpHealthProbeService.Targets(configuration)
+            .ShouldBe([("lemonade", "http://lemonade:13305/api/v1/health")]);
+    }
 }

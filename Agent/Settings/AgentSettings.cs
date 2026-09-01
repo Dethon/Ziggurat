@@ -22,6 +22,16 @@ public record AgentSettings
     public ReadImageConfiguration ReadImages { get; init; } = new();
     public RetentionSettings Retention { get; init; } = new();
     public OutpostConfiguration Outposts { get; init; } = new();
+    public LemonadeChatConfiguration LemonadeChat { get; init; } = new();
+}
+
+// The Lemonade chat host: somebody's own box on the local network, outside the compose stack, and
+// possibly off. Its address is the one per-deployment value, and empty means the feature does not
+// exist. The key is a secret and optional — a box that checks none needs none.
+public record LemonadeChatConfiguration
+{
+    public string ApiUrl { get; [UsedImplicitly] init; } = "";
+    public string? ApiKey { get; [UsedImplicitly] init; }
 }
 
 public record OutpostConfiguration

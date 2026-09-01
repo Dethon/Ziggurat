@@ -709,6 +709,11 @@ services:
       - .env
     environment:
       <<: *timezone
+      # The Lemonade chat host: somebody's own box on the local network, outside this stack and
+      # possibly off, e.g. http://192.168.5.40:13305/api/v1. Empty means the feature is off. The
+      # observability container carries the same address for its health probe. A key, if the box
+      # checks one, is LEMONADECHAT__APIKEY in .env.
+      LemonadeChat__ApiUrl: ""
     networks:
       - jackbot
     depends_on:
@@ -785,6 +790,8 @@ services:
       - .env
     environment:
       <<: *timezone
+      # Same address as the agent's: the probe row for the Lemonade chat host exists only when set.
+      LemonadeChat__ApiUrl: ""
     restart: unless-stopped
     depends_on:
       redis:

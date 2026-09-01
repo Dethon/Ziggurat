@@ -4,15 +4,15 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] With an address configured and a reachable host, the agent catalog every channel receives lists the box's kept models after the configured patchable models, for every agent that has any, with namespaced ids, trimmed names and vision-derived attachment kinds
-- [ ] Two kept ids that trim to the same name are both shown by their full id
-- [ ] Models lacking the chat or tool-calling label, not downloaded, or naming a cloud provider are not offered
-- [ ] The discovered context window (`context_length`, else `max_context_window`, else unknown) is kept on the source for the next tickets to read
-- [ ] The source refreshes once at startup and about every minute; the existing catalog re-registration carries a changed list to WebChat without any new hub call
-- [ ] An unreachable, erroring or malformed host offers nothing, logs one warning, and keeps offering nothing until an answer arrives
-- [ ] An empty address makes no request, logs nothing and offers nothing, and the agent appsettings test pins the shipped default as empty
-- [ ] An optional API key is sent as a bearer token when set and the header is omitted when blank
-- [ ] Compose carries placeholder environment entries for the address and no new service; the observability probe list carries the host's health endpoint only when an address is set
-- [ ] Tests: the catalog builder with a stub Lemonade model source, and the discovery source against a WireMock models endpoint, following the OpenRouter capability tests
+- [x] With an address configured and a reachable host, the agent catalog every channel receives lists the box's kept models after the configured patchable models, for every agent that has any, with namespaced ids, trimmed names and vision-derived attachment kinds
+- [x] Two kept ids that trim to the same name are both shown by their full id
+- [x] Models lacking the chat or tool-calling label, not downloaded, or naming a cloud provider are not offered
+- [x] The discovered context window (`context_length`, else `max_context_window`, else unknown) is kept on the source for the next tickets to read
+- [x] The source refreshes once at startup and about every minute; the existing catalog re-registration carries a changed list to WebChat without any new hub call
+- [x] An unreachable, erroring or malformed host offers nothing, logs one warning, and keeps offering nothing until an answer arrives
+- [x] An empty address makes no request, logs nothing and offers nothing, and the agent appsettings test pins the shipped default as empty
+- [x] An optional API key is sent as a bearer token when set and the header is omitted when blank
+- [x] Compose carries placeholder environment entries for the address and no new service; the observability probe list carries the host's health endpoint only when an address is set
+- [x] Tests: the catalog builder with a stub Lemonade model source, and the discovery source against a WireMock models endpoint, following the OpenRouter capability tests

@@ -134,6 +134,31 @@ public class AgentAppSettingsTests
         ]);
     }
 
+    // The feature ships off. An address is the one thing that turns it on, and a deployment
+    // without a local box must see no lemon entries, no probes and no warnings.
+    [Fact]
+    public void LemonadeChat_ShipsWithAnEmptyAddress()
+    {
+        BoundConfig().GetSection("lemonadeChat").Get<LemonadeChatConfiguration>()!.ApiUrl.ShouldBe("");
+    }
+
+    [Fact]
+    public void Bind_LemonadeChat_BindsTheAddressAndTheOptionalKey()
+    {
+        var settings = BindSettings(
+            ("lemonadeChat:apiUrl", "http://192.168.5.40:13305/api/v1"),
+            ("lemonadeChat:apiKey", "secret"));
+
+        settings.LemonadeChat.ApiUrl.ShouldBe("http://192.168.5.40:13305/api/v1");
+        settings.LemonadeChat.ApiKey.ShouldBe("secret");
+    }
+
+    [Fact]
+    public void Bind_LemonadeChatOmitted_MeansTheFeatureIsOff()
+    {
+        BindSettings().LemonadeChat.ApiUrl.ShouldBe("");
+    }
+
     // Who answers a message whose channel named no agent is configuration, and the two halves of
     // it live in the same file: a default naming an agent this file does not declare routes
     // nothing at all, and the host refuses to start rather than fail one message at a time.
