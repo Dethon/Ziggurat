@@ -166,6 +166,55 @@ public sealed class HostRoutingChatClientTests
         lemonade.Requests.ShouldBe(1);
     }
 
+    // The box replays no reasoning: a `reasoning` input item from an earlier turn — which the
+    // adapter emits for reasoning text that carries its item id — is refused by the box's
+    // backend, so it is not sent there. OpenRouter keeps receiving it as before.
+    [Fact]
+    public async Task ReasoningFromAnEarlierTurn_IsNotReplayedToTheHost()
+    {
+        var lemonade = new CapturingSseHandler();
+        await using var agent = Agent(Routing(new CapturingSseHandler(), lemonade));
+        var reasoning = new TextReasoningContent("thinking about it")
+        {
+            AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoningItemId"] = "rs_1" }
+        };
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.User, "hello"),
+            new(ChatRole.Assistant, [reasoning]),
+            new(ChatRole.Assistant, "Hello! How can I help?"),
+            Patched(LemonadeModel)
+        };
+
+        await agent.RunStreamingAsync(history).ToListAsync();
+
+        var input = JsonNode.Parse(lemonade.CapturedBody!)!["input"]!.AsArray();
+        input.ShouldNotContain(i => i!["type"]!.GetValue<string>() == "reasoning");
+        input.Select(i => i!["role"]?.GetValue<string>()).ShouldContain("assistant");
+    }
+
+    // The box answers a request its backend refused with HTTP 200 and an error event as the
+    // whole stream; read as a reply that is an empty reply, with no toast for anyone.
+    [Fact]
+    public async Task AnErrorTheHostStreamsInsideA200_FailsTheTurnByName()
+    {
+        var lemonade = new ScriptedHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """
+                data: {"error":{"code":400,"message":"item['content'] is not an array","status_code":400,"type":"invalid_request_error"}}
+
+                """, System.Text.Encoding.UTF8, "text/event-stream")
+        });
+        await using var agent = Agent(Routing(new CapturingSseHandler(), lemonade));
+
+        var error = await Should.ThrowAsync<LemonadeChatHostException>(
+            () => agent.RunStreamingAsync([Patched(LemonadeModel)]).ToListAsync().AsTask());
+
+        error.Message.ShouldContain("item['content'] is not an array");
+        error.Message.ShouldContain(LemonadeAddress);
+    }
+
     // A connection the box drops is the kind of failure the SDK retries by default, and a retry
     // is a second turn sent to a box that just said no. One request, then the named error.
     [Fact]

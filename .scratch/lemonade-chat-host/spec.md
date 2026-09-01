@@ -129,6 +129,9 @@ The agent host's appsettings test pins the section's default (empty address) so 
 
 - The box must listen on the LAN: Lemonade's `host` defaults to `localhost`, so a fresh install answers only on loopback and the agent logs the unreachable-host warning once per outage. `"host": "0.0.0.0"` in the box's `config.json`, plus a firewall rule for the port, is part of pointing a deployment at a box. Found on first deployment.
 
+- The box does not take its own reasoning back. The adapter replays reasoning text that carries an item id as a `reasoning` input item, and the box's backend refuses the request ("item['content'] is not an array"; with an empty content array, "is empty"). The Lemonade client drops `reasoning` input items at the wire; OpenRouter keeps receiving them. Found on the second turn of the first deployed conversations.
+- A request the box's backend refuses comes back as HTTP 200 with a stream whose only event is `data: {"error": …}`, which the adapter read as an empty reply with no error. The Lemonade client looks at the first data event before the adapter does and raises the named error from it.
+
 ## Out of Scope
 
 - A Lemonade model as an agent's default model, for subagents, for memory extraction or for dreaming.

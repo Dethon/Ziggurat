@@ -1,6 +1,8 @@
 using System.ClientModel;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
@@ -13,10 +15,11 @@ namespace Infrastructure.Agents.ChatClients;
 // OpenRouter does — tools, streamed function-call events, the tool-result round trip, usage and
 // nested reasoning effort were all verified on a real box — so the turn rides the same pipeline
 // (decoration, hydration, per-turn truncation, metrics) pointed at the box's address. What differs
-// is done at the wire: the model id loses its namespace so the box sees what it advertised, the
-// bearer token is sent only when a key is set, and any failure to get an answer — refused
-// connection, timeout, non-2xx — becomes one named error, with no retry and no fallback. The
-// OpenRouter-only body fields are left in place; the box tolerates them.
+// is done at the wire: the model id loses its namespace so the box sees what it advertised,
+// reasoning from earlier turns is not replayed because the box refuses it, the bearer token is
+// sent only when a key is set, and any failure to get an answer — refused connection, timeout,
+// non-2xx, or the error event the box streams inside a 200 — becomes one named error, with no
+// retry and no fallback. The OpenRouter-only body fields are left in place; the box tolerates them.
 public sealed class LemonadeChatClient : IChatClient
 {
     private readonly OpenRouterChatClient _pipeline;
@@ -120,7 +123,7 @@ public sealed class LemonadeChatClient : IChatClient
                 request.Headers.Authorization = null;
             }
 
-            await StripNamespaceAsync(request, cancellationToken);
+            await RewriteForTheHostAsync(request, cancellationToken);
 
             HttpResponseMessage response;
             try
@@ -132,18 +135,30 @@ public sealed class LemonadeChatClient : IChatClient
                 throw LemonadeChatHostException.From(address, ex);
             }
 
-            if (response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode)
             {
-                return response;
+                var detail = await response.Content.ReadAsStringAsync(cancellationToken);
+                response.Dispose();
+                throw new LemonadeChatHostException(
+                    address, $"it answered {(int)response.StatusCode} {response.ReasonPhrase}: {detail}".TrimEnd(' ', ':'));
             }
 
-            var detail = await response.Content.ReadAsStringAsync(cancellationToken);
-            response.Dispose();
-            throw new LemonadeChatHostException(
-                address, $"it answered {(int)response.StatusCode} {response.ReasonPhrase}: {detail}".TrimEnd(' ', ':'));
+            // A request the box's backend refuses comes back as 200 and a stream whose only event
+            // is the error, which the adapter reads as an empty reply. The first data event is
+            // looked at before the adapter gets the stream.
+            if (response.Content.Headers.ContentType?.MediaType?
+                    .Equals("text/event-stream", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                response.Content = new ErrorEventGuardContent(response.Content, address);
+            }
+
+            return response;
         }
 
-        private static async Task StripNamespaceAsync(HttpRequestMessage request, CancellationToken ct)
+        // The model id as the box advertised it, and no `reasoning` input items: the adapter
+        // replays reasoning text that carries its item id as a reasoning item, and the box's
+        // backend refuses one ("item['content'] is not an array") — with content, empty, too.
+        private static async Task RewriteForTheHostAsync(HttpRequestMessage request, CancellationToken ct)
         {
             if (request.Method != HttpMethod.Post ||
                 request.Content?.Headers.ContentType?.MediaType?
@@ -153,13 +168,169 @@ public sealed class LemonadeChatClient : IChatClient
             }
 
             var body = await request.Content.ReadAsStringAsync(ct);
-            if (JsonNode.Parse(body) is not JsonObject obj || obj["model"]?.GetValue<string>() is not { } model)
+            if (JsonNode.Parse(body) is not JsonObject obj)
             {
                 return;
             }
 
-            obj["model"] = LemonadeModelId.Bare(model);
+            if (obj["model"]?.GetValue<string>() is { } model)
+            {
+                obj["model"] = LemonadeModelId.Bare(model);
+            }
+
+            if (obj["input"] is JsonArray input)
+            {
+                var kept = input
+                    .Where(item => item?["type"]?.GetValue<string>() != "reasoning")
+                    .Select(item => item?.DeepClone())
+                    .ToArray();
+                obj["input"] = new JsonArray(kept);
+            }
+
             request.Content = new StringContent(obj.ToJsonString(), Encoding.UTF8, "application/json");
+        }
+    }
+
+    private sealed class ErrorEventGuardContent(HttpContent inner, string address) : HttpContent
+    {
+        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            await using var guarded = await CreateContentReadStreamAsync();
+            await guarded.CopyToAsync(stream);
+        }
+
+        protected override async Task<Stream> CreateContentReadStreamAsync() =>
+            new ErrorEventGuardStream(await inner.ReadAsStreamAsync(), address);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                inner.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+    }
+
+    // Reads ahead to the first `data:` event, throws the named error if that event is the box's
+    // error object, and otherwise hands every byte on untouched. Keep-alive comments the box
+    // sends while a model loads are not data events and are read past.
+    private sealed class ErrorEventGuardStream(Stream inner, string address) : Stream
+    {
+        private const int InspectCap = 64 * 1024;
+        private byte[] _held = [];
+        private int _heldOffset;
+        private bool _inspected;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (!_inspected)
+            {
+                await InspectAsync(cancellationToken);
+            }
+
+            if (_heldOffset < _held.Length)
+            {
+                var count = Math.Min(buffer.Length, _held.Length - _heldOffset);
+                _held.AsSpan(_heldOffset, count).CopyTo(buffer.Span);
+                _heldOffset += count;
+                return count;
+            }
+
+            return await inner.ReadAsync(buffer, cancellationToken);
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+
+        private async Task InspectAsync(CancellationToken ct)
+        {
+            _inspected = true;
+            using var collected = new MemoryStream();
+            var chunk = new byte[4096];
+            while (collected.Length < InspectCap)
+            {
+                var read = await inner.ReadAsync(chunk, ct);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                collected.Write(chunk, 0, read);
+                if (FirstDataPayload(collected) is { } payload)
+                {
+                    ThrowIfError(payload);
+                    break;
+                }
+            }
+
+            _held = collected.ToArray();
+        }
+
+        private static string? FirstDataPayload(MemoryStream collected)
+        {
+            var text = Encoding.UTF8.GetString(collected.GetBuffer(), 0, (int)collected.Length);
+            return text.Split('\n')
+                .SkipLast(1)
+                .Select(l => l.TrimEnd('\r'))
+                .Where(l => l.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                .Select(l => l[5..].Trim())
+                .FirstOrDefault();
+        }
+
+        private void ThrowIfError(string payload)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(payload);
+                if (document.RootElement.ValueKind != JsonValueKind.Object
+                    || !document.RootElement.TryGetProperty("error", out var error)
+                    || error.ValueKind != JsonValueKind.Object)
+                {
+                    return;
+                }
+
+                var code = error.TryGetProperty("code", out var c) ? c.ToString() : null;
+                var message = error.TryGetProperty("message", out var m) ? m.GetString() : payload;
+                throw new LemonadeChatHostException(address, $"it answered {code}: {message}".Replace("answered :", "answered"));
+            }
+            catch (JsonException)
+            {
+                // Not JSON, so not the box's error object; the adapter decides what it is.
+            }
+        }
+
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                inner.Dispose();
+            }
+
+            base.Dispose(disposing);
         }
     }
 }
