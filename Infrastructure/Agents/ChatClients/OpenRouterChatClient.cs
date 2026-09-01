@@ -25,7 +25,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly ConcurrentQueue<long> _cachedTokenQueue = new();
     private readonly ServedRouteSink _routeSink = new();
     private readonly IMetricsPublisher _metricsPublisher;
-    private readonly int? _maxContextTokens;
+    private readonly Func<string, int?> _contextWindowFor;
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
     private readonly IAttachmentSource? _attachmentSource;
@@ -46,10 +46,11 @@ public sealed class OpenRouterChatClient : IChatClient
         IAttachmentSource? attachmentSource = null,
         int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
         IReadImageStore? readImageStore = null,
-        Func<string, bool>? modelAcceptsImages = null)
+        Func<string, bool>? modelAcceptsImages = null,
+        Func<string, int?>? contextWindowFor = null)
     {
         _model = model;
-        _maxContextTokens = maxContextTokens;
+        _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
@@ -71,10 +72,11 @@ public sealed class OpenRouterChatClient : IChatClient
         IAttachmentSource? attachmentSource = null,
         int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
         IReadImageStore? readImageStore = null,
-        Func<string, bool>? modelAcceptsImages = null)
+        Func<string, bool>? modelAcceptsImages = null,
+        Func<string, int?>? contextWindowFor = null)
     {
         _model = model;
-        _maxContextTokens = maxContextTokens;
+        _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
@@ -131,9 +133,12 @@ public sealed class OpenRouterChatClient : IChatClient
             .LastOrDefault(m => m.Role == ChatRole.User)
             ?.GetSenderId();
 
+        // Decided for this turn rather than at construction, and from the model the turn runs on:
+        // a model a person switched to for one turn may hold less than the agent's own does.
+        var maxContextTokens = _contextWindowFor(effectiveModel);
         var fixedOverhead = MessageTruncator.EstimateOptionsOverheadTokens(options);
         var truncated = MessageTruncator.Truncate(
-            transformedMessages, _maxContextTokens,
+            transformedMessages, maxContextTokens,
             out var droppedCount, out var tokensBefore, out var tokensAfter,
             out var overflowDetected, fixedOverheadTokens: fixedOverhead);
 
@@ -146,7 +151,7 @@ public sealed class OpenRouterChatClient : IChatClient
                 DroppedMessages = droppedCount,
                 EstimatedTokensBefore = tokensBefore,
                 EstimatedTokensAfter = tokensAfter,
-                MaxContextTokens = _maxContextTokens ?? 0
+                MaxContextTokens = maxContextTokens ?? 0
             });
         }
 

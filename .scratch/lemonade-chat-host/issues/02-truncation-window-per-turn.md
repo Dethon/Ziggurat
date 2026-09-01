@@ -4,9 +4,9 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Truncation for a turn reads a window resolved for that turn, and with no override the window is the agent's, exactly as today
-- [ ] The metric events that report the window used still report the agent's window for every turn
-- [ ] Existing chat client, truncation and multi-agent factory tests stay green, with any test that pinned the construction-time window moved to the per-turn shape
-- [ ] No behaviour change for any provider or model
+- [x] Truncation for a turn reads a window resolved for that turn, and with no override the window is the agent's, exactly as today
+- [x] The metric events that report the window used still report the agent's window for every turn
+- [x] Existing chat client, truncation and multi-agent factory tests stay green, with any test that pinned the construction-time window moved to the per-turn shape
+- [x] No behaviour change for any provider or model
