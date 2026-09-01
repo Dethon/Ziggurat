@@ -1,4 +1,3 @@
-using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Prompts;
 

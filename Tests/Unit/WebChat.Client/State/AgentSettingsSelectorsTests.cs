@@ -65,6 +65,22 @@ public class AgentSettingsSelectorsTests
         sanitized.ShouldBe(new AgentModelSettings("z-ai/glm-5.2", "low"));
     }
 
+    // A Lemonade id is a valid override exactly while the catalogue lists it, by id like any
+    // other; one that vanished from the host is dropped to the default like any other.
+    [Fact]
+    public void Sanitize_ALemonadeModel_IsValidWhileTheCatalogueListsIt()
+    {
+        var withLemonade = _jack with
+        {
+            PatchableModels = [.. _jack.PatchableModels!, new PatchableModel("lemonade/local", "local")]
+        };
+
+        AgentSettingsSelectors.Sanitize(new AgentModelSettings("lemonade/local", "low"), withLemonade)
+            .Model.ShouldBe("lemonade/local");
+        AgentSettingsSelectors.Sanitize(new AgentModelSettings("lemonade/local", "low"), _jack)
+            .Model.ShouldBe("openai/gpt-5.6-luna");
+    }
+
     // The lemon is a function of the id alone: the catalogue carries no provider field, and the
     // namespace a Lemonade model carries everywhere inside the system is what marks it here too.
     [Theory]

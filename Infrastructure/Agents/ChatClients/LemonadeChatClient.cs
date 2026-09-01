@@ -1,3 +1,4 @@
+using System.ClientModel;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -25,7 +26,6 @@ public sealed class LemonadeChatClient : IChatClient
         LemonadeChatHostOptions host,
         IMetricsPublisher? metricsPublisher = null,
         string? sessionId = null,
-        TimeProvider? timeProvider = null,
         HttpMessageHandler? transportHandler = null,
         IAttachmentSource? attachmentSource = null,
         int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
@@ -45,7 +45,6 @@ public sealed class LemonadeChatClient : IChatClient
             LemonadeModelId.Prefix.TrimEnd('/'),
             metricsPublisher: metricsPublisher,
             sessionId: sessionId,
-            timeProvider: timeProvider,
             providerRouting: null,
             transportHandler: new WireHandler(host.Address, hasKey)
             {
@@ -55,7 +54,10 @@ public sealed class LemonadeChatClient : IChatClient
             hydrationDepthMessages: hydrationDepthMessages,
             readImageStore: readImageStore,
             modelAcceptsImages: modelAcceptsImages,
-            contextWindowFor: contextWindowFor);
+            contextWindowFor: contextWindowFor,
+            // A timed-out turn is one the SDK would otherwise send again; the box must never see
+            // a turn twice, so the wire's own failures are the only ones and each is thrown once.
+            maxRetries: 0);
     }
 
     public async Task<ChatResponse> GetResponseAsync(
@@ -65,9 +67,10 @@ public sealed class LemonadeChatClient : IChatClient
         return updates.ToChatResponse();
     }
 
-    // Whatever the pipeline throws that the wire handler did not already name — a timeout
-    // surfacing as a cancellation, an SDK wrapper, a connection dropped mid-stream — is the host's
-    // failure unless the caller itself gave up.
+    // What the wire throws that the handler did not already name — a timeout surfacing as a
+    // cancellation, the SDK's wrapper round a transport error, a connection dropped mid-stream —
+    // is the host's failure unless the caller itself gave up. A defect anywhere else in the
+    // pipeline keeps its own name.
     public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -83,7 +86,7 @@ public sealed class LemonadeChatClient : IChatClient
                     yield break;
                 }
             }
-            catch (Exception ex) when (ex is not LemonadeChatHostException && !cancellationToken.IsCancellationRequested)
+            catch (Exception ex) when (IsWireFailure(ex) && !cancellationToken.IsCancellationRequested)
             {
                 throw LemonadeChatHostException.From(_address, ex);
             }
@@ -95,6 +98,9 @@ public sealed class LemonadeChatClient : IChatClient
             yield return updates.Current;
         }
     }
+
+    private static bool IsWireFailure(Exception ex) =>
+        ex is ClientResultException or HttpRequestException or IOException or OperationCanceledException;
 
     public object? GetService(Type serviceType, object? key = null) =>
         serviceType.IsInstanceOfType(this) ? this : _pipeline.GetService(serviceType, key);

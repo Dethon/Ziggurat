@@ -1,6 +1,6 @@
 using JetBrains.Annotations;
 
-namespace Domain.Contracts;
+namespace Infrastructure.Agents;
 
 // The models a config patch may name, asked at the moment a patch is checked rather than captured
 // when the agent was built: part of the list is discovered while the agent runs, and a model that

@@ -1,6 +1,6 @@
 # Lemonade chat host: Lemonade models in the model selector
 
-Status: ready-for-agent
+Status: done
 Date: 2026-09-01
 Glossary: `CONTEXT.md` → Models (patchable model, Lemonade chat host, Lemonade model)
 
@@ -93,7 +93,7 @@ the feature does not exist.
 
 - The chat client an agent is built with becomes a routing client that owns two inner clients: the existing OpenRouter client, unchanged, and a Lemonade client for the configured host. Per call it reads the effective model id from chat options and routes by prefix. An OpenRouter turn goes through exactly the path it goes through today.
 - The Lemonade client speaks the OpenAI Responses wire, like the OpenRouter client, with the same reasoning options. This was verified on the real box, which is why the docs listing no tools for that endpoint did not decide it: tools, streamed function-call events, the function-call-output round trip, usage, and nested `reasoning.effort` (`none` disabling thinking) all work.
-- The OpenRouter-only body fields (`session_id`, `usage.include`, `provider`) are left in the request unless the box rejects them; the box tolerated them. Provider routing advisories do not run for Lemonade turns.
+- The OpenRouter-only body fields `session_id` and `usage.include` are left in the request unless the box rejects them; the box tolerated them. No `provider` node is sent, because the Lemonade client is built with no provider routing, and the advisories do not run for Lemonade turns.
 - Truncation becomes per turn. A Lemonade turn truncates to the smaller of the agent's context window and the model's discovered window; an unknown model window falls back to the agent's. An OpenRouter turn keeps the agent's window as today.
 - Metrics events from a Lemonade turn stamp the namespaced id as the model, cost zero, and the model window used for truncation. The box reports its served model as a file path in the completion; that value is never used.
 - No fallback and no pre-flight: a request that fails to connect, times out or gets a non-2xx from the host fails the turn. No in-process serialization: the box has one LLM slot and closes the connection on a request that arrives while it is busy, and that second turn simply fails.
@@ -122,6 +122,10 @@ Three seams, highest first:
 3. **Client.** Selector and store tests for the lemon marker: the override summary and the entry marking are pure functions of the id, tested like the existing agent settings selectors. The drawn-icon conformance test guards the glyph and the listbox markup unchanged. No new Playwright E2E: the E2E stack has no Lemonade host and stubbing one was judged not worth it.
 
 The agent host's appsettings test pins the section's default (empty address) so the feature ships off.
+
+- The box's `response.completed` carries a response id that the Responses adapter surfaces as a conversation id, and the agent refuses a turn that offers one because the history is its own. The Lemonade client clears it on every update; the id has already become the message id by then. Found against the real box during implementation.
+- "Names no cloud provider" is read as any of: a `cloud` label, a `cloud` recipe, or a `provider` field on the model entry, which is how Lemonade's cloud offload marks the models it proxies.
+- Zero cost is a property of the wire, not an override: the box reports no `usage.cost`, so the cost tap drains nothing and the event carries zero. A box that ever reported a cost would be charted with it.
 
 ## Out of Scope
 

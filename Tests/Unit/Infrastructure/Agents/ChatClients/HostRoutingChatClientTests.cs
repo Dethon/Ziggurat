@@ -3,11 +3,14 @@ using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 using WebChat.Client.Services.Streaming;
@@ -38,6 +41,55 @@ public sealed class HostRoutingChatClientTests
         body["reasoning"]!["effort"]!.GetValue<string>().ShouldBe("high");
         body["tools"]!.AsArray().ShouldContain(t => t!["name"]!.GetValue<string>() == "ping");
         openRouter.CapturedBody.ShouldBeNull();
+    }
+
+    // "none" is an effort the box honours by not thinking at all, so it has to reach it as itself
+    // rather than as an absent field.
+    [Fact]
+    public async Task AnEffortOfNone_ReachesTheHostAsNone()
+    {
+        var lemonade = new CapturingSseHandler();
+        await using var agent = Agent(Routing(new CapturingSseHandler(), lemonade));
+
+        var message = Patched(LemonadeModel);
+        message.SetConfigPatch(new AgentConfigPatch { Model = LemonadeModel, ReasoningEffort = "none" });
+        await agent.RunStreamingAsync([message]).ToListAsync();
+
+        JsonNode.Parse(lemonade.CapturedBody!)!["reasoning"]!["effort"]!.GetValue<string>().ShouldBe("none");
+    }
+
+    [Fact]
+    public async Task ALemonadeTurn_StampsItsLatencyUnderTheNamespacedId()
+    {
+        var metrics = new RecordingMetricsPublisher();
+        await using var agent = Agent(Routing(new CapturingSseHandler(), new CapturingSseHandler()), metrics);
+
+        await agent.RunStreamingAsync([Patched(LemonadeModel)]).ToListAsync();
+
+        metrics.Published.OfType<LatencyEvent>().Where(e => e.Stage is LatencyStage.LlmTotal or LatencyStage.LlmFirstToken)
+            .ShouldAllBe(e => e.Model == LemonadeModel);
+    }
+
+    // The routing client is transparent for an OpenRouter turn: the bytes it sends are the bytes
+    // a bare OpenRouter client sends for the same turn at the same moment.
+    [Fact]
+    public async Task AnOpenRouterTurn_SendsByteForByteWhatTheBareClientSends()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 2, 10, 0, 0, TimeSpan.Zero));
+        var routed = new CapturingSseHandler();
+        var bare = new CapturingSseHandler();
+        using var routing = new HostRoutingChatClient(
+            OpenRouter(routed, clock),
+            new LemonadeChatClient(new LemonadeChatHostOptions { ApiUrl = LemonadeAddress }));
+        using var plain = OpenRouter(bare, clock);
+        var turn = new ChatMessage(ChatRole.User, "hi");
+        var options = new ChatOptions { ModelId = "z-ai/glm-5.2", Instructions = "be brief" };
+
+        await routing.GetStreamingResponseAsync([turn], options).ToListAsync();
+        await plain.GetStreamingResponseAsync([turn], options).ToListAsync();
+
+        routed.CapturedBody.ShouldBe(bare.CapturedBody);
+        routed.CapturedUri.ShouldBe(bare.CapturedUri);
     }
 
     [Fact]
@@ -114,6 +166,20 @@ public sealed class HostRoutingChatClientTests
         lemonade.Requests.ShouldBe(1);
     }
 
+    // A connection the box drops is the kind of failure the SDK retries by default, and a retry
+    // is a second turn sent to a box that just said no. One request, then the named error.
+    [Fact]
+    public async Task AConnectionTheHostDrops_IsNotRetried()
+    {
+        var lemonade = new ScriptedHandler(_ => throw new IOException("Connection reset by peer"));
+        await using var agent = Agent(Routing(new CapturingSseHandler(), lemonade));
+
+        await Should.ThrowAsync<LemonadeChatHostException>(
+            () => agent.RunStreamingAsync([Patched(LemonadeModel)]).ToListAsync().AsTask());
+
+        lemonade.Requests.ShouldBe(1);
+    }
+
     // A timeout arrives as a cancellation, and WebChat's transient filter swallows the wording a
     // cancellation carries — so the named error must not carry it, or the person sees nothing.
     [Fact]
@@ -133,15 +199,20 @@ public sealed class HostRoutingChatClientTests
     private static HostRoutingChatClient Routing(
         HttpMessageHandler openRouter, HttpMessageHandler lemonade, string? apiKey = null) =>
         new(
-            new OpenRouterChatClient(
-                "http://openrouter.test/api/v1", "or-key", "configured/model",
-                providerRouting: new ProviderRouting { Sort = ProviderSort.Latency },
-                transportHandler: openRouter),
+            OpenRouter(openRouter),
             new LemonadeChatClient(
                 new LemonadeChatHostOptions { ApiUrl = LemonadeAddress, ApiKey = apiKey },
                 transportHandler: lemonade));
 
-    private static McpAgent Agent(IChatClient client) =>
+    private static OpenRouterChatClient OpenRouter(HttpMessageHandler handler, TimeProvider? clock = null) =>
+        new(
+            "http://openrouter.test/api/v1", "or-key", "configured/model",
+            sessionId: "session-1",
+            timeProvider: clock,
+            providerRouting: new ProviderRouting { Sort = ProviderSort.Latency },
+            transportHandler: handler);
+
+    private static McpAgent Agent(IChatClient client, IMetricsPublisher? metrics = null) =>
         new(
             TestAgentSpec.Default with
             {
@@ -152,7 +223,7 @@ public sealed class HostRoutingChatClientTests
             },
             client,
             new Mock<IThreadStateStore>().Object,
-            NoOpMetricsPublisher.Instance,
+            metrics ?? NoOpMetricsPublisher.Instance,
             TimeProvider.System,
             [AIFunctionFactory.Create(() => "pong", "ping")],
             []);

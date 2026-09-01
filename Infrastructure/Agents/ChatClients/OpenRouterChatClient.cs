@@ -47,7 +47,8 @@ public sealed class OpenRouterChatClient : IChatClient
         int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
-        Func<string, int?>? contextWindowFor = null)
+        Func<string, int?>? contextWindowFor = null,
+        int? maxRetries = null)
     {
         _model = model;
         _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
@@ -60,7 +61,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _httpClient = CreateHttpClient(
             _costQueue, _cachedTokenQueue, _routeSink, sessionId, providerRouting, transportHandler);
         _transport = new HttpClientPipelineTransport(_httpClient);
-        _client = CreateClient(endpoint, apiKey, model, _transport);
+        _client = CreateClient(endpoint, apiKey, model, _transport, maxRetries);
     }
 
     internal OpenRouterChatClient(
@@ -244,13 +245,19 @@ public sealed class OpenRouterChatClient : IChatClient
     // honours session_id, provider routing and usage accounting on it, and translates it for
     // non-OpenAI models. See docs/adr/0029.
     private static IChatClient CreateClient(
-        string endpoint, string apiKey, string model, HttpClientPipelineTransport transport)
+        string endpoint, string apiKey, string model, HttpClientPipelineTransport transport, int? maxRetries)
     {
         var options = new ResponsesClientOptions
         {
             Endpoint = new Uri(endpoint),
             Transport = transport
         };
+        // The SDK's default (three retries with backoff) is right for a hosted provider and wrong
+        // for a host that must never see a turn twice; unset keeps the default.
+        if (maxRetries is { } retries)
+        {
+            options.RetryPolicy = new ClientRetryPolicy(retries);
+        }
 
         return new ResponsesClient(new ApiKeyCredential(apiKey), options)
             .AsIChatClient(model);
