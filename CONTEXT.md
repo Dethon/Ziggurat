@@ -659,6 +659,31 @@ outposts only when its parent and its own definition both allow it, so it is nev
 more privileged than the agent that spawned it.
 _Avoid_: child agent, worker, nested agent
 
+## Models
+
+**Patchable model**:
+A model a person may pick for one turn in place of the agent's own, from the list the
+agent offers. Picking one changes that turn and nothing about the agent, and a model
+outside the list is never honoured.
+_Avoid_: model override, selectable model, alternative model
+
+**Lemonade chat host**:
+A machine on the local network running Lemonade that serves chat models, reached by
+an address that is configuration and nothing else. It is not the Lemonade that voice,
+dictation and memory talk to: that one is part of the deployment, this one is
+somebody's own box, and it may not be there. With no address configured it does not
+exist. When it is unreachable a turn that asked for it fails, and nothing answers in
+its place.
+_Avoid_: lemonade, local model server, local LLM host, second Lemonade
+
+**Lemonade model**:
+A chat model the Lemonade chat host says it has, offered as a patchable model to every
+agent that offers any. It is discovered, never declared: which ones exist, what they
+accept and how much context they hold come from asking the host, and a host that
+cannot be asked offers none. Wherever the model is named it is marked as the host's,
+so a chart or a log never mistakes it for a hosted-provider model.
+_Avoid_: local model, lemonade patchable, GGUF model
+
 ## Behavioural evaluation
 
 **Claim**:
