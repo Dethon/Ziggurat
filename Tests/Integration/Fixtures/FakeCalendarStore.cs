@@ -22,9 +22,11 @@ public sealed class FakeCalendarStore
         }
     }
 
-    public FakeCalendarEvent Seed(string entityId, string summary, string start, string end, string? description = null, string? rrule = null)
+    public FakeCalendarEvent Seed(
+        string entityId, string summary, string start, string end,
+        string? description = null, string? rrule = null, string? uid = null)
     {
-        var uid = $"seed-{Interlocked.Increment(ref _next)}";
+        uid ??= $"seed-{Interlocked.Increment(ref _next)}";
         var created = new FakeCalendarEvent(entityId, uid, summary, start, end, description, null, rrule);
         lock (_gate)
         {

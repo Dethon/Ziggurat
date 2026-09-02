@@ -13,7 +13,8 @@ public static class HomeAssistantScenarios
     public static IReadOnlyList<Scenario> All =>
     [
         TurnTheAirConditionerOn, SetTheTemperature, VacuumTheStudy,
-        TurnOnTheWashingMachine, TheStationThatCannotBePlayed, FiveMoreMinutesOfTheAlarm
+        TurnOnTheWashingMachine, TheStationThatCannotBePlayed, FiveMoreMinutesOfTheAlarm,
+        CancelTheTrashAlarm
     ];
 
     // "Turn on the AC" and stop: the prompt's own example of the thing not to do is picking a mode
@@ -313,7 +314,59 @@ public static class HomeAssistantScenarios
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
         CallCeiling = 6,
+        Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],
         Claims = [HomeAssistantPrompt.SnoozeIsANewEvent.Id, BasePrompt.NoPlaceholderToolCalls.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // An alarm that exists is cancelled by its uid: listed first, because nothing else names it,
+    // then deleted. The failure this pins is one a real turn showed — an agent that found no way
+    // to delete created a second event as a way of "changing" the first, and the calendar held
+    // both.
+    public static Scenario CancelTheTrashAlarm => new()
+    {
+        Name = "an alarm is cancelled by its uid",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "quita la alarma de sacar la basura",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "list",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
+                    Arg.Matches("command", @"^get_events\.sh\b")
+                ]
+            },
+            new CallExpectation
+            {
+                Label = "delete",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
+                    Arg.Matches("command", @"^delete_event\.sh\b"),
+                    Arg.Matches("command", $@"--uid[= ]+""?{FakeHomeAssistant.TrashAlarmUid}\b")
+                ]
+            }
+        ],
+        Permitted =
+        [
+            .. CallPermission.LookingAndManuals("/ha*"),
+            new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
+        ],
+        CallCeiling = 6,
+        Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "0")],
+        Claims = [HomeAssistantPrompt.AlarmIsCancelledByUid.Id],
         Policy = new RunPolicy(2, 3)
     };
 }

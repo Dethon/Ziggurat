@@ -76,22 +76,25 @@ public static class HomeAssistantPrompt
 
         ### Alarms & reminders
 
-        To set an alarm or reminder, use the `calendar.create_event` service on the
-        alarms calendar (`calendar.assistant_alarms`) — do NOT use `/schedules` for
-        human alarms. From that entity directory:
+        An alarm or reminder is an event on the **alarms calendar** — the `calendar` entity the
+        setup index lists as alarms (e.g. `alarms_(alarms)`); do NOT use `/schedules` for human
+        alarms. That directory serves three action files: `create_event.sh`, `get_events.sh` and
+        `delete_event.sh`. From the entity directory:
         `exec(command="create_event.sh --summary \"Take out the trash\"
               --start_date_time \"2026-06-19 21:30:00\"
-              --description \"{\\\"target\\\":{\\\"room\\\":\\\"Kitchen\\\"},\\\"insistent\\\":{\\\"gapSeconds\\\":30,\\\"maxRepeats\\\":5}}\"")`
+              --description '{\"target\":{\"room\":\"Kitchen\"},\"insistent\":{\"gapSeconds\":30,\"maxRepeats\":5}}'")`
 
         - `summary` is the spoken message.
         - `start_date_time` is the local wall-clock time. Resolve relative requests
           ("tomorrow at 7", "next Monday at 9") to an absolute date-time yourself; HA
-          interprets it in its own timezone (with DST), so you never compute UTC.
+          interprets it in its own timezone (with DST), so you never compute UTC. The end
+          defaults to one minute later — omit `end_date_time`.
         - `rrule` makes it recurring (e.g. `--rrule "FREQ=DAILY"` for every day,
           `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR` for weekdays).
         - `description` is a JSON object with two keys: `target` ({satelliteId |
           satelliteIds | room | all}) and `insistent` (an object with optional
           `gapSeconds`, `maxRepeats`, `maxDurationSeconds`; use `{}` for all defaults).
+          Wrap it in single quotes, as above, so its own double quotes need no escaping.
           The alarm repeats on the satellite until the user says "ok nabu" there, or
           the cap is reached. **`insistent` must be present** — omitting it makes a
           one-shot announce, not an alarm.
@@ -109,8 +112,14 @@ public static class HomeAssistantPrompt
         action would never happen. `/schedules` is for agent tasks and must never carry a human
         alarm or reminder (it speaks once at most and skips offline satellites).
 
-        To change or cancel: list with `exec get_events.sh ...`, then
-        `exec delete_event.sh ...` / `exec update_event.sh ...` on the event.
+        To see, change or cancel alarms: `exec get_events.sh` lists every event with its `uid`
+        (no arguments covers the week ahead; `--days N` or `--start_date_time`/`--end_date_time`
+        set the window). Cancel with `exec delete_event.sh --uid <uid>` — the uid comes from that
+        listing, never from memory; to drop one occurrence of a recurring alarm add
+        `--recurrence_id <the listing's recurrence_id>`. There is no update action: to change an
+        alarm's time or message, delete it by uid and create the new one. That is internal —
+        state the new time and never narrate the delete — and never create a second event beside
+        the old one as a way of "moving" it.
 
         Snooze: when the message context says the user just dismissed an alarm and they ask to
         snooze or be reminded again ("five more minutes"), create a new one-shot event on the
@@ -236,6 +245,14 @@ public static class HomeAssistantPrompt
         new("home.snooze-is-a-new-event",
             "A snooze after a dismissed alarm is a new one-shot event at the requested offset with the same summary and description.");
 
+    public static readonly PromptClaim AlarmIsCancelledByUid =
+        new("home.alarm-is-cancelled-by-uid",
+            "An alarm is cancelled by listing the calendar for its uid and deleting by that uid, never left in place.");
+
+    public static readonly PromptClaim AlarmIsChangedByDeleteAndCreate =
+        new("home.alarm-is-changed-by-delete-and-create",
+            "A change to an alarm is a delete by uid and a fresh create, never a second event beside the old one.");
+
     public static readonly PromptClaim MusicPlaysOnTheMusicAssistantPlayer =
         new("home.music-plays-on-the-music-assistant-player",
             "Music plays on the media_player whose state says it is a Music Assistant player, defaulting to the speaking room's.");
@@ -273,6 +290,8 @@ public static class HomeAssistantPrompt
         ExitCodesAreNeverVoiced,
         AlarmCarriesTargetAndInsistent,
         SnoozeIsANewEvent,
+        AlarmIsCancelledByUid,
+        AlarmIsChangedByDeleteAndCreate,
         MusicPlaysOnTheMusicAssistantPlayer,
         PlaylistIsBrowsedBeforeItIsPlayed,
         EpisodePlaysOnlyByItsUri,

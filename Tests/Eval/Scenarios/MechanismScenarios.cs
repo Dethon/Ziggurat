@@ -172,6 +172,7 @@ public static class MechanismScenarios
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
         CallCeiling = 6,
+        Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],
         // What is cited is the description's shape: target and insistent are only in the prose,
         // and an event without them is an announce pretending to be an alarm.
         Claims = [HomeAssistantPrompt.AlarmCarriesTargetAndInsistent.Id],
@@ -223,6 +224,7 @@ public static class MechanismScenarios
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
         CallCeiling = 6,
+        Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],
         Claims = [TimerPrompt.DurationCappedAtFourHours.Id],
         Policy = new RunPolicy(2, 3)
     };

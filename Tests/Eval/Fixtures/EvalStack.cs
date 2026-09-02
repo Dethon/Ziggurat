@@ -69,6 +69,11 @@ public sealed class EvalStack : IAsyncDisposable
     // it wanted happened, and whether anything else moved.
     public FakeHomeAssistant Home { get; } = new();
 
+    // Home Assistant's websocket API, faked as its own server: the calendar's create and delete
+    // are websocket commands, and a message handler cannot answer a socket upgrade. It shares the
+    // home's calendar store and records into the home's call list.
+    public FakeHomeAssistantSocket HomeSocket { get; private set; } = null!;
+
     // The directory the vault server is pointed at, so a scenario can read the notes back after
     // the turn. Per run, and deleted with the stack: a note edited by the previous run would make
     // this one's assertions about what survived meaningless.
@@ -219,6 +224,8 @@ public sealed class EvalStack : IAsyncDisposable
     private async Task<string> StartHomeAssistantAsync()
     {
         Music = await FakeMusicAssistantServer.StartAsync();
+        HomeSocket = await FakeHomeAssistantSocket.StartAsync(Home.Calendar, FakeHomeAssistant.Token);
+        HomeSocket.Recorder = Home.Record;
 
         var port = TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();
@@ -227,7 +234,9 @@ public sealed class EvalStack : IAsyncDisposable
         {
             HomeAssistant = new HomeAssistantConfiguration
             {
-                BaseUrl = "http://home-assistant.eval",
+                // The socket's address: REST never reaches it (the handler below answers first),
+                // but the websocket client derives /api/websocket from this base.
+                BaseUrl = HomeSocket.BaseUrl,
                 Token = FakeHomeAssistant.Token
             },
             // Configured, so the server advertises the podcast-episode action — a deployment
@@ -423,6 +432,7 @@ public sealed class EvalStack : IAsyncDisposable
         }
 
         await Music.DisposeAsync();
+        await HomeSocket.DisposeAsync();
         await Web.DisposeAsync();
         await Sandbox.DisposeAsync();
 

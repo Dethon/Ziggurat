@@ -17,17 +17,16 @@ internal static class HaServices
 
     public static JsonArray Catalog() =>
     [
+        // Exactly what Home Assistant publishes for the calendar domain (2026.7): no recurrence
+        // rule on create, no delete, no update. The mount replaces these with its own served
+        // actions (HaCalendarActions); a fake that advertised a delete service would be testing an
+        // action no deployment has.
         Domain("calendar",
             Service("create_event", "Adds a new calendar event.",
-                Text("summary", required: true), Text("start_date_time"), Text("end_date_time"),
-                Text("description"), Text("rrule"), Text("location")),
+                Text("summary", required: true), Text("description"), Text("start_date_time"),
+                Text("end_date_time"), Text("start_date"), Text("end_date"), Text("in"), Text("location")),
             Service("get_events", "Lists events on a calendar within a time range.",
-                Text("start_date_time"), Text("end_date_time"), Text("duration")),
-            Service("delete_event", "Deletes an event on a calendar.",
-                Text("uid", required: true), Text("recurrence_id"), Text("recurrence_range")),
-            Service("update_event", "Updates an event on a calendar.",
-                Text("uid", required: true), Text("summary"), Text("start_date_time"),
-                Text("end_date_time"), Text("description"), Text("rrule"))),
+                Text("start_date_time"), Text("end_date_time"), Text("duration"))),
         Domain("light",
             Service("turn_on", "Turns on one or more lights.",
                 Number("brightness_pct", 0, 100), Number("transition", 0, 300), Text("color_name")),

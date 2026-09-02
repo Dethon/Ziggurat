@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using Domain.Tools.HomeAssistant.Vfs;
+using Tests.Integration.Fixtures;
 
 namespace Tests.Eval.Fixtures;
 
@@ -16,6 +17,16 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public const string Token = "eval-token";
 
     public const string AlarmsEntityId = "calendar.assistant_alarms";
+
+    // One alarm already on the calendar, so a scenario about cancelling has something to cancel
+    // and one about creating shows up as the count moving. Its uid is what the cancel scenario
+    // expects to see passed back — a uid is only knowable from the listing.
+    public const string TrashAlarmUid = "alarm-basura";
+    public const string TrashAlarmSummary = "Sacar la basura";
+
+    // The calendar's row in the snapshot: how many events it holds. A created or deleted event is
+    // a change to the home like a light switched, and is declared by a scenario the same way.
+    public static readonly string AlarmsEventCountKey = $"{AlarmsEntityId}#events";
     public const string KitchenLightEntityId = "light.kitchen";
     public const string AirConditionerEntityId = "climate.salon";
     public const string WashingMachineEntityId = "switch.lavadora";
@@ -94,7 +105,28 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     private readonly List<HaCall> _calls = [];
     private readonly Dictionary<string, HaEntity> _entities;
 
-    public FakeHomeAssistant() => _entities = Seed().ToDictionary(e => e.EntityId);
+    // The calendar's events, shared with the websocket side (FakeHomeAssistantSocket) that creates
+    // and deletes them: the REST side only ever lists.
+    public FakeCalendarStore Calendar { get; } = new();
+
+    public FakeHomeAssistant()
+    {
+        _entities = Seed().ToDictionary(e => e.EntityId);
+        Calendar.Seed(AlarmsEntityId, TrashAlarmSummary,
+            "2026-08-17T21:30:00+02:00", "2026-08-17T21:31:00+02:00",
+            """{"target":{"room":"kitchen"},"insistent":{"gapSeconds":30,"maxRepeats":5}}""",
+            uid: TrashAlarmUid);
+    }
+
+    // What the websocket side did to the calendar, recorded beside the REST calls so a scenario
+    // reads one list of everything the turn asked Home Assistant to do.
+    public void Record(string service, string entityId, JsonObject data)
+    {
+        lock (_gate)
+        {
+            _calls.Add(new HaCall("calendar", service, entityId, data));
+        }
+    }
 
     public IReadOnlyList<HaCall> Calls
     {
@@ -126,6 +158,8 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         {
             return _entities.Values
                 .SelectMany(entity => entity.Snapshot())
+                .Append(new KeyValuePair<string, string>(
+                    AlarmsEventCountKey, Calendar.For(AlarmsEntityId).Count.ToString()))
                 .ToDictionary(entry => entry.Key, entry => entry.Value);
         }
     }
@@ -151,6 +185,14 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         if (request.Method == HttpMethod.Get && path.EndsWith("/api/services"))
         {
             return Json(HaServices.Catalog());
+        }
+
+        // The calendars endpoint: the one read that lists an event's uid. The window is ignored —
+        // the fake holds a handful of events and a scenario asks about all of them.
+        if (request.Method == HttpMethod.Get && path.Contains("/api/calendars/"))
+        {
+            var id = Uri.UnescapeDataString(path[(path.LastIndexOf('/') + 1)..]);
+            return Json(new JsonArray([.. Calendar.For(id).Select(e => e.ToApiJson())]));
         }
 
         if (request.Method == HttpMethod.Post && path.EndsWith("/api/template"))
