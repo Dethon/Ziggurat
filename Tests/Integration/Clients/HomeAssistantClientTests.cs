@@ -182,7 +182,7 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
         mine.Select(e => e.Uid).Distinct().Count().ShouldBe(1, "every occurrence carries the master's uid");
         mine[0].Uid.ShouldNotBeNullOrWhiteSpace();
         mine[0].Rrule.ShouldBe("FREQ=DAILY;COUNT=3");
-        mine[0].Description.ShouldContain("insistent");
+        mine[0].Description.ShouldNotBeNull().ShouldContain("insistent");
         mine[0].Start.ShouldStartWith("2031-03-10T07:00:00");
         mine[0].AllDay.ShouldBeFalse();
         mine.Select(e => e.RecurrenceId).ShouldAllBe(id => !string.IsNullOrEmpty(id));

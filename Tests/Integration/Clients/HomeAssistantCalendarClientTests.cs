@@ -35,7 +35,7 @@ public class HomeAssistantCalendarClientTests
         created.Summary.ShouldBe("Wake up");
         created.Start.ShouldBe("2026-09-03 07:00:00");
         created.End.ShouldBe("2026-09-03 07:01:00");
-        created.Description.ShouldContain("insistent");
+        created.Description.ShouldNotBeNull().ShouldContain("insistent");
         created.Rrule.ShouldBe("FREQ=DAILY");
         server.AuthCount.ShouldBe(1);
     }

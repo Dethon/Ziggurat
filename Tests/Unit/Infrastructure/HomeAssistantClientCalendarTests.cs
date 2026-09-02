@@ -50,7 +50,7 @@ public class HomeAssistantClientCalendarTests : IDisposable
         events[0].Uid.ShouldBe("fd96f9b2-a666-11f1-8c54-ce24ff4dd9fd");
         events[0].Start.ShouldBe("2026-09-02T10:30:00+02:00");
         events[0].AllDay.ShouldBeFalse();
-        events[0].Description.ShouldContain("FRAN-OFFICE-01");
+        events[0].Description.ShouldNotBeNull().ShouldContain("FRAN-OFFICE-01");
         events[0].Rrule.ShouldBeNull();
         events[1].AllDay.ShouldBeTrue();
         events[1].Start.ShouldBe("2026-09-05");
