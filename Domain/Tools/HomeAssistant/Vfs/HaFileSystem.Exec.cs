@@ -89,6 +89,13 @@ public sealed partial class HaFileSystem
                 return done(code, output, error);
             }
 
+            // Served here too: the calendar's service catalog cannot list uids or delete at all.
+            if (HaCalendarActions.IsCalendarAction(svc))
+            {
+                var (code, output, error) = await HaCalendarEvents.RunAsync(clientFactory(), svc, entityId, data, _time, effectiveCt);
+                return done(code, output, error);
+            }
+
             IReadOnlyDictionary<string, JsonNode?> payload = data.ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.DeepClone());
             var result = await clientFactory().CallServiceAsync(svc.Domain, svc.Service, entityId, payload, effectiveCt);
             var changed = new JsonArray(result.ChangedEntities

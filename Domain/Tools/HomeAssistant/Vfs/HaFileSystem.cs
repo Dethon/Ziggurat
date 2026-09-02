@@ -11,8 +11,11 @@ public sealed partial class HaFileSystem(
     HaCatalogProvider catalogProvider,
     Func<IHomeAssistantClient> clientFactory,
     TimeSpan? regexMatchTimeout = null,
-    Func<IMusicAssistantClient>? musicClientFactory = null) : FileSystemBackendBase
+    Func<IMusicAssistantClient>? musicClientFactory = null,
+    TimeProvider? timeProvider = null) : FileSystemBackendBase
 {
+    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+
     public const string Name = "ha";
 
     public override string FilesystemName => Name;

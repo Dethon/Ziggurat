@@ -11,9 +11,11 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 // falls back to HaCatalog.Empty with a short negative TTL, so a transient outage doesn't blind the
 // agent for the full window. Func<IHomeAssistantClient> (not a direct injection) keeps the transient,
 // IHttpClientFactory-managed client from being pinned for this singleton's lifetime.
-// `extraServices` are action definitions the VFS serves itself (see HaMusicActions) rather than
-// forwarding to HA. They join the catalog so glob/read/info/exec resolve them through the same
-// paths as real services; only the exec call itself is intercepted.
+// `extraServices` are action definitions the VFS serves itself (see HaMusicActions and
+// HaCalendarActions) rather than forwarding to HA. They join the catalog so glob/read/info/exec
+// resolve them through the same paths as real services; only the exec call itself is intercepted.
+// One named like a service HA publishes replaces it — the calendar's create_event is served here
+// because HA's own takes no recurrence rule — so an action file resolves to exactly one definition.
 public sealed class HaCatalogProvider(
     Func<IHomeAssistantClient> clientFactory,
     TimeProvider? timeProvider = null,
@@ -69,7 +71,7 @@ public sealed class HaCatalogProvider(
             await Task.WhenAll(states, services, areas);
             var allServices = extraServices is null or []
                 ? services.Result
-                : [.. services.Result, .. extraServices];
+                : [.. services.Result.Where(s => !extraServices.Any(e => SameAction(e, s))), .. extraServices];
             return (new HaCatalog(states.Result, allServices, areas.Result), true);
         }
         // Let cancellation propagate without writing the cache — otherwise a cancelled request would
@@ -80,6 +82,9 @@ public sealed class HaCatalogProvider(
             return (HaCatalog.Empty, false);
         }
     }
+
+    private static bool SameAction(HaServiceDefinition a, HaServiceDefinition b) =>
+        a.Domain.Equals(b.Domain, StringComparison.Ordinal) && a.Service.Equals(b.Service, StringComparison.Ordinal);
 
     private static async Task<IReadOnlyList<HaAreaEntities>> LoadAreasAsync(IHomeAssistantClient client, CancellationToken ct)
     {
