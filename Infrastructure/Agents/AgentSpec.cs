@@ -10,9 +10,13 @@ namespace Infrastructure.Agents;
 public sealed record AgentSpec
 {
     // The configured id, which is what a prompt section's audience and a routing default name. The
-    // display name beside it carries the conversation and belongs to metrics.
+    // display name beside it carries the conversation and belongs to metrics; the prompt name is
+    // what the identity section renders and carries no conversation, deliberately — it sits a
+    // few hundred tokens into the instructions, and a conversation id there is what turned the
+    // static prefix a chat host caches into one no other conversation could ever match.
     public required string AgentId { get; init; }
     public required string DisplayName { get; init; }
+    public required string PromptName { get; init; }
     public required string Description { get; init; }
     public required string MetricsAgentId { get; init; }
     public required string RoutingSessionId { get; init; }
@@ -48,5 +52,8 @@ public sealed record AgentSpec
     // delegated task is not the operator's to be told about. Its own field rather than a second
     // meaning for KeepsHistory, which is about thread state and would answer this by coincidence.
     public required bool RecordsOutpostVerdicts { get; init; }
-    public required IReadOnlyList<string> PatchableModelIds { get; init; }
+
+    // Asked per turn rather than copied here: part of the list is discovered while the agent
+    // runs, so a spec holding the ids would refuse a model that appeared after it was built.
+    public required IPatchableModelSource PatchableModels { get; init; }
 }

@@ -20,6 +20,49 @@ public interface IHomeAssistantClient
     // `{{ area_entities(area_id) }}`, `{{ device_id(entity_id) }}`, etc. — so we use
     // it to enumerate setup information that's otherwise WebSocket-only.
     Task<string> RenderTemplateAsync(string template, CancellationToken ct = default);
+
+    // The calendar is the one entity class the service catalog cannot fully drive: `get_events`
+    // answers without the uid an event is addressed by, and deleting has no service at all — both
+    // exist only on the REST calendars endpoint and the WebSocket API. `start` and `end` are the
+    // caller's own date-time strings: Home Assistant reads a naive one in its own time zone, and
+    // converting here would need a zone this side does not know.
+    Task<IReadOnlyList<HaCalendarEvent>> ListCalendarEventsAsync(
+        string entityId, string start, string end, CancellationToken ct = default);
+
+    Task CreateCalendarEventAsync(string entityId, HaCalendarEventDraft draft, CancellationToken ct = default);
+
+    Task DeleteCalendarEventAsync(
+        string entityId, string uid, string? recurrenceId = null, string? recurrenceRange = null,
+        CancellationToken ct = default);
+}
+
+// One event as the calendars endpoint lists it. `Start`/`End` are the strings Home Assistant sent —
+// a local date-time with its offset, or a bare date when `AllDay`.
+[PublicAPI]
+public record HaCalendarEvent
+{
+    public required string Uid { get; init; }
+    public required string Summary { get; init; }
+    public required string Start { get; init; }
+    public required string End { get; init; }
+    public bool AllDay { get; init; }
+    public string? Description { get; init; }
+    public string? Location { get; init; }
+    public string? Rrule { get; init; }
+    public string? RecurrenceId { get; init; }
+}
+
+// What creating an event needs: the WebSocket schema's `dtstart`/`dtend` (a date-time each, or a
+// date each for an all-day event) beside the text fields and an optional RFC 5545 recurrence rule.
+[PublicAPI]
+public record HaCalendarEventDraft
+{
+    public required string Summary { get; init; }
+    public required string Start { get; init; }
+    public required string End { get; init; }
+    public string? Description { get; init; }
+    public string? Location { get; init; }
+    public string? Rrule { get; init; }
 }
 
 [PublicAPI]

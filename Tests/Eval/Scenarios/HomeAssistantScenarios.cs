@@ -13,7 +13,8 @@ public static class HomeAssistantScenarios
     public static IReadOnlyList<Scenario> All =>
     [
         TurnTheAirConditionerOn, SetTheTemperature, VacuumTheStudy,
-        TurnOnTheWashingMachine, TheStationThatCannotBePlayed, FiveMoreMinutesOfTheAlarm
+        TurnOnTheWashingMachine, TheStationThatCannotBePlayed, FiveMoreMinutesOfTheAlarm,
+        CancelTheTrashAlarm, MoveTheTrashAlarm
     ];
 
     // "Turn on the AC" and stop: the prompt's own example of the thing not to do is picking a mode
@@ -313,7 +314,114 @@ public static class HomeAssistantScenarios
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
         CallCeiling = 6,
+        Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],
         Claims = [HomeAssistantPrompt.SnoozeIsANewEvent.Id, BasePrompt.NoPlaceholderToolCalls.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // An alarm that exists is cancelled by its uid: listed first, because nothing else names it,
+    // then deleted. The failure this pins is one a real turn showed — an agent that found no way
+    // to delete created a second event as a way of "changing" the first, and the calendar held
+    // both.
+    public static Scenario CancelTheTrashAlarm => new()
+    {
+        Name = "an alarm is cancelled by its uid",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "quita la alarma de sacar la basura",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "list",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
+                    Arg.Matches("command", @"^get_events\.sh\b")
+                ]
+            },
+            new CallExpectation
+            {
+                Label = "delete",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
+                    Arg.Matches("command", @"^delete_event\.sh\b"),
+                    Arg.Matches("command", $@"--uid[= ]+""?{FakeHomeAssistant.TrashAlarmUid}\b")
+                ]
+            }
+        ],
+        Permitted =
+        [
+            .. CallPermission.LookingAndManuals("/ha*"),
+            new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
+        ],
+        CallCeiling = 6,
+        Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "0")],
+        Claims = [HomeAssistantPrompt.AlarmIsCancelledByUid.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // Moving an alarm is the turn the real failure came from: with no delete, the agent created a
+    // second event at the new time and reported success. The calendar must end with one event —
+    // the count is the fact a second event would betray — at the new time, with the old one gone
+    // by its uid.
+    public static Scenario MoveTheTrashAlarm => new()
+    {
+        Name = "an alarm is moved by deleting it and creating the new one",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "cambia la alarma de sacar la basura a las diez y media",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "delete",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
+                    Arg.Matches("command", @"^delete_event\.sh\b"),
+                    Arg.Matches("command", $@"--uid[= ]+""?{FakeHomeAssistant.TrashAlarmUid}\b")
+                ]
+            },
+            new CallExpectation
+            {
+                Label = "create",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
+                    Arg.Matches("command", @"^create_event\.sh\b"),
+                    Arg.Matches("command", @"2026-08-17[ T]22:30"),
+                    Arg.Matches("command", "(?i)basura"),
+                    Arg.Matches("command", "(?i)insistent")
+                ]
+            }
+        ],
+        Permitted =
+        [
+            .. CallPermission.LookingAndManuals("/ha*"),
+            new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
+        ],
+        CallCeiling = 8,
+        // Declared as unchanged on purpose: one event before, one after. A create without the
+        // delete leaves two, and the diff reports it.
+        Claims = [HomeAssistantPrompt.AlarmIsChangedByDeleteAndCreate.Id, HomeAssistantPrompt.AlarmIsCancelledByUid.Id],
         Policy = new RunPolicy(2, 3)
     };
 }

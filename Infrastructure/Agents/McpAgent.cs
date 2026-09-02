@@ -37,13 +37,14 @@ public sealed class McpAgent : DisposableAgent
     private readonly ILogger<McpAgent>? _logger;
     private readonly ChatClientAgent _innerAgent;
     private readonly string _name;
+    private readonly string _promptName;
     private readonly string _userId;
     private readonly ReasoningEffort? _reasoningEffort;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private readonly TimeProvider _timeProvider;
     private readonly IMetricsPublisher _metricsPublisher;
     private readonly string _model;
-    private readonly IReadOnlyList<string> _patchableModelIds;
+    private readonly IPatchableModelSource _patchableModels;
     private readonly string _conversationId;
     private readonly McpPromptCache? _promptCache;
     private readonly ReadImageSupport? _readImages;
@@ -85,6 +86,7 @@ public sealed class McpAgent : DisposableAgent
         _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger<McpAgent>();
         _name = spec.DisplayName;
+        _promptName = spec.PromptName;
         _description = spec.Description;
         _userId = spec.UserId;
         _customInstructions = spec.CustomInstructions;
@@ -97,7 +99,7 @@ public sealed class McpAgent : DisposableAgent
         _timeProvider = timeProvider;
         _metricsPublisher = metricsPublisher;
         _model = spec.Model;
-        _patchableModelIds = spec.PatchableModelIds;
+        _patchableModels = spec.PatchableModels;
         _conversationId = spec.ConversationId;
         _promptCache = promptCache;
         _readImages = readImages;
@@ -302,7 +304,7 @@ public sealed class McpAgent : DisposableAgent
         // Return the whitelist's own casing, not the patch's: OpenRouter model IDs are lowercase
         // slugs, and stamping the patch's casing verbatim can turn a valid override into a
         // model-not-found error.
-        var resolved = _patchableModelIds
+        var resolved = _patchableModels.Ids
             .FirstOrDefault(id => string.Equals(id, patchedModel, StringComparison.OrdinalIgnoreCase));
 
         if (resolved is null)
@@ -393,7 +395,7 @@ public sealed class McpAgent : DisposableAgent
         var assembly = PromptComposer.Compose(new PromptContext
         {
             AgentId = _agentId,
-            Name = _name,
+            Name = _promptName,
             Description = _description,
             Selected = _selectedSections,
             Domain = _domainPrompts,

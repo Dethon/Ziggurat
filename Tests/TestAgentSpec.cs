@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Infrastructure.Agents;
 
 namespace Tests;
@@ -17,6 +18,7 @@ internal static class TestAgentSpec
     {
         AgentId = "test-agent",
         DisplayName = "test-agent",
+        PromptName = "test-agent",
         Description = "",
         MetricsAgentId = "test-agent",
         RoutingSessionId = $"test-agent:{conversationId}",
@@ -30,6 +32,6 @@ internal static class TestAgentSpec
         PromptSections = [],
         KeepsHistory = true,
         RecordsOutpostVerdicts = true,
-        PatchableModelIds = []
+        PatchableModels = FixedPatchableModelSource.None
     };
 }

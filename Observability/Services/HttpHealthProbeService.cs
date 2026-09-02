@@ -16,11 +16,8 @@ public sealed class HttpHealthProbeService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var targets = configuration.GetSection("HttpProbes").GetChildren()
-            .Where(c => !string.IsNullOrWhiteSpace(c.Value))
-            .Select(c => (Service: c.Key, Url: c.Value!))
-            .ToArray();
-        if (targets.Length == 0)
+        var targets = Targets(configuration);
+        if (targets.Count == 0)
         {
             return;
         }
@@ -44,6 +41,21 @@ public sealed class HttpHealthProbeService(
         {
             // Graceful shutdown
         }
+    }
+
+    // The configured probe list, plus the Lemonade chat host when a deployment has one: a box
+    // outside the stack, reached by the same address the agent discovers its models from, so a
+    // red tile says the box is down before a user does. No address, no tile.
+    internal static IReadOnlyList<(string Service, string Url)> Targets(IConfiguration configuration)
+    {
+        var configured = configuration.GetSection("HttpProbes").GetChildren()
+            .Where(c => !string.IsNullOrWhiteSpace(c.Value))
+            .Select(c => (Service: c.Key, Url: c.Value!));
+
+        var lemonadeChatHost = configuration["LemonadeChat:ApiUrl"];
+        return string.IsNullOrWhiteSpace(lemonadeChatHost)
+            ? configured.ToList()
+            : configured.Append(("lemonade-chat-host", $"{lemonadeChatHost.TrimEnd('/')}/health")).ToList();
     }
 
     internal async Task ProbeAsync(

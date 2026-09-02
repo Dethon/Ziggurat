@@ -51,6 +51,12 @@ public static class InjectorModule
 
             services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);
 
+            var lemonadeChatHost = new LemonadeChatHostOptions
+            {
+                ApiUrl = settings.LemonadeChat.ApiUrl,
+                ApiKey = settings.LemonadeChat.ApiKey
+            };
+
             return services
                 .AddSingleton(settings.AgentDefaults)
                 .AddSingleton(settings.Retention)
@@ -90,7 +96,29 @@ public static class InjectorModule
                 .AddSingleton<IModelCapabilityCatalog>(sp =>
                     sp.GetRequiredService<OpenRouterModelCapabilities>())
                 .AddHostedService<ModelCapabilityRefresher>()
+                .AddLemonadeChatHost(lemonadeChatHost)
                 .AddOutposts(settings.Outposts);
+        }
+
+        // An empty address is the feature switched off: no discovery, no refresher, and an empty
+        // source for the catalogue to read. A configured one is asked for its models on a timer.
+        private IServiceCollection AddLemonadeChatHost(LemonadeChatHostOptions host)
+        {
+            if (!host.IsConfigured)
+            {
+                return services.AddSingleton<ILemonadeModelSource>(FixedLemonadeModelSource.None);
+            }
+
+            return services
+                .AddSingleton(host)
+                // Shares the chat clients' pool: the pool is per host, so the box gets its own
+                // connections inside it, and the discovery rides the same ones the turns use.
+                .AddSingleton(sp => new LemonadeModelDiscovery(
+                    new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
+                    host,
+                    sp.GetRequiredService<ILogger<LemonadeModelDiscovery>>()))
+                .AddSingleton<ILemonadeModelSource>(sp => sp.GetRequiredService<LemonadeModelDiscovery>())
+                .AddHostedService<LemonadeModelRefresher>();
         }
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
@@ -120,7 +148,8 @@ public static class InjectorModule
                         () => AgentCatalogBuilder.Build(
                             settings.Agents,
                             settings.PatchableModels,
-                            sp.GetRequiredService<IModelCapabilityCatalog>()),
+                            sp.GetRequiredService<IModelCapabilityCatalog>(),
+                            sp.GetRequiredService<ILemonadeModelSource>()),
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>()));
         }
 

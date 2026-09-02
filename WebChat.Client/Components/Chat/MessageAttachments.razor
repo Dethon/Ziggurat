@@ -1,29 +1,47 @@
 @using Domain.DTOs.Channel
 @inject IAttachmentService AttachmentService
 @inject IJSRuntime Js
+@inject TimeProvider Clock
 
 @code {
     [Parameter] public IReadOnlyList<AttachmentReference>? Attachments { get; set; }
 
-    private readonly Dictionary<string, string> _previews = [];
+    private AttachmentPreviewCache _previews = null!;
+
+    protected override void OnInitialized() => _previews = new AttachmentPreviewCache(Clock);
 
     // A thumbnail needs a URL the browser can fetch, and a download URL is minted rather than
     // published — so an image asks for one as it renders, and other kinds only ask when clicked.
-    protected override async Task OnParametersSetAsync()
+    // The cache says which images need asking: never held, or held on a ticket that ran out
+    // while the app sat in the background.
+    protected override Task OnParametersSetAsync() => RefreshPreviewsAsync();
+
+    private async Task RefreshPreviewsAsync()
     {
         if (Attachments is null)
         {
             return;
         }
 
-        foreach (var attachment in Attachments.Where(a => IsImage(a) && !_previews.ContainsKey(a.Id)))
+        var stale = _previews.Stale(Attachments.Where(IsImage).Select(a => a.Id));
+        foreach (var attachmentId in stale)
         {
-            var download = await AttachmentService.CreateDownloadAsync(attachment.Id);
+            var download = await AttachmentService.CreateDownloadAsync(attachmentId);
             if (download is { IsLive: true, Value: not null })
             {
-                _previews[attachment.Id] = download.Value.Url;
+                _previews.Hold(attachmentId, download.Value);
                 StateHasChanged();
             }
+        }
+    }
+
+    // The ticket can be gone before its time — a server restart while the app was in the
+    // background prunes every one it held — and the image failing to load is the only signal.
+    private async Task PreviewFailed(string attachmentId)
+    {
+        if (_previews.Failed(attachmentId))
+        {
+            await RefreshPreviewsAsync();
         }
     }
 
@@ -50,12 +68,15 @@
     <div class="message-attachments">
         @foreach (var attachment in Attachments)
         {
-            @if (IsImage(attachment) && _previews.TryGetValue(attachment.Id, out var preview))
+            @if (IsImage(attachment) && _previews.TryGetUrl(attachment.Id, out var preview))
             {
                 <button class="attachment-thumbnail"
                         title="@attachment.FileName"
                         @onclick="() => Download(attachment)">
-                    <img src="@preview" alt="@attachment.FileName" />
+                    <img src="@preview"
+                         alt="@attachment.FileName"
+                         @onload="() => _previews.Loaded(attachment.Id)"
+                         @onerror="() => PreviewFailed(attachment.Id)" />
                 </button>
             }
             else

@@ -15,6 +15,7 @@ public class HomeAssistantFixture : IAsyncLifetime
     public string BaseUrl { get; private set; } = null!;
     public string Token { get; private set; } = null!;
     public const string TestEntityId = HomeAssistantSeed.TestEntityId;
+    public const string CalendarEntityId = HomeAssistantSeed.CalendarEntityId;
 
     public async Task InitializeAsync()
     {

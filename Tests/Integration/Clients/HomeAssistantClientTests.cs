@@ -157,6 +157,54 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
         rendered.ShouldNotContain("/ha/entities/input_boolean/");
     }
 
+    // The whole calendar round trip against the real component: created over the websocket with a
+    // recurrence rule, listed by the calendars endpoint with the uid, deleted by that uid, gone.
+    [Fact]
+    public async Task CalendarEvents_CreateListDelete_RoundTripsThroughTheRealComponent()
+    {
+        var client = fixture.CreateClient();
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        const string window = "2031-03-01T00:00:00Z";
+        const string windowEnd = "2031-03-31T00:00:00Z";
+
+        await client.CreateCalendarEventAsync(HomeAssistantFixture.CalendarEntityId, new global::Domain.Contracts.HaCalendarEventDraft
+        {
+            Summary = $"Wake {tag}",
+            Start = "2031-03-10 07:00:00",
+            End = "2031-03-10 07:01:00",
+            Description = """{"target":{"room":"bedroom"},"insistent":{}}""",
+            Rrule = "FREQ=DAILY;COUNT=3"
+        });
+
+        var listed = await client.ListCalendarEventsAsync(HomeAssistantFixture.CalendarEntityId, window, windowEnd);
+        var mine = listed.Where(e => e.Summary == $"Wake {tag}").ToList();
+        mine.Count.ShouldBe(3, "a COUNT=3 rule expands to three occurrences in the window");
+        mine.Select(e => e.Uid).Distinct().Count().ShouldBe(1, "every occurrence carries the master's uid");
+        mine[0].Uid.ShouldNotBeNullOrWhiteSpace();
+        mine[0].Rrule.ShouldBe("FREQ=DAILY;COUNT=3");
+        mine[0].Description.ShouldNotBeNull().ShouldContain("insistent");
+        mine[0].Start.ShouldStartWith("2031-03-10T07:00:00");
+        mine[0].AllDay.ShouldBeFalse();
+        mine.Select(e => e.RecurrenceId).ShouldAllBe(id => !string.IsNullOrEmpty(id));
+
+        await client.DeleteCalendarEventAsync(HomeAssistantFixture.CalendarEntityId, mine[0].Uid);
+
+        var after = await client.ListCalendarEventsAsync(HomeAssistantFixture.CalendarEntityId, window, windowEnd);
+        after.ShouldNotContain(e => e.Summary == $"Wake {tag}");
+    }
+
+    [Fact]
+    public async Task DeleteCalendarEventAsync_UnknownUid_ThrowsWithTheComponentsReason()
+    {
+        var client = fixture.CreateClient();
+
+        var ex = await Should.ThrowAsync<HomeAssistantException>(
+            () => client.DeleteCalendarEventAsync(HomeAssistantFixture.CalendarEntityId, "no-such-uid"));
+
+        output.WriteLine(ex.Message);
+        ex.ShouldNotBeOfType<HomeAssistantUnauthorizedException>();
+    }
+
     [Fact]
     public async Task ListStatesAsync_BadToken_ThrowsUnauthorized()
     {

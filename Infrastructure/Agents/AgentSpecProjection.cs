@@ -1,4 +1,5 @@
 using Domain.Agents;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Prompts;
 using Domain.Tools.FileSystem;
@@ -16,10 +17,12 @@ internal static class AgentSpecProjection
         AgentKey agentKey,
         string userId,
         OpenRouterConfig openRouterConfig,
+        IPatchableModelSource patchableModels,
         ILogger? logger) => new()
         {
             AgentId = definition.Id,
             DisplayName = $"{definition.Name}-{agentKey.ConversationId}",
+            PromptName = definition.Name,
             Description = definition.Description ?? "",
             MetricsAgentId = definition.Name,
             RoutingSessionId = $"{definition.Id}:{agentKey.ConversationId}",
@@ -44,7 +47,7 @@ internal static class AgentSpecProjection
             Language = definition.Language,
             KeepsHistory = true,
             RecordsOutpostVerdicts = true,
-            PatchableModelIds = openRouterConfig.PatchableModelIds ?? []
+            PatchableModels = patchableModels
         };
 
     public static AgentSpec ForSubAgent(
@@ -62,6 +65,7 @@ internal static class AgentSpecProjection
         {
             AgentId = definition.Id,
             DisplayName = identity,
+            PromptName = identity,
             Description = definition.Description ?? "",
             MetricsAgentId = definition.Name,
             // Fresh every spawn, so a subagent never shares the parent's prompt cache: its
@@ -105,7 +109,7 @@ internal static class AgentSpecProjection
             // is the point of having one. No patch reaches a subagent today, so this is the
             // second line of defence: if a future change ever copies the parent's message
             // properties down, the patch is rejected and logged instead of silently winning.
-            PatchableModelIds = []
+            PatchableModels = FixedPatchableModelSource.None
         };
     }
 

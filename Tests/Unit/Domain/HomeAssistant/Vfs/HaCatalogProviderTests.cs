@@ -26,6 +26,31 @@ public class HaCatalogProviderTests
         catalog.Areas.ShouldContain(a => a.Id == "salon" && a.EntityIds.Contains("light.kitchen"));
     }
 
+    // A served action with the same name as one Home Assistant publishes replaces it rather than
+    // sitting beside it: the calendar's create_event is served here (Home Assistant's own cannot
+    // take a recurrence rule), and two definitions of one action file would resolve to whichever
+    // came first.
+    [Fact]
+    public async Task GetAsync_ExtraServiceWithTheSameName_ReplacesTheHomeAssistantOne()
+    {
+        var client = new FakeHaClient
+        {
+            Services =
+            {
+                Service("calendar", "create_event", DomainTarget("calendar"), ("summary", new HaServiceField())),
+                Service("calendar", "get_events", DomainTarget("calendar"))
+            }
+        };
+        var served = Service("calendar", "create_event", DomainTarget("calendar"),
+            ("summary", new HaServiceField()), ("rrule", new HaServiceField()));
+        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider(), extraServices: [served]);
+
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.Services.Count.ShouldBe(2);
+        catalog.Services.Single(s => s.Service == "create_event").Fields.Keys.ShouldContain("rrule");
+    }
+
     [Fact]
     public async Task GetAsync_SuccessfulButEmpty_CachesForFullTtl()
     {

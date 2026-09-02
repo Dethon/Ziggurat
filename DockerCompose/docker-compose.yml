@@ -785,6 +785,9 @@ services:
       - .env
     environment:
       <<: *timezone
+      # LemonadeChat__ApiUrl arrives through .env, as it does for the agent: the probe row for
+      # the Lemonade chat host exists only when that line is set. A literal here would win over
+      # .env and keep the probe off.
     restart: unless-stopped
     depends_on:
       redis:

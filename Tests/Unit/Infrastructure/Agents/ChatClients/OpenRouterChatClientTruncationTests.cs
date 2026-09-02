@@ -127,4 +127,46 @@ public class OpenRouterChatClientTruncationTests
             p => p.Publish(It.IsAny<ContextTruncationEvent>()),
             Times.Never);
     }
+
+    // The window is a decision about the turn, not about the client: a model a person switched
+    // to for one turn may hold less than the agent's own, and rebuilding the client per turn to
+    // say so is not an option. The resolver is asked with the model the turn runs on.
+    [Fact]
+    public async Task GetStreamingResponseAsync_WindowResolvedPerTurn_TruncatesToThatModelsWindow()
+    {
+        var sut = new OpenRouterChatClient(
+            _innerClient.Object, "test-model",
+            contextWindowFor: model => model == "small/model" ? 80 : 100000,
+            metricsPublisher: _publisher.Object);
+
+        var sys = new ChatMessage(ChatRole.System, new string('s', 4));
+        var u1 = new ChatMessage(ChatRole.User, new string('a', 400));
+        var u2 = new ChatMessage(ChatRole.User, "hi");
+        u2.SetSenderId("alice");
+
+        _innerClient
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerable.Empty<ChatResponseUpdate>());
+
+        ContextTruncationEvent? publishedEvent = null;
+        _publisher
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => publishedEvent = e as ContextTruncationEvent ?? publishedEvent);
+
+        await foreach (var _ in sut.GetStreamingResponseAsync([sys, u1, u2]))
+        { }
+
+        publishedEvent.ShouldBeNull();
+
+        await foreach (var _ in sut.GetStreamingResponseAsync(
+            [sys, u1, u2], new ChatOptions { ModelId = "small/model" }))
+        { }
+
+        publishedEvent.ShouldNotBeNull();
+        publishedEvent!.Model.ShouldBe("small/model");
+        publishedEvent.MaxContextTokens.ShouldBe(80);
+    }
 }

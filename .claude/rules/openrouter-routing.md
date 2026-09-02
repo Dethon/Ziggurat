@@ -49,3 +49,12 @@ a turn. Each takes either a bare number (OpenRouter's shorthand for the p50 cuto
 (`{prompt, completion}` in $/M tokens, `{request, image}` per unit) is the exception: a real
 ceiling that excludes. Cutoffs are guarded non-negative and finite at bind time, because a
 negative one is otherwise silent — it deprioritizes nothing and excludes nobody.
+
+**A Lemonade turn is not an OpenRouter turn.** A config patch naming a `lemonade/<id>` model
+(`LemonadeModelId`) is routed by `HostRoutingChatClient` to `LemonadeChatClient`, which rides the
+same Responses pipeline pointed at the Lemonade chat host with `providerRouting: null`, so no
+`provider` node is stamped and the advisories, which run at agent construction for the agent's own
+model, say nothing about it. `session_id` and `usage.include` still go out; the box tolerates them.
+Every failure to get an answer from the box is one `LemonadeChatHostException`, thrown from the
+wire so the SDK's retry policy never re-sends the turn, and worded so WebChat's transient-error
+filter cannot swallow it.

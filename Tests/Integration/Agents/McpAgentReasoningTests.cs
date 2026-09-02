@@ -222,7 +222,7 @@ public class McpAgentReasoningTestsConfigPatch
                 UserId = "fran",
                 Model = ConfiguredModel,
                 ReasoningEffort = reasoningEffort,
-                PatchableModelIds = _whitelist
+                PatchableModels = new FixedPatchableModelSource(_whitelist)
             },
             chatClient.Object,
             new Mock<IThreadStateStore>().Object,

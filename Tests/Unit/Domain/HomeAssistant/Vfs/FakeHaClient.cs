@@ -37,6 +37,44 @@ public class FakeHaClient : IHomeAssistantClient
     public virtual Task<string> RenderTemplateAsync(string template, CancellationToken ct = default)
         => Task.FromResult(AreaTemplateJson);
 
+    // The calendar side: what the listing answers, and what was created or deleted through it.
+    public List<HaCalendarEvent> CalendarEvents { get; init; } = [];
+    public (string EntityId, string Start, string End)? LastCalendarWindow { get; private set; }
+    public List<(string EntityId, HaCalendarEventDraft Draft)> CreatedEvents { get; } = [];
+    public List<(string EntityId, string Uid, string? RecurrenceId, string? RecurrenceRange)> DeletedEvents { get; } = [];
+    public Exception? CalendarFailure { get; set; }
+
+    public virtual Task<IReadOnlyList<HaCalendarEvent>> ListCalendarEventsAsync(
+        string entityId, string start, string end, CancellationToken ct = default)
+    {
+        LastCalendarWindow = (entityId, start, end);
+        return CalendarFailure is null
+            ? Task.FromResult<IReadOnlyList<HaCalendarEvent>>(CalendarEvents)
+            : Task.FromException<IReadOnlyList<HaCalendarEvent>>(CalendarFailure);
+    }
+
+    public virtual Task CreateCalendarEventAsync(string entityId, HaCalendarEventDraft draft, CancellationToken ct = default)
+    {
+        if (CalendarFailure is not null)
+        {
+            return Task.FromException(CalendarFailure);
+        }
+        CreatedEvents.Add((entityId, draft));
+        return Task.CompletedTask;
+    }
+
+    public virtual Task DeleteCalendarEventAsync(
+        string entityId, string uid, string? recurrenceId = null, string? recurrenceRange = null,
+        CancellationToken ct = default)
+    {
+        if (CalendarFailure is not null)
+        {
+            return Task.FromException(CalendarFailure);
+        }
+        DeletedEvents.Add((entityId, uid, recurrenceId, recurrenceRange));
+        return Task.CompletedTask;
+    }
+
     public static HaEntityState Entity(string id, string state, params (string Key, JsonNode? Value)[] attrs) => new()
     {
         EntityId = id,

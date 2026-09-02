@@ -37,7 +37,7 @@ public sealed class OpenRouterChatClientTests
             {
                 UserId = "fran",
                 Model = "configured/model",
-                PatchableModelIds = ["z-ai/glm-5.2"]
+                PatchableModels = new FixedPatchableModelSource(["z-ai/glm-5.2"])
             },
             client,
             new Mock<IThreadStateStore>().Object,
@@ -68,7 +68,7 @@ public sealed class OpenRouterChatClientTests
             {
                 UserId = "fran",
                 Model = "configured/model",
-                PatchableModelIds = ["z-ai/glm-5.2"]
+                PatchableModels = new FixedPatchableModelSource(["z-ai/glm-5.2"])
             },
             client,
             new Mock<IThreadStateStore>().Object,

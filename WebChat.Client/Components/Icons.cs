@@ -36,6 +36,43 @@ public static class Icons
         + "2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 "
         + "0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z");
 
+    // Lemonade's own mark — the lemon body and the leaf from its logo.svg, on the 32-unit grid it
+    // was drawn on and in its own colours, so a person who knows the app recognises it. The glow
+    // filters are left out; at 14px they were only blur. The gradient ids carry the wrapper's
+    // per-instance token: a paint server is found by id across the whole document, so two lemons
+    // on one page with the same ids share one definition, and the one whose definition is removed
+    // when the list closes loses its colour.
+    public static readonly IconGlyph Lemon = new(
+        """
+        <defs>
+          <linearGradient id="lemonade-leaf-__icon__" x1="2" y1="5" x2="14.09" y2="5" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#80A338" />
+            <stop offset="1" stop-color="#B3D745" />
+          </linearGradient>
+          <radialGradient id="lemonade-body-__icon__" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+                          gradientTransform="translate(21.2 10.57) rotate(115.15) scale(17.63 14.92)">
+            <stop stop-color="#FFFB98" />
+            <stop offset=".5" stop-color="#FFD84C" />
+            <stop offset="1" stop-color="#E6B534" />
+          </radialGradient>
+          <radialGradient id="lemonade-underside-__icon__" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+                          gradientTransform="translate(14.62 4.97) rotate(69.33) scale(26.75 22.64)">
+            <stop offset=".52" stop-color="#FFDE67" stop-opacity="0" />
+            <stop offset=".74" stop-color="#FFA457" stop-opacity=".2" />
+            <stop offset=".89" stop-color="#D5676D" stop-opacity=".75" />
+            <stop offset=".92" stop-color="#E88257" />
+            <stop offset="1" stop-color="#F49754" />
+          </radialGradient>
+        </defs>
+        <path d="M7.036 2.492 2 5.01c.826 2.336 3.525 3.525 6.043 2.518l6.043-2.518C13.26 2.663 9.85 1.177 7.036 2.492Z"
+              fill="url(#lemonade-leaf-__icon__)" />
+        <path d="M14.924 4.6C9.52 6.507 6.69 12.45 8.592 17.87l1.252 3.558c1.404 3.99 4.987 6.583 8.93 6.908.742.058 1.438.384 1.994.884.8.721 1.948.989 3.027.605 1.078-.384 1.809-1.314 1.983-2.373.116-.744.452-1.419.997-1.942 2.864-2.745 4.035-7.013 2.632-11.002l-1.252-3.559C26.253 5.518 20.327 2.68 14.924 4.6Z"
+              fill="url(#lemonade-body-__icon__)" />
+        <path d="M14.924 4.6C9.52 6.507 6.69 12.45 8.592 17.87l1.252 3.558c1.404 3.99 4.987 6.583 8.93 6.908.742.058 1.438.384 1.994.884.8.721 1.948.989 3.027.605 1.078-.384 1.809-1.314 1.983-2.373.116-.744.452-1.419.997-1.942 2.864-2.745 4.035-7.013 2.632-11.002l-1.252-3.559C26.253 5.518 20.327 2.68 14.924 4.6Z"
+              fill="url(#lemonade-underside-__icon__)" />
+        """,
+        "0 0 32 32");
+
     // Points right when shut and is turned by CSS when open, so a toggle is one drawing rather than
     // two that have to agree about weight.
     public static readonly IconGlyph Triangle = Filled("M9 6l6 6-6 6Z");

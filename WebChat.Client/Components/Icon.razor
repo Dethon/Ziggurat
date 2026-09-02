@@ -10,7 +10,7 @@
      stroke-width="@StrokeWidth"
      stroke-linecap="@(Stroked ? "round" : null)"
      stroke-linejoin="@(Stroked ? "round" : null)"
-     aria-hidden="true">@((MarkupString)Glyph.Body)</svg>
+     aria-hidden="true">@((MarkupString)Body)</svg>
 
 @code {
     [Parameter, EditorRequired] public IconGlyph Glyph { get; set; } = default!;
@@ -22,6 +22,13 @@
     [Parameter] public string? Class { get; set; }
 
     private bool Stroked => Glyph.StrokeWidth is not null;
+
+    // A glyph that defines a gradient names it with this token, and each rendered icon gets its
+    // own, because an id is looked up document-wide: two icons sharing one would share one
+    // definition, and removing the icon that held it takes the colour off the other.
+    private readonly string _instance = Guid.NewGuid().ToString("N")[..8];
+
+    private string Body => Glyph.Body.Replace("__icon__", _instance);
 
     private string? StrokeWidth =>
         Glyph.StrokeWidth?.ToString(System.Globalization.CultureInfo.InvariantCulture);

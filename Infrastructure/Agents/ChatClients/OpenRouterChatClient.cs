@@ -25,7 +25,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly ConcurrentQueue<long> _cachedTokenQueue = new();
     private readonly ServedRouteSink _routeSink = new();
     private readonly IMetricsPublisher _metricsPublisher;
-    private readonly int? _maxContextTokens;
+    private readonly Func<string, int?> _contextWindowFor;
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
     private readonly IAttachmentSource? _attachmentSource;
@@ -46,10 +46,12 @@ public sealed class OpenRouterChatClient : IChatClient
         IAttachmentSource? attachmentSource = null,
         int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
         IReadImageStore? readImageStore = null,
-        Func<string, bool>? modelAcceptsImages = null)
+        Func<string, bool>? modelAcceptsImages = null,
+        Func<string, int?>? contextWindowFor = null,
+        int? maxRetries = null)
     {
         _model = model;
-        _maxContextTokens = maxContextTokens;
+        _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
@@ -59,7 +61,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _httpClient = CreateHttpClient(
             _costQueue, _cachedTokenQueue, _routeSink, sessionId, providerRouting, transportHandler);
         _transport = new HttpClientPipelineTransport(_httpClient);
-        _client = CreateClient(endpoint, apiKey, model, _transport);
+        _client = CreateClient(endpoint, apiKey, model, _transport, maxRetries);
     }
 
     internal OpenRouterChatClient(
@@ -71,10 +73,11 @@ public sealed class OpenRouterChatClient : IChatClient
         IAttachmentSource? attachmentSource = null,
         int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
         IReadImageStore? readImageStore = null,
-        Func<string, bool>? modelAcceptsImages = null)
+        Func<string, bool>? modelAcceptsImages = null,
+        Func<string, int?>? contextWindowFor = null)
     {
         _model = model;
-        _maxContextTokens = maxContextTokens;
+        _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _attachmentSource = attachmentSource;
@@ -131,9 +134,12 @@ public sealed class OpenRouterChatClient : IChatClient
             .LastOrDefault(m => m.Role == ChatRole.User)
             ?.GetSenderId();
 
+        // Decided for this turn rather than at construction, and from the model the turn runs on:
+        // a model a person switched to for one turn may hold less than the agent's own does.
+        var maxContextTokens = _contextWindowFor(effectiveModel);
         var fixedOverhead = MessageTruncator.EstimateOptionsOverheadTokens(options);
         var truncated = MessageTruncator.Truncate(
-            transformedMessages, _maxContextTokens,
+            transformedMessages, maxContextTokens,
             out var droppedCount, out var tokensBefore, out var tokensAfter,
             out var overflowDetected, fixedOverheadTokens: fixedOverhead);
 
@@ -146,7 +152,7 @@ public sealed class OpenRouterChatClient : IChatClient
                 DroppedMessages = droppedCount,
                 EstimatedTokensBefore = tokensBefore,
                 EstimatedTokensAfter = tokensAfter,
-                MaxContextTokens = _maxContextTokens ?? 0
+                MaxContextTokens = maxContextTokens ?? 0
             });
         }
 
@@ -239,13 +245,19 @@ public sealed class OpenRouterChatClient : IChatClient
     // honours session_id, provider routing and usage accounting on it, and translates it for
     // non-OpenAI models. See docs/adr/0029.
     private static IChatClient CreateClient(
-        string endpoint, string apiKey, string model, HttpClientPipelineTransport transport)
+        string endpoint, string apiKey, string model, HttpClientPipelineTransport transport, int? maxRetries)
     {
         var options = new ResponsesClientOptions
         {
             Endpoint = new Uri(endpoint),
             Transport = transport
         };
+        // The SDK's default (three retries with backoff) is right for a hosted provider and wrong
+        // for a host that must never see a turn twice; unset keeps the default.
+        if (maxRetries is { } retries)
+        {
+            options.RetryPolicy = new ClientRetryPolicy(retries);
+        }
 
         return new ResponsesClient(new ApiKeyCredential(apiKey), options)
             .AsIChatClient(model);

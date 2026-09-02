@@ -124,7 +124,7 @@ public class McpAgentLatencyTests : IAsyncDisposable
             {
                 Model = "anthropic/claude",
                 ConversationId = "conv1",
-                PatchableModelIds = ["z-ai/glm"]
+                PatchableModels = new FixedPatchableModelSource(["z-ai/glm"])
             },
             wrappedClient,
             new Mock<IThreadStateStore>().Object,
