@@ -10,8 +10,8 @@ namespace Tests.Unit.WebChat.Client.Components;
 // the bubble, decides when a URL has to be minted again.
 public sealed class AttachmentPreviewCacheTests
 {
-    private static readonly DateTimeOffset Start = new(2026, 9, 2, 12, 0, 0, TimeSpan.Zero);
-    private readonly FakeTimeProvider _clock = new(Start);
+    private static readonly DateTimeOffset _start = new(2026, 9, 2, 12, 0, 0, TimeSpan.Zero);
+    private readonly FakeTimeProvider _clock = new(_start);
     private readonly AttachmentPreviewCache _sut;
 
     public AttachmentPreviewCacheTests()
@@ -29,7 +29,7 @@ public sealed class AttachmentPreviewCacheTests
     [Fact]
     public void AHeldTicketWithTimeLeftIsServedFromTheCache()
     {
-        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", Start.AddMinutes(15)));
+        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", _start.AddMinutes(15)));
 
         _sut.Stale(["att-1"]).ShouldBeEmpty();
         _sut.TryGetUrl("att-1", out var url).ShouldBeTrue();
@@ -42,7 +42,7 @@ public sealed class AttachmentPreviewCacheTests
     [Fact]
     public void ATicketInsideTheExpiryMarginIsStale()
     {
-        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", Start.AddMinutes(15)));
+        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", _start.AddMinutes(15)));
 
         _clock.Advance(TimeSpan.FromMinutes(15) - AttachmentPreviewCache.Margin + TimeSpan.FromSeconds(1));
 
@@ -53,7 +53,7 @@ public sealed class AttachmentPreviewCacheTests
     [Fact]
     public void AnExpiredTicketIsStale()
     {
-        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", Start.AddMinutes(15)));
+        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", _start.AddMinutes(15)));
 
         _clock.Advance(TimeSpan.FromHours(2));
 
@@ -63,7 +63,7 @@ public sealed class AttachmentPreviewCacheTests
     [Fact]
     public void HoldingAgainReplacesTheTicket()
     {
-        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", Start.AddMinutes(15)));
+        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", _start.AddMinutes(15)));
         _clock.Advance(TimeSpan.FromHours(2));
 
         _sut.Hold("att-1", new AttachmentDownload("https://x/dl/2", _clock.GetUtcNow().AddMinutes(15)));
@@ -78,7 +78,7 @@ public sealed class AttachmentPreviewCacheTests
     [Fact]
     public void TheFirstFailureMakesTheAttachmentStaleAgain()
     {
-        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", Start.AddMinutes(15)));
+        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", _start.AddMinutes(15)));
 
         _sut.Failed("att-1").ShouldBeTrue();
 
@@ -92,9 +92,9 @@ public sealed class AttachmentPreviewCacheTests
     [Fact]
     public void ASecondFailureGivesUpOnTheAttachment()
     {
-        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", Start.AddMinutes(15)));
+        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", _start.AddMinutes(15)));
         _sut.Failed("att-1");
-        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/2", Start.AddMinutes(15)));
+        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/2", _start.AddMinutes(15)));
 
         _sut.Failed("att-1").ShouldBeFalse();
 
@@ -107,9 +107,9 @@ public sealed class AttachmentPreviewCacheTests
     [Fact]
     public void ALoadedReplacementForgivesTheEarlierFailure()
     {
-        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", Start.AddMinutes(15)));
+        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/1", _start.AddMinutes(15)));
         _sut.Failed("att-1");
-        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/2", Start.AddMinutes(15)));
+        _sut.Hold("att-1", new AttachmentDownload("https://x/dl/2", _start.AddMinutes(15)));
         _sut.Loaded("att-1");
 
         _sut.Failed("att-1").ShouldBeTrue();
@@ -118,8 +118,8 @@ public sealed class AttachmentPreviewCacheTests
     [Fact]
     public void OnlyTheStaleOnesAreReported()
     {
-        _sut.Hold("fresh", new AttachmentDownload("https://x/dl/f", Start.AddMinutes(15)));
-        _sut.Hold("old", new AttachmentDownload("https://x/dl/o", Start.AddSeconds(1)));
+        _sut.Hold("fresh", new AttachmentDownload("https://x/dl/f", _start.AddMinutes(15)));
+        _sut.Hold("old", new AttachmentDownload("https://x/dl/o", _start.AddSeconds(1)));
         _clock.Advance(TimeSpan.FromMinutes(1));
 
         _sut.Stale(["fresh", "old", "never"]).ShouldBe(["old", "never"]);
