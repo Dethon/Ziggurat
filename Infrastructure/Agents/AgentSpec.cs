@@ -10,9 +10,13 @@ namespace Infrastructure.Agents;
 public sealed record AgentSpec
 {
     // The configured id, which is what a prompt section's audience and a routing default name. The
-    // display name beside it carries the conversation and belongs to metrics.
+    // display name beside it carries the conversation and belongs to metrics; the prompt name is
+    // what the identity section renders and carries no conversation, deliberately — it sits a
+    // few hundred tokens into the instructions, and a conversation id there is what turned the
+    // static prefix a chat host caches into one no other conversation could ever match.
     public required string AgentId { get; init; }
     public required string DisplayName { get; init; }
+    public required string PromptName { get; init; }
     public required string Description { get; init; }
     public required string MetricsAgentId { get; init; }
     public required string RoutingSessionId { get; init; }

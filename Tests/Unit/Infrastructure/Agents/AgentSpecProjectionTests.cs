@@ -66,6 +66,9 @@ public sealed class AgentSpecProjectionTests
     public static IEnumerable<object?[]> FieldsToCompare =>
     [
         Row("display name", s => s.DisplayName, "Jack-conv-1", "subagent-worker"),
+        // The identity section opens the prompt, so a conversation id in it would make every
+        // new conversation miss the host's cached prefix from the previous one.
+        Row("prompt name", s => s.PromptName, "Jack", "subagent-worker"),
         Row("routing session id", s => WithoutSpawnId(s.RoutingSessionId),
             "jack:conv-1", "subagent-worker:<spawn>"),
         Row("conversation id", s => s.ConversationId, "conv-1", "conv-1"),

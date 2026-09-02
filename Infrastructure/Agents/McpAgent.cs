@@ -37,6 +37,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly ILogger<McpAgent>? _logger;
     private readonly ChatClientAgent _innerAgent;
     private readonly string _name;
+    private readonly string _promptName;
     private readonly string _userId;
     private readonly ReasoningEffort? _reasoningEffort;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
@@ -85,6 +86,7 @@ public sealed class McpAgent : DisposableAgent
         _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger<McpAgent>();
         _name = spec.DisplayName;
+        _promptName = spec.PromptName;
         _description = spec.Description;
         _userId = spec.UserId;
         _customInstructions = spec.CustomInstructions;
@@ -393,7 +395,7 @@ public sealed class McpAgent : DisposableAgent
         var assembly = PromptComposer.Compose(new PromptContext
         {
             AgentId = _agentId,
-            Name = _name,
+            Name = _promptName,
             Description = _description,
             Selected = _selectedSections,
             Domain = _domainPrompts,

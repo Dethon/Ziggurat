@@ -22,6 +22,7 @@ internal static class AgentSpecProjection
         {
             AgentId = definition.Id,
             DisplayName = $"{definition.Name}-{agentKey.ConversationId}",
+            PromptName = definition.Name,
             Description = definition.Description ?? "",
             MetricsAgentId = definition.Name,
             RoutingSessionId = $"{definition.Id}:{agentKey.ConversationId}",
@@ -64,6 +65,7 @@ internal static class AgentSpecProjection
         {
             AgentId = definition.Id,
             DisplayName = identity,
+            PromptName = identity,
             Description = definition.Description ?? "",
             MetricsAgentId = definition.Name,
             // Fresh every spawn, so a subagent never shares the parent's prompt cache: its

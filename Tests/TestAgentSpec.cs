@@ -18,6 +18,7 @@ internal static class TestAgentSpec
     {
         AgentId = "test-agent",
         DisplayName = "test-agent",
+        PromptName = "test-agent",
         Description = "",
         MetricsAgentId = "test-agent",
         RoutingSessionId = $"test-agent:{conversationId}",
