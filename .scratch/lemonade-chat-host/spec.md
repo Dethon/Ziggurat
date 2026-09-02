@@ -150,3 +150,6 @@ The agent host's appsettings test pins the section's default (empty address) so 
 - The box's health endpoint reports one LLM slot; two conversations picking Lemonade at once will see the second fail. That is the accepted behaviour, not a bug to file.
 - A cold load of a large model on the box takes minutes; the first Lemonade turn after the box restarts is slow and the request timeout must allow it. Match the existing OpenRouter request timeout unless it proves too short.
 - Discovery answers the default models listing, which already excludes undownloaded models; the downloaded flag is still checked so a change in that default does not offer a model the box would first download.
+
+## Comments
+- 2026-09-02: user story 33 and the "memory extraction" out-of-scope line are superseded by `.scratch/lemonade-extraction/spec.md`; dreaming and subagents stay as written.
