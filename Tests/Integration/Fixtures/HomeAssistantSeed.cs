@@ -19,11 +19,15 @@ namespace Tests.Integration.Fixtures;
 //   - .storage/auth: one owner user + groups + a `long_lived_access_token` refresh token whose `jwt_key`
 //     we control. We sign an HS256 JWT with that key and use it as the Bearer token.
 //   - .storage/onboarding: marks every onboarding step as done.
+//   - .storage/core.config_entries: one Local Calendar entry (the integration has no YAML form), so
+//     the calendar round trip — create over the websocket, list with uids, delete — runs against
+//     the real component rather than a fake's reading of it.
 internal static class HomeAssistantSeed
 {
     public const string ContainerImage = "ghcr.io/home-assistant/home-assistant:stable";
     public const int Port = 8123;
     public const string TestEntityId = "input_boolean.test_switch";
+    public const string CalendarEntityId = "calendar.alarms";
 
     public static readonly TimeSpan DefaultReadyTimeout = TimeSpan.FromMinutes(3);
 
@@ -132,9 +136,42 @@ internal static class HomeAssistantSeed
             }
         };
 
+        var configEntries = new
+        {
+            version = 1,
+            minor_version = 5,
+            key = "core.config_entries",
+            data = new
+            {
+                entries = new[]
+                {
+                    new
+                    {
+                        created_at = createdAt,
+                        data = new { calendar_name = "Alarms" },
+                        disabled_by = (string?)null,
+                        discovery_keys = new { },
+                        domain = "local_calendar",
+                        entry_id = RandomHex(13),
+                        minor_version = 1,
+                        modified_at = createdAt,
+                        options = new { },
+                        pref_disable_new_entities = false,
+                        pref_disable_polling = false,
+                        source = "user",
+                        subentries = Array.Empty<object>(),
+                        title = "Alarms",
+                        unique_id = (string?)null,
+                        version = 1
+                    }
+                }
+            }
+        };
+
         var jsonOpts = new JsonSerializerOptions { WriteIndented = false };
         File.WriteAllText(Path.Combine(configDir, ".storage", "auth"), JsonSerializer.Serialize(auth, jsonOpts));
         File.WriteAllText(Path.Combine(configDir, ".storage", "onboarding"), JsonSerializer.Serialize(onboarding, jsonOpts));
+        File.WriteAllText(Path.Combine(configDir, ".storage", "core.config_entries"), JsonSerializer.Serialize(configEntries, jsonOpts));
 
         return CreateAccessToken(refreshTokenId, jwtKey);
     }
@@ -161,11 +198,21 @@ internal static class HomeAssistantSeed
                     if (servicesResponse.IsSuccessStatusCode)
                     {
                         var json = await servicesResponse.Content.ReadAsStringAsync();
-                        if (json.Contains("\"input_boolean\""))
+                        if (!json.Contains("\"input_boolean\""))
                         {
-                            return;
+                            lastError = new InvalidOperationException("input_boolean domain not yet registered");
                         }
-                        lastError = new InvalidOperationException("input_boolean domain not yet registered");
+                        else
+                        {
+                            // The config-entry integrations load after the YAML ones; the calendar
+                            // is the last thing a test here waits on.
+                            using var calendarResponse = await http.GetAsync($"api/states/{CalendarEntityId}");
+                            if (calendarResponse.IsSuccessStatusCode)
+                            {
+                                return;
+                            }
+                            lastError = new InvalidOperationException($"{CalendarEntityId} not yet registered");
+                        }
                     }
                 }
                 else
