@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Moq;
 using Shouldly;
@@ -7,6 +8,7 @@ using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Hub;
+using WebChat.Client.State.Messages;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Topics;
 
@@ -18,6 +20,7 @@ public sealed class ReconnectionEffectTests : IDisposable
     private readonly ConnectionStore _connectionStore;
     private readonly TopicsStore _topicsStore;
     private readonly SpaceStore _spaceStore;
+    private readonly MessagesStore _messagesStore;
     private readonly Mock<IChatSessionService> _mockSessionService;
     private readonly Mock<IStreamResumeService> _mockStreamResumeService;
     private readonly Mock<ITopicService> _mockTopicService;
@@ -30,6 +33,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _connectionStore = new ConnectionStore(_dispatcher);
         _topicsStore = new TopicsStore(_dispatcher);
         _spaceStore = new SpaceStore(_dispatcher);
+        _messagesStore = new MessagesStore(_dispatcher);
         _mockSessionService = new Mock<IChatSessionService>();
         _mockStreamResumeService = new Mock<IStreamResumeService>();
         _mockTopicService = new Mock<ITopicService>();
@@ -221,6 +225,40 @@ public sealed class ReconnectionEffectTests : IDisposable
         _mockTopicService.Verify(s => s.GetHistoryAsync("agent-1", 123, 456), Times.Once);
     }
 
+    // The reload replaces every bubble in the open conversation. A picture that was sent
+    // before the connection dropped is part of that history, and it came back to the bubbles
+    // on a cold load — so it must come back on this one too, or backgrounding the app on a
+    // phone quietly strips the thumbnails until a full refresh.
+    [Fact]
+    public async Task WhenConnectionReconnected_TheReloadedHistoryKeepsItsAttachments()
+    {
+        var topic = new StoredTopic
+        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Test Topic" };
+        _dispatcher.Dispatch(new TopicsLoaded([topic]));
+        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
+
+        var picture = new AttachmentReference
+        { Id = "att-1", FileName = "cat.png", MediaType = "image/png", SizeBytes = 1234 };
+        _mockTopicService
+            .Setup(s => s.GetHistoryAsync("agent-1", 123, 456))
+            .ReturnsAsync(HubResult<IReadOnlyList<ChatHistoryMessage>>.Answered(
+            [
+                new ChatHistoryMessage("m-1", "user", "look", "u-1", DateTimeOffset.UnixEpoch, [picture])
+            ]));
+
+        CreateEffect();
+
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        await TestChat.Eventually(() => _messagesStore.State.MessagesByTopic.ContainsKey("topic-1"));
+
+        var reloaded = _messagesStore.State.MessagesByTopic["topic-1"].Single();
+        reloaded.Attachments.ShouldNotBeNull();
+        reloaded.Attachments.Single().ShouldBe(picture);
+    }
+
     [Fact]
     public void WhenConnectionReconnecting_DoesNotTriggerYet()
     {
@@ -324,5 +362,6 @@ public sealed class ReconnectionEffectTests : IDisposable
         _connectionStore.Dispose();
         _topicsStore.Dispose();
         _spaceStore.Dispose();
+        _messagesStore.Dispose();
     }
 }

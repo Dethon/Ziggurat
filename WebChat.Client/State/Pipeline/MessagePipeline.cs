@@ -1,5 +1,6 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Messages;
@@ -45,15 +46,7 @@ public sealed class MessagePipeline(
 
     public void LoadHistory(string topicId, IEnumerable<ChatHistoryMessage> messages)
     {
-        var chatMessages = messages.Select(h => new ChatMessageModel
-        {
-            Role = h.Role,
-            Content = h.Content,
-            MessageId = h.MessageId,
-            SenderId = h.SenderId,
-            Timestamp = h.Timestamp,
-            Attachments = h.Attachments
-        }).ToList();
+        var chatMessages = messages.Select(h => h.ToChatMessageModel()).ToList();
 
         // MessagesLoaded records every message id it carries, so the finalized set follows.
         logger.LogDebug(

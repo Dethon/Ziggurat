@@ -5,6 +5,9 @@ namespace WebChat.Client.Extensions;
 
 public static class ChatHistoryMessageExtensions
 {
+    // The one place a history row becomes a bubble. Every reload — first open, reconnect,
+    // stream resume — goes through here, so a field the transcript carries cannot be kept by
+    // one path and dropped by another.
     public static ChatMessageModel ToChatMessageModel(this ChatHistoryMessage history) =>
         new()
         {
@@ -12,6 +15,7 @@ public static class ChatHistoryMessageExtensions
             Role = history.Role,
             Content = history.Content,
             SenderId = history.SenderId,
-            Timestamp = history.Timestamp
+            Timestamp = history.Timestamp,
+            Attachments = history.Attachments
         };
 }
