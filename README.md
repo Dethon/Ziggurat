@@ -187,7 +187,7 @@ Countdown timers are another non-disk MCP filesystem server (`mcp-timers`) expos
 
 The timers server has no audio path of its own. When a timer fires it calls the voice hub's token-gated HTTP endpoints (`/api/voice/announce`, `/api/voice/dismiss`, `/api/voice/satellites`), so ringing, dismissal (wake word or button on the satellite, or `dismiss.sh` from any channel), and satellite/room resolution all stay in one place — the hub. The `timers_prompt` MCP prompt teaches the `/timers` idiom and embeds the live satellite roster.
 
-Clock-time alarms and reminders ride Home Assistant instead: the agent creates events on a dedicated `calendar.assistant_alarms` calendar and an HA automation bridges each firing to the same voice announce endpoint, with optional insistent repetition until acknowledged.
+Clock-time alarms and reminders ride Home Assistant instead: the agent creates events on a dedicated alarms calendar (served by the `/ha` mount as `create_event.sh`, `get_events.sh` and `delete_event.sh`, over HA's calendars endpoint and WebSocket API, because the service catalog cannot list an event's uid or delete one) and an HA automation bridges each firing to the same voice announce endpoint, with optional insistent repetition until acknowledged.
 
 ### Voice Satellites
 

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
@@ -16,11 +17,15 @@ namespace Tests.Eval.Fixtures;
 public class FakeHomeAssistantTests
 {
     [Fact]
-    public async Task TheAlarmsCalendar_OffersCreateEvent_AsAnActionFile()
+    public async Task TheAlarmsCalendar_OffersCreateListAndDelete_AsActionFiles()
     {
         var files = await Mount().GlobAsync(Relative("/ha/entities/calendar"), "**", CancellationToken.None);
 
-        Paths(files).ShouldContain(Relative(FakeHomeAssistant.AlarmsDirectory) + "/create_event.sh");
+        var directory = Relative(FakeHomeAssistant.AlarmsDirectory);
+        Paths(files).ShouldContain(directory + "/create_event.sh");
+        Paths(files).ShouldContain(directory + "/get_events.sh");
+        Paths(files).ShouldContain(directory + "/delete_event.sh");
+        Paths(files).ShouldNotContain(directory + "/update_event.sh");
     }
 
     [Fact]
@@ -45,8 +50,9 @@ public class FakeHomeAssistantTests
     public async Task CreatingAnEvent_ReachesTheCalendar_WithTheArgumentsTheAgentWrote()
     {
         var home = new FakeHomeAssistant();
+        await using var socket = await Socket(home);
 
-        var result = await Mount(home).ExecAsync(
+        var result = await Mount(home, socket: socket).ExecAsync(
             Relative(FakeHomeAssistant.AlarmsDirectory),
             """create_event.sh --summary "Levántate" --start_date_time "2026-08-18 07:00:00" """,
             timeoutSeconds: null, CancellationToken.None);
@@ -57,7 +63,45 @@ public class FakeHomeAssistantTests
         call.Service.ShouldBe("create_event");
         call.EntityId.ShouldBe(FakeHomeAssistant.AlarmsEntityId);
         call.Data["summary"]!.GetValue<string>().ShouldBe("Levántate");
-        call.Data["start_date_time"]!.GetValue<string>().ShouldBe("2026-08-18 07:00:00");
+        call.Data["dtstart"]!.GetValue<string>().ShouldBe("2026-08-18 07:00:00");
+        home.Snapshot()[FakeHomeAssistant.AlarmsEventCountKey].ShouldBe("2");
+    }
+
+    // The seeded alarm is listed with the uid the cancel scenario expects back — a uid is only
+    // knowable from this listing, which is what makes "list, then delete" falsifiable.
+    [Fact]
+    public async Task ListingTheCalendar_ReturnsTheSeededAlarm_WithItsUid()
+    {
+        var home = new FakeHomeAssistant();
+
+        var result = await Mount(home).ExecAsync(
+            Relative(FakeHomeAssistant.AlarmsDirectory), "get_events.sh --days 30",
+            timeoutSeconds: null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        var alarm = JsonNode.Parse(exec.Stdout)!["events"]!.AsArray().ShouldHaveSingleItem()!;
+        alarm["uid"]!.GetValue<string>().ShouldBe(FakeHomeAssistant.TrashAlarmUid);
+        alarm["summary"]!.GetValue<string>().ShouldBe(FakeHomeAssistant.TrashAlarmSummary);
+        home.Calls.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DeletingByUid_RemovesTheAlarm_AndTheSnapshotShowsIt()
+    {
+        var home = new FakeHomeAssistant();
+        await using var socket = await Socket(home);
+
+        var result = await Mount(home, socket: socket).ExecAsync(
+            Relative(FakeHomeAssistant.AlarmsDirectory),
+            $"delete_event.sh --uid {FakeHomeAssistant.TrashAlarmUid}",
+            timeoutSeconds: null, CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
+        var call = home.Calls.ShouldHaveSingleItem();
+        call.Service.ShouldBe("delete_event");
+        call.Data["uid"]!.GetValue<string>().ShouldBe(FakeHomeAssistant.TrashAlarmUid);
+        home.Snapshot()[FakeHomeAssistant.AlarmsEventCountKey].ShouldBe("0");
     }
 
     [Fact]
@@ -233,21 +277,34 @@ public class FakeHomeAssistantTests
         home.StateOf(FakeHomeAssistant.VacuumEntityId).ShouldBe("cleaning");
     }
 
+    // The websocket side of the home, wired the way the stack wires it: the same calendar store,
+    // and every mutation recorded beside the REST calls.
+    private static async Task<FakeHomeAssistantSocket> Socket(FakeHomeAssistant home)
+    {
+        var socket = await FakeHomeAssistantSocket.StartAsync(home.Calendar, FakeHomeAssistant.Token);
+        socket.Recorder = home.Record;
+        return socket;
+    }
+
     private static HaFileSystem Mount(
-        FakeHomeAssistant? home = null, FakeMusicAssistantServer? music = null)
+        FakeHomeAssistant? home = null, FakeMusicAssistantServer? music = null, FakeHomeAssistantSocket? socket = null)
     {
         var fake = home ?? new FakeHomeAssistant();
         IHomeAssistantClient client() => new HomeAssistantClient(
-            new HttpClient(fake) { BaseAddress = new Uri("http://home-assistant.eval/") },
+            new HttpClient(fake) { BaseAddress = new Uri(socket?.BaseUrl ?? "http://home-assistant.eval") },
             FakeHomeAssistant.Token);
 
         // The podcast action exists only where Music Assistant does, in the mount as in the
-        // deployment: no music server, no extra service, no action file.
+        // deployment: no music server, no extra service, no action file. The calendar's actions
+        // are always there, as they are in the deployment.
         IMusicAssistantClient musicClient() =>
             new MusicAssistantClient(music!.BaseUrl, FakeMusicAssistantServer.ValidToken);
+        IReadOnlyList<HaServiceDefinition> served = music is null
+            ? HaCalendarActions.All
+            : [.. HaCalendarActions.All, HaMusicActions.PodcastEpisodes];
 
         return new HaFileSystem(
-            new HaCatalogProvider(client, extraServices: music is null ? null : [HaMusicActions.PodcastEpisodes]),
+            new HaCatalogProvider(client, extraServices: served),
             client,
             musicClientFactory: music is null ? null : musicClient);
     }

@@ -89,6 +89,13 @@ public sealed partial class HaFileSystem
                 return done(code, output, error);
             }
 
+            // Served here too: the calendar's service catalog cannot list uids or delete at all.
+            if (HaCalendarActions.IsCalendarAction(svc))
+            {
+                var (code, output, error) = await HaCalendarEvents.RunAsync(clientFactory(), svc, entityId, data, _time, effectiveCt);
+                return done(code, output, error);
+            }
+
             IReadOnlyDictionary<string, JsonNode?> payload = data.ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.DeepClone());
             var result = await clientFactory().CallServiceAsync(svc.Domain, svc.Service, entityId, payload, effectiveCt);
             var changed = new JsonArray(result.ChangedEntities
@@ -153,8 +160,11 @@ public sealed partial class HaFileSystem
             Cwd = cwd
         });
 
-    // Minimal shell tokeniser: whitespace-split, honouring single and double quotes so JSON
-    // object values like --advanced '{"eco":true}' survive as one token.
+    // Minimal shell tokeniser with bash's quoting rules: whitespace-split; single quotes keep
+    // everything literal; double quotes honour `\"` and `\\` (and keep the backslash before any
+    // other character); an unquoted backslash escapes the next character. A model writes a JSON
+    // argument as `--description "{\"target\":…}"`, and without the escapes Home Assistant stored
+    // `{\target\:…}` — an alarm whose target nothing could parse.
     private static List<string> ShellTokenize(string command)
     {
         var tokens = new List<string>();
@@ -162,14 +172,29 @@ public sealed partial class HaFileSystem
         var quote = '\0';
         var has = false;
 
-        foreach (var c in command)
+        for (var i = 0; i < command.Length; i++)
         {
-            if (quote != '\0')
+            var c = command[i];
+            if (quote == '\'')
             {
-                if (c == quote)
+                if (c == '\'')
                 { quote = '\0'; }
                 else
                 { current.Append(c); }
+            }
+            else if (quote == '"')
+            {
+                if (c == '"')
+                { quote = '\0'; }
+                else if (c == '\\' && i + 1 < command.Length && command[i + 1] is '"' or '\\')
+                { current.Append(command[++i]); }
+                else
+                { current.Append(c); }
+            }
+            else if (c == '\\' && i + 1 < command.Length)
+            {
+                current.Append(command[++i]);
+                has = true;
             }
             else if (c is '\'' or '"')
             {

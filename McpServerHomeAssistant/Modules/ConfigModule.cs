@@ -25,11 +25,17 @@ public static class ConfigModule
                 services.AddMusicAssistantClient(music!.BaseUrl, music.Token);
             }
 
+            // The calendar's actions are always served here: Home Assistant's own catalog cannot list
+            // an event's uid or delete one, and the replacement needs nothing beyond the HA token.
+            IReadOnlyList<HaServiceDefinition> served = musicConfigured
+                ? [.. HaCalendarActions.All, HaMusicActions.PodcastEpisodes]
+                : HaCalendarActions.All;
+
             services
                 .AddHomeAssistantClient(settings.HomeAssistant.BaseUrl, settings.HomeAssistant.Token)
                 .AddSingleton(sp => new HaCatalogProvider(
                     sp.GetRequiredService<IHomeAssistantClient>,
-                    extraServices: musicConfigured ? [HaMusicActions.PodcastEpisodes] : null))
+                    extraServices: served))
                 .AddSingleton(sp => new HaFileSystem(
                     sp.GetRequiredService<HaCatalogProvider>(),
                     sp.GetRequiredService<IHomeAssistantClient>,
