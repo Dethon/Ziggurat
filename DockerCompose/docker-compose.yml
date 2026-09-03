@@ -36,7 +36,7 @@ services:
       - jackbot
 
   qbittorrent:
-    image: qbittorrentofficial/qbittorrent-nox:5.1.2-2
+    image: qbittorrentofficial/qbittorrent-nox:latest
     logging:
       options:
         max-size: "5m"
@@ -118,7 +118,7 @@ services:
       - jackbot
 
   jackett:
-    image: lscr.io/linuxserver/jackett:0.24.306
+    image: lscr.io/linuxserver/jackett:latest
     ulimits:
       nofile:
         soft: 65536
@@ -163,7 +163,7 @@ services:
   #    restart: unless-stopped
 
   plex:
-    image: lscr.io/linuxserver/plex:1.42.1
+    image: lscr.io/linuxserver/plex:latest
     logging:
       options:
         max-size: "5m"
