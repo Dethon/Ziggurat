@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -100,11 +101,20 @@ public static class Judge
                 """;
     }
 
+    // One retry, then a loud failure. The transient shapes worth absorbing are a non-200 and a
+    // malformed body; anything past two attempts is an outage the run should report. A 429 is
+    // not one of those: the judge runs beside k-of-N runs on the same key, so a rate limit here
+    // is a scheduling fact, not an outage, and it gets its own budget — waited out for as long
+    // as the provider asked, or seconds growing when it did not say.
+    private const int Attempts = 2;
+    private const int RateLimitAttempts = 4;
+    private static readonly TimeSpan _rateLimitDelay = TimeSpan.FromSeconds(2);
+
     private static async Task<Verdict?> AskAsync(HttpClient client, string material)
     {
-        // One retry, then a loud failure. The transient shapes worth absorbing are a non-200 and
-        // a malformed body; anything past two attempts is an outage the run should report.
-        foreach (var _ in Enumerable.Range(0, 2))
+        var misses = 0;
+        var rateLimited = 0;
+        while (misses < Attempts)
         {
             try
             {
@@ -119,8 +129,16 @@ public static class Judge
 
                 using var response = await client.PostAsync("chat/completions",
                     new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"));
+                if (response.StatusCode == HttpStatusCode.TooManyRequests && rateLimited < RateLimitAttempts)
+                {
+                    rateLimited++;
+                    await Task.Delay(response.Headers.RetryAfter?.Delta ?? _rateLimitDelay * rateLimited);
+                    continue;
+                }
+
                 if (!response.IsSuccessStatusCode)
                 {
+                    misses++;
                     continue;
                 }
 
@@ -135,12 +153,15 @@ public static class Judge
                 {
                     return verdict;
                 }
+
+                misses++;
             }
             catch (Exception exception) when (
                 exception is HttpRequestException or JsonException
                     or KeyNotFoundException or InvalidOperationException)
             {
                 // Fall through to the retry; the second miss returns null and fails loudly.
+                misses++;
             }
         }
 

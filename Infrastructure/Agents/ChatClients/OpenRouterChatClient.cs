@@ -252,12 +252,10 @@ public sealed class OpenRouterChatClient : IChatClient
             Endpoint = new Uri(endpoint),
             Transport = transport
         };
-        // The SDK's default (three retries with backoff) is right for a hosted provider and wrong
-        // for a host that must never see a turn twice; unset keeps the default.
-        if (maxRetries is { } retries)
-        {
-            options.RetryPolicy = new ClientRetryPolicy(retries);
-        }
+        // Unset is the hosted default: the SDK's budget and backoff for transient failures, and a
+        // longer, provider-hinted one for a 429 (OpenRouterRetryPolicy). Zero is for a host that
+        // must never see a turn twice.
+        options.RetryPolicy = new OpenRouterRetryPolicy(maxRetries ?? OpenRouterRetryPolicy.DefaultMaxRetries);
 
         return new ResponsesClient(new ApiKeyCredential(apiKey), options)
             .AsIChatClient(model);
