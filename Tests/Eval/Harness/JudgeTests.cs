@@ -187,7 +187,20 @@ public class JudgeTests
 
     // OpenRouter's chat/completions shape with one canned assistant message, recording every
     // request body it was sent.
-    private sealed class CannedJudge(string verdict) : HttpMessageHandler
+    [Fact]
+    public async Task FailuresAsync_RateLimitedThreeTimesThenAnswered_UsesTheVerdict()
+    {
+        var check = new JudgedCheck("web.steps-are-not-reported", "Judge whether the reply narrates steps.");
+        var transport = new CannedJudge(
+            """{"pass": false, "reason": "the reply lists the clicks"}""", rateLimitedResponses: 3);
+
+        var failures = await Judge.FailuresAsync(TheScenario(check), TheRecording(), "key", transport);
+
+        failures.ShouldHaveSingleItem().ShouldContain("the reply lists the clicks");
+        transport.Requests.Count.ShouldBe(4);
+    }
+
+    private sealed class CannedJudge(string verdict, int rateLimitedResponses = 0) : HttpMessageHandler
     {
         public List<string> Requests { get; } = [];
 
@@ -195,6 +208,14 @@ public class JudgeTests
             HttpRequestMessage request, CancellationToken ct)
         {
             Requests.Add(await request.Content!.ReadAsStringAsync(ct));
+            if (Requests.Count <= rateLimitedResponses)
+            {
+                // Retry-After: 0 keeps the test instant while exercising the provider-hint path.
+                var limited = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+                limited.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.Zero);
+                return limited;
+            }
+
             var body = new
             {
                 choices = new[] { new { message = new { content = verdict } } }

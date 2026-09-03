@@ -50,6 +50,15 @@ a turn. Each takes either a bare number (OpenRouter's shorthand for the p50 cuto
 ceiling that excludes. Cutoffs are guarded non-negative and finite at bind time, because a
 negative one is otherwise silent — it deprioritizes nothing and excludes nobody.
 
+**A 429 is waited out, not treated as a blip.** `OpenRouterRetryPolicy` replaces the SDK's stock
+`ClientRetryPolicy` on every `OpenRouterChatClient` pipeline: transient statuses keep the SDK's
+budget and sub-second backoff, but a 429 gets its own — six retries, `Retry-After` verbatim when the
+provider sent one, otherwise 2s doubling with jitter up to 30s. A burst of parallel tests or
+scheduled agents on one key hits per-key and per-provider windows that a 0.8s/1.6s/3.2s ladder cannot
+outlast. `maxRetries: 0` disables everything, the rate-limited case included. A 429 that arrives
+mid-stream (an SSE error event on a 200) is not retried by anything. The eval judge, on its own
+raw `HttpClient`, waits the same way for up to four rate-limited answers.
+
 **A Lemonade turn is not an OpenRouter turn.** A config patch naming a `lemonade/<id>` model
 (`LemonadeModelId`) is routed by `HostRoutingChatClient` to `LemonadeChatClient`, which rides the
 same Responses pipeline pointed at the Lemonade chat host with `providerRouting: null`, so no

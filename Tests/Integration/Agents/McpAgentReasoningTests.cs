@@ -31,9 +31,14 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
     // flag stopped reaching the wire, not that the router picked somewhere else this morning.
     private const string PinnedModel = "deepseek/deepseek-v4-flash-0731";
 
-    // `only` rather than `order`, per the routing rule: order disables sticky routing, and a
-    // single-entry `only` pins the endpoint without paying for it.
-    private static readonly ProviderRouting _pinnedProvider = new() { Only = ["deepinfra"] };
+    // `only` rather than `order`, per the routing rule: order disables sticky routing, and `only`
+    // pins the endpoint set without paying for it. Three rather than one, because a lone pin has
+    // no fallback: DeepInfra's shared pool for this model went `engine_overloaded` for longer than
+    // the client's whole 429 ladder (2026-09-03), and a provider outage is not what this test is
+    // about. Each of these was checked by hand to honour `reasoning.effort: none` on the Responses
+    // wire; DeepSeek's own endpoint is not here because the account's training guardrail excludes
+    // it.
+    private static readonly ProviderRouting _pinnedProvider = new() { Only = ["deepinfra", "novita", "parasail"] };
 
     private static (string apiUrl, string apiKey, string model) GetConfig()
     {
