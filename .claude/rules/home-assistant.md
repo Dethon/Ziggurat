@@ -61,9 +61,13 @@ and keeps it off the per-class lines. `HaHistory` runs it through `IHomeAssistan
 ListHistoryAsync` (asked with `minimal_response&no_attributes`, so a change is state plus
 instant). Window strings cross as written (naive = HA's zone), like the calendar's; the shared
 arithmetic is `HaDateTimeText`. Plain listing keeps the latest `--limit` changes; `--every N`
-buckets numeric states per N minutes (min/max/mean/last/samples), clock-aligned, and is an
-argument error on an entity with no numeric state. What comes back is bounded by the recorder's
-retention (10 days by default). See `docs/adr/0037`.
+buckets numeric states per N minutes (min/max/mean/last/samples), aligned to the clock of the
+changes' own offset (a day bucket opens at the home's midnight, not UTC's), and is an argument
+error on an entity with no numeric state. The first entry is the state at the window's start,
+stamped there (pinned by `HomeAssistantClientHistoryStartTests` against the real recorder). What
+comes back is bounded by the recorder's retention (10 days by default, 90 on prod); nothing in
+the API says which, so the help and the empty answer say "unless this home raised it" rather
+than naming a bound the model would treat as fact. See `docs/adr/0037`.
 
 **`statistics.sh` is the read that outlives retention.** Long-term statistics (hourly mean/min/max,
 or state/sum/change for a total) are WebSocket-only (`recorder/statistics_during_period`), compiled

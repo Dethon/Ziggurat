@@ -21,10 +21,12 @@ public static class HaHistoryActions
         Service = Service,
         AppliesToEveryEntity = true,
         Description =
-            "Lists this entity's recorded state changes over a window (Home Assistant keeps them for "
-            + $"its recorder's retention, 10 days by default). With no arguments, the last {DefaultHours} "
-            + "hours ending now, every change listed. A value that changes every minute makes a long "
-            + "list: pass --every to get min/max/mean/last per bucket instead (numeric states only).",
+            "Lists this entity's recorded state changes over a window. The first entry is the state the "
+            + "entity had when the window opened, stamped at the window's start; the rest are the changes "
+            + "inside it. Home Assistant keeps them only for its recorder's retention (10 days unless this "
+            + $"home raised it). With no arguments, the last {DefaultHours} hours ending now, every change "
+            + "listed. A value that changes every minute makes a long list: pass --every to get "
+            + "min/max/mean/last per bucket instead (numeric states only).",
         Fields = new Dictionary<string, HaServiceField>
         {
             ["hours"] = new()

@@ -77,16 +77,19 @@ public static class HomeAssistantPrompt
         ### History
 
         Every entity directory, read-only classes included, also has `history.sh`: the recorded
-        state changes over a window (Home Assistant keeps them for its recorder's retention, 10
-        days by default). Any question about the past or a trend — "how was her glucose
-        overnight", "when did the door last open", "has the temperature been climbing" — is
-        answered from it, never from `state.json` (one value) and never by reading it again and
-        again. No arguments = the last 24 hours ending now, every change listed; `--hours N`
-        widens or narrows that, and `--start_date_time`/`--end_date_time` (local wall-clock,
-        as for alarms) set an exact window. A value that changes every minute makes a long
-        list: pass `--every <minutes>` to get min/max/mean/last per bucket instead (numeric
-        states only) — the right call for a whole day. The instants in the output carry their
-        UTC offset; say them in the user's local time.
+        state changes over a window. Any question about the past or a trend — "how was her
+        glucose overnight", "when did the door last open", "has the temperature been climbing"
+        — is answered from it, never from `state.json` (one value) and never by reading it
+        again and again. No arguments = the last 24 hours ending now, every change listed;
+        `--hours N` widens or narrows that, and `--start_date_time`/`--end_date_time` (local
+        wall-clock, as for alarms) set an exact window. The first entry is the state at the
+        window's start, not a change. Home Assistant keeps history only for its recorder's
+        retention (10 days unless this home raised it, and nothing tells you which): an empty
+        window means nothing was recorded in it, so widen it or try a nearer one before saying
+        the past is gone. A value that changes every minute makes a long list: pass `--every
+        <minutes>` to get min/max/mean/last per bucket instead (numeric states only) — the
+        right call for a whole day. The instants in the output carry their UTC offset; say them
+        in the user's local time.
 
         Sensors whose `state.json` carries a `state_class` (the setup index's `every entity with
         state_class` line) also have `statistics.sh`: Home Assistant's own hourly mean/min/max

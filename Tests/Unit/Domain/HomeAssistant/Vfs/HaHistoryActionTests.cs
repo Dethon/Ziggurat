@@ -210,6 +210,29 @@ public class HaHistoryActionTests
         payload.ContainsKey("changes").ShouldBeFalse();
     }
 
+    // The instants carry the home's offset, and the buckets follow it: a day bucket runs from the
+    // home's midnight, not UTC's, and its stamp keeps the same offset the changes have.
+    [Fact]
+    public async Task Every_AlignsBucketsToTheChangesOwnOffset()
+    {
+        var fs = Build(out var client);
+        client.History.AddRange([
+            Change("100", "2026-09-03T23:30:00+02:00"),
+            Change("110", "2026-09-04T01:00:00+02:00"),
+            Change("120", "2026-09-04T13:00:00+02:00")
+        ]);
+
+        var exec = await Exec(fs, "history.sh --every 1440");
+
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        var buckets = JsonNode.Parse(exec.Stdout)!["buckets"]!.AsArray();
+        buckets.Count.ShouldBe(2);
+        buckets[0]!["at"]!.GetValue<string>().ShouldBe("2026-09-03T00:00:00+02:00");
+        buckets[0]!["samples"]!.GetValue<int>().ShouldBe(1);
+        buckets[1]!["at"]!.GetValue<string>().ShouldBe("2026-09-04T00:00:00+02:00");
+        buckets[1]!["samples"]!.GetValue<int>().ShouldBe(2);
+    }
+
     [Fact]
     public async Task Every_OnAnEntityWithNoNumericStates_IsABadArgument()
     {
