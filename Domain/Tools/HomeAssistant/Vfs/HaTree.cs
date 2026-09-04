@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
@@ -29,26 +30,27 @@ public static class HaTree
         foreach (var e in catalog.Entities)
         {
             var entDir = $"entities/{HaCatalog.ClassOf(e.EntityId)}/{HaSlug.Compose(HaCatalog.ObjectOf(e.EntityId), HaCatalog.FriendlyName(e))}";
-            files.AddRange(LeafFiles(entDir, e.EntityId, catalog));
+            files.AddRange(LeafFiles(entDir, e, catalog));
         }
 
         foreach (var area in catalog.AreaSlugs())
         {
             foreach (var id in catalog.EntityIdsInArea(area))
             {
-                var entDir = $"areas/{area}/{HaSlug.Compose(id, HaCatalog.FriendlyName(catalog.EntityById(id)))}";
-                files.AddRange(LeafFiles(entDir, id, catalog));
+                var entity = catalog.EntityById(id)!;
+                var entDir = $"areas/{area}/{HaSlug.Compose(id, HaCatalog.FriendlyName(entity))}";
+                files.AddRange(LeafFiles(entDir, entity, catalog));
             }
         }
 
         return files.OrderBy(f => f, StringComparer.Ordinal).ToList();
     }
 
-    private static IEnumerable<string> LeafFiles(string entityDir, string entityId, HaCatalog catalog)
+    private static IEnumerable<string> LeafFiles(string entityDir, HaEntityState entity, HaCatalog catalog)
     {
         yield return $"{entityDir}/{HaVfsPath.StateFileName}";
-        var classDomain = HaCatalog.ClassOf(entityId);
-        foreach (var svc in HaActionResolver.ServicesFor(entityId, catalog.Services))
+        var classDomain = HaCatalog.ClassOf(entity.EntityId);
+        foreach (var svc in HaActionResolver.ServicesFor(entity, catalog.Services))
         {
             yield return $"{entityDir}/{HaActionResolver.CommandName(svc, classDomain)}.sh";
         }

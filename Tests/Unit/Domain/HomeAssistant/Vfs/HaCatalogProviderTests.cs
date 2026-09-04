@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.Tools.HomeAssistant.Vfs;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using static Tests.Unit.Domain.HomeAssistant.Vfs.FakeHaClient;
@@ -49,6 +50,58 @@ public class HaCatalogProviderTests
 
         catalog.Services.Count.ShouldBe(2);
         catalog.Services.Single(s => s.Service == "create_event").Fields.Keys.ShouldContain("rrule");
+    }
+
+    // The recorder stamps history in UTC, so the home's own clock has to come from its
+    // configuration; the catalog carries it, resolved to a zone this runtime knows.
+    [Fact]
+    public async Task GetAsync_CarriesTheHomesTimeZone()
+    {
+        var client = new FakeHaClient { TimeZone = "Europe/Madrid" };
+        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
+
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.HomeZone.ShouldNotBeNull().Id.ShouldBe("Europe/Madrid");
+    }
+
+    // A zone this runtime cannot resolve, or a config read that fails, leaves the zone unknown
+    // rather than blanking the catalog: the mount stays usable and the summary buckets on UTC. It
+    // is said once in the log, because otherwise the only trace is a `bucket_zone: UTC` in a payload.
+    [Theory]
+    [InlineData("Nowhere/Nowhere", false)]
+    [InlineData(null, false)]
+    [InlineData("Europe/Madrid", true)]
+    public async Task GetAsync_AnUnknownOrUnreadableZone_LeavesItNull_KeepsTheCatalog_AndWarns(string? zone, bool fails)
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("light.kitchen", "off") },
+            TimeZone = zone,
+            TimeZoneFailure = fails ? new HttpRequestException("config unreachable") : null
+        };
+        var log = new CapturingLoggerProvider(LogLevel.Warning);
+        var provider = new HaCatalogProvider(
+            () => client, new FakeTimeProvider(), logger: new Logger<HaCatalogProvider>(new LoggerFactory([log])));
+
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.Entities.Count.ShouldBe(1);
+        catalog.HomeZone.ShouldBeNull();
+        log.Messages.ShouldHaveSingleItem().ShouldContain("UTC");
+    }
+
+    [Fact]
+    public async Task GetAsync_AResolvedZone_WarnsOfNothing()
+    {
+        var client = new FakeHaClient { States = { Entity("light.kitchen", "off") }, TimeZone = "Europe/Madrid" };
+        var log = new CapturingLoggerProvider(LogLevel.Warning);
+        var provider = new HaCatalogProvider(
+            () => client, new FakeTimeProvider(), logger: new Logger<HaCatalogProvider>(new LoggerFactory([log])));
+
+        await provider.GetAsync(CancellationToken.None);
+
+        log.Messages.ShouldBeEmpty();
     }
 
     [Fact]

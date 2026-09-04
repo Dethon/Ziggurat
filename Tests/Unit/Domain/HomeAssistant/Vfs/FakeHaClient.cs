@@ -37,6 +37,13 @@ public class FakeHaClient : IHomeAssistantClient
     public virtual Task<string> RenderTemplateAsync(string template, CancellationToken ct = default)
         => Task.FromResult(AreaTemplateJson);
 
+    // The home's configured zone, as `GET /api/config` names it; null when the fake home has none.
+    public string? TimeZone { get; set; }
+    public Exception? TimeZoneFailure { get; set; }
+
+    public virtual Task<string?> GetTimeZoneAsync(CancellationToken ct = default)
+        => TimeZoneFailure is null ? Task.FromResult(TimeZone) : Task.FromException<string?>(TimeZoneFailure);
+
     // The calendar side: what the listing answers, and what was created or deleted through it.
     public List<HaCalendarEvent> CalendarEvents { get; init; } = [];
     public (string EntityId, string Start, string End)? LastCalendarWindow { get; private set; }
@@ -73,6 +80,33 @@ public class FakeHaClient : IHomeAssistantClient
         }
         DeletedEvents.Add((entityId, uid, recurrenceId, recurrenceRange));
         return Task.CompletedTask;
+    }
+
+    // The recorder side: what the history read answers, and the window it was asked for.
+    public List<HaStateChange> History { get; init; } = [];
+    public (string EntityId, string Start, string End)? LastHistoryWindow { get; private set; }
+    public Exception? HistoryFailure { get; set; }
+
+    public virtual Task<IReadOnlyList<HaStateChange>> ListHistoryAsync(
+        string entityId, string start, string end, CancellationToken ct = default)
+    {
+        LastHistoryWindow = (entityId, start, end);
+        return HistoryFailure is null
+            ? Task.FromResult<IReadOnlyList<HaStateChange>>(History)
+            : Task.FromException<IReadOnlyList<HaStateChange>>(HistoryFailure);
+    }
+
+    public List<HaStatisticsRow> Statistics { get; init; } = [];
+    public (string EntityId, string Start, string End, string Period)? LastStatisticsWindow { get; private set; }
+    public Exception? StatisticsFailure { get; set; }
+
+    public virtual Task<IReadOnlyList<HaStatisticsRow>> ListStatisticsAsync(
+        string entityId, string start, string end, string period, CancellationToken ct = default)
+    {
+        LastStatisticsWindow = (entityId, start, end, period);
+        return StatisticsFailure is null
+            ? Task.FromResult<IReadOnlyList<HaStatisticsRow>>(Statistics)
+            : Task.FromException<IReadOnlyList<HaStatisticsRow>>(StatisticsFailure);
     }
 
     public static HaEntityState Entity(string id, string state, params (string Key, JsonNode? Value)[] attrs) => new()

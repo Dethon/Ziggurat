@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Tools.HomeAssistant.Vfs;
 using Shouldly;
@@ -19,7 +20,7 @@ public class HaActionResolverTests
     [Fact]
     public void ServicesFor_ReturnsClassDomainTargetedServices_Sorted()
     {
-        var result = HaActionResolver.ServicesFor("light.kitchen", _services)
+        var result = HaActionResolver.ServicesFor(Entity("light.kitchen", "off"), _services)
             .Select(s => s.Service).ToList();
         result.ShouldBe(["toggle", "turn_on"]);
     }
@@ -28,7 +29,7 @@ public class HaActionResolverTests
     public void ServicesFor_ReadOnlyEntity_ReturnsEmpty()
     {
         // sensor has no class-domain entity-targeted services here.
-        HaActionResolver.ServicesFor("sensor.salon_temp", _services).ShouldBeEmpty();
+        HaActionResolver.ServicesFor(Entity("sensor.salon_temp", "off"), _services).ShouldBeEmpty();
     }
 
     [Fact]
@@ -45,11 +46,74 @@ public class HaActionResolverTests
             Service("homeassistant", "turn_on", AnyEntityTarget())
         };
 
-        var names = HaActionResolver.ServicesFor("media_player.office", services)
+        var names = HaActionResolver.ServicesFor(Entity("media_player.office", "off"), services)
             .Select(s => HaActionResolver.CommandName(s, "media_player")).ToList();
 
         names.ShouldContain("music_assistant.play_media");
         names.ShouldContain("play_media");
         names.ShouldNotContain("turn_on");
+    }
+}
+public class HaActionResolverEveryEntityTests
+{
+    private static readonly HaServiceDefinition _history = new()
+    {
+        Domain = "homeassistant",
+        Service = "history",
+        AppliesToEveryEntity = true
+    };
+
+    // The generic `homeassistant.*` services are kept out of every directory because their target
+    // accepts anything; an action that declares itself for every entity is the one exception, and
+    // it reaches the read-only classes too.
+    [Fact]
+    public void ServicesFor_AnEveryEntityAction_AppearsInEveryClass_UnderItsBareName()
+    {
+        List<HaServiceDefinition> services =
+        [
+            Service("light", "turn_on", DomainTarget("light")),
+            Service("homeassistant", "restart", null),
+            _history
+        ];
+
+        HaActionResolver.ServicesFor(Entity("sensor.glucose", "off"), services).ShouldBe([_history]);
+        HaActionResolver.ServicesFor(Entity("light.kitchen", "off"), services)
+            .Select(s => HaActionResolver.CommandName(s, "light"))
+            .ShouldBe(["history", "turn_on"]);
+    }
+}
+public class HaActionResolverRequiredAttributeTests
+{
+    private static readonly HaServiceDefinition _statistics = new()
+    {
+        Domain = "homeassistant",
+        Service = "statistics",
+        AppliesToEveryEntity = true,
+        RequiresAttribute = "state_class"
+    };
+
+    // Long-term statistics exist only for a sensor whose state carries a state_class, so the action
+    // that reads them is offered to exactly those — an every-entity action narrowed by attribute.
+    [Fact]
+    public void ServicesFor_ARequiredAttribute_AdmitsOnlyTheEntitiesCarryingIt()
+    {
+        List<HaServiceDefinition> services = [_statistics];
+        var measured = Entity("sensor.temperature", "21", ("state_class", JsonValue.Create("measurement")));
+        var bare = Entity("sensor.glucose", "94");
+        var light = Entity("light.kitchen", "off", ("state_class", JsonValue.Create("measurement")));
+
+        HaActionResolver.ServicesFor(measured, services).ShouldBe([_statistics]);
+        HaActionResolver.ServicesFor(bare, services).ShouldBeEmpty();
+        HaActionResolver.ServicesFor(light, services).ShouldBe([_statistics]);
+        HaActionResolver.CommandName(_statistics, "sensor").ShouldBe("statistics");
+    }
+
+    // Carrying the attribute means having a value for it: a `state_class: null` is no state_class.
+    [Fact]
+    public void ServicesFor_ARequiredAttributeWithANullValue_DoesNotCount()
+    {
+        var nulled = Entity("sensor.glucose", "94", ("state_class", null));
+
+        HaActionResolver.ServicesFor(nulled, [_statistics]).ShouldBeEmpty();
     }
 }

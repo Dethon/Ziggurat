@@ -131,3 +131,52 @@ public class HomeAssistantSetupSummaryTests
     }
 
 }
+public class HomeAssistantSetupSummaryEveryEntityTests
+{
+    // Listing `history.sh` on every class line would put every read-only class into the table and
+    // say the same word once per class; the index says it once instead.
+    [Fact]
+    public async Task GetAsync_AnEveryEntityAction_IsAnnouncedOnce_NotPerClass()
+    {
+        var client = new FakeHaClient
+        {
+            States =
+            {
+                Entity("light.kitchen", "off"),
+                Entity("sensor.salon_temp", "21", ("state_class", JsonValue.Create("measurement")))
+            },
+            Services = { Service("light", "turn_on", DomainTarget("light")) }
+        };
+        var summary = new HomeAssistantSetupSummary(new HaCatalogProvider(
+            () => client, new FakeTimeProvider(),
+            extraServices: [HaHistoryActions.History, HaStatisticsActions.Statistics]));
+
+        var text = await summary.GetAsync(CancellationToken.None);
+
+        text.ShouldContain("every entity: history.sh\nevery entity with state_class: statistics.sh\n");
+        text.ShouldContain("light: turn_on.sh");
+        text.ShouldNotContain("light: history.sh");
+        text.ShouldNotContain("sensor: history.sh");
+        text.ShouldNotContain("sensor: statistics.sh");
+    }
+
+    // A narrowed action is announced only when some entity admits it: a home with no state_class
+    // sensor has no statistics.sh anywhere, and a line naming it would send the model looking.
+    [Fact]
+    public async Task GetAsync_ANarrowedActionNoEntityAdmits_IsNotAnnounced()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("light.kitchen", "off"), Entity("sensor.glucose", "94") },
+            Services = { Service("light", "turn_on", DomainTarget("light")) }
+        };
+        var summary = new HomeAssistantSetupSummary(new HaCatalogProvider(
+            () => client, new FakeTimeProvider(),
+            extraServices: [HaHistoryActions.History, HaStatisticsActions.Statistics]));
+
+        var text = await summary.GetAsync(CancellationToken.None);
+
+        text.ShouldContain("every entity: history.sh\n");
+        text.ShouldNotContain("statistics.sh");
+    }
+}

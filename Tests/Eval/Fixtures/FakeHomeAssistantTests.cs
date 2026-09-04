@@ -5,6 +5,7 @@ using Domain.DTOs.FileSystem;
 using Domain.Tools.HomeAssistant.Vfs;
 using Infrastructure.Clients.HomeAssistant;
 using Infrastructure.Clients.MusicAssistant;
+using McpServerHomeAssistant.Modules;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -26,6 +27,24 @@ public class FakeHomeAssistantTests
         Paths(files).ShouldContain(directory + "/get_events.sh");
         Paths(files).ShouldContain(directory + "/delete_event.sh");
         Paths(files).ShouldNotContain(directory + "/update_event.sh");
+    }
+
+    // The recorder's reads are served in the deployment whether or not Music Assistant is, so the
+    // fake mount serves them too: a scenario that asks about the past finds history.sh and gets the
+    // fake's honest empty window, not a missing file.
+    [Fact]
+    public async Task EveryEntityDirectory_ServesHistory_AsTheDeploymentDoes()
+    {
+        var home = new FakeHomeAssistant();
+        var files = await Mount(home).GlobAsync(Relative("/ha/entities/calendar"), "**", CancellationToken.None);
+        Paths(files).ShouldContain(Relative(FakeHomeAssistant.AlarmsDirectory) + "/history.sh");
+
+        var result = await Mount(home).ExecAsync(
+            Relative(FakeHomeAssistant.AlarmsDirectory), "history.sh", timeoutSeconds: null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        JsonNode.Parse(exec.Stdout)!["count"]!.GetValue<int>().ShouldBe(0);
     }
 
     [Fact]
@@ -294,17 +313,13 @@ public class FakeHomeAssistantTests
             new HttpClient(fake) { BaseAddress = new Uri(socket?.BaseUrl ?? "http://home-assistant.eval") },
             FakeHomeAssistant.Token);
 
-        // The podcast action exists only where Music Assistant does, in the mount as in the
-        // deployment: no music server, no extra service, no action file. The calendar's actions
-        // are always there, as they are in the deployment.
+        // The served actions are the deployment's own list, so the podcast action exists only
+        // where Music Assistant does and the calendar's and the recorder's are always there.
         IMusicAssistantClient musicClient() =>
             new MusicAssistantClient(music!.BaseUrl, FakeMusicAssistantServer.ValidToken);
-        IReadOnlyList<HaServiceDefinition> served = music is null
-            ? HaCalendarActions.All
-            : [.. HaCalendarActions.All, HaMusicActions.PodcastEpisodes];
 
         return new HaFileSystem(
-            new HaCatalogProvider(client, extraServices: served),
+            new HaCatalogProvider(client, extraServices: ConfigModule.ServedActions(musicConfigured: music is not null)),
             client,
             musicClientFactory: music is null ? null : musicClient);
     }

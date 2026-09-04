@@ -12,6 +12,11 @@ public sealed record HaCatalog(
 {
     public const string UnassignedArea = "unassigned";
 
+    // The home's clock, from its configuration; null when unread or unknown to this runtime. The
+    // recorder stamps history in UTC, so a summary that opens a day at the home's midnight reads
+    // the zone here rather than from the stamps.
+    public TimeZoneInfo? HomeZone { get; init; }
+
     public static HaCatalog Empty { get; } = new([], [], []);
 
     public IReadOnlyList<string> ClassDomains() => Entities

@@ -175,6 +175,76 @@ public class HomeAssistantClient(HttpClient httpClient, string token, TimeSpan? 
         return events.Select(ToCalendarEvent).ToList();
     }
 
+    // The recorder's one read. Asked minimally so the answer is state and instant per change and
+    // nothing else; the outer array holds one series per entity, so a filter on one entity yields
+    // one series, or none when the recorder never saw the entity.
+    public async Task<IReadOnlyList<HaStateChange>> ListHistoryAsync(
+        string entityId, string start, string end, CancellationToken ct = default)
+    {
+        var path = $"api/history/period/{Uri.EscapeDataString(start)}"
+                   + $"?filter_entity_id={Uri.EscapeDataString(entityId)}&end_time={Uri.EscapeDataString(end)}"
+                   + "&minimal_response&no_attributes";
+        using var request = NewRequest(HttpMethod.Get, path);
+        using var response = await httpClient.SendAsync(request, ct);
+        await EnsureOkAsync(response, ct);
+
+        var series = await response.Content.ReadFromJsonAsync<HaHistoryPointDto[][]>(_json, ct) ?? [];
+        return series
+            .SelectMany(points => points)
+            .Where(p => p.State is not null && p.LastChanged is not null)
+            .Select(p => new HaStateChange { State = p.State!, At = p.LastChanged!.Value })
+            .ToList();
+    }
+
+    // `GET /api/config` is the one place the home's zone is stated; the history endpoint never
+    // carries it, every stamp there is UTC.
+    public async Task<string?> GetTimeZoneAsync(CancellationToken ct = default)
+    {
+        using var request = NewRequest(HttpMethod.Get, "api/config");
+        using var response = await httpClient.SendAsync(request, ct);
+        await EnsureOkAsync(response, ct);
+
+        var config = await response.Content.ReadFromJsonAsync<JsonNode>(_json, ct);
+        return config?["time_zone"] is JsonValue value && value.TryGetValue<string>(out var zone)
+               && !string.IsNullOrWhiteSpace(zone)
+            ? zone
+            : null;
+    }
+
+    // Long-term statistics have no REST form. The command answers an object keyed by statistic id
+    // whose rows carry epoch-millisecond bounds and only the measures the sensor's kind has.
+    public async Task<IReadOnlyList<HaStatisticsRow>> ListStatisticsAsync(
+        string entityId, string start, string end, string period, CancellationToken ct = default)
+    {
+        var result = await SendCommandAsync(new JsonObject
+        {
+            ["type"] = "recorder/statistics_during_period",
+            ["start_time"] = start,
+            ["end_time"] = end,
+            ["statistic_ids"] = new JsonArray(entityId),
+            ["period"] = period
+        }, ct);
+
+        return result?[entityId] is JsonArray rows
+            ? rows.OfType<JsonObject>().Select(ToStatisticsRow).ToList()
+            : [];
+    }
+
+    private static HaStatisticsRow ToStatisticsRow(JsonObject row) => new()
+    {
+        Start = DateTimeOffset.FromUnixTimeMilliseconds(row["start"]!.GetValue<long>()),
+        End = DateTimeOffset.FromUnixTimeMilliseconds(row["end"]!.GetValue<long>()),
+        Mean = Number(row, "mean"),
+        Min = Number(row, "min"),
+        Max = Number(row, "max"),
+        State = Number(row, "state"),
+        Sum = Number(row, "sum"),
+        Change = Number(row, "change")
+    };
+
+    private static double? Number(JsonObject row, string name) =>
+        row[name] is JsonValue value && value.TryGetValue<double>(out var number) ? number : null;
+
     // Creating and deleting are WebSocket commands (`calendar/event/create`, `calendar/event/delete`);
     // the service catalog's create_event takes no recurrence rule and there is no delete service.
     public async Task CreateCalendarEventAsync(string entityId, HaCalendarEventDraft draft, CancellationToken ct = default)
@@ -456,5 +526,11 @@ public class HomeAssistantClient(HttpClient httpClient, string token, TimeSpan? 
         [JsonPropertyName("required")] public bool? Required { get; init; }
         [JsonPropertyName("example")] public JsonNode? Example { get; init; }
         [JsonPropertyName("selector")] public JsonNode? Selector { get; init; }
+    }
+
+    private sealed record HaHistoryPointDto
+    {
+        public string? State { get; init; }
+        public DateTimeOffset? LastChanged { get; init; }
     }
 }

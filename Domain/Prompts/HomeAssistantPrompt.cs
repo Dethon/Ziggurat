@@ -74,6 +74,31 @@ public static class HomeAssistantPrompt
         `stderr` in plain words; when your reply is read aloud, state success or failure in one
         short clause and never voice exit codes or `stderr` text.
 
+        ### History
+
+        Every entity directory, read-only classes included, also has `history.sh`: the recorded
+        state changes over a window. Any question about the past or a trend — "how was her
+        glucose overnight", "when did the door last open", "has the temperature been climbing"
+        — is answered from it, never from `state.json` (one value) and never by reading it
+        again and again. No arguments = the last 24 hours ending now, every change listed;
+        `--hours N` widens or narrows that, and `--start_date_time`/`--end_date_time` (local
+        wall-clock, as for alarms) set an exact window. The first entry is the state at the
+        window's start, not a change. Home Assistant keeps history only for its recorder's
+        retention (10 days unless this home raised it, and nothing tells you which): an empty
+        window means nothing was recorded in it, so widen it or try a nearer one before saying
+        the past is gone. A value that changes every minute makes a long list: pass `--every
+        <minutes>` to get min/max/mean/last per bucket instead (numeric states only) — the
+        right call for a whole day. The instants in the output carry their UTC offset; say them
+        in the user's local time.
+
+        Sensors whose `state.json` carries a `state_class` (the setup index's `every entity with
+        state_class` line) also have `statistics.sh`: Home Assistant's own hourly mean/min/max
+        (sum and change for a total such as energy), kept for good, so it is the file for
+        anything older than the recorder holds or coarser than a reading — "her average this
+        month", "how much energy last week". No arguments = the last 7 days by the hour;
+        `--days N` widens it and `--period day|week|month` coarsens it. Raw changes and the
+        last few days: `history.sh`; averages, extremes and the long run: `statistics.sh`.
+
         ### Alarms & reminders
 
         An alarm or reminder is an event on the **alarms calendar** — the `calendar` entity the
@@ -277,6 +302,10 @@ public static class HomeAssistantPrompt
         new("home.relative-seek-reads-the-position-first",
             "A rewind or skip-forward reads media_position and seeks to that value plus or minus the offset, never to a bare offset and never as a timer.");
 
+    public static readonly PromptClaim ThePastIsReadFromHistory =
+        new("home.past-is-read-from-history",
+            "A question about the past or a trend of a value is answered from history.sh's recorded changes or statistics.sh's compiled rows, never from state.json or repeated reads of it.");
+
     public static readonly PromptClaim AreaSlugIsReadNotDerived =
         new("home.area-slug-is-read-not-derived",
             "An area id passed to an action is the slug read from the setup index, never one derived from the display name.");
@@ -298,6 +327,7 @@ public static class HomeAssistantPrompt
         TheWebIsNoMediaFallback,
         RestartIsASeek,
         RelativeSeekReadsThePositionFirst,
-        AreaSlugIsReadNotDerived
+        AreaSlugIsReadNotDerived,
+        ThePastIsReadFromHistory
     ];
 }

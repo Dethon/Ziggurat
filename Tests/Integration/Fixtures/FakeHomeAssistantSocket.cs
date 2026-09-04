@@ -34,6 +34,13 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
     // Entities the fake refuses to touch, answering not_found the way HA does for an unknown id.
     public HashSet<string> KnownCalendars { get; } = [];
 
+    // The recorder's compiled rows per statistic id, in the shape the command answers them; an id
+    // with none is absent from the result, as it is in Home Assistant. The window is ignored.
+    public Dictionary<string, JsonArray> Statistics { get; } = [];
+    public StatisticsRequest? LastStatisticsRequest { get; private set; }
+
+    public sealed record StatisticsRequest(IReadOnlyList<string> StatisticIds, string Start, string End, string Period);
+
     private FakeHomeAssistantSocket(IHost host, string baseUrl, int port, string token, FakeCalendarStore calendar)
     {
         _host = host;
@@ -113,6 +120,10 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
         var type = request["type"]?.GetValue<string>() ?? "";
         var entityId = request["entity_id"]?.GetValue<string>() ?? "";
 
+        if (type == "recorder/statistics_during_period")
+        {
+            return StatisticsDuringPeriod(id, request);
+        }
         if (type is not ("calendar/event/create" or "calendar/event/delete"))
         {
             return Error(id, "unknown_command", $"Unknown command: {type}");
@@ -148,6 +159,29 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
                 Recorder?.Invoke("delete_event", entityId, payload);
                 return Result(id);
         }
+    }
+
+    private JsonObject StatisticsDuringPeriod(int id, JsonObject request)
+    {
+        var start = request["start_time"]?.GetValue<string>() ?? "";
+        var end = request["end_time"]?.GetValue<string>() ?? "";
+        var ids = request["statistic_ids"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
+        LastStatisticsRequest = new StatisticsRequest(ids, start, end, request["period"]?.GetValue<string>() ?? "");
+
+        // Home Assistant answers a start it cannot parse with this code; the client surfaces it.
+        if (!DateTimeOffset.TryParse(start, out _))
+        {
+            return Error(id, "invalid_start_time", "Invalid start_time");
+        }
+
+        var result = new JsonObject();
+        foreach (var statisticId in ids.Where(Statistics.ContainsKey))
+        {
+            result[statisticId] = Statistics[statisticId].DeepClone();
+        }
+        var frame = Result(id);
+        frame["result"] = result;
+        return frame;
     }
 
     private static JsonObject Result(int id) =>

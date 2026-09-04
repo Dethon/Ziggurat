@@ -15,6 +15,7 @@ namespace Tests.Eval.Fixtures;
 public sealed class FakeHomeAssistant : HttpMessageHandler
 {
     public const string Token = "eval-token";
+    public const string TimeZone = "Europe/Madrid";
 
     public const string AlarmsEntityId = "calendar.assistant_alarms";
 
@@ -182,6 +183,13 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
                 : new HttpResponseMessage(HttpStatusCode.NotFound);
         }
 
+        // The home's configuration: the one place its zone is stated. The fake home keeps Madrid
+        // time, the prod home's, so a summary's day buckets open where the scenarios expect.
+        if (request.Method == HttpMethod.Get && path.EndsWith("/api/config"))
+        {
+            return Json(new JsonObject { ["time_zone"] = TimeZone });
+        }
+
         if (request.Method == HttpMethod.Get && path.EndsWith("/api/services"))
         {
             return Json(HaServices.Catalog());
@@ -193,6 +201,13 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         {
             var id = Uri.UnescapeDataString(path[(path.LastIndexOf('/') + 1)..]);
             return Json(new JsonArray([.. Calendar.For(id).Select(e => e.ToApiJson())]));
+        }
+
+        // The recorder's read. The fake keeps no past, so every window is empty — a scenario about
+        // history needs a store of changes first.
+        if (request.Method == HttpMethod.Get && path.Contains("/api/history/period/"))
+        {
+            return Json(new JsonArray());
         }
 
         if (request.Method == HttpMethod.Post && path.EndsWith("/api/template"))

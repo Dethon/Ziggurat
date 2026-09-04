@@ -35,7 +35,7 @@ public sealed partial class HaFileSystem
         var tokens = ShellTokenize(command);
         var entityId = resolution.Entity.EntityId;
         var classDomain = HaCatalog.ClassOf(entityId);
-        var actions = HaActionResolver.ServicesFor(entityId, catalog.Services);
+        var actions = HaActionResolver.ServicesFor(resolution.Entity, catalog.Services);
         var available = string.Join(", ", actions.Select(a => $"{HaActionResolver.CommandName(a, classDomain)}.sh"));
 
         if (tokens.Count == 0)
@@ -82,6 +82,21 @@ public sealed partial class HaFileSystem
 
         try
         {
+            // Served here: the recorder has no service, only a REST read, and every entity has a past.
+            if (HaHistoryActions.IsHistory(svc))
+            {
+                var (code, output, error) = await HaHistory.RunAsync(
+                    clientFactory(), entityId, data, _time, catalog.HomeZone, effectiveCt);
+                return done(code, output, error);
+            }
+
+            // Served here: long-term statistics are a WebSocket command and nothing else.
+            if (HaStatisticsActions.IsStatistics(svc))
+            {
+                var (code, output, error) = await HaStatistics.RunAsync(clientFactory(), entityId, data, _time, effectiveCt);
+                return done(code, output, error);
+            }
+
             // Served here, not by HA: no Home Assistant call can list a podcast's episodes.
             if (HaMusicActions.IsPodcastEpisodes(svc))
             {

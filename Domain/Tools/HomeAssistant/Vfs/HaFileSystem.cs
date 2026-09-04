@@ -92,10 +92,9 @@ public sealed partial class HaFileSystem(
             return NotFound(path, resolution.Hint);
         }
 
-        var entityId = resolution.Entity.EntityId;
         return node.Kind == HaVfsKind.StateFile
-            ? await ReadStateAsync(path, entityId, offset, limit, ct)
-            : ReadAction(path, entityId, node.Service!, catalog);
+            ? await ReadStateAsync(path, resolution.Entity.EntityId, offset, limit, ct)
+            : ReadAction(path, resolution.Entity, node.Service!, catalog);
     }
 
     public override async Task<FsResult<FsSearchResult>> SearchAsync(
@@ -225,14 +224,14 @@ public sealed partial class HaFileSystem(
             ? queue.GetValue<string>()
             : null;
 
-    private static FsResult<FsReadResult> ReadAction(string path, string entityId, string service, HaCatalog catalog)
+    private static FsResult<FsReadResult> ReadAction(string path, HaEntityState entity, string service, HaCatalog catalog)
     {
-        var classDomain = HaCatalog.ClassOf(entityId);
-        var svc = HaActionResolver.ServicesFor(entityId, catalog.Services)
+        var classDomain = HaCatalog.ClassOf(entity.EntityId);
+        var svc = HaActionResolver.ServicesFor(entity, catalog.Services)
             .FirstOrDefault(s => HaActionResolver.CommandName(s, classDomain).Equals(service, StringComparison.Ordinal));
         return svc is null
             ? NotFound(path)
-            : BuildReadResult(path, HaServiceHelpRenderer.Render(entityId, svc), null, null);
+            : BuildReadResult(path, HaServiceHelpRenderer.Render(entity.EntityId, svc), null, null);
     }
 
     private readonly record struct EntityResolution(HaEntityState? Entity, string? Hint);
@@ -271,7 +270,7 @@ public sealed partial class HaFileSystem(
         HaVfsKind.EntityDir => (ResolveEntity(catalog, node).Entity is not null, true),
         HaVfsKind.StateFile => (ResolveEntity(catalog, node).Entity is not null, false),
         HaVfsKind.ActionFile => ResolveEntity(catalog, node).Entity is { } e
-            && HaActionResolver.ServicesFor(e.EntityId, catalog.Services)
+            && HaActionResolver.ServicesFor(e, catalog.Services)
                 .Any(s => HaActionResolver.CommandName(s, HaCatalog.ClassOf(e.EntityId)) == node.Service)
             ? (true, false)
             : (false, false),

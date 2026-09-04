@@ -50,6 +50,45 @@ string, an unquoted backslash escape). Before it did, `--description "{\"target\
 as `{\target\:…}` and the bridge could not read the alarm's target. The prompt now shows the
 description single-quoted.
 
+## Every entity has `history.sh`, served by the mount
+
+The service catalog cannot read the recorder — the history endpoint (`GET /api/history/period/
+{start}`) is REST only — so `HaHistoryActions.History` is a served action (the calendar pattern)
+with `AppliesToEveryEntity`, the one flag that puts an action in **every** entity directory under
+its bare name, read-only classes included. `HaActionResolver` honours the flag before its
+domain rules; `HomeAssistantSetupSummary` says such an action once, on an `every entity:` line,
+and keeps it off the per-class lines. `HaHistory` runs it through `IHomeAssistantClient.
+ListHistoryAsync` (asked with `minimal_response&no_attributes`, so a change is state plus
+instant). Window strings cross as written (naive = HA's zone), like the calendar's; the shared
+arithmetic is `HaDateTimeText`. Plain listing keeps the latest `--limit` changes; `--every N`
+buckets numeric states per N minutes (min/max/mean/last/samples) and is an argument error on an
+entity with no numeric state, or beside `--limit`. **The recorder stamps every change in UTC
+whatever the home's zone** (`recorder/history/__init__.py` formats `last_changed` from a UTC
+timestamp), so buckets cannot follow the stamps' offset: `HaCatalogProvider` reads the home's zone
+once from `GET /api/config` (`IHomeAssistantClient.GetTimeZoneAsync`, `HaCatalog.HomeZone`) and
+`HaHistory` aligns buckets to that clock, so a day bucket opens at the home's midnight; a zone it
+cannot read or resolve leaves the catalog whole and buckets on UTC, logged once as a warning, and
+the payload's `bucket_zone` says which. An empty window under `--every` is an empty summary with
+the retention note, never an error. The seeded test container is `time_zone: UTC`, so only the unit test with Madrid
+stamps pins this. The first entry is the state at the window's start,
+stamped there (pinned by `HomeAssistantClientTests.ListHistoryAsync_FirstElement_IsTheStateAtTheWindowsStart_StampedThere` against the real recorder). What
+comes back is bounded by the recorder's retention (10 days by default, 90 on prod); nothing in
+the API says which, so the help and the empty answer say "unless this home raised it" rather
+than naming a bound the model would treat as fact. See `docs/adr/0037`.
+
+**`statistics.sh` is the read that outlives retention.** Long-term statistics (hourly mean/min/max,
+or state/sum/change for a total) are WebSocket-only (`recorder/statistics_during_period`), compiled
+at :12 each hour for every sensor with a `state_class`, and kept for good. `HaStatisticsActions.
+Statistics` is the same every-entity served action narrowed by `RequiresAttribute = "state_class"`,
+so it appears in exactly the directories that have rows behind it — the resolver now takes the
+`HaEntityState`, not its id, for that reason — and the index says `every entity with state_class:
+statistics.sh`. `HaStatistics` runs it through `ListStatisticsAsync` (`--days`, `--period
+5minute|hour|day|week|month`, `--limit`); `HaWindow` resolves both reads' windows. Rows render only
+the measures the sensor's kind has. `FakeHomeAssistantSocket` answers the command from its
+`Statistics` map; the real-container test imports rows with `recorder.import_statistics` and
+reads them back. A sensor that lacks a `state_class` (LibreLink's glucose did) gets one through
+HA's `customize:`; prod has that and `purge_keep_days: 90` since 2026-09-04.
+
 ## Music Assistant (podcast episodes)
 
 Almost everything media goes through HA's `music_assistant.*` services. One thing cannot: **listing a

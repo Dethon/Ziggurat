@@ -34,6 +34,49 @@ public interface IHomeAssistantClient
     Task DeleteCalendarEventAsync(
         string entityId, string uid, string? recurrenceId = null, string? recurrenceRange = null,
         CancellationToken ct = default);
+
+    // The recorder's one read: `GET /api/history/period/{start}` asked minimally (state and instant
+    // only, no attributes), which answers the entity's state at the window's start followed by every
+    // change inside it. Nothing in the service catalog answers "what was this over the last day".
+    // `start` and `end` cross as the caller's strings for the same reason the calendar's do.
+    Task<IReadOnlyList<HaStateChange>> ListHistoryAsync(
+        string entityId, string start, string end, CancellationToken ct = default);
+
+    // Long-term statistics: the WebSocket command `recorder/statistics_during_period` for one
+    // entity, one row per `period` (5minute, hour, day, week, month). Home Assistant compiles them
+    // for every sensor with a state_class and keeps the hourly ones for good, which is what makes
+    // them reach past the recorder's retention. Window strings cross as the caller's, as above.
+    Task<IReadOnlyList<HaStatisticsRow>> ListStatisticsAsync(
+        string entityId, string start, string end, string period, CancellationToken ct = default);
+
+    // The home's configured zone as `GET /api/config` names it (an IANA id such as Europe/Madrid),
+    // or null when the config carries none. The recorder stamps every change in UTC whatever the
+    // home's zone, so anything aligned to the home's clock (a day bucket at its midnight) needs this.
+    Task<string?> GetTimeZoneAsync(CancellationToken ct = default);
+}
+
+// One statistics row as the recorder answers it. A measured sensor carries Mean/Min/Max; a total
+// (energy, a counter) carries State/Sum/Change and no mean. Whatever the recorder did not send is
+// null rather than zero.
+[PublicAPI]
+public record HaStatisticsRow
+{
+    public required DateTimeOffset Start { get; init; }
+    public required DateTimeOffset End { get; init; }
+    public double? Mean { get; init; }
+    public double? Min { get; init; }
+    public double? Max { get; init; }
+    public double? State { get; init; }
+    public double? Sum { get; init; }
+    public double? Change { get; init; }
+}
+
+// One recorded state and the instant it was taken, as the history endpoint lists them.
+[PublicAPI]
+public record HaStateChange
+{
+    public required string State { get; init; }
+    public required DateTimeOffset At { get; init; }
 }
 
 // One event as the calendars endpoint lists it. `Start`/`End` are the strings Home Assistant sent —
@@ -89,6 +132,16 @@ public record HaServiceDefinition
     // shape (e.g. `{entity: [{domain: ["vacuum"]}]}`) narrows acceptable entity kinds.
     // Absent (null) means the service takes no entity target.
     public JsonNode? Target { get; init; }
+
+    // An action the mount serves in EVERY entity directory, read-only classes included, under its
+    // bare name — the recorder's history is one. Set only on served definitions; a catalog service
+    // never carries it, which is what keeps `homeassistant.turn_on` out of every directory.
+    public bool AppliesToEveryEntity { get; init; }
+
+    // Narrows AppliesToEveryEntity to the entities whose state carries this attribute: long-term
+    // statistics exist only for a sensor with a `state_class`, so the action that reads them is
+    // offered to exactly those. Meaningless without the flag.
+    public string? RequiresAttribute { get; init; }
 }
 
 [PublicAPI]
