@@ -95,11 +95,14 @@ internal static class HaHistory
     // recorder's are always UTC. A bucket's stamp carries the home's offset at the instant it opens.
     // A state that is not a number (`unavailable`, `unknown`, a light's `on`) is skipped and counted,
     // and a history with no number in it at all is an argument error rather than an empty answer.
+    // Python's `nan` and `inf` — what a sensor without a numeric class stores for a non-finite
+    // reading — parse as numbers here but are not readings: a NaN poisons every measure of its
+    // bucket and the payload cannot be written with one, so only a finite value is a sample.
     private static void Summarise(JsonObject payload, IReadOnlyList<HaStateChange> changes, int minutes, TimeZoneInfo zone)
     {
         var samples = changes
             .Select(c => (Change: c, Ok: double.TryParse(c.State, NumberStyles.Float, CultureInfo.InvariantCulture, out var value), Value: value))
-            .Where(s => s.Ok)
+            .Where(s => s.Ok && double.IsFinite(s.Value))
             .ToList();
 
         if (changes.Count > 0 && samples.Count == 0)

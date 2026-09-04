@@ -397,6 +397,31 @@ public class HaHistoryActionTests
         exec.Stderr.ShouldNotContain("none of this entity's recorded states is a number");
     }
 
+    // A sensor without a numeric class can store Python's `nan` as its state, and .NET parses that
+    // as a number. It is not a reading: it is skipped like `unavailable`, never a sample that
+    // poisons a bucket's min/max/mean or a value the payload cannot even be written with.
+    [Fact]
+    public async Task Every_ANanState_IsSkipped_NotASample()
+    {
+        var fs = Build(out var client);
+        client.History.AddRange([
+            Change("100", "2026-09-04T12:01:00+00:00"),
+            Change("nan", "2026-09-04T12:07:00+00:00"),
+            Change("110", "2026-09-04T12:14:00+00:00")
+        ]);
+
+        var exec = await Exec(fs, "history.sh --every 60");
+
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
+        payload["samples"]!.GetValue<int>().ShouldBe(2);
+        payload["skipped"]!.GetValue<int>().ShouldBe(1);
+        var bucket = payload["buckets"]!.AsArray()[0]!;
+        bucket["min"]!.GetValue<double>().ShouldBe(100);
+        bucket["max"]!.GetValue<double>().ShouldBe(110);
+        bucket["mean"]!.GetValue<double>().ShouldBe(105);
+    }
+
     // A reading in exponent notation carries its precision in the exponent, not after a dot.
     [Fact]
     public async Task Every_ExponentNotationSamples_KeepTheirPrecision()
