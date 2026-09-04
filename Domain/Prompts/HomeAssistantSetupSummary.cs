@@ -26,9 +26,10 @@ public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider)
         "Action files live in the ENTITY directory (`/ha/entities/<class>/<id>/<action>.sh`), "
         + "never in the class directory — `glob` on `/ha/entities/<class>/*.sh` always returns "
         + "nothing. Use this table instead of globbing to discover actions. The `every entity` "
-        + "line names the actions every directory has, read-only classes included; a class absent "
-        + "from the rest has only those. If one entity lacks a listed action, `exec` returns "
-        + "exitCode 127 and `stderr` names the ones it does have.";
+        + "lines name the actions every directory has, read-only classes included (an `every "
+        + "entity with <attribute>` line: every entity whose state.json carries that attribute); "
+        + "a class absent from the rest has only those. If one entity lacks a listed action, "
+        + "`exec` returns exitCode 127 and `stderr` names the ones it does have.";
 
     public async Task<string> GetAsync(CancellationToken ct = default)
     {
@@ -49,10 +50,7 @@ public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider)
         {
             sb.Append("\n## Actions by entity class\n\n");
             sb.Append(ActionsHeader).Append("\n\n");
-            if (everywhere.Count > 0)
-            {
-                sb.Append("every entity: ").Append(string.Join(", ", everywhere)).Append('\n');
-            }
+            sb.Append(string.Concat(everywhere.Select(line => line + "\n")));
             sb.Append(string.Join("\n", actions)).Append('\n');
         }
 
@@ -87,19 +85,23 @@ public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider)
             .ToList();
 
     // Said once, above the table: on every class line it would put every read-only class into the
-    // table to repeat one word.
+    // table to repeat one word. An action narrowed by an attribute gets its own line naming it.
     private static IReadOnlyList<string> EveryEntityActions(HaCatalog catalog) =>
         catalog.Services
             .Where(svc => svc.AppliesToEveryEntity)
-            .Select(svc => $"{svc.Service}.sh")
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(a => a, StringComparer.Ordinal)
+            .GroupBy(svc => svc.RequiresAttribute, StringComparer.Ordinal)
+            .OrderBy(g => g.Key is null ? 0 : 1)
+            .ThenBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g =>
+                (g.Key is null ? "every entity: " : $"every entity with {g.Key}: ")
+                + string.Join(", ", g.Select(svc => $"{svc.Service}.sh").Distinct(StringComparer.Ordinal).OrderBy(a => a, StringComparer.Ordinal)))
             .ToList();
 
     private static IReadOnlyList<string> ActionsFor(string classDomain, HaCatalog catalog) =>
         catalog.ObjectIdsFor(classDomain)
-            .SelectMany(objectId => HaActionResolver
-                .ServicesFor($"{classDomain}.{objectId}", catalog.Services)
+            .Select(objectId => catalog.EntityById($"{classDomain}.{objectId}")!)
+            .SelectMany(entity => HaActionResolver
+                .ServicesFor(entity, catalog.Services)
                 .Where(svc => !svc.AppliesToEveryEntity)
                 .Select(svc => $"{HaActionResolver.CommandName(svc, classDomain)}.sh"))
             .Distinct(StringComparer.Ordinal)

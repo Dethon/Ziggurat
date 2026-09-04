@@ -196,6 +196,40 @@ public class HomeAssistantClient(HttpClient httpClient, string token, TimeSpan? 
             .ToList();
     }
 
+    // Long-term statistics have no REST form. The command answers an object keyed by statistic id
+    // whose rows carry epoch-millisecond bounds and only the measures the sensor's kind has.
+    public async Task<IReadOnlyList<HaStatisticsRow>> ListStatisticsAsync(
+        string entityId, string start, string end, string period, CancellationToken ct = default)
+    {
+        var result = await SendCommandAsync(new JsonObject
+        {
+            ["type"] = "recorder/statistics_during_period",
+            ["start_time"] = start,
+            ["end_time"] = end,
+            ["statistic_ids"] = new JsonArray(entityId),
+            ["period"] = period
+        }, ct);
+
+        return result?[entityId] is JsonArray rows
+            ? rows.OfType<JsonObject>().Select(ToStatisticsRow).ToList()
+            : [];
+    }
+
+    private static HaStatisticsRow ToStatisticsRow(JsonObject row) => new()
+    {
+        Start = DateTimeOffset.FromUnixTimeMilliseconds(row["start"]!.GetValue<long>()),
+        End = DateTimeOffset.FromUnixTimeMilliseconds(row["end"]!.GetValue<long>()),
+        Mean = Number(row, "mean"),
+        Min = Number(row, "min"),
+        Max = Number(row, "max"),
+        State = Number(row, "state"),
+        Sum = Number(row, "sum"),
+        Change = Number(row, "change")
+    };
+
+    private static double? Number(JsonObject row, string name) =>
+        row[name] is JsonValue value && value.TryGetValue<double>(out var number) ? number : null;
+
     // Creating and deleting are WebSocket commands (`calendar/event/create`, `calendar/event/delete`);
     // the service catalog's create_event takes no recurrence rule and there is no delete service.
     public async Task CreateCalendarEventAsync(string entityId, HaCalendarEventDraft draft, CancellationToken ct = default)

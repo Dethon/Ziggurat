@@ -225,6 +225,91 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
         changes.Zip(changes.Skip(1)).ShouldAllBe(pair => pair.First.At <= pair.Second.At);
     }
 
+    // Statistics against the real recorder: rows imported through the recorder's own WebSocket
+    // command (the way an energy integration backfills; there is no service for it), then read back
+    // by the command the mount uses.
+    [Fact]
+    public async Task ListStatisticsAsync_ReadsWhatTheRecorderCompiled()
+    {
+        var client = fixture.CreateClient();
+        const string statisticId = "sensor.imported_temperature";
+
+        await ImportStatisticsAsync(new JsonObject
+        {
+            ["type"] = "recorder/import_statistics",
+            ["metadata"] = new JsonObject
+            {
+                ["statistic_id"] = statisticId,
+                ["source"] = "recorder",
+                ["name"] = null,
+                ["unit_of_measurement"] = "°C",
+                ["mean_type"] = 1,
+                ["has_sum"] = false
+            },
+            ["stats"] = new JsonArray(
+                new JsonObject { ["start"] = "2031-03-10T07:00:00+00:00", ["mean"] = 20.5, ["min"] = 19.0, ["max"] = 22.0 },
+                new JsonObject { ["start"] = "2031-03-10T08:00:00+00:00", ["mean"] = 21.0, ["min"] = 20.0, ["max"] = 22.5 })
+        });
+
+        // The import is queued on the recorder thread and the read joins the same queue, but a
+        // slow commit can still be overtaken, so a short retry is honest rather than a race.
+        IReadOnlyList<global::Domain.Contracts.HaStatisticsRow> rows = [];
+        foreach (var _ in Enumerable.Range(0, 20))
+        {
+            rows = await client.ListStatisticsAsync(statisticId, "2031-03-10T00:00:00Z", "2031-03-11T00:00:00Z", "hour");
+            if (rows.Count == 2)
+            {
+                break;
+            }
+            await Task.Delay(500);
+        }
+
+        rows.Count.ShouldBe(2);
+        rows[0].Start.ShouldBe(DateTimeOffset.Parse("2031-03-10T07:00:00+00:00"));
+        rows[0].End.ShouldBe(DateTimeOffset.Parse("2031-03-10T08:00:00+00:00"));
+        rows[0].Mean.ShouldBe(20.5);
+        rows[0].Min.ShouldBe(19.0);
+        rows[0].Max.ShouldBe(22.0);
+        rows[0].Sum.ShouldBeNull();
+        rows[1].Mean.ShouldBe(21.0);
+    }
+
+    // One authenticated WebSocket command, the protocol the client speaks, for a command the client
+    // has no reason to offer.
+    private async Task ImportStatisticsAsync(JsonObject command)
+    {
+        using var socket = new System.Net.WebSockets.ClientWebSocket();
+        var uri = new Uri(fixture.BaseUrl.Replace("http://", "ws://") + "/api/websocket");
+        await socket.ConnectAsync(uri, CancellationToken.None);
+
+        (await ReceiveAsync(socket))["type"]!.GetValue<string>().ShouldBe("auth_required");
+        await SendAsync(socket, new JsonObject { ["type"] = "auth", ["access_token"] = fixture.Token });
+        (await ReceiveAsync(socket))["type"]!.GetValue<string>().ShouldBe("auth_ok");
+
+        command["id"] = 1;
+        await SendAsync(socket, command);
+        var answer = await ReceiveAsync(socket);
+        answer["success"]!.GetValue<bool>().ShouldBeTrue(answer.ToJsonString());
+    }
+
+    private static async Task SendAsync(System.Net.WebSockets.ClientWebSocket socket, JsonObject frame) =>
+        await socket.SendAsync(
+            System.Text.Encoding.UTF8.GetBytes(frame.ToJsonString()),
+            System.Net.WebSockets.WebSocketMessageType.Text, true, CancellationToken.None);
+
+    private static async Task<JsonObject> ReceiveAsync(System.Net.WebSockets.ClientWebSocket socket)
+    {
+        var buffer = new byte[64 * 1024];
+        using var text = new MemoryStream();
+        System.Net.WebSockets.WebSocketReceiveResult result;
+        do
+        {
+            result = await socket.ReceiveAsync(buffer, CancellationToken.None);
+            text.Write(buffer, 0, result.Count);
+        } while (!result.EndOfMessage);
+        return JsonNode.Parse(System.Text.Encoding.UTF8.GetString(text.ToArray()))!.AsObject();
+    }
+
     [Fact]
     public async Task DeleteCalendarEventAsync_UnknownUid_ThrowsWithTheComponentsReason()
     {

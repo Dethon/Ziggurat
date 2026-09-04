@@ -41,6 +41,29 @@ public interface IHomeAssistantClient
     // `start` and `end` cross as the caller's strings for the same reason the calendar's do.
     Task<IReadOnlyList<HaStateChange>> ListHistoryAsync(
         string entityId, string start, string end, CancellationToken ct = default);
+
+    // Long-term statistics: the WebSocket command `recorder/statistics_during_period` for one
+    // entity, one row per `period` (5minute, hour, day, week, month). Home Assistant compiles them
+    // for every sensor with a state_class and keeps the hourly ones for good, which is what makes
+    // them reach past the recorder's retention. Window strings cross as the caller's, as above.
+    Task<IReadOnlyList<HaStatisticsRow>> ListStatisticsAsync(
+        string entityId, string start, string end, string period, CancellationToken ct = default);
+}
+
+// One statistics row as the recorder answers it. A measured sensor carries Mean/Min/Max; a total
+// (energy, a counter) carries State/Sum/Change and no mean. Whatever the recorder did not send is
+// null rather than zero.
+[PublicAPI]
+public record HaStatisticsRow
+{
+    public required DateTimeOffset Start { get; init; }
+    public required DateTimeOffset End { get; init; }
+    public double? Mean { get; init; }
+    public double? Min { get; init; }
+    public double? Max { get; init; }
+    public double? State { get; init; }
+    public double? Sum { get; init; }
+    public double? Change { get; init; }
 }
 
 // One recorded state and the instant it was taken, as the history endpoint lists them.
@@ -109,6 +132,11 @@ public record HaServiceDefinition
     // bare name — the recorder's history is one. Set only on served definitions; a catalog service
     // never carries it, which is what keeps `homeassistant.turn_on` out of every directory.
     public bool AppliesToEveryEntity { get; init; }
+
+    // Narrows AppliesToEveryEntity to the entities whose state carries this attribute: long-term
+    // statistics exist only for a sensor with a `state_class`, so the action that reads them is
+    // offered to exactly those. Meaningless without the flag.
+    public string? RequiresAttribute { get; init; }
 }
 
 [PublicAPI]

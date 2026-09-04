@@ -19,9 +19,9 @@ internal static class HaHistory
     {
         try
         {
-            var (start, end) = Window(data, time);
-            var every = WholeNumber(data, "every");
-            var limit = WholeNumber(data, "limit") ?? HaHistoryActions.DefaultLimit;
+            var (start, end) = HaWindow.Resolve(data, time, "hours", TimeSpan.FromHours, HaHistoryActions.DefaultHours);
+            var every = HaWindow.WholeNumber(data, "every");
+            var limit = HaWindow.WholeNumber(data, "limit") ?? HaHistoryActions.DefaultLimit;
 
             var changes = await client.ListHistoryAsync(entityId, start, end, ct);
 
@@ -57,29 +57,6 @@ internal static class HaHistory
         {
             return (1, "", ex.Message);
         }
-    }
-
-    // `--hours` counts back from the end (now, or the end given); an explicit start excludes it.
-    private static (string Start, string End) Window(JsonObject data, TimeProvider time)
-    {
-        var hours = Positive(data, "hours");
-        var start = Text(data, "start_date_time");
-        var end = Text(data, "end_date_time");
-
-        if (hours is not null && start is not null)
-        {
-            throw new ArgumentException("Give either --hours or --start_date_time, not both.");
-        }
-
-        var now = HaDateTimeText.Now(time);
-        if (start is not null)
-        {
-            return (start, end ?? now);
-        }
-
-        var span = TimeSpan.FromHours(hours ?? HaHistoryActions.DefaultHours);
-        end ??= now;
-        return (HaDateTimeText.Shift(end, -span, "end_date_time"), end);
     }
 
     private static void List(JsonObject payload, IReadOnlyList<HaStateChange> changes, int limit)
@@ -147,35 +124,4 @@ internal static class HaHistory
 
     private static string Stamp(DateTimeOffset at) =>
         at.ToString(HaDateTimeText.Format, CultureInfo.InvariantCulture);
-
-    private static string? Text(JsonObject data, string name) => data[name] switch
-    {
-        JsonValue value when value.TryGetValue<string>(out var text) => string.IsNullOrWhiteSpace(text) ? null : text,
-        JsonNode node => node.ToJsonString(),
-        null => null
-    };
-
-    private static double? Positive(JsonObject data, string name)
-    {
-        if (data[name] is not JsonValue value)
-        {
-            return null;
-        }
-        var number = value.GetValue<double>();
-        return number > 0
-            ? number
-            : throw new ArgumentException($"--{name} expects a positive number, got {number}.");
-    }
-
-    private static int? WholeNumber(JsonObject data, string name)
-    {
-        var number = Positive(data, name);
-        if (number is null)
-        {
-            return null;
-        }
-        return number % 1 == 0
-            ? (int)number
-            : throw new ArgumentException($"--{name} expects a whole number, got {number}.");
-    }
 }

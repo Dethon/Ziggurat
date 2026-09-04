@@ -5,12 +5,14 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 public static class HaActionResolver
 {
+    // Takes the entity, not its id: an every-entity action may be narrowed by an attribute the
+    // entity's state carries (HaServiceDefinition.RequiresAttribute).
     public static IReadOnlyList<HaServiceDefinition> ServicesFor(
-        string entityId, IReadOnlyList<HaServiceDefinition> services)
+        HaEntityState entity, IReadOnlyList<HaServiceDefinition> services)
     {
-        var classDomain = HaCatalog.ClassOf(entityId);
+        var classDomain = HaCatalog.ClassOf(entity.EntityId);
         return services
-            .Where(s => Applies(s, classDomain))
+            .Where(s => Applies(s, entity, classDomain))
             .OrderBy(s => CommandName(s, classDomain), StringComparer.Ordinal)
             .ToList();
     }
@@ -33,11 +35,16 @@ public static class HaActionResolver
     //    Assistant's `music_assistant.play_media` targeting `media_player`). The explicit-name
     //    requirement keeps generic global services (`homeassistant.turn_on`, whose target accepts
     //    ANY entity) from flooding every entity directory.
-    private static bool Applies(HaServiceDefinition svc, string classDomain) =>
-        svc.AppliesToEveryEntity
-        || (svc.Domain.Equals(classDomain, StringComparison.Ordinal)
+    private static bool Applies(HaServiceDefinition svc, HaEntityState entity, string classDomain)
+    {
+        if (svc.AppliesToEveryEntity)
+        {
+            return svc.RequiresAttribute is null || entity.Attributes.ContainsKey(svc.RequiresAttribute);
+        }
+        return svc.Domain.Equals(classDomain, StringComparison.Ordinal)
             ? TargetAcceptsEntity(svc.Target, classDomain)
-            : TargetNamesDomain(svc.Target, classDomain));
+            : TargetNamesDomain(svc.Target, classDomain);
+    }
 
     // target == null  -> not entity-targeted, exclude.
     // target has no "entity" constraint we can read -> accept (it targets entities generically).

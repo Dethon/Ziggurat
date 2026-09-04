@@ -1,4 +1,4 @@
-# 0037 — Every entity has a history, and the mount serves it
+# 0037 — Every entity has a history, and the mount serves it (and its statistics)
 
 Status: accepted
 Date: 2026-09-04
@@ -49,11 +49,9 @@ skipped. A history with no number in it under `--every` is an argument error, no
 - **A `history.json` file beside `state.json`.** A read takes no arguments, so the window and the
   bucket size would have to be fixed. A day of raw readings is too big to be a file the model reads
   on a whim, and any fixed summary is wrong for half the questions.
-- **Long-term statistics.** Home Assistant keeps hourly mean/min/max forever for sensors with a
-  `state_class`, which would answer "last month". They are WebSocket only
-  (`recorder/statistics_during_period`), the glucose sensor declares no `state_class` so it has
-  none, and the ten-day recorder covers the questions actually asked. Worth adding as a second
-  action when a question needs more than the recorder keeps.
+- **Long-term statistics instead.** Home Assistant keeps hourly mean/min/max for good for sensors
+  with a `state_class`, which answers "last month" but not "last night in detail", and the
+  glucose sensor declared no `state_class`. They are the second read, below, not a replacement.
 - **Only on classes with numeric states.** Every entity has a past; a door's history answers "when
   did it last open" as well as a sensor's answers a trend. Restricting it would need a rule about
   which classes count, and the rule would be wrong somewhere.
@@ -61,12 +59,41 @@ skipped. A history with no number in it under `--every` is an argument error, no
   hours the recorder does, through a second credential and a second integration to keep alive.
   Home Assistant already has the data, for every sensor, not one.
 
+## The second read: statistics, for the entities that have them
+
+The recorder's retention bounds `history.sh`, and raising it (prod went to 90 days the same day)
+buys detail, not permanence. Home Assistant's long-term statistics are the permanent part: hourly
+mean/min/max — or state/sum/change for a total such as energy — compiled at twelve past each hour
+for every sensor with a `state_class`, kept outside the purge, and readable only by the WebSocket
+command `recorder/statistics_during_period`.
+
+So `statistics.sh` is a second served action (`HaStatisticsActions`, run by `HaStatistics`) with
+one more rule:
+
+- **An every-entity action can be narrowed by an attribute.** `RequiresAttribute = "state_class"`
+  puts it in exactly the directories whose `state.json` carries that attribute, which is the same
+  rule Home Assistant uses to decide whether to compile statistics at all — on the prod home the
+  29 entities with a `state_class` are the 29 statistic ids the recorder lists. The resolver takes
+  the entity rather than its id for this, and the setup index announces the action on its own
+  line, `every entity with state_class:`.
+
+The window is the history action's (`--days` in place of `--hours`, one resolver for both); a
+`--period` of `5minute`, `hour`, `day`, `week` or `month` picks the row; the latest `--limit` rows
+are kept. A row renders only the measures the sensor's kind has, so a total never shows a mean of
+zero. The prompt divides the two: raw changes and the last few days from history, averages,
+extremes and the long run from statistics.
+
+A sensor an integration ships without a `state_class` gets one through HA's `customize:` — the
+glucose sensor has since 2026-09-04 — and its first row lands within the hour.
+
 ## Consequences
 
-- The agent can answer a question about the past of anything in the home from one call, and the
-  prompt teaches that the past is read from `history.sh`, never from `state.json` or repeated
-  reads of it; the claim is declared and excused until the fake home keeps a past.
-- The eval's fake home answers the history endpoint with an empty window, so the action is honest
-  there rather than a 404; a scenario about history needs it to record changes first.
+- The agent can answer a question about the past of anything in the home from one call, and one
+  about the long run of a measured sensor from another; the prompt teaches that the past is read
+  from `history.sh` or `statistics.sh`, never from `state.json` or repeated reads of it, and the
+  claim is declared and excused until the fake home keeps a past.
+- The eval's fake home answers the history endpoint with an empty window and the statistics
+  command from an empty map, so both actions are honest there rather than failing; a scenario
+  about either needs the fake to keep a past first.
 - What comes back is bounded by the recorder's retention. The empty answer names it, so a question
   about last month gets "nothing recorded in this window" and the reason, not a guess.

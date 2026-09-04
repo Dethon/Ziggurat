@@ -1,4 +1,4 @@
-# jonas-worker — 8242 tokens across 10 sections
+# jonas-worker — 8390 tokens across 10 sections
 
   core_directive           CoreDirective         250 / 350    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               26 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -8,7 +8,7 @@
   sandbox_prompt           Client               1004 / 1400   The sandbox's layout, what may be run in it and what it refuses.
   websearch_prompt         Client               1368 / 1500   Searching, loading and reading pages, and what to do when one refuses.
   idealista_guide          Client                317 / 600    Property search: the filters that exist and how a listing is read back.
-  home_assistant_guide     Client               3509 / 5000   The house: its areas and entities, and how an intent becomes a service call.
+  home_assistant_guide     Client               3657 / 5000   The house: its areas and entities, and how an intent becomes a service call.
   date                     Date                    7 / 30     Today's date. Last of the static sections, because it is the only one that changes on its own.
 
 ================================================================================================
@@ -329,6 +329,14 @@ as for alarms) set an exact window. A value that changes every minute makes a lo
 list: pass `--every <minutes>` to get min/max/mean/last per bucket instead (numeric
 states only) — the right call for a whole day. The instants in the output carry their
 UTC offset; say them in the user's local time.
+
+Sensors whose `state.json` carries a `state_class` (the setup index's `every entity with
+state_class` line) also have `statistics.sh`: Home Assistant's own hourly mean/min/max
+(sum and change for a total such as energy), kept for good, so it is the file for
+anything older than the recorder holds or coarser than a reading — "her average this
+month", "how much energy last week". No arguments = the last 7 days by the hour;
+`--days N` widens it and `--period day|week|month` coarsens it. Raw changes and the
+last few days: `history.sh`; averages, extremes and the long run: `statistics.sh`.
 
 ### Alarms & reminders
 

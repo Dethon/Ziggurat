@@ -88,6 +88,14 @@ public static class HomeAssistantPrompt
         states only) — the right call for a whole day. The instants in the output carry their
         UTC offset; say them in the user's local time.
 
+        Sensors whose `state.json` carries a `state_class` (the setup index's `every entity with
+        state_class` line) also have `statistics.sh`: Home Assistant's own hourly mean/min/max
+        (sum and change for a total such as energy), kept for good, so it is the file for
+        anything older than the recorder holds or coarser than a reading — "her average this
+        month", "how much energy last week". No arguments = the last 7 days by the hour;
+        `--days N` widens it and `--period day|week|month` coarsens it. Raw changes and the
+        last few days: `history.sh`; averages, extremes and the long run: `statistics.sh`.
+
         ### Alarms & reminders
 
         An alarm or reminder is an event on the **alarms calendar** — the `calendar` entity the
@@ -293,7 +301,7 @@ public static class HomeAssistantPrompt
 
     public static readonly PromptClaim ThePastIsReadFromHistory =
         new("home.past-is-read-from-history",
-            "A question about the past or a trend of a value is answered from history.sh's recorded changes, never from state.json or repeated reads of it.");
+            "A question about the past or a trend of a value is answered from history.sh's recorded changes or statistics.sh's compiled rows, never from state.json or repeated reads of it.");
 
     public static readonly PromptClaim AreaSlugIsReadNotDerived =
         new("home.area-slug-is-read-not-derived",

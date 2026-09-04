@@ -89,6 +89,19 @@ public class FakeHaClient : IHomeAssistantClient
             : Task.FromException<IReadOnlyList<HaStateChange>>(HistoryFailure);
     }
 
+    public List<HaStatisticsRow> Statistics { get; init; } = [];
+    public (string EntityId, string Start, string End, string Period)? LastStatisticsWindow { get; private set; }
+    public Exception? StatisticsFailure { get; set; }
+
+    public virtual Task<IReadOnlyList<HaStatisticsRow>> ListStatisticsAsync(
+        string entityId, string start, string end, string period, CancellationToken ct = default)
+    {
+        LastStatisticsWindow = (entityId, start, end, period);
+        return StatisticsFailure is null
+            ? Task.FromResult<IReadOnlyList<HaStatisticsRow>>(Statistics)
+            : Task.FromException<IReadOnlyList<HaStatisticsRow>>(StatisticsFailure);
+    }
+
     public static HaEntityState Entity(string id, string state, params (string Key, JsonNode? Value)[] attrs) => new()
     {
         EntityId = id,

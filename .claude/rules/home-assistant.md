@@ -63,8 +63,20 @@ instant). Window strings cross as written (naive = HA's zone), like the calendar
 arithmetic is `HaDateTimeText`. Plain listing keeps the latest `--limit` changes; `--every N`
 buckets numeric states per N minutes (min/max/mean/last/samples), clock-aligned, and is an
 argument error on an entity with no numeric state. What comes back is bounded by the recorder's
-retention (10 days by default); long-term statistics are WebSocket-only and not served. See
-`docs/adr/0037`.
+retention (10 days by default). See `docs/adr/0037`.
+
+**`statistics.sh` is the read that outlives retention.** Long-term statistics (hourly mean/min/max,
+or state/sum/change for a total) are WebSocket-only (`recorder/statistics_during_period`), compiled
+at :12 each hour for every sensor with a `state_class`, and kept for good. `HaStatisticsActions.
+Statistics` is the same every-entity served action narrowed by `RequiresAttribute = "state_class"`,
+so it appears in exactly the directories that have rows behind it — the resolver now takes the
+`HaEntityState`, not its id, for that reason — and the index says `every entity with state_class:
+statistics.sh`. `HaStatistics` runs it through `ListStatisticsAsync` (`--days`, `--period
+5minute|hour|day|week|month`, `--limit`); `HaWindow` resolves both reads' windows. Rows render only
+the measures the sensor's kind has. `FakeHomeAssistantSocket` answers the command from its
+`Statistics` map; the real-container test imports rows with `recorder.import_statistics` and
+reads them back. A sensor that lacks a `state_class` (LibreLink's glucose did) gets one through
+HA's `customize:`; prod has that and `purge_keep_days: 90` since 2026-09-04.
 
 ## Music Assistant (podcast episodes)
 

@@ -140,17 +140,23 @@ public class HomeAssistantSetupSummaryEveryEntityTests
     {
         var client = new FakeHaClient
         {
-            States = { Entity("light.kitchen", "off"), Entity("sensor.salon_temp", "21") },
+            States =
+            {
+                Entity("light.kitchen", "off"),
+                Entity("sensor.salon_temp", "21", ("state_class", JsonValue.Create("measurement")))
+            },
             Services = { Service("light", "turn_on", DomainTarget("light")) }
         };
-        var summary = new HomeAssistantSetupSummary(
-            new HaCatalogProvider(() => client, new FakeTimeProvider(), extraServices: [HaHistoryActions.History]));
+        var summary = new HomeAssistantSetupSummary(new HaCatalogProvider(
+            () => client, new FakeTimeProvider(),
+            extraServices: [HaHistoryActions.History, HaStatisticsActions.Statistics]));
 
         var text = await summary.GetAsync(CancellationToken.None);
 
-        text.ShouldContain("every entity: history.sh");
+        text.ShouldContain("every entity: history.sh\nevery entity with state_class: statistics.sh\n");
         text.ShouldContain("light: turn_on.sh");
         text.ShouldNotContain("light: history.sh");
         text.ShouldNotContain("sensor: history.sh");
+        text.ShouldNotContain("sensor: statistics.sh");
     }
 }
