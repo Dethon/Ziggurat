@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
@@ -19,7 +21,8 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 public sealed class HaCatalogProvider(
     Func<IHomeAssistantClient> clientFactory,
     TimeProvider? timeProvider = null,
-    IReadOnlyList<HaServiceDefinition>? extraServices = null)
+    IReadOnlyList<HaServiceDefinition>? extraServices = null,
+    ILogger<HaCatalogProvider>? logger = null)
 {
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _failureCacheTtl = TimeSpan.FromSeconds(30);
@@ -30,6 +33,7 @@ public sealed class HaCatalogProvider(
         """{"areas":[{% for aid in areas() %}{% if not loop.first %},{% endif %}{"id":{{aid|tojson}},"name":{{area_name(aid)|tojson}},"entities":{{area_entities(aid)|list|tojson}}}{% endfor %}]}""";
 
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+    private readonly ILogger<HaCatalogProvider> _logger = logger ?? NullLogger<HaCatalogProvider>.Instance;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private HaCatalog _cached = HaCatalog.Empty;
     private DateTimeOffset _expiry = DateTimeOffset.MinValue;
@@ -68,7 +72,7 @@ public sealed class HaCatalogProvider(
             var states = client.ListStatesAsync(ct);
             var services = client.ListServicesAsync(ct);
             var areas = LoadAreasAsync(client, ct);
-            var zone = LoadZoneAsync(client, ct);
+            var zone = LoadZoneAsync(client, _logger, ct);
             await Task.WhenAll(states, services, areas, zone);
             var allServices = extraServices is null or []
                 ? services.Result
@@ -89,15 +93,25 @@ public sealed class HaCatalogProvider(
 
     // The home's zone is a convenience for one summary, not the catalog's substance: a config read
     // that fails, or an id this runtime's tz database lacks, leaves it null and the catalog whole.
-    private static async Task<TimeZoneInfo?> LoadZoneAsync(IHomeAssistantClient client, CancellationToken ct)
+    // Said in the log, though: otherwise the only trace is `bucket_zone: UTC` in a summary's payload.
+    private static async Task<TimeZoneInfo?> LoadZoneAsync(
+        IHomeAssistantClient client, ILogger logger, CancellationToken ct)
     {
+        string? id = null;
         try
         {
-            var id = await client.GetTimeZoneAsync(ct);
-            return id is null ? null : TimeZoneInfo.FindSystemTimeZoneById(id);
+            id = await client.GetTimeZoneAsync(ct);
+            if (id is null)
+            {
+                logger.LogWarning("Home Assistant's config names no time zone; history buckets will align to UTC");
+                return null;
+            }
+            return TimeZoneInfo.FindSystemTimeZoneById(id);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            logger.LogWarning(ex,
+                "Could not resolve the home's time zone {Zone}; history buckets will align to UTC", id ?? "(unread)");
             return null;
         }
     }

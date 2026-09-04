@@ -67,8 +67,9 @@ whatever the home's zone** (`recorder/history/__init__.py` formats `last_changed
 timestamp), so buckets cannot follow the stamps' offset: `HaCatalogProvider` reads the home's zone
 once from `GET /api/config` (`IHomeAssistantClient.GetTimeZoneAsync`, `HaCatalog.HomeZone`) and
 `HaHistory` aligns buckets to that clock, so a day bucket opens at the home's midnight; a zone it
-cannot read or resolve leaves the catalog whole and buckets on UTC, and the payload's `bucket_zone`
-says which. The seeded test container is `time_zone: UTC`, so only the unit test with Madrid
+cannot read or resolve leaves the catalog whole and buckets on UTC, logged once as a warning, and
+the payload's `bucket_zone` says which. An empty window under `--every` is an empty summary with
+the retention note, never an error. The seeded test container is `time_zone: UTC`, so only the unit test with Madrid
 stamps pins this. The first entry is the state at the window's start,
 stamped there (pinned by `HomeAssistantClientHistoryStartTests` against the real recorder). What
 comes back is bounded by the recorder's retention (10 days by default, 90 on prod); nothing in

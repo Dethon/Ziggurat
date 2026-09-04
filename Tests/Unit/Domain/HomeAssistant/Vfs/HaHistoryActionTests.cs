@@ -395,6 +395,23 @@ public class HaHistoryActionTests
         payload["suggestion"]!.GetValue<string>().ShouldContain("retention");
     }
 
+    // An out-of-retention day is exactly when the model reaches for --every, so the empty window
+    // must answer with the retention note there too, not fall over on an empty summary.
+    [Fact]
+    public async Task NoChanges_UnderEvery_IsAnEmptySummary_WithTheRetentionNote()
+    {
+        var fs = Build(out _);
+
+        var exec = await Exec(fs, "history.sh --every 60 --hours 240");
+
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
+        payload["buckets"]!.AsArray().Count.ShouldBe(0);
+        payload["samples"]!.GetValue<int>().ShouldBe(0);
+        payload["skipped"]!.GetValue<int>().ShouldBe(0);
+        payload["suggestion"]!.GetValue<string>().ShouldContain("retention");
+    }
+
     [Fact]
     public async Task HomeAssistantRefusingTheWindow_IsExitOne_WithTheReason()
     {

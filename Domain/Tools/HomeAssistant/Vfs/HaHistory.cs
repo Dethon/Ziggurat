@@ -110,7 +110,7 @@ internal static class HaHistory
         }
 
         var bucketSeconds = minutes * 60L;
-        var meanDecimals = Math.Min(samples.Max(s => Decimals(s.Change.State)) + 1, 6);
+        var meanDecimals = Math.Min(samples.Select(s => Decimals(s.Change.State)).DefaultIfEmpty(0).Max() + 1, 6);
         var buckets = samples
             .GroupBy(s => Bucket(s.Change.At, bucketSeconds, zone))
             .OrderBy(g => g.Key)

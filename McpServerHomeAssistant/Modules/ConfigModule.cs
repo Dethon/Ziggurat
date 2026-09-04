@@ -7,6 +7,7 @@ using Mcp.Hosting;
 using McpServerHomeAssistant.McpPrompts;
 using McpServerHomeAssistant.Settings;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace McpServerHomeAssistant.Modules;
 
@@ -37,7 +38,8 @@ public static class ConfigModule
                 .AddHomeAssistantClient(settings.HomeAssistant.BaseUrl, settings.HomeAssistant.Token)
                 .AddSingleton(sp => new HaCatalogProvider(
                     sp.GetRequiredService<IHomeAssistantClient>,
-                    extraServices: served))
+                    extraServices: served,
+                    logger: sp.GetRequiredService<ILogger<HaCatalogProvider>>()))
                 .AddSingleton(sp => new HaFileSystem(
                     sp.GetRequiredService<HaCatalogProvider>(),
                     sp.GetRequiredService<IHomeAssistantClient>,
