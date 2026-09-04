@@ -104,9 +104,7 @@ internal static class HaHistory
 
         if (changes.Count > 0 && samples.Count == 0)
         {
-            throw new ArgumentException(
-                "--every summarises numeric states only, and none of this entity's recorded states is a number. "
-                + "Drop --every and read the changes themselves (--limit caps how many).");
+            throw new ArgumentException(NothingToSummarise(changes));
         }
 
         var bucketSeconds = minutes * 60L;
@@ -137,12 +135,31 @@ internal static class HaHistory
         payload["buckets"] = new JsonArray(buckets);
     }
 
+    // --every summarises numeric states only. A sensor that was offline for the whole window has
+    // only `unavailable` and `unknown` to show, and the error says so rather than calling the
+    // entity non-numeric; anything else (a light's `on`) really is not a number.
+    private static string NothingToSummarise(IReadOnlyList<HaStateChange> changes)
+    {
+        var offline = changes.All(c => c.State is "unavailable" or "unknown");
+        return offline
+            ? $"--every summarises numeric states only, and all {changes.Count} recorded states were unavailable "
+              + "or unknown: the entity had no reading in this window. Widen or move the window before concluding "
+              + "it never reports numbers."
+            : "--every summarises numeric states only, and none of this entity's recorded states is a number. "
+              + "Drop --every and read the changes themselves (--limit caps how many).";
+    }
+
     // A mean is rounded one place past the samples' own precision: integer readings give a tenth,
-    // and a sensor reporting thousandths keeps them rather than flattening to 0.0.
+    // and a sensor reporting thousandths keeps them rather than flattening to 0.0. A reading in
+    // exponent notation carries its precision in the exponent as well as after the dot.
     private static int Decimals(string state)
     {
-        var dot = state.IndexOf('.');
-        return dot < 0 ? 0 : state.Length - dot - 1;
+        var exponentAt = state.IndexOfAny(['e', 'E']);
+        var mantissa = exponentAt < 0 ? state : state[..exponentAt];
+        var exponent = exponentAt < 0 ? 0 : int.Parse(state[(exponentAt + 1)..], CultureInfo.InvariantCulture);
+        var dot = mantissa.IndexOf('.');
+        var afterDot = dot < 0 ? 0 : mantissa.Length - dot - 1;
+        return Math.Max(afterDot - exponent, 0);
     }
 
     // The bucket index of an instant on the zone's clock: wall-clock seconds since the epoch as the

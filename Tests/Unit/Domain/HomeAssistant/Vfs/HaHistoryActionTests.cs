@@ -382,6 +382,39 @@ public class HaHistoryActionTests
         exec.Stderr.ShouldContain("numeric");
     }
 
+    // A numeric sensor that was offline for the whole window has only `unavailable` to show; the
+    // error must say that, not that the entity is non-numeric, or the model stops asking for buckets.
+    [Fact]
+    public async Task Every_OnANumericSensorOfflineAllWindow_SaysTheStatesWereUnavailable()
+    {
+        var fs = Build(out var client);
+        client.History.AddRange([Change("unavailable", "2026-09-04T12:01:00+00:00"), Change("unknown", "2026-09-04T13:07:00+00:00")]);
+
+        var exec = await Exec(fs, "history.sh --every 60");
+
+        exec.ExitCode.ShouldBe(2);
+        exec.Stderr.ShouldContain("all 2 recorded states were unavailable or unknown");
+        exec.Stderr.ShouldNotContain("none of this entity's recorded states is a number");
+    }
+
+    // A reading in exponent notation carries its precision in the exponent, not after a dot.
+    [Fact]
+    public async Task Every_ExponentNotationSamples_KeepTheirPrecision()
+    {
+        var fs = Build(out var client);
+        client.History.AddRange([
+            Change("12e-4", "2026-09-04T12:01:00+00:00"),
+            Change("15e-4", "2026-09-04T12:07:00+00:00"),
+            Change("14e-4", "2026-09-04T12:14:00+00:00")
+        ]);
+
+        var exec = await Exec(fs, "history.sh --every 60");
+
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        var buckets = JsonNode.Parse(exec.Stdout)!["buckets"]!.AsArray();
+        buckets[0]!["mean"]!.GetValue<double>().ShouldBe(0.00137);
+    }
+
     [Fact]
     public async Task NoChanges_SaysSo_AndNamesTheRetention()
     {

@@ -71,7 +71,7 @@ cannot read or resolve leaves the catalog whole and buckets on UTC, logged once 
 the payload's `bucket_zone` says which. An empty window under `--every` is an empty summary with
 the retention note, never an error. The seeded test container is `time_zone: UTC`, so only the unit test with Madrid
 stamps pins this. The first entry is the state at the window's start,
-stamped there (pinned by `HomeAssistantClientHistoryStartTests` against the real recorder). What
+stamped there (pinned by `HomeAssistantClientTests.ListHistoryAsync_FirstElement_IsTheStateAtTheWindowsStart_StampedThere` against the real recorder). What
 comes back is bounded by the recorder's retention (10 days by default, 90 on prod); nothing in
 the API says which, so the help and the empty answer say "unless this home raised it" rather
 than naming a bound the model would treat as fact. See `docs/adr/0037`.
