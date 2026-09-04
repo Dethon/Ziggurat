@@ -50,6 +50,22 @@ string, an unquoted backslash escape). Before it did, `--description "{\"target\
 as `{\target\:…}` and the bridge could not read the alarm's target. The prompt now shows the
 description single-quoted.
 
+## Every entity has `history.sh`, served by the mount
+
+The service catalog cannot read the recorder — the history endpoint (`GET /api/history/period/
+{start}`) is REST only — so `HaHistoryActions.History` is a served action (the calendar pattern)
+with `AppliesToEveryEntity`, the one flag that puts an action in **every** entity directory under
+its bare name, read-only classes included. `HaActionResolver` honours the flag before its
+domain rules; `HomeAssistantSetupSummary` says such an action once, on an `every entity:` line,
+and keeps it off the per-class lines. `HaHistory` runs it through `IHomeAssistantClient.
+ListHistoryAsync` (asked with `minimal_response&no_attributes`, so a change is state plus
+instant). Window strings cross as written (naive = HA's zone), like the calendar's; the shared
+arithmetic is `HaDateTimeText`. Plain listing keeps the latest `--limit` changes; `--every N`
+buckets numeric states per N minutes (min/max/mean/last/samples), clock-aligned, and is an
+argument error on an entity with no numeric state. What comes back is bounded by the recorder's
+retention (10 days by default); long-term statistics are WebSocket-only and not served. See
+`docs/adr/0037`.
+
 ## Music Assistant (podcast episodes)
 
 Almost everything media goes through HA's `music_assistant.*` services. One thing cannot: **listing a

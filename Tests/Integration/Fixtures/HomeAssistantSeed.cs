@@ -15,7 +15,8 @@ namespace Tests.Integration.Fixtures;
 //
 // The seeding consists of:
 //   - configuration.yaml: minimal core + an `input_boolean.test_switch` so the call_service test has a
-//     real entity to toggle, and a `script.echo` returning a response dict for the return_response path.
+//     real entity to toggle, a `script.echo` returning a response dict for the return_response path,
+//     and the recorder plus history integrations so the history read has an endpoint to hit.
 //   - .storage/auth: one owner user + groups + a `long_lived_access_token` refresh token whose `jwt_key`
 //     we control. We sign an HS256 JWT with that key and use it as the Bearer token.
 //   - .storage/onboarding: marks every onboarding step as done.
@@ -48,6 +49,11 @@ internal static class HomeAssistantSeed
               server_host: 0.0.0.0
 
             api:
+
+            # The history REST endpoint is the `history` integration's, over the recorder's store;
+            # neither is in a minimal core, so the history round trip needs both named.
+            recorder:
+            history:
 
             input_boolean:
               test_switch:

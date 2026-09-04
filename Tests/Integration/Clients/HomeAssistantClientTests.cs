@@ -193,6 +193,38 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
         after.ShouldNotContain(e => e.Summary == $"Wake {tag}");
     }
 
+    // The recorder against the real component: toggle the seeded entity, then read the window back
+    // and find the flips in it, in order, on the instants they happened.
+    [Fact]
+    public async Task ListHistoryAsync_ReadsTheChangesTheRecorderKept()
+    {
+        var client = fixture.CreateClient();
+        var start = DateTimeOffset.UtcNow.AddMinutes(-5).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+
+        await client.CallServiceAsync("input_boolean", "toggle", HomeAssistantFixture.TestEntityId, null);
+        await client.CallServiceAsync("input_boolean", "toggle", HomeAssistantFixture.TestEntityId, null);
+        var end = DateTimeOffset.UtcNow.AddMinutes(5).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+
+        // The recorder commits on its own schedule; the history read joins the queue, so a short
+        // wait is what the real UI does too.
+        IReadOnlyList<global::Domain.Contracts.HaStateChange> changes = [];
+        foreach (var _ in Enumerable.Range(0, 20))
+        {
+            changes = await client.ListHistoryAsync(HomeAssistantFixture.TestEntityId, start, end);
+            if (changes.Count >= 3)
+            {
+                break;
+            }
+            await Task.Delay(500);
+        }
+
+        output.WriteLine(string.Join("\n", changes.Select(c => $"{c.At:O} {c.State}")));
+        changes.Count.ShouldBeGreaterThanOrEqualTo(3, "the state at the window's start plus two flips");
+        changes.Select(c => c.State).ShouldAllBe(s => s == "on" || s == "off");
+        changes[^1].State.ShouldNotBe(changes[^2].State, "the last two flips alternate");
+        changes.Zip(changes.Skip(1)).ShouldAllBe(pair => pair.First.At <= pair.Second.At);
+    }
+
     [Fact]
     public async Task DeleteCalendarEventAsync_UnknownUid_ThrowsWithTheComponentsReason()
     {

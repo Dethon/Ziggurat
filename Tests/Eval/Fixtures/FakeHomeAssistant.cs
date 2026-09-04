@@ -195,6 +195,13 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             return Json(new JsonArray([.. Calendar.For(id).Select(e => e.ToApiJson())]));
         }
 
+        // The recorder's read. The fake keeps no past, so every window is empty — a scenario about
+        // history needs a store of changes first.
+        if (request.Method == HttpMethod.Get && path.Contains("/api/history/period/"))
+        {
+            return Json(new JsonArray());
+        }
+
         if (request.Method == HttpMethod.Post && path.EndsWith("/api/template"))
         {
             return Text(Areas());

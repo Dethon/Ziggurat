@@ -25,11 +25,12 @@ public static class ConfigModule
                 services.AddMusicAssistantClient(music!.BaseUrl, music.Token);
             }
 
-            // The calendar's actions are always served here: Home Assistant's own catalog cannot list
-            // an event's uid or delete one, and the replacement needs nothing beyond the HA token.
+            // The calendar's actions and the recorder's history are always served here: Home
+            // Assistant's own catalog cannot list an event's uid, delete one, or read the recorder,
+            // and the replacements need nothing beyond the HA token.
             IReadOnlyList<HaServiceDefinition> served = musicConfigured
-                ? [.. HaCalendarActions.All, HaMusicActions.PodcastEpisodes]
-                : HaCalendarActions.All;
+                ? [.. HaCalendarActions.All, HaHistoryActions.History, HaMusicActions.PodcastEpisodes]
+                : [.. HaCalendarActions.All, HaHistoryActions.History];
 
             services
                 .AddHomeAssistantClient(settings.HomeAssistant.BaseUrl, settings.HomeAssistant.Token)

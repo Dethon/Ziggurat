@@ -175,6 +175,27 @@ public class HomeAssistantClient(HttpClient httpClient, string token, TimeSpan? 
         return events.Select(ToCalendarEvent).ToList();
     }
 
+    // The recorder's one read. Asked minimally so the answer is state and instant per change and
+    // nothing else; the outer array holds one series per entity, so a filter on one entity yields
+    // one series, or none when the recorder never saw the entity.
+    public async Task<IReadOnlyList<HaStateChange>> ListHistoryAsync(
+        string entityId, string start, string end, CancellationToken ct = default)
+    {
+        var path = $"api/history/period/{Uri.EscapeDataString(start)}"
+                   + $"?filter_entity_id={Uri.EscapeDataString(entityId)}&end_time={Uri.EscapeDataString(end)}"
+                   + "&minimal_response&no_attributes";
+        using var request = NewRequest(HttpMethod.Get, path);
+        using var response = await httpClient.SendAsync(request, ct);
+        await EnsureOkAsync(response, ct);
+
+        var series = await response.Content.ReadFromJsonAsync<HaHistoryPointDto[][]>(_json, ct) ?? [];
+        return series
+            .SelectMany(points => points)
+            .Where(p => p.State is not null && p.LastChanged is not null)
+            .Select(p => new HaStateChange { State = p.State!, At = p.LastChanged!.Value })
+            .ToList();
+    }
+
     // Creating and deleting are WebSocket commands (`calendar/event/create`, `calendar/event/delete`);
     // the service catalog's create_event takes no recurrence rule and there is no delete service.
     public async Task CreateCalendarEventAsync(string entityId, HaCalendarEventDraft draft, CancellationToken ct = default)
@@ -456,5 +477,11 @@ public class HomeAssistantClient(HttpClient httpClient, string token, TimeSpan? 
         [JsonPropertyName("required")] public bool? Required { get; init; }
         [JsonPropertyName("example")] public JsonNode? Example { get; init; }
         [JsonPropertyName("selector")] public JsonNode? Selector { get; init; }
+    }
+
+    private sealed record HaHistoryPointDto
+    {
+        public string? State { get; init; }
+        public DateTimeOffset? LastChanged { get; init; }
     }
 }

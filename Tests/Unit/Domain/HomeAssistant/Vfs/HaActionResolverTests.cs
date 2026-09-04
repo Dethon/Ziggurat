@@ -53,3 +53,31 @@ public class HaActionResolverTests
         names.ShouldNotContain("turn_on");
     }
 }
+public class HaActionResolverEveryEntityTests
+{
+    private static readonly HaServiceDefinition _history = new()
+    {
+        Domain = "homeassistant",
+        Service = "history",
+        AppliesToEveryEntity = true
+    };
+
+    // The generic `homeassistant.*` services are kept out of every directory because their target
+    // accepts anything; an action that declares itself for every entity is the one exception, and
+    // it reaches the read-only classes too.
+    [Fact]
+    public void ServicesFor_AnEveryEntityAction_AppearsInEveryClass_UnderItsBareName()
+    {
+        List<HaServiceDefinition> services =
+        [
+            Service("light", "turn_on", DomainTarget("light")),
+            Service("homeassistant", "restart", null),
+            _history
+        ];
+
+        HaActionResolver.ServicesFor("sensor.glucose", services).ShouldBe([_history]);
+        HaActionResolver.ServicesFor("light.kitchen", services)
+            .Select(s => HaActionResolver.CommandName(s, "light"))
+            .ShouldBe(["history", "turn_on"]);
+    }
+}

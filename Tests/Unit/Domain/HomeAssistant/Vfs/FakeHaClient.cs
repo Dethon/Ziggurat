@@ -75,6 +75,20 @@ public class FakeHaClient : IHomeAssistantClient
         return Task.CompletedTask;
     }
 
+    // The recorder side: what the history read answers, and the window it was asked for.
+    public List<HaStateChange> History { get; init; } = [];
+    public (string EntityId, string Start, string End)? LastHistoryWindow { get; private set; }
+    public Exception? HistoryFailure { get; set; }
+
+    public virtual Task<IReadOnlyList<HaStateChange>> ListHistoryAsync(
+        string entityId, string start, string end, CancellationToken ct = default)
+    {
+        LastHistoryWindow = (entityId, start, end);
+        return HistoryFailure is null
+            ? Task.FromResult<IReadOnlyList<HaStateChange>>(History)
+            : Task.FromException<IReadOnlyList<HaStateChange>>(HistoryFailure);
+    }
+
     public static HaEntityState Entity(string id, string state, params (string Key, JsonNode? Value)[] attrs) => new()
     {
         EntityId = id,

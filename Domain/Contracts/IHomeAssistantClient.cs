@@ -34,6 +34,21 @@ public interface IHomeAssistantClient
     Task DeleteCalendarEventAsync(
         string entityId, string uid, string? recurrenceId = null, string? recurrenceRange = null,
         CancellationToken ct = default);
+
+    // The recorder's one read: `GET /api/history/period/{start}` asked minimally (state and instant
+    // only, no attributes), which answers the entity's state at the window's start followed by every
+    // change inside it. Nothing in the service catalog answers "what was this over the last day".
+    // `start` and `end` cross as the caller's strings for the same reason the calendar's do.
+    Task<IReadOnlyList<HaStateChange>> ListHistoryAsync(
+        string entityId, string start, string end, CancellationToken ct = default);
+}
+
+// One recorded state and the instant it was taken, as the history endpoint lists them.
+[PublicAPI]
+public record HaStateChange
+{
+    public required string State { get; init; }
+    public required DateTimeOffset At { get; init; }
 }
 
 // One event as the calendars endpoint lists it. `Start`/`End` are the strings Home Assistant sent —
@@ -89,6 +104,11 @@ public record HaServiceDefinition
     // shape (e.g. `{entity: [{domain: ["vacuum"]}]}`) narrows acceptable entity kinds.
     // Absent (null) means the service takes no entity target.
     public JsonNode? Target { get; init; }
+
+    // An action the mount serves in EVERY entity directory, read-only classes included, under its
+    // bare name — the recorder's history is one. Set only on served definitions; a catalog service
+    // never carries it, which is what keeps `homeassistant.turn_on` out of every directory.
+    public bool AppliesToEveryEntity { get; init; }
 }
 
 [PublicAPI]

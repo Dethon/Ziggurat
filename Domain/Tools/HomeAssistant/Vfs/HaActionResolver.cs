@@ -22,20 +22,22 @@ public static class HaActionResolver
     // (`media_player.play_media` -> `play_media.sh`). exec/read/info resolve back through the same
     // CommandName, so the qualified name round-trips.
     public static string CommandName(HaServiceDefinition svc, string classDomain) =>
-        svc.Domain.Equals(classDomain, StringComparison.Ordinal)
+        svc.AppliesToEveryEntity || svc.Domain.Equals(classDomain, StringComparison.Ordinal)
             ? svc.Service
             : $"{svc.Domain}.{svc.Service}";
 
-    // A service applies to an entity when it is either:
+    // A service applies to an entity when it declares itself for every entity (see
+    // HaServiceDefinition.AppliesToEveryEntity), or is either:
     //  - a same-domain service that entity-targets this class (the original rule), or
     //  - a cross-domain service whose target EXPLICITLY names this class domain (e.g. Music
     //    Assistant's `music_assistant.play_media` targeting `media_player`). The explicit-name
     //    requirement keeps generic global services (`homeassistant.turn_on`, whose target accepts
     //    ANY entity) from flooding every entity directory.
     private static bool Applies(HaServiceDefinition svc, string classDomain) =>
-        svc.Domain.Equals(classDomain, StringComparison.Ordinal)
+        svc.AppliesToEveryEntity
+        || (svc.Domain.Equals(classDomain, StringComparison.Ordinal)
             ? TargetAcceptsEntity(svc.Target, classDomain)
-            : TargetNamesDomain(svc.Target, classDomain);
+            : TargetNamesDomain(svc.Target, classDomain));
 
     // target == null  -> not entity-targeted, exclude.
     // target has no "entity" constraint we can read -> accept (it targets entities generically).

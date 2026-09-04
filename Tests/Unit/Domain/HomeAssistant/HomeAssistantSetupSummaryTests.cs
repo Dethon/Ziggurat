@@ -131,3 +131,26 @@ public class HomeAssistantSetupSummaryTests
     }
 
 }
+public class HomeAssistantSetupSummaryEveryEntityTests
+{
+    // Listing `history.sh` on every class line would put every read-only class into the table and
+    // say the same word once per class; the index says it once instead.
+    [Fact]
+    public async Task GetAsync_AnEveryEntityAction_IsAnnouncedOnce_NotPerClass()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("light.kitchen", "off"), Entity("sensor.salon_temp", "21") },
+            Services = { Service("light", "turn_on", DomainTarget("light")) }
+        };
+        var summary = new HomeAssistantSetupSummary(
+            new HaCatalogProvider(() => client, new FakeTimeProvider(), extraServices: [HaHistoryActions.History]));
+
+        var text = await summary.GetAsync(CancellationToken.None);
+
+        text.ShouldContain("every entity: history.sh");
+        text.ShouldContain("light: turn_on.sh");
+        text.ShouldNotContain("light: history.sh");
+        text.ShouldNotContain("sensor: history.sh");
+    }
+}

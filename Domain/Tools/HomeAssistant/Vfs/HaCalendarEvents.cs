@@ -1,6 +1,4 @@
-using System.Globalization;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.Exceptions;
 
@@ -13,7 +11,7 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 // in its own time zone, and this process may sit in another, so parsing into an instant here would
 // move an alarm by the difference. The one arithmetic done — an end derived from a start, a window
 // end derived from its start — keeps the string's own shape: separator, precision and offset.
-internal static partial class HaCalendarEvents
+internal static class HaCalendarEvents
 {
     private static readonly TimeSpan _defaultEventLength = TimeSpan.FromMinutes(1);
 
@@ -87,7 +85,7 @@ internal static partial class HaCalendarEvents
             {
                 throw new ArgumentException("--end_date goes with --start_date; a --start_date_time takes --end_date_time.");
             }
-            return (startDateTime, endDateTime ?? Shift(startDateTime, _defaultEventLength, "start_date_time"));
+            return (startDateTime, endDateTime ?? HaDateTimeText.Shift(startDateTime, _defaultEventLength, "start_date_time"));
         }
 
         if (startDate is not null)
@@ -96,7 +94,7 @@ internal static partial class HaCalendarEvents
             {
                 throw new ArgumentException("--end_date_time goes with --start_date_time; a --start_date takes --end_date.");
             }
-            return (startDate, endDate ?? ShiftDate(startDate, 1, "start_date"));
+            return (startDate, endDate ?? HaDateTimeText.ShiftDate(startDate, 1, "start_date"));
         }
 
         throw new ArgumentException(
@@ -118,8 +116,7 @@ internal static partial class HaCalendarEvents
     private static async Task<(int, string, string)> ListAsync(
         IHomeAssistantClient client, string entityId, JsonObject data, TimeProvider time, CancellationToken ct)
     {
-        var start = Text(data, "start_date_time")
-            ?? time.GetUtcNow().ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture);
+        var start = Text(data, "start_date_time") ?? HaDateTimeText.Now(time);
         var end = Text(data, "end_date_time");
         var days = data["days"]?.GetValue<int>();
 
@@ -127,7 +124,7 @@ internal static partial class HaCalendarEvents
         {
             throw new ArgumentException("Give either --end_date_time or --days, not both.");
         }
-        end ??= Shift(start, TimeSpan.FromDays(days ?? HaCalendarActions.DefaultListingDays), "start_date_time");
+        end ??= HaDateTimeText.Shift(start, TimeSpan.FromDays(days ?? HaCalendarActions.DefaultListingDays), "start_date_time");
 
         var events = await client.ListCalendarEventsAsync(entityId, start, end, ct);
 
@@ -177,44 +174,4 @@ internal static partial class HaCalendarEvents
         JsonNode node => node.ToJsonString(),
         null => null
     };
-
-    // Moves a date-time string by a span, giving back the same shape it came in: a naive
-    // "2026-09-02 21:30:00" stays naive with its space, a "2026-09-03T07:00:00+02:00" keeps its
-    // offset, a trailing Z stays a Z.
-    private static string Shift(string dateTime, TimeSpan by, string argument)
-    {
-        var trimmed = dateTime.Trim();
-        var separator = trimmed.Length > 10 && trimmed[10] == ' ' ? " " : "T";
-        var offset = OffsetSuffix().Match(trimmed);
-
-        if (offset.Success)
-        {
-            if (!DateTimeOffset.TryParse(trimmed, CultureInfo.InvariantCulture, DateTimeStyles.None, out var aware))
-            {
-                throw Unparseable(argument, dateTime);
-            }
-            var moved = aware + by;
-            return offset.Value.Equals("Z", StringComparison.OrdinalIgnoreCase)
-                ? moved.UtcDateTime.ToString($"yyyy-MM-dd'{separator}'HH:mm:ss'Z'", CultureInfo.InvariantCulture)
-                : moved.ToString($"yyyy-MM-dd'{separator}'HH:mm:sszzz", CultureInfo.InvariantCulture);
-        }
-
-        if (!DateTime.TryParse(trimmed, CultureInfo.InvariantCulture, DateTimeStyles.None, out var naive)
-            || trimmed.Length < 16)
-        {
-            throw Unparseable(argument, dateTime);
-        }
-        return (naive + by).ToString($"yyyy-MM-dd'{separator}'HH:mm:ss", CultureInfo.InvariantCulture);
-    }
-
-    private static string ShiftDate(string date, int days, string argument) =>
-        DateOnly.TryParseExact(date.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
-            ? day.AddDays(days).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
-            : throw new ArgumentException($"--{argument} expects a date as YYYY-MM-DD, got '{date}'.");
-
-    private static ArgumentException Unparseable(string argument, string value) =>
-        new($"--{argument} expects a date-time as \"YYYY-MM-DD HH:MM:SS\" (an offset such as +02:00 or Z may follow), got '{value}'. Resolve relative times to an absolute one yourself.");
-
-    [GeneratedRegex(@"(Z|[+-]\d{2}:?\d{2})$", RegexOptions.IgnoreCase)]
-    private static partial Regex OffsetSuffix();
 }

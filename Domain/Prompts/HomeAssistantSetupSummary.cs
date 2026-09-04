@@ -25,9 +25,10 @@ public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider)
     private const string ActionsHeader =
         "Action files live in the ENTITY directory (`/ha/entities/<class>/<id>/<action>.sh`), "
         + "never in the class directory — `glob` on `/ha/entities/<class>/*.sh` always returns "
-        + "nothing. Use this table instead of globbing to discover actions. Classes absent "
-        + "here are read-only. If one entity lacks a listed action, `exec` returns exitCode "
-        + "127 and `stderr` names the ones it does have.";
+        + "nothing. Use this table instead of globbing to discover actions. The `every entity` "
+        + "line names the actions every directory has, read-only classes included; a class absent "
+        + "from the rest has only those. If one entity lacks a listed action, `exec` returns "
+        + "exitCode 127 and `stderr` names the ones it does have.";
 
     public async Task<string> GetAsync(CancellationToken ct = default)
     {
@@ -42,11 +43,16 @@ public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider)
         sb.Append(SetupHeader).Append("\n\n");
         sb.Append(string.Join("\n", BuildRoomSections(catalog)));
 
+        var everywhere = EveryEntityActions(catalog);
         var actions = BuildActionTable(catalog);
-        if (actions.Count > 0)
+        if (everywhere.Count > 0 || actions.Count > 0)
         {
             sb.Append("\n## Actions by entity class\n\n");
             sb.Append(ActionsHeader).Append("\n\n");
+            if (everywhere.Count > 0)
+            {
+                sb.Append("every entity: ").Append(string.Join(", ", everywhere)).Append('\n');
+            }
             sb.Append(string.Join("\n", actions)).Append('\n');
         }
 
@@ -80,10 +86,21 @@ public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider)
             .Select(x => $"{x.classDomain}: {string.Join(", ", x.actions)}")
             .ToList();
 
+    // Said once, above the table: on every class line it would put every read-only class into the
+    // table to repeat one word.
+    private static IReadOnlyList<string> EveryEntityActions(HaCatalog catalog) =>
+        catalog.Services
+            .Where(svc => svc.AppliesToEveryEntity)
+            .Select(svc => $"{svc.Service}.sh")
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(a => a, StringComparer.Ordinal)
+            .ToList();
+
     private static IReadOnlyList<string> ActionsFor(string classDomain, HaCatalog catalog) =>
         catalog.ObjectIdsFor(classDomain)
             .SelectMany(objectId => HaActionResolver
                 .ServicesFor($"{classDomain}.{objectId}", catalog.Services)
+                .Where(svc => !svc.AppliesToEveryEntity)
                 .Select(svc => $"{HaActionResolver.CommandName(svc, classDomain)}.sh"))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(a => a, StringComparer.Ordinal)

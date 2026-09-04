@@ -82,6 +82,13 @@ public sealed partial class HaFileSystem
 
         try
         {
+            // Served here: the recorder has no service, only a REST read, and every entity has a past.
+            if (HaHistoryActions.IsHistory(svc))
+            {
+                var (code, output, error) = await HaHistory.RunAsync(clientFactory(), entityId, data, _time, effectiveCt);
+                return done(code, output, error);
+            }
+
             // Served here, not by HA: no Home Assistant call can list a podcast's episodes.
             if (HaMusicActions.IsPodcastEpisodes(svc))
             {

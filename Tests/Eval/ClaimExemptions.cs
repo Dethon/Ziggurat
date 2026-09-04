@@ -39,6 +39,11 @@ public static class ClaimExemptions
             + "call at all (every thread on the prod host, checked 2026-08-20), so the probe is "
             + "an artifact of the eval's fresh-context condition — worth the retry it "
             + "occasionally costs, not more prose."),
+        [HomeAssistantPrompt.ThePastIsReadFromHistory.Id] = new(ExemptionKind.Unwritten,
+            "Written on 2026-09-04 with the action. A scenario needs the fake home to keep a past — "
+            + "its history endpoint answers every window empty — and a turn that asks about one, "
+            + "e.g. a glucose sensor's night, judged on whether the answer came from history.sh "
+            + "rather than state.json."),
         [VoicePrompt.OneSentenceTwelveWords.Id] = new(ExemptionKind.Unwritten,
             "Every spoken scenario declares a sentence and word limit, but none of them is *about* the "
             + "limit — the assertion is diffuse and no single scenario owns it — and the declared word "
