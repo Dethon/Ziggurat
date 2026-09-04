@@ -51,6 +51,41 @@ public class HaCatalogProviderTests
         catalog.Services.Single(s => s.Service == "create_event").Fields.Keys.ShouldContain("rrule");
     }
 
+    // The recorder stamps history in UTC, so the home's own clock has to come from its
+    // configuration; the catalog carries it, resolved to a zone this runtime knows.
+    [Fact]
+    public async Task GetAsync_CarriesTheHomesTimeZone()
+    {
+        var client = new FakeHaClient { TimeZone = "Europe/Madrid" };
+        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
+
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.HomeZone.ShouldNotBeNull().Id.ShouldBe("Europe/Madrid");
+    }
+
+    // A zone this runtime cannot resolve, or a config read that fails, leaves the zone unknown
+    // rather than blanking the catalog: the mount stays usable and the summary buckets on UTC.
+    [Theory]
+    [InlineData("Nowhere/Nowhere", false)]
+    [InlineData(null, false)]
+    [InlineData("Europe/Madrid", true)]
+    public async Task GetAsync_AnUnknownOrUnreadableZone_LeavesItNull_AndKeepsTheCatalog(string? zone, bool fails)
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("light.kitchen", "off") },
+            TimeZone = zone,
+            TimeZoneFailure = fails ? new HttpRequestException("config unreachable") : null
+        };
+        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
+
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.Entities.Count.ShouldBe(1);
+        catalog.HomeZone.ShouldBeNull();
+    }
+
     [Fact]
     public async Task GetAsync_SuccessfulButEmpty_CachesForFullTtl()
     {

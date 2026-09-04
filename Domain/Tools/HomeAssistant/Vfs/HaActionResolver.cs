@@ -39,7 +39,8 @@ public static class HaActionResolver
     {
         if (svc.AppliesToEveryEntity)
         {
-            return svc.RequiresAttribute is null || entity.Attributes.ContainsKey(svc.RequiresAttribute);
+            return svc.RequiresAttribute is null
+                   || (entity.Attributes.TryGetValue(svc.RequiresAttribute, out var value) && value is not null);
         }
         return svc.Domain.Equals(classDomain, StringComparison.Ordinal)
             ? TargetAcceptsEntity(svc.Target, classDomain)

@@ -196,6 +196,21 @@ public class HomeAssistantClient(HttpClient httpClient, string token, TimeSpan? 
             .ToList();
     }
 
+    // `GET /api/config` is the one place the home's zone is stated; the history endpoint never
+    // carries it, every stamp there is UTC.
+    public async Task<string?> GetTimeZoneAsync(CancellationToken ct = default)
+    {
+        using var request = NewRequest(HttpMethod.Get, "api/config");
+        using var response = await httpClient.SendAsync(request, ct);
+        await EnsureOkAsync(response, ct);
+
+        var config = await response.Content.ReadFromJsonAsync<JsonNode>(_json, ct);
+        return config?["time_zone"] is JsonValue value && value.TryGetValue<string>(out var zone)
+               && !string.IsNullOrWhiteSpace(zone)
+            ? zone
+            : null;
+    }
+
     // Long-term statistics have no REST form. The command answers an object keyed by statistic id
     // whose rows carry epoch-millisecond bounds and only the measures the sensor's kind has.
     public async Task<IReadOnlyList<HaStatisticsRow>> ListStatisticsAsync(

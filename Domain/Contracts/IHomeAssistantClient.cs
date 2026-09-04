@@ -48,6 +48,11 @@ public interface IHomeAssistantClient
     // them reach past the recorder's retention. Window strings cross as the caller's, as above.
     Task<IReadOnlyList<HaStatisticsRow>> ListStatisticsAsync(
         string entityId, string start, string end, string period, CancellationToken ct = default);
+
+    // The home's configured zone as `GET /api/config` names it (an IANA id such as Europe/Madrid),
+    // or null when the config carries none. The recorder stamps every change in UTC whatever the
+    // home's zone, so anything aligned to the home's clock (a day bucket at its midnight) needs this.
+    Task<string?> GetTimeZoneAsync(CancellationToken ct = default);
 }
 
 // One statistics row as the recorder answers it. A measured sensor carries Mean/Min/Max; a total

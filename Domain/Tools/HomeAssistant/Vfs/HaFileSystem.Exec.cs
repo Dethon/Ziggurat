@@ -85,7 +85,8 @@ public sealed partial class HaFileSystem
             // Served here: the recorder has no service, only a REST read, and every entity has a past.
             if (HaHistoryActions.IsHistory(svc))
             {
-                var (code, output, error) = await HaHistory.RunAsync(clientFactory(), entityId, data, _time, effectiveCt);
+                var (code, output, error) = await HaHistory.RunAsync(
+                    clientFactory(), entityId, data, _time, catalog.HomeZone, effectiveCt);
                 return done(code, output, error);
             }
 

@@ -61,9 +61,15 @@ and keeps it off the per-class lines. `HaHistory` runs it through `IHomeAssistan
 ListHistoryAsync` (asked with `minimal_response&no_attributes`, so a change is state plus
 instant). Window strings cross as written (naive = HA's zone), like the calendar's; the shared
 arithmetic is `HaDateTimeText`. Plain listing keeps the latest `--limit` changes; `--every N`
-buckets numeric states per N minutes (min/max/mean/last/samples), aligned to the clock of the
-changes' own offset (a day bucket opens at the home's midnight, not UTC's), and is an argument
-error on an entity with no numeric state. The first entry is the state at the window's start,
+buckets numeric states per N minutes (min/max/mean/last/samples) and is an argument error on an
+entity with no numeric state, or beside `--limit`. **The recorder stamps every change in UTC
+whatever the home's zone** (`recorder/history/__init__.py` formats `last_changed` from a UTC
+timestamp), so buckets cannot follow the stamps' offset: `HaCatalogProvider` reads the home's zone
+once from `GET /api/config` (`IHomeAssistantClient.GetTimeZoneAsync`, `HaCatalog.HomeZone`) and
+`HaHistory` aligns buckets to that clock, so a day bucket opens at the home's midnight; a zone it
+cannot read or resolve leaves the catalog whole and buckets on UTC, and the payload's `bucket_zone`
+says which. The seeded test container is `time_zone: UTC`, so only the unit test with Madrid
+stamps pins this. The first entry is the state at the window's start,
 stamped there (pinned by `HomeAssistantClientHistoryStartTests` against the real recorder). What
 comes back is bounded by the recorder's retention (10 days by default, 90 on prod); nothing in
 the API says which, so the help and the empty answer say "unless this home raised it" rather

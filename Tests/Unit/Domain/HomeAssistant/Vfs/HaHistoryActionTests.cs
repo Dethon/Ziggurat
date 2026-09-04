@@ -77,6 +77,8 @@ public class HaHistoryActionTests
         help.Stdout.ShouldContain("--end_date_time");
         help.Stdout.ShouldContain("--every");
         help.Stdout.ShouldContain("--limit");
+        // An end given alone: the default length is counted back from it, and the help says so.
+        help.Stdout.ShouldContain("counted back");
     }
 
     [Fact]
@@ -210,27 +212,72 @@ public class HaHistoryActionTests
         payload.ContainsKey("changes").ShouldBeFalse();
     }
 
-    // The instants carry the home's offset, and the buckets follow it: a day bucket runs from the
-    // home's midnight, not UTC's, and its stamp keeps the same offset the changes have.
+    // The recorder stamps every change in UTC whatever the home's zone (Home Assistant's history
+    // endpoint formats `last_changed` from a UTC timestamp), so the buckets cannot follow the
+    // stamps' offset: they follow the home's clock, read from its configuration, and a day bucket
+    // runs from the home's midnight. The stamp of a bucket carries the home's offset at that instant.
     [Fact]
-    public async Task Every_AlignsBucketsToTheChangesOwnOffset()
+    public async Task Every_AlignsBucketsToTheHomesClock_NotTheUtcStampsTheRecorderSends()
     {
         var fs = Build(out var client);
+        client.TimeZone = "Europe/Madrid";
         client.History.AddRange([
-            Change("100", "2026-09-03T23:30:00+02:00"),
-            Change("110", "2026-09-04T01:00:00+02:00"),
-            Change("120", "2026-09-04T13:00:00+02:00")
+            Change("100", "2026-09-03T21:30:00+00:00"),
+            Change("110", "2026-09-03T23:00:00+00:00"),
+            Change("120", "2026-09-04T11:00:00+00:00")
         ]);
 
         var exec = await Exec(fs, "history.sh --every 1440");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
-        var buckets = JsonNode.Parse(exec.Stdout)!["buckets"]!.AsArray();
+        var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
+        payload["bucket_zone"]!.GetValue<string>().ShouldBe("Europe/Madrid");
+        var buckets = payload["buckets"]!.AsArray();
         buckets.Count.ShouldBe(2);
         buckets[0]!["at"]!.GetValue<string>().ShouldBe("2026-09-03T00:00:00+02:00");
         buckets[0]!["samples"]!.GetValue<int>().ShouldBe(1);
         buckets[1]!["at"]!.GetValue<string>().ShouldBe("2026-09-04T00:00:00+02:00");
         buckets[1]!["samples"]!.GetValue<int>().ShouldBe(2);
+    }
+
+    // A home whose zone could not be read (or is unknown here) buckets on UTC and says so, rather
+    // than guessing this process's zone.
+    [Fact]
+    public async Task Every_WithoutAKnownHomeZone_BucketsOnUtc_AndSaysSo()
+    {
+        var fs = Build(out var client);
+        client.TimeZone = null;
+        client.History.AddRange([
+            Change("100", "2026-09-03T21:30:00+00:00"),
+            Change("110", "2026-09-03T23:00:00+00:00"),
+            Change("120", "2026-09-04T11:00:00+00:00")
+        ]);
+
+        var exec = await Exec(fs, "history.sh --every 1440");
+
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
+        payload["bucket_zone"]!.GetValue<string>().ShouldBe("UTC");
+        var buckets = payload["buckets"]!.AsArray();
+        buckets.Count.ShouldBe(2);
+        buckets[0]!["at"]!.GetValue<string>().ShouldBe("2026-09-03T00:00:00+00:00");
+        buckets[0]!["samples"]!.GetValue<int>().ShouldBe(2);
+        buckets[1]!["at"]!.GetValue<string>().ShouldBe("2026-09-04T00:00:00+00:00");
+    }
+
+    // --limit caps a listing; a summary has buckets, not changes, so the pair is a mistake to name,
+    // not one to ignore.
+    [Fact]
+    public async Task Every_WithLimit_IsABadArgument()
+    {
+        var fs = Build(out var client);
+
+        var exec = await Exec(fs, "history.sh --every 60 --limit 5");
+
+        exec.ExitCode.ShouldBe(2);
+        exec.Stderr.ShouldContain("--every");
+        exec.Stderr.ShouldContain("--limit");
+        client.LastHistoryWindow.ShouldBeNull();
     }
 
     [Fact]

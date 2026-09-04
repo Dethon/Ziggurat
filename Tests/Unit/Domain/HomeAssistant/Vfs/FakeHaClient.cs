@@ -37,6 +37,13 @@ public class FakeHaClient : IHomeAssistantClient
     public virtual Task<string> RenderTemplateAsync(string template, CancellationToken ct = default)
         => Task.FromResult(AreaTemplateJson);
 
+    // The home's configured zone, as `GET /api/config` names it; null when the fake home has none.
+    public string? TimeZone { get; set; }
+    public Exception? TimeZoneFailure { get; set; }
+
+    public virtual Task<string?> GetTimeZoneAsync(CancellationToken ct = default)
+        => TimeZoneFailure is null ? Task.FromResult(TimeZone) : Task.FromException<string?>(TimeZoneFailure);
+
     // The calendar side: what the listing answers, and what was created or deleted through it.
     public List<HaCalendarEvent> CalendarEvents { get; init; } = [];
     public (string EntityId, string Start, string End)? LastCalendarWindow { get; private set; }

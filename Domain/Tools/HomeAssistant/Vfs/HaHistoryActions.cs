@@ -35,7 +35,7 @@ public static class HaHistoryActions
                 Selector = JsonNode.Parse("""{"number":{"min":1,"max":240}}""")
             },
             ["start_date_time"] = new() { Description = "Window start as a local date-time, e.g. \"2026-09-03 22:00:00\" (an explicit offset is honoured). Not with --hours." },
-            ["end_date_time"] = new() { Description = "Window end as a local date-time; defaults to now." },
+            ["end_date_time"] = new() { Description = $"Window end as a local date-time; defaults to now. Alone, --hours (default {DefaultHours}) is counted back from it." },
             ["every"] = new()
             {
                 Description = "Summarise per bucket of this many minutes: min, max, mean, last and sample count. Numeric states only.",

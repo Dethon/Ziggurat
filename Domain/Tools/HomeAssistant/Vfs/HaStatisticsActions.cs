@@ -38,7 +38,7 @@ public static class HaStatisticsActions
                 Selector = JsonNode.Parse("""{"number":{"min":1,"max":3660}}""")
             },
             ["start_date_time"] = new() { Description = "Window start as a local date-time, e.g. \"2026-08-01 00:00:00\" (an explicit offset is honoured). Not with --days." },
-            ["end_date_time"] = new() { Description = "Window end as a local date-time; defaults to now." },
+            ["end_date_time"] = new() { Description = $"Window end as a local date-time; defaults to now. Alone, --days (default {DefaultDays}) is counted back from it." },
             ["period"] = new()
             {
                 Description = $"One row per period (default {DefaultPeriod}). 5minute rows last only the recorder's retention; the rest are kept for good.",

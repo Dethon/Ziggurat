@@ -42,7 +42,14 @@ Two shapes come back, because a minute-by-minute sensor over a day is 1,440 poin
 four. The plain listing keeps the latest `--limit` changes (200 by default) and says how many
 there were; `--every <minutes>` answers min, max, mean, last and a sample count per clock-aligned
 bucket, numeric states only, with the non-numeric ones (`unavailable`, `unknown`) counted as
-skipped. A history with no number in it under `--every` is an argument error, not an empty answer.
+skipped. A history with no number in it under `--every` is an argument error, not an empty answer,
+and so is `--every` beside `--limit`.
+
+The clock the buckets align to is the home's, not the stamps'. Home Assistant stamps every change
+in UTC whatever zone the home keeps, so a day bucket cut on the stamps would open at UTC midnight —
+02:00 in Madrid. The catalog therefore reads the home's zone once from `GET /api/config`, the one
+place it is stated, and the summary opens a day at that zone's midnight, naming the zone in its
+answer; a zone that cannot be read leaves the catalog whole and the buckets on UTC, said as much.
 
 ## Considered options
 

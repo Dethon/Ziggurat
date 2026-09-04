@@ -193,6 +193,34 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
         after.ShouldNotContain(e => e.Summary == $"Wake {tag}");
     }
 
+    // The home's clock, the one the summary buckets follow: the seed pins the container to UTC.
+    [Fact]
+    public async Task GetTimeZoneAsync_ReadsTheZoneTheHomeIsConfiguredWith()
+    {
+        var zone = await fixture.CreateClient().GetTimeZoneAsync();
+
+        zone.ShouldBe("UTC");
+    }
+
+    // What the first element of a history is, pinned against the real recorder: the state the
+    // entity had when the window opened, stamped at the window's start — not at the instant it
+    // last changed, which may be days earlier. The action's help says so, and this is the evidence.
+    [Fact]
+    public async Task ListHistoryAsync_FirstElement_IsTheStateAtTheWindowsStart_StampedThere()
+    {
+        var client = fixture.CreateClient();
+        await client.CallServiceAsync("input_boolean", "toggle", HomeAssistantFixture.TestEntityId, null);
+        await Task.Delay(3000);
+        var start = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        await Task.Delay(1500);
+        var end = DateTimeOffset.UtcNow.AddMinutes(5).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+
+        var changes = await client.ListHistoryAsync(HomeAssistantFixture.TestEntityId, start, end);
+
+        changes.ShouldHaveSingleItem();
+        changes[0].At.ShouldBe(DateTimeOffset.Parse(start));
+    }
+
     // The recorder against the real component: toggle the seeded entity, then read the window back
     // and find the flips in it, in order, on the instants they happened.
     [Fact]

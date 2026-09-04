@@ -9,19 +9,28 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 // the client, and answers either every change or one summary per bucket.
 //
 // The window's strings cross to Home Assistant as written (HaDateTimeText). The instants that come
-// back are Home Assistant's own, offset included, and are rendered with that offset rather than
-// converted: this process does not know the home's zone, and the prompt tells the model to say
-// them in the user's.
+// back are Home Assistant's own — always UTC, whatever the home's zone: the history endpoint formats
+// `last_changed` from a UTC timestamp — and a listing renders them as they came; the prompt tells
+// the model to say them in the user's time. A summary is the one place the home's clock matters (a
+// day bucket should open at the home's midnight), so it takes the zone the catalog read from the
+// home's configuration, and buckets on UTC, saying so, when there is none.
 internal static class HaHistory
 {
     public static async Task<(int Code, string Stdout, string Stderr)> RunAsync(
-        IHomeAssistantClient client, string entityId, JsonObject data, TimeProvider time, CancellationToken ct)
+        IHomeAssistantClient client, string entityId, JsonObject data, TimeProvider time, TimeZoneInfo? homeZone,
+        CancellationToken ct)
     {
         try
         {
             var (start, end) = HaWindow.Resolve(data, time, "hours", TimeSpan.FromHours, HaHistoryActions.DefaultHours);
             var every = HaWindow.WholeNumber(data, "every");
-            var limit = HaWindow.WholeNumber(data, "limit") ?? HaHistoryActions.DefaultLimit;
+            var limit = HaWindow.WholeNumber(data, "limit");
+            if (every is not null && limit is not null)
+            {
+                throw new ArgumentException(
+                    "Give either --every or --limit, not both: --limit caps a listing of changes, and --every "
+                    + "answers buckets instead of a listing.");
+            }
 
             var changes = await client.ListHistoryAsync(entityId, start, end, ct);
 
@@ -34,11 +43,11 @@ internal static class HaHistory
 
             if (every is { } minutes)
             {
-                Summarise(payload, changes, minutes);
+                Summarise(payload, changes, minutes, homeZone ?? TimeZoneInfo.Utc);
             }
             else
             {
-                List(payload, changes, limit);
+                List(payload, changes, limit ?? HaHistoryActions.DefaultLimit);
             }
 
             if (changes.Count == 0)
@@ -80,13 +89,13 @@ internal static class HaHistory
         }
     }
 
-    // Buckets are aligned to the clock of the changes' own offset (multiples of the bucket length
-    // since the epoch, shifted by that offset), so an hourly summary starts on the hour and a daily
-    // one at the home's midnight, whatever the window's start; a bucket's stamp keeps the offset the
-    // changes carry. A state that is not a number (`unavailable`, `unknown`, a light's `on`) is
-    // skipped and counted, and a history with no number in it at all is an argument error rather
-    // than an empty answer.
-    private static void Summarise(JsonObject payload, IReadOnlyList<HaStateChange> changes, int minutes)
+    // Buckets are aligned to the home's clock (multiples of the bucket length since the epoch, as
+    // that zone counts wall-clock seconds), so an hourly summary starts on the hour and a daily one
+    // at the home's midnight, whatever the window's start and whatever offset the stamps carry — the
+    // recorder's are always UTC. A bucket's stamp carries the home's offset at the instant it opens.
+    // A state that is not a number (`unavailable`, `unknown`, a light's `on`) is skipped and counted,
+    // and a history with no number in it at all is an argument error rather than an empty answer.
+    private static void Summarise(JsonObject payload, IReadOnlyList<HaStateChange> changes, int minutes, TimeZoneInfo zone)
     {
         var samples = changes
             .Select(c => (Change: c, Ok: double.TryParse(c.State, NumberStyles.Float, CultureInfo.InvariantCulture, out var value), Value: value))
@@ -102,16 +111,15 @@ internal static class HaHistory
 
         var bucketSeconds = minutes * 60L;
         var buckets = samples
-            .GroupBy(s => Bucket(s.Change.At, bucketSeconds))
+            .GroupBy(s => Bucket(s.Change.At, bucketSeconds, zone))
             .OrderBy(g => g.Key)
             .Select(g =>
             {
                 var ordered = g.OrderBy(s => s.Change.At).ToList();
                 var values = ordered.Select(s => s.Value).ToList();
-                var offset = ordered[0].Change.At.Offset;
                 return (JsonNode?)new JsonObject
                 {
-                    ["at"] = Stamp(BucketStart(g.Key, bucketSeconds, offset)),
+                    ["at"] = Stamp(BucketStart(g.Key, bucketSeconds, zone)),
                     ["min"] = values.Min(),
                     ["max"] = values.Max(),
                     ["mean"] = Math.Round(values.Average(), 1),
@@ -122,23 +130,31 @@ internal static class HaHistory
             .ToArray();
 
         payload["every_minutes"] = minutes;
+        payload["bucket_zone"] = zone.Id;
         payload["samples"] = samples.Count;
         payload["skipped"] = changes.Count - samples.Count;
         payload["buckets"] = new JsonArray(buckets);
     }
 
-    // The bucket index of an instant on its own offset's clock: wall-clock seconds since the epoch
-    // as that offset counts them, floored to a multiple of the bucket. Two instants in the same
-    // offset share a bucket exactly when the wall clock puts them in the same one.
-    private static long Bucket(DateTimeOffset at, long bucketSeconds)
+    // The bucket index of an instant on the zone's clock: wall-clock seconds since the epoch as the
+    // zone counts them at that instant, floored to a multiple of the bucket. Two instants share a
+    // bucket exactly when the home's wall clock puts them in the same one.
+    private static long Bucket(DateTimeOffset at, long bucketSeconds, TimeZoneInfo zone)
     {
-        var wallClockSeconds = at.ToUnixTimeSeconds() + (long)at.Offset.TotalSeconds;
+        var wallClockSeconds = at.ToUnixTimeSeconds() + (long)zone.GetUtcOffset(at).TotalSeconds;
         return Math.DivRem(wallClockSeconds, bucketSeconds, out var rem) - (rem < 0 ? 1 : 0);
     }
 
-    // The instant a bucket opens, back from the wall clock of the offset it was indexed on.
-    private static DateTimeOffset BucketStart(long index, long bucketSeconds, TimeSpan offset) =>
-        DateTimeOffset.FromUnixTimeSeconds(index * bucketSeconds - (long)offset.TotalSeconds).ToOffset(offset);
+    // The instant a bucket opens on the zone's clock: the wall-clock second it starts at, read back
+    // through the offset the zone has at that moment (a first guess with the offset of the wall
+    // clock taken as UTC, corrected once for the zone's offset there — exact outside the hour a
+    // DST change skips or repeats, and never off by more than that hour inside it).
+    private static DateTimeOffset BucketStart(long index, long bucketSeconds, TimeZoneInfo zone)
+    {
+        var wallClock = DateTimeOffset.FromUnixTimeSeconds(index * bucketSeconds);
+        var offset = zone.GetUtcOffset(wallClock - zone.GetUtcOffset(wallClock));
+        return new DateTimeOffset(wallClock.DateTime, offset);
+    }
 
     private static string Stamp(DateTimeOffset at) =>
         at.ToString(HaDateTimeText.Format, CultureInfo.InvariantCulture);

@@ -68,11 +68,12 @@ public sealed class HaCatalogProvider(
             var states = client.ListStatesAsync(ct);
             var services = client.ListServicesAsync(ct);
             var areas = LoadAreasAsync(client, ct);
-            await Task.WhenAll(states, services, areas);
+            var zone = LoadZoneAsync(client, ct);
+            await Task.WhenAll(states, services, areas, zone);
             var allServices = extraServices is null or []
                 ? services.Result
                 : [.. services.Result.Where(s => !extraServices.Any(e => SameAction(e, s))), .. extraServices];
-            return (new HaCatalog(states.Result, allServices, areas.Result), true);
+            return (new HaCatalog(states.Result, allServices, areas.Result) { HomeZone = zone.Result }, true);
         }
         // Let cancellation propagate without writing the cache — otherwise a cancelled request would
         // poison the (process-wide) cache with an empty catalog for the negative TTL, blinding
@@ -85,6 +86,21 @@ public sealed class HaCatalogProvider(
 
     private static bool SameAction(HaServiceDefinition a, HaServiceDefinition b) =>
         a.Domain.Equals(b.Domain, StringComparison.Ordinal) && a.Service.Equals(b.Service, StringComparison.Ordinal);
+
+    // The home's zone is a convenience for one summary, not the catalog's substance: a config read
+    // that fails, or an id this runtime's tz database lacks, leaves it null and the catalog whole.
+    private static async Task<TimeZoneInfo?> LoadZoneAsync(IHomeAssistantClient client, CancellationToken ct)
+    {
+        try
+        {
+            var id = await client.GetTimeZoneAsync(ct);
+            return id is null ? null : TimeZoneInfo.FindSystemTimeZoneById(id);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
 
     private static async Task<IReadOnlyList<HaAreaEntities>> LoadAreasAsync(IHomeAssistantClient client, CancellationToken ct)
     {

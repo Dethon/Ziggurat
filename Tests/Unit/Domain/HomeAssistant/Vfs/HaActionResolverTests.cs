@@ -107,4 +107,13 @@ public class HaActionResolverRequiredAttributeTests
         HaActionResolver.ServicesFor(light, services).ShouldBe([_statistics]);
         HaActionResolver.CommandName(_statistics, "sensor").ShouldBe("statistics");
     }
+
+    // Carrying the attribute means having a value for it: a `state_class: null` is no state_class.
+    [Fact]
+    public void ServicesFor_ARequiredAttributeWithANullValue_DoesNotCount()
+    {
+        var nulled = Entity("sensor.glucose", "94", ("state_class", null));
+
+        HaActionResolver.ServicesFor(nulled, [_statistics]).ShouldBeEmpty();
+    }
 }
