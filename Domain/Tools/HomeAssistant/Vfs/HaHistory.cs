@@ -110,6 +110,7 @@ internal static class HaHistory
         }
 
         var bucketSeconds = minutes * 60L;
+        var meanDecimals = Math.Min(samples.Max(s => Decimals(s.Change.State)) + 1, 6);
         var buckets = samples
             .GroupBy(s => Bucket(s.Change.At, bucketSeconds, zone))
             .OrderBy(g => g.Key)
@@ -122,7 +123,7 @@ internal static class HaHistory
                     ["at"] = Stamp(BucketStart(g.Key, bucketSeconds, zone)),
                     ["min"] = values.Min(),
                     ["max"] = values.Max(),
-                    ["mean"] = Math.Round(values.Average(), 1),
+                    ["mean"] = Math.Round(values.Average(), meanDecimals),
                     ["last"] = values[^1],
                     ["samples"] = values.Count
                 };
@@ -136,6 +137,14 @@ internal static class HaHistory
         payload["buckets"] = new JsonArray(buckets);
     }
 
+    // A mean is rounded one place past the samples' own precision: integer readings give a tenth,
+    // and a sensor reporting thousandths keeps them rather than flattening to 0.0.
+    private static int Decimals(string state)
+    {
+        var dot = state.IndexOf('.');
+        return dot < 0 ? 0 : state.Length - dot - 1;
+    }
+
     // The bucket index of an instant on the zone's clock: wall-clock seconds since the epoch as the
     // zone counts them at that instant, floored to a multiple of the bucket. Two instants share a
     // bucket exactly when the home's wall clock puts them in the same one.
@@ -145,15 +154,22 @@ internal static class HaHistory
         return Math.DivRem(wallClockSeconds, bucketSeconds, out var rem) - (rem < 0 ? 1 : 0);
     }
 
-    // The instant a bucket opens on the zone's clock: the wall-clock second it starts at, read back
-    // through the offset the zone has at that moment (a first guess with the offset of the wall
-    // clock taken as UTC, corrected once for the zone's offset there — exact outside the hour a
-    // DST change skips or repeats, and never off by more than that hour inside it).
+    // The instant a bucket opens on the zone's clock. The hour a fall-back repeats belongs to one
+    // wall-clock bucket, stamped at its first occurrence (the larger, daylight offset); a start the
+    // spring-forward skips is stamped at the instant the clock jumped to, never at a wall time
+    // that did not exist.
     private static DateTimeOffset BucketStart(long index, long bucketSeconds, TimeZoneInfo zone)
     {
-        var wallClock = DateTimeOffset.FromUnixTimeSeconds(index * bucketSeconds);
-        var offset = zone.GetUtcOffset(wallClock - zone.GetUtcOffset(wallClock));
-        return new DateTimeOffset(wallClock.DateTime, offset);
+        var wall = DateTimeOffset.FromUnixTimeSeconds(index * bucketSeconds).DateTime;
+        if (zone.IsAmbiguousTime(wall))
+        {
+            return new DateTimeOffset(wall, zone.GetAmbiguousTimeOffsets(wall).Max());
+        }
+        if (zone.IsInvalidTime(wall))
+        {
+            return TimeZoneInfo.ConvertTime(new DateTimeOffset(wall, zone.BaseUtcOffset), zone);
+        }
+        return new DateTimeOffset(wall, zone.GetUtcOffset(wall));
     }
 
     private static string Stamp(DateTimeOffset at) =>

@@ -31,8 +31,8 @@ public static class HaHistoryActions
         {
             ["hours"] = new()
             {
-                Description = $"Window length ending now, or ending at --end_date_time (default {DefaultHours}).",
-                Selector = JsonNode.Parse("""{"number":{"min":1,"max":240}}""")
+                Description = $"Window length ending now, or ending at --end_date_time (default {DefaultHours}). No ceiling: the recorder's retention is the only bound, and it may have been raised.",
+                Selector = JsonNode.Parse("""{"number":{"min":1}}""")
             },
             ["start_date_time"] = new() { Description = "Window start as a local date-time, e.g. \"2026-09-03 22:00:00\" (an explicit offset is honoured). Not with --hours." },
             ["end_date_time"] = new() { Description = $"Window end as a local date-time; defaults to now. Alone, --hours (default {DefaultHours}) is counted back from it." },

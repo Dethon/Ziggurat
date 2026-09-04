@@ -85,10 +85,12 @@ public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider)
             .ToList();
 
     // Said once, above the table: on every class line it would put every read-only class into the
-    // table to repeat one word. An action narrowed by an attribute gets its own line naming it.
+    // table to repeat one word. An action narrowed by an attribute gets its own line naming it,
+    // and only when some entity admits it — a line for a file no directory has sends the model looking.
     private static IReadOnlyList<string> EveryEntityActions(HaCatalog catalog) =>
         catalog.Services
             .Where(svc => svc.AppliesToEveryEntity)
+            .Where(svc => catalog.Entities.Any(e => HaActionResolver.ServicesFor(e, [svc]).Count > 0))
             .GroupBy(svc => svc.RequiresAttribute, StringComparer.Ordinal)
             .OrderBy(g => g.Key is null ? 0 : 1)
             .ThenBy(g => g.Key, StringComparer.Ordinal)

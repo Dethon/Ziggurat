@@ -265,6 +265,95 @@ public class HaHistoryActionTests
         buckets[1]!["at"]!.GetValue<string>().ShouldBe("2026-09-04T00:00:00+00:00");
     }
 
+    // The help's range is read as a hard limit, and the parser enforces none: a ceiling of ten days
+    // would stop the model asking for the month a home with raised retention can answer.
+    [Fact]
+    public async Task Help_PutsNoCeilingOnHours()
+    {
+        var fs = Build(out _);
+
+        var help = await Exec(fs, "history.sh --help");
+
+        help.Stdout.ShouldNotContain("1-240");
+        var month = await Exec(fs, "history.sh --hours 720");
+        month.ExitCode.ShouldBe(0, month.Stderr);
+    }
+
+    // A mean is rounded to one place past the samples' own precision, so integer readings give a
+    // tenth and a kilowatt sensor's thousandths are not flattened to 0.0.
+    [Fact]
+    public async Task Every_RoundsTheMean_ToOnePlacePastTheSamplesPrecision()
+    {
+        var fs = Build(out var client);
+        client.History.AddRange([
+            Change("0.012", "2026-09-04T12:01:00+00:00"),
+            Change("0.015", "2026-09-04T12:07:00+00:00"),
+            Change("0.014", "2026-09-04T12:14:00+00:00")
+        ]);
+
+        var exec = await Exec(fs, "history.sh --every 60");
+
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        var buckets = JsonNode.Parse(exec.Stdout)!["buckets"]!.AsArray();
+        buckets[0]!["mean"]!.GetValue<double>().ShouldBe(0.0137);
+    }
+
+    [Fact]
+    public async Task Every_IntegerSamples_GiveAMeanToOneDecimal()
+    {
+        var fs = Build(out var client);
+        client.History.AddRange([
+            Change("100", "2026-09-04T12:01:00+00:00"),
+            Change("101", "2026-09-04T12:07:00+00:00"),
+            Change("101", "2026-09-04T12:14:00+00:00")
+        ]);
+
+        var exec = await Exec(fs, "history.sh --every 60");
+
+        var buckets = JsonNode.Parse(exec.Stdout)!["buckets"]!.AsArray();
+        buckets[0]!["mean"]!.GetValue<double>().ShouldBe(100.7);
+    }
+
+    // The hour the clocks fall back happens twice on the wall; both belong to the same wall-clock
+    // bucket, which is stamped at its first occurrence, the DST offset, not the second.
+    [Fact]
+    public async Task Every_TheRepeatedHourOfAFallBack_IsOneBucket_StampedAtItsFirstOccurrence()
+    {
+        var fs = Build(out var client);
+        client.TimeZone = "Europe/Madrid";
+        client.History.AddRange([
+            Change("100", "2026-10-25T00:30:00+00:00"),
+            Change("110", "2026-10-25T01:30:00+00:00"),
+            Change("120", "2026-10-25T02:30:00+00:00")
+        ]);
+
+        var exec = await Exec(fs, "history.sh --every 60");
+
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        var buckets = JsonNode.Parse(exec.Stdout)!["buckets"]!.AsArray();
+        buckets.Count.ShouldBe(2);
+        buckets[0]!["at"]!.GetValue<string>().ShouldBe("2026-10-25T02:00:00+02:00");
+        buckets[0]!["samples"]!.GetValue<int>().ShouldBe(2);
+        buckets[1]!["at"]!.GetValue<string>().ShouldBe("2026-10-25T03:00:00+01:00");
+    }
+
+    // A bucket whose wall-clock start the spring-forward skips opens at the instant the clock
+    // jumps to, never at a time that did not exist.
+    [Fact]
+    public async Task Every_ABucketOpeningInTheSkippedHour_IsStampedWhereTheClockLanded()
+    {
+        var fs = Build(out var client);
+        client.TimeZone = "Europe/Madrid";
+        client.History.AddRange([Change("100", "2026-03-29T01:30:00+00:00")]);
+
+        var exec = await Exec(fs, "history.sh --every 120");
+
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        var buckets = JsonNode.Parse(exec.Stdout)!["buckets"]!.AsArray();
+        buckets.ShouldHaveSingleItem();
+        buckets[0]!["at"]!.GetValue<string>().ShouldBe("2026-03-29T03:00:00+02:00");
+    }
+
     // --limit caps a listing; a summary has buckets, not changes, so the pair is a mistake to name,
     // not one to ignore.
     [Fact]
