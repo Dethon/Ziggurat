@@ -13,6 +13,16 @@ namespace McpServerHomeAssistant.Modules;
 
 public static class ConfigModule
 {
+    // The actions the mount serves itself rather than forwarding to a catalog service. The
+    // calendar's and the recorder's two reads are always there: Home Assistant's own catalog cannot
+    // list an event's uid, delete one, or read the recorder, and the replacements need nothing
+    // beyond the HA token. The podcast listing exists only where Music Assistant does. The eval's
+    // fake mount builds from this same list, so it serves exactly what a deployment serves.
+    public static IReadOnlyList<HaServiceDefinition> ServedActions(bool musicConfigured) =>
+        musicConfigured
+            ? [.. HaCalendarActions.All, HaHistoryActions.History, HaStatisticsActions.Statistics, HaMusicActions.PodcastEpisodes]
+            : [.. HaCalendarActions.All, HaHistoryActions.History, HaStatisticsActions.Statistics];
+
     extension(IServiceCollection services)
     {
         public IServiceCollection ConfigureMcp(McpSettings settings)
@@ -26,19 +36,11 @@ public static class ConfigModule
                 services.AddMusicAssistantClient(music!.BaseUrl, music.Token);
             }
 
-            // The calendar's actions and the recorder's two reads are always served here: Home
-            // Assistant's own catalog cannot list an event's uid, delete one, or read the recorder,
-            // and the replacements need nothing beyond the HA token.
-            IReadOnlyList<HaServiceDefinition> recorder = [HaHistoryActions.History, HaStatisticsActions.Statistics];
-            IReadOnlyList<HaServiceDefinition> served = musicConfigured
-                ? [.. HaCalendarActions.All, .. recorder, HaMusicActions.PodcastEpisodes]
-                : [.. HaCalendarActions.All, .. recorder];
-
             services
                 .AddHomeAssistantClient(settings.HomeAssistant.BaseUrl, settings.HomeAssistant.Token)
                 .AddSingleton(sp => new HaCatalogProvider(
                     sp.GetRequiredService<IHomeAssistantClient>,
-                    extraServices: served,
+                    extraServices: ServedActions(musicConfigured),
                     logger: sp.GetRequiredService<ILogger<HaCatalogProvider>>()))
                 .AddSingleton(sp => new HaFileSystem(
                     sp.GetRequiredService<HaCatalogProvider>(),
