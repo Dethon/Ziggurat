@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Domain.DTOs;
 
 namespace Tests.Eval.Harness;
@@ -216,7 +217,21 @@ public sealed record JudgedCheck(string Claim, string Rubric);
 // One entity, and what the turn must leave it at. The key is an entity id, or an entity id and one
 // of its attributes (`climate.salon#temperature`) — a thermostat set to another temperature has
 // changed without its state moving, and a scenario about setting one has to be able to say so.
-public sealed record StateChange(string Key, string To);
+// A key with `*` declares a family the scenario cannot spell: a new watch is an automation whose
+// entity id the home derives from the name the model chose. A pattern covers only the value it
+// names, so a sibling that moved somewhere else still shows as undeclared.
+public sealed record StateChange(string Key, string To)
+{
+    public bool IsPattern => Key.Contains('*');
+
+    public bool Names(string key) =>
+        IsPattern
+            ? Regex.IsMatch(key, "^" + Regex.Escape(Key).Replace("\\*", ".*") + "$")
+            : Key == key;
+
+    public bool Declares(KeyValuePair<string, string> moved) =>
+        IsPattern ? Names(moved.Key) && moved.Value == To : Key == moved.Key;
+}
 
 // One task handed to a worker: which profile ran it, and what the prompt had to carry. The worker
 // starts with no conversation history, so every url, name and requirement the task needs has to be

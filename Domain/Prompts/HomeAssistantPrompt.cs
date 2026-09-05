@@ -214,8 +214,11 @@ public static class HomeAssistantPrompt
           of the same file, never a delete.
         - To change a watch (a new threshold, another room) `text_edit` its `watch.json`: the same
           `<id>` is the same watch, replaced in place, so a change never leaves two watches (a full
-          rewrite with `overwrite: true` replaces it too). `remove /ha/watches/<id>` removes it from
-          the home.
+          rewrite with `overwrite: true` replaces it too). That is for a change to the reaction that
+          exists ("warn me below 65, not 70"). A request that ADDS a reaction beside it — a second
+          threshold with its own effect, a night-only alarm next to a daytime warning — is a new
+          watch under its own id, and the existing one keeps running as it was: never overwrite a
+          watch the user did not ask to change. `remove /ha/watches/<id>` removes it from the home.
         - `status.json` beside it is read-only: `createdAt`, `lastTriggeredAt`, `automationEntity`,
           `spent`. To list watches, `glob /ha/watches/*/` and read each `watch.json`.
         - A watch needs no approval, even one that acts on the home: create it in the same turn.

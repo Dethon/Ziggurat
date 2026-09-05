@@ -123,6 +123,10 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     // is the watch count a scenario declares as its change, the way it declares an alarm's.
     public const string WatchCountKey = "automation#watches";
 
+    // A new watch is also a new automation entity, on, whose id the home derives from the name the
+    // model chose — a scenario declares the family, since it cannot spell the member.
+    public const string AnyAutomationEntity = "automation.*";
+
     private readonly Lock _gate = new();
     private readonly List<HaCall> _calls = [];
     private readonly Dictionary<string, HaEntity> _entities;
