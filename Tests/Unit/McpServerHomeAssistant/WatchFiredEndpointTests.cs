@@ -20,7 +20,7 @@ namespace Tests.Unit.McpServerHomeAssistant;
 public class WatchFiredEndpointTests
 {
     private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "homeassistant";
-    private static readonly DateTimeOffset Now = new(2026, 9, 5, 3, 14, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _now = new(2026, 9, 5, 3, 14, 0, TimeSpan.Zero);
 
     private sealed record Harness(HttpClient Client, ChannelInbox Inbox, FakeTimeProvider Clock)
     {
@@ -41,7 +41,7 @@ public class WatchFiredEndpointTests
 
     private static async Task<Harness> BuildAsync(bool subscribed = true, string token = "expected", string[]? defaultDeliverTo = null)
     {
-        var clock = new FakeTimeProvider(Now);
+        var clock = new FakeTimeProvider(_now);
         var inbox = new ChannelInbox(clock);
         if (subscribed)
         {
@@ -136,11 +136,11 @@ public class WatchFiredEndpointTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.Accepted);
         var fire = (await harness.DrainAsync()).ShouldHaveSingleItem();
-        fire.ConversationId.ShouldBe($"watch-laura-sugar-high-{Now.ToUnixTimeSeconds()}");
+        fire.ConversationId.ShouldBe($"watch-laura-sugar-high-{_now.ToUnixTimeSeconds()}");
         fire.Sender.ShouldBe("watch");
         fire.AgentId.ShouldBe("jonas");
         fire.UserId.ShouldBe("fran");
-        fire.Timestamp.ShouldBe(Now);
+        fire.Timestamp.ShouldBe(_now);
         fire.Content.Split('\n')[0].ShouldBe(
             "[watch \"Laura's sugar\" fired] Laura glucose (sensor.laura_glucose) went from 176 to 183 at 2026-09-05T05:14:00+02:00.");
         fire.Content.ShouldEndWith("Look into it and warn Fran.");

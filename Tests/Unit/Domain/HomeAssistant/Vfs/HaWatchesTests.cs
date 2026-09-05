@@ -16,7 +16,7 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 // was rendered on the way.
 public class HaWatchesTests
 {
-    private static readonly DateTimeOffset Now = new(2026, 9, 5, 10, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _now = new(2026, 9, 5, 10, 0, 0, TimeSpan.Zero);
 
     private const string BlindsWatch = """
         {
@@ -39,7 +39,7 @@ public class HaWatchesTests
             Services = { Service("cover", "close_cover", DomainTarget("cover")) }
         };
         var local = client;
-        var time = new FakeTimeProvider(Now);
+        var time = new FakeTimeProvider(_now);
         var provider = new HaCatalogProvider(() => local, time);
         return new HaFileSystem(provider, () => local, timeProvider: time,
             caller: () => agentId is null ? null : new ConversationContext(agentId, "conv-1", "fran", origin ?? new ReplyTarget("telegram", "conv-1")));
@@ -153,7 +153,7 @@ public class HaWatchesTests
     {
         var fs = Build(out var client);
         await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
-        client.Automations["assistant_watch_blinds-when-hot"].LastTriggered = Now.AddMinutes(30);
+        client.Automations["assistant_watch_blinds-when-hot"].LastTriggered = _now.AddMinutes(30);
 
         var status = await Read(fs, "watches/blinds-when-hot/status.json");
 
@@ -379,7 +379,7 @@ public class HaWatchesTests
         var fs = Build(out var client);
         client.SeedAutomation("assistant_watch_x", new JsonObject
         {
-            ["alias"] = "X", ["description"] = new HaWatchMetadata("jonas", [new HaPromptEffect("p")], false, null, null, Now).ToJson(),
+            ["alias"] = "X", ["description"] = new HaWatchMetadata("jonas", [new HaPromptEffect("p")], false, null, null, _now).ToJson(),
             ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state" }), ["actions"] = new JsonArray()
         });
 
