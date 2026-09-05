@@ -1,4 +1,7 @@
 using System.Text.Json.Nodes;
+using Domain.Contracts;
+using Domain.DTOs.Voice;
+using Domain.Exceptions;
 using Domain.Prompts;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
@@ -166,6 +169,43 @@ public class HomeAssistantSetupSummaryWatchesTests
             new HaCatalogProvider(() => client, new FakeTimeProvider()), new HaWatches(() => client));
 
         (await summary.GetAsync(CancellationToken.None)).ShouldContain("— 0 defined (none yet)");
+    }
+
+    // The rooms an announcement can target are the voice hub's, not the home's areas; the index
+    // names them so the model never reaches for an area slug, and says nothing when the hub is
+    // down rather than listing nothing as fact.
+    [Fact]
+    public async Task GetAsync_ListsTheVoiceSatellites_AsTheAnnounceTargets()
+    {
+        var client = new FakeHaClient { States = { Entity("light.kitchen", "off") } };
+        var summary = new HomeAssistantSetupSummary(
+            new HaCatalogProvider(() => client, new FakeTimeProvider()), new HaWatches(() => client),
+            new FakeSatellites([new("FRAN-OFFICE-01", "Fran's office"), new("kitchen-01", "Kitchen")]));
+
+        var text = await summary.GetAsync(CancellationToken.None);
+
+        text.Split('\n').Single(l => l.StartsWith("voice satellites:", StringComparison.Ordinal)).ShouldBe(
+            "voice satellites: FRAN-OFFICE-01 (room \"Fran's office\"), kitchen-01 (room \"Kitchen\") — an announce "
+            + "target is one of these rooms or ids, never a Home Assistant area.");
+    }
+
+    [Fact]
+    public async Task GetAsync_WithTheHubDown_SaysNothingAboutSatellites()
+    {
+        var client = new FakeHaClient { States = { Entity("light.kitchen", "off") } };
+        var summary = new HomeAssistantSetupSummary(
+            new HaCatalogProvider(() => client, new FakeTimeProvider()), new HaWatches(() => client), new FakeSatellites(null));
+
+        (await summary.GetAsync(CancellationToken.None)).ShouldNotContain("voice satellites");
+    }
+
+    private sealed class FakeSatellites(IReadOnlyList<SatelliteDescriptor>? roster) : ISatelliteCatalog
+    {
+        public Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct) =>
+            roster is null ? throw new VoiceHubUnavailableException("connection refused") : Task.FromResult(roster);
+
+        public Task<IReadOnlyList<string>> ResolveAsync(AnnounceTarget target, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
     }
 
     private static JsonObject Watch(string name, bool once) => new()

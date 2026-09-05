@@ -64,7 +64,8 @@ public static class ConfigModule
                     watches: sp.GetRequiredService<HaWatches>(),
                     satellites: sp.GetRequiredService<ISatelliteCatalog>()))
                 .AddSingleton(sp => new HomeAssistantSetupSummary(
-                    sp.GetRequiredService<HaCatalogProvider>(), sp.GetRequiredService<HaWatches>()))
+                    sp.GetRequiredService<HaCatalogProvider>(), sp.GetRequiredService<HaWatches>(),
+                    sp.GetRequiredService<ISatelliteCatalog>()))
                 .AddToolServer(settings, ToolResponse.Create)
                 // Broadcast, so an agent that is merely reconnecting still receives a fire; the
                 // callback answers Home Assistant 503 only when nobody is registered at all, and

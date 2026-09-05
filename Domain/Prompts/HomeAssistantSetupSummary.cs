@@ -1,4 +1,5 @@
 using System.Text;
+using Domain.Contracts;
 using Domain.Tools.HomeAssistant.Vfs;
 
 namespace Domain.Prompts;
@@ -14,7 +15,8 @@ namespace Domain.Prompts;
 // carries the rule for rebuilding either one. The composed `<id>_(<slug>)` segment stays verbatim
 // because HaFileSystem.ResolveEntity is strict-canonical — a bare id yields a hint, not a hit,
 // so shortening the segment itself would buy characters at the price of a round trip.
-public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider, HaWatches? watches = null)
+public class HomeAssistantSetupSummary(
+    HaCatalogProvider catalogProvider, HaWatches? watches = null, ISatelliteCatalog? satellites = null)
 {
     private const string SetupHeader =
         "Mounted at `/ha`. Every entity is listed once below, under its room, as the exact "
@@ -59,7 +61,36 @@ public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider, HaWatc
             sb.Append('\n').Append(watchesLine).Append('\n');
         }
 
+        if (await SatellitesLineAsync(ct) is { } satellitesLine)
+        {
+            sb.Append(satellitesLine).Append('\n');
+        }
+
         return sb.ToString();
+    }
+
+    // The rooms an announcement can reach are the voice hub's, spelled its way, and the first prod
+    // watch reached for a Home Assistant area slug instead. Read live from the hub, the roster the
+    // timers prompt shows; a hub that cannot answer leaves the line out rather than listing nothing.
+    private async Task<string?> SatellitesLineAsync(CancellationToken ct)
+    {
+        if (satellites is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var roster = await satellites.GetAllAsync(ct);
+            return roster.Count == 0
+                ? null
+                : "voice satellites: " + string.Join(", ", roster.Select(s => $"{s.Id} (room \"{s.Room}\")"))
+                  + " — an announce target is one of these rooms or ids, never a Home Assistant area.";
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     // The watches exist and where they are, so the agent discovers the feature without being told.
