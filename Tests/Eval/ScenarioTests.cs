@@ -87,6 +87,31 @@ public class HomeAssistantScenarioTests2(EvalScorecard scorecard) : IClassFixtur
         EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
 }
 
+// Ten scenarios, split in two like the Home Assistant family they belong beside.
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
+public class WatchScenarioTests(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(WatchScenarios.All, 0, of: 2);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task AScenario_AtItsDeclaredThreshold_Holds(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
+}
+
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
+public class WatchScenarioTests2(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(WatchScenarios.All, 1, of: 2);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task AScenario_AtItsDeclaredThreshold_Holds(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
+}
+
 [Trait("Category", "Eval")]
 [Trait("Tier", "Full")]
 public class VaultScenarioTests(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
