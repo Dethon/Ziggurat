@@ -18,3 +18,7 @@
   end-to-end test drives. `voice_announce` is not seeded: nothing in the container tests rings a
   satellite, and a rest_command nothing calls would be dead configuration. The bridges document
   and the local compose config carry both.
+- 2026-09-05, after the first prod try: the agent wrote the Home Assistant area slug as the announce
+  room and the hub, which knows the room by its own name, dropped the fire. Announce targets are now
+  resolved against the voice hub when the watch is written (the timers' rule, `ISatelliteCatalog`;
+  `VoiceHub__BaseUrl` on the server) and the guide says a room is the hub's room, never an area slug.
