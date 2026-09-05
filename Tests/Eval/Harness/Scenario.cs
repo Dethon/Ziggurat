@@ -129,6 +129,11 @@ public sealed record EvalTurn
     public string? SatelliteId { get; init; }
 
     public string? DismissedAlert { get; init; }
+
+    // The channel the turn came in on, for a scenario whose subject is where an answer is sent
+    // back. Null means the chat, or voice when a satellite is named — the two every other scenario
+    // already implies.
+    public string? Channel { get; init; }
 }
 
 // How many of how many runs must pass. Never a retry-until-green: half the assertions in this

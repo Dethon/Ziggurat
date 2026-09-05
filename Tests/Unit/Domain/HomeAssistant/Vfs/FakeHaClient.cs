@@ -143,8 +143,10 @@ public class FakeHaClient : IHomeAssistantClient
     private static string EntitySlug(string alias) =>
         new string([.. alias.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '_')]);
 
+    // Home Assistant writes the id into the stored config and answers it back on a read.
     public FakeAutomation SeedAutomation(string id, JsonObject config, bool on = true, DateTimeOffset? lastTriggered = null)
     {
+        config["id"] = id;
         var automation = new FakeAutomation(id, config) { IsOn = on, LastTriggered = lastTriggered };
         Automations[id] = automation;
         return automation;
@@ -156,8 +158,12 @@ public class FakeHaClient : IHomeAssistantClient
             ("friendly_name", JsonValue.Create(a.Config["alias"]?.GetValue<string>() ?? a.Id)),
             ("last_triggered", a.LastTriggered is { } at ? JsonValue.Create(at.ToString("o")) : null)));
 
+    public int AutomationListings { get; private set; }
+
     public virtual Task<IReadOnlyList<HaAutomationState>> ListAutomationsAsync(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<HaAutomationState>>(Automations.Values
+    {
+        AutomationListings++;
+        return Task.FromResult<IReadOnlyList<HaAutomationState>>(Automations.Values
             .Select(a => new HaAutomationState
             {
                 EntityId = a.EntityId,
@@ -167,6 +173,7 @@ public class FakeHaClient : IHomeAssistantClient
                 LastTriggered = a.LastTriggered
             })
             .ToList());
+    }
 
     public virtual Task<JsonObject?> GetAutomationConfigAsync(string id, CancellationToken ct = default)
         => Task.FromResult(Automations.TryGetValue(id, out var a) ? a.Config.DeepClone().AsObject() : null);

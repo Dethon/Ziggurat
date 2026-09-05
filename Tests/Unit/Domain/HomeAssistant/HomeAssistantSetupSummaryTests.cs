@@ -131,6 +131,53 @@ public class HomeAssistantSetupSummaryTests
     }
 
 }
+public class HomeAssistantSetupSummaryWatchesTests
+{
+    // The agent discovers the feature from the index rather than from being told: the line names
+    // the subtree, counts what exists and tells a paused or spent watch from a live one.
+    [Fact]
+    public async Task GetAsync_ListsTheWatchesLine_WithTheCountAndEachWatchsState()
+    {
+        var client = new FakeHaClient { States = { Entity("light.kitchen", "off") } };
+        client.SeedAutomation("assistant_watch_laura-sugar-high", Watch("Laura's sugar", once: false));
+        client.SeedAutomation("assistant_watch_washing-done", Watch("Washing done", once: true), on: false);
+        client.SeedAutomation("assistant_watch_night-sugar", Watch("Night sugar", once: false), on: false);
+        client.SeedAutomation("voice_alarm_bridge", new JsonObject
+        {
+            ["alias"] = "Voice alarm bridge", ["description"] = "hand made",
+            ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state" }), ["actions"] = new JsonArray()
+        });
+        var summary = new HomeAssistantSetupSummary(
+            new HaCatalogProvider(() => client, new FakeTimeProvider()), new HaWatches(() => client));
+
+        var text = await summary.GetAsync(CancellationToken.None);
+
+        var line = text.Split('\n').Single(l => l.StartsWith("watches:", StringComparison.Ordinal));
+        line.ShouldBe(
+            "watches: `/ha/watches/<id>/watch.json` — 3 defined (`laura-sugar-high`, `night-sugar` (paused), `washing-done` (spent)); "
+            + "see the guide's Watches section.");
+    }
+
+    [Fact]
+    public async Task GetAsync_WithNoWatches_SaysNoneYet()
+    {
+        var client = new FakeHaClient { States = { Entity("light.kitchen", "off") } };
+        var summary = new HomeAssistantSetupSummary(
+            new HaCatalogProvider(() => client, new FakeTimeProvider()), new HaWatches(() => client));
+
+        (await summary.GetAsync(CancellationToken.None)).ShouldContain("— 0 defined (none yet)");
+    }
+
+    private static JsonObject Watch(string name, bool once) => new()
+    {
+        ["alias"] = name,
+        ["description"] = new HaWatchMetadata("jonas", [new HaPromptEffect("look into it")], once, null, null,
+            new DateTimeOffset(2026, 9, 5, 9, 0, 0, TimeSpan.Zero)).ToJson(),
+        ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state", ["entity_id"] = "sensor.x" }),
+        ["actions"] = new JsonArray()
+    };
+}
+
 public class HomeAssistantSetupSummaryEveryEntityTests
 {
     // Listing `history.sh` on every class line would put every read-only class into the table and

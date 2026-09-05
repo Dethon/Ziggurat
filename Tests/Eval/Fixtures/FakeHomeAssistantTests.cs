@@ -320,16 +320,19 @@ public class FakeHomeAssistantTests
 
         (await client.GetAutomationConfigAsync(HaWatchAutomation.AutomationId("laura-sugar-high")))!["alias"]!
             .GetValue<string>().ShouldBe("Laura's sugar");
+        // The home starts with one watch seeded (Laura's sugar below 70), so two written here make three.
         var listed = await client.ListAutomationsAsync();
-        listed.Count.ShouldBe(2);
-        listed.Single(a => a.ConfigId == HaWatchAutomation.AutomationId("laura-sugar-high")).IsOn.ShouldBeTrue();
-        home.Snapshot()[FakeHomeAssistant.WatchCountKey].ShouldBe("1");
+        listed.Count.ShouldBe(3);
+        var written = listed.Single(a => a.ConfigId == HaWatchAutomation.AutomationId("laura-sugar-high"));
+        written.IsOn.ShouldBeTrue();
+        home.Snapshot()[FakeHomeAssistant.WatchCountKey].ShouldBe("2");
 
-        await client.CallServiceAsync("automation", "turn_off", listed[0].EntityId, null);
-        (await client.ListAutomationsAsync()).Single(a => a.EntityId == listed[0].EntityId).IsOn.ShouldBeFalse();
+        await client.CallServiceAsync("automation", "turn_off", written.EntityId, null);
+        (await client.ListAutomationsAsync()).Single(a => a.EntityId == written.EntityId).IsOn.ShouldBeFalse();
+        home.Snapshot()[written.EntityId].ShouldBe("off");
 
         await client.DeleteAutomationConfigAsync(HaWatchAutomation.AutomationId("laura-sugar-high"));
-        home.Snapshot()[FakeHomeAssistant.WatchCountKey].ShouldBe("0");
+        home.Snapshot()[FakeHomeAssistant.WatchCountKey].ShouldBe("1");
         (await client.GetAutomationConfigAsync(HaWatchAutomation.AutomationId("laura-sugar-high"))).ShouldBeNull();
     }
 

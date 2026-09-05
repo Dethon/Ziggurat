@@ -14,7 +14,7 @@ namespace Domain.Prompts;
 // carries the rule for rebuilding either one. The composed `<id>_(<slug>)` segment stays verbatim
 // because HaFileSystem.ResolveEntity is strict-canonical — a bare id yields a hint, not a hit,
 // so shortening the segment itself would buy characters at the price of a round trip.
-public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider)
+public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider, HaWatches? watches = null)
 {
     private const string SetupHeader =
         "Mounted at `/ha`. Every entity is listed once below, under its room, as the exact "
@@ -54,7 +54,36 @@ public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider)
             sb.Append(string.Join("\n", actions)).Append('\n');
         }
 
+        if (await WatchesLineAsync(ct) is { } watchesLine)
+        {
+            sb.Append('\n').Append(watchesLine).Append('\n');
+        }
+
         return sb.ToString();
+    }
+
+    // The watches exist and where they are, so the agent discovers the feature without being told.
+    // The count is read live from the home; a home that cannot answer for them says nothing rather
+    // than listing an empty subtree as fact.
+    private async Task<string?> WatchesLineAsync(CancellationToken ct)
+    {
+        if (watches is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var existing = await watches.ListAsync(ct);
+            var listing = existing.Count == 0
+                ? "none yet"
+                : string.Join(", ", existing.Select(w => w.Spent ? $"`{w.Id}` (spent)" : w.Enabled ? $"`{w.Id}`" : $"`{w.Id}` (paused)"));
+            return $"watches: `/ha/watches/<id>/watch.json` — {existing.Count} defined ({listing}); see the guide's Watches section.";
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     // AreaSlugs() already orders real rooms ordinally and appends `unassigned` last, and

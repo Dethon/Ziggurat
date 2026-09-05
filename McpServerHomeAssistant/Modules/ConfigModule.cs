@@ -46,7 +46,9 @@ public static class ConfigModule
                     sp.GetRequiredService<HaCatalogProvider>(),
                     sp.GetRequiredService<IHomeAssistantClient>,
                     musicClientFactory: musicConfigured ? sp.GetRequiredService<IMusicAssistantClient> : null))
-                .AddSingleton(sp => new HomeAssistantSetupSummary(sp.GetRequiredService<HaCatalogProvider>()))
+                .AddSingleton(sp => new HaWatches(sp.GetRequiredService<IHomeAssistantClient>))
+                .AddSingleton(sp => new HomeAssistantSetupSummary(
+                    sp.GetRequiredService<HaCatalogProvider>(), sp.GetRequiredService<HaWatches>()))
                 .AddToolServer(settings, ToolResponse.Create)
                 .AddFileSystemTools<HaFileSystem>()
                 .AddFileSystemResource<HaFileSystem>()

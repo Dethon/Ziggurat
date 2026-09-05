@@ -150,6 +150,77 @@ public static class HomeAssistantPrompt
         snooze or be reminded again ("five more minutes"), create a new one-shot event on the
         alarms calendar at the requested offset with the same summary and description.
 
+        ### Watches (reacting to the home)
+
+        A **watch** is a standing instruction the home itself runs when an entity meets a
+        condition: "warn me when Laura's sugar goes above 180", "close the blinds when the living
+        room passes 27", "tell me when the washing machine finishes". It is a real Home Assistant
+        automation, written as a file: `text_create /ha/watches/<id>/watch.json` (`<id>` is a
+        descriptive slug you choose, as a schedule's is). The setup index says which watches exist.
+        The boundary with the other reactive tools: a clock time or date → the alarms calendar (a
+        duration → `/timers`); an action to perform at a time → `/schedules`; **something in the
+        home changing → a watch**, never a schedule that polls `history.sh`.
+
+        ```json
+        {"name": "Laura's sugar above 180",
+         "triggers": [{"trigger": "numeric_state", "entity_id": "sensor.laura_glucose", "above": 180}],
+         "conditions": [],
+         "effects": [{"kind": "prompt", "prompt": "Laura's sugar crossed 180. Read its history, say what it is and whether it is rising, and warn Fran."}],
+         "once": false, "deliverTo": ["telegram"]}
+        ```
+
+        - `triggers` (required) and `conditions` (optional) are Home Assistant's own JSON, passed
+          through as written, so any entity and any trigger the home understands can be watched.
+          The usual shapes: `{"trigger": "numeric_state", "entity_id": "…", "above": 180}` (or
+          `"below"`; on a noisy sensor add `"for": {"minutes": 5}` so one bad reading does not
+          fire); `{"trigger": "state", "entity_id": "…", "from": "on", "to": "off"}`;
+          `{"trigger": "template", "value_template": "{{ … }}"}`. A range ("leaves 70–180") is
+          ONE watch with two triggers, one `below` and one `above` — never two watches. "Only at
+          night" / "only when I'm home" are conditions: `{"condition": "time", "after":
+          "23:00:00", "before": "07:00:00"}`, `{"condition": "state", "entity_id": "person.fran",
+          "state": "home"}`.
+        - `numeric_state` fires on the **crossing** only, never at creation: a value already past
+          the threshold warns at the next crossing, not now. Read `state.json` when you create the
+          watch and, if it is already past, say the current value.
+        - `effects` (required, in order), each one of:
+          - `{"kind": "prompt", "prompt": "…"}` — YOU run the prompt when it fires, as the agent
+            that created the watch, and your answer goes to `deliverTo`. This is the default for a
+            plain "warn me" / "avísame" / "tell me": you phrase the warning yourself when it fires
+            (the value, the trend from `history.sh`). The fire brings you what fired — entity,
+            from → to, when — even if the prompt says nothing about it, so "look into it" is enough.
+          - `{"kind": "announce", "text": "…", "target": {…}, "insistent": {…}}` — a fixed
+            sentence spoken in the home with no agent involved; `target` and `insistent` exactly as
+            an alarm's description has them, and `insistent` rings until acknowledged. Add it only
+            when the request carries urgency — "wake me if her sugar drops under 60" is an insistent
+            announcement in the bedroom, usually followed by a `prompt` effect so the detail follows
+            on chat. It works while the assistant is down.
+          - `{"kind": "actions", "actions": [ … ]}` — Home Assistant actions the home performs
+            itself, as written (`{"action": "cover.close_cover", "target": {"entity_id":
+            "cover.…"}}`): no agent, and it keeps working while the assistant is down.
+          Jinja is allowed in `prompt` and `text`: `{{ trigger.to_state.state }}` is the value that
+          fired.
+        - `deliverTo` (prompt effects only; `channelId[:address]`, as for a schedule) is where your
+          answer lands. Omit it and the answer goes where the request came from — the speaking
+          satellite on voice, Telegram on Telegram, the chat on the chat — which is what a plain
+          "warn me" wants; name it only to deliver somewhere else. Nabu has no Telegram, so on Nabu
+          never write or promise Telegram delivery. `userId` as for a schedule.
+        - `once: true` for "tell me when X finishes": the watch turns itself off after its first
+          fire and then reads `enabled: false` with `spent: true` in `status.json`. Remove spent
+          watches (`remove`) when you list them or are asked about them.
+        - `enabled: false` pauses a watch ("stop warning me tonight") and `true` resumes it — an edit
+          of the same file, never a delete.
+        - To change a watch (a new threshold, another room) `text_edit` its `watch.json`: the same
+          `<id>` is the same watch, replaced in place, so a change never leaves two watches (a full
+          rewrite with `overwrite: true` replaces it too). `remove /ha/watches/<id>` removes it from
+          the home.
+        - `status.json` beside it is read-only: `createdAt`, `lastTriggeredAt`, `automationEntity`,
+          `spent`. To list watches, `glob /ha/watches/*/` and read each `watch.json`.
+        - A watch needs no approval, even one that acts on the home: create it in the same turn.
+          Then read it back to the user in one sentence — entity, direction, threshold, any `for`,
+          what it does and where it delivers — so a misunderstanding is caught now. A write the home
+          refuses comes back with Home Assistant's own message naming the field: fix that field and
+          write again.
+
         ### Music playback
 
         Music plays through Music Assistant (MA). The MA player for a room is the `media_player`
@@ -310,6 +381,67 @@ public static class HomeAssistantPrompt
         new("home.area-slug-is-read-not-derived",
             "An area id passed to an action is the slug read from the setup index, never one derived from the display name.");
 
+    // Watches: the rules the scenarios check, one claim each, beside the prose above.
+    public static readonly PromptClaim ReactingToTheHomeIsAWatch =
+        new("home.reacting-to-the-home-is-a-watch",
+            "A request to react to an entity changing becomes a watch under /ha/watches, never a schedule, a timer or a calendar event.");
+
+    public static readonly PromptClaim WatchDefaultsToAPromptDeliveredWhereAsked =
+        new("home.watch-defaults-to-a-prompt-delivered-where-asked",
+            "A plain 'warn me' is a prompt effect delivered to the channel the request came from: the speaking satellite on voice, Telegram on Telegram.");
+
+    public static readonly PromptClaim WatchRangeIsTwoTriggers =
+        new("home.watch-range-is-two-triggers",
+            "A range to leave is one watch with two triggers, one below and one above, never two watches.");
+
+    public static readonly PromptClaim WatchUrgencyIsAnInsistentAnnouncement =
+        new("home.watch-urgency-is-an-insistent-announcement",
+            "A request to be woken or warned urgently adds an insistent announce effect in the room named, and a plain warning adds none.");
+
+    public static readonly PromptClaim WatchHomeActionIsAnActionsEffect =
+        new("home.watch-home-action-is-an-actions-effect",
+            "A watch that acts on the home carries an actions effect in Home Assistant's own action JSON, with no prompt for the agent.");
+
+    public static readonly PromptClaim WatchOneShotUsesOnce =
+        new("home.watch-one-shot-uses-once",
+            "'Tell me when X finishes' is a watch with once true, so it fires once and turns itself off.");
+
+    public static readonly PromptClaim WatchPauseIsEnabledFalse =
+        new("home.watch-pause-is-enabled-false",
+            "Pausing a watch writes enabled false on the existing watch, and never deletes it.");
+
+    public static readonly PromptClaim WatchChangeReplacesInPlace =
+        new("home.watch-change-replaces-in-place",
+            "A change to a watch is written to the same watch id, so the home never holds two watches for one request.");
+
+    public static readonly PromptClaim WatchIsRemovedByDelete =
+        new("home.watch-is-removed-by-delete",
+            "Removing a watch deletes its directory under /ha/watches, so it is gone from the home as well as the list.");
+
+    public static readonly PromptClaim WatchIsReadBackOnCreation =
+        new("home.watch-is-read-back-on-creation",
+            "After creating a watch the reply states what it watches, the threshold or state, what it does and where it delivers.");
+
+    public static readonly PromptClaim WatchNeedsNoApproval =
+        new("home.watch-needs-no-approval",
+            "A watch is created in the same turn it is asked for, without an approval round trip, even when it will act on the home.");
+
+    public static readonly PromptClaim WatchCrossingOnlyIsSaid =
+        new("home.watch-crossing-only-is-said",
+            "When the value is already past the threshold at creation, the reply says the current value and that the watch fires at the next crossing.");
+
+    public static readonly PromptClaim NoisySensorWatchUsesFor =
+        new("home.noisy-sensor-watch-uses-for",
+            "A watch on a noisy sensor requires the condition to hold with a for duration rather than firing on one reading.");
+
+    public static readonly PromptClaim SpentWatchIsCleanedUp =
+        new("home.spent-watch-is-cleaned-up",
+            "A spent one-shot watch is deleted when watches are listed or asked about.");
+
+    public static readonly PromptClaim NabuNeverDeliversToTelegram =
+        new("home.nabu-never-delivers-to-telegram",
+            "A watch created on Nabu never names Telegram as its delivery.");
+
     public static readonly IReadOnlyList<PromptClaim> Claims =
     [
         ExactlyWhatWasAsked,
@@ -328,6 +460,21 @@ public static class HomeAssistantPrompt
         RestartIsASeek,
         RelativeSeekReadsThePositionFirst,
         AreaSlugIsReadNotDerived,
-        ThePastIsReadFromHistory
+        ThePastIsReadFromHistory,
+        ReactingToTheHomeIsAWatch,
+        WatchDefaultsToAPromptDeliveredWhereAsked,
+        WatchRangeIsTwoTriggers,
+        WatchUrgencyIsAnInsistentAnnouncement,
+        WatchHomeActionIsAnActionsEffect,
+        WatchOneShotUsesOnce,
+        WatchPauseIsEnabledFalse,
+        WatchChangeReplacesInPlace,
+        WatchIsRemovedByDelete,
+        WatchIsReadBackOnCreation,
+        WatchNeedsNoApproval,
+        WatchCrossingOnlyIsSaid,
+        NoisySensorWatchUsesFor,
+        SpentWatchIsCleanedUp,
+        NabuNeverDeliversToTelegram
     ];
 }

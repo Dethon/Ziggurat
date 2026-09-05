@@ -4,13 +4,21 @@
 
 **Blocked by:** 02 — The client speaks the automation config API.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Over the fake client: create, glob, read back, edit in place (same automation id, no second automation), delete; `status.json` fields; the rendered automation carries the prefix, the alias, `mode: single`, triggers and conditions verbatim, and the actions verbatim.
-- [ ] Every write error in the spec is a test, including Home Assistant's own message on a rejected trigger.
-- [ ] A hand-made automation in the fake store is absent from `/ha/watches` and still present under the entities tree.
-- [ ] Writes anywhere else in the mount are still refused.
-- [ ] The setup index has a `watches:` line; the setup summary test pins it.
-- [ ] The guide teaches watches; the prompt snapshot pins the section; each rule a scenario checks is a declared claim and the claim-coverage test passes.
-- [ ] Eval scenario: the home-action watch above, declaring the watch count as its change, with a claim on read-back.
-- [ ] Spec: `.scratch/home-watches/spec.md` § The watch record, § The mount, § Rendering the automation, § Prompts and discovery.
+- [x] Over the fake client: create, glob, read back, edit in place (same automation id, no second automation), delete; `status.json` fields; the rendered automation carries the prefix, the alias, `mode: single`, triggers and conditions verbatim, and the actions verbatim.
+- [x] Every write error in the spec is a test, including Home Assistant's own message on a rejected trigger.
+- [x] A hand-made automation in the fake store is absent from `/ha/watches` and still present under the entities tree.
+- [x] Writes anywhere else in the mount are still refused.
+- [x] The setup index has a `watches:` line; the setup summary test pins it.
+- [x] The guide teaches watches; the prompt snapshot pins the section; each rule a scenario checks is a declared claim and the claim-coverage test passes.
+- [x] Eval scenario: the home-action watch above, declaring the watch count as its change, with a claim on read-back.
+- [x] Spec: `.scratch/home-watches/spec.md` § The watch record, § The mount, § Rendering the automation, § Prompts and discovery.
+
+## Comments
+
+- 2026-09-05: the setup index says `watches:` with the count and each watch's state. The
+  "unavailable without the `config` integration" case is not detected for the index — a missing
+  integration and an unknown id both answer 404 — so it is said on the write error's hint instead.
+- 2026-09-05: a file naming no `deliverTo` takes the caller's own channel and address at write
+  time (the model is never told which channel a turn came from), rather than reading back absent.

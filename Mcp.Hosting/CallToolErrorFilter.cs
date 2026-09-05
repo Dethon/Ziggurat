@@ -1,3 +1,4 @@
+using Domain.Channels;
 using Domain.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -7,7 +8,9 @@ using ModelContextProtocol.Server;
 namespace Mcp.Hosting;
 
 // The one error rule every MCP server in the repo answers to: a cancelled call propagates as the
-// abort it is; anything else is logged and comes back as the caller's error result.
+// abort it is; anything else is logged and comes back as the caller's error result. It is also
+// where the call's conversation context is entered (CallerContext), so code answering the call
+// without the request in hand — a filesystem backend — can still ask who is calling.
 //
 // Cancellation is carved out because a cancelled call is a call somebody hung up on —
 // channel_receive's long poll whenever the agent disconnects or the server shuts down, an fs_exec or
@@ -36,6 +39,7 @@ internal static class CallToolErrorFilter
         return builder.WithRequestFilters(filters => filters.AddCallToolFilter(
             next => async (context, cancellationToken) =>
             {
+                using var caller = CallerContext.Enter(ConversationScope.Parse(context.Params?.Meta));
                 try
                 {
                     return await next(context, cancellationToken);

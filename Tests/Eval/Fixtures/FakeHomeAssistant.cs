@@ -102,6 +102,23 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         $@"(^|/)({HaCatalog.ClassOf(KitchenSpeakerEntityId)}\.)?{HaCatalog.ObjectOf(KitchenSpeakerEntityId)}_\(";
 
 
+    // Laura's glucose, with a state_class so it has statistics, and the living room's temperature
+    // and blinds: the entities the watch scenarios watch and act on. The glucose reads well inside
+    // the range every scenario names, so a crossing is never already past at creation.
+    public const string GlucoseEntityId = "sensor.glucosa_laura";
+    public const string SalonTemperatureEntityId = "sensor.temperatura_salon";
+    public const string SalonBlindsEntityId = "cover.persianas_salon";
+
+    // One watch already in the home — Laura's sugar below 70, warning on Telegram — so a scenario
+    // about pausing, changing or removing a watch has one to act on, and one about creating shows
+    // as the count moving from one to two.
+    public const string SugarWatchId = "glucosa-laura-baja";
+    public const string SugarWatchName = "Glucosa de Laura por debajo de 70";
+    public static readonly string SugarWatchEntityId = new FakeAutomation(
+        HaWatchAutomation.AutomationId(SugarWatchId), new JsonObject { ["alias"] = SugarWatchName }).EntityId;
+
+    public static readonly string SugarWatchPathPattern = $@"^/ha/watches/{SugarWatchId}(/watch\.json)?/?$";
+
     // The home's automations, as the config API holds them: how many carry the assistant prefix
     // is the watch count a scenario declares as its change, the way it declares an alarm's.
     public const string WatchCountKey = "automation#watches";
@@ -122,6 +139,19 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             "2026-08-17T21:30:00+02:00", "2026-08-17T21:31:00+02:00",
             """{"target":{"room":"kitchen"},"insistent":{"gapSeconds":30,"maxRepeats":5}}""",
             uid: TrashAlarmUid);
+
+        // Rendered the way the mount renders one, so the seeded watch reads back through the same
+        // projection a created one does.
+        var sugarWatchId = HaWatchAutomation.AutomationId(SugarWatchId);
+        var sugarWatch = HaWatchAutomation.Render(SugarWatchId, new HaWatchSpec
+        {
+            Name = SugarWatchName,
+            Triggers = [new JsonObject { ["trigger"] = "numeric_state", ["entity_id"] = GlucoseEntityId, ["below"] = 70 }],
+            Effects = [new HaPromptEffect("La glucosa de Laura ha bajado de 70. Mira la tendencia y avisa a Fran.")],
+            DeliverTo = ["telegram"]
+        }, new HaWatchMetadata("jonas", [new HaPromptEffect("La glucosa de Laura ha bajado de 70. Mira la tendencia y avisa a Fran.")],
+            false, ["telegram"], null, new DateTimeOffset(2026, 8, 16, 9, 0, 0, TimeSpan.Zero)));
+        _automations[sugarWatchId] = new FakeAutomation(sugarWatchId, sugarWatch);
     }
 
     // What the websocket side did to the calendar, recorded beside the REST calls so a scenario
@@ -468,7 +498,7 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             ["areas"] = new JsonArray(
                 Area("kitchen", "Cocina", KitchenLightEntityId, WashingMachineEntityId,
                     KitchenSpeakerEntityId, KitchenTvEntityId),
-                Area("salon", "Salón", AirConditionerEntityId),
+                Area("salon", "Salón", AirConditionerEntityId, SalonTemperatureEntityId, SalonBlindsEntityId),
                 Area(StudyAreaSlug, "Estudio", VacuumEntityId))
         }.ToJsonString();
 
@@ -488,6 +518,15 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             new JsonObject { ["temperature"] = 24, ["hvac_modes"] = new JsonArray("off", "cool", "heat") }),
         new(WashingMachineEntityId, "off", "Lavadora"),
         new(VacuumEntityId, "docked", "Aspiradora"),
+        new(GlucoseEntityId, "112", "Glucosa Laura", new JsonObject
+        {
+            ["state_class"] = "measurement", ["unit_of_measurement"] = "mg/dL", ["device_class"] = "blood_glucose_concentration"
+        }),
+        new(SalonTemperatureEntityId, "23.4", "Temperatura Salón", new JsonObject
+        {
+            ["state_class"] = "measurement", ["unit_of_measurement"] = "°C", ["device_class"] = "temperature"
+        }),
+        new(SalonBlindsEntityId, "open", "Persianas Salón", new JsonObject { ["current_position"] = 100 }),
         // The two attributes the contract says to read a player by. The episode already loaded is
         // what makes a seek possible: media_seek needs something on the player, and a scenario
         // about restarting one has to arrive with it playing.
