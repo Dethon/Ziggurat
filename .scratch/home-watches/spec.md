@@ -1,6 +1,6 @@
 # Home watches
 
-Status: ready-for-agent
+Status: implemented (2026-09-05, all eight tickets done)
 
 Grilled 2026-09-05. Glossary: `CONTEXT.md` § Home watches (**Watch**, **Effect**). Decision:
 `docs/adr/0038-a-watch-is-a-home-automation-and-the-home-carries-its-fires-back.md`.

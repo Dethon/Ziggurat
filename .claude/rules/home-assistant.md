@@ -108,8 +108,13 @@ composed with `to_json` and a quote in a prompt cannot break them. The creating 
 `CallerContext` (entered by the call-tool filter from the request's `_meta`); a file naming no
 `deliverTo` takes the caller's origin channel and address, because the model is never told which
 channel a turn came from. The default `deliverTo` a fire falls back to is `Domain/delivery.json`.
-The prompt effect's callback and the bridges document are in `docs/home-assistant-bridges.md`; the
-decision is `docs/adr/0038`.
+The prompt effect's callback (`McpServerHomeAssistant/Services/WatchFiredEndpoint.cs`, guarded by
+the announce token, 202/401/400/503 as the automation's trace reads them) and the bridges document
+are in `docs/home-assistant-bridges.md`; the decision is `docs/adr/0038`. Testing: `HaWatchesTests`
+and `HaWatchEffectsTests` over `FakeHaClient`'s automation store; `WatchFiredEndpointTests` at the
+HTTP boundary over a real inbox; `HomeAssistantFixture` seeds the rest_command towards a listener
+it owns and `HomeAssistantWatchFireTests` drives a real crossing through it; the eval's fake home
+serves the config API and counts watches (`WatchCountKey`), with `WatchScenarios` per effect kind.
 
 ## Music Assistant (podcast episodes)
 

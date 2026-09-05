@@ -29,14 +29,32 @@ internal static class HomeAssistantSeed
     public const int Port = 8123;
     public const string TestEntityId = "input_boolean.test_switch";
     public const string CalendarEntityId = "calendar.alarms";
+    public const string WatchCallbackToken = "itest-announce-token";
 
     public static readonly TimeSpan DefaultReadyTimeout = TimeSpan.FromMinutes(3);
 
     // Writes configuration.yaml + .storage/{auth,onboarding} into configDir and returns the
-    // long-lived access token (Bearer JWT) for the seeded owner user.
-    public static string WriteConfig(string configDir)
+    // long-lived access token (Bearer JWT) for the seeded owner user. `watchCallbackUrl`, when
+    // given, provisions the watch-fired rest_command towards it — the bridge a prompt watch fires
+    // through (docs/home-assistant-bridges.md) — so a test can own the far end.
+    public static string WriteConfig(string configDir, string? watchCallbackUrl = null, string announceToken = WatchCallbackToken)
     {
         Directory.CreateDirectory(Path.Combine(configDir, ".storage"));
+
+        var restCommands = watchCallbackUrl is null
+            ? ""
+            : $$$"""
+
+              rest_command:
+                assistant_watch_fired:
+                  url: "{{{watchCallbackUrl}}}"
+                  method: POST
+                  timeout: 20
+                  headers:
+                    X-Announce-Token: {{{announceToken}}}
+                    Content-Type: application/json
+                  payload: "{{ payload }}"
+              """;
 
         File.WriteAllText(Path.Combine(configDir, "automations.yaml"), "[]\n");
         File.WriteAllText(Path.Combine(configDir, "configuration.yaml"),
@@ -60,6 +78,7 @@ internal static class HomeAssistantSeed
             # automations file this line includes; a watch is a real automation written through it.
             config:
             automation: !include automations.yaml
+            """ + restCommands + """
 
             input_boolean:
               test_switch:

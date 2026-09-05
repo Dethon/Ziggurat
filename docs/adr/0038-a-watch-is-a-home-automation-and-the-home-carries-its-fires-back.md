@@ -1,7 +1,11 @@
 # 0038 — A watch is a home automation, and the home carries its fires back
 
-Status: proposed
-Date: 2026-09-05
+Status: accepted
+Date: 2026-09-05 (proposed and accepted the same day: shipped on the `home-watches` branch, the
+fire proven end to end against a real Home Assistant container by
+`HomeAssistantWatchFireTests` — a state change across the threshold reaches the callback with the
+rendered prompt and the firing facts, a second change in the same direction does not, a change
+back and across does)
 
 ## Context
 
