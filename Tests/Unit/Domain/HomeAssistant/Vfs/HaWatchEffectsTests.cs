@@ -18,7 +18,7 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 // automation switched off rather than removed.
 public class HaWatchEffectsTests
 {
-    private static readonly DateTimeOffset Now = new(2026, 9, 5, 10, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _now = new(2026, 9, 5, 10, 0, 0, TimeSpan.Zero);
 
     private static HaFileSystem Build(out FakeHaClient client, ReplyTarget? origin = null)
     {
@@ -27,7 +27,7 @@ public class HaWatchEffectsTests
             States = { Entity("sensor.laura_glucose", "112", ("state_class", JsonValue.Create("measurement"))) }
         };
         var local = client;
-        var time = new FakeTimeProvider(Now);
+        var time = new FakeTimeProvider(_now);
         return new HaFileSystem(new HaCatalogProvider(() => local, time), () => local, timeProvider: time,
             caller: () => new ConversationContext("jonas", "conv-1", "fran", origin ?? new ReplyTarget("telegram", "conv-1")));
     }
