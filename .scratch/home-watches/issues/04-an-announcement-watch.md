@@ -4,10 +4,10 @@
 
 **Blocked by:** 03 — A home-action watch.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Over the fake client: an `announce` effect renders the voice-announce call with text, target and insistent; a watch with an `announce` followed by `actions` renders them in that order.
-- [ ] The announce payload shape in the rendering, the bridge document and the local compose configuration agree; the integration seed carries the same rest_command.
-- [ ] The guide teaches when an announcement is the right effect (a fixed sentence, urgency, insistence) and that it needs no agent; claims declared.
-- [ ] Eval scenario: the night-time glucose alarm above (insistent announcement, condition), declaring the watch count as its change.
-- [ ] Spec: `.scratch/home-watches/spec.md` § Rendering the automation, § Provisioning and rollout.
+- [x] Over the fake client: an `announce` effect renders the voice-announce call with text, target and insistent; a watch with an `announce` followed by `actions` renders them in that order.
+- [x] The announce payload shape in the rendering, the bridge document and the local compose configuration agree; the integration seed carries the same rest_command.
+- [x] The guide teaches when an announcement is the right effect (a fixed sentence, urgency, insistence) and that it needs no agent; claims declared.
+- [x] Eval scenario: the night-time glucose alarm above (insistent announcement, condition), declaring the watch count as its change.
+- [x] Spec: `.scratch/home-watches/spec.md` § Rendering the automation, § Provisioning and rollout.

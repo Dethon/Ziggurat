@@ -4,9 +4,16 @@
 
 **Blocked by:** 03 — A home-action watch; 05 — The home can raise a prompt with the agent.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Over the fake client: a `prompt` effect renders the watch-fired call with every firing fact as a template; `deliverTo` and `userId` land in the automation's description and round-trip through `watch.json`; a missing `deliverTo` reads back as absent and the callback applies the configured default.
-- [ ] The guide's section and claims cover the default effect, ranges, crossing-only semantics, read-back and Nabu's channels; prompt snapshot and claim coverage pass.
-- [ ] Eval scenarios: warn on Telegram (deliverTo telegram), warn on voice (deliverTo the speaking satellite), a range (two triggers, one watch), urgent (announce then prompt), a threshold change (same id, watch count unchanged), removal (count down); each declares its change and its claims.
-- [ ] Spec: `.scratch/home-watches/spec.md` § Rendering the automation, § Prompts and discovery.
+- [x] Over the fake client: a `prompt` effect renders the watch-fired call with every firing fact as a template; `deliverTo` and `userId` land in the automation's description and round-trip through `watch.json`; a missing `deliverTo` reads back as absent and the callback applies the configured default.
+- [x] The guide's section and claims cover the default effect, ranges, crossing-only semantics, read-back and Nabu's channels; prompt snapshot and claim coverage pass.
+- [x] Eval scenarios: warn on Telegram (deliverTo telegram), warn on voice (deliverTo the speaking satellite), a range (two triggers, one watch), urgent (announce then prompt), a threshold change (same id, watch count unchanged), removal (count down); each declares its change and its claims.
+- [x] Spec: `.scratch/home-watches/spec.md` § Rendering the automation, § Prompts and discovery.
+
+## Comments
+
+- 2026-09-05: a file naming no `deliverTo` does not read back as absent — the mount fills it with
+  the caller's own channel and address at write time, because the model is never told which
+  channel a turn came from (only voice decorates the turn). The callback still applies the shared
+  default (`Domain/delivery.json`) to a payload that names none.

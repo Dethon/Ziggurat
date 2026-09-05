@@ -4,11 +4,20 @@
 
 **Blocked by:** 01 — Fire planning is shared.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Endpoint tests at the HTTP boundary: 202 with the composed notification drained from a real inbox (first line, agent id, reply targets, userId, origin, conversation id); 401; 400; 503 with no subscriber; delivery to a stale but registered subscriber.
-- [ ] The server registers as a channel server with Broadcast and no outbound surface, and its channel-protocol tools are hidden from the model; the existing tool surface is unchanged.
-- [ ] The agent's channel endpoints list the new channel; a fired prompt reaches the agent and its answer lands in a conversation titled after the watch (integration test over the MCP server fixture, as scheduling's).
-- [ ] Compose passes the announce token to the container; no new `.env` placeholder.
-- [ ] The bridges document describes both rest_commands and the local compose configuration and the integration seed carry the new one.
-- [ ] Spec: `.scratch/home-watches/spec.md` § The callback, § Provisioning and rollout.
+- [x] Endpoint tests at the HTTP boundary: 202 with the composed notification drained from a real inbox (first line, agent id, reply targets, userId, origin, conversation id); 401; 400; 503 with no subscriber; delivery to a stale but registered subscriber.
+- [x] The server registers as a channel server with Broadcast and no outbound surface, and its channel-protocol tools are hidden from the model; the existing tool surface is unchanged.
+- [x] The agent's channel endpoints list the new channel; a fired prompt reaches the agent and its answer lands in a conversation titled after the watch (integration test over the MCP server fixture, as scheduling's).
+- [x] Compose passes the announce token to the container; no new `.env` placeholder.
+- [x] The bridges document describes both rest_commands and the local compose configuration and the integration seed carry the new one.
+- [x] Spec: `.scratch/home-watches/spec.md` § The callback, § Provisioning and rollout.
+
+## Comments
+
+- 2026-09-05: compose already passes `Announce__Token` to `mcp-homeassistant` through `env_file:
+  .env` (as it does to `mcp-timers`), so no new environment entry; a comment on the service says
+  so. The callback answers 202 whenever a registered subscriber holds the fire — a quiet one
+  mid-reconnect included (`ChannelNotificationEmitter.EmitWithReceiptAsync`) — and 503 only when
+  nobody is registered, which is the loss the trace must show. The HA server registers no
+  `register_agents` tool: the agent's connection skips it where a server does not offer it.

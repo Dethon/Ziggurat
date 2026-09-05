@@ -151,7 +151,9 @@ public static class McpServerRegistrations
 
         // MusicAssistant left absent: the podcast-episode action is the one conditional branch in
         // this module, and the row that exercises the default is the one every deployment runs.
-        Row("homeassistant", "McpServerHomeAssistant", McpServerRole.Tool,
+        // Dual-role since the watches: the home raises a fired prompt with the agent through the
+        // watch callback, by broadcast so a reconnecting agent still receives it.
+        Row("homeassistant", "McpServerHomeAssistant", McpServerRole.DualRole,
             new HaSettings.McpSettings
             {
                 HomeAssistant = new HaSettings.HomeAssistantConfiguration
@@ -159,7 +161,8 @@ public static class McpServerRegistrations
                     BaseUrl = "http://home-assistant:8123", Token = "x"
                 }
             },
-            (services, settings) => services.ConfigureMcp(settings)),
+            (services, settings) => services.ConfigureMcp(settings),
+            DeliveryPolicy.Broadcast),
 
         Row("idealista", "McpServerIdealista", McpServerRole.Tool,
             new IdealistaSettings.McpSettings

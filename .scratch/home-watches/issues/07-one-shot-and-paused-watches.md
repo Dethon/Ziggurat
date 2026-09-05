@@ -4,9 +4,9 @@
 
 **Blocked by:** 03 — A home-action watch.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Over the fake client: `once` appends a final self turn-off targeting the watch's own automation entity, for every effect kind; `enabled` false and true call the automation on/off; `enabled` reads back from the entity state; `spent` is true only for a `once` watch that is off.
-- [ ] The guide teaches `once`, pausing, resuming and cleanup; claims declared.
-- [ ] Eval scenarios: the washing-machine one-shot (watch count up, `once` on the automation), pausing tonight (count unchanged, automation off).
-- [ ] Spec: `.scratch/home-watches/spec.md` § The mount, § Rendering the automation.
+- [x] Over the fake client: `once` appends a final self turn-off targeting the watch's own automation entity, for every effect kind; `enabled` false and true call the automation on/off; `enabled` reads back from the entity state; `spent` is true only for a `once` watch that is off.
+- [x] The guide teaches `once`, pausing, resuming and cleanup; claims declared.
+- [x] Eval scenarios: the washing-machine one-shot (watch count up, `once` on the automation), pausing tonight (count unchanged, automation off).
+- [x] Spec: `.scratch/home-watches/spec.md` § The mount, § Rendering the automation.

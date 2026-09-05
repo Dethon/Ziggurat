@@ -49,7 +49,12 @@ public static class ConfigModule
                 .AddSingleton(sp => new HaWatches(sp.GetRequiredService<IHomeAssistantClient>))
                 .AddSingleton(sp => new HomeAssistantSetupSummary(
                     sp.GetRequiredService<HaCatalogProvider>(), sp.GetRequiredService<HaWatches>()))
+                .AddSingleton(TimeProvider.System)
                 .AddToolServer(settings, ToolResponse.Create)
+                // Broadcast, so an agent that is merely reconnecting still receives a fire; the
+                // callback answers Home Assistant 503 only when nobody is registered at all, and
+                // buffers nothing itself (docs/adr/0038).
+                .AddChannelServer(DeliveryPolicy.Broadcast, noOutboundSurface: true)
                 .AddFileSystemTools<HaFileSystem>()
                 .AddFileSystemResource<HaFileSystem>()
                 .WithPrompts<McpSystemPrompt>();
