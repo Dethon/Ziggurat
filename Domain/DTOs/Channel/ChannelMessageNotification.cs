@@ -9,6 +9,9 @@ public record ChannelMessageNotification
     public required string Sender { get; init; }
     public required string Content { get; init; }
     public string? AgentId { get; init; }
+    // The person an unprompted fire is on behalf of, when its author named one: a schedule's or a
+    // watch's `userId`. Null for a message a person sent themselves — the sender is that person.
+    public string? UserId { get; init; }
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
     // Optional originating room for room-aware prompts. Part of the shared channel protocol but

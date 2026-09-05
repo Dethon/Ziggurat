@@ -4,9 +4,9 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The schedule fire planner's target parsing and coalescing live in the domain layer with a name that says fire planning, and the scheduling server calls them; the existing planner tests pass unchanged against the moved code.
-- [ ] A fired schedule with a `userId` carries it on the notification; a test drains a real inbox and sees it.
-- [ ] A `Watch` message origin kind exists, carrying a watch id, and nothing in the monitor treats it as a schedule.
-- [ ] Spec: `.scratch/home-watches/spec.md` § The callback.
+- [x] The schedule fire planner's target parsing and coalescing live in the domain layer with a name that says fire planning, and the scheduling server calls them; the existing planner tests pass unchanged against the moved code.
+- [x] A fired schedule with a `userId` carries it on the notification; a test drains a real inbox and sees it.
+- [x] A `Watch` message origin kind exists, carrying a watch id, and nothing in the monitor treats it as a schedule.
+- [x] Spec: `.scratch/home-watches/spec.md` § The callback.

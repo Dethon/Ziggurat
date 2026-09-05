@@ -313,7 +313,7 @@ public sealed class EvalStack : IAsyncDisposable
             // Long enough that nothing dispatches during a turn. The clock is pinned anyway, so a
             // due schedule is one the scenario armed rather than one the turn created.
             DispatchIntervalSeconds = 3600,
-            DefaultDeliverTo = ["signalr"]
+            Delivery = new DeliverySettings { DefaultDeliverTo = ["signalr"] }
         });
         builder.Services.Replace(ServiceDescriptor.Singleton(_ => (TimeProvider)Clock));
 
