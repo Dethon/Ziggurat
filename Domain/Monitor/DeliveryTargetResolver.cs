@@ -49,7 +49,7 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
                 try
                 {
                     conversationId = await channel.CreateConversationAsync(
-                        message.AgentId ?? "default", "Scheduled task", message.Sender, message.Content, target.Address, shared, ct);
+                        message.AgentId ?? "default", TopicName(message), message.Sender, message.Content, target.Address, shared, ct);
                     wasMinted = true;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -70,6 +70,11 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
 
         return targets;
     }
+
+    // The sidebar label of a conversation minted for an unprompted fire. A watch carries its human
+    // name on the origin; a schedule never had one and keeps the label it always had.
+    private static string TopicName(ChannelMessage message) =>
+        message.Origin?.Title is { Length: > 0 } title ? title : "Scheduled task";
 
     public async Task AnnounceTurnStartAsync(
         IReadOnlyList<DeliveryTarget> targets,

@@ -129,8 +129,8 @@ public static class PromptManifest
             Priority = PromptPriority.Client,
             // The largest section by far, and the only one that grows with the deployment rather
             // than with an edit: the setup index naming every area and entity is appended to it
-            // when the server serves it.
-            TokenBudget = 5_000,
+            // when the server serves it. Raised from 5,000 when watches joined the guide.
+            TokenBudget = 6_500,
             ServedBy = "mcp-homeassistant",
             Claims = HomeAssistantPrompt.Claims
         },

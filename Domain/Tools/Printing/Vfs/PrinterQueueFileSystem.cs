@@ -273,7 +273,7 @@ public sealed class PrinterQueueFileSystem(
             }
 
             var replaced = edit.ReplaceAll ? count : 1;
-            text = ReplaceFirstOrAll(text, edit.OldString, edit.NewString, edit.ReplaceAll);
+            text = TextEdits.ReplaceFirstOrAll(text, edit.OldString, edit.NewString, edit.ReplaceAll);
             total += replaced;
             details.Add(new FsEditDetail { OccurrencesReplaced = replaced, AffectedLines = new FsLineRange { Start = 0, End = 0 } });
         }
@@ -543,17 +543,6 @@ public sealed class PrinterQueueFileSystem(
         }
 
         return count;
-    }
-
-    private static string ReplaceFirstOrAll(string text, string oldValue, string newValue, bool all)
-    {
-        if (all)
-        {
-            return text.Replace(oldValue, newValue, StringComparison.Ordinal);
-        }
-
-        var index = text.IndexOf(oldValue, StringComparison.Ordinal);
-        return index < 0 ? text : text[..index] + newValue + text[(index + oldValue.Length)..];
     }
 
     private static FsResult<FsReadResult> Ok(string path, string content) =>

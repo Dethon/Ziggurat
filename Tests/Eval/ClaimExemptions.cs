@@ -44,6 +44,21 @@ public static class ClaimExemptions
             + "its history endpoint answers every window empty — and a turn that asks about one, "
             + "e.g. a glucose sensor's night, judged on whether the answer came from history.sh "
             + "rather than state.json."),
+        [HomeAssistantPrompt.WatchCrossingOnlyIsSaid.Id] = new(ExemptionKind.Unwritten,
+            "Written on 2026-09-05 with the watches. A scenario needs the glucose sensor already past "
+            + "the threshold the turn names and a judged check on whether the reply says the current "
+            + "value and that the watch fires at the next crossing; the fake home reads 112, inside "
+            + "every range the shipped scenarios use."),
+        [HomeAssistantPrompt.NoisySensorWatchUsesFor.Id] = new(ExemptionKind.Unwritten,
+            "Written on 2026-09-05 with the watches. Needs a turn that names a jittery sensor or asks "
+            + "not to be woken by one reading, asserting a `for` on the trigger."),
+        [HomeAssistantPrompt.SpentWatchIsCleanedUp.Id] = new(ExemptionKind.Unwritten,
+            "Written on 2026-09-05 with the watches. Needs a seeded one-shot watch already off in the "
+            + "fake home and a 'what watches do I have' turn, asserting the delete and the count."),
+        [HomeAssistantPrompt.WatchNeedsNoApproval.Id] = new(ExemptionKind.Unfalsifiable,
+            "Nothing in an eval is approved by a person: AutoApproveHandler answers every request, so "
+            + "a round trip the model asked for would be invisible here. Guarded diffusely by the call "
+            + "ceilings of the watch scenarios, where an approval turn would show as an extra call."),
         [VoicePrompt.OneSentenceTwelveWords.Id] = new(ExemptionKind.Unwritten,
             "Every spoken scenario declares a sentence and word limit, but none of them is *about* the "
             + "limit — the assertion is diffuse and no single scenario owns it — and the declared word "

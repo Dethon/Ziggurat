@@ -14,7 +14,7 @@ Home Assistant runs at `http://<host>:8123` (published on all interfaces). On fi
 3. Set `HOMEASSISTANT__TOKEN=...` in `DockerCompose/.env` and restart `mcp-homeassistant`.
 4. For the Roborock S8: Settings → Devices & Services → Add Integration → **Roborock**; the vacuum appears as `vacuum.<name>`.
 
-The agent reaches HA in-network at `http://homeassistant:8123` via `McpServerHomeAssistant`. For voice alarms/reminders it creates events on a dedicated Local Calendar (prod: `calendar.assistant_alarms`, "Assistant Alarms" — the prompt never hard-codes the id, it says "the calendar the setup index lists as alarms") that an HA automation bridges to the voice announce endpoint; the `home_assistant_guide` prompt (`Domain/Prompts/HomeAssistantPrompt.cs`) teaches the idiom, and the one-time `rest_command` + automation provisioning lives in the HA instance itself — `docs/home-assistant-alarm-bridge.md` has the YAML. Without that automation an event is created and nothing rings.
+The agent reaches HA in-network at `http://homeassistant:8123` via `McpServerHomeAssistant`. For voice alarms/reminders it creates events on a dedicated Local Calendar (prod: `calendar.assistant_alarms`, "Assistant Alarms" — the prompt never hard-codes the id, it says "the calendar the setup index lists as alarms") that an HA automation bridges to the voice announce endpoint; the `home_assistant_guide` prompt (`Domain/Prompts/HomeAssistantPrompt.cs`) teaches the idiom, and the one-time `rest_command` + automation provisioning lives in the HA instance itself — `docs/home-assistant-bridges.md` has the YAML. Without that automation an event is created and nothing rings.
 
 The HA VFS engine is `Domain/Tools/HomeAssistant/Vfs/*.cs`.
 
@@ -88,6 +88,33 @@ the measures the sensor's kind has. `FakeHomeAssistantSocket` answers the comman
 `Statistics` map; the real-container test imports rows with `recorder.import_statistics` and
 reads them back. A sensor that lacks a `state_class` (LibreLink's glucose did) gets one through
 HA's `customize:`; prod has that and `purge_keep_days: 90` since 2026-09-04.
+
+## Watches are Home Assistant automations, written as files
+
+`/ha/watches/<id>/watch.json` is the mount's one writable subtree (`HaFileSystem.Watches.cs`;
+`HaVfsPath` has the four watch kinds; `HaTree` lists them from ids the fs fetches live, only for a
+glob that can reach them). A watch **is** a real automation written through the config API
+(`IHomeAssistantClient.{List,Get,Upsert,Delete}Automation*`): `HaWatchSpec` parses the file and
+names the field it refuses, `HaWatchAutomation.Render` turns it into the automation — id
+`assistant_watch_<id>`, alias = name, `mode: single`, triggers/conditions verbatim, the effects in
+order, a final `automation.turn_off` on `{{ this.entity_id }}` for `once` — and `Project` reads one
+back; the metadata the automation cannot carry (creating agent, effects as authored, once,
+deliverTo, userId, createdAt) is JSON in its description (`HaWatchMetadata`). Only a prefixed
+automation with parsable metadata is a watch; the alarm bridge and blueprints are invisible to the
+subtree and untouchable through it. `enabled` is the entity's on/off, synced with
+`automation.turn_on/off` after every write; `status.json` is rendered, read-only. Text fields cross
+as Jinja and are rendered by the home inside a `variables` step, so the rest_command payloads are
+composed with `to_json` and a quote in a prompt cannot break them. The creating agent comes from
+`CallerContext` (entered by the call-tool filter from the request's `_meta`); a file naming no
+`deliverTo` takes the caller's origin channel and address, because the model is never told which
+channel a turn came from. The default `deliverTo` a fire falls back to is `Domain/delivery.json`.
+The prompt effect's callback (`McpServerHomeAssistant/Services/WatchFiredEndpoint.cs`, guarded by
+the announce token, 202/401/400/503 as the automation's trace reads them) and the bridges document
+are in `docs/home-assistant-bridges.md`; the decision is `docs/adr/0038`. Testing: `HaWatchesTests`
+and `HaWatchEffectsTests` over `FakeHaClient`'s automation store; `WatchFiredEndpointTests` at the
+HTTP boundary over a real inbox; `HomeAssistantFixture` seeds the rest_command towards a listener
+it owns and `HomeAssistantWatchFireTests` drives a real crossing through it; the eval's fake home
+serves the config API and counts watches (`WatchCountKey`), with `WatchScenarios` per effect kind.
 
 ## Music Assistant (podcast episodes)
 

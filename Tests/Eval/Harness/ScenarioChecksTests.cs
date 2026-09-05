@@ -61,6 +61,46 @@ public class ScenarioChecksTests
     }
 
     [Fact]
+    public async Task AnEntityTheScenarioCannotName_IsDeclaredByAPattern()
+    {
+        // A new watch is a new automation whose entity id the home derives from the name the model
+        // chose, so the scenario cannot spell it: a pattern declares the family, and only the value
+        // it names is covered — a seeded automation that went off under the same prefix still shows.
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.StateBefore = new Dictionary<string, string> { ["automation#watches"] = "1", ["automation.azucar_baja"] = "on" };
+        recording.StateAfter = new Dictionary<string, string>
+        {
+            ["automation#watches"] = "2", ["automation.azucar_baja"] = "on", ["automation.lavadora_termina"] = "on"
+        };
+
+        var scenario = Timer() with
+        {
+            Changes = [new StateChange("automation#watches", "2"), new StateChange("automation.*", "on")]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
+
+        recording.StateAfter = new Dictionary<string, string>
+        {
+            ["automation#watches"] = "2", ["automation.azucar_baja"] = "off", ["automation.lavadora_termina"] = "on"
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("automation.azucar_baja");
+    }
+
+    [Fact]
+    public async Task APatternNothingMatched_IsAMissingChange()
+    {
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.StateBefore = new Dictionary<string, string> { ["automation.azucar_baja"] = "on" };
+        recording.StateAfter = new Dictionary<string, string> { ["automation.azucar_baja"] = "on" };
+
+        var scenario = Timer() with { Changes = [new StateChange("automation.*", "on")] };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldHaveSingleItem().ShouldContain("automation.*");
+    }
+
+    [Fact]
     public async Task ADeclaredChangeThatDidNotHappen_FailsEvenWhenTheReplySaysItDid()
     {
         var recording = await ScriptedTurn.RunAsync(

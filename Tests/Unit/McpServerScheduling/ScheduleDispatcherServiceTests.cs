@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Infrastructure.Validation;
 using Mcp.Hosting;
 using McpServerScheduling.Services;
@@ -166,6 +167,23 @@ public class ScheduleDispatcherServiceTests
         delivered.ShouldBeTrue();
     }
 
+    // The schedule file has carried userId since the beginning and the fire never did: the field
+    // was stored, listed and lost on the way to the agent. Drained from a real inbox, as the agent
+    // drains it, so what is asserted is what the far end receives.
+    [Fact]
+    public async Task DispatchDueAsync_ScheduleWithAUserId_CarriesItOnTheNotification()
+    {
+        var store = StoreWithDue(OneShot() with { UserId = "fran" });
+        var probe = Probe(delivers: true);
+
+        await BuildDispatcher(store.Object, probe).DispatchDueAsync(CancellationToken.None);
+
+        var fire = probe.Received().ShouldHaveSingleItem();
+        fire.UserId.ShouldBe("fran");
+        fire.Sender.ShouldBe("scheduler");
+        fire.Origin.ShouldBe(new MessageOrigin(MessageOriginKind.Schedule, "once"));
+    }
+
     private static Schedule OneShot() =>
         new() { Id = "once", AgentId = "jack", Prompt = "p", RunAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow };
 
@@ -196,7 +214,7 @@ public class ScheduleDispatcherServiceTests
             store,
             cron ?? new Mock<ICronValidator>().Object,
             emitter.Emitter,
-            new SchedulingSettings { RedisConnectionString = "x", DefaultDeliverTo = ["signalr"] },
+            new SchedulingSettings { RedisConnectionString = "x", Delivery = new DeliverySettings { DefaultDeliverTo = ["signalr"] } },
             logs is null
                 ? new Mock<ILogger<ScheduleDispatcherService>>().Object
                 : new LoggerFactory([logs]).CreateLogger<ScheduleDispatcherService>(),

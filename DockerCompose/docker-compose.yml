@@ -376,6 +376,9 @@ services:
     container_name: mcp-homeassistant
     ports:
       - "6006:8080"
+    # The watch callback (/api/homeassistant/watch-fired) is guarded by the voice hub's announce
+    # secret, Announce__Token, which reaches this container through .env like the timers server's.
+    # The hub itself is asked to resolve a watch's announcement target when the watch is written.
     # music-assistant runs with network_mode: host, so it is not on the jackbot bridge and its
     # container name does not resolve. Its podcast-episode API is reached via the host gateway.
     extra_hosts:
@@ -388,12 +391,15 @@ services:
       - .env
     environment:
       <<: *timezone
+      VoiceHub__BaseUrl: http://mcp-channel-voice:8080
     networks:
       - jackbot
     depends_on:
       base-sdk:
         condition: service_started
       homeassistant:
+        condition: service_started
+      mcp-channel-voice:
         condition: service_started
 
   mcp-channel-signalr:

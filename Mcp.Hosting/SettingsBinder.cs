@@ -37,6 +37,7 @@ public static class SettingsBinder
         ArgumentNullException.ThrowIfNull(configBuilder);
 
         configBuilder.AddJsonFile(RetentionSettings.FileName, optional: true);
+        configBuilder.AddJsonFile(DeliverySettings.FileName, optional: true);
         configBuilder.AddEnvironmentVariables();
         if (userSecretsId is not null)
         {

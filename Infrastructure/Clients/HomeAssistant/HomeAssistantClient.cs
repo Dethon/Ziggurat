@@ -230,6 +230,80 @@ public class HomeAssistantClient(HttpClient httpClient, string token, TimeSpan? 
             : [];
     }
 
+    // Automations are listed from the states endpoint: the config API has no list, and the entity
+    // state is the only place on/off and last_triggered exist. The `id` attribute is the config id.
+    public async Task<IReadOnlyList<HaAutomationState>> ListAutomationsAsync(CancellationToken ct = default)
+    {
+        var states = await ListStatesAsync(ct);
+        return states
+            .Where(s => s.EntityId.StartsWith("automation.", StringComparison.Ordinal))
+            .Select(s => new HaAutomationState
+            {
+                EntityId = s.EntityId,
+                ConfigId = StringAttribute(s, "id"),
+                IsOn = s.State == "on",
+                FriendlyName = StringAttribute(s, "friendly_name"),
+                LastTriggered = StringAttribute(s, "last_triggered") is { } stamp
+                                && DateTimeOffset.TryParse(stamp, null, System.Globalization.DateTimeStyles.RoundtripKind, out var at)
+                    ? at
+                    : null
+            })
+            .ToList();
+    }
+
+    private static string? StringAttribute(HaEntityState state, string name) =>
+        state.Attributes.TryGetValue(name, out var value) && value is JsonValue jv && jv.TryGetValue<string>(out var text)
+            ? text
+            : null;
+
+    public async Task<JsonObject?> GetAutomationConfigAsync(string id, CancellationToken ct = default)
+    {
+        using var request = NewRequest(HttpMethod.Get, AutomationConfigPath(id));
+        using var response = await httpClient.SendAsync(request, ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+        await EnsureOkAsync(response, ct);
+
+        return (await response.Content.ReadFromJsonAsync<JsonNode>(_json, ct)) as JsonObject;
+    }
+
+    // A 400 here is the home's validation, not a malformed request: the body's `message` names the
+    // key or trigger it refused, and that text is what the caller acts on.
+    public async Task UpsertAutomationConfigAsync(string id, JsonObject config, CancellationToken ct = default)
+    {
+        using var response = await PostJsonAsync(AutomationConfigPath(id), config, ct);
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            throw new HomeAssistantConfigRejectedException(RejectionMessage(body));
+        }
+        await EnsureOkAsync(response, ct);
+    }
+
+    public async Task DeleteAutomationConfigAsync(string id, CancellationToken ct = default)
+    {
+        using var request = NewRequest(HttpMethod.Delete, AutomationConfigPath(id));
+        using var response = await httpClient.SendAsync(request, ct);
+        await EnsureOkAsync(response, ct);
+    }
+
+    private static string AutomationConfigPath(string id) =>
+        $"api/config/automation/config/{Uri.EscapeDataString(id)}";
+
+    private static string RejectionMessage(string body)
+    {
+        try
+        {
+            return JsonNode.Parse(body)?["message"]?.GetValue<string>() ?? body;
+        }
+        catch (JsonException)
+        {
+            return body;
+        }
+    }
+
     private static HaStatisticsRow ToStatisticsRow(JsonObject row) => new()
     {
         Start = DateTimeOffset.FromUnixTimeMilliseconds(row["start"]!.GetValue<long>()),

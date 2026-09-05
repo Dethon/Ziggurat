@@ -4,6 +4,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Domain.Channels;
 
+// What a broadcast fan-out did: `Accepted` is "some subscriber holds a copy", `Live` is "one of
+// them was polling as it landed". Live implies Accepted; the gap between them is a quiet
+// subscriber whose copy waits for its next poll.
+public readonly record struct EnqueueReceipt(bool Accepted, bool Live);
+
 public sealed class ChannelInbox(
     TimeProvider? timeProvider = null,
     int capacity = 256,
@@ -45,14 +50,22 @@ public sealed class ChannelInbox(
 
     // Fans out to every subscriber whatever its freshness, and answers whether any of them was live
     // as its copy went in.
-    public bool Enqueue(ChannelInboxItem item) => FanOut(item, onlyIfLive: false);
+    public bool Enqueue(ChannelInboxItem item) => FanOut(item, onlyIfLive: false).Live;
 
     // The same fan-out, restricted to subscribers that are live as the item lands: for a caller that
     // settles a durable record on the answer, so an item must never sit in a buffer the "yes" it was
     // given claims someone is draining.
-    public bool EnqueueIfLive(ChannelInboxItem item) => FanOut(item, onlyIfLive: true);
+    public bool EnqueueIfLive(ChannelInboxItem item) => FanOut(item, onlyIfLive: true).Live;
 
-    private bool FanOut(ChannelInboxItem item, bool onlyIfLive)
+    // The broadcast fan-out with both of its answers: whether any subscriber took the item at all,
+    // and whether one of them was live. They differ exactly for a registered subscriber that has gone
+    // quiet — the agent mid-reconnect — whose copy is buffered and delivered on its next poll. A
+    // caller that answers an outside party (the watch callback answering Home Assistant) reports
+    // that as accepted rather than lost; liveness stays the answer for the callers that settle a
+    // durable record on it.
+    public EnqueueReceipt EnqueueWithReceipt(ChannelInboxItem item) => FanOut(item, onlyIfLive: false);
+
+    private EnqueueReceipt FanOut(ChannelInboxItem item, bool onlyIfLive)
     {
         PruneIdle();
         var cutoff = _timeProvider.GetUtcNow() - _liveSubscriberFreshness;
@@ -63,7 +76,9 @@ public sealed class ChannelInbox(
             .Where(entry => entry.Result.Outcome == EnqueueOutcome.AcceptedDroppingOldest)
             .Select(entry => entry.Key)
             .ToArray());
-        return results.Any(entry => entry.Result.Live);
+        return new EnqueueReceipt(
+            results.Any(entry => entry.Result.Outcome is EnqueueOutcome.Accepted or EnqueueOutcome.AcceptedDroppingOldest),
+            results.Any(entry => entry.Result.Live));
     }
 
     // The targeted variant, for channels whose delivery policy is buffer-always (Telegram): unlike

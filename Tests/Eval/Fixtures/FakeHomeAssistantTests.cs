@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
+using Domain.Exceptions;
 using Domain.Tools.HomeAssistant.Vfs;
 using Infrastructure.Clients.HomeAssistant;
 using Infrastructure.Clients.MusicAssistant;
@@ -295,6 +296,59 @@ public class FakeHomeAssistantTests
             timeoutSeconds: null, CancellationToken.None);
         home.StateOf(FakeHomeAssistant.VacuumEntityId).ShouldBe("cleaning");
     }
+
+    // The automation config API, proven against the real client: a written automation is read
+    // back, listed as an entity, and counted in the snapshot as a watch when it carries the
+    // assistant prefix; a hand-made one is listed and not counted.
+    [Fact]
+    public async Task TheAutomationConfigApi_RoundTripsThroughTheRealClient_AndCountsWatches()
+    {
+        var home = new FakeHomeAssistant();
+        var client = Client(home);
+        var watch = new JsonObject
+        {
+            ["alias"] = "Laura's sugar",
+            ["mode"] = "single",
+            ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "numeric_state", ["entity_id"] = "sensor.glucose", ["above"] = 180 }),
+            ["actions"] = new JsonArray()
+        };
+
+        await client.UpsertAutomationConfigAsync(HaWatchAutomation.AutomationId("laura-sugar-high"), watch);
+        var bridge = watch.DeepClone().AsObject();
+        bridge["alias"] = "Voice alarm bridge";
+        await client.UpsertAutomationConfigAsync("voice_alarm_bridge", bridge);
+
+        (await client.GetAutomationConfigAsync(HaWatchAutomation.AutomationId("laura-sugar-high")))!["alias"]!
+            .GetValue<string>().ShouldBe("Laura's sugar");
+        // The home starts with one watch seeded (Laura's sugar below 70), so two written here make three.
+        var listed = await client.ListAutomationsAsync();
+        listed.Count.ShouldBe(3);
+        var written = listed.Single(a => a.ConfigId == HaWatchAutomation.AutomationId("laura-sugar-high"));
+        written.IsOn.ShouldBeTrue();
+        home.Snapshot()[FakeHomeAssistant.WatchCountKey].ShouldBe("2");
+
+        await client.CallServiceAsync("automation", "turn_off", written.EntityId, null);
+        (await client.ListAutomationsAsync()).Single(a => a.EntityId == written.EntityId).IsOn.ShouldBeFalse();
+        home.Snapshot()[written.EntityId].ShouldBe("off");
+
+        await client.DeleteAutomationConfigAsync(HaWatchAutomation.AutomationId("laura-sugar-high"));
+        home.Snapshot()[FakeHomeAssistant.WatchCountKey].ShouldBe("1");
+        (await client.GetAutomationConfigAsync(HaWatchAutomation.AutomationId("laura-sugar-high"))).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task TheAutomationConfigApi_RefusesAConfigWithNoTrigger_WithHomeAssistantsWords()
+    {
+        var ex = await Should.ThrowAsync<HomeAssistantConfigRejectedException>(() =>
+            Client(new FakeHomeAssistant()).UpsertAutomationConfigAsync(
+                HaWatchAutomation.AutomationId("broken"),
+                new JsonObject { ["alias"] = "Broken", ["triggers"] = new JsonArray(), ["actions"] = new JsonArray() }));
+
+        ex.Message.ShouldStartWith("Message malformed:");
+    }
+
+    private static HomeAssistantClient Client(FakeHomeAssistant home) => new(
+        new HttpClient(home) { BaseAddress = new Uri("http://home-assistant.eval") }, FakeHomeAssistant.Token);
 
     // The websocket side of the home, wired the way the stack wires it: the same calendar store,
     // and every mutation recorded beside the REST calls.

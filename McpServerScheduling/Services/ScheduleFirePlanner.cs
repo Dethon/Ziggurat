@@ -1,3 +1,4 @@
+using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 
@@ -7,73 +8,24 @@ public sealed record FirePlan(ChannelMessageNotification Payload, DateTime? Next
 
 public static class ScheduleFirePlanner
 {
+    public const string ConversationPrefix = "sched";
+    public const string Sender = "scheduler";
+
     public static FirePlan Plan(
         Schedule schedule, IReadOnlyList<string> defaultDeliverTo, DateTime? nextRun, DateTimeOffset now)
     {
-        var channels = schedule.DeliverTo is { Count: > 0 } ? schedule.DeliverTo : defaultDeliverTo;
-        // Multiple entries for the same channel (e.g. several `voice:<id>` satellites) are one
-        // logical delivery: merge their sub-addresses into a single ReplyTarget so the fan-out
-        // produces one conversation spoken on every satellite, not a duplicate per satellite.
-        var replyTo = channels
-            .Select(ParseTarget)
-            .GroupBy(t => t.ChannelId)
-            .Select(Coalesce)
-            .ToList();
-        var origin = new MessageOrigin(MessageOriginKind.Schedule, schedule.Id);
+        // The targets, the origin and the clock reading are the shared fire planning's; what is the
+        // scheduler's own is what to do with the record afterwards.
+        var payload = FirePlanning.Compose(new Fire(
+            FirePlanning.ConversationId(ConversationPrefix, schedule.Id, now),
+            Sender,
+            schedule.Prompt,
+            schedule.AgentId,
+            schedule.DeliverTo,
+            schedule.UserId,
+            new MessageOrigin(MessageOriginKind.Schedule, schedule.Id),
+            now), defaultDeliverTo);
 
-        // One reading of the clock for both fields: the suffix and the Timestamp must agree, and
-        // the injected TimeProvider — not the wall clock — is what a scheduled agent's one-clock
-        // world and a test's fake time both expect to drive them.
-        var payload = new ChannelMessageNotification
-        {
-            ConversationId = $"sched-{schedule.Id}-{now.ToUnixTimeSeconds()}",
-            Sender = "scheduler",
-            Content = schedule.Prompt,
-            AgentId = schedule.AgentId,
-            ReplyTo = replyTo,
-            Origin = origin,
-            Timestamp = now
-        };
-
-        var deleteAfterFire = schedule.CronExpression is null;
-        return new FirePlan(payload, nextRun, deleteAfterFire);
-    }
-
-    private static ReplyTarget Coalesce(IGrouping<string, ReplyTarget> group)
-    {
-        var targets = group.ToList();
-        if (targets.Count == 1)
-        {
-            return targets[0];
-        }
-
-        // A bare entry (null/whitespace address) means "all" for that channel; if any entry in the
-        // group is bare it subsumes the specific sub-addresses, so the whole group is "all".
-        if (targets.Any(t => string.IsNullOrWhiteSpace(t.Address)))
-        {
-            return new ReplyTarget(group.Key, null, null);
-        }
-
-        // Otherwise join the distinct specific sub-addresses (e.g. satellite ids).
-        var addresses = targets
-            .Select(t => t.Address)
-            .Where(a => !string.IsNullOrWhiteSpace(a))
-            .Distinct()
-            .ToList();
-        var merged = addresses.Count == 0 ? null : string.Join(",", addresses);
-        return new ReplyTarget(group.Key, null, merged);
-    }
-
-    private static ReplyTarget ParseTarget(string entry)
-    {
-        var separator = entry.IndexOf(':');
-        if (separator < 0)
-        {
-            return new ReplyTarget(entry, null);
-        }
-
-        var channelId = entry[..separator];
-        var address = entry[(separator + 1)..];
-        return new ReplyTarget(channelId, null, string.IsNullOrWhiteSpace(address) ? null : address);
+        return new FirePlan(payload, nextRun, DeleteAfterFire: schedule.CronExpression is null);
     }
 }

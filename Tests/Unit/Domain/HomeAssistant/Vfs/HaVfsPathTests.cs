@@ -35,6 +35,20 @@ public class HaVfsPathTests
     }
 
     [Theory]
+    [InlineData("watches", HaVfsKind.WatchesRoot, null)]
+    [InlineData("watches/laura-sugar-high", HaVfsKind.WatchDir, "laura-sugar-high")]
+    [InlineData("watches/laura-sugar-high/watch.json", HaVfsKind.WatchFile, "laura-sugar-high")]
+    [InlineData("watches/laura-sugar-high/status.json", HaVfsKind.WatchStatusFile, "laura-sugar-high")]
+    [InlineData("watches/laura-sugar-high/other.json", HaVfsKind.Unknown, null)]
+    [InlineData("watches/a/b/c", HaVfsKind.Unknown, null)]
+    public void Parse_WatchShapes(string path, HaVfsKind kind, string? watchId)
+    {
+        var n = HaVfsPath.Parse(path);
+        n.Kind.ShouldBe(kind);
+        n.WatchId.ShouldBe(watchId);
+    }
+
+    [Theory]
     [InlineData("nope")]
     [InlineData("entities/light/kitchen/extra/deep")]
     [InlineData("areas/salon/light.salon/x/y")]
