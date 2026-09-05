@@ -78,20 +78,20 @@ public sealed partial class HaFileSystem
             return NotFound<FsEditResult>(path);
         }
 
-        var current = existing.Spec.ToJson();
-        var updated = edits.Aggregate(current, (text, edit) =>
-            edit.ReplaceAll ? text.Replace(edit.OldString, edit.NewString) : ReplaceFirst(text, edit.OldString, edit.NewString));
-        if (updated == current)
+        if (!TextEdits.Apply(existing.Spec.ToJson(), edits).TryGetValue(out var applied, out var unmatched))
         {
-            return FsError.Invalid<FsEditResult>("No edit matched the current watch.json; read it and use its exact text.");
+            return new FsResult<FsEditResult>.Err(unmatched with
+            {
+                Hint = "Read the current watch.json and use its exact text; the file is rendered from the automation, so the spelling is the mount's."
+            });
         }
 
-        return await WriteWatchAsync(node.WatchId!, updated, existing, ct, () => new FsEditResult
+        return await WriteWatchAsync(node.WatchId!, applied.Text, existing, ct, () => new FsEditResult
         {
             Status = "edited",
             FilePath = path,
-            TotalOccurrencesReplaced = edits.Count,
-            Edits = edits.Select(_ => new FsEditDetail { OccurrencesReplaced = 1, AffectedLines = new FsLineRange { Start = 1, End = 1 } }).ToList()
+            TotalOccurrencesReplaced = applied.Total,
+            Edits = applied.Details
         });
     }
 
@@ -194,10 +194,4 @@ public sealed partial class HaFileSystem
             : FsError.Fail<T>(ToolError.Codes.UnsupportedOperation,
                 $"{path} cannot be {verb}: /ha is read-only except for /ha/watches/<id>/watch.json.",
                 "To act on a device use exec on its action files; to react to the home write a watch.");
-
-    private static string ReplaceFirst(string text, string oldValue, string newValue)
-    {
-        var index = text.IndexOf(oldValue, StringComparison.Ordinal);
-        return index < 0 ? text : text[..index] + newValue + text[(index + oldValue.Length)..];
-    }
 }

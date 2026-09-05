@@ -299,7 +299,7 @@ public class HaWatchesTests
     // subtree never lists them and no write through it can reach them — while they stay visible
     // where every entity is.
     [Fact]
-    public async Task AHandMadeAutomation_IsAbsentFromWatches_AndPresentUnderEntities()
+    public async Task Glob_AHandMadeAutomation_IsAbsentFromWatchesAndPresentUnderEntities()
     {
         var fs = Build(out var client);
         client.SeedAutomation("voice_alarm_bridge", new JsonObject
@@ -323,7 +323,7 @@ public class HaWatchesTests
     // A prefixed automation whose description is not the metadata is not a watch either: somebody
     // edited it in the UI, or wrote one by hand under the prefix. It stays theirs.
     [Fact]
-    public async Task APrefixedAutomationWithoutMetadata_IsNotAWatch()
+    public async Task Glob_APrefixedAutomationWithoutMetadata_IsNotAWatch()
     {
         var fs = Build(out var client);
         client.SeedAutomation("assistant_watch_handmade", new JsonObject
@@ -343,7 +343,7 @@ public class HaWatchesTests
     [InlineData("watches/blinds-when-hot/status.json")]
     [InlineData("watches/blinds-when-hot/notes.txt")]
     [InlineData("notes.txt")]
-    public async Task Writes_AnywhereButAWatchFile_AreRefused(string path)
+    public async Task CreateAndEdit_AnywhereButAWatchFile_AreRefused(string path)
     {
         var fs = Build(out var client);
         await Ok(Create(fs, "blinds-when-hot", BlindsWatch));

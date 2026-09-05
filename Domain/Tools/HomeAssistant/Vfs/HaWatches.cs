@@ -59,8 +59,10 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
         await client.UpsertAutomationConfigAsync(id, HaWatchAutomation.Render(watchId, spec, meta), ct);
 
         // The config write reloads the automation, and its on/off state is the entity's, not the
-        // config's: a pause or a resume is a service call on the entity the reload produced.
-        var state = (await client.ListAutomationsAsync(ct)).FirstOrDefault(a => a.ConfigId == id);
+        // config's: a pause or a resume is a service call on the entity the reload produced. A
+        // brand-new entity can trail the write by a moment, so it is asked for a few times before a
+        // watch created paused would be left on.
+        var state = await ReloadedStateAsync(client, id, ct);
         if (state is not null && state.IsOn != spec.Enabled)
         {
             await client.CallServiceAsync("automation", spec.Enabled ? "turn_on" : "turn_off", state.EntityId, null, ct);
@@ -68,6 +70,20 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
         }
 
         return new HaWatch(watchId, spec with { Enabled = state?.IsOn ?? spec.Enabled }, meta, state);
+    }
+
+    private async Task<HaAutomationState?> ReloadedStateAsync(IHomeAssistantClient client, string id, CancellationToken ct)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            var state = (await client.ListAutomationsAsync(ct)).FirstOrDefault(a => a.ConfigId == id);
+            if (state is not null || attempt == 4)
+            {
+                return state;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(200), _time, ct);
+        }
     }
 
     public Task DeleteAsync(string watchId, CancellationToken ct) =>
@@ -81,5 +97,7 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
         ["automationEntity"] = watch.State?.EntityId,
         ["enabled"] = watch.Enabled,
         ["spent"] = watch.Spent
-    }.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+    }.ToJsonString(_indented);
+
+    private static readonly System.Text.Json.JsonSerializerOptions _indented = new() { WriteIndented = true };
 }

@@ -63,7 +63,6 @@ public class HomeAssistantWatchFireTests(HomeAssistantFixture fixture) : IClassF
             // Further above is not another crossing.
             await SetStateAsync(http, "195");
             await Eventually.Settle();
-            await Eventually.Settle();
             fixture.Fires.Count.ShouldBe(firesBefore + 1);
 
             // Back under and across again is.

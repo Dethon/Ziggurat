@@ -11,3 +11,10 @@
 - [x] The guide teaches when an announcement is the right effect (a fixed sentence, urgency, insistence) and that it needs no agent; claims declared.
 - [x] Eval scenario: the night-time glucose alarm above (insistent announcement, condition), declaring the watch count as its change.
 - [x] Spec: `.scratch/home-watches/spec.md` § Rendering the automation, § Provisioning and rollout.
+
+## Comments
+
+- 2026-09-05: the integration seed carries `assistant_watch_fired` alone — the command the
+  end-to-end test drives. `voice_announce` is not seeded: nothing in the container tests rings a
+  satellite, and a rest_command nothing calls would be dead configuration. The bridges document
+  and the local compose config carry both.

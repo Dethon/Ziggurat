@@ -106,7 +106,7 @@ public class HaWatchEffectsTests
         var payload = actions[1]!["data"]!["payload"]!.GetValue<string>();
         payload.ShouldStartWith("{{ {");
         payload.ShouldEndWith("| to_json }}");
-        foreach (var fact in new[]
+        var facts = new[]
         {
             "'watchId': watch_id", "'name': watch_name", "'agentId': watch_agent", "'deliverTo': watch_deliver_to",
             "'userId': watch_user", "'prompt': watch_prompt",
@@ -116,10 +116,8 @@ public class HaWatchEffectsTests
             "'toState': (trigger.to_state.state if trigger.to_state is defined and trigger.to_state else none)",
             "'description': (trigger.description if trigger.description is defined else none)",
             "'firedAt': now().isoformat()"
-        })
-        {
-            payload.ShouldContain(fact);
-        }
+        };
+        facts.ShouldAllBe(fact => payload.Contains(fact, StringComparison.Ordinal));
     }
 
     [Fact]

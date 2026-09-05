@@ -42,14 +42,16 @@ public static class ConfigModule
                     sp.GetRequiredService<IHomeAssistantClient>,
                     extraServices: ServedActions(musicConfigured),
                     logger: sp.GetRequiredService<ILogger<HaCatalogProvider>>()))
+                .AddSingleton(TimeProvider.System)
+                .AddSingleton(sp => new HaWatches(sp.GetRequiredService<IHomeAssistantClient>, sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton(sp => new HaFileSystem(
                     sp.GetRequiredService<HaCatalogProvider>(),
                     sp.GetRequiredService<IHomeAssistantClient>,
-                    musicClientFactory: musicConfigured ? sp.GetRequiredService<IMusicAssistantClient> : null))
-                .AddSingleton(sp => new HaWatches(sp.GetRequiredService<IHomeAssistantClient>))
+                    musicClientFactory: musicConfigured ? sp.GetRequiredService<IMusicAssistantClient> : null,
+                    timeProvider: sp.GetRequiredService<TimeProvider>(),
+                    watches: sp.GetRequiredService<HaWatches>()))
                 .AddSingleton(sp => new HomeAssistantSetupSummary(
                     sp.GetRequiredService<HaCatalogProvider>(), sp.GetRequiredService<HaWatches>()))
-                .AddSingleton(TimeProvider.System)
                 .AddToolServer(settings, ToolResponse.Create)
                 // Broadcast, so an agent that is merely reconnecting still receives a fire; the
                 // callback answers Home Assistant 503 only when nobody is registered at all, and

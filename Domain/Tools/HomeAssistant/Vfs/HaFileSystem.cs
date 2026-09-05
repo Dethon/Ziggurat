@@ -15,10 +15,14 @@ public sealed partial class HaFileSystem(
     TimeSpan? regexMatchTimeout = null,
     Func<IMusicAssistantClient>? musicClientFactory = null,
     TimeProvider? timeProvider = null,
-    Func<ConversationContext?>? caller = null) : FileSystemBackendBase
+    Func<ConversationContext?>? caller = null,
+    HaWatches? watches = null) : FileSystemBackendBase
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
-    private readonly HaWatches _watches = new(clientFactory, timeProvider);
+
+    // Shared with the setup summary when the server hands one in, so both read the home's watches
+    // through one instance; a test that builds the mount alone gets its own.
+    private readonly HaWatches _watches = watches ?? new HaWatches(clientFactory, timeProvider);
 
     // Who is writing, for the one record on this mount that remembers its author: a watch runs its
     // prompts as the agent that created it. The call-tool filter enters the context; a test hands
