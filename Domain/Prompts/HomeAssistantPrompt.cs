@@ -190,7 +190,10 @@ public static class HomeAssistantPrompt
             from → to, when — even if the prompt says nothing about it, so "look into it" is enough.
           - `{"kind": "announce", "text": "…", "target": {…}, "insistent": {…}}` — a fixed
             sentence spoken in the home with no agent involved; `target` and `insistent` exactly as
-            an alarm's description has them, and `insistent` rings until acknowledged. Add it only
+            an alarm's description has them, and `insistent` rings until acknowledged. `target.room`
+            is the voice hub's room name as the timers section's satellite list spells it (or a
+            `satelliteId` from that list) — NEVER a Home Assistant area slug like `fran_s_office`;
+            the write is refused naming the satellites that exist. Add it only
             when the request carries urgency — "wake me if her sugar drops under 60" is an insistent
             announcement in the bedroom, usually followed by a `prompt` effect so the detail follows
             on chat. It works while the assistant is down.

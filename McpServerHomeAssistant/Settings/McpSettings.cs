@@ -15,6 +15,10 @@ public record McpSettings
     // presents it, so provisioning the home is one secret.
     public AnnounceTokenSettings Announce { get; init; } = new();
 
+    // The voice hub, asked to resolve an announcement's target when a watch is written — the same
+    // adapters the timers server uses, and the same secret.
+    public VoiceHubSettings VoiceHub { get; init; } = new();
+
     // Where a watch with no deliverTo lands: the shared policy file's answer, the same the
     // scheduler gives a schedule (Domain/delivery.json).
     public DeliverySettings Delivery { get; init; } = new();
@@ -23,6 +27,11 @@ public record McpSettings
 public record AnnounceTokenSettings
 {
     public string Token { get; init; } = "";
+}
+
+public record VoiceHubSettings
+{
+    public string BaseUrl { get; init; } = "http://mcp-channel-voice:8080";
 }
 
 public record HomeAssistantConfiguration

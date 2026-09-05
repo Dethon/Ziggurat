@@ -1,7 +1,10 @@
 using System.Text.Json.Nodes;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Voice;
+using Domain.Exceptions;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -226,5 +229,151 @@ public class HaWatchEffectsTests
         var read = (await fs.ReadAsync(path, null, null, CancellationToken.None)).ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
         var text = string.Join("\n", read.Content.Split('\n').Select(l => l[(l.IndexOf(": ", StringComparison.Ordinal) + 2)..]));
         return JsonNode.Parse(text)!.AsObject();
+    }
+}
+// An announce target the hub cannot resolve is a watch that fires into silence: the first prod
+// watch named the Home Assistant area slug as its room, and the hub, which knows the room by its
+// own name, answered "target not found" while the automation's trace showed a fire. So a target is
+// resolved against the hub when the file is written, the timers' rule, and refused by name.
+public class HaWatchAnnounceTargetTests
+{
+    private sealed class FakeSatelliteCatalog : ISatelliteCatalog
+    {
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct)
+        {
+            Calls++;
+            return Task.FromResult<IReadOnlyList<SatelliteDescriptor>>([new("FRAN-OFFICE-01", "Fran's office"), new("kitchen-01", "Kitchen")]);
+        }
+
+        public Task<IReadOnlyList<string>> ResolveAsync(AnnounceTarget target, CancellationToken ct)
+        {
+            Calls++;
+            IReadOnlyList<string> resolved = target switch
+            {
+                { SatelliteIds: { Count: > 0 } ids } => ids.Where(id => id is "FRAN-OFFICE-01" or "kitchen-01").ToList(),
+                { SatelliteId: { } id } => id is "FRAN-OFFICE-01" or "kitchen-01" ? [id] : [],
+                { Room: { } room } => room.Equals("Fran's office", StringComparison.OrdinalIgnoreCase) ? ["FRAN-OFFICE-01"]
+                    : room.Equals("Kitchen", StringComparison.OrdinalIgnoreCase) ? ["kitchen-01"] : [],
+                { All: true } => ["FRAN-OFFICE-01", "kitchen-01"],
+                _ => []
+            };
+            return Task.FromResult(resolved);
+        }
+    }
+
+    private sealed class UnreachableCatalog : ISatelliteCatalog
+    {
+        public Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct) =>
+            throw new VoiceHubUnavailableException("connection refused");
+
+        public Task<IReadOnlyList<string>> ResolveAsync(AnnounceTarget target, CancellationToken ct) =>
+            throw new VoiceHubUnavailableException("connection refused");
+    }
+
+    private static HaFileSystem Build(out FakeHaClient client, ISatelliteCatalog? satellites)
+    {
+        client = new FakeHaClient { States = { Entity("sensor.laura_glucose", "112") } };
+        var local = client;
+        return new HaFileSystem(new HaCatalogProvider(() => local, new FakeTimeProvider()), () => local,
+            caller: () => new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("signalr", "conv-1")),
+            satellites: satellites);
+    }
+
+    private static Task<FsResult<FsCreateResult>> Create(HaFileSystem fs, string target) =>
+        fs.CreateAsync("watches/sugar-low/watch.json", $$"""
+            {"name": "Laura's sugar", "triggers": [{"trigger": "numeric_state", "entity_id": "sensor.laura_glucose", "below": 60}],
+             "effects": [{"kind": "announce", "text": "low", "target": {{target}}}]}
+            """, false, true, CancellationToken.None);
+
+    [Theory]
+    [InlineData("""{"room": "Fran's office"}""")]
+    [InlineData("""{"room": "fran's OFFICE"}""")]
+    [InlineData("""{"satelliteId": "FRAN-OFFICE-01"}""")]
+    [InlineData("""{"satelliteIds": ["FRAN-OFFICE-01", "kitchen-01"]}""")]
+    [InlineData("""{"all": true}""")]
+    public async Task ATargetTheHubResolves_IsWritten(string target)
+    {
+        var fs = Build(out var client, new FakeSatelliteCatalog());
+
+        (await Create(fs, target)).ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+
+        client.UpsertedAutomations.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task ARoomTheHubDoesNotKnow_IsRefusedNamingTheRoomsThatExist()
+    {
+        var fs = Build(out var client, new FakeSatelliteCatalog());
+
+        var error = (await Create(fs, """{"room": "fran_s_office"}""")).ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe("not_found");
+        error.Message.ShouldContain("fran_s_office");
+        error.Message.ShouldContain("""FRAN-OFFICE-01 (room "Fran's office")""");
+        error.Hint.ShouldNotBeNull().ShouldContain("Home Assistant area");
+        client.UpsertedAutomations.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AnUnknownSatelliteId_IsRefusedNamingIt()
+    {
+        var fs = Build(out var client, new FakeSatelliteCatalog());
+
+        var error = (await Create(fs, """{"satelliteIds": ["FRAN-OFFICE-01", "bedroom-01"]}""")).ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe("not_found");
+        error.Message.ShouldContain("bedroom-01");
+        client.UpsertedAutomations.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AnEmptyTarget_IsAnInvalidArgument()
+    {
+        var fs = Build(out var client, new FakeSatelliteCatalog());
+
+        var error = (await Create(fs, "{}")).ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe("invalid_argument");
+        error.Message.ShouldContain("satelliteId | satelliteIds | room | all");
+        client.UpsertedAutomations.ShouldBeEmpty();
+    }
+
+    // A hub that is down cannot vouch for a room, and a watch written blind would fire into
+    // silence; the write waits for the hub rather than guessing, and says so.
+    [Fact]
+    public async Task AHubThatIsDown_RefusesTheWriteAsTransient()
+    {
+        var fs = Build(out var client, new UnreachableCatalog());
+
+        var error = (await Create(fs, """{"room": "Fran's office"}""")).ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe("transient_dependency");
+        client.UpsertedAutomations.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task APromptOnlyWatch_NeverAsksTheHub()
+    {
+        var catalog = new FakeSatelliteCatalog();
+        var fs = Build(out _, catalog);
+
+        (await fs.CreateAsync("watches/sugar-low/watch.json", """
+            {"name": "x", "triggers": [{"trigger": "state", "entity_id": "sensor.laura_glucose"}], "effects": [{"kind": "prompt", "prompt": "p"}]}
+            """, false, true, CancellationToken.None)).ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+
+        catalog.Calls.ShouldBe(0);
+    }
+
+    // No hub configured means nothing to ask: the write goes through as written.
+    [Fact]
+    public async Task WithoutAHub_TheTargetIsWrittenUnchecked()
+    {
+        var fs = Build(out var client, satellites: null);
+
+        (await Create(fs, """{"room": "fran_s_office"}""")).ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+
+        client.UpsertedAutomations.ShouldHaveSingleItem();
     }
 }

@@ -16,7 +16,8 @@ public sealed partial class HaFileSystem(
     Func<IMusicAssistantClient>? musicClientFactory = null,
     TimeProvider? timeProvider = null,
     Func<ConversationContext?>? caller = null,
-    HaWatches? watches = null) : FileSystemBackendBase
+    HaWatches? watches = null,
+    ISatelliteCatalog? satellites = null) : FileSystemBackendBase
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 

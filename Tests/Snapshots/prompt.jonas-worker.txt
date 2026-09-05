@@ -1,4 +1,4 @@
-# jonas-worker — 9726 tokens across 10 sections
+# jonas-worker — 9789 tokens across 10 sections
 
   core_directive           CoreDirective         250 / 350    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               26 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -8,7 +8,7 @@
   sandbox_prompt           Client               1004 / 1400   The sandbox's layout, what may be run in it and what it refuses.
   websearch_prompt         Client               1368 / 1500   Searching, loading and reading pages, and what to do when one refuses.
   idealista_guide          Client                317 / 600    Property search: the filters that exist and how a listing is read back.
-  home_assistant_guide     Client               4993 / 6500   The house: its areas and entities, and how an intent becomes a service call.
+  home_assistant_guide     Client               5056 / 6500   The house: its areas and entities, and how an intent becomes a service call.
   date                     Date                    7 / 30     Today's date. Last of the static sections, because it is the only one that changes on its own.
 
 ================================================================================================
@@ -432,7 +432,10 @@ home changing → a watch**, never a schedule that polls `history.sh`.
     from → to, when — even if the prompt says nothing about it, so "look into it" is enough.
   - `{"kind": "announce", "text": "…", "target": {…}, "insistent": {…}}` — a fixed
     sentence spoken in the home with no agent involved; `target` and `insistent` exactly as
-    an alarm's description has them, and `insistent` rings until acknowledged. Add it only
+    an alarm's description has them, and `insistent` rings until acknowledged. `target.room`
+    is the voice hub's room name as the timers section's satellite list spells it (or a
+    `satelliteId` from that list) — NEVER a Home Assistant area slug like `fran_s_office`;
+    the write is refused naming the satellites that exist. Add it only
     when the request carries urgency — "wake me if her sugar drops under 60" is an insistent
     announcement in the bedroom, usually followed by a `prompt` effect so the detail follows
     on chat. It works while the assistant is down.

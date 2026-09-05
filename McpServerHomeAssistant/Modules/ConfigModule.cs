@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.Prompts;
 using Domain.Tools.HomeAssistant.Vfs;
+using Infrastructure.Clients.Voice;
 using Infrastructure.Extensions;
 using Infrastructure.Utils;
 using Mcp.Hosting;
@@ -36,7 +37,18 @@ public static class ConfigModule
                 services.AddMusicAssistantClient(music!.BaseUrl, music.Token);
             }
 
+            // The voice hub's satellite roster, asked when a watch's announcement names a target,
+            // through the timers' own adapter: the hub knows rooms by its names, not by the home's
+            // area slugs, and a target it cannot resolve is a watch that fires into silence.
+            services.AddHttpClient(VoiceHubHttp.ClientName, client =>
+            {
+                client.BaseAddress = new Uri(settings.VoiceHub.BaseUrl);
+                client.Timeout = TimeSpan.FromSeconds(15);
+            });
+
             services
+                .AddSingleton<ISatelliteCatalog>(sp => new HttpSatelliteCatalog(
+                    sp.GetRequiredService<IHttpClientFactory>(), settings.Announce.Token))
                 .AddHomeAssistantClient(settings.HomeAssistant.BaseUrl, settings.HomeAssistant.Token)
                 .AddSingleton(sp => new HaCatalogProvider(
                     sp.GetRequiredService<IHomeAssistantClient>,
@@ -49,7 +61,8 @@ public static class ConfigModule
                     sp.GetRequiredService<IHomeAssistantClient>,
                     musicClientFactory: musicConfigured ? sp.GetRequiredService<IMusicAssistantClient> : null,
                     timeProvider: sp.GetRequiredService<TimeProvider>(),
-                    watches: sp.GetRequiredService<HaWatches>()))
+                    watches: sp.GetRequiredService<HaWatches>(),
+                    satellites: sp.GetRequiredService<ISatelliteCatalog>()))
                 .AddSingleton(sp => new HomeAssistantSetupSummary(
                     sp.GetRequiredService<HaCatalogProvider>(), sp.GetRequiredService<HaWatches>()))
                 .AddToolServer(settings, ToolResponse.Create)

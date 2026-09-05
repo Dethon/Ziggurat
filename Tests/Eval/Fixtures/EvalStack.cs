@@ -254,6 +254,11 @@ public sealed class EvalStack : IAsyncDisposable
         builder.Services.AddHttpClient(nameof(IHomeAssistantClient))
             .ConfigurePrimaryHttpMessageHandler(() => Home);
 
+        // The hub a watch's announcement target is resolved against, the same fake the timers
+        // server rings: a room the roster does not have is refused here as it is in prod.
+        builder.Services.AddHttpClient(VoiceHubHttp.ClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => VoiceHub);
+
         return await StartAsync(builder, port);
     }
 

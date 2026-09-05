@@ -1,5 +1,8 @@
+using System.Text.Json;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Voice;
 using Domain.Exceptions;
 using Domain.Tools.FileSystem;
 
@@ -159,6 +162,20 @@ public sealed partial class HaFileSystem
 
         try
         {
+            if (await ValidateAnnounceTargetsAsync(spec, ct) is { } badTarget)
+            {
+                return new FsResult<T>.Err(badTarget);
+            }
+        }
+        catch (VoiceHubUnavailableException ex)
+        {
+            return FsError.Fail<T>(ToolError.Codes.TransientDependency,
+                $"The voice hub is not answering, so the announcement's target cannot be checked: {ex.Message}. The watch was not written.",
+                "Try again in a moment; a target the hub cannot vouch for would fire into silence.");
+        }
+
+        try
+        {
             await _watches.WriteAsync(watchId, spec, agentId, existing, ct);
         }
         catch (HomeAssistantConfigRejectedException ex)
@@ -173,6 +190,56 @@ public sealed partial class HaFileSystem
 
         return new FsResult<T>.Ok(ok());
     }
+
+    // An announcement's target is resolved against the voice hub when the file is written, the
+    // timers' rule: the hub knows rooms by its own names, not by Home Assistant's area slugs, and a
+    // target it cannot resolve is a watch whose trace shows a fire while nothing rings. Without a
+    // hub to ask, the target is written as it came.
+    private async Task<ToolErrorResult?> ValidateAnnounceTargetsAsync(HaWatchSpec spec, CancellationToken ct)
+    {
+        var announces = spec.Effects.OfType<HaAnnounceEffect>().ToList();
+        if (satellites is null || announces.Count == 0)
+        {
+            return null;
+        }
+
+        var roster = await satellites.GetAllAsync(ct);
+        var known = roster.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        var rooms = string.Join(", ", roster.Select(s => $"{s.Id} (room \"{s.Room}\")"));
+        foreach (var announce in announces)
+        {
+            var target = announce.Target.Deserialize<AnnounceTarget>(_targetJson);
+            if (target is null
+                || (target.SatelliteId is null && target.SatelliteIds is not { Count: > 0 } && target.Room is null && target.All != true))
+            {
+                return ToolError.Result(ToolError.Codes.InvalidArgument,
+                    "An announce effect's target is required: {satelliteId | satelliteIds | room | all}.",
+                    $"The satellites are {rooms}.");
+            }
+
+            IEnumerable<string> named = target.SatelliteIds is { Count: > 0 } ids
+                ? ids.Where(id => id is not null)
+                : target.SatelliteId is not null ? [target.SatelliteId] : [];
+            var unknown = named.Where(id => !known.Contains(id)).ToList();
+            if (unknown.Count > 0)
+            {
+                return ToolError.Result(ToolError.Codes.NotFound,
+                    $"The announce target names unknown satellite(s): {string.Join(", ", unknown)}. Known satellites: {rooms}.",
+                    "Use one of those ids, or the room name the hub lists.");
+            }
+
+            if ((await satellites.ResolveAsync(target, ct)).Count == 0)
+            {
+                return ToolError.Result(ToolError.Codes.NotFound,
+                    $"The announce target {announce.Target.ToJsonString()} matches no satellite. Known satellites: {rooms}.",
+                    "A room is the voice hub's room name as the timers section lists it (or a satellite id), never a Home Assistant area slug.");
+            }
+        }
+
+        return null;
+    }
+
+    private static readonly System.Text.Json.JsonSerializerOptions _targetJson = new() { PropertyNameCaseInsensitive = true };
 
     private static FsResult<T> HomeAssistantFailure<T>(HomeAssistantException ex) where T : class =>
         ex is HomeAssistantNotFoundException
