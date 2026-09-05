@@ -4,10 +4,10 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Against the seeded container: write an automation, read it back, see it listed with its entity state, delete it, see it gone.
-- [ ] Against the seeded container: writing an automation with an invalid trigger fails with an error whose message is Home Assistant's validation text.
-- [ ] Unit tests pin the HTTP shape of each operation the way the calendar and history client tests do.
-- [ ] The unit fake client stores automations and records writes and deletes; the eval fake home serves the same operations from a store and exposes a watch-count snapshot key.
-- [ ] Spec: `.scratch/home-watches/spec.md` § Home Assistant client.
+- [x] Against the seeded container: write an automation, read it back, see it listed with its entity state, delete it, see it gone.
+- [x] Against the seeded container: writing an automation with an invalid trigger fails with an error whose message is Home Assistant's validation text.
+- [x] Unit tests pin the HTTP shape of each operation the way the calendar and history client tests do.
+- [x] The unit fake client stores automations and records writes and deletes; the eval fake home serves the same operations from a store and exposes a watch-count snapshot key.
+- [x] Spec: `.scratch/home-watches/spec.md` § Home Assistant client.

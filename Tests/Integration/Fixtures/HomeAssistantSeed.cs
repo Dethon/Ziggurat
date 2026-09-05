@@ -38,6 +38,7 @@ internal static class HomeAssistantSeed
     {
         Directory.CreateDirectory(Path.Combine(configDir, ".storage"));
 
+        File.WriteAllText(Path.Combine(configDir, "automations.yaml"), "[]\n");
         File.WriteAllText(Path.Combine(configDir, "configuration.yaml"),
             """
             homeassistant:
@@ -54,6 +55,11 @@ internal static class HomeAssistantSeed
             # neither is in a minimal core, so the history round trip needs both named.
             recorder:
             history:
+
+            # The automation config API is the `config` integration's, and it writes into the
+            # automations file this line includes; a watch is a real automation written through it.
+            config:
+            automation: !include automations.yaml
 
             input_boolean:
               test_switch:

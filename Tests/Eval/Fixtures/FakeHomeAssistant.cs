@@ -102,9 +102,14 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         $@"(^|/)({HaCatalog.ClassOf(KitchenSpeakerEntityId)}\.)?{HaCatalog.ObjectOf(KitchenSpeakerEntityId)}_\(";
 
 
+    // The home's automations, as the config API holds them: how many carry the assistant prefix
+    // is the watch count a scenario declares as its change, the way it declares an alarm's.
+    public const string WatchCountKey = "automation#watches";
+
     private readonly Lock _gate = new();
     private readonly List<HaCall> _calls = [];
     private readonly Dictionary<string, HaEntity> _entities;
+    private readonly Dictionary<string, FakeAutomation> _automations = [];
 
     // The calendar's events, shared with the websocket side (FakeHomeAssistantSocket) that creates
     // and deletes them: the REST side only ever lists.
@@ -126,6 +131,18 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         lock (_gate)
         {
             _calls.Add(new HaCall("calendar", service, entityId, data));
+        }
+    }
+
+    // The automations the home holds, watch or not, with the config exactly as it was written.
+    public IReadOnlyList<FakeAutomation> Automations
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _automations.Values];
+            }
         }
     }
 
@@ -159,8 +176,11 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         {
             return _entities.Values
                 .SelectMany(entity => entity.Snapshot())
+                .Concat(_automations.Values.Select(a => new KeyValuePair<string, string>(a.EntityId, a.IsOn ? "on" : "off")))
                 .Append(new KeyValuePair<string, string>(
                     AlarmsEventCountKey, Calendar.For(AlarmsEntityId).Count.ToString()))
+                .Append(new KeyValuePair<string, string>(
+                    WatchCountKey, _automations.Keys.Count(HaWatchAutomation.IsWatch).ToString()))
                 .ToDictionary(entry => entry.Key, entry => entry.Value);
         }
     }
@@ -172,7 +192,7 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
 
         if (request.Method == HttpMethod.Get && path.EndsWith("/api/states"))
         {
-            return Json(new JsonArray([.. Entities().Select(e => e.ToJson())]));
+            return Json(new JsonArray([.. Entities().Select(e => e.ToJson()), .. AutomationEntities()]));
         }
 
         if (request.Method == HttpMethod.Get && path.Contains("/api/states/"))
@@ -180,7 +200,18 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             var id = Uri.UnescapeDataString(path[(path.LastIndexOf('/') + 1)..]);
             return Entities().FirstOrDefault(e => e.EntityId == id) is { } entity
                 ? Json(entity.ToJson())
-                : new HttpResponseMessage(HttpStatusCode.NotFound);
+                : Automations.FirstOrDefault(a => a.EntityId == id) is { } automation
+                    ? Json(automation.ToJson())
+                    : new HttpResponseMessage(HttpStatusCode.NotFound);
+        }
+
+        // The automation config API, which is how a watch lives in the home: read, write (create
+        // or replace) and delete by id. The write is validated the way Home Assistant validates
+        // its own — an alias and at least one trigger — and refused with the same words, so a
+        // malformed watch fails here as it would in prod rather than sitting in the store.
+        if (path.Contains("/api/config/automation/config/"))
+        {
+            return await AutomationConfigAsync(request, path, cancellationToken);
         }
 
         // The home's configuration: the one place its zone is stated. The fake home keeps Madrid
@@ -258,6 +289,69 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         return Media(domain, service, data) ?? Json(new JsonArray());
     }
 
+    private async Task<HttpResponseMessage> AutomationConfigAsync(
+        HttpRequestMessage request, string path, CancellationToken cancellationToken)
+    {
+        var id = Uri.UnescapeDataString(path[(path.LastIndexOf('/') + 1)..]);
+        lock (_gate)
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return _automations.TryGetValue(id, out var found)
+                    ? Json(found.Config.DeepClone())
+                    : NotFoundMessage();
+            }
+
+            if (request.Method == HttpMethod.Delete)
+            {
+                return _automations.Remove(id) ? Json(new JsonObject { ["result"] = "ok" }) : NotFoundMessage();
+            }
+        }
+
+        var config = JsonNode.Parse(await request.Content!.ReadAsStringAsync(cancellationToken))?.AsObject()
+                     ?? new JsonObject();
+        if (config["alias"] is null)
+        {
+            return Malformed("required key not provided @ data['alias']");
+        }
+        if (config["triggers"] is not JsonArray { Count: > 0 })
+        {
+            return Malformed("required key not provided @ data['triggers']");
+        }
+
+        lock (_gate)
+        {
+            _calls.Add(new HaCall("config", "automation", id, config.DeepClone().AsObject()));
+            _automations[id] = _automations.TryGetValue(id, out var existing)
+                ? existing with { Config = config }
+                : new FakeAutomation(id, config);
+        }
+
+        return Json(new JsonObject { ["result"] = "ok" });
+    }
+
+    private static HttpResponseMessage NotFoundMessage() =>
+        new(HttpStatusCode.NotFound)
+        {
+            Content = new StringContent("""{"message":"Resource not found"}""", System.Text.Encoding.UTF8, "application/json")
+        };
+
+    private static HttpResponseMessage Malformed(string reason) =>
+        new(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(
+                new JsonObject { ["message"] = $"Message malformed: {reason}" }.ToJsonString(),
+                System.Text.Encoding.UTF8, "application/json")
+        };
+
+    private IEnumerable<JsonNode> AutomationEntities()
+    {
+        lock (_gate)
+        {
+            return [.. _automations.Values.Select(a => a.ToJson())];
+        }
+    }
+
     // The two media answers that are not "ok, nothing changed": a browse that returns a listing,
     // and a name that resolves to nothing. Both are what the contract's rules are about — the
     // listing is the only place a real playlist title exists, and the 500 is what an invented one
@@ -323,6 +417,18 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     // be a second Home Assistant nobody verified.
     private void Apply(string domain, string service, string? entityId, JsonObject data)
     {
+        if (domain == "automation" && entityId is not null
+            && _automations.Values.FirstOrDefault(a => a.EntityId == entityId) is { } automation)
+        {
+            _automations[automation.Id] = service switch
+            {
+                "turn_on" => automation with { IsOn = true },
+                "turn_off" => automation with { IsOn = false },
+                _ => automation
+            };
+            return;
+        }
+
         if (entityId is null || !_entities.TryGetValue(entityId, out var entity))
         {
             return;
@@ -421,6 +527,29 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
 }
 
 public sealed record HaCall(string Domain, string Service, string? EntityId, JsonObject Data);
+
+// One automation as the fake home holds it: the config the agent wrote, and the entity state a
+// real home would list beside it. Home Assistant derives the entity id from the alias.
+public sealed record FakeAutomation(string Id, JsonObject Config, bool IsOn = true)
+{
+    public string EntityId { get; } = "automation." + new string(
+        [.. (Config["alias"]?.GetValue<string>() ?? Id).ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '_')]);
+
+    public JsonNode ToJson() => new JsonObject
+    {
+        ["entity_id"] = EntityId,
+        ["state"] = IsOn ? "on" : "off",
+        ["attributes"] = new JsonObject
+        {
+            ["id"] = Id,
+            ["friendly_name"] = Config["alias"]?.GetValue<string>() ?? Id,
+            ["last_triggered"] = null,
+            ["mode"] = Config["mode"]?.GetValue<string>() ?? "single"
+        },
+        ["last_changed"] = "2026-08-17T18:00:00+00:00",
+        ["last_updated"] = "2026-08-17T18:00:00+00:00"
+    };
+}
 
 internal sealed record HaEntity(
     string EntityId, string State, string FriendlyName, JsonObject? Attributes = null)

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Exceptions;
 
 namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 
@@ -15,11 +16,12 @@ public class FakeHaClient : IHomeAssistantClient
     public (string Domain, string Service, string? EntityId, IReadOnlyDictionary<string, JsonNode?>? Data)? LastCall { get; private set; }
     public Func<string, string, string?, IReadOnlyDictionary<string, JsonNode?>?, HaServiceCallResult>? CallHandler { get; set; }
 
+    // The seeded entities plus one entity per stored automation, as a real home lists them.
     public virtual Task<IReadOnlyList<HaEntityState>> ListStatesAsync(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<HaEntityState>>(States);
+        => Task.FromResult<IReadOnlyList<HaEntityState>>([.. States, .. AutomationEntities()]);
 
     public virtual Task<HaEntityState?> GetStateAsync(string entityId, CancellationToken ct = default)
-        => Task.FromResult(States.FirstOrDefault(s => s.EntityId == entityId));
+        => Task.FromResult(States.Concat(AutomationEntities()).FirstOrDefault(s => s.EntityId == entityId));
 
     public virtual Task<IReadOnlyList<HaServiceDefinition>> ListServicesAsync(CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<HaServiceDefinition>>(Services);
@@ -29,6 +31,15 @@ public class FakeHaClient : IHomeAssistantClient
         IReadOnlyDictionary<string, JsonNode?>? data, CancellationToken ct = default)
     {
         LastCall = (domain, service, entityId, data);
+        Calls.Add((domain, service, entityId));
+        if (domain == "automation" && service is "turn_on" or "turn_off" && entityId is not null)
+        {
+            var automation = Automations.Values.FirstOrDefault(a => a.EntityId == entityId);
+            if (automation is not null)
+            {
+                automation.IsOn = service == "turn_on";
+            }
+        }
         var result = CallHandler?.Invoke(domain, service, entityId, data)
                      ?? new HaServiceCallResult { ChangedEntities = [] };
         return Task.FromResult(result);
@@ -107,6 +118,87 @@ public class FakeHaClient : IHomeAssistantClient
         return StatisticsFailure is null
             ? Task.FromResult<IReadOnlyList<HaStatisticsRow>>(Statistics)
             : Task.FromException<IReadOnlyList<HaStatisticsRow>>(StatisticsFailure);
+    }
+
+    public List<(string Domain, string Service, string? EntityId)> Calls { get; } = [];
+
+    // The automation store: the configs the config API holds, keyed by id, each with the entity
+    // state a real home would list beside it. What was written and deleted is recorded so a test
+    // can assert on the automation the home received rather than on how it was rendered.
+    public Dictionary<string, FakeAutomation> Automations { get; } = [];
+    public List<(string Id, JsonObject Config)> UpsertedAutomations { get; } = [];
+    public List<string> DeletedAutomations { get; } = [];
+    public Exception? AutomationRejection { get; set; }
+
+    public sealed class FakeAutomation(string id, JsonObject config)
+    {
+        public string Id { get; } = id;
+        public JsonObject Config { get; set; } = config;
+        public string EntityId { get; init; } = "automation." + EntitySlug(config["alias"]?.GetValue<string>() ?? id);
+        public bool IsOn { get; set; } = true;
+        public DateTimeOffset? LastTriggered { get; set; }
+    }
+
+    // Home Assistant derives an automation's entity id from its alias the first time it is loaded.
+    private static string EntitySlug(string alias) =>
+        new string([.. alias.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '_')]);
+
+    public FakeAutomation SeedAutomation(string id, JsonObject config, bool on = true, DateTimeOffset? lastTriggered = null)
+    {
+        var automation = new FakeAutomation(id, config) { IsOn = on, LastTriggered = lastTriggered };
+        Automations[id] = automation;
+        return automation;
+    }
+
+    private IEnumerable<HaEntityState> AutomationEntities() =>
+        Automations.Values.Select(a => Entity(a.EntityId, a.IsOn ? "on" : "off",
+            ("id", JsonValue.Create(a.Id)),
+            ("friendly_name", JsonValue.Create(a.Config["alias"]?.GetValue<string>() ?? a.Id)),
+            ("last_triggered", a.LastTriggered is { } at ? JsonValue.Create(at.ToString("o")) : null)));
+
+    public virtual Task<IReadOnlyList<HaAutomationState>> ListAutomationsAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<HaAutomationState>>(Automations.Values
+            .Select(a => new HaAutomationState
+            {
+                EntityId = a.EntityId,
+                ConfigId = a.Id,
+                IsOn = a.IsOn,
+                FriendlyName = a.Config["alias"]?.GetValue<string>(),
+                LastTriggered = a.LastTriggered
+            })
+            .ToList());
+
+    public virtual Task<JsonObject?> GetAutomationConfigAsync(string id, CancellationToken ct = default)
+        => Task.FromResult(Automations.TryGetValue(id, out var a) ? a.Config.DeepClone().AsObject() : null);
+
+    public virtual Task UpsertAutomationConfigAsync(string id, JsonObject config, CancellationToken ct = default)
+    {
+        if (AutomationRejection is not null)
+        {
+            return Task.FromException(AutomationRejection);
+        }
+
+        var stored = config.DeepClone().AsObject();
+        UpsertedAutomations.Add((id, stored));
+        if (Automations.TryGetValue(id, out var existing))
+        {
+            existing.Config = stored;
+        }
+        else
+        {
+            Automations[id] = new FakeAutomation(id, stored);
+        }
+        return Task.CompletedTask;
+    }
+
+    public virtual Task DeleteAutomationConfigAsync(string id, CancellationToken ct = default)
+    {
+        if (!Automations.Remove(id))
+        {
+            return Task.FromException(new HomeAssistantNotFoundException($"Home Assistant returned 404: no automation {id}"));
+        }
+        DeletedAutomations.Add(id);
+        return Task.CompletedTask;
     }
 
     public static HaEntityState Entity(string id, string state, params (string Key, JsonNode? Value)[] attrs) => new()
