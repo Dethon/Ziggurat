@@ -5,6 +5,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -239,12 +240,21 @@ internal class McpFileSystemBackend(
         return new FsResult<T>.Ok(value);
     }
 
+    // The turn's conversation context rides this hop as `_meta`, exactly as QualifiedMcpTool stamps
+    // a tool the model calls directly: a mount that answers by who is calling — the Home Assistant
+    // watches record their creating agent — sees the same context either way. Without it the first
+    // watch written in prod was refused for carrying no caller.
     protected internal virtual async Task<JsonNode> CallToolAsync(string toolName, Dictionary<string, object?> args, CancellationToken ct)
     {
         CallToolResult result;
         try
         {
-            result = await client.CallToolAsync(toolName, args, cancellationToken: ct);
+            result = await client.CallToolAsync(new CallToolRequestParams
+            {
+                Name = toolName,
+                Arguments = args.ToDictionary(a => a.Key, a => JsonSerializer.SerializeToElement(a.Value)),
+                Meta = ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options)
+            }, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
