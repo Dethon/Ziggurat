@@ -125,6 +125,36 @@ public class HaWatchesTests
         meta["createdAt"]!.GetValue<string>().ShouldStartWith("2026-09-05T10:00:00");
     }
 
+    // An edit whose text is not in the file is the caller's error, and the hint says whose spelling
+    // the file has: it is rendered from the automation, so the model reads it back before editing.
+    [Fact]
+    public async Task Edit_TextThatIsNotInTheFile_IsAnInvalidArgumentWithTheMountsHint()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var error = await Err(fs.EditAsync("watches/blinds-when-hot/watch.json",
+            [new TextEdit("\"above\": 28", "\"above\": 29")], CancellationToken.None));
+
+        error.ErrorCode.ShouldBe("invalid_argument");
+        error.Message.ShouldContain("Text not found");
+        error.Hint.ShouldNotBeNull();
+        error.Hint.ShouldContain("rendered from the automation");
+        client.UpsertedAutomations.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Edit_AWatchThatDoesNotExist_IsNotFound()
+    {
+        var fs = Build(out var client);
+
+        var error = await Err(fs.EditAsync("watches/no-such-watch/watch.json",
+            [new TextEdit("a", "b")], CancellationToken.None));
+
+        error.ErrorCode.ShouldBe("not_found");
+        client.UpsertedAutomations.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task Create_ThenGlobAndRead_RoundTripsTheFile()
     {
@@ -159,7 +189,7 @@ public class HaWatchesTests
 
         status["createdAt"]!.GetValue<string>().ShouldStartWith("2026-09-05T10:00:00");
         status["lastTriggeredAt"]!.GetValue<string>().ShouldStartWith("2026-09-05T10:30:00");
-        status["automationEntity"]!.GetValue<string>().ShouldBe("automation.close_the_blinds_when_the_living_room_is_hot");
+        status["automationEntity"]!.GetValue<string>().ShouldBe(client.Automations["assistant_watch_blinds-when-hot"].EntityId);
         status["spent"]!.GetValue<bool>().ShouldBeFalse();
         status["enabled"]!.GetValue<bool>().ShouldBeTrue();
     }
@@ -245,6 +275,14 @@ public class HaWatchesTests
     [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"actions","actions":[]}]}""", "effects[0].actions must be a non-empty list")]
     [InlineData("""{"name":"x","trigger":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"x"}]}""", "unknown field 'trigger'")]
     [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"x"}],"deliverTo":"telegram"}""", "deliverTo must be a list")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"conditions":{"condition":"sun"},"effects":[{"kind":"prompt","prompt":"x"}]}""", "conditions must be a list")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"x"}],"userId":7}""", "userId must be a string")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"x"}],"once":"yes"}""", "once must be true or false")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"x"}],"enabled":1}""", "enabled must be true or false")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"announce","text":"hi","target":{"all":true},"insistent":true}]}""", "effects[0].insistent must be an object")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"   "}]}""", "effects[0].prompt must not be empty")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"prompt":"x"}]}""", "effects[0].kind is required")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":["prompt"]}""", "effects[0] must be an object with a kind")]
     public async Task Create_AMalformedFile_IsAnInvalidArgumentNamingTheField(string content, string expected)
     {
         var fs = Build(out var client);
@@ -282,17 +320,37 @@ public class HaWatchesTests
         client.UpsertedAutomations.ShouldBeEmpty();
     }
 
+    // An id that parses as a watch id but is not a slug is refused by name, with the shape asked for;
+    // one that is too long to be an automation id counts too.
     [Theory]
     [InlineData("Blinds When Hot")]
-    [InlineData("blinds/when")]
-    [InlineData("")]
-    public async Task Create_ABadWatchId_IsAnInvalidArgument(string id)
+    [InlineData("blinds.when.hot")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task Create_AnIdThatIsNotASlug_IsAnInvalidArgumentNamingTheShape(string id)
     {
-        var fs = Build(out _);
+        var fs = Build(out var client);
 
         var error = await Err(fs.CreateAsync($"watches/{id}/watch.json", BlindsWatch, false, true, CancellationToken.None));
 
-        error.ErrorCode.ShouldBeOneOf("invalid_argument", "unsupported_operation");
+        error.ErrorCode.ShouldBe("invalid_argument");
+        error.Message.ShouldContain($"'{id}' is not a valid watch id");
+        client.UpsertedAutomations.ShouldBeEmpty();
+    }
+
+    // A slash makes another path, not a bad id: a deeper path is nowhere a watch can be, and an
+    // empty segment collapses to the directory itself. Both are refused as not-the-place.
+    [Theory]
+    [InlineData("watches/blinds/when/watch.json")]
+    [InlineData("watches//watch.json")]
+    public async Task Create_APathThatIsNotAWatchFile_IsRefusedAsNotThePlace(string path)
+    {
+        var fs = Build(out var client);
+
+        var error = await Err(fs.CreateAsync(path, BlindsWatch, false, true, CancellationToken.None));
+
+        error.ErrorCode.ShouldBe("unsupported_operation");
+        error.Message.ShouldContain("/ha/watches/<id>/watch.json");
+        client.UpsertedAutomations.ShouldBeEmpty();
     }
 
     // The alarm bridge and any blueprint are automations too. They are the operator's, so the

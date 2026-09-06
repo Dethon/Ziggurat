@@ -200,7 +200,7 @@ public class HaWatchEffectsTests
             [new TextEdit("\"enabled\": true", "\"enabled\": false")], CancellationToken.None))
             .ShouldBeOfType<FsResult<FsEditResult>.Ok>();
 
-        client.Calls.ShouldBe([("automation", "turn_off", "automation.laura_s_sugar")]);
+        client.Calls.ShouldBe([("automation", "turn_off", client.Automations["assistant_watch_sugar-low"].EntityId)]);
         client.Automations["assistant_watch_sugar-low"].IsOn.ShouldBeFalse();
         (await Watch(fs, "sugar-low"))["enabled"]!.GetValue<bool>().ShouldBeFalse();
         client.Calls.Clear();
@@ -209,7 +209,7 @@ public class HaWatchEffectsTests
             [new TextEdit("\"enabled\": false", "\"enabled\": true")], CancellationToken.None))
             .ShouldBeOfType<FsResult<FsEditResult>.Ok>();
 
-        client.Calls.ShouldBe([("automation", "turn_on", "automation.laura_s_sugar")]);
+        client.Calls.ShouldBe([("automation", "turn_on", client.Automations["assistant_watch_sugar-low"].EntityId)]);
         client.Automations["assistant_watch_sugar-low"].IsOn.ShouldBeTrue();
     }
 
@@ -278,7 +278,8 @@ public class HaWatchAnnounceTargetTests
     {
         client = new FakeHaClient { States = { Entity("sensor.laura_glucose", "112") } };
         var local = client;
-        return new HaFileSystem(new HaCatalogProvider(() => local, new FakeTimeProvider()), () => local,
+        var time = new FakeTimeProvider();
+        return new HaFileSystem(new HaCatalogProvider(() => local, time), () => local, timeProvider: time,
             caller: () => new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("signalr", "conv-1")),
             satellites: satellites);
     }

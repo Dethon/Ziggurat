@@ -38,6 +38,11 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public const string VacuumEntityId = "vacuum.aspiradora";
     public const string StudyAreaSlug = "despacho";
 
+    // The kitchen's area slug is deliberately not the voice hub's room for it ("kitchen",
+    // EvalStack.Roster): the first prod watch announced to a Home Assistant area slug and fired
+    // into silence, and a scenario can only tell the two apart when they are spelled apart.
+    public const string KitchenAreaSlug = "cocina";
+
     // Two players in the kitchen, because "play it here" is only a decision when the room has more
     // than one thing that could play it: one is a Music Assistant player and the other is a
     // television that lists the same actions and does nothing with them.
@@ -127,6 +132,11 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     // model chose — a scenario declares the family, since it cannot spell the member.
     public const string AnyAutomationEntity = "automation.*";
 
+    // A watch's numeric thresholds, keyed `<automation entity>#below` / `#above`, so a scenario
+    // about changing one can declare the value the home ends up holding rather than only that an
+    // edit mentioning it was issued.
+    public static string ThresholdKey(string automationEntityId, string bound) => $"{automationEntityId}#{bound}";
+
     private readonly Lock _gate = new();
     private readonly List<HaCall> _calls = [];
     private readonly Dictionary<string, HaEntity> _entities;
@@ -211,6 +221,7 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             return _entities.Values
                 .SelectMany(entity => entity.Snapshot())
                 .Concat(_automations.Values.Select(a => new KeyValuePair<string, string>(a.EntityId, a.IsOn ? "on" : "off")))
+                .Concat(_automations.Values.SelectMany(Thresholds))
                 .Append(new KeyValuePair<string, string>(
                     AlarmsEventCountKey, Calendar.For(AlarmsEntityId).Count.ToString()))
                 .Append(new KeyValuePair<string, string>(
@@ -218,6 +229,14 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
                 .ToDictionary(entry => entry.Key, entry => entry.Value);
         }
     }
+
+    private static IEnumerable<KeyValuePair<string, string>> Thresholds(FakeAutomation automation) =>
+        (automation.Config["triggers"] as JsonArray ?? [])
+            .OfType<JsonObject>()
+            .SelectMany(trigger => new[] { "below", "above" }
+                .Where(bound => trigger[bound] is not null)
+                .Select(bound => new KeyValuePair<string, string>(
+                    ThresholdKey(automation.EntityId, bound), trigger[bound]!.ToJsonString().Trim('"'))));
 
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
@@ -500,7 +519,7 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         new JsonObject
         {
             ["areas"] = new JsonArray(
-                Area("kitchen", "Cocina", KitchenLightEntityId, WashingMachineEntityId,
+                Area(KitchenAreaSlug, "Cocina", KitchenLightEntityId, WashingMachineEntityId,
                     KitchenSpeakerEntityId, KitchenTvEntityId),
                 Area("salon", "Salón", AirConditionerEntityId, SalonTemperatureEntityId, SalonBlindsEntityId),
                 Area(StudyAreaSlug, "Estudio", VacuumEntityId))

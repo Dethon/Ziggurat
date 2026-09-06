@@ -48,6 +48,28 @@ public class CallerContextFilterTests
         InMemoryMcpServer.Text(result).ShouldBe("nobody");
     }
 
+    // A context that does not parse is answered in the standard error envelope every other failure
+    // gets — a code the model can act on — rather than escaping the filter for the SDK to wrap in
+    // its own words.
+    [Fact]
+    public async Task ACallWhoseContextDoesNotParse_IsTheStandardErrorEnvelope()
+    {
+        await using var server = await InMemoryMcpServer.StartAsync(services => services
+            .AddToolServer(new ProbeSettings("probe"))
+            .WithTools<CallerEchoTools>());
+
+        var result = await server.Client.CallToolAsync(new ModelContextProtocol.Protocol.CallToolRequestParams
+        {
+            Name = "who_calls",
+            Meta = new System.Text.Json.Nodes.JsonObject { [ChannelProtocol.ConversationContextMetaKey] = "not a context" }
+        });
+
+        result.IsError.ShouldBe(true);
+        var envelope = System.Text.Json.Nodes.JsonNode.Parse(InMemoryMcpServer.Text(result))!;
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(global::Domain.Tools.ToolError.Codes.InternalError);
+        CallerContext.Current.ShouldBeNull();
+    }
+
     [Fact]
     public void OutsideAnyCall_TheCallerIsNull()
     {

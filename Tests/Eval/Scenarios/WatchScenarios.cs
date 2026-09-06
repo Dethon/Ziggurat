@@ -24,6 +24,12 @@ public static class WatchScenarios
 
     private static string Kind(string kind) => $@"""kind""\s*:\s*""{kind}""";
 
+    // An announcement's target object naming the hub's room or the satellite in it — never the
+    // word anywhere in the file, which a delivery address or the watch's name would satisfy, and
+    // never the home's area slug, which the fake spells differently on purpose.
+    private static string AnnounceTarget(string room, string satelliteId) =>
+        $@"""target""\s*:\s*\{{[^}}]*""(room""\s*:\s*""{room}""|satelliteId""\s*:\s*""{satelliteId}"")";
+
     // Creating a watch beside the seeded one: the count becomes two, and a new automation is on.
     private static IReadOnlyList<StateChange> OneMoreWatch =>
     [
@@ -114,7 +120,7 @@ public static class WatchScenarios
                     Arg.Matches("content", @"""below""\s*:\s*55"),
                     Arg.Matches("content", FakeHomeAssistant.GlucoseEntityId),
                     Arg.Matches("content", @"""condition""\s*:\s*""time"""),
-                    Arg.Matches("content", @"office")
+                    Arg.Matches("content", AnnounceTarget("office", "office-01"))
                 ]
             }
         ],
@@ -269,7 +275,7 @@ public static class WatchScenarios
                     Arg.Matches("content", @"""insistent"""),
                     Arg.Matches("content", Kind("prompt")),
                     Arg.Matches("content", @"""below""\s*:\s*50"),
-                    Arg.Matches("content", "kitchen")
+                    Arg.Matches("content", AnnounceTarget("kitchen", "kitchen-01"))
                 ]
             }
         ],
@@ -339,7 +345,7 @@ public static class WatchScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.SugarWatchPathPattern),
-                    Arg.Mentions("edits", @"65")
+                    Arg.Mentions("edits", @"below\\?""\s*:\s*65(?!\d)")
                 ]
             }
         ],
@@ -348,6 +354,9 @@ public static class WatchScenarios
             .. LookingAtTheHome,
             new CallPermission(EvalTools.Create, $"/ha/watches/{FakeHomeAssistant.SugarWatchId}/*")
         ],
+        // The outcome, not only the edit: the home's automation now fires below 65, and it is
+        // still the one watch.
+        Changes = [new StateChange(FakeHomeAssistant.ThresholdKey(FakeHomeAssistant.SugarWatchEntityId, "below"), "65")],
         CallCeiling = 6,
         Claims = [HomeAssistantPrompt.WatchChangeReplacesInPlace.Id],
         Policy = new RunPolicy(2, 3)

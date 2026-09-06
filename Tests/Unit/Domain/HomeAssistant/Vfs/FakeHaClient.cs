@@ -137,7 +137,16 @@ public class FakeHaClient : IHomeAssistantClient
         public string EntityId { get; init; } = "automation." + EntitySlug(config["alias"]?.GetValue<string>() ?? id);
         public bool IsOn { get; set; } = true;
         public DateTimeOffset? LastTriggered { get; set; }
+
+        // The listing count at which the entity first appears: a real home loads a brand-new
+        // automation's entity a moment after the config write, and a listing before that has no
+        // row for it.
+        public int VisibleFromListing { get; init; }
     }
+
+    // How many listings a newly written automation's entity is missing from, so the reload wait a
+    // real home needs can be exercised. Zero, the default, is an entity that is there at once.
+    public int EntityLagListings { get; set; }
 
     // Home Assistant derives an automation's entity id from its alias the first time it is loaded.
     private static string EntitySlug(string alias) =>
@@ -169,6 +178,7 @@ public class FakeHaClient : IHomeAssistantClient
             return Task.FromException<IReadOnlyList<HaAutomationState>>(AutomationListingFailure);
         }
         return Task.FromResult<IReadOnlyList<HaAutomationState>>(Automations.Values
+            .Where(a => a.VisibleFromListing < AutomationListings)
             .Select(a => new HaAutomationState
             {
                 EntityId = a.EntityId,
@@ -198,7 +208,7 @@ public class FakeHaClient : IHomeAssistantClient
         }
         else
         {
-            Automations[id] = new FakeAutomation(id, stored);
+            Automations[id] = new FakeAutomation(id, stored) { VisibleFromListing = AutomationListings + EntityLagListings };
         }
         return Task.CompletedTask;
     }

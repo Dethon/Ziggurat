@@ -39,9 +39,11 @@ internal static class CallToolErrorFilter
         return builder.WithRequestFilters(filters => filters.AddCallToolFilter(
             next => async (context, cancellationToken) =>
             {
-                using var caller = CallerContext.Enter(ConversationScope.Parse(context.Params?.Meta));
                 try
                 {
+                    // Entered inside the try: a `_meta` that does not parse is the caller's error
+                    // result like any other, not a protocol failure the envelope never sees.
+                    using var caller = CallerContext.Enter(ConversationScope.Parse(context.Params?.Meta));
                     return await next(context, cancellationToken);
                 }
                 // Only the caller's own token tripping is a hang-up. An HttpClient timeout throws

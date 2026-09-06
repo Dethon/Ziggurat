@@ -209,7 +209,9 @@ public static class HomeAssistantPrompt
           never write or promise Telegram delivery. `userId` as for a schedule.
         - `once: true` for "tell me when X finishes": the watch turns itself off after its first
           fire and then reads `enabled: false` with `spent: true` in `status.json`. Remove spent
-          watches (`remove`) when you list them or are asked about them.
+          watches (`remove`) when you list them or are asked about them. To arm a spent one again
+          ("watch the next cycle too") edit it with `enabled: true` — a change to its threshold
+          alone leaves it off.
         - `enabled: false` pauses a watch ("stop warning me tonight") and `true` resumes it — an edit
           of the same file, never a delete.
         - To change a watch (a new threshold, another room) `text_edit` its `watch.json`: the same
