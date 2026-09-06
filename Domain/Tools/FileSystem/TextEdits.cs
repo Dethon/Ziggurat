@@ -4,9 +4,10 @@ using Domain.DTOs.FileSystem;
 namespace Domain.Tools.FileSystem;
 
 // Applying a list of text edits to a rendered file, for the virtual mounts whose "file" is a
-// record rendered on read: the schedule, the print queue and the watch each had their own copy of
-// this. One edit replaces its first occurrence, or every one when it says so, and reports how many
-// it touched — an edit whose text is not there is the caller's error, said by name.
+// record rendered on read. The watch mount runs the whole loop through `Apply`; the schedule and
+// the print queue keep their own loops and share only `ReplaceFirstOrAll`, which each had copied.
+// One edit replaces its first occurrence, or every one when it says so, and reports how many it
+// touched — an edit whose text is not there is the caller's error, said by name.
 public static class TextEdits
 {
     public sealed record Applied(string Text, IReadOnlyList<FsEditDetail> Details)

@@ -174,7 +174,9 @@ public class HaWatchEffectsTests
         var fs = Build(out var client);
         await Written(fs, client, "washing-done", """[{"kind": "prompt", "prompt": "p"}]""", """, "once": true""");
         await Written(fs, client, "sugar-low", """[{"kind": "prompt", "prompt": "p"}]""");
+        // The one-shot fired and turned itself off; the other was merely paused.
         client.Automations["assistant_watch_washing-done"].IsOn = false;
+        client.Automations["assistant_watch_washing-done"].LastTriggered = _now.AddMinutes(30);
         client.Automations["assistant_watch_sugar-low"].IsOn = false;
 
         var spent = await Status(fs, "washing-done");

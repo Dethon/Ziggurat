@@ -166,7 +166,7 @@ public static class HomeAssistantPrompt
          "triggers": [{"trigger": "numeric_state", "entity_id": "sensor.laura_glucose", "above": 180}],
          "conditions": [],
          "effects": [{"kind": "prompt", "prompt": "Laura's sugar crossed 180. Read its history, say what it is and whether it is rising, and warn Fran."}],
-         "once": false, "deliverTo": ["telegram"]}
+         "once": false}
         ```
 
         - `triggers` (required) and `conditions` (optional) are Home Assistant's own JSON, passed

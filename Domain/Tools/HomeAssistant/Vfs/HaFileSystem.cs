@@ -101,7 +101,9 @@ public sealed partial class HaFileSystem(
     }
 
     // The watches are read live from the home, so they are fetched only for a glob that can reach
-    // them: one scoped to an entity or an area lists no watch and pays no call for them.
+    // them: one scoped to an entity or an area lists no watch and pays no call for them. A home
+    // that cannot answer for them degrades the way the catalog does — the listing goes on without
+    // them — rather than turning every root glob into an error while the home is down.
     private async Task<IReadOnlyList<string>> WatchIdsInScopeAsync(string basePath, CancellationToken ct)
     {
         var scope = (basePath ?? string.Empty).Trim('/');
@@ -110,7 +112,14 @@ public sealed partial class HaFileSystem(
             return [];
         }
 
-        return (await _watches.ListAsync(ct)).Select(w => w.Id).ToList();
+        try
+        {
+            return (await _watches.ListAsync(ct)).Select(w => w.Id).ToList();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return [];
+        }
     }
 
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)

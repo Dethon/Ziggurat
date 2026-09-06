@@ -143,7 +143,8 @@ public class HomeAssistantSetupSummaryWatchesTests
     {
         var client = new FakeHaClient { States = { Entity("light.kitchen", "off") } };
         client.SeedAutomation("assistant_watch_laura-sugar-high", Watch("Laura's sugar", once: false));
-        client.SeedAutomation("assistant_watch_washing-done", Watch("Washing done", once: true), on: false);
+        client.SeedAutomation("assistant_watch_washing-done", Watch("Washing done", once: true), on: false,
+            lastTriggered: new DateTimeOffset(2026, 9, 5, 9, 0, 0, TimeSpan.Zero));
         client.SeedAutomation("assistant_watch_night-sugar", Watch("Night sugar", once: false), on: false);
         client.SeedAutomation("voice_alarm_bridge", new JsonObject
         {

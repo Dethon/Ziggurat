@@ -46,8 +46,13 @@ public sealed record HaWatchMetadata(
                 return null;
             }
 
+            if (watch["agentId"]?.GetValue<string>() is not { Length: > 0 } agentId)
+            {
+                return null;
+            }
+
             return new HaWatchMetadata(
-                watch["agentId"]?.GetValue<string>() ?? "default",
+                agentId,
                 (watch["effects"] as JsonArray ?? [])
                     .Select((effect, index) => HaWatchEffect.Parse(effect, $"effects[{index}]"))
                     .ToList(),
@@ -72,7 +77,9 @@ public sealed record HaWatch(string Id, HaWatchSpec Spec, HaWatchMetadata Meta, 
 {
     public bool Enabled => State?.IsOn ?? true;
 
-    public bool Spent => Meta.Once && State is { IsOn: false };
+    // Spent is "fired and turned itself off", never "paused": the guide tells the agent to remove
+    // spent watches, so a paused one-shot that read as spent would be deleted for being paused.
+    public bool Spent => Meta.Once && State is { IsOn: false, LastTriggered: not null };
 }
 
 // The rendering of a watch into a Home Assistant automation, and the reading of one back. The

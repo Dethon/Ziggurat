@@ -11,6 +11,9 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
+    // One states fetch plus one config read per watch, on every root glob and every prompt serve:
+    // the mount's first live call per turn. Cheap at a handful of watches; a short cache is the
+    // answer if that count grows, not a cap on the reads.
     public async Task<IReadOnlyList<HaWatch>> ListAsync(CancellationToken ct)
     {
         var client = clientFactory();

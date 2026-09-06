@@ -159,10 +159,15 @@ public class FakeHaClient : IHomeAssistantClient
             ("last_triggered", a.LastTriggered is { } at ? JsonValue.Create(at.ToString("o")) : null)));
 
     public int AutomationListings { get; private set; }
+    public Exception? AutomationListingFailure { get; set; }
 
     public virtual Task<IReadOnlyList<HaAutomationState>> ListAutomationsAsync(CancellationToken ct = default)
     {
         AutomationListings++;
+        if (AutomationListingFailure is not null)
+        {
+            return Task.FromException<IReadOnlyList<HaAutomationState>>(AutomationListingFailure);
+        }
         return Task.FromResult<IReadOnlyList<HaAutomationState>>(Automations.Values
             .Select(a => new HaAutomationState
             {

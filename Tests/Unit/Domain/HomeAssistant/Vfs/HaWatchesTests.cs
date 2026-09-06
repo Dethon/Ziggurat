@@ -388,4 +388,81 @@ public class HaWatchesTests
         entries.ShouldBe(["entities/cover/living_room_blinds/"]);
         client.AutomationListings.ShouldBe(0);
     }
+
+    private const string OnceWatch = """
+        {
+          "name": "Tell me when the wash is done",
+          "triggers": [{"trigger": "state", "entity_id": "cover.living_room_blinds", "to": "closed"}],
+          "effects": [{"kind": "prompt", "prompt": "The wash is done."}],
+          "once": true,
+          "enabled": false
+        }
+        """;
+
+    // A one-shot is spent when it fired and turned itself off — not when it was merely paused. The
+    // guide tells the agent to remove spent watches, so a paused one-shot read as spent is deleted.
+    [Fact]
+    public async Task Read_StatusFile_APausedOneShotThatNeverFired_IsNotSpent()
+    {
+        var fs = Build(out _);
+        await Ok(Create(fs, "wash-done", OnceWatch));
+
+        var status = await Read(fs, "watches/wash-done/status.json");
+
+        status["enabled"]!.GetValue<bool>().ShouldBeFalse();
+        status["spent"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Read_StatusFile_AOneShotThatFiredAndTurnedItselfOff_IsSpent()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "wash-done", OnceWatch));
+        client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
+
+        var status = await Read(fs, "watches/wash-done/status.json");
+
+        status["spent"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    // The catalog answers a glob from its cache when the home is down; the watches, read live, must
+    // degrade the same way rather than turn the whole listing into an error.
+    [Fact]
+    public async Task Glob_TheRoot_WhenTheHomeCannotListItsAutomations_StillListsTheCatalog()
+    {
+        var fs = Build(out var client);
+        client.AutomationListingFailure = new HomeAssistantException("connection refused", 503);
+
+        var entries = (await Ok(fs.GlobAsync("", "*/", CancellationToken.None))).Entries;
+
+        entries.ShouldBe(["areas/", "entities/", "watches/"]);
+    }
+
+    // Metadata naming no creating agent is not a watch's: a prompt fire would otherwise run as an
+    // agent nobody chose.
+    [Fact]
+    public async Task Glob_APrefixedAutomationWhoseMetadataNamesNoAgent_IsNotAWatch()
+    {
+        var fs = Build(out var client);
+        client.SeedAutomation("assistant_watch_orphan", new JsonObject
+        {
+            ["alias"] = "Orphan", ["description"] = """{"watch": {"effects": [{"kind": "prompt", "prompt": "p"}]}}""",
+            ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state" }), ["actions"] = new JsonArray()
+        });
+
+        (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
+    }
+
+    // An empty list names no delivery, so it takes the caller's channel like an absent one.
+    [Fact]
+    public async Task Create_WithAnEmptyDeliverTo_TakesTheCallersOwnChannel()
+    {
+        var fs = Build(out var client, origin: new ReplyTarget("voice", "conv-1", "kitchen-01"));
+        var content = BlindsWatch.TrimEnd().TrimEnd('}') + ", \"deliverTo\": []}";
+
+        await Ok(Create(fs, "blinds-when-hot", content));
+
+        var meta = JsonNode.Parse(client.UpsertedAutomations.Single().Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe(["voice:kitchen-01"]);
+    }
 }

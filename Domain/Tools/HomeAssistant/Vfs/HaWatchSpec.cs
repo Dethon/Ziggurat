@@ -158,6 +158,7 @@ public sealed record HaWatchSpec
             DeliverTo = watch["deliverTo"] switch
             {
                 null => null,
+                JsonArray { Count: 0 } => null,
                 JsonArray targets when targets.All(t => t is JsonValue v && v.TryGetValue<string>(out _)) =>
                     targets.Select(t => t!.GetValue<string>()).ToList(),
                 _ => throw new HaWatchSpecException("deliverTo must be a list of channel ids, e.g. [\"telegram\"] or [\"voice:office-01\"]")
