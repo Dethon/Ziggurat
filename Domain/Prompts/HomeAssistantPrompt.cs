@@ -205,10 +205,12 @@ public static class HomeAssistantPrompt
         - `deliverTo` (prompt effects only; `channelId[:address]`, as for a schedule) is where your
           answer lands. Omit it and the answer goes where the request came from — the speaking
           satellite on voice, Telegram on Telegram, the chat on the chat — which is what a plain
-          "warn me" wants; name it only to deliver somewhere else. Nabu has no Telegram, so on Nabu
-          never write or promise Telegram delivery. `userId` as for a schedule.
+          "warn me" wants; name it only to deliver somewhere else. A rewrite that omits it keeps
+          the watch's delivery. Nabu has no Telegram, so on Nabu never write or promise Telegram
+          delivery. `userId` as for a schedule.
         - `once: true` for "tell me when X finishes": the watch turns itself off after its first
-          fire and then reads `enabled: false` with `spent: true` in `status.json`. Remove spent
+          fire that reached you (a fire nobody was connected to take leaves it armed) and then
+          reads `enabled: false` with `spent: true` in `status.json`. Remove spent
           watches (`remove`) when you list them or are asked about them. To arm a spent one again
           ("watch the next cycle too") edit it with `enabled: true` — a change to its threshold
           alone leaves it off.

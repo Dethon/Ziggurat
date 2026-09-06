@@ -1,4 +1,4 @@
-# nabu — 14230 tokens across 17 sections
+# nabu — 14261 tokens across 17 sections
 
   core_directive           CoreDirective         250 / 350    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               80 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -10,7 +10,7 @@
   sandbox_prompt           Client               1004 / 1400   The sandbox's layout, what may be run in it and what it refuses.
   websearch_prompt         Client               1368 / 1500   Searching, loading and reading pages, and what to do when one refuses.
   idealista_guide          Client                317 / 600    Property search: the filters that exist and how a listing is read back.
-  home_assistant_guide     Client               5171 / 6500   The house: its areas and entities, and how an intent becomes a service call.
+  home_assistant_guide     Client               5202 / 6500   The house: its areas and entities, and how an intent becomes a service call.
   scheduling_prompt        Client               1360 / 2000   Scheduled tasks as files: creating, listing, editing and firing one.
   printing_prompt          Client                330 / 600    The printer's queue, the formats it takes and what it rejects.
   timers_prompt            Client                979 / 1500   Timers and alarms on the satellites, named by the room they ring in.
@@ -513,10 +513,12 @@ home changing → a watch**, never a schedule that polls `history.sh`.
 - `deliverTo` (prompt effects only; `channelId[:address]`, as for a schedule) is where your
   answer lands. Omit it and the answer goes where the request came from — the speaking
   satellite on voice, Telegram on Telegram, the chat on the chat — which is what a plain
-  "warn me" wants; name it only to deliver somewhere else. Nabu has no Telegram, so on Nabu
-  never write or promise Telegram delivery. `userId` as for a schedule.
+  "warn me" wants; name it only to deliver somewhere else. A rewrite that omits it keeps
+  the watch's delivery. Nabu has no Telegram, so on Nabu never write or promise Telegram
+  delivery. `userId` as for a schedule.
 - `once: true` for "tell me when X finishes": the watch turns itself off after its first
-  fire and then reads `enabled: false` with `spent: true` in `status.json`. Remove spent
+  fire that reached you (a fire nobody was connected to take leaves it armed) and then
+  reads `enabled: false` with `spent: true` in `status.json`. Remove spent
   watches (`remove`) when you list them or are asked about them. To arm a spent one again
   ("watch the next cycle too") edit it with `enabled: true` — a change to its threshold
   alone leaves it off.

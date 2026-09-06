@@ -97,8 +97,11 @@ glob that can reach them). A watch **is** a real automation written through the 
 (`IHomeAssistantClient.{List,Get,Upsert,Delete}Automation*`): `HaWatchSpec` parses the file and
 names the field it refuses, `HaWatchAutomation.Render` turns it into the automation — id
 `assistant_watch_<id>`, alias = name, `mode: single`, triggers/conditions verbatim, the effects in
-order, a final `automation.turn_off` on `{{ this.entity_id }}` for `once` — and `Project` reads one
-back; the metadata the automation cannot carry (creating agent, effects as authored, once,
+order, and for `once` a final `automation.turn_off` on `{{ this.entity_id }}` guarded by a template
+condition over each prompt callback's `response_variable` (`watch_fire_<n>.status < 400`, the call
+marked `continue_on_error`), because a `rest_command` does not abort the sequence on an error
+status and an unguarded turn_off would spend the watch on a 503 nobody received — and `Project`
+reads one back; the metadata the automation cannot carry (creating agent, effects as authored, once,
 deliverTo, userId, createdAt) is JSON in its description (`HaWatchMetadata`). Only a prefixed
 automation with parsable metadata is a watch; the alarm bridge and blueprints are invisible to the
 subtree and untouchable through it. `enabled` is the entity's on/off, synced with
@@ -107,7 +110,10 @@ as Jinja and are rendered by the home inside a `variables` step, so the rest_com
 composed with `to_json` and a quote in a prompt cannot break them. The creating agent comes from
 `CallerContext` (entered by the call-tool filter from the request's `_meta`); a file naming no
 `deliverTo` takes the caller's origin channel and address, because the model is never told which
-channel a turn came from. The default `deliverTo` a fire falls back to is `Domain/delivery.json`.
+channel a turn came from, and a replace naming none keeps the watch's own. The hub answering an
+error status at that check is `VoiceHubRejectedException` (Infrastructure's `HttpSatelliteCatalog`
+throws it, `ToolError.CodeFor` maps it by status), refused as `authentication` for a token
+mismatch and `transient_dependency` otherwise. The default `deliverTo` a fire falls back to is `Domain/delivery.json`.
 The prompt effect's callback (`McpServerHomeAssistant/Services/WatchFiredEndpoint.cs`, guarded by
 the announce token, 202/401/400/503 as the automation's trace reads them) and the bridges document
 are in `docs/home-assistant-bridges.md`; the decision is `docs/adr/0038`. Testing: `HaWatchesTests`

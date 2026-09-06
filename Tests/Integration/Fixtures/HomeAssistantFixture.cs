@@ -36,6 +36,10 @@ public class HomeAssistantFixture : IAsyncLifetime
 
     public sealed record WatchCallback(string? Token, JsonObject Payload);
 
+    // What the listener answers the home: 202 as the real callback does when an agent took the
+    // fire, or whatever a test sets to stand in for the stack refusing it (503, nobody connected).
+    public volatile int CallbackStatus = StatusCodes.Status202Accepted;
+
     public async Task InitializeAsync()
     {
         // Bound before the container starts, because the seed writes the url into configuration.yaml
@@ -51,7 +55,7 @@ public class HomeAssistantFixture : IAsyncLifetime
             _fires.Enqueue(new WatchCallback(
                 ctx.Request.Headers["X-Announce-Token"].FirstOrDefault(),
                 body as JsonObject ?? new JsonObject()));
-            return Results.Accepted();
+            return Results.StatusCode(CallbackStatus);
         });
         await app.StartAsync();
         _listener = app;

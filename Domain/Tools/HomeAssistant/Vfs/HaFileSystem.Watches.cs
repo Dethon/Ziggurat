@@ -155,9 +155,17 @@ public sealed partial class HaFileSystem
         // came from — only voice decorates the turn with its room — so a file that names no
         // delivery takes the caller's own origin: the speaking satellite on voice, Telegram on
         // Telegram, the chat on the chat. Naming one is how the user sends the answer elsewhere.
-        if (spec.DeliverTo is null && caller?.Origin is { } origin)
+        // A replace that names none keeps the watch's own: "below 65, not 70" said on Telegram
+        // must not move a warning that was asked for on voice.
+        if (spec.DeliverTo is null)
         {
-            spec = spec with { DeliverTo = [origin.Address is null ? origin.ChannelId : $"{origin.ChannelId}:{origin.Address}"] };
+            spec = spec with
+            {
+                DeliverTo = existing?.Meta.DeliverTo
+                    ?? (caller?.Origin is { } origin
+                        ? [origin.Address is null ? origin.ChannelId : $"{origin.ChannelId}:{origin.Address}"]
+                        : null)
+            };
         }
 
         try
@@ -172,6 +180,17 @@ public sealed partial class HaFileSystem
             return FsError.Fail<T>(ToolError.Codes.TransientDependency,
                 $"The voice hub is not answering, so the announcement's target cannot be checked: {ex.Message}. The watch was not written.",
                 "Try again in a moment; a target the hub cannot vouch for would fire into silence.");
+        }
+        catch (VoiceHubRejectedException ex)
+        {
+            // The hub answered, with an error: a refused token is configuration and retrying will
+            // not fix it; anything else it answered is its own trouble and might.
+            var refusedToken = ex.StatusCode is 401 or 403;
+            return FsError.Fail<T>(refusedToken ? ToolError.Codes.Authentication : ToolError.Codes.TransientDependency,
+                $"The voice hub answered {ex.StatusCode} while checking the announcement's target: {ex.Message} The watch was not written.",
+                refusedToken
+                    ? "The Home Assistant server's announce token does not match the voice hub's; that is the deployment's to fix, not the file's."
+                    : "Try again in a moment; a target the hub cannot vouch for would fire into silence.");
         }
 
         try

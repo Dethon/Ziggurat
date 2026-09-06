@@ -110,12 +110,34 @@ public static class HaWatchAutomation
 
     public static JsonObject Render(string watchId, HaWatchSpec spec, HaWatchMetadata meta)
     {
-        var actions = spec.Effects.SelectMany(effect => RenderEffect(effect, watchId, spec, meta)).ToList();
+        var prompts = spec.Once ? spec.Effects.OfType<HaPromptEffect>().Count() : 0;
+        var actions = spec.Effects
+            .Select((effect, index) => (effect, promptIndex: spec.Once && effect is HaPromptEffect
+                ? spec.Effects.Take(index).OfType<HaPromptEffect>().Count()
+                : (int?)null))
+            .SelectMany(e => RenderEffect(e.effect, watchId, spec, meta, e.promptIndex))
+            .ToList();
         if (spec.Once)
         {
             // Home Assistant offers no self-delete, so a one-shot turns itself off as its last
             // action and is listed as spent until the agent removes it. `this` is the automation's
             // own state object, which spares knowing the entity id before the automation exists.
+            //
+            // Only on a fire the stack took: the callback answers 503 when no agent is connected,
+            // and the rest_command does not abort the sequence on an error status, so an unguarded
+            // turn_off would spend the watch on a fire nobody received. Each prompt's answer is kept
+            // in its own variable and the guard wants every one under 400; an answer that never
+            // came (the command itself failed and was continued past) is undefined, and fails it.
+            if (prompts > 0)
+            {
+                var taken = string.Join(" and ", Enumerable.Range(0, prompts)
+                    .Select(i => $"{ResponseVariable(i)} is defined and {ResponseVariable(i)}.status is defined and {ResponseVariable(i)}.status < 400"));
+                actions.Add(new JsonObject
+                {
+                    ["condition"] = "template",
+                    ["value_template"] = $"{{{{ {taken} }}}}"
+                });
+            }
             actions.Add(new JsonObject
             {
                 ["action"] = "automation.turn_off",
@@ -141,14 +163,18 @@ public static class HaWatchAutomation
         return automation;
     }
 
-    private static IEnumerable<JsonObject> RenderEffect(HaWatchEffect effect, string watchId, HaWatchSpec spec, HaWatchMetadata meta) =>
+    // `promptIndex` is set only for a one-shot: the index of this prompt among the watch's prompts,
+    // naming the variable its callback answer is kept in for the turn_off guard.
+    private static IEnumerable<JsonObject> RenderEffect(HaWatchEffect effect, string watchId, HaWatchSpec spec, HaWatchMetadata meta, int? promptIndex) =>
         effect switch
         {
             HaActionsEffect actions => actions.Actions.Select(a => a!.DeepClone().AsObject()),
             HaAnnounceEffect announce => RenderAnnounce(announce),
-            HaPromptEffect prompt => RenderPrompt(prompt, watchId, spec, meta),
+            HaPromptEffect prompt => RenderPrompt(prompt, watchId, spec, meta, promptIndex),
             _ => throw new InvalidOperationException($"Unknown effect kind {effect.Kind}")
         };
+
+    private static string ResponseVariable(int promptIndex) => $"watch_fire_{promptIndex}";
 
     // Text crosses to Home Assistant as a template and is rendered there — a `variables` step is
     // where the home renders it, and the payload is then composed from the rendered variable with
@@ -180,7 +206,7 @@ public static class HaWatchAutomation
     // The callback's body: the watch's identity and delivery as literals, the prompt rendered by
     // the home, and the firing facts from the `trigger` variable — each guarded, because a template
     // or time trigger carries no entity and an unguarded read would render as an error.
-    private static IEnumerable<JsonObject> RenderPrompt(HaPromptEffect prompt, string watchId, HaWatchSpec spec, HaWatchMetadata meta)
+    private static IEnumerable<JsonObject> RenderPrompt(HaPromptEffect prompt, string watchId, HaWatchSpec spec, HaWatchMetadata meta, int? promptIndex)
     {
         var variables = new JsonObject
         {
@@ -213,11 +239,20 @@ public static class HaWatchAutomation
             + "'firedAt': now().isoformat()}";
 
         yield return new JsonObject { ["variables"] = variables };
-        yield return new JsonObject
+        var call = new JsonObject
         {
             ["action"] = WatchFiredCommand,
             ["data"] = new JsonObject { ["payload"] = $"{{{{ {payload} | to_json }}}}" }
         };
+        if (promptIndex is { } index)
+        {
+            // The answer is kept for the one-shot's turn_off guard, and a command that fails
+            // outright is continued past so the guard — not the failure — decides. A watch that
+            // stays armed asks for neither: an error status must not abort the effects after it.
+            call["response_variable"] = ResponseVariable(index);
+            call["continue_on_error"] = true;
+        }
+        yield return call;
     }
 
     // The automation read back as the file the agent wrote. Null when the automation is not a watch:

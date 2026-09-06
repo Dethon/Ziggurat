@@ -157,6 +157,62 @@ public class HaWatchEffectsTests
         last["target"]!["entity_id"]!.GetValue<string>().ShouldBe("{{ this.entity_id }}");
     }
 
+    // A one-shot's fire can be lost: the callback answers 503 when no agent is connected, and the
+    // rest_command does not abort the sequence on an error status. An unguarded turn_off would then
+    // spend the watch on a fire nobody received, so the callback's answer is kept and the turn_off
+    // runs only when every prompt was taken.
+    [Fact]
+    public async Task AOneShotPromptWatch_TurnsItselfOffOnlyWhenTheCallbackTookEveryFire()
+    {
+        var fs = Build(out var client);
+
+        var actions = Actions(await Written(fs, client, "washing-done",
+            """[{"kind": "prompt", "prompt": "p"}, {"kind": "actions", "actions": [{"action": "light.turn_on"}]}, {"kind": "prompt", "prompt": "q"}]""",
+            """, "once": true"""));
+
+        var callbacks = actions.Where(a => a!["action"]?.GetValue<string>() == "rest_command.assistant_watch_fired").ToList();
+        callbacks.Count.ShouldBe(2);
+        callbacks[0]!["response_variable"]!.GetValue<string>().ShouldBe("watch_fire_0");
+        callbacks[1]!["response_variable"]!.GetValue<string>().ShouldBe("watch_fire_1");
+        callbacks.ShouldAllBe(c => c!["continue_on_error"]!.GetValue<bool>());
+
+        actions[^1]!["action"]!.GetValue<string>().ShouldBe("automation.turn_off");
+        var guard = actions[^2]!;
+        guard["condition"]!.GetValue<string>().ShouldBe("template");
+        var template = guard["value_template"]!.GetValue<string>();
+        template.ShouldContain("watch_fire_0 is defined");
+        template.ShouldContain("watch_fire_0.status < 400");
+        template.ShouldContain("watch_fire_1 is defined");
+        template.ShouldContain("watch_fire_1.status < 400");
+    }
+
+    [Fact]
+    public async Task AOneShotWithoutAPrompt_TurnsItselfOffUnguarded()
+    {
+        var fs = Build(out var client);
+
+        var actions = Actions(await Written(fs, client, "washing-done",
+            """[{"kind": "announce", "text": "t", "target": {"all": true}}]""", """, "once": true"""));
+
+        actions[^1]!["action"]!.GetValue<string>().ShouldBe("automation.turn_off");
+        actions.Any(a => a!["condition"] is not null).ShouldBeFalse();
+    }
+
+    // A watch that stays armed has nothing to guard, and asking for the response would make an
+    // error status abort the effects after the prompt.
+    [Fact]
+    public async Task ANotOncePromptWatch_AsksForNoResponse()
+    {
+        var fs = Build(out var client);
+
+        var actions = Actions(await Written(fs, client, "sugar-low", """[{"kind": "prompt", "prompt": "p"}]"""));
+
+        var callback = actions.Single(a => a!["action"]?.GetValue<string>() == "rest_command.assistant_watch_fired")!;
+        callback["response_variable"].ShouldBeNull();
+        callback["continue_on_error"].ShouldBeNull();
+        actions.Any(a => a!["condition"] is not null).ShouldBeFalse();
+    }
+
     [Fact]
     public async Task NotOnce_AppendsNoTurnOff()
     {
@@ -265,6 +321,15 @@ public class HaWatchAnnounceTargetTests
         }
     }
 
+    private sealed class RefusingCatalog(int status) : ISatelliteCatalog
+    {
+        public Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct) =>
+            throw new VoiceHubRejectedException(status, $"The voice hub answered {status}.");
+
+        public Task<IReadOnlyList<string>> ResolveAsync(AnnounceTarget target, CancellationToken ct) =>
+            throw new VoiceHubRejectedException(status, $"The voice hub answered {status}.");
+    }
+
     private sealed class UnreachableCatalog : ISatelliteCatalog
     {
         public Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct) =>
@@ -328,6 +393,24 @@ public class HaWatchAnnounceTargetTests
 
         error.ErrorCode.ShouldBe("not_found");
         error.Message.ShouldContain("bedroom-01");
+        client.UpsertedAutomations.ShouldBeEmpty();
+    }
+
+    // The hub answering with an error is not the hub being down: a refused token is configuration,
+    // said as such; anything else it answers is its own trouble. Either way the watch is not written.
+    [Theory]
+    [InlineData(401, "authentication")]
+    [InlineData(403, "authentication")]
+    [InlineData(500, "transient_dependency")]
+    public async Task AHubThatAnswersWithAnError_RefusesTheWatchNamingTheStatus(int status, string code)
+    {
+        var fs = Build(out var client, new RefusingCatalog(status));
+
+        var error = (await Create(fs, """{"room": "Kitchen"}""")).ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe(code);
+        error.Message.ShouldContain(status.ToString());
+        error.Message.ShouldContain("not written");
         client.UpsertedAutomations.ShouldBeEmpty();
     }
 

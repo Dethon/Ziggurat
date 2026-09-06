@@ -63,9 +63,12 @@ visible in the automation's trace.
 - The `/ha` mount gains its first writable subtree. Everything else under it stays read-and-exec.
 - Provisioning, not code: the callback `rest_command` joins `voice_announce` in the HA instance's
   configuration, sharing the announce token, and adding it needs a full HA restart there. The
-  alarm-bridge document grows a second section; without it a prompt watch is created and never
+  bridges document (`docs/home-assistant-bridges.md`) grows a second section; without it a prompt watch is created and never
   reaches the agent, exactly as an alarm without the bridge never rings.
 - A one-shot watch turns itself off as its last action and is listed as spent until removed;
-  Home Assistant offers no self-delete.
+  Home Assistant offers no self-delete. The turn-off is guarded by the callback's answer: a
+  `rest_command` does not abort the sequence on an error status, so without the guard a fire the
+  stack refused (503, nobody connected) would spend the watch while nobody received the prompt.
+  Such a fire leaves the one-shot armed for the next crossing.
 - The eval's fake home must serve the automation config API, and a scenario can assert the
   rendered automation; the callback is an HTTP POST into our own code and is tested as one.

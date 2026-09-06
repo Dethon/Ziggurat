@@ -119,7 +119,9 @@ says, in a conversation named after the watch), `503` when no agent is connected
 lost and the trace says so; nothing retries it — `401` for the token and `400` for a payload the
 callback could not read. On the stack, `docker logs mcp-homeassistant` shows a `Watch … fired for
 agent …` line per accepted fire. The automation's own on/off is the watch's `enabled`; a one-shot
-(`once`) turns itself off after its first fire and reads as spent.
+(`once`) turns itself off after its first fire the callback took and reads as spent — a `503` leaves
+it armed, because its turn-off is conditioned on the callback's status (the `rest_command` itself
+carries on past an error status).
 
 Adding a `rest_command` to a configuration needs a **full restart**, not a reload — the integration
 is only set up at start; that holds for adding `assistant_watch_fired` beside an existing

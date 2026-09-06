@@ -81,6 +81,64 @@ public class HomeAssistantWatchFireTests(HomeAssistantFixture fixture) : IClassF
         }
     }
 
+    // A one-shot turns itself off only on a fire the stack took: the callback answering 503 (nobody
+    // connected) leaves it armed for the next crossing, and the fire it does take spends it.
+    [Fact]
+    public async Task AOneShotWhoseFireTheCallbackRefuses_StaysArmed_AndIsSpentByAFireItTakes()
+    {
+        var client = fixture.CreateClient();
+        var watchId = $"itest-once-{Guid.NewGuid():N}"[..24];
+        var automationId = HaWatchAutomation.AutomationId(watchId);
+        using var http = new HttpClient { BaseAddress = new Uri(fixture.BaseUrl + "/") };
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.Token);
+        await SetStateAsync(http, "120");
+
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client), () => client,
+            caller: () => new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1")));
+        var created = await fs.CreateAsync($"watches/{watchId}/watch.json", $$$"""
+            {"name": "Laura's sugar above 180, once",
+             "triggers": [{"trigger": "numeric_state", "entity_id": "{{{Sensor}}}", "above": 180}],
+             "effects": [{"kind": "prompt", "prompt": "Look into it."}],
+             "once": true}
+            """, false, true, CancellationToken.None);
+        created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+
+        try
+        {
+            await Eventually.Until(
+                async () => (await client.ListAutomationsAsync()).Any(a => a.ConfigId == automationId && a.IsOn),
+                "the watch's automation to be loaded and on");
+
+            fixture.CallbackStatus = 503;
+            var firesBefore = fixture.Fires.Count;
+            await SetStateAsync(http, "190");
+            await Eventually.Until(() => fixture.Fires.Count > firesBefore, "the refused crossing to reach the callback");
+            await Eventually.Settle();
+
+            (await client.ListAutomationsAsync()).Single(a => a.ConfigId == automationId).IsOn.ShouldBeTrue();
+            (await StatusAsync(fs, watchId)).ShouldContain("\"spent\": false");
+
+            fixture.CallbackStatus = 202;
+            await SetStateAsync(http, "150");
+            await SetStateAsync(http, "185");
+            await Eventually.Until(() => fixture.Fires.Count > firesBefore + 1, "the taken crossing to reach the callback");
+            await Eventually.Until(
+                async () => !(await client.ListAutomationsAsync()).Single(a => a.ConfigId == automationId).IsOn,
+                "the spent one-shot to turn itself off");
+
+            (await StatusAsync(fs, watchId)).ShouldContain("\"spent\": true");
+        }
+        finally
+        {
+            fixture.CallbackStatus = 202;
+            await fs.DeleteAsync($"watches/{watchId}", CancellationToken.None);
+        }
+    }
+
+    private static async Task<string> StatusAsync(HaFileSystem fs, string watchId) =>
+        (await fs.ReadAsync($"watches/{watchId}/status.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
+
     private static async Task SetStateAsync(HttpClient http, string state)
     {
         var response = await http.PostAsJsonAsync($"api/states/{Sensor}", new JsonObject

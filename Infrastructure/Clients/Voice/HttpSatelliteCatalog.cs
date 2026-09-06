@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using Domain.Contracts;
 using Domain.DTOs.Voice;
+using Domain.Exceptions;
 
 namespace Infrastructure.Clients.Voice;
 
@@ -16,8 +17,8 @@ public sealed class HttpSatelliteCatalog(IHttpClientFactory httpClientFactory, s
         using var message = new HttpRequestMessage(HttpMethod.Get, "api/voice/satellites");
         message.Headers.Add("X-Announce-Token", token);
 
-        var response = await VoiceHubHttp.SendAsync(httpClientFactory, message, ct);
-        response.EnsureSuccessStatusCode();
+        using var response = await VoiceHubHttp.SendAsync(httpClientFactory, message, ct);
+        Answered(response);
         return await response.Content.ReadFromJsonAsync<List<SatelliteDescriptor>>(ct) ?? [];
     }
 
@@ -29,8 +30,19 @@ public sealed class HttpSatelliteCatalog(IHttpClientFactory httpClientFactory, s
         };
         message.Headers.Add("X-Announce-Token", token);
 
-        var response = await VoiceHubHttp.SendAsync(httpClientFactory, message, ct);
-        response.EnsureSuccessStatusCode();
+        using var response = await VoiceHubHttp.SendAsync(httpClientFactory, message, ct);
+        Answered(response);
         return await response.Content.ReadFromJsonAsync<List<string>>(ct) ?? [];
+    }
+
+    // An error status is the hub answering — a token mismatch, its own failure — not the hub being
+    // unreachable, so it is typed apart from VoiceHubUnavailableException and carries the status.
+    private static void Answered(HttpResponseMessage response)
+    {
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new VoiceHubRejectedException((int)response.StatusCode,
+                $"The voice hub answered {(int)response.StatusCode} ({response.ReasonPhrase}).");
+        }
     }
 }

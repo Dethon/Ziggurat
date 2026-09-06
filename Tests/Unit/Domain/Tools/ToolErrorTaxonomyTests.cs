@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json.Nodes;
+using Domain.Exceptions;
 using Domain.Tools;
 using Shouldly;
 
@@ -85,6 +86,19 @@ public class ToolErrorTaxonomyTests
     {
         ToolError.Create(ToolError.Codes.PermissionDenied, "no", "ask the user for the vault password")
             ["hint"]!.GetValue<string>().ShouldBe("ask the user for the vault password");
+    }
+
+    // The voice hub answering an error is mapped by its status as an HTTP failure is, so a timers or
+    // watches call that lets it through the filter says "authentication" for a token mismatch rather
+    // than "internal_error"; the hub being unreachable stays the one retryable answer.
+    [Theory]
+    [InlineData(401, ToolError.Codes.Authentication)]
+    [InlineData(403, ToolError.Codes.PermissionDenied)]
+    [InlineData(500, ToolError.Codes.TransientDependency)]
+    public void TheVoiceHubAnsweringAnError_IsMappedByItsStatus(int status, string code)
+    {
+        ToolError.CodeFor(new VoiceHubRejectedException(status, "answered")).ShouldBe(code);
+        ToolError.CodeFor(new VoiceHubUnavailableException("down")).ShouldBe(ToolError.Codes.TransientDependency);
     }
 
     [Fact]

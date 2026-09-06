@@ -58,6 +58,34 @@ public class HttpSatelliteCatalogTests
         await Should.ThrowAsync<VoiceHubUnavailableException>(() => sut.GetAllAsync(CancellationToken.None));
     }
 
+    // The hub answering with an error is not the hub being unreachable — retrying will not fix a
+    // token mismatch — but it is still the hub's answer, typed so a mount can say so instead of
+    // leaking a raw HTTP exception.
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task GetAllAsync_ErrorStatus_ThrowsVoiceHubRejected_CarryingTheStatus(HttpStatusCode status)
+    {
+        var handler = new VoiceHubStubHandler(_ => new HttpResponseMessage(status));
+        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Factory(handler), "secret");
+
+        var ex = await Should.ThrowAsync<VoiceHubRejectedException>(() => sut.GetAllAsync(CancellationToken.None));
+
+        ex.StatusCode.ShouldBe((int)status);
+        ex.Message.ShouldContain(((int)status).ToString());
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ErrorStatus_ThrowsVoiceHubRejected()
+    {
+        var handler = new VoiceHubStubHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Factory(handler), "secret");
+
+        var ex = await Should.ThrowAsync<VoiceHubRejectedException>(() => sut.ResolveAsync(new AnnounceTarget { Room = "Kitchen" }, CancellationToken.None));
+
+        ex.StatusCode.ShouldBe(401);
+    }
+
     [Fact]
     public async Task ResolveAsync_ForwardsTargetToHubResolveEndpoint()
     {

@@ -74,6 +74,42 @@ public class HaWatchesTests
         meta["userId"]!.GetValue<string>().ShouldBe("fran");
     }
 
+    // A replace that names no delivery keeps the watch's own, not the replacing caller's: "below
+    // 65, not 70" said on Telegram must not move a warning that was asked for on voice.
+    [Fact]
+    public async Task Replace_WithoutADeliverTo_KeepsTheWatchsOwnDelivery()
+    {
+        var fs = Build(out var client, origin: new ReplyTarget("voice", "conv-1", "kitchen-01"));
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var fromTelegram = Over(client, new ReplyTarget("telegram", "conv-2"));
+        await Ok(Create(fromTelegram, "blinds-when-hot", BlindsWatch.Replace("\"above\": 27", "\"above\": 30"), overwrite: true));
+
+        var meta = JsonNode.Parse(client.UpsertedAutomations.Last().Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe(["voice:kitchen-01"]);
+        (await Read(fs, "watches/blinds-when-hot/watch.json"))["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe(["voice:kitchen-01"]);
+    }
+
+    [Fact]
+    public async Task Replace_WithADeliverTo_MovesTheDelivery()
+    {
+        var fs = Build(out var client, origin: new ReplyTarget("voice", "conv-1", "kitchen-01"));
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch.Replace("\"conditions\"", "\"deliverTo\": [\"telegram\"], \"conditions\""), overwrite: true));
+
+        var meta = JsonNode.Parse(client.UpsertedAutomations.Last().Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe(["telegram"]);
+    }
+
+    // A second mount over the same home, as another channel's turn would see it.
+    private static HaFileSystem Over(FakeHaClient client, ReplyTarget origin)
+    {
+        var time = new FakeTimeProvider(_now);
+        return new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
+            caller: () => new ConversationContext("jonas", origin.ConversationId!, "fran", origin));
+    }
+
     private static async Task<T> Ok<T>(Task<FsResult<T>> result) where T : class =>
         (await result).ShouldBeOfType<FsResult<T>.Ok>().Value;
 
