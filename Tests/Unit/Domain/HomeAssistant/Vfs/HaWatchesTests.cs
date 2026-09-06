@@ -483,6 +483,16 @@ public class HaWatchesTests
         client.AutomationListings.ShouldBe(0);
     }
 
+    private const string ArmedOnceWatch = """
+        {
+          "name": "Tell me when the wash is done",
+          "triggers": [{"trigger": "state", "entity_id": "cover.living_room_blinds", "to": "closed"}],
+          "effects": [{"kind": "prompt", "prompt": "The wash is done."}],
+          "once": true,
+          "enabled": true
+        }
+        """;
+
     private const string OnceWatch = """
         {
           "name": "Tell me when the wash is done",
@@ -511,8 +521,62 @@ public class HaWatchesTests
     public async Task Read_StatusFile_AOneShotThatFiredAndTurnedItselfOff_IsSpent()
     {
         var fs = Build(out var client);
-        await Ok(Create(fs, "wash-done", OnceWatch));
+        await Ok(Create(fs, "wash-done", ArmedOnceWatch));
         client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
+        client.Automations["assistant_watch_wash-done"].IsOn = false;
+
+        var status = await Read(fs, "watches/wash-done/status.json");
+
+        status["spent"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    // A fire the callback refused leaves the one-shot armed with `last_triggered` stamped. Paused
+    // afterwards through the file, it is off with a fire on record — the same shape as a spent one
+    // — and must still read as paused: the agent removes spent watches, never paused ones.
+    [Fact]
+    public async Task Read_StatusFile_AOneShotWhoseFireWasRefused_ThenPaused_IsNotSpent()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "wash-done", ArmedOnceWatch));
+        client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
+
+        await Ok(fs.EditAsync("watches/wash-done/watch.json",
+            [new TextEdit("\"enabled\": true", "\"enabled\": false")], CancellationToken.None));
+
+        var status = await Read(fs, "watches/wash-done/status.json");
+        status["enabled"]!.GetValue<bool>().ShouldBeFalse();
+        status["spent"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    // A spent watch rewritten without `enabled: true` stays off, as the guide says, and reads as
+    // paused from then on: the agent that kept it off chose to, and a listing must not remove it.
+    [Fact]
+    public async Task Read_StatusFile_ASpentOneShotEditedButNotReArmed_ReadsAsPaused()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "wash-done", ArmedOnceWatch));
+        client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
+        client.Automations["assistant_watch_wash-done"].IsOn = false;
+        (await Read(fs, "watches/wash-done/status.json"))["spent"]!.GetValue<bool>().ShouldBeTrue();
+
+        await Ok(fs.EditAsync("watches/wash-done/watch.json",
+            [new TextEdit("The wash is done.", "The wash is done; say so.")], CancellationToken.None));
+
+        var status = await Read(fs, "watches/wash-done/status.json");
+        status["enabled"]!.GetValue<bool>().ShouldBeFalse();
+        status["spent"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    // Re-armed through the file and fired again, it is spent as any one-shot is.
+    [Fact]
+    public async Task Read_StatusFile_AReArmedOneShotThatThenFires_IsSpent()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "wash-done", OnceWatch));
+        await Ok(fs.EditAsync("watches/wash-done/watch.json",
+            [new TextEdit("\"enabled\": false", "\"enabled\": true")], CancellationToken.None));
+        client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
+        client.Automations["assistant_watch_wash-done"].IsOn = false;
 
         var status = await Read(fs, "watches/wash-done/status.json");
 

@@ -102,7 +102,10 @@ condition over each prompt callback's `response_variable` (`watch_fire_<n>.statu
 marked `continue_on_error`), because a `rest_command` does not abort the sequence on an error
 status and an unguarded turn_off would spend the watch on a 503 nobody received — and `Project`
 reads one back; the metadata the automation cannot carry (creating agent, effects as authored, once,
-deliverTo, userId, createdAt) is JSON in its description (`HaWatchMetadata`). Only a prefixed
+deliverTo, userId, createdAt, and the on/off the agent last wrote) is JSON in its description
+(`HaWatchMetadata`). A one-shot is spent only when it is off with a fire on record **and** the
+agent last wrote it armed: a refused fire stamps `last_triggered` on a watch that stays on, and a
+pause after it would otherwise read as spent and be removed. Only a prefixed
 automation with parsable metadata is a watch; the alarm bridge and blueprints are invisible to the
 subtree and untouchable through it. `enabled` is the entity's on/off, synced with
 `automation.turn_on/off` after every write; `status.json` is rendered, read-only. Text fields cross

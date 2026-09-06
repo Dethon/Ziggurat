@@ -13,7 +13,11 @@ public sealed record HaWatchMetadata(
     bool Once,
     IReadOnlyList<string>? DeliverTo,
     string? UserId,
-    DateTimeOffset CreatedAt)
+    DateTimeOffset CreatedAt,
+    // The on/off the agent last wrote, kept apart from the entity's own: a spent one-shot is off
+    // by its own hand, a paused one by the agent's, and the entity state cannot tell the two apart
+    // once a refused fire has stamped `last_triggered` on a watch that stayed armed.
+    bool Enabled = true)
 {
     private const string Key = "watch";
 
@@ -26,7 +30,8 @@ public sealed record HaWatchMetadata(
             ["once"] = Once,
             ["deliverTo"] = DeliverTo is null ? null : new JsonArray([.. DeliverTo.Select(d => (JsonNode)d)]),
             ["userId"] = UserId,
-            ["createdAt"] = CreatedAt.ToString("o")
+            ["createdAt"] = CreatedAt.ToString("o"),
+            ["enabled"] = Enabled
         }
     }.ToJsonString();
 
@@ -62,7 +67,8 @@ public sealed record HaWatchMetadata(
                 DateTimeOffset.TryParse(watch["createdAt"]?.GetValue<string>(), null,
                     System.Globalization.DateTimeStyles.RoundtripKind, out var at)
                     ? at
-                    : DateTimeOffset.MinValue);
+                    : DateTimeOffset.MinValue,
+                watch["enabled"]?.GetValue<bool>() ?? true);
         }
         catch (Exception ex) when (ex is JsonException or HaWatchSpecException or InvalidOperationException or FormatException)
         {
@@ -78,8 +84,12 @@ public sealed record HaWatch(string Id, HaWatchSpec Spec, HaWatchMetadata Meta, 
     public bool Enabled => State?.IsOn ?? true;
 
     // Spent is "fired and turned itself off", never "paused": the guide tells the agent to remove
-    // spent watches, so a paused one-shot that read as spent would be deleted for being paused.
-    public bool Spent => Meta.Once && State is { IsOn: false, LastTriggered: not null };
+    // spent watches, so a paused one-shot that read as spent would be deleted for being paused. Off
+    // with a fire on record is not enough to tell them apart — a fire the callback refused stamps
+    // `last_triggered` and leaves the watch armed, and a pause after it looks exactly like a spend —
+    // so spent also asks that the agent last wrote it armed: only the automation itself turns off
+    // a watch nobody paused.
+    public bool Spent => Meta.Once && Meta.Enabled && State is { IsOn: false, LastTriggered: not null };
 }
 
 // The rendering of a watch into a Home Assistant automation, and the reading of one back. The

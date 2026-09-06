@@ -56,7 +56,8 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
             spec.Once,
             spec.DeliverTo,
             spec.UserId,
-            existing?.Meta.CreatedAt ?? _time.GetUtcNow());
+            existing?.Meta.CreatedAt ?? _time.GetUtcNow(),
+            spec.Enabled);
         var id = HaWatchAutomation.AutomationId(watchId);
 
         await client.UpsertAutomationConfigAsync(id, HaWatchAutomation.Render(watchId, spec, meta), ct);
