@@ -238,6 +238,20 @@ public class AgentAppSettingsTests
     private static JsonNode Agent(string agentId) =>
         Root()["agents"]!.AsArray().Single(a => a!["id"]!.GetValue<string>() == agentId)!;
 
+    // The local override is where a developer runs the agent against the compose stack, and a
+    // channel server it does not list is one whose fires answer 503 there: every channel the
+    // shipped file connects, the local one connects too, by the same id.
+    [Fact]
+    public void LocalOverride_ConnectsEveryChannelTheShippedFileDoes()
+    {
+        static IEnumerable<string> ChannelIds(JsonNode root) =>
+            root["channelEndpoints"]!.AsArray().Select(e => e!["channelId"]!.GetValue<string>());
+
+        var local = JsonNode.Parse(File.ReadAllText(Path.Combine(RepoRoot(), "Agent", "appsettings.Local.json")))!;
+
+        ChannelIds(local).ShouldBe(ChannelIds(Root()), ignoreOrder: true);
+    }
+
     private static JsonNode Root()
     {
         // Read the working tree, never AppContext.BaseDirectory: many referenced projects copy

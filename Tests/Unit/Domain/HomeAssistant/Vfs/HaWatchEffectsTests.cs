@@ -198,10 +198,11 @@ public class HaWatchEffectsTests
         actions.Any(a => a!["condition"] is not null).ShouldBeFalse();
     }
 
-    // A watch that stays armed has nothing to guard, and asking for the response would make an
-    // error status abort the effects after the prompt.
+    // A watch that stays armed has nothing to guard, so it keeps no answer — but the callback is
+    // still continued past: an error status never aborts a sequence, an unreachable stack does,
+    // and the announcement or home action ordered after the prompt must fire regardless.
     [Fact]
-    public async Task ANotOncePromptWatch_AsksForNoResponse()
+    public async Task ANotOncePromptWatch_AsksForNoResponse_AndIsContinuedPast()
     {
         var fs = Build(out var client);
 
@@ -209,7 +210,7 @@ public class HaWatchEffectsTests
 
         var callback = actions.Single(a => a!["action"]?.GetValue<string>() == "rest_command.assistant_watch_fired")!;
         callback["response_variable"].ShouldBeNull();
-        callback["continue_on_error"].ShouldBeNull();
+        callback["continue_on_error"]!.GetValue<bool>().ShouldBeTrue();
         actions.Any(a => a!["condition"] is not null).ShouldBeFalse();
     }
 

@@ -98,9 +98,11 @@ glob that can reach them). A watch **is** a real automation written through the 
 names the field it refuses, `HaWatchAutomation.Render` turns it into the automation — id
 `assistant_watch_<id>`, alias = name, `mode: single`, triggers/conditions verbatim, the effects in
 order, and for `once` a final `automation.turn_off` on `{{ this.entity_id }}` guarded by a template
-condition over each prompt callback's `response_variable` (`watch_fire_<n>.status < 400`, the call
-marked `continue_on_error`), because a `rest_command` does not abort the sequence on an error
-status and an unguarded turn_off would spend the watch on a 503 nobody received — and `Project`
+condition over each prompt callback's `response_variable` (`watch_fire_<n>.status < 400`), because
+a `rest_command` does not abort the sequence on an error status and an unguarded turn_off would
+spend the watch on a 503 nobody received; every callback call is `continue_on_error`, once or not,
+because a stack that is down does raise in the home and the effects after the prompt must still
+fire — and `Project`
 reads one back; the metadata the automation cannot carry (creating agent, effects as authored, once,
 deliverTo, userId, createdAt, and the on/off the agent last wrote) is JSON in its description
 (`HaWatchMetadata`). A one-shot is spent only when it is off with a fire on record **and** the

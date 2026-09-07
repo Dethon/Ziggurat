@@ -119,10 +119,13 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
             ? (targets[0].Channel.ChannelId, targets[0].ConversationId)
             : (message.ChannelId, message.ConversationId);
         var address = channelId == message.ChannelId ? message.SatelliteId : null;
+        // An unprompted fire runs on behalf of the person its author named — a schedule's or a
+        // watch's `userId` — not as the sender label its server stamps on it ("scheduler",
+        // "watch"); a message a person sent themselves names nobody, and the sender is that person.
         return new ConversationContext(
             message.AgentId ?? "default",
             conversationId,
-            message.Sender,
+            message.UserId ?? message.Sender,
             new ReplyTarget(channelId, conversationId, address));
     }
 }

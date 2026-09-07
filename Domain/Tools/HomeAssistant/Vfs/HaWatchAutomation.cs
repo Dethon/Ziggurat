@@ -249,18 +249,20 @@ public static class HaWatchAutomation
             + "'firedAt': now().isoformat()}";
 
         yield return new JsonObject { ["variables"] = variables };
+        // Continued past whatever happens to it: an error status never aborts a sequence, but a
+        // stack that is down — connection refused, a timeout — raises in the home and would, so
+        // the announcement or home action ordered after the prompt fires regardless, as promised.
         var call = new JsonObject
         {
             ["action"] = WatchFiredCommand,
-            ["data"] = new JsonObject { ["payload"] = $"{{{{ {payload} | to_json }}}}" }
+            ["data"] = new JsonObject { ["payload"] = $"{{{{ {payload} | to_json }}}}" },
+            ["continue_on_error"] = true
         };
         if (promptIndex is { } index)
         {
-            // The answer is kept for the one-shot's turn_off guard, and a command that fails
-            // outright is continued past so the guard — not the failure — decides. A watch that
-            // stays armed asks for neither: an error status must not abort the effects after it.
+            // The answer is kept for the one-shot's turn_off guard, so the guard — not the
+            // failure — decides whether the watch is spent.
             call["response_variable"] = ResponseVariable(index);
-            call["continue_on_error"] = true;
         }
         yield return call;
     }
