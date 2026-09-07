@@ -207,7 +207,8 @@ public static class HomeAssistantPrompt
           satellite on voice, Telegram on Telegram, the chat on the chat — which is what a plain
           "warn me" wants; name it only to deliver somewhere else. A rewrite that omits it keeps
           the watch's delivery. Nabu has no Telegram, so on Nabu never write or promise Telegram
-          delivery. `userId` as for a schedule.
+          delivery. `userId` (optional) is the person the fire runs as; omit it and it is the
+          person who asked.
         - `once: true` for "tell me when X finishes": the watch turns itself off after its first
           fire that reached you (a fire nobody was connected to take leaves it armed) and then
           reads `enabled: false` with `spent: true` in `status.json`. Remove spent

@@ -5,6 +5,7 @@ using Domain.DTOs.FileSystem;
 using Domain.Exceptions;
 using Domain.Tools;
 using Domain.Tools.HomeAssistant.Vfs;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using static Tests.Unit.Domain.HomeAssistant.Vfs.FakeHaClient;
@@ -90,6 +91,36 @@ public class HaWatchesTests
         (await Read(fs, "watches/blinds-when-hot/watch.json"))["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe(["voice:kitchen-01"]);
     }
 
+    // The model is never told who is asking either, so a file naming no userId runs its prompts as
+    // the person whose turn wrote it: a fire attributed to nobody would read and write memory as a
+    // phantom user named after the channel.
+    [Fact]
+    public async Task Create_WithoutUserId_TakesTheCallersOwnUser()
+    {
+        var fs = Build(out var client);
+
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var meta = JsonNode.Parse(client.UpsertedAutomations.Single().Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["userId"]!.GetValue<string>().ShouldBe("fran");
+        (await Read(fs, "watches/blinds-when-hot/watch.json"))["userId"]!.GetValue<string>().ShouldBe("fran");
+    }
+
+    // A replace that names no user keeps the watch's own, as it keeps its delivery: whoever edits a
+    // threshold does not become the person the warning is for.
+    [Fact]
+    public async Task Replace_WithoutAUserId_KeepsTheWatchsOwnUser()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var asLaura = Over(client, new ReplyTarget("telegram", "conv-2"), userId: "laura");
+        await Ok(Create(asLaura, "blinds-when-hot", BlindsWatch.Replace("\"above\": 27", "\"above\": 30"), overwrite: true));
+
+        var meta = JsonNode.Parse(client.UpsertedAutomations.Last().Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["userId"]!.GetValue<string>().ShouldBe("fran");
+    }
+
     [Fact]
     public async Task Replace_WithADeliverTo_MovesTheDelivery()
     {
@@ -103,11 +134,11 @@ public class HaWatchesTests
     }
 
     // A second mount over the same home, as another channel's turn would see it.
-    private static HaFileSystem Over(FakeHaClient client, ReplyTarget origin)
+    private static HaFileSystem Over(FakeHaClient client, ReplyTarget origin, string userId = "fran")
     {
         var time = new FakeTimeProvider(_now);
         return new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
-            caller: () => new ConversationContext("jonas", origin.ConversationId!, "fran", origin));
+            caller: () => new ConversationContext("jonas", origin.ConversationId!, userId, origin));
     }
 
     private static async Task<T> Ok<T>(Task<FsResult<T>> result) where T : class =>
@@ -211,7 +242,7 @@ public class HaWatchesTests
         watch["enabled"]!.GetValue<bool>().ShouldBeTrue();
         // Named by nobody, so it is the caller's own channel — the Build helper's is Telegram.
         watch["deliverTo"]!.ToJsonString().ShouldBe("""["telegram"]""");
-        watch["userId"].ShouldBeNull();
+        watch["userId"]!.GetValue<string>().ShouldBe("fran");
     }
 
     [Fact]
@@ -428,6 +459,52 @@ public class HaWatchesTests
 
         (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
         (await Err(fs.ReadAsync("watches/handmade/watch.json", null, null, CancellationToken.None))).ErrorCode.ShouldBe("not_found");
+    }
+
+    // Staying theirs is right; vanishing without a word is not. The prefix is ours, so a prefixed
+    // automation the subtree cannot read is said in the log by its id — the automation keeps
+    // running in the home, and "my watch disappeared" needs somewhere to start.
+    [Fact]
+    public async Task Glob_APrefixedAutomationWithoutMetadata_IsSaidInTheLog()
+    {
+        var client = new FakeHaClient();
+        var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        var time = new FakeTimeProvider(_now);
+        var watches = new HaWatches(() => client, time, logs.CreateLogger("watches"));
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time, watches: watches);
+        client.SeedAutomation("assistant_watch_handmade", new JsonObject
+        {
+            ["alias"] = "Hand made", ["description"] = "edited in the UI",
+            ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state" }), ["actions"] = new JsonArray()
+        });
+
+        (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
+
+        logs.Messages.ShouldContain(m => m.Contains("assistant_watch_handmade") && m.Contains("description"));
+    }
+
+    // 2. A watch created paused whose entity the home has not loaded yet cannot be turned off, and
+    // is armed until it is: the result says so instead of reporting a pause that did not happen.
+    [Fact]
+    public async Task Create_PausedWhenTheEntityNeverAppears_SaysTheWatchIsStillArmed()
+    {
+        var client = new FakeHaClient { EntityLagListings = 100 };
+        var time = new FakeTimeProvider(_now);
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
+            caller: () => new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1")));
+
+        var write = Create(fs, "wash-done", OnceWatch);
+        for (var step = 0; step < 10 && !write.IsCompleted; step++)
+        {
+            await Task.Yield();
+            time.Advance(TimeSpan.FromMilliseconds(200));
+        }
+        var created = await Ok(write);
+
+        created.Status.ShouldBe("created");
+        created.Note.ShouldNotBeNull();
+        created.Note.ShouldContain("armed");
+        client.Calls.ShouldBeEmpty();
     }
 
     [Theory]

@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
@@ -7,9 +9,10 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 // projects the prefixed ones back into files, every write renders the file into an automation and
 // hands it to the home. Func<IHomeAssistantClient>, as the catalog provider takes it, so the
 // transient client is not pinned by a singleton.
-public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProvider? timeProvider = null)
+public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProvider? timeProvider = null, ILogger? logger = null)
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+    private readonly ILogger _logger = logger ?? NullLogger.Instance;
 
     // One states fetch plus one config read per watch, on every root glob and every prompt serve:
     // the mount's first live call per turn. Cheap at a handful of watches; a short cache is the
@@ -23,11 +26,30 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
         var configs = await Task.WhenAll(states.Select(s => client.GetAutomationConfigAsync(s.ConfigId!, ct)));
 
         return states.Zip(configs)
-            .Where(pair => pair.Second is not null)
-            .Select(pair => HaWatchAutomation.Project(pair.First.ConfigId!, pair.Second!, pair.First))
+            .Select(pair => Projected(pair.First.ConfigId!, pair.Second, pair.First))
             .OfType<HaWatch>()
             .OrderBy(w => w.Id, StringComparer.Ordinal)
             .ToList();
+    }
+
+    // A prefixed automation the subtree cannot read stays the operator's and is left alone — but
+    // the prefix is ours, so its absence is said once per listing by id rather than silently: the
+    // automation keeps running in the home, and "my watch disappeared" needs somewhere to start.
+    private HaWatch? Projected(string automationId, JsonObject? config, HaAutomationState? state)
+    {
+        if (config is null)
+        {
+            return null;
+        }
+
+        var watch = HaWatchAutomation.Project(automationId, config, state);
+        if (watch is null)
+        {
+            _logger.LogWarning(
+                "Automation {AutomationId} carries the watch prefix but its description is not watch metadata; it is not listed under /ha/watches and still runs in the home",
+                automationId);
+        }
+        return watch;
     }
 
     public async Task<HaWatch?> GetAsync(string watchId, CancellationToken ct)
@@ -41,7 +63,7 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
         }
 
         var state = (await client.ListAutomationsAsync(ct)).FirstOrDefault(a => a.ConfigId == id);
-        return HaWatchAutomation.Project(id, config, state);
+        return Projected(id, config, state);
     }
 
     // Create or replace, under the same id, so a change never leaves a second watch. The creator

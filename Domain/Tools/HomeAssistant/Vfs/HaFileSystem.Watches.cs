@@ -60,12 +60,13 @@ public sealed partial class HaFileSystem
                 "Pass overwrite=true to replace it in place (same id, never a second watch), or fs_edit its watch.json.");
         }
 
-        return await WriteWatchAsync(node.WatchId!, content, existing, ct, () => new FsCreateResult
+        return await WriteWatchAsync(node.WatchId!, content, existing, ct, note => new FsCreateResult
         {
             Status = existing is null ? "created" : "replaced",
             FilePath = path,
             Size = content.Length.ToString(),
-            Lines = content.Split('\n').Length
+            Lines = content.Split('\n').Length,
+            Note = note
         });
     }
 
@@ -89,12 +90,13 @@ public sealed partial class HaFileSystem
             });
         }
 
-        return await WriteWatchAsync(node.WatchId!, applied.Text, existing, ct, () => new FsEditResult
+        return await WriteWatchAsync(node.WatchId!, applied.Text, existing, ct, note => new FsEditResult
         {
             Status = "edited",
             FilePath = path,
             TotalOccurrencesReplaced = applied.Total,
-            Edits = applied.Details
+            Edits = applied.Details,
+            Note = note
         });
     }
 
@@ -128,7 +130,7 @@ public sealed partial class HaFileSystem
     // Parse, validate, render and hand to the home. The home's own refusal — a trigger it does not
     // know, a key it requires — comes back in its own words, so the agent can fix the file in the
     // same turn instead of creating a watch that never fires.
-    private async Task<FsResult<T>> WriteWatchAsync<T>(string watchId, string content, HaWatch? existing, CancellationToken ct, Func<T> ok)
+    private async Task<FsResult<T>> WriteWatchAsync<T>(string watchId, string content, HaWatch? existing, CancellationToken ct, Func<string?, T> ok)
         where T : class
     {
         HaWatchSpec spec;
@@ -168,6 +170,14 @@ public sealed partial class HaFileSystem
             };
         }
 
+        // The same rule for who the fire is for: the model is not told who is asking either, and a
+        // fire attributed to nobody runs as the sender label the callback stamps on it — memory read
+        // and written under a phantom user. A replace naming none keeps the watch's own, as above.
+        if (spec.UserId is null)
+        {
+            spec = spec with { UserId = existing?.Meta.UserId ?? caller?.UserId };
+        }
+
         try
         {
             if (await ValidateAnnounceTargetsAsync(spec, ct) is { } badTarget)
@@ -193,9 +203,10 @@ public sealed partial class HaFileSystem
                     : "Try again in a moment; a target the hub cannot vouch for would fire into silence.");
         }
 
+        HaWatch written;
         try
         {
-            await _watches.WriteAsync(watchId, spec, agentId, existing, ct);
+            written = await _watches.WriteAsync(watchId, spec, agentId, existing, ct);
         }
         catch (HomeAssistantConfigRejectedException ex)
         {
@@ -207,8 +218,17 @@ public sealed partial class HaFileSystem
             return HomeAssistantFailure<T>(ex);
         }
 
-        return new FsResult<T>.Ok(ok());
+        return new FsResult<T>.Ok(ok(PauseNote(spec, written)));
     }
+
+    // The on/off is a service call on the entity the reload produces, and a brand-new entity can
+    // trail the write past the store's patience. The config was written and the home holds it
+    // armed, so a watch asked for paused says so rather than reporting a pause that did not happen.
+    private static string? PauseNote(HaWatchSpec spec, HaWatch written) =>
+        !spec.Enabled && written.State is null
+            ? "The watch was written, but the home had not loaded its automation entity in time to pause it, so it is armed. "
+              + "Write it again with \"enabled\": false in a moment to pause it."
+            : null;
 
     // An announcement's target is resolved against the voice hub when the file is written, the
     // timers' rule: the hub knows rooms by its own names, not by Home Assistant's area slugs, and a

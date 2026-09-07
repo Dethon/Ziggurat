@@ -84,7 +84,7 @@ public class ScheduleFirePlannerTests
 
         var plan = ScheduleFirePlanner.Plan(s, defaultDeliverTo: ["signalr"], nextRun: null, now: now);
 
-        plan.Payload.ConversationId.ShouldBe($"sched-once-{now.ToUnixTimeSeconds()}");
+        plan.Payload.ConversationId.ShouldBe($"sched-once-{now.ToUnixTimeMilliseconds()}");
         plan.Payload.Timestamp.ShouldBe(now);
     }
 }

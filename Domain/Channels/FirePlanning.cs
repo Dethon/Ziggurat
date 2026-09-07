@@ -20,9 +20,11 @@ public static class FirePlanning
 {
     // One reading of the clock for both the conversation id's suffix and the Timestamp: the two
     // must agree, and the injected TimeProvider — not the wall clock — is what a scheduled agent's
-    // one-clock world and a test's fake time both expect to drive them.
+    // one-clock world and a test's fake time both expect to drive them. Milliseconds, not seconds:
+    // a schedule fires at most once a minute, but a watch on a flapping sensor can fire twice inside
+    // one second, and two fires sharing an id would be two prompts in one conversation.
     public static string ConversationId(string prefix, string id, DateTimeOffset at) =>
-        $"{prefix}-{id}-{at.ToUnixTimeSeconds()}";
+        $"{prefix}-{id}-{at.ToUnixTimeMilliseconds()}";
 
     public static ChannelMessageNotification Compose(Fire fire, IReadOnlyList<string> defaultDeliverTo)
     {

@@ -136,7 +136,7 @@ public class WatchFiredEndpointTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.Accepted);
         var fire = (await harness.DrainAsync()).ShouldHaveSingleItem();
-        fire.ConversationId.ShouldBe($"watch-laura-sugar-high-{_now.ToUnixTimeSeconds()}");
+        fire.ConversationId.ShouldBe($"watch-laura-sugar-high-{_now.ToUnixTimeMilliseconds()}");
         fire.Sender.ShouldBe("watch");
         fire.AgentId.ShouldBe("jonas");
         fire.UserId.ShouldBe("fran");

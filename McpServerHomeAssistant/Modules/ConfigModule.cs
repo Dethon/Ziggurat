@@ -55,7 +55,9 @@ public static class ConfigModule
                     extraServices: ServedActions(musicConfigured),
                     logger: sp.GetRequiredService<ILogger<HaCatalogProvider>>()))
                 .AddSingleton(TimeProvider.System)
-                .AddSingleton(sp => new HaWatches(sp.GetRequiredService<IHomeAssistantClient>, sp.GetRequiredService<TimeProvider>()))
+                .AddSingleton(sp => new HaWatches(
+                    sp.GetRequiredService<IHomeAssistantClient>, sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<ILogger<HaWatches>>()))
                 .AddSingleton(sp => new HaFileSystem(
                     sp.GetRequiredService<HaCatalogProvider>(),
                     sp.GetRequiredService<IHomeAssistantClient>,

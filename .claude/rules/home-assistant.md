@@ -115,7 +115,11 @@ as Jinja and are rendered by the home inside a `variables` step, so the rest_com
 composed with `to_json` and a quote in a prompt cannot break them. The creating agent comes from
 `CallerContext` (entered by the call-tool filter from the request's `_meta`); a file naming no
 `deliverTo` takes the caller's origin channel and address, because the model is never told which
-channel a turn came from, and a replace naming none keeps the watch's own. The hub answering an
+channel a turn came from, and a file naming no `userId` takes the caller's user for the same
+reason (a fire attributed to nobody would run as the sender label "watch"); a replace naming
+neither keeps the watch's own. A watch written paused whose entity the home has not loaded within
+the store's five polls is armed, and the write's `Note` says so. A prefixed automation whose
+description is not the metadata is not a watch and is logged by id once per listing. The hub answering an
 error status at that check is `VoiceHubRejectedException` (Infrastructure's `HttpSatelliteCatalog`
 throws it, `ToolError.CodeFor` maps it by status), refused as `authentication` for a token
 mismatch and `transient_dependency` otherwise. The default `deliverTo` a fire falls back to is `Domain/delivery.json`.
