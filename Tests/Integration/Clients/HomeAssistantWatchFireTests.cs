@@ -29,7 +29,10 @@ public class HomeAssistantWatchFireTests(HomeAssistantFixture fixture) : IClassF
         await SetStateAsync(http, "120");
 
         var fs = new HaFileSystem(new HaCatalogProvider(() => client), () => client,
-            caller: () => new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1")));
+            // The user is a Telegram chat id, as a person with no username is known: the home
+            // renders the watch's literals through a `variables` step, and this pins that a value
+            // which looks like a number still reaches the callback as the string the mount wrote.
+            caller: () => new ConversationContext("jonas", "conv-1", "123456789", new ReplyTarget("telegram", "conv-1")));
         var created = await fs.CreateAsync($"watches/{watchId}/watch.json", $$$"""
             {"name": "Laura's sugar above 180",
              "triggers": [{"trigger": "numeric_state", "entity_id": "{{{Sensor}}}", "above": 180}],
@@ -54,6 +57,7 @@ public class HomeAssistantWatchFireTests(HomeAssistantFixture fixture) : IClassF
             fire.Payload["name"]!.GetValue<string>().ShouldBe("Laura's sugar above 180");
             fire.Payload["agentId"]!.GetValue<string>().ShouldBe("jonas");
             fire.Payload["deliverTo"]!.ToJsonString().ShouldBe("""["telegram"]""");
+            fire.Payload["userId"]!.GetValue<string>().ShouldBe("123456789");
             fire.Payload["prompt"]!.GetValue<string>().ShouldBe("Her sugar is 190: look into it.");
             fire.Payload["entityId"]!.GetValue<string>().ShouldBe(Sensor);
             fire.Payload["fromState"]!.GetValue<string>().ShouldBe("120");

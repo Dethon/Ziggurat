@@ -391,7 +391,6 @@ services:
       - .env
     environment:
       <<: *timezone
-      VoiceHub__BaseUrl: http://mcp-channel-voice:8080
     networks:
       - jackbot
     depends_on:
@@ -545,7 +544,6 @@ services:
       - .env
     environment:
       <<: *timezone
-      VoiceHub__BaseUrl: http://mcp-channel-voice:8080
     networks:
       - jackbot
     depends_on:
