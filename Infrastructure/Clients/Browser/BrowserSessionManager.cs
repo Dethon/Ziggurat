@@ -572,7 +572,7 @@ public class BrowserSessionManager : IAsyncDisposable
 
     private BrowserTab Admit(BrowserSession session, string sessionId, IPage page, string url)
     {
-        var tab = new BrowserTab(page, url, _timeProvider.GetUtcNow());
+        var tab = new BrowserTab(page, url);
         HandlePageEvents(sessionId, tab);
         session.AddTab(tab);
         Touch(session, tab);
@@ -638,10 +638,9 @@ public class BrowserSessionManager : IAsyncDisposable
 
     private void Touch(BrowserSession session, BrowserTab tab)
     {
-        var now = _timeProvider.GetUtcNow();
-        tab.LastTouchedAt = now;
+        tab.LastTouch = session.NextTouch();
         session.CurrentTab = tab;
-        session.LastAccessedAt = now;
+        session.LastAccessedAt = _timeProvider.GetUtcNow();
     }
 
     // Where the tab actually landed, recorded beside the address it was asked for — redirects
@@ -998,7 +997,7 @@ public sealed class TabWorkContext
 
 // One live page in a session's pool. The model never sees it: a tab is addressed only through the
 // refs it stamped, or by being the tab last touched.
-internal class BrowserTab(IPage page, string requestedUrl, DateTimeOffset createdAt)
+internal class BrowserTab(IPage page, string requestedUrl)
 {
     public IPage Page { get; } = page;
 
@@ -1008,7 +1007,8 @@ internal class BrowserTab(IPage page, string requestedUrl, DateTimeOffset create
     // The address the page actually landed on, updated by every navigation on the tab.
     public string FinalUrl { get; internal set; } = requestedUrl;
 
-    public DateTimeOffset LastTouchedAt { get; internal set; } = createdAt;
+    // Its place in the session's touch order; the highest is the most recently touched.
+    public long LastTouch { get; internal set; }
 
     // The popup this tab's last click spawned, waiting for that click's action to answer from it.
     internal BrowserTab? PendingPopup { get; set; }
@@ -1062,6 +1062,13 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
     public DateTimeOffset LastAccessedAt { get; internal set; } = createdAt;
     internal BrowserTab? CurrentTab { get; set; }
     internal SessionRefCounters Counters { get; } = new();
+
+    // The LRU order is a sequence, not a clock: a WSL2 host steps its wall clock backwards every
+    // half minute, and a touch stamped after such a step read as older than the tabs it followed,
+    // so the pool evicted the tab the model had just used and kept the one it abandoned.
+    private long _touchSequence;
+
+    internal long NextTouch() => Interlocked.Increment(ref _touchSequence);
 
     // Serializes this session's pool mutation — create, reuse, evict, adopt — and nothing else's.
     internal SemaphoreSlim PoolGate { get; } = new(1, 1);
@@ -1124,7 +1131,7 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
                 return null;
             }
 
-            var evicted = _tabs.MinBy(t => t.LastTouchedAt)!;
+            var evicted = _tabs.MinBy(t => t.LastTouch)!;
             _tabs.Remove(evicted);
             CloseRangesOf(evicted);
             return evicted;

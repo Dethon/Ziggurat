@@ -124,6 +124,30 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
+    public async Task TheClockSteppingBackwards_DoesNotChangeWhichTabIsLeastRecentlyTouched()
+    {
+        // WSL2 hosts step the wall clock backwards every half minute or so; a touch stamped after
+        // such a step must still count as later than every touch before it, or the pool evicts a
+        // tab the model just used and keeps the one it abandoned.
+        var time = new SteppingClock(DateTimeOffset.UtcNow);
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager(timeProvider: time);
+
+        await BrowseAsync(manager, ctx, "s1", "https://a.test/");
+        time.Step(TimeSpan.FromSeconds(1));
+        await BrowseAsync(manager, ctx, "s1", "https://b.test/");
+        time.Step(TimeSpan.FromSeconds(-5));
+        await BrowseAsync(manager, ctx, "s1", "https://c.test/");
+        time.Step(TimeSpan.FromSeconds(1));
+
+        await BrowseAsync(manager, ctx, "s1", "https://d.test/");
+
+        pages[0].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
+        pages[1].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
+        pages[2].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
+    }
+
+    [Fact]
     public async Task TheTabCap_IsASettingOnTheManager()
     {
         var (ctx, pages) = TabPoolFakes.CreateContext();
@@ -749,4 +773,14 @@ public class BrowserSessionManagerTests
         await Eventually.Until(() => manager.Get("s1") is null, "the idle session to be pruned");
         pages[0].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Once);
     }
+}
+
+// FakeTimeProvider refuses to go back in time, which is exactly the host behaviour under test.
+internal sealed class SteppingClock(DateTimeOffset now) : TimeProvider
+{
+    private DateTimeOffset _now = now;
+
+    public override DateTimeOffset GetUtcNow() => _now;
+
+    public void Step(TimeSpan by) => _now += by;
 }
