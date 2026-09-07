@@ -244,12 +244,12 @@ public class AgentAppSettingsTests
     [Fact]
     public void LocalOverride_ConnectsEveryChannelTheShippedFileDoes()
     {
-        static IEnumerable<string> ChannelIds(JsonNode root) =>
+        static IEnumerable<string> channelIds(JsonNode root) =>
             root["channelEndpoints"]!.AsArray().Select(e => e!["channelId"]!.GetValue<string>());
 
         var local = JsonNode.Parse(File.ReadAllText(Path.Combine(RepoRoot(), "Agent", "appsettings.Local.json")))!;
 
-        ChannelIds(local).ShouldBe(ChannelIds(Root()), ignoreOrder: true);
+        channelIds(local).ShouldBe(channelIds(Root()), ignoreOrder: true);
     }
 
     private static JsonNode Root()
