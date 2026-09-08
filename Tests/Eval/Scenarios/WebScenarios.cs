@@ -169,8 +169,13 @@ public static class WebScenarios
             // worker, and it does exactly that on about half of the runs where the turn reads like
             // research — the per-run coin recorded with the subagent claims in SubAgentPrompt, and
             // not what this scenario is about.
-            Text = "Abre el formulario de reservas del taller del Cuaderno de barrio y reserva el "
-                   + "turno del sábado a las 12:00 a nombre de Fran; dime el código de la reserva.",
+            // "en la web del": the site's name reads in Spanish as a notebook, so a request that
+            // does not say it is a site is a request to search the vault, and a model that reads
+            // the vault prompt literally does exactly that. The two scenarios that always carried
+            // these words never searched the vault; the two that did not, did.
+            Text = "Abre el formulario de reservas del taller en la web del Cuaderno de barrio y "
+                   + "reserva el turno del sábado a las 12:00 a nombre de Fran; dime el código "
+                   + "de la reserva.",
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
@@ -381,8 +386,11 @@ public static class WebScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "Apúntame a la actividad de astronomía en la azotea, a nombre de Fran, y dime "
-                   + "el código de inscripción.",
+            // The site is named for the same reason the booking scenarios name it: this scenario's
+            // subject is type-vs-fill, and a request that names no source at all makes the model
+            // guess where to look before it can reach the field this is about.
+            Text = "Apúntame en la web del Cuaderno de barrio a la actividad de astronomía en la "
+                   + "azotea, a nombre de Fran, y dime el código de inscripción.",
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
@@ -523,7 +531,7 @@ public static class WebScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "Abre el formulario de materiales del taller del Cuaderno de barrio y "
+            Text = "Abre el formulario de materiales del taller en la web del Cuaderno de barrio y "
                    + "apúntame al lote de Cerámica sábado: Fran, teléfono 600111222, correo "
                    + "fran@example.com. Dime el código.",
             Sender = "fran"
