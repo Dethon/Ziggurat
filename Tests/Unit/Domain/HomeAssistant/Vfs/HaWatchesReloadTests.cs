@@ -22,11 +22,11 @@ public class HaWatchesReloadTests
     public async Task AnEntityThatTrailsTheWrite_IsStillTurnedOff_OnceItAppears()
     {
         var client = new FakeHaClient { EntityLagListings = 2 };
-        var time = new FakeTimeProvider(_now);
+        var time = new ArmedClock(_now);
         var watches = new HaWatches(() => client, time);
 
         var write = watches.WriteAsync("sugar-low", _paused, "jonas", null, CancellationToken.None);
-        var written = await Driven(write, time);
+        var written = await Driven(write, time, delays: 2);
 
         client.AutomationListings.ShouldBe(3);
         client.Calls.ShouldBe([("automation", "turn_off", client.Automations["assistant_watch_sugar-low"].EntityId)]);
@@ -39,11 +39,11 @@ public class HaWatchesReloadTests
     public async Task AnEntityThatNeverAppears_IsGivenUpOn_AndTheWatchReadsTheFilesEnabled()
     {
         var client = new FakeHaClient { EntityLagListings = 100 };
-        var time = new FakeTimeProvider(_now);
+        var time = new ArmedClock(_now);
         var watches = new HaWatches(() => client, time);
 
         var write = watches.WriteAsync("sugar-low", _paused, "jonas", null, CancellationToken.None);
-        var written = await Driven(write, time);
+        var written = await Driven(write, time, delays: 4);
 
         client.AutomationListings.ShouldBe(5);
         client.Calls.ShouldBeEmpty();
@@ -66,13 +66,15 @@ public class HaWatchesReloadTests
         time.GetUtcNow().ShouldBe(_now);
     }
 
-    // The retry waits on the fake clock, so the test moves it: each step releases one delay.
-    private static async Task<HaWatch> Driven(Task<HaWatch> write, FakeTimeProvider time)
+    // The retry waits on the fake clock, so the test moves it — but only once the write has armed
+    // the delay the advance is meant to end. A yield-then-advance guessed at that ordering, and when
+    // the suite ran wide the guess lost: the advance fired nothing, the delay armed against a clock
+    // already past it, and the test hung the whole run waiting for a write that could never finish.
+    private static async Task<HaWatch> Driven(Task<HaWatch> write, ArmedClock time, int delays)
     {
-        for (var step = 0; step < 10 && !write.IsCompleted; step++)
+        for (var step = 0; step < delays; step++)
         {
-            await Task.Yield();
-            time.Advance(TimeSpan.FromMilliseconds(200));
+            await time.AdvancePastAsync(TimeSpan.FromMilliseconds(200), previously: step);
         }
         return await write;
     }

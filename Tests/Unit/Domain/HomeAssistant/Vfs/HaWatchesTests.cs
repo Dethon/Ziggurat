@@ -489,15 +489,16 @@ public class HaWatchesTests
     public async Task Create_PausedWhenTheEntityNeverAppears_SaysTheWatchIsStillArmed()
     {
         var client = new FakeHaClient { EntityLagListings = 100 };
-        var time = new FakeTimeProvider(_now);
+        var time = new ArmedClock(_now);
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
             caller: () => new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1")));
 
+        // Each advance waits for the write to arm the retry delay it ends; advancing on a yield
+        // guessed at that ordering and hung the run when the guess lost.
         var write = Create(fs, "wash-done", OnceWatch);
-        for (var step = 0; step < 10 && !write.IsCompleted; step++)
+        for (var step = 0; step < 4; step++)
         {
-            await Task.Yield();
-            time.Advance(TimeSpan.FromMilliseconds(200));
+            await time.AdvancePastAsync(TimeSpan.FromMilliseconds(200), previously: step);
         }
         var created = await Ok(write);
 
