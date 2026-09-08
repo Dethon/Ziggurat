@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Domain.Prompts;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -10,7 +11,11 @@ namespace Infrastructure.Agents.Skills;
 // because no skill here ships a resource or a script (docs/adr/0039).
 //
 // A wrapper rather than the provider itself because the provider always builds all three tools
-// and has no switch for the two nothing needs; what reaches the model is what leaves here.
+// and has no switch for the two nothing needs; what reaches the model is what leaves here. The
+// load tool itself is re-faced at the same seam: the framework's description is generic and its
+// `skillName` is free text, and the model was seen calling it as a warm-up probe with garbage
+// names. Ours says when not to call it and lists the session's names as an enum, so a name that
+// is not advertised cannot be sent.
 public sealed class SkillsProvider : AIContextProvider, IDisposable
 {
     // The whole of the template. The prose about what the list is and when to load from it is a
@@ -20,22 +25,19 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
 
     public static readonly string LoadToolName = AgentSkillsProvider.LoadSkillToolName;
 
+    public const string LoadToolDescription =
+        "Loads one skill from the `<available_skills>` list. Call it only when the request is of that skill's kind, once per conversation, never to check what it does or to fill a pause.";
+
+    private const string SkillNameParameter = "skillName";
+
+    private readonly Func<AgentSession?, IReadOnlyList<PromptSkill>> _skillsOf;
     private readonly AgentSkillsProvider _inner;
 
     public SkillsProvider(Func<AgentSession?, IReadOnlyList<PromptSkill>> skillsOf)
-        : this(new SessionSkillsSource(skillsOf))
     {
-    }
-
-    public SkillsProvider(IReadOnlyList<PromptSkill> skills)
-        : this(new SessionSkillsSource(_ => skills))
-    {
-    }
-
-    private SkillsProvider(AgentSkillsSource source)
-    {
+        _skillsOf = skillsOf;
         _inner = new AgentSkillsProvider(
-            source,
+            new SessionSkillsSource(skillsOf),
             new AgentSkillsProviderOptions
             {
                 SkillsInstructionPrompt = Template,
@@ -55,7 +57,7 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     public static async Task<string> AdvertisementAsync(
         IReadOnlyList<PromptSkill> skills, AIAgent agent, CancellationToken ct = default)
     {
-        using var provider = new SkillsProvider(skills);
+        using var provider = new SkillsProvider(_ => skills);
         var context = await provider.InvokingAsync(new InvokingContext(agent, null, new AIContext()), ct);
         return context.Instructions ?? string.Empty;
     }
@@ -66,13 +68,47 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
         var provided = await _inner.InvokingAsync(
             new InvokingContext(context.Agent, context.Session, new AIContext()), cancellationToken);
 
+        var load = provided.Tools?
+            .OfType<AIFunction>()
+            .FirstOrDefault(t => string.Equals(t.Name, LoadToolName, StringComparison.Ordinal));
+
         return new AIContext
         {
             Instructions = provided.Instructions,
-            Tools = provided.Tools?.Where(t => string.Equals(t.Name, LoadToolName, StringComparison.Ordinal)).ToList()
+            Tools = load is null
+                ? null
+                : [new LoadSkillFunction(load, [.. _skillsOf(context.Session).Select(s => s.Name)])]
         };
     }
 #pragma warning restore MAAI001
+
+    // The framework's load, invoked as the framework wrote it, behind a face of our own.
+    private sealed class LoadSkillFunction(AIFunction inner, IReadOnlyList<string> names) : DelegatingAIFunction(inner)
+    {
+        public override string Description => LoadToolDescription;
+
+        public override JsonElement JsonSchema { get; } = SchemaOver(names);
+
+        private static JsonElement SchemaOver(IReadOnlyList<string> names)
+        {
+            using var document = JsonDocument.Parse(JsonSerializer.Serialize(new
+            {
+                type = "object",
+                properties = new Dictionary<string, object>
+                {
+                    [SkillNameParameter] = new
+                    {
+                        type = "string",
+                        description = "The name of the skill to load, exactly as listed.",
+                        @enum = names
+                    }
+                },
+                required = new[] { SkillNameParameter },
+                additionalProperties = false
+            }));
+            return document.RootElement.Clone();
+        }
+    }
 
     public void Dispose() => _inner.Dispose();
 

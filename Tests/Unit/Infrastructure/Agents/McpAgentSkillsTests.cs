@@ -74,6 +74,29 @@ public class McpAgentSkillsTests
         tools.ShouldNotContain(AgentSkillsProvider.RunSkillScriptToolName);
     }
 
+    // The load tool wears the repo's face: our description, and a schema that names exactly the
+    // session's skills, so a garbage name is impossible at the schema level and the model is told
+    // when not to call it (a warm-up probe is the failure this guards against).
+    [Fact]
+    public async Task TheLoadTool_CarriesTheReposDescription_AndAnEnumOfTheSessionsSkillNames()
+    {
+        await using var server = await StartAsync(
+            new SkillText(Skill, "Does test things.", "# Test\n\nDo the thing."),
+            new SkillText("other-skill", "Does other things.", "# Other\n\nDo the other thing."));
+        var (chatClient, captured) = Capturing();
+        await using var agent = Agent(chatClient, server.Endpoint);
+
+        await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hi")]).ToListAsync();
+
+        var load = captured.ShouldHaveSingleItem().ShouldNotBeNull().Tools.ShouldNotBeNull()
+            .OfType<AIFunction>().Where(t => t.Name == SkillsProvider.LoadToolName).ShouldHaveSingleItem();
+        load.Description.ShouldBe(SkillsProvider.LoadToolDescription);
+        var skillName = load.JsonSchema.GetProperty("properties").GetProperty("skillName");
+        skillName.GetProperty("type").GetString().ShouldBe("string");
+        skillName.GetProperty("enum").EnumerateArray().Select(e => e.GetString()).ShouldBe([Skill, "other-skill"]);
+        load.JsonSchema.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ShouldBe(["skillName"]);
+    }
+
     [Fact]
     public async Task AnAgentWhoseServersShipNoSkill_GetsNoListAndNoLoadTool()
     {
