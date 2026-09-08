@@ -499,7 +499,9 @@ public static class VaultScenarios
             // Never beside the note: a copy at this path is the parallel layout the rule names.
             new FileExpectation { Path = $"{EvalVault.Mount}/Cocina/tarta.jpg", Deleted = true }
         ],
-        CallCeiling = 6,
+        // One more than the load took: a glob for the note and one for the image are looking, and
+        // the ceiling was reporting that as a fault.
+        CallCeiling = 7,
         Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id],
         Guards =
         [

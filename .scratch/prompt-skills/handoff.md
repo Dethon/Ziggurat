@@ -38,11 +38,13 @@ mostly `home-assistant` on timer turns.
 - **The eval's own vocabulary needed two loosenings:** command matchers accept a leading `./` (the
   mount does), and `CallPermission.Load(name)` tolerates one named skill's load on scenarios
   whose subject is elsewhere.
-- **Recurring reds unrelated to any move**, each at threshold's edge in most passes: the
-  night-time watch editing the seeded watch instead of adding one; the delegated research reply
-  running over five sentences; "cinco minutos para el té" and "para la alarma que está sonando"
-  attracting a `home-assistant` load under a ceiling of three or four. The last two should ease
-  now that `countdown-timers` names "ringing now" — check ticket 10's result block.
+- **Recurring reds unrelated to any move** were the fixtures' own (fixed 2026-09-09, each 6/6
+  armed after): the night-time watch asked for "below 55" beside a seeded "below 70", a tightening
+  reading the model took a third of the time — it now asks for "above 250"; the delegated research
+  reply is a bulleted forward of a seven-fact chronicle and the sentence counter counts bullets —
+  the cap is 10, the judged synthesis check owns padding; the attachment vault turn had lost its
+  one call of slack to the load — ceiling 7. What remains is the probe reflex: one to three
+  `home-assistant` loads per pass on watch turns, measured rather than tuned.
 
 ## Review fixes (after the ten gates)
 

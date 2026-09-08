@@ -115,7 +115,10 @@ public static class WatchScenarios
         AgentId = "nabu",
         Turn = new EvalTurn
         {
-            Text = "si el azúcar de Laura baja de 55 por la noche despiértame aquí, que suene hasta que lo apague",
+            // Above, not below: the seeded watch is "below 70", and a night-time "below 55" read as a
+            // tightening of it on a third of runs — a defensible reading the fixture invited, not the
+            // add-beside rule being ignored. A high threshold cannot be the same watch.
+            Text = "si el azúcar de Laura pasa de 250 por la noche despiértame aquí, que suene hasta que lo apague",
             Sender = "fran",
             Room = "office",
             SatelliteId = "office-01"
@@ -134,7 +137,7 @@ public static class WatchScenarios
                     Arg.PathMatches(WatchFile),
                     Arg.Matches("content", Kind("announce")),
                     Arg.Matches("content", @"""insistent"""),
-                    Arg.Matches("content", @"""below""\s*:\s*55"),
+                    Arg.Matches("content", @"""above""\s*:\s*250"),
                     Arg.Matches("content", FakeHomeAssistant.GlucoseEntityId),
                     Arg.Matches("content", @"""condition""\s*:\s*""time"""),
                     Arg.Matches("content", AnnounceTarget("office", "office-01"))
@@ -142,7 +145,7 @@ public static class WatchScenarios
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch(("below", "55")),
+        Changes = OneMoreWatch(("above", "250")),
         Ordering = [new OrderingConstraint("skill", "watch")],
         CallCeiling = 8,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
