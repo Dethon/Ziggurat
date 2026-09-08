@@ -89,6 +89,41 @@ public class ScenarioChecksTests
     }
 
     [Fact]
+    public async Task ANewWatchsThreshold_IsDeclaredByAPatternOnTheBound()
+    {
+        // The home reads a watch's bounds back beside its entity, so a created watch moves two keys
+        // the scenario cannot spell: the automation and its threshold. The bound pattern covers the
+        // value the user asked for and nothing else — a watch that landed at the wrong number is
+        // still an undeclared change, which is the whole point of reading the bound back.
+        var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.StateBefore = new Dictionary<string, string> { ["automation#watches"] = "1" };
+        recording.StateAfter = new Dictionary<string, string>
+        {
+            ["automation#watches"] = "2", ["automation.glucosa_alta"] = "on", ["automation.glucosa_alta#above"] = "180"
+        };
+
+        var scenario = Timer() with
+        {
+            Changes =
+            [
+                new StateChange("automation#watches", "2"),
+                new StateChange("automation.*", "on"),
+                new StateChange("automation.*#above", "180")
+            ]
+        };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
+
+        recording.StateAfter = new Dictionary<string, string>
+        {
+            ["automation#watches"] = "2", ["automation.glucosa_alta"] = "on", ["automation.glucosa_alta#above"] = "18"
+        };
+
+        ScenarioChecks.Failures(scenario, recording).Count.ShouldBe(2);
+        ScenarioChecks.Failures(scenario, recording).ShouldContain(f => f.Contains("automation.glucosa_alta#above"));
+    }
+
+    [Fact]
     public async Task APatternNothingMatched_IsAMissingChange()
     {
         var recording = await ScriptedTurn.RunAsync("Hecho", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));

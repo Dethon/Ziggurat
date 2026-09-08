@@ -30,11 +30,15 @@ public static class WatchScenarios
     private static string AnnounceTarget(string room, string satelliteId) =>
         $@"""target""\s*:\s*\{{[^}}]*""(room""\s*:\s*""{room}""|satelliteId""\s*:\s*""{satelliteId}"")";
 
-    // Creating a watch beside the seeded one: the count becomes two, and a new automation is on.
-    private static IReadOnlyList<StateChange> OneMoreWatch =>
+    // Creating a watch beside the seeded one: the count becomes two, a new automation is on, and
+    // the home holds the bounds the user named — read back from the automation, not from the file
+    // the model wrote, so a watch that landed at another number is an undeclared change.
+    private static IReadOnlyList<StateChange> OneMoreWatch(params (string Bound, string Value)[] thresholds) =>
     [
         new StateChange(FakeHomeAssistant.WatchCountKey, "2"),
-        new StateChange(FakeHomeAssistant.AnyAutomationEntity, "on")
+        new StateChange(FakeHomeAssistant.AnyAutomationEntity, "on"),
+        .. thresholds.Select(t => new StateChange(
+            FakeHomeAssistant.ThresholdKey(FakeHomeAssistant.AnyAutomationEntity, t.Bound), t.Value))
     ];
 
     // A home action: the blinds close when the living room passes 27, with nobody in the loop. The
@@ -70,7 +74,7 @@ public static class WatchScenarios
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch,
+        Changes = OneMoreWatch(("above", "27")),
         CallCeiling = 6,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
         Claims =
@@ -125,7 +129,7 @@ public static class WatchScenarios
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch,
+        Changes = OneMoreWatch(("below", "55")),
         CallCeiling = 6,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
         Claims = [HomeAssistantPrompt.WatchUrgencyIsAnInsistentAnnouncement.Id],
@@ -164,7 +168,7 @@ public static class WatchScenarios
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch,
+        Changes = OneMoreWatch(("above", "180")),
         CallCeiling = 6,
         Claims =
         [
@@ -206,7 +210,7 @@ public static class WatchScenarios
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch,
+        Changes = OneMoreWatch(("above", "180")),
         CallCeiling = 6,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
         Claims =
@@ -244,7 +248,7 @@ public static class WatchScenarios
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch,
+        Changes = OneMoreWatch(("below", "18"), ("above", "26")),
         CallCeiling = 6,
         Claims = [HomeAssistantPrompt.WatchRangeIsTwoTriggers.Id],
         Policy = new RunPolicy(2, 3)
@@ -280,7 +284,7 @@ public static class WatchScenarios
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch,
+        Changes = OneMoreWatch(("below", "50")),
         CallCeiling = 6,
         Claims = [HomeAssistantPrompt.WatchUrgencyIsAnInsistentAnnouncement.Id],
         Policy = new RunPolicy(2, 3)
@@ -316,7 +320,7 @@ public static class WatchScenarios
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch,
+        Changes = OneMoreWatch(),
         CallCeiling = 6,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
         Claims = [HomeAssistantPrompt.WatchOneShotUsesOnce.Id],
