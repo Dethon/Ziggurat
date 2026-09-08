@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Prompts;
 using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Infrastructure.Clients;
@@ -43,6 +44,13 @@ public static class ConfigModule
             .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<SandboxFileSystem>()
             .AddFileSystemResource<SandboxFileSystem>()
+            // The skill that teaches this server's tools ships beside them, built from the mount
+            // the server publishes so the workspace it names is the one this deployment has.
+            .AddSkill(SandboxSkill.Name, SandboxSkill.Description, sp =>
+            {
+                var sandbox = sp.GetRequiredService<SandboxFileSystem>();
+                return SandboxSkill.Body(sandbox.MountPoint, sandbox.Workspace);
+            })
             .WithPrompts<McpSystemPrompt>();
 
         return services;

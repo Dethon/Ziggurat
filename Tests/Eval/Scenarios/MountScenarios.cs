@@ -135,6 +135,14 @@ public static class MountScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            // Running anything is the sandbox skill's business; the transfer rule it also
+            // exercises is the mounts section's and needs no load.
+            new CallExpectation
+            {
+                Label = "skill",
+                Tool = EvalTools.LoadSkill,
+                Arguments = [Arg.Is("skillName", SandboxSkill.Name)]
+            },
             new CallExpectation
             {
                 Label = "transfer",
@@ -156,18 +164,18 @@ public static class MountScenarios
                 ]
             }
         ],
-        Ordering = [new OrderingConstraint("transfer", "hash")],
+        Ordering = [new OrderingConstraint("skill", "hash"), new OrderingConstraint("transfer", "hash")],
         Permitted =
         [
             .. CallPermission.Looking("/vault*"),
             .. CallPermission.Looking("/sandbox*"),
             new CallPermission(EvalTools.Copy),
             new CallPermission(EvalTools.Exec, "/sandbox*"),
-            // A copy out of the vault is a vault task to a model reading the stub; the load is
+            // A copy out of the vault is a vault task to a model reading the stub; that load is
             // tolerated, and the transfer rule it cites is in the stub, not the body.
             new CallPermission(EvalTools.LoadSkill)
         ],
-        CallCeiling = 7,
+        CallCeiling = 8,
         Reply = new ReplyExpectation
         {
             // Only bytes that actually went through a real hasher produce this prefix; a model
@@ -176,6 +184,7 @@ public static class MountScenarios
         },
         Claims =
         [
+            SandboxSkill.LoadsForARun.Id,
             FileSystemToolFeature.ExecWorkGoesWhereExecLives.Id,
             FileSystemToolFeature.TransferIsOneCall.Id
         ],

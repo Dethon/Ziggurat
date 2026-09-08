@@ -56,6 +56,38 @@ public static class SkillServerResources
         return builder;
     }
 
+    // A skill whose body is built from what the server publishes — the sandbox's mount point and
+    // workspace — rather than from constants alone. The name and description are constants, so
+    // the index is; the body waits for the provider.
+    public static IMcpServerBuilder AddSkill(
+        this IMcpServerBuilder builder, string name, string description, Func<IServiceProvider, string> body)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(body);
+
+        var index = Index([new SkillText(name, description, string.Empty)]);
+        builder.Services.AddSingleton(McpServerResource.Create(
+            () => index,
+            new McpServerResourceCreateOptions
+            {
+                UriTemplate = IndexAddress,
+                Name = "skills",
+                Description = "The skills this server ships: name, description and where each body is.",
+                MimeType = IndexMimeType
+            }));
+        builder.Services.AddSingleton(sp => McpServerResource.Create(
+            () => Body(new SkillText(name, description, body(sp))),
+            new McpServerResourceCreateOptions
+            {
+                UriTemplate = BodyAddress(name),
+                Name = name,
+                Description = description,
+                MimeType = BodyMimeType
+            }));
+
+        return builder;
+    }
+
     public static string BodyAddress(string skillName) => $"{Scheme}{skillName}/SKILL.md";
 
     // What the index says about each skill: enough to advertise it and to fetch it, nothing of the

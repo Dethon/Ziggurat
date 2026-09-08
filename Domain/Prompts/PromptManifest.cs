@@ -26,7 +26,7 @@ public static class PromptManifest
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated.
-    public const int StandingTokens = 11_000;
+    public const int StandingTokens = 10_000;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -110,9 +110,11 @@ public static class PromptManifest
         new()
         {
             Name = SandboxPrompt.Name,
-            Purpose = "The sandbox's layout, what may be run in it and what it refuses.",
+            Purpose = "That the sandbox is the one mount with exec, where its workspace is, and that a run loads the skill.",
             Priority = PromptPriority.Client,
-            TokenBudget = 1_400,
+            // The stub: the section had no choosing rule of its own and moved whole into the
+            // sandbox skill. Ratcheted from 1,400.
+            TokenBudget = 250,
             ServedBy = "mcp-sandbox"
         },
         new()
@@ -281,6 +283,15 @@ public static class PromptManifest
             BodyBudget = 1_300,
             ServedBy = "mcp-scheduling",
             Claims = SchedulingSkill.Claims
+        },
+        new()
+        {
+            Name = SandboxSkill.Name,
+            Description = SandboxSkill.Description,
+            DescriptionBudget = 130,
+            BodyBudget = 1_200,
+            ServedBy = "mcp-sandbox",
+            Claims = SandboxSkill.Claims
         }
     ];
 
