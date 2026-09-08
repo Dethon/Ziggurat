@@ -52,9 +52,9 @@ public class PromptComposerTests
     {
         var result = Compose(Context(withSections: true));
 
-        result.ShouldStartWith(BasePrompt.Instructions);
+        result.ShouldStartWith(CoreDirectivePrompt.Instructions);
         var date = result.IndexOf("Today is", StringComparison.Ordinal);
-        date.ShouldBeGreaterThan(result.IndexOf(BasePrompt.Instructions, StringComparison.Ordinal));
+        date.ShouldBeGreaterThan(result.IndexOf(CoreDirectivePrompt.Instructions, StringComparison.Ordinal));
         date.ShouldBeGreaterThan(result.IndexOf("DOMAIN", StringComparison.Ordinal));
         date.ShouldBeGreaterThan(result.IndexOf("FS", StringComparison.Ordinal));
         date.ShouldBeGreaterThan(result.IndexOf("CLIENT", StringComparison.Ordinal));
@@ -98,7 +98,7 @@ public class PromptComposerTests
     {
         var result = Compose(Context(name: "Mycroft", description: "Voice assistant.", withSections: true));
 
-        result.IndexOf(BasePrompt.Instructions, StringComparison.Ordinal)
+        result.IndexOf(CoreDirectivePrompt.Instructions, StringComparison.Ordinal)
             .ShouldBeLessThan(result.IndexOf("## Identity", StringComparison.Ordinal));
         result.IndexOf("## Identity", StringComparison.Ordinal)
             .ShouldBeLessThan(result.IndexOf("DOMAIN", StringComparison.Ordinal));

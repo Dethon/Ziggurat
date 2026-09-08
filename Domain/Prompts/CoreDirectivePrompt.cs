@@ -1,7 +1,12 @@
 namespace Domain.Prompts;
 
-public static class BasePrompt
+// The section every agent reads first, under the name the manifest declares it by. "Base prompt"
+// means the standing whole — every section an agent reads on every turn — so the file that holds
+// this one section carries the section's own name rather than the whole's.
+public static class CoreDirectivePrompt
 {
+    public const string Name = "core_directive";
+
     public const string Instructions =
         """
         ## Core Directive

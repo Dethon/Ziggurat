@@ -33,7 +33,7 @@ public class TimersSystemPromptTests
     }
 
     [Fact]
-    public async Task GetTimerPrompt_HubUnreachable_FailsOpenToTheBasePrompt()
+    public async Task GetTimerPrompt_HubUnreachable_FailsOpenToTheRosterlessPrompt()
     {
         // MCP prompts are fetched while the agent session is built — an unreachable hub must
         // degrade to the roster-less static text, never stall or fail session build (the roster

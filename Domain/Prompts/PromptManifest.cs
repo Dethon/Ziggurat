@@ -17,11 +17,27 @@ public static class PromptManifest
     // server this repo owns.
     public const int UndeclaredBudget = 1_500;
 
+    // What the largest agent's standing sections are budgeted to, rounded up to the hundred. It is
+    // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
+    // number, and the budget tests refuse a figure left where it was, so what left the base prompt
+    // cannot grow back into the room it vacated.
+    public const int StandingTokens = 19_400;
+
+    // What an agent's whole prompt may cost above that: the slack for a section that ran over its
+    // budget, or one that arrived from a server nobody declared, before a turn is paying for a
+    // prompt nobody agreed to.
+    public const int Headroom = 600;
+
     // What one agent's whole system prompt may cost. It is re-sent on every request of every
     // conversation, and what it does not take is what the conversation itself gets — so this is a
     // ceiling on the static prefix rather than on the context window, and the sum of the budgets
     // below has to stay under it or the table is decoration.
-    public const int MaxAgentPromptTokens = 20_000;
+    public const int MaxAgentPromptTokens = StandingTokens + Headroom;
+
+    // The ceiling check, with the standing figure as a parameter so a test can show what lowering
+    // it does to an agent whose sections add up to more.
+    public static bool FitsCeiling(int tokens, int standingTokens = StandingTokens) =>
+        tokens <= standingTokens + Headroom;
 
     public static IReadOnlyList<PromptDeclaration> Declarations { get; } =
     [
@@ -34,7 +50,7 @@ public static class PromptManifest
             // leaving a section every agent reads one word from failing the build.
             TokenBudget = 350,
             Conflict = ConflictPolicy.Governs(PromptRules.Refusals),
-            Claims = BasePrompt.Claims
+            Claims = CoreDirectivePrompt.Claims
         },
         new()
         {
@@ -198,7 +214,7 @@ public static class PromptManifest
         }
     ];
 
-    public const string CoreDirective = "core_directive";
+    public const string CoreDirective = CoreDirectivePrompt.Name;
     public const string Identity = "identity";
     public const string UserContext = "user_context";
     public const string Subagents = "subagents";

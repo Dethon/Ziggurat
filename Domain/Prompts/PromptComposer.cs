@@ -39,7 +39,7 @@ public static class PromptComposer
     {
         IEnumerable<PromptSection> sections =
         [
-            PromptManifest.Bind(PromptManifest.CoreDirective, BasePrompt.Instructions),
+            PromptManifest.Bind(PromptManifest.CoreDirective, CoreDirectivePrompt.Instructions),
             .. Identity(context),
             .. context.Domain,
             .. context.FileSystem,

@@ -315,7 +315,7 @@ public static class HomeAssistantScenarios
         ],
         CallCeiling = 6,
         Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],
-        Claims = [HomeAssistantPrompt.SnoozeIsANewEvent.Id, BasePrompt.NoPlaceholderToolCalls.Id],
+        Claims = [HomeAssistantPrompt.SnoozeIsANewEvent.Id, CoreDirectivePrompt.NoPlaceholderToolCalls.Id],
         Policy = new RunPolicy(2, 3)
     };
 

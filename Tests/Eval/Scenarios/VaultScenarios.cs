@@ -280,7 +280,7 @@ public static class VaultScenarios
             }
         ],
         CallCeiling = 8,
-        Claims = [VaultPrompt.HeadingsAreReferenceable.Id, BasePrompt.NoPlaceholderToolCalls.Id],
+        Claims = [VaultPrompt.HeadingsAreReferenceable.Id, CoreDirectivePrompt.NoPlaceholderToolCalls.Id],
         Policy = new RunPolicy(2, 3)
     };
 

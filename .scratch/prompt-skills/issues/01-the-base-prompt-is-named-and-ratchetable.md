@@ -4,9 +4,9 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The core directive's file and type carry the section name; every snapshot is byte-identical to before.
-- [ ] The ceiling is a remaining-plus-headroom expression; the budget tests pass unchanged and a test shows lowering the remaining figure fails an agent whose declared sections exceed it.
-- [ ] The prompts rule file carries the timing rule, the size floor and the skill-claim red procedure, and names the glossary terms base prompt, skill and trigger claim.
-- [ ] Spec: `.scratch/prompt-skills/spec.md` § The dividing line, § The manifest.
+- [x] The core directive's file and type carry the section name; every snapshot is byte-identical to before.
+- [x] The ceiling is a remaining-plus-headroom expression; the budget tests pass unchanged and a test shows lowering the remaining figure fails an agent whose declared sections exceed it.
+- [x] The prompts rule file carries the timing rule, the size floor and the skill-claim red procedure, and names the glossary terms base prompt, skill and trigger claim.
+- [x] Spec: `.scratch/prompt-skills/spec.md` § The dividing line, § The manifest.
