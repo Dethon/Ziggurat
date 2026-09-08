@@ -26,7 +26,9 @@ public static class WatchScenarios
 
     // Every scenario of the family requires the load, before the watch is touched: the skill's
     // description is the trigger claim, and a watch written without the skill is the red that
-    // claim exists to show.
+    // claim exists to show. The setup index read is required beside it, as the home family
+    // requires it: a watch names an entity, and a run that skipped the index wrote the skill's
+    // own example into the home (2026-09-08, twice in one pass) — the index is where the id is.
     private static CallExpectation LoadsTheSkill => new()
     {
         Label = "skill",
@@ -68,6 +70,7 @@ public static class WatchScenarios
         Required =
         [
             LoadsTheSkill,
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "watch",
@@ -126,6 +129,7 @@ public static class WatchScenarios
         Required =
         [
             LoadsTheSkill,
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "watch",
@@ -168,6 +172,7 @@ public static class WatchScenarios
         Required =
         [
             LoadsTheSkill,
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "watch",
@@ -213,6 +218,7 @@ public static class WatchScenarios
         Required =
         [
             LoadsTheSkill,
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "watch",
@@ -256,6 +262,7 @@ public static class WatchScenarios
         Required =
         [
             LoadsTheSkill,
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "watch",
@@ -292,6 +299,7 @@ public static class WatchScenarios
         Required =
         [
             LoadsTheSkill,
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "watch",
@@ -332,6 +340,7 @@ public static class WatchScenarios
         Required =
         [
             LoadsTheSkill,
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "watch",
@@ -370,6 +379,7 @@ public static class WatchScenarios
         Required =
         [
             LoadsTheSkill,
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "edit",
@@ -410,6 +420,7 @@ public static class WatchScenarios
         Required =
         [
             LoadsTheSkill,
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "pause",
@@ -447,6 +458,7 @@ public static class WatchScenarios
         Required =
         [
             LoadsTheSkill,
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "delete",

@@ -162,9 +162,12 @@ public static class MountScenarios
             .. CallPermission.Looking("/vault*"),
             .. CallPermission.Looking("/sandbox*"),
             new CallPermission(EvalTools.Copy),
-            new CallPermission(EvalTools.Exec, "/sandbox*")
+            new CallPermission(EvalTools.Exec, "/sandbox*"),
+            // A copy out of the vault is a vault task to a model reading the stub; the load is
+            // tolerated, and the transfer rule it cites is in the stub, not the body.
+            new CallPermission(EvalTools.LoadSkill)
         ],
-        CallCeiling = 6,
+        CallCeiling = 7,
         Reply = new ReplyExpectation
         {
             // Only bytes that actually went through a real hasher produce this prefix; a model

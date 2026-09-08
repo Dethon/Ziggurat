@@ -15,14 +15,16 @@ public static class HomeWatchesSkill
         """
         A watch is a file: `text_create /ha/watches/<id>/watch.json` (`<id>` is a descriptive slug you
         choose, as a schedule's is). The same `<id>` is the same watch, so a change replaces it in place.
-        The setup index already says which watches exist: a new watch is written from the request and
-        this guide, without listing or reading the others first.
+        The setup index you read this turn says which entities and which watches exist: a new watch is
+        written from the request, the entity id the index lists and this guide, without listing or
+        reading the other watches first. The example below is a shape, not a watch to copy — its
+        entity id and wording are invented, and the real ones come from the index and the request.
 
         ```json
-        {"name": "Laura's sugar above 180",
-         "triggers": [{"trigger": "numeric_state", "entity_id": "sensor.laura_glucose", "above": 180}],
+        {"name": "Greenhouse above 30",
+         "triggers": [{"trigger": "numeric_state", "entity_id": "sensor.<id from the setup index>", "above": 30}],
          "conditions": [],
-         "effects": [{"kind": "prompt", "prompt": "Laura's sugar crossed 180. Read its history, say what it is and whether it is rising, and warn Fran."}],
+         "effects": [{"kind": "prompt", "prompt": "The greenhouse crossed 30 degrees. Read its history, say what it is and whether it is rising, and warn Fran."}],
          "once": false}
         ```
 

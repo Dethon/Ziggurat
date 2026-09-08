@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Prompts;
 using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Infrastructure.Clients;
@@ -32,6 +33,9 @@ public static class ConfigModule
             .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<TextDiskFileSystem>()
             .AddFileSystemResource<TextDiskFileSystem>()
+            // The skill that teaches this server's tools ships beside them, so a deployment
+            // without the vault cannot advertise how to write a note.
+            .AddSkills(ObsidianVaultSkill.Text)
             .WithPrompts<McpSystemPrompt>();
 
         return services;

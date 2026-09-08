@@ -26,7 +26,7 @@ public static class PromptManifest
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated.
-    public const int StandingTokens = 14_600;
+    public const int StandingTokens = 13_200;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -118,9 +118,10 @@ public static class PromptManifest
         new()
         {
             Name = VaultPrompt.Name,
-            Purpose = "Obsidian's conventions: frontmatter, wikilinks, where a new note belongs.",
+            Purpose = "What the vault is, and that a task needing exec is transferred to the sandbox once.",
             Priority = PromptPriority.Client,
-            TokenBudget = 2_000,
+            // The stub: the conventions are the obsidian-vault skill. Ratcheted from 2,000.
+            TokenBudget = 400,
             ServedBy = "mcp-vault",
             Claims = VaultPrompt.Claims
         },
@@ -250,6 +251,15 @@ public static class PromptManifest
             BodyBudget = 3_600,
             ServedBy = "mcp-homeassistant",
             Claims = HomeAssistantSkill.Claims
+        },
+        new()
+        {
+            Name = ObsidianVaultSkill.Name,
+            Description = ObsidianVaultSkill.Description,
+            DescriptionBudget = 120,
+            BodyBudget = 1_800,
+            ServedBy = "mcp-vault",
+            Claims = ObsidianVaultSkill.Claims
         }
     ];
 

@@ -61,8 +61,9 @@ public static class HomeAssistantPrompt
         **something in the home changing → a watch**, never a schedule that polls `history.sh`.
         Before you write, change, pause or remove a watch — and only then: no other home task
         needs it — load the `home-watches` skill, which carries the file's shape, the trigger and
-        effect kinds, and the delivery rules. That is the only skill a watch needs: the setup
-        index names the entity, so do not load `home-assistant` for a watch.
+        effect kinds, and the delivery rules. A watch takes two calls before the write, like any
+        home task — `file_read /ha/setup-index.md` for the entity's id and the watches that exist,
+        and that one skill; it does not need `home-assistant`.
 
         ### Area ids
 
