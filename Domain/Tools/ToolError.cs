@@ -154,6 +154,9 @@ public static class ToolError
         HomeAssistantException { StatusCode: >= 400 and < 500 } => Codes.InvalidArgument,
         // A 5xx, and no status at all: the call either fell over on the far side or never arrived.
         HomeAssistantException => Codes.TransientDependency,
+        // The voice hub answered with an error status: the status says what kind, as an HTTP one's does.
+        VoiceHubRejectedException hub => FromStatus(hub.StatusCode),
+        VoiceHubUnavailableException => Codes.TransientDependency,
         TimeoutException => Codes.Timeout,
         // An HttpClient timeout arrives as a cancellation with nobody behind it. A caller's real
         // hang-up never reaches a mapping — the call-tool filter rethrows it as the abort it is.

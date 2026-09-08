@@ -619,6 +619,24 @@ The existing mount always wins, so a name collision costs the outpost rather tha
 replacing what was there.
 _Avoid_: duplicate mount, conflicting outpost, rejected registration
 
+## Home watches
+
+**Watch**:
+A standing instruction the agent leaves behind on the home: when a named entity meets
+a condition, its effects happen, in order. A watch outlives the conversation that created it and
+fires as often as its condition is met, until it is removed. Any agent can see and
+change any watch, and a watch that needs an agent to fire fires as the agent that
+created it.
+_Avoid_: automation, trigger, rule, alert, subscription
+
+**Effect**:
+One thing a watch does when it fires; a watch lists one or more. There are three
+kinds: a prompt the creating agent runs, an announcement spoken in the home with no
+agent involved, and a home action performed with no agent involved. The announcement
+and the home action happen the instant the watch fires; the prompt takes as long as
+the agent does.
+_Avoid_: action (that is the home-action kind), consequence, handler
+
 ## Media library
 
 **Live download**:

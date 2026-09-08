@@ -67,4 +67,4 @@ Home Assistant reads a naive one in its own time zone, and the container may sit
 - The integration seed boots the real container with a Local Calendar config entry, so the
   round trip is proven against the component, recurrence expansion included.
 - Nothing rings unless the HA instance carries the bridge automation. That is provisioning, not
-  code; `docs/home-assistant-alarm-bridge.md` holds it.
+  code; `docs/home-assistant-bridges.md` holds it.

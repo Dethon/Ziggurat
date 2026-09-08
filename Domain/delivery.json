@@ -1,0 +1,12 @@
+// Where an unprompted fire — a schedule's, a watch's — is delivered when its author named no
+// channel. Two servers raise such fires and must agree, so this is one file rather than a block in
+// each host's appsettings.json: it ships beside the DeliverySettings type it fills, in Domain, and
+// every host that references Domain gets it in its own output.
+//
+// Read after each host's own appsettings.json and before environment variables, so a host cannot
+// quietly disagree with it and a single container can still be overridden (DELIVERY__DEFAULTDELIVERTO__0).
+{
+  "delivery": {
+    "defaultDeliverTo": [ "signalr" ]
+  }
+}

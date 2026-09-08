@@ -37,6 +37,23 @@ public sealed class ChannelNotificationEmitter
         return Task.FromResult(Deliver(ChannelInboxItem.ForMessage(payload)));
     }
 
+    // The broadcast emit with both of its answers, for a caller answering an outside party — the
+    // watch callback telling Home Assistant whether a fire was taken. Accepted means a registered
+    // subscriber holds a copy, even a quiet one mid-reconnect; only "nobody registered at all" is a
+    // loss. Defined for Broadcast alone: the other two policies never buffer for a quiet subscriber,
+    // so their accepted and live answers are one answer.
+    public Task<EnqueueReceipt> EmitWithReceiptAsync(ChannelMessageNotification payload, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (_policy != DeliveryPolicy.Broadcast)
+        {
+            throw new InvalidOperationException(
+                "EmitWithReceiptAsync is defined for the Broadcast policy: the other policies buffer nothing a live answer would not say.");
+        }
+
+        return Task.FromResult(_inbox.EnqueueWithReceipt(ChannelInboxItem.ForMessage(payload)));
+    }
+
     public Task<bool> EmitCancelAsync(ChannelCancelNotification payload, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();

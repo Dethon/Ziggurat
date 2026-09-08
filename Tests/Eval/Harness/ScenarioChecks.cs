@@ -175,19 +175,27 @@ public static class ScenarioChecks
         var changed = recording.Moved;
 
         var undeclared = changed
-            .Where(entry => !scenario.Changes.Any(c => c.Key == entry.Key))
+            .Where(entry => !scenario.Changes.Any(c => c.Declares(entry)))
             .Select(entry =>
                 $"{entry.Key} changed to '{entry.Value}' and the scenario did not declare it " +
                 $"(it was '{recording.StateBefore.GetValueOrDefault(entry.Key) ?? "absent"}')");
 
         var missing = scenario.Changes
-            .Where(change => changed.GetValueOrDefault(change.Key) != change.To)
+            .Where(change => !changed.Any(entry => change.Names(entry.Key) && entry.Value == change.To))
             .Select(change =>
                 $"{change.Key} was to end at '{change.To}' and is at " +
-                $"'{recording.StateAfter.GetValueOrDefault(change.Key) ?? "absent"}'");
+                $"'{EndedAt(change, recording)}'");
 
         return [.. missing, .. undeclared];
     }
+
+    // What a missed change is at now: the entity's own state, or for a pattern the matching
+    // entities that moved — none of which reached the value, or the change would not be missing.
+    private static string EndedAt(StateChange change, Recording recording) =>
+        change.IsPattern
+            ? string.Join(", ", recording.Moved.Where(e => change.Names(e.Key)).Select(e => $"{e.Key}={e.Value}"))
+                is { Length: > 0 } moved ? moved : "absent"
+            : recording.StateAfter.GetValueOrDefault(change.Key) ?? "absent";
 
     private static IReadOnlyList<string> Answered(Scenario scenario, Recording recording) =>
         scenario.Reply is null ? [] : ReplyChecks.Failures(scenario.Reply, recording.Reply);

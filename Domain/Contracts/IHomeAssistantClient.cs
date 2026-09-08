@@ -53,6 +53,32 @@ public interface IHomeAssistantClient
     // or null when the config carries none. The recorder stamps every change in UTC whatever the
     // home's zone, so anything aligned to the home's clock (a day bucket at its midnight) needs this.
     Task<string?> GetTimeZoneAsync(CancellationToken ct = default);
+
+    // The automation config API, which is how a watch lives in the home. Automations are listed
+    // from their entity states — the one place on/off and `last_triggered` exist; the config API
+    // has no list — and each config is read, written and deleted by the id the state's `id`
+    // attribute names. Writing an existing id replaces the automation and reloads it. A config the
+    // home refuses surfaces as HomeAssistantConfigRejectedException carrying the home's own words.
+    Task<IReadOnlyList<HaAutomationState>> ListAutomationsAsync(CancellationToken ct = default);
+
+    Task<JsonObject?> GetAutomationConfigAsync(string id, CancellationToken ct = default);
+
+    Task UpsertAutomationConfigAsync(string id, JsonObject config, CancellationToken ct = default);
+
+    Task DeleteAutomationConfigAsync(string id, CancellationToken ct = default);
+}
+
+// One automation as its entity state describes it. `ConfigId` is the `id` attribute the config API
+// addresses it by; an automation written by hand in YAML without an id has none, and can neither
+// be read nor written through that API.
+[PublicAPI]
+public record HaAutomationState
+{
+    public required string EntityId { get; init; }
+    public string? ConfigId { get; init; }
+    public required bool IsOn { get; init; }
+    public string? FriendlyName { get; init; }
+    public DateTimeOffset? LastTriggered { get; init; }
 }
 
 // One statistics row as the recorder answers it. A measured sensor carries Mean/Min/Max; a total

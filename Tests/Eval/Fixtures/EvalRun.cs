@@ -94,7 +94,10 @@ public static class EvalRun
         message.SetMemoryContext(memories);
         message.SetConversationContext(new ConversationContext(
             scenario.AgentId, conversationId, UserId,
-            new ReplyTarget(scenario.Turn.SatelliteId is null ? "signalr" : "voice", conversationId)));
+            new ReplyTarget(
+                scenario.Turn.Channel ?? (scenario.Turn.SatelliteId is null ? "signalr" : "voice"),
+                conversationId,
+                scenario.Turn.SatelliteId)));
 
         return message;
     }

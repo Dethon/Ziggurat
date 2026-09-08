@@ -296,8 +296,7 @@ public sealed class ScheduleFileSystem(
 
         var current = RenderSpec(existing);
         var updatedText = edits.Aggregate(current, (acc, e) =>
-            e.ReplaceAll ? acc.Replace(e.OldString, e.NewString)
-                         : ReplaceFirst(acc, e.OldString, e.NewString));
+            TextEdits.ReplaceFirstOrAll(acc, e.OldString, e.NewString, e.ReplaceAll));
 
         var spec = ParseSpec(updatedText, out var specError);
         if (specError is not null)
@@ -504,12 +503,6 @@ public sealed class ScheduleFileSystem(
         spec.RunAt ?? (spec.Cron is not null
             ? cronValidator.GetNextOccurrence(spec.Cron, timeProvider.GetUtcNow(), timeProvider.LocalTimeZone)
             : null);
-
-    private static string ReplaceFirst(string text, string oldValue, string newValue)
-    {
-        var i = text.IndexOf(oldValue, StringComparison.Ordinal);
-        return i < 0 ? text : text[..i] + newValue + text[(i + oldValue.Length)..];
-    }
 
     private static bool IsReadOnlyFile(ScheduleNodeKind kind) =>
         kind is ScheduleNodeKind.StatusFile or ScheduleNodeKind.AgentInfoFile or ScheduleNodeKind.RunNowFile;

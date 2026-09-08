@@ -18,6 +18,7 @@ public static class EvalSuite
         .. MechanismScenarios.All,
         .. VoiceScenarios.All,
         .. HomeAssistantScenarios.All,
+        .. WatchScenarios.All,
         .. VaultScenarios.All,
         .. MountScenarios.All,
         .. DelegationScenarios.All,

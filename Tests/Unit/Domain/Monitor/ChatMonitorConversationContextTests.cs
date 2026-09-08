@@ -65,4 +65,30 @@ public class ChatMonitorConversationContextTests
         context.ConversationId.ShouldBe("conv-2");
         context.Origin.ShouldBe(new ReplyTarget("voice", "conv-2", "fran-office-01"));
     }
+
+    // An unprompted fire is on behalf of the person its author named: the watch's or the schedule's
+    // `userId` is the user the agent runs as, not the sender label the channel stamps on the fire.
+    [Fact]
+    public void BuildConversationContext_PrefersTheFiresUserIdOverItsSender()
+    {
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "watch-1", channelId: "homeassistant", agentId: "jonas") with
+        { Sender = "watch", UserId = "fran" };
+
+        var context = DeliveryTargetResolver.BuildConversationContext(message, []);
+
+        context.UserId.ShouldBe("fran");
+    }
+
+    [Fact]
+    public void BuildConversationContext_WithoutAUserId_TheSenderIsTheUser()
+    {
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "conv-1", channelId: "signalr", agentId: "jonas") with
+        { Sender = "test", UserId = null };
+
+        var context = DeliveryTargetResolver.BuildConversationContext(message, []);
+
+        context.UserId.ShouldBe("test");
+    }
 }

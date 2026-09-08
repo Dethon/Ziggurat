@@ -76,7 +76,7 @@ public sealed class ScheduleDispatcherService(
                 ? null
                 : cronValidator.GetNextOccurrence(schedule.CronExpression, now, timeProvider.LocalTimeZone);
 
-            var plan = ScheduleFirePlanner.Plan(schedule, settings.DefaultDeliverTo, nextRun, now);
+            var plan = ScheduleFirePlanner.Plan(schedule, settings.Delivery.DefaultDeliverTo, nextRun, now);
 
             // Emit before mutating the store: if no active session receives the
             // notification, leave the schedule due so the next tick retries instead of

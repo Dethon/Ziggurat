@@ -1,0 +1,704 @@
+using System.Text.Json.Nodes;
+using Domain.DTOs;
+using Domain.DTOs.Channel;
+using Domain.DTOs.FileSystem;
+using Domain.Exceptions;
+using Domain.Tools;
+using Domain.Tools.HomeAssistant.Vfs;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
+using Shouldly;
+using static Tests.Unit.Domain.HomeAssistant.Vfs.FakeHaClient;
+
+namespace Tests.Unit.Domain.HomeAssistant.Vfs;
+
+// A watch is a Home Assistant automation the agent writes as a file. What these pin is what the
+// agent reads and the errors it gets, and the automation the home received — never how the file
+// was rendered on the way.
+public class HaWatchesTests
+{
+    private static readonly DateTimeOffset _now = new(2026, 9, 5, 10, 0, 0, TimeSpan.Zero);
+
+    private const string BlindsWatch = """
+        {
+          "name": "Close the blinds when the living room is hot",
+          "triggers": [{"trigger": "numeric_state", "entity_id": "sensor.living_room_temperature", "above": 27}],
+          "conditions": [{"condition": "sun", "after": "sunrise"}],
+          "effects": [{"kind": "actions", "actions": [{"action": "cover.close_cover", "target": {"entity_id": "cover.living_room_blinds"}}]}]
+        }
+        """;
+
+    private static HaFileSystem Build(out FakeHaClient client, string? agentId = "jonas", ReplyTarget? origin = null)
+    {
+        client = new FakeHaClient
+        {
+            States =
+            {
+                Entity("sensor.living_room_temperature", "24", ("friendly_name", JsonValue.Create("Living room temperature"))),
+                Entity("cover.living_room_blinds", "open")
+            },
+            Services = { Service("cover", "close_cover", DomainTarget("cover")) }
+        };
+        var local = client;
+        var time = new FakeTimeProvider(_now);
+        var provider = new HaCatalogProvider(() => local, time);
+        return new HaFileSystem(provider, () => local, timeProvider: time,
+            caller: () => agentId is null ? null : new ConversationContext(agentId, "conv-1", "fran", origin ?? new ReplyTarget("telegram", "conv-1")));
+    }
+
+    // The model is never told which channel a turn came from, so "warn me where I asked" is the
+    // mount's to keep: a file naming no delivery takes the caller's origin, address included.
+    [Theory]
+    [InlineData("telegram", null, "telegram")]
+    [InlineData("voice", "kitchen-01", "voice:kitchen-01")]
+    [InlineData("signalr", null, "signalr")]
+    public async Task Create_WithoutDeliverTo_TakesTheCallersOwnChannel(string channel, string? address, string expected)
+    {
+        var fs = Build(out var client, origin: new ReplyTarget(channel, "conv-1", address));
+
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var meta = JsonNode.Parse(client.UpsertedAutomations.Single().Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe([expected]);
+        (await Read(fs, "watches/blinds-when-hot/watch.json"))["deliverTo"]!.AsArray().Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Create_WithADeliverTo_KeepsIt()
+    {
+        var fs = Build(out var client, origin: new ReplyTarget("voice", "conv-1", "kitchen-01"));
+
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch.Replace("\"conditions\"", "\"deliverTo\": [\"telegram\"], \"userId\": \"fran\", \"conditions\"")));
+
+        var meta = JsonNode.Parse(client.UpsertedAutomations.Single().Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["deliverTo"]!.ToJsonString().ShouldBe("""["telegram"]""");
+        meta["userId"]!.GetValue<string>().ShouldBe("fran");
+    }
+
+    // A replace that names no delivery keeps the watch's own, not the replacing caller's: "below
+    // 65, not 70" said on Telegram must not move a warning that was asked for on voice.
+    [Fact]
+    public async Task Replace_WithoutADeliverTo_KeepsTheWatchsOwnDelivery()
+    {
+        var fs = Build(out var client, origin: new ReplyTarget("voice", "conv-1", "kitchen-01"));
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var fromTelegram = Over(client, new ReplyTarget("telegram", "conv-2"));
+        await Ok(Create(fromTelegram, "blinds-when-hot", BlindsWatch.Replace("\"above\": 27", "\"above\": 30"), overwrite: true));
+
+        var meta = JsonNode.Parse(client.UpsertedAutomations.Last().Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe(["voice:kitchen-01"]);
+        (await Read(fs, "watches/blinds-when-hot/watch.json"))["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe(["voice:kitchen-01"]);
+    }
+
+    // The model is never told who is asking either, so a file naming no userId runs its prompts as
+    // the person whose turn wrote it: a fire attributed to nobody would read and write memory as a
+    // phantom user named after the channel.
+    [Fact]
+    public async Task Create_WithoutUserId_TakesTheCallersOwnUser()
+    {
+        var fs = Build(out var client);
+
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var meta = JsonNode.Parse(client.UpsertedAutomations.Single().Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["userId"]!.GetValue<string>().ShouldBe("fran");
+        (await Read(fs, "watches/blinds-when-hot/watch.json"))["userId"]!.GetValue<string>().ShouldBe("fran");
+    }
+
+    // A replace that names no user keeps the watch's own, as it keeps its delivery: whoever edits a
+    // threshold does not become the person the warning is for.
+    [Fact]
+    public async Task Replace_WithoutAUserId_KeepsTheWatchsOwnUser()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var asLaura = Over(client, new ReplyTarget("telegram", "conv-2"), userId: "laura");
+        await Ok(Create(asLaura, "blinds-when-hot", BlindsWatch.Replace("\"above\": 27", "\"above\": 30"), overwrite: true));
+
+        var meta = JsonNode.Parse(client.UpsertedAutomations.Last().Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["userId"]!.GetValue<string>().ShouldBe("fran");
+    }
+
+    [Fact]
+    public async Task Replace_WithADeliverTo_MovesTheDelivery()
+    {
+        var fs = Build(out var client, origin: new ReplyTarget("voice", "conv-1", "kitchen-01"));
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch.Replace("\"conditions\"", "\"deliverTo\": [\"telegram\"], \"conditions\""), overwrite: true));
+
+        var meta = JsonNode.Parse(client.UpsertedAutomations.Last().Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe(["telegram"]);
+    }
+
+    // A second mount over the same home, as another channel's turn would see it.
+    private static HaFileSystem Over(FakeHaClient client, ReplyTarget origin, string userId = "fran")
+    {
+        var time = new FakeTimeProvider(_now);
+        return new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
+            caller: () => new ConversationContext("jonas", origin.ConversationId!, userId, origin));
+    }
+
+    private static async Task<T> Ok<T>(Task<FsResult<T>> result) where T : class =>
+        (await result).ShouldBeOfType<FsResult<T>.Ok>().Value;
+
+    private static async Task<ToolErrorResult> Err<T>(Task<FsResult<T>> result) where T : class =>
+        (await result).ShouldBeOfType<FsResult<T>.Err>().Error;
+
+    private static Task<FsResult<FsCreateResult>> Create(HaFileSystem fs, string id, string content, bool overwrite = false) =>
+        fs.CreateAsync($"watches/{id}/watch.json", content, overwrite, true, CancellationToken.None);
+
+    private static async Task<JsonObject> Read(HaFileSystem fs, string path)
+    {
+        var read = await Ok(fs.ReadAsync(path, null, null, CancellationToken.None));
+        // The read is line-numbered like every other file on the mount; strip the numbers back off.
+        var text = string.Join("\n", read.Content.Split('\n').Select(l => l[(l.IndexOf(": ", StringComparison.Ordinal) + 2)..]));
+        return JsonNode.Parse(text)!.AsObject();
+    }
+
+    [Fact]
+    public async Task Glob_TheRoot_ListsTheWatchesDirectoryBesideEntitiesAndAreas()
+    {
+        var fs = Build(out _);
+
+        var entries = (await Ok(fs.GlobAsync("", "*/", CancellationToken.None))).Entries;
+
+        entries.ShouldBe(["areas/", "entities/", "watches/"]);
+    }
+
+    [Fact]
+    public async Task Create_AHomeActionWatch_BecomesAnAutomationTheHomeReceived()
+    {
+        var fs = Build(out var client);
+
+        var created = await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        created.Status.ShouldBe("created");
+        var (id, automation) = client.UpsertedAutomations.ShouldHaveSingleItem();
+        id.ShouldBe("assistant_watch_blinds-when-hot");
+        automation["id"]!.GetValue<string>().ShouldBe("assistant_watch_blinds-when-hot");
+        automation["alias"]!.GetValue<string>().ShouldBe("Close the blinds when the living room is hot");
+        automation["mode"]!.GetValue<string>().ShouldBe("single");
+        automation["triggers"]!.ToJsonString().ShouldBe(
+            """[{"trigger":"numeric_state","entity_id":"sensor.living_room_temperature","above":27}]""");
+        automation["conditions"]!.ToJsonString().ShouldBe("""[{"condition":"sun","after":"sunrise"}]""");
+        automation["actions"]!.ToJsonString().ShouldBe(
+            """[{"action":"cover.close_cover","target":{"entity_id":"cover.living_room_blinds"}}]""");
+        var meta = JsonNode.Parse(automation["description"]!.GetValue<string>())!["watch"]!;
+        meta["agentId"]!.GetValue<string>().ShouldBe("jonas");
+        meta["once"]!.GetValue<bool>().ShouldBeFalse();
+        meta["createdAt"]!.GetValue<string>().ShouldStartWith("2026-09-05T10:00:00");
+    }
+
+    // An edit whose text is not in the file is the caller's error, and the hint says whose spelling
+    // the file has: it is rendered from the automation, so the model reads it back before editing.
+    [Fact]
+    public async Task Edit_TextThatIsNotInTheFile_IsAnInvalidArgumentWithTheMountsHint()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var error = await Err(fs.EditAsync("watches/blinds-when-hot/watch.json",
+            [new TextEdit("\"above\": 28", "\"above\": 29")], CancellationToken.None));
+
+        error.ErrorCode.ShouldBe("invalid_argument");
+        error.Message.ShouldContain("Text not found");
+        error.Hint.ShouldNotBeNull();
+        error.Hint.ShouldContain("rendered from the automation");
+        client.UpsertedAutomations.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Edit_AWatchThatDoesNotExist_IsNotFound()
+    {
+        var fs = Build(out var client);
+
+        var error = await Err(fs.EditAsync("watches/no-such-watch/watch.json",
+            [new TextEdit("a", "b")], CancellationToken.None));
+
+        error.ErrorCode.ShouldBe("not_found");
+        client.UpsertedAutomations.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_ThenGlobAndRead_RoundTripsTheFile()
+    {
+        var fs = Build(out _);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var entries = (await Ok(fs.GlobAsync("watches", "**", CancellationToken.None))).Entries;
+        entries.ShouldBe(["watches/blinds-when-hot/", "watches/blinds-when-hot/status.json", "watches/blinds-when-hot/watch.json"]);
+
+        var watch = await Read(fs, "watches/blinds-when-hot/watch.json");
+        watch["name"]!.GetValue<string>().ShouldBe("Close the blinds when the living room is hot");
+        watch["triggers"]!.ToJsonString().ShouldBe(
+            """[{"trigger":"numeric_state","entity_id":"sensor.living_room_temperature","above":27}]""");
+        watch["conditions"]!.ToJsonString().ShouldBe("""[{"condition":"sun","after":"sunrise"}]""");
+        watch["effects"]!.ToJsonString().ShouldBe(
+            """[{"kind":"actions","actions":[{"action":"cover.close_cover","target":{"entity_id":"cover.living_room_blinds"}}]}]""");
+        watch["once"]!.GetValue<bool>().ShouldBeFalse();
+        watch["enabled"]!.GetValue<bool>().ShouldBeTrue();
+        // Named by nobody, so it is the caller's own channel — the Build helper's is Telegram.
+        watch["deliverTo"]!.ToJsonString().ShouldBe("""["telegram"]""");
+        watch["userId"]!.GetValue<string>().ShouldBe("fran");
+    }
+
+    [Fact]
+    public async Task Read_StatusFile_CarriesCreatedAtLastTriggeredEntityAndSpent()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+        client.Automations["assistant_watch_blinds-when-hot"].LastTriggered = _now.AddMinutes(30);
+
+        var status = await Read(fs, "watches/blinds-when-hot/status.json");
+
+        status["createdAt"]!.GetValue<string>().ShouldStartWith("2026-09-05T10:00:00");
+        status["lastTriggeredAt"]!.GetValue<string>().ShouldStartWith("2026-09-05T10:30:00");
+        status["automationEntity"]!.GetValue<string>().ShouldBe(client.Automations["assistant_watch_blinds-when-hot"].EntityId);
+        status["spent"]!.GetValue<bool>().ShouldBeFalse();
+        status["enabled"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Info_TheWatchesRootADirectoryAndItsFiles_Exist_AndAnUnknownWatchDoesNot()
+    {
+        var fs = Build(out _);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        (await Ok(fs.InfoAsync("watches", CancellationToken.None))).ShouldSatisfyAllConditions(
+            i => i.Exists.ShouldBeTrue(), i => i.IsDirectory.ShouldBe(true));
+        (await Ok(fs.InfoAsync("watches/blinds-when-hot", CancellationToken.None))).ShouldSatisfyAllConditions(
+            i => i.Exists.ShouldBeTrue(), i => i.IsDirectory.ShouldBe(true));
+        (await Ok(fs.InfoAsync("watches/blinds-when-hot/watch.json", CancellationToken.None))).ShouldSatisfyAllConditions(
+            i => i.Exists.ShouldBeTrue(), i => i.IsDirectory.ShouldBe(false));
+        (await Ok(fs.InfoAsync("watches/ghost/watch.json", CancellationToken.None))).Exists.ShouldBeFalse();
+    }
+
+    // The failure this pins is the one alarms had: a change that ends as two records. Editing a
+    // watch replaces the same automation; the home holds one, under the same id, with the new value.
+    [Fact]
+    public async Task Edit_ChangesTheThresholdInPlace_LeavingOneAutomationUnderTheSameId()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var edited = await Ok(fs.EditAsync("watches/blinds-when-hot/watch.json",
+            [new TextEdit("\"above\": 27", "\"above\": 29")], CancellationToken.None));
+
+        edited.Status.ShouldBe("edited");
+        client.Automations.Keys.ShouldBe(["assistant_watch_blinds-when-hot"]);
+        client.UpsertedAutomations.Count.ShouldBe(2);
+        client.UpsertedAutomations[1].Config["triggers"]![0]!["above"]!.GetValue<int>().ShouldBe(29);
+        // The creator and the creation instant survive the replacement.
+        var meta = JsonNode.Parse(client.UpsertedAutomations[1].Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["agentId"]!.GetValue<string>().ShouldBe("jonas");
+        meta["createdAt"]!.GetValue<string>().ShouldStartWith("2026-09-05T10:00:00");
+        (await Read(fs, "watches/blinds-when-hot/watch.json"))["triggers"]![0]!["above"]!.GetValue<int>().ShouldBe(29);
+    }
+
+    [Fact]
+    public async Task Create_AnExistingWatch_RefusesWithoutOverwrite_AndReplacesWithIt()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var refused = await Err(Create(fs, "blinds-when-hot", BlindsWatch));
+        refused.ErrorCode.ShouldBe("already_exists");
+        refused.Hint.ShouldNotBeNull().ShouldContain("overwrite");
+
+        var replaced = await Ok(Create(fs, "blinds-when-hot", BlindsWatch.Replace("\"above\": 27", "\"above\": 30"), overwrite: true));
+        replaced.Status.ShouldBe("replaced");
+        client.Automations.Count.ShouldBe(1);
+        client.Automations["assistant_watch_blinds-when-hot"].Config["triggers"]![0]!["above"]!.GetValue<int>().ShouldBe(30);
+    }
+
+    [Theory]
+    [InlineData("watches/blinds-when-hot")]
+    [InlineData("watches/blinds-when-hot/watch.json")]
+    public async Task Delete_TheDirectoryOrTheFile_RemovesTheAutomationFromTheHome(string path)
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var deleted = await Ok(fs.DeleteAsync(path, CancellationToken.None));
+
+        deleted.Status.ShouldBe("deleted");
+        client.DeletedAutomations.ShouldBe(["assistant_watch_blinds-when-hot"]);
+        client.Automations.ShouldBeEmpty();
+        (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
+        (await Err(fs.DeleteAsync(path, CancellationToken.None))).ErrorCode.ShouldBe("not_found");
+    }
+
+    [Theory]
+    [InlineData("not json", "not valid JSON")]
+    [InlineData("[]", "must be a JSON object")]
+    [InlineData("""{"triggers":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"x"}]}""", "name is required")]
+    [InlineData("""{"name":"x","triggers":[],"effects":[{"kind":"prompt","prompt":"x"}]}""", "triggers must be a non-empty list")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[]}""", "effects must be a non-empty list")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"email","to":"x"}]}""", "effects[0].kind 'email' is not one of prompt, announce, actions")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"announce","text":"hi"}]}""", "effects[0].target is required")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"actions","actions":[]}]}""", "effects[0].actions must be a non-empty list")]
+    [InlineData("""{"name":"x","trigger":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"x"}]}""", "unknown field 'trigger'")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"x"}],"deliverTo":"telegram"}""", "deliverTo must be a list")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"conditions":{"condition":"sun"},"effects":[{"kind":"prompt","prompt":"x"}]}""", "conditions must be a list")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"x"}],"userId":7}""", "userId must be a string")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"x"}],"once":"yes"}""", "once must be true or false")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"x"}],"enabled":1}""", "enabled must be true or false")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"announce","text":"hi","target":{"all":true},"insistent":true}]}""", "effects[0].insistent must be an object")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"kind":"prompt","prompt":"   "}]}""", "effects[0].prompt must not be empty")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":[{"prompt":"x"}]}""", "effects[0].kind is required")]
+    [InlineData("""{"name":"x","triggers":[{"trigger":"state"}],"effects":["prompt"]}""", "effects[0] must be an object with a kind")]
+    public async Task Create_AMalformedFile_IsAnInvalidArgumentNamingTheField(string content, string expected)
+    {
+        var fs = Build(out var client);
+
+        var error = await Err(Create(fs, "bad", content));
+
+        error.ErrorCode.ShouldBe("invalid_argument");
+        error.Message.ShouldContain(expected);
+        client.UpsertedAutomations.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_ATriggerHomeAssistantRejects_CarriesItsOwnMessage()
+    {
+        var fs = Build(out var client);
+        client.AutomationRejection = new HomeAssistantConfigRejectedException(
+            "Message malformed: required key not provided @ data['triggers'][0]['entity_id']");
+
+        var error = await Err(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        error.ErrorCode.ShouldBe("invalid_argument");
+        error.Message.ShouldContain("required key not provided @ data['triggers'][0]['entity_id']");
+        client.Automations.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_WithoutAConversationContext_IsRefused_BecauseAWatchNeedsItsCreator()
+    {
+        var fs = Build(out var client, agentId: null);
+
+        var error = await Err(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        error.ErrorCode.ShouldBe("invalid_argument");
+        error.Message.ShouldContain("creating agent");
+        client.UpsertedAutomations.ShouldBeEmpty();
+    }
+
+    // An id that parses as a watch id but is not a slug is refused by name, with the shape asked for;
+    // one that is too long to be an automation id counts too.
+    [Theory]
+    [InlineData("Blinds When Hot")]
+    [InlineData("blinds.when.hot")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task Create_AnIdThatIsNotASlug_IsAnInvalidArgumentNamingTheShape(string id)
+    {
+        var fs = Build(out var client);
+
+        var error = await Err(fs.CreateAsync($"watches/{id}/watch.json", BlindsWatch, false, true, CancellationToken.None));
+
+        error.ErrorCode.ShouldBe("invalid_argument");
+        error.Message.ShouldContain($"'{id}' is not a valid watch id");
+        client.UpsertedAutomations.ShouldBeEmpty();
+    }
+
+    // A slash makes another path, not a bad id: a deeper path is nowhere a watch can be, and an
+    // empty segment collapses to the directory itself. Both are refused as not-the-place.
+    [Theory]
+    [InlineData("watches/blinds/when/watch.json")]
+    [InlineData("watches//watch.json")]
+    public async Task Create_APathThatIsNotAWatchFile_IsRefusedAsNotThePlace(string path)
+    {
+        var fs = Build(out var client);
+
+        var error = await Err(fs.CreateAsync(path, BlindsWatch, false, true, CancellationToken.None));
+
+        error.ErrorCode.ShouldBe("unsupported_operation");
+        error.Message.ShouldContain("/ha/watches/<id>/watch.json");
+        client.UpsertedAutomations.ShouldBeEmpty();
+    }
+
+    // The alarm bridge and any blueprint are automations too. They are the operator's, so the
+    // subtree never lists them and no write through it can reach them — while they stay visible
+    // where every entity is.
+    [Fact]
+    public async Task Glob_AHandMadeAutomation_IsAbsentFromWatchesAndPresentUnderEntities()
+    {
+        var fs = Build(out var client);
+        client.SeedAutomation("voice_alarm_bridge", new JsonObject
+        {
+            ["alias"] = "Voice alarm bridge",
+            ["description"] = "Bridges the alarms calendar to the voice hub.",
+            ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "time_pattern", ["seconds"] = 5 }),
+            ["actions"] = new JsonArray()
+        });
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var watches = (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries;
+        watches.ShouldBe(["watches/blinds-when-hot/"]);
+        (await Ok(fs.InfoAsync("watches/voice_alarm_bridge/watch.json", CancellationToken.None))).Exists.ShouldBeFalse();
+        (await Err(fs.DeleteAsync("watches/voice_alarm_bridge", CancellationToken.None))).ErrorCode.ShouldBe("not_found");
+
+        var entities = (await Ok(fs.GlobAsync("entities/automation", "*/", CancellationToken.None))).Entries;
+        entities.ShouldContain(e => e.Contains("voice_alarm_bridge"));
+    }
+
+    // A prefixed automation whose description is not the metadata is not a watch either: somebody
+    // edited it in the UI, or wrote one by hand under the prefix. It stays theirs.
+    [Fact]
+    public async Task Glob_APrefixedAutomationWithoutMetadata_IsNotAWatch()
+    {
+        var fs = Build(out var client);
+        client.SeedAutomation("assistant_watch_handmade", new JsonObject
+        {
+            ["alias"] = "Hand made", ["description"] = "edited in the UI",
+            ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state" }), ["actions"] = new JsonArray()
+        });
+
+        (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
+        (await Err(fs.ReadAsync("watches/handmade/watch.json", null, null, CancellationToken.None))).ErrorCode.ShouldBe("not_found");
+    }
+
+    // Staying theirs is right; vanishing without a word is not. The prefix is ours, so a prefixed
+    // automation the subtree cannot read is said in the log by its id — the automation keeps
+    // running in the home, and "my watch disappeared" needs somewhere to start.
+    [Fact]
+    public async Task Glob_APrefixedAutomationWithoutMetadata_IsSaidInTheLog()
+    {
+        var client = new FakeHaClient();
+        var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        var time = new FakeTimeProvider(_now);
+        var watches = new HaWatches(() => client, time, logs.CreateLogger("watches"));
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time, watches: watches);
+        client.SeedAutomation("assistant_watch_handmade", new JsonObject
+        {
+            ["alias"] = "Hand made", ["description"] = "edited in the UI",
+            ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state" }), ["actions"] = new JsonArray()
+        });
+
+        (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
+
+        logs.Messages.ShouldContain(m => m.Contains("assistant_watch_handmade") && m.Contains("description"));
+    }
+
+    // 2. A watch created paused whose entity the home has not loaded yet cannot be turned off, and
+    // is armed until it is: the result says so instead of reporting a pause that did not happen.
+    [Fact]
+    public async Task Create_PausedWhenTheEntityNeverAppears_SaysTheWatchIsStillArmed()
+    {
+        var client = new FakeHaClient { EntityLagListings = 100 };
+        var time = new ArmedClock(_now);
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
+            caller: () => new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1")));
+
+        // Each advance waits for the write to arm the retry delay it ends; advancing on a yield
+        // guessed at that ordering and hung the run when the guess lost.
+        var write = Create(fs, "wash-done", OnceWatch);
+        for (var step = 0; step < 4; step++)
+        {
+            await time.AdvancePastAsync(TimeSpan.FromMilliseconds(200), previously: step);
+        }
+        var created = await Ok(write);
+
+        created.Status.ShouldBe("created");
+        created.Note.ShouldNotBeNull();
+        created.Note.ShouldContain("armed");
+        client.Calls.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("entities/cover/living_room_blinds/state.json")]
+    [InlineData("entities/cover/living_room_blinds/close_cover.sh")]
+    [InlineData("areas/unassigned/cover.living_room_blinds/state.json")]
+    [InlineData("watches/blinds-when-hot/status.json")]
+    [InlineData("watches/blinds-when-hot/notes.txt")]
+    [InlineData("notes.txt")]
+    public async Task CreateAndEdit_AnywhereButAWatchFile_AreRefused(string path)
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var create = await Err(fs.CreateAsync(path, "{}", true, true, CancellationToken.None));
+        var edit = await Err(fs.EditAsync(path, [new TextEdit("a", "b")], CancellationToken.None));
+
+        create.ErrorCode.ShouldBe("unsupported_operation");
+        create.Message.ShouldContain("/ha/watches/<id>/watch.json");
+        edit.ErrorCode.ShouldBe("unsupported_operation");
+        client.UpsertedAutomations.Count.ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData("entities/cover/living_room_blinds")]
+    [InlineData("entities/cover/living_room_blinds/state.json")]
+    [InlineData("watches/blinds-when-hot/status.json")]
+    [InlineData("watches")]
+    public async Task Delete_AnywhereButAWatch_IsRefused(string path)
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+
+        var error = await Err(fs.DeleteAsync(path, CancellationToken.None));
+
+        error.ErrorCode.ShouldBe("unsupported_operation");
+        client.DeletedAutomations.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Glob_ScopedToAnEntity_DoesNotAskTheHomeForItsWatches()
+    {
+        var fs = Build(out var client);
+        client.SeedAutomation("assistant_watch_x", new JsonObject
+        {
+            ["alias"] = "X", ["description"] = new HaWatchMetadata("jonas", [new HaPromptEffect("p")], false, null, null, _now).ToJson(),
+            ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state" }), ["actions"] = new JsonArray()
+        });
+
+        var entries = (await Ok(fs.GlobAsync("entities/cover", "*/", CancellationToken.None))).Entries;
+
+        entries.ShouldBe(["entities/cover/living_room_blinds/"]);
+        client.AutomationListings.ShouldBe(0);
+    }
+
+    private const string ArmedOnceWatch = """
+        {
+          "name": "Tell me when the wash is done",
+          "triggers": [{"trigger": "state", "entity_id": "cover.living_room_blinds", "to": "closed"}],
+          "effects": [{"kind": "prompt", "prompt": "The wash is done."}],
+          "once": true,
+          "enabled": true
+        }
+        """;
+
+    private const string OnceWatch = """
+        {
+          "name": "Tell me when the wash is done",
+          "triggers": [{"trigger": "state", "entity_id": "cover.living_room_blinds", "to": "closed"}],
+          "effects": [{"kind": "prompt", "prompt": "The wash is done."}],
+          "once": true,
+          "enabled": false
+        }
+        """;
+
+    // A one-shot is spent when it fired and turned itself off — not when it was merely paused. The
+    // guide tells the agent to remove spent watches, so a paused one-shot read as spent is deleted.
+    [Fact]
+    public async Task Read_StatusFile_APausedOneShotThatNeverFired_IsNotSpent()
+    {
+        var fs = Build(out _);
+        await Ok(Create(fs, "wash-done", OnceWatch));
+
+        var status = await Read(fs, "watches/wash-done/status.json");
+
+        status["enabled"]!.GetValue<bool>().ShouldBeFalse();
+        status["spent"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Read_StatusFile_AOneShotThatFiredAndTurnedItselfOff_IsSpent()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "wash-done", ArmedOnceWatch));
+        client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
+        client.Automations["assistant_watch_wash-done"].IsOn = false;
+
+        var status = await Read(fs, "watches/wash-done/status.json");
+
+        status["spent"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    // A fire the callback refused leaves the one-shot armed with `last_triggered` stamped. Paused
+    // afterwards through the file, it is off with a fire on record — the same shape as a spent one
+    // — and must still read as paused: the agent removes spent watches, never paused ones.
+    [Fact]
+    public async Task Read_StatusFile_AOneShotWhoseFireWasRefused_ThenPaused_IsNotSpent()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "wash-done", ArmedOnceWatch));
+        client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
+
+        await Ok(fs.EditAsync("watches/wash-done/watch.json",
+            [new TextEdit("\"enabled\": true", "\"enabled\": false")], CancellationToken.None));
+
+        var status = await Read(fs, "watches/wash-done/status.json");
+        status["enabled"]!.GetValue<bool>().ShouldBeFalse();
+        status["spent"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    // A spent watch rewritten without `enabled: true` stays off, as the guide says, and reads as
+    // paused from then on: the agent that kept it off chose to, and a listing must not remove it.
+    [Fact]
+    public async Task Read_StatusFile_ASpentOneShotEditedButNotReArmed_ReadsAsPaused()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "wash-done", ArmedOnceWatch));
+        client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
+        client.Automations["assistant_watch_wash-done"].IsOn = false;
+        (await Read(fs, "watches/wash-done/status.json"))["spent"]!.GetValue<bool>().ShouldBeTrue();
+
+        await Ok(fs.EditAsync("watches/wash-done/watch.json",
+            [new TextEdit("The wash is done.", "The wash is done; say so.")], CancellationToken.None));
+
+        var status = await Read(fs, "watches/wash-done/status.json");
+        status["enabled"]!.GetValue<bool>().ShouldBeFalse();
+        status["spent"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    // Re-armed through the file and fired again, it is spent as any one-shot is.
+    [Fact]
+    public async Task Read_StatusFile_AReArmedOneShotThatThenFires_IsSpent()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "wash-done", OnceWatch));
+        await Ok(fs.EditAsync("watches/wash-done/watch.json",
+            [new TextEdit("\"enabled\": false", "\"enabled\": true")], CancellationToken.None));
+        client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
+        client.Automations["assistant_watch_wash-done"].IsOn = false;
+
+        var status = await Read(fs, "watches/wash-done/status.json");
+
+        status["spent"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    // The catalog answers a glob from its cache when the home is down; the watches, read live, must
+    // degrade the same way rather than turn the whole listing into an error.
+    [Fact]
+    public async Task Glob_TheRoot_WhenTheHomeCannotListItsAutomations_StillListsTheCatalog()
+    {
+        var fs = Build(out var client);
+        client.AutomationListingFailure = new HomeAssistantException("connection refused", 503);
+
+        var entries = (await Ok(fs.GlobAsync("", "*/", CancellationToken.None))).Entries;
+
+        entries.ShouldBe(["areas/", "entities/", "watches/"]);
+    }
+
+    // Metadata naming no creating agent is not a watch's: a prompt fire would otherwise run as an
+    // agent nobody chose.
+    [Fact]
+    public async Task Glob_APrefixedAutomationWhoseMetadataNamesNoAgent_IsNotAWatch()
+    {
+        var fs = Build(out var client);
+        client.SeedAutomation("assistant_watch_orphan", new JsonObject
+        {
+            ["alias"] = "Orphan", ["description"] = """{"watch": {"effects": [{"kind": "prompt", "prompt": "p"}]}}""",
+            ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state" }), ["actions"] = new JsonArray()
+        });
+
+        (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
+    }
+
+    // An empty list names no delivery, so it takes the caller's channel like an absent one.
+    [Fact]
+    public async Task Create_WithAnEmptyDeliverTo_TakesTheCallersOwnChannel()
+    {
+        var fs = Build(out var client, origin: new ReplyTarget("voice", "conv-1", "kitchen-01"));
+        var content = BlindsWatch.TrimEnd().TrimEnd('}') + ", \"deliverTo\": []}";
+
+        await Ok(Create(fs, "blinds-when-hot", content));
+
+        var meta = JsonNode.Parse(client.UpsertedAutomations.Single().Config["description"]!.GetValue<string>())!["watch"]!;
+        meta["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe(["voice:kitchen-01"]);
+    }
+}

@@ -36,7 +36,11 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   nine servers that offer the agent things to call. Being a tool server and being a channel server
   are independent, so a dual-role server calls `AddToolServer` and then `AddChannelServer`.
 - **The error filter is one shared registration, installed at most once.** A cancelled call
-  propagates as the abort it is; anything else is logged and becomes the caller's error result. Two
+  propagates as the abort it is; anything else is logged and becomes the caller's error result. It
+  also enters the call's `ConversationContext` (`Domain/Channels/CallerContext.cs`, from the
+  request's `_meta`) for the duration of the call, so a filesystem backend — which never sees the
+  request — can still ask who is calling; absent means the call carried none, and a consumer
+  refuses rather than guesses. Two
   filters nested around each other would let the outer one convert the very cancellation the inner
   rethrows, so a second ask is a no-op and the first ask's error shape wins.
 - **`Tests/Integration/McpServers/McpServerRegistrations.cs` is the one server table.** Fourteen

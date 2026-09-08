@@ -16,6 +16,7 @@
            writes a topic. That is what makes the retention policy one file rather than a block
            per host, and what puts it in each container image without a Dockerfile knowing. -->
       <Content Include="retention.json" CopyToOutputDirectory="PreserveNewest" />
+      <Content Include="delivery.json" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup>

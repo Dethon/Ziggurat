@@ -1,5 +1,6 @@
 using System.Net;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpServerScheduling.Modules;
 using McpServerScheduling.Settings;
@@ -28,7 +29,7 @@ public class McpSchedulingServerFixture : IAsyncLifetime
         {
             RedisConnectionString = _redis.ConnectionString,
             DispatchIntervalSeconds = 3600,
-            DefaultDeliverTo = ["signalr"]
+            Delivery = new DeliverySettings { DefaultDeliverTo = ["signalr"] }
         };
 
         var builder = WebApplication.CreateBuilder();

@@ -23,6 +23,21 @@ public static class Arg
             args => Read(args, name) is { ValueKind: JsonValueKind.String } element
                     && Regex.IsMatch(element.GetString() ?? "", pattern, RegexOptions.IgnoreCase));
 
+    // A question about an argument whatever its shape — a list of edits, a nested object — asked of
+    // its JSON text. For the edits an fs_edit carries, where what a scenario wants to know is which
+    // value the model wrote and not which of several edits carried it.
+    public static ArgumentMatcher Mentions(string name, string pattern) =>
+        new($"{name} mentions /{pattern}/",
+            args => Read(args, name) is { } element
+                    && Regex.IsMatch(element.GetRawText(), pattern, RegexOptions.IgnoreCase));
+
+    // The negative question: a document that must not carry something — a delivery to a channel
+    // the agent does not have. Absent argument counts as lacking it.
+    public static ArgumentMatcher Lacks(string name, string pattern) =>
+        new($"{name} lacks /{pattern}/",
+            args => Read(args, name) is not { ValueKind: JsonValueKind.String } element
+                    || !Regex.IsMatch(element.GetString() ?? "", pattern, RegexOptions.IgnoreCase));
+
     // A flag, which is a boolean and not a string: `snapshot: true` on a browse is what the web
     // contract asks for, and the string matchers above would silently never match it.
     public static ArgumentMatcher Flag(string name, bool value) =>

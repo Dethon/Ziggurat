@@ -128,6 +128,38 @@ public class DeliveryTargetResolverTests
         capturedPrompt.ShouldBe("Check qBittorrent for stalled torrents");
     }
 
+    // A minted conversation is named after what raised it. A schedule has no name of its own and
+    // keeps the label it always had; a watch carries its name on the origin, so the sidebar says
+    // "Laura's sugar" rather than "Scheduled task" for a fire that was never a schedule.
+    [Theory]
+    [InlineData(null, "Scheduled task")]
+    [InlineData("Laura's sugar", "Laura's sugar")]
+    public async Task ResolveDeliveryTargets_WhenMintingConversation_TitlesItAfterTheOrigin(string? title, string expected)
+    {
+        var origin = Channel("homeassistant");
+        var captor = new Mock<IChannelConnection>();
+        captor.SetupGet(c => c.ChannelId).Returns("signalr");
+        string? topic = null;
+        captor.Setup(c => c.CreateConversationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string t, string _, string? _, string? _, string? _, CancellationToken _) => topic = t)
+            .ReturnsAsync("minted-signalr");
+        var msg = new ChannelMessage
+        {
+            ConversationId = "fire-1",
+            Content = "Her sugar is 183",
+            Sender = "watch",
+            ChannelId = "homeassistant",
+            AgentId = "jonas",
+            ReplyTo = [new ReplyTarget("signalr", null)],
+            Origin = new MessageOrigin(MessageOriginKind.Watch, null, WatchId: "laura-sugar-high", Title: title)
+        };
+
+        await Resolver(origin, captor.Object).ResolveAsync(msg, origin, CancellationToken.None);
+
+        topic.ShouldBe(expected);
+    }
+
     [Fact]
     public async Task ResolveDeliveryTargets_WhenMintingThrows_SkipsTargetInsteadOfThrowing()
     {
