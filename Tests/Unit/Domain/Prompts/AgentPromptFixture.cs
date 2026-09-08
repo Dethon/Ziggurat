@@ -9,7 +9,7 @@ namespace Tests.Unit.Domain.Prompts;
 //
 // Half of a prompt is served by MCP servers at session warmup, so nothing in a unit test can fetch
 // it. What it can do is bind each declaration to the text this repo hands that server, which is the
-// same text — `McpServerScheduling` serves `SchedulingPrompt.Build(...)` and nothing else. The
+// same text — `McpServerScheduling` serves `SchedulingPrompt.Prompt` and nothing else. The
 // samples below are therefore the source of truth for what a server will serve, and the parameters
 // they are built with are fixed here so a snapshot moves only when a prompt does.
 internal static class AgentPromptFixture
@@ -46,7 +46,7 @@ internal static class AgentPromptFixture
             [DownloaderPrompt.Name] = DownloaderPrompt.AgentSystemPrompt,
             [IdealistaPrompt.Name] = IdealistaPrompt.SystemPrompt,
             [HomeAssistantPrompt.Name] = HomeAssistantPrompt.SystemPrompt,
-            [SchedulingPrompt.Name] = SchedulingPrompt.Build("Europe/Madrid"),
+            [SchedulingPrompt.Name] = SchedulingPrompt.Prompt,
             [PrintingPrompt.Name] = PrintingPrompt.Build("text,jpeg"),
             [TimerPrompt.Name] = TimerPrompt.Build([])
         };
@@ -54,7 +54,7 @@ internal static class AgentPromptFixture
     // What each server ships as skills, bound to the manifest exactly as the client manager binds
     // what it reads off the wire: the served description and the served body, under the declaration.
     public static IReadOnlyDictionary<string, PromptSkill> ServedSkills { get; } =
-        new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text }
+        new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.For("Europe/Madrid") }
             .ToDictionary(
                 text => text.Name,
                 text => PromptManifest.BindSkill(text.Name, text.Description, text.Body),

@@ -164,11 +164,11 @@ public class PromptStalenessTests
             $"{name} teaches paths under roots nothing mounts: {string.Join(", ", stale)}");
     }
 
-    // The scheduling prompt is worked examples end to end, so it names more tools than any other.
+    // The scheduling skill is worked examples end to end, so it names more tools than any other.
     [Fact]
-    public void SchedulingPrompt_NamesTheToolLeavesThatAreActuallyExposed()
+    public void SchedulingSkill_NamesTheToolLeavesThatAreActuallyExposed()
     {
-        var prompt = AgentPromptFixture.ServedText[SchedulingPrompt.Name];
+        var prompt = AgentPromptFixture.ServedSkills[SchedulingSkill.Name].Body;
 
         foreach (var tool in (string[])
                  [

@@ -93,6 +93,14 @@ public static class MechanismScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            // The file's fields are in the skill's body; the choice of a schedule over a timer
+            // is made before it, in the stub.
+            new CallExpectation
+            {
+                Label = "skill",
+                Tool = EvalTools.LoadSkill,
+                Arguments = [Arg.Is("skillName", SchedulingSkill.Name)]
+            },
             new CallExpectation
             {
                 Label = "schedule",
@@ -120,7 +128,9 @@ public static class MechanismScenarios
             new CallPermission(EvalTools.Info, "/ha*"),
             HomeAssistantScenarios.MayLoadASkill
         ],
-        CallCeiling = 7,
+        Ordering = [new OrderingConstraint("skill", "schedule")],
+        CallCeiling = 8,
+        Claims = [SchedulingSkill.LoadsForAScheduleRequest.Id],
         Guards =
         [
             new Guard(TimerPrompt.AgentActsIsAScheduledTask.Id,

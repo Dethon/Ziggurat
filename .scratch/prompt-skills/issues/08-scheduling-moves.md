@@ -4,11 +4,14 @@
 
 **Blocked by:** 07
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A full-tier eval pass runs on the base commit first and its scorecard is backed up.
-- [ ] The server serves the stub as its prompt and the skill as resources; agent snapshots show the stub and the advertisement; the body snapshot is under its budget.
-- [ ] The family's scenarios cite the trigger claim and require the load; mechanism scenarios still pass with no load required.
-- [ ] Every moved claim is cited or guarded as before; the commit notes each demonstrated red.
-- [ ] A full-tier pass after the move shows no claim rate below the backed-up scorecard; the ceiling is lowered to remaining plus headroom.
-- [ ] Spec: `.scratch/prompt-skills/spec.md` § Rollout.
+- [x] A full-tier eval pass runs on the base commit first and its scorecard is backed up.
+- [x] The server serves the stub as its prompt and the skill as resources; agent snapshots show the stub and the advertisement; the body snapshot is under its budget.
+- [x] The family's scenarios cite the trigger claim and require the load; mechanism scenarios still pass with no load required.
+- [x] Every moved claim is cited or guarded as before; the commit notes each demonstrated red.
+- [x] A full-tier pass after the move shows no claim rate below the backed-up scorecard; the ceiling is lowered to remaining plus headroom.
+- [x] Spec: `.scratch/prompt-skills/spec.md` § Rollout.
+
+Result (2026-09-08): base 72/73, 219/228 (`…after-web-skill.json`); after the move 70/73, 219/228 (`…after-scheduling-skill.json`), 2 spurious loads in 228. The scheduling scenario is green. The three reds are elsewhere and recurring: the ringing-alarm voice turn loading `home-assistant` (ticket 10's countdown-timers description names "ringing now"), the night-time watch editing the seeded watch instead of adding one (a watch body rule, 1/3–2/3 across the day's passes), and the delegated research reply at seven sentences against five. The section declared no claims, so the demonstrated red is informational only: with the body deleted the schedule was still written correctly 3/3 (`…scheduling-body-deleted.json`) — the file's shape is in the mount's description. The live agent list the server appends stays with the stub. Nabu 8,065 → 6,976 tokens; ceiling 12,200 → 11,000.
+

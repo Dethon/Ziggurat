@@ -26,7 +26,7 @@ public static class PromptManifest
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated.
-    public const int StandingTokens = 12_200;
+    public const int StandingTokens = 11_000;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -167,9 +167,11 @@ public static class PromptManifest
         new()
         {
             Name = SchedulingPrompt.Name,
-            Purpose = "Scheduled tasks as files: creating, listing, editing and firing one.",
+            Purpose = "That a schedule is a deferred action of the agent's own, never a human reminder, and that writing one loads the skill.",
             Priority = PromptPriority.Client,
-            TokenBudget = 2_000,
+            // The stub plus the live agent list the server appends: the file's rules are the
+            // scheduling skill. Ratcheted from 2,000.
+            TokenBudget = 700,
             ServedBy = "mcp-scheduling"
         },
         new()
@@ -270,6 +272,15 @@ public static class PromptManifest
             BodyBudget = 1_400,
             ServedBy = "mcp-websearch",
             Claims = WebBrowsingSkill.Claims
+        },
+        new()
+        {
+            Name = SchedulingSkill.Name,
+            Description = SchedulingSkill.Description,
+            DescriptionBudget = 130,
+            BodyBudget = 1_300,
+            ServedBy = "mcp-scheduling",
+            Claims = SchedulingSkill.Claims
         }
     ];
 
