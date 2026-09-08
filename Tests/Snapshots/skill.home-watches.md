@@ -1,4 +1,4 @@
-# home-watches — description 103 / 120 tokens, body 1481 / 2200 tokens, served by mcp-homeassistant
+# home-watches — description 103 / 120 tokens, body 1500 / 2200 tokens, served by mcp-homeassistant
 
 ================================================================================================
 
@@ -7,7 +7,7 @@ name: home-watches
 description: Writing, changing, pausing or removing a watch: a standing instruction the home runs when an entity's state meets a condition ("warn me when the sugar passes 180", "close the blinds when it gets hot", "tell me when the washer finishes"). Only for watches — not for switching or reading a device, an alarm, a reminder, a timer or music. The watch.json shape, trigger and effect kinds, delivery, once and enabled.
 ---
 
-A watch is a file: `text_create /ha/watches/<id>/watch.json` (`<id>` is a descriptive slug you
+A watch is a file: `domain__filesystem__text_create` on `/ha/watches/<id>/watch.json` (`<id>` is a descriptive slug you
 choose, as a schedule's is). The same `<id>` is the same watch, so a change replaces it in place.
 The setup index you read this turn says which entities and which watches exist: a new watch is
 written from the request, the entity id the index lists and this guide, without listing or
@@ -76,9 +76,9 @@ entity id and wording are invented, and the real ones come from the index and th
   exists ("warn me below 65, not 70"). A request that ADDS a reaction beside it — a second
   threshold with its own effect, a night-only alarm next to a daytime warning — is a new
   watch under its own id, and the existing one keeps running as it was: never overwrite a
-  watch the user did not ask to change. `remove /ha/watches/<id>` removes it from the home.
+  watch the user did not ask to change. `domain__filesystem__remove` on `/ha/watches/<id>` removes it from the home.
 - `status.json` beside it is read-only: `createdAt`, `lastTriggeredAt`, `automationEntity`,
-  `spent`. To list watches, `glob /ha/watches/*/` and read each `watch.json`.
+  `spent`. To list watches, `domain__filesystem__glob` on `/ha/watches/*/` and read each `watch.json`.
 - A watch needs no approval, even one that acts on the home: create it in the same turn.
   Then say it back to the user in one sentence — entity, direction, threshold, any `for`,
   what it does and where it delivers — from what you just wrote, so a misunderstanding is

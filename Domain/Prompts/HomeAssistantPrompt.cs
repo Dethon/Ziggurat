@@ -18,8 +18,8 @@ public static class HomeAssistantPrompt
         built when it is read, so it is never stale. A home task — switching, setting or reading a
         device, a question about its past, an alarm or reminder, music — starts with two calls in
         the same turn, before anything else: load the `home-assistant` skill, which carries the
-        layout, the workflow, how a result is read, history, alarms and music, and `file_read
-        /ha/setup-index.md`. One read replaces every exploratory `glob`. A watch is the one home
+        layout, the workflow, how a result is read, history, alarms and music, and `domain__filesystem__file_read`
+        on `/ha/setup-index.md`. One read replaces every exploratory `glob`. A watch is the one home
         task with a skill of its own, below.
 
         ### Scope
@@ -62,7 +62,8 @@ public static class HomeAssistantPrompt
         Before you write, change, pause or remove a watch — and only then: no other home task
         needs it — load the `home-watches` skill, which carries the file's shape, the trigger and
         effect kinds, and the delivery rules. A watch takes two calls before the write, like any
-        home task — `file_read /ha/setup-index.md` for the entity's id and the watches that exist,
+        home task — `domain__filesystem__file_read` on `/ha/setup-index.md` for the entity's id and
+        the watches that exist,
         and that one skill; it does not need `home-assistant`.
 
         ### Area ids

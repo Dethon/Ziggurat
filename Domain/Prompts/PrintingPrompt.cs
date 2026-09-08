@@ -48,7 +48,7 @@ public static class PrintingPrompt
           transform it into one — typically plain text or a JPEG. For example: render a PDF, web page,
           chart, or PNG to a JPEG; or extract a document's text and `text_create` it as a `.txt`. Use your
           available tools (e.g. the sandbox) to do the conversion.
-        - Examples: `text_create /print-queue/note.txt` with text content, or copy `/vault/photo.jpg`
+        - Examples: `domain__filesystem__text_create` on `/print-queue/note.txt` with text content, or copy `/vault/photo.jpg`
           to `/print-queue/photo.jpg`.
         - To **cancel** a job that has not finished printing yet, use the `remove` tool. If it has
           already finished, it is gone from the queue and removal is a no-op.

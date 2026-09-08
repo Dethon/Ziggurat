@@ -1,4 +1,4 @@
-# scheduling — description 107 / 130 tokens, body 1057 / 1300 tokens, served by mcp-scheduling
+# scheduling — description 107 / 130 tokens, body 1091 / 1300 tokens, served by mcp-scheduling
 
 ================================================================================================
 
@@ -22,7 +22,7 @@ Use another agent's directory only when the user asked for that agent by name, o
 
 ### Creating a schedule
 
-`text_create` a `schedule.json` whose content is a JSON object:
+`domain__filesystem__text_create` a `schedule.json` whose content is a JSON object:
 
 - `prompt` (required) — the instruction delivered to the agent when the schedule fires.
 - `cron` **or** `runAt` — exactly one is required, and they are mutually exclusive.
@@ -62,8 +62,9 @@ A one-shot schedule — fires once, then deletes itself:
 
 ### Managing schedules
 
-- **Discover** — `glob` `/schedules` to list agents, then glob `/schedules/<agentId>` to list their schedules.
-- **Change** — `text_edit` the `schedule.json` to adjust the prompt, timing, or delivery.
-- **Reassign / rename** — `move` a schedule directory to a different `<agentId>` or `<scheduleId>`.
-- **Remove** — `remove` the schedule directory.
-- **Run now** — `exec` `run_now.sh` on a schedule directory to fire it immediately without waiting for its next scheduled time.
+- **Discover** — `domain__filesystem__glob` on `/schedules` to list agents, then the same on
+  `/schedules/<agentId>` to list their schedules.
+- **Change** — `domain__filesystem__text_edit` the `schedule.json` to adjust the prompt, timing, or delivery.
+- **Reassign / rename** — `domain__filesystem__move` a schedule directory to a different `<agentId>` or `<scheduleId>`.
+- **Remove** — `domain__filesystem__remove` the schedule directory.
+- **Run now** — `domain__filesystem__exec` of `run_now.sh` on a schedule directory to fire it immediately without waiting for its next scheduled time.

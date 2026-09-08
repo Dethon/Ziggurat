@@ -37,16 +37,16 @@ public static class HomeAssistantSkill
 
         ### Workflow
 
-        1. Find the entity in the setup index you read; `glob` under `/ha/entities/<class>` or
+        1. Find the entity in the setup index you read; `domain__filesystem__glob` under `/ha/entities/<class>` or
            `/ha/areas/<room>` only for what the index does not settle. Do NOT glob to discover actions:
            the setup index lists them per class, and action files live in the entity
-           directory, so `glob` `/ha/entities/<class>/*.sh` returns nothing.
-        2. Inspect when you need an attribute as input: `file_read`
+           directory, so a glob of `/ha/entities/<class>/*.sh` returns nothing.
+        2. Inspect when you need an attribute as input: `domain__filesystem__file_read` on
            `/ha/.../state.json`.
-        3. Learn an action's arguments: `exec` `<service>.sh --help`. The `.sh` files are
+        3. Learn an action's arguments: `domain__filesystem__exec` of `<service>.sh --help`. The `.sh` files are
            action stubs, not scripts — don't `file_read` them; `--help` prints the field list.
-        4. Act: `exec` from the entity directory, e.g.
-           `exec(path="/ha/entities/light/kitchen_(kitchen)", command="turn_on.sh --brightness_pct 60")`.
+        4. Act: `domain__filesystem__exec` from the entity directory, e.g.
+           `domain__filesystem__exec(path="/ha/entities/light/kitchen_(kitchen)", command="turn_on.sh --brightness_pct 60")`.
 
         ### Reading results
 

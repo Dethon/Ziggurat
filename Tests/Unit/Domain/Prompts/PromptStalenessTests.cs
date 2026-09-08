@@ -143,6 +143,29 @@ public class PromptStalenessTests
         phantom.ShouldBeEmpty($"{name} names tools that are not exposed to the model");
     }
 
+    // A filesystem tool named as a call the model should make is named as the model can call it:
+    // `domain__filesystem__file_read`, never the bare `file_read`. The bare form is the tool's own
+    // name inside the feature, and a model that reads the prompt literally calls it and gets
+    // nothing back. gpt-5.6-luna mapped the bare name onto the real tool and hid this for as long
+    // as it was the only model the eval ran; glm-5.3-flash calls what the prompt actually says.
+    // Prose *about* a tool ("don't `file_read` them") is not a call, so only a name followed by an
+    // argument — a path, or a parenthesised call — has to carry the prefix.
+    [Theory]
+    [MemberData(nameof(Sections))]
+    public void Section_NamesAFilesystemCall_WithThePrefixTheModelCanCall(string name)
+    {
+        var bare = Regex.Matches(
+                TextOf(name),
+                @"`(?<tool>file_read|file_write|text_search|text_create|text_edit|glob|exec|move|copy|remove|file_info)`?\s*[(`]?\s*(?<arg>/[A-Za-z0-9_./<>*-]+|path=)")
+            .Select(m => $"{m.Groups["tool"].Value} {m.Groups["arg"].Value}")
+            .Distinct()
+            .ToList();
+
+        bare.ShouldBeEmpty(
+            $"{name} tells the model to call a filesystem tool by its bare name; the model can " +
+            "only call it as domain__filesystem__<name>");
+    }
+
     [Theory]
     [MemberData(nameof(Sections))]
     public void Section_EveryPathItTeaches_StartsAtAMountThatExists(string name)
@@ -176,7 +199,9 @@ public class PromptStalenessTests
                      VfsMoveTool.Name, VfsRemoveTool.Name, VfsExecTool.Name
                  ])
         {
-            prompt.ShouldContain($"`{tool}`");
+            // Named as the model can call it: the bare leaf is the tool's name inside the feature,
+            // not the name the agent exposes.
+            prompt.ShouldContain($"domain__filesystem__{tool}");
         }
 
         prompt.ShouldContain("Europe/Madrid");
