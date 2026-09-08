@@ -4,11 +4,14 @@
 
 **Blocked by:** 02, 03, 04
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A full-tier eval pass runs on the base commit first and its scorecard is backed up.
-- [ ] The home server serves the stub as its prompt and two skills as resources; agent snapshots show the stub and both advertisements; the body snapshot is under its budget.
-- [ ] The home and music families cite the trigger claim and require the load; mechanism scenarios still pass with no load required; a scenario is shown red with body prose deleted and the description intact.
-- [ ] Every moved claim is cited or guarded as before; the commit notes each demonstrated red.
-- [ ] A full-tier pass after the move shows no claim rate below the backed-up scorecard; nabu's and jonas's standing token counts drop by the body; the ceiling's remaining figure is lowered.
-- [ ] Spec: `.scratch/prompt-skills/spec.md` § The setup index, § Rollout.
+- [x] A full-tier eval pass runs on the base commit first and its scorecard is backed up.
+- [x] The home server serves the stub as its prompt and two skills as resources; agent snapshots show the stub and both advertisements; the body snapshot is under its budget.
+- [x] The home and music families cite the trigger claim and require the load; mechanism scenarios still pass with no load required; a scenario is shown red with body prose deleted and the description intact.
+- [x] Every moved claim is cited or guarded as before; the commit notes each demonstrated red.
+- [x] A full-tier pass after the move shows no claim rate below the backed-up scorecard; nabu's and jonas's standing token counts drop by the body; the ceiling's remaining figure is lowered.
+- [x] Spec: `.scratch/prompt-skills/spec.md` § The setup index, § Rollout.
+
+Result (2026-09-08): base 73/73, 223/228 runs (`.eval-output/scorecard-full.2026-09-08.after-load-tool-face.json`); after the move 73/73, 223/228 (`…after-home-skill-c.json`), one spurious load in 228. Two passes before it taught the stub: the snooze rule and the room-action rule are choosing rules and went back into the stub, and the description names `/timers` as not its business. Demonstrated red in `…home-body-deleted.json`: twelve of thirteen scenarios red with the description intact, every body claim 0/N, the load still made on every run but the snooze turn (which then chose a timer — the sentence that moved back). Nabu's standing prompt 13,358 → 10,567 tokens; ceiling 17,800 → 14,600.
+

@@ -26,6 +26,7 @@ public class SkillResourceTests
 
         resources.Select(r => r.Uri).ShouldContain(SkillServerResources.IndexAddress);
         resources.Select(r => r.Uri).ShouldContain(SkillServerResources.BodyAddress(HomeWatchesSkill.Name));
+        resources.Select(r => r.Uri).ShouldContain(SkillServerResources.BodyAddress(HomeAssistantSkill.Name));
     }
 
     [Fact]
@@ -62,11 +63,14 @@ public class SkillResourceTests
 
         await using var session = await BuildAsync(server.Endpoint);
 
-        var skill = session.Skills.ShouldHaveSingleItem();
-        skill.Name.ShouldBe(HomeWatchesSkill.Name);
+        session.Skills.Select(s => s.Name).ShouldBe([HomeWatchesSkill.Name, HomeAssistantSkill.Name], ignoreOrder: true);
+        var skill = session.Skills.Single(s => s.Name == HomeWatchesSkill.Name);
         skill.Declaration.ShouldBeSameAs(PromptManifest.FindSkill(HomeWatchesSkill.Name));
         skill.Description.ShouldBe(HomeWatchesSkill.Description);
         skill.Body.ShouldBe(HomeWatchesSkill.Body.TrimEnd());
+        var home = session.Skills.Single(s => s.Name == HomeAssistantSkill.Name);
+        home.Declaration.ShouldBeSameAs(PromptManifest.FindSkill(HomeAssistantSkill.Name));
+        home.Body.ShouldBe(HomeAssistantSkill.Body.TrimEnd());
     }
 
     [Fact]

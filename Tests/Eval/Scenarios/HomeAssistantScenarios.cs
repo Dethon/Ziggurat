@@ -20,6 +20,21 @@ public static class HomeAssistantScenarios
         Arguments = [Arg.Path("/ha/" + HaVfsPath.SetupIndexFileName)]
     };
 
+    // Every scenario of the family requires the load, before the home is touched: the skill's
+    // description is the trigger claim, and a device switched without the skill is the red that
+    // claim exists to show. The watch family has its own.
+    public static CallExpectation LoadsTheSkill => new()
+    {
+        Label = "skill",
+        Tool = EvalTools.LoadSkill,
+        Arguments = [Arg.Is("skillName", HomeAssistantSkill.Name)]
+    };
+
+    // Any load at all, for a scenario whose subject is elsewhere and that merely passes through
+    // the home — a mechanism choice, a spoken failure — so the load the stub asks for is not an
+    // unnecessary call there.
+    public static CallPermission MayLoadASkill => new(EvalTools.LoadSkill);
+
     public static IReadOnlyList<Scenario> All =>
     [
         TurnTheAirConditionerOn, SetTheTemperature, VacuumTheStudy,
@@ -44,6 +59,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             ReadsTheSetupIndex,
             new CallExpectation
             {
@@ -52,7 +68,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.Path(FakeHomeAssistant.AirConditionerDirectory),
-                    Arg.Matches("command", @"^turn_on\.sh")
+                    Arg.Matches("command", @"^(\./)?turn_on\.sh")
                 ]
             }
         ],
@@ -65,7 +81,9 @@ public static class HomeAssistantScenarios
             new CallPermission(EvalTools.Exec, FakeHomeAssistant.AirConditionerDirectory)
         ],
         Changes = [new StateChange(FakeHomeAssistant.AirConditionerEntityId, "on")],
-        CallCeiling = 6,
+        Ordering = [new OrderingConstraint("skill", "turn on")],
+        CallCeiling = 7,
+        Claims = [HomeAssistantSkill.LoadsForAHomeRequest.Id],
         Guards =
         [
             new Guard(HomeAssistantPrompt.ExactlyWhatWasAsked.Id,
@@ -97,6 +115,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             ReadsTheSetupIndex,
             new CallExpectation
             {
@@ -105,7 +124,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.Path(FakeHomeAssistant.AirConditionerDirectory),
-                    Arg.Matches("command", @"^set_temperature\.sh.*\b22\b")
+                    Arg.Matches("command", @"^(\./)?set_temperature\.sh.*\b22\b")
                 ]
             }
         ],
@@ -119,10 +138,12 @@ public static class HomeAssistantScenarios
         [
             new StateChange($"{FakeHomeAssistant.AirConditionerEntityId}#temperature", "22")
         ],
-        CallCeiling = 6,
+        Ordering = [new OrderingConstraint("skill", "set")],
+        CallCeiling = 7,
+        Claims = [HomeAssistantSkill.LoadsForAHomeRequest.Id],
         Guards =
         [
-            new Guard(HomeAssistantPrompt.ExitCodeIsTheConfirmation.Id,
+            new Guard(HomeAssistantSkill.ExitCodeIsTheConfirmation.Id,
                 "Demonstrated on 2026-08-18 with the never-re-read rule deleted from both places it is "
                 + "written: the model set the temperature and stopped. It does not check its own work "
                 + "unprompted, so the prose defends against a habit this model does not have.")
@@ -148,6 +169,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             ReadsTheSetupIndex,
             new CallExpectation
             {
@@ -156,7 +178,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.VacuumPathPattern),
-                    Arg.Matches("command", @"^clean_zone\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?clean_zone\.sh\b"),
                     Arg.Matches("command",
                         $@"--cleaning_area_id[= ]+""?{FakeHomeAssistant.StudyAreaSlug}\b")
                 ]
@@ -168,7 +190,8 @@ public static class HomeAssistantScenarios
             new CallPermission(EvalTools.Exec, "*aspiradora*")
         ],
         Changes = [new StateChange(FakeHomeAssistant.VacuumEntityId, "cleaning")],
-        CallCeiling = 7,
+        Ordering = [new OrderingConstraint("skill", "clean")],
+        CallCeiling = 8,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 1 },
         // Two claims on one call: the value of --cleaning_area_id is the frozen slug (the setup
         // index's only bridge between "estudio" and `despacho`), and the flag's *name* exists
@@ -178,8 +201,9 @@ public static class HomeAssistantScenarios
         // unwitnessed until a first attempt can be forced to fail.
         Claims =
         [
+            HomeAssistantSkill.LoadsForAHomeRequest.Id,
             HomeAssistantPrompt.AreaSlugIsReadNotDerived.Id,
-            HomeAssistantPrompt.ArgumentsComeFromHelp.Id
+            HomeAssistantSkill.ArgumentsComeFromHelp.Id
         ],
         Policy = new RunPolicy(2, 3)
     };
@@ -202,6 +226,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             ReadsTheSetupIndex,
             new CallExpectation
             {
@@ -210,7 +235,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.WashingMachinePathPattern),
-                    Arg.Matches("command", @"^turn_on\.sh")
+                    Arg.Matches("command", @"^(\./)?turn_on\.sh")
                 ]
             }
         ],
@@ -220,9 +245,10 @@ public static class HomeAssistantScenarios
             new CallPermission(EvalTools.Exec, "*lavadora_(*")
         ],
         Changes = [new StateChange(FakeHomeAssistant.WashingMachineEntityId, "on")],
-        CallCeiling = 5,
+        Ordering = [new OrderingConstraint("skill", "turn on")],
+        CallCeiling = 6,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 1 },
-        Claims = [HomeAssistantPrompt.EntityNamedAsListed.Id],
+        Claims = [HomeAssistantSkill.LoadsForAHomeRequest.Id, HomeAssistantSkill.EntityNamedAsListed.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -245,6 +271,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             ReadsTheSetupIndex,
             new CallExpectation
             {
@@ -253,7 +280,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^music_assistant\.play_media\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?music_assistant\.play_media\.sh\b"),
                     Arg.Matches("command", "(?i)faro")
                 ]
             }
@@ -271,7 +298,8 @@ public static class HomeAssistantScenarios
         // retry — which is the contract's own "list the real items" done thoroughly. The claim
         // cited here is about the reply; playback-retry storms are what FavouriteMusic's tight
         // ceiling guards.
-        CallCeiling = 11,
+        Ordering = [new OrderingConstraint("skill", "play")],
+        CallCeiling = 12,
         Reply = new ReplyExpectation
         {
             Mentions = [new SpokenValue("what could not be played", "Faro del Sur", "emisora")],
@@ -283,8 +311,9 @@ public static class HomeAssistantScenarios
         // stream twice — and the exhaustive permitted set is what fails it.
         Claims =
         [
-            HomeAssistantPrompt.ExitCodesAreNeverVoiced.Id,
-            HomeAssistantPrompt.TheWebIsNoMediaFallback.Id
+            HomeAssistantSkill.LoadsForAHomeRequest.Id,
+            HomeAssistantSkill.ExitCodesAreNeverVoiced.Id,
+            HomeAssistantSkill.TheWebIsNoMediaFallback.Id
         ],
         Policy = new RunPolicy(2, 4)
     };
@@ -308,6 +337,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             ReadsTheSetupIndex,
             new CallExpectation
             {
@@ -316,7 +346,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^create_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?create_event\.sh\b"),
                     Arg.Matches("command", @"2026-08-17[ T]20:05"),
                     Arg.Matches("command", "(?i)basura"),
                     Arg.Matches("command", "(?i)insistent")
@@ -329,9 +359,15 @@ public static class HomeAssistantScenarios
             .. CallPermission.Looking("/timers*"),
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
-        CallCeiling = 7,
+        Ordering = [new OrderingConstraint("skill", "snooze")],
+        CallCeiling = 8,
         Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],
-        Claims = [HomeAssistantPrompt.SnoozeIsANewEvent.Id, CoreDirectivePrompt.NoPlaceholderToolCalls.Id],
+        Claims =
+        [
+            HomeAssistantSkill.LoadsForAHomeRequest.Id,
+            HomeAssistantSkill.SnoozeIsANewEvent.Id,
+            CoreDirectivePrompt.NoPlaceholderToolCalls.Id
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -353,6 +389,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             ReadsTheSetupIndex,
             new CallExpectation
             {
@@ -361,7 +398,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^get_events\.sh\b")
+                    Arg.Matches("command", @"^(\./)?get_events\.sh\b")
                 ]
             },
             new CallExpectation
@@ -371,7 +408,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^delete_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?delete_event\.sh\b"),
                     Arg.Matches("command", $@"--uid[= ]+""?{FakeHomeAssistant.TrashAlarmUid}\b")
                 ]
             }
@@ -381,9 +418,10 @@ public static class HomeAssistantScenarios
             .. CallPermission.LookingAndManuals("/ha*"),
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
-        CallCeiling = 7,
+        Ordering = [new OrderingConstraint("skill", "delete")],
+        CallCeiling = 8,
         Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "0")],
-        Claims = [HomeAssistantPrompt.AlarmIsCancelledByUid.Id],
+        Claims = [HomeAssistantSkill.LoadsForAHomeRequest.Id, HomeAssistantSkill.AlarmIsCancelledByUid.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -405,6 +443,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             ReadsTheSetupIndex,
             new CallExpectation
             {
@@ -413,7 +452,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^delete_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?delete_event\.sh\b"),
                     Arg.Matches("command", $@"--uid[= ]+""?{FakeHomeAssistant.TrashAlarmUid}\b")
                 ]
             },
@@ -424,7 +463,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^create_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?create_event\.sh\b"),
                     Arg.Matches("command", @"2026-08-17[ T]22:30"),
                     Arg.Matches("command", "(?i)basura"),
                     Arg.Matches("command", "(?i)insistent")
@@ -436,10 +475,16 @@ public static class HomeAssistantScenarios
             .. CallPermission.LookingAndManuals("/ha*"),
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
-        CallCeiling = 9,
+        Ordering = [new OrderingConstraint("skill", "create")],
+        CallCeiling = 10,
         // Declared as unchanged on purpose: one event before, one after. A create without the
         // delete leaves two, and the diff reports it.
-        Claims = [HomeAssistantPrompt.AlarmIsChangedByDeleteAndCreate.Id, HomeAssistantPrompt.AlarmIsCancelledByUid.Id],
+        Claims =
+        [
+            HomeAssistantSkill.LoadsForAHomeRequest.Id,
+            HomeAssistantSkill.AlarmIsChangedByDeleteAndCreate.Id,
+            HomeAssistantSkill.AlarmIsCancelledByUid.Id
+        ],
         Policy = new RunPolicy(2, 3)
     };
 }

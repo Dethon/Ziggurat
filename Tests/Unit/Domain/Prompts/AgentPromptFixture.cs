@@ -54,7 +54,7 @@ internal static class AgentPromptFixture
     // What each server ships as skills, bound to the manifest exactly as the client manager binds
     // what it reads off the wire: the served description and the served body, under the declaration.
     public static IReadOnlyDictionary<string, PromptSkill> ServedSkills { get; } =
-        new[] { HomeWatchesSkill.Text }
+        new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text }
             .ToDictionary(
                 text => text.Name,
                 text => PromptManifest.BindSkill(text.Name, text.Description, text.Body),

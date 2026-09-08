@@ -121,8 +121,8 @@ public static class VoiceScenarios
         Instant = EvalInstant.Evening,
         // Nothing is required: the garage has no light, so the right number of successful actions
         // is none, and what is being checked is what the agent said about that.
-        Permitted = [.. CallPermission.Looking("/ha*")],
-        CallCeiling = 6,
+        Permitted = [.. CallPermission.Looking("/ha*"), HomeAssistantScenarios.MayLoadASkill],
+        CallCeiling = 7,
         Reply = new ReplyExpectation
         {
             MaxSentences = 1,
@@ -302,8 +302,8 @@ public static class VoiceScenarios
                 ]
             }
         ],
-        Permitted = [.. CallPermission.Looking("/ha*")],
-        CallCeiling = 4,
+        Permitted = [.. CallPermission.Looking("/ha*"), HomeAssistantScenarios.MayLoadASkill],
+        CallCeiling = 5,
         Reply = new ReplyExpectation
         {
             Spoken = true,

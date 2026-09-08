@@ -117,9 +117,10 @@ public static class MechanismScenarios
             new CallPermission(EvalTools.Info, "/schedules*"),
             new CallPermission(EvalTools.Glob, "/ha*"),
             new CallPermission(EvalTools.Read, "/ha*"),
-            new CallPermission(EvalTools.Info, "/ha*")
+            new CallPermission(EvalTools.Info, "/ha*"),
+            HomeAssistantScenarios.MayLoadASkill
         ],
-        CallCeiling = 6,
+        CallCeiling = 7,
         Guards =
         [
             new Guard(TimerPrompt.AgentActsIsAScheduledTask.Id,
@@ -147,6 +148,9 @@ public static class MechanismScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            // The event's shape — target, insistent — is in the skill's body, so the load is
+            // required here; the choice of the calendar over a timer is made before it.
+            HomeAssistantScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "alarm",
@@ -154,7 +158,7 @@ public static class MechanismScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^create_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?create_event\.sh\b"),
                     Arg.Matches("command", @"2026-08-18[ T]07:00"),
                     // The description's JSON shape: without insistent the event is a one-shot
                     // announce that speaks once into a bedroom at seven and gives up.
@@ -171,11 +175,12 @@ public static class MechanismScenarios
             .. CallPermission.Looking("/ha*"),
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
-        CallCeiling = 6,
+        Ordering = [new OrderingConstraint("skill", "alarm")],
+        CallCeiling = 7,
         Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],
         // What is cited is the description's shape: target and insistent are only in the prose,
         // and an event without them is an announce pretending to be an alarm.
-        Claims = [HomeAssistantPrompt.AlarmCarriesTargetAndInsistent.Id],
+        Claims = [HomeAssistantSkill.LoadsForAHomeRequest.Id, HomeAssistantSkill.AlarmCarriesTargetAndInsistent.Id],
         Guards =
         [
             new Guard(TimerPrompt.ClockTimeIsACalendarAlarm.Id,
@@ -213,7 +218,7 @@ public static class MechanismScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^create_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?create_event\.sh\b"),
                     Arg.Matches("command", @"2026-08-18[ T]02:00")
                 ]
             }
@@ -221,9 +226,10 @@ public static class MechanismScenarios
         Permitted =
         [
             .. CallPermission.Looking("/ha*"),
-            new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
+            new CallPermission(EvalTools.Exec, "*assistant_alarms_(*"),
+            HomeAssistantScenarios.MayLoadASkill
         ],
-        CallCeiling = 6,
+        CallCeiling = 7,
         Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],
         Claims = [TimerPrompt.DurationCappedAtFourHours.Id],
         Policy = new RunPolicy(2, 3)

@@ -29,6 +29,7 @@ public static class MusicScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            HomeAssistantScenarios.LoadsTheSkill,
             HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
@@ -37,7 +38,7 @@ public static class MusicScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^browse_media\.sh\b")
+                    Arg.Matches("command", @"^(\./)?browse_media\.sh\b")
                 ]
             },
             new CallExpectation
@@ -49,24 +50,24 @@ public static class MusicScenarios
                     // On the Music Assistant player, not on the television standing beside it in
                     // the same room and listing the same actions.
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^music_assistant\.play_media\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?music_assistant\.play_media\.sh\b"),
                     Arg.Matches("command", FakeHomeAssistant.FavouritesPlaylist),
                     Arg.Matches("command", @"--media_type\s+""?playlist")
                 ]
             }
         ],
-        Ordering = [new OrderingConstraint("browse", "play")],
+        Ordering = [new OrderingConstraint("skill", "browse"), new OrderingConstraint("browse", "play")],
         Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
         // Tight on purpose: a model that guesses a title first gets a 500, and the browse and the
         // retry that follow put it over. That is the failure this scenario is named after.
-        CallCeiling = 6,
+        CallCeiling = 7,
         // The playlist rule alone. Demonstrated red by deleting it: the model played "mis
         // favoritos", took the 500, and spent the rest of the turn on an empty browse and a
         // --help.
-        Claims = [HomeAssistantPrompt.PlaylistIsBrowsedBeforeItIsPlayed.Id],
+        Claims = [HomeAssistantSkill.LoadsForAHomeRequest.Id, HomeAssistantSkill.PlaylistIsBrowsedBeforeItIsPlayed.Id],
         Guards =
         [
-            new Guard(HomeAssistantPrompt.MusicPlaysOnTheMusicAssistantPlayer.Id,
+            new Guard(HomeAssistantSkill.MusicPlaysOnTheMusicAssistantPlayer.Id,
                 "Demonstrated on 2026-08-19 with the whole MA-player paragraph deleted, in a kitchen "
                 + "holding both a Music Assistant speaker and a television that lists the same "
                 + "actions: the playlist still went to the speaker. A player called 'Altavoz Cocina' "
@@ -97,6 +98,7 @@ public static class MusicScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            HomeAssistantScenarios.LoadsTheSkill,
             HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
@@ -105,7 +107,7 @@ public static class MusicScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^music_assistant\.podcast_episodes\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?music_assistant\.podcast_episodes\.sh\b"),
                     // The show, not just the flag: --podcast with anything after it would pass a
                     // check on the flag's name alone.
                     Arg.Matches("command", "(?i)--podcast +\"?[^\"]*fin del mundo")
@@ -118,19 +120,19 @@ public static class MusicScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^music_assistant\.play_media\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?music_assistant\.play_media\.sh\b"),
                     // The exact uri the listing returned. A play carrying the episode's title, or
                     // the show's name, does not match — which is the point.
                     Arg.Matches("command", "podcast_episode/4Fk1sWv0xKvJ6teiCpTAJN")
                 ]
             }
         ],
-        Ordering = [new OrderingConstraint("episodes", "play")],
+        Ordering = [new OrderingConstraint("skill", "episodes"), new OrderingConstraint("episodes", "play")],
         Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
-        CallCeiling = 6,
+        CallCeiling = 7,
         // Demonstrated red by deleting the podcast bullet: with it gone the model read the
         // player's state and answered without playing anything at all.
-        Claims = [HomeAssistantPrompt.EpisodePlaysOnlyByItsUri.Id],
+        Claims = [HomeAssistantSkill.LoadsForAHomeRequest.Id, HomeAssistantSkill.EpisodePlaysOnlyByItsUri.Id],
         // Two of four rather than two of three: on about a third of runs the model hands the
         // episode lookup to a worker instead of doing it, which is the reflex the delegation
         // guards record. The threshold says the behaviour has to hold at least half the time
@@ -155,6 +157,7 @@ public static class MusicScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            HomeAssistantScenarios.LoadsTheSkill,
             HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
@@ -163,7 +166,7 @@ public static class MusicScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^media_seek\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?media_seek\.sh\b"),
                     Arg.Matches("command", @"--seek_position\s+""?[01]\b")
                 ]
             }
@@ -171,10 +174,12 @@ public static class MusicScenarios
         // Nothing else may be run: a play of any kind is an unnecessary call here, and that is
         // exactly the mistake the rule names. Reading an action's manual is not running it.
         Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
-        CallCeiling = 5,
+        Ordering = [new OrderingConstraint("skill", "seek")],
+        CallCeiling = 6,
+        Claims = [HomeAssistantSkill.LoadsForAHomeRequest.Id],
         Guards =
         [
-            new Guard(HomeAssistantPrompt.RestartIsASeek.Id,
+            new Guard(HomeAssistantSkill.RestartIsASeek.Id,
                 "Demonstrated on 2026-08-19 with the 'play it from the beginning' bullet deleted: "
                 + "'ponlo otra vez desde el principio' still came out as media_seek on the player that "
                 + "was playing, and not as another play. The first attempt at this demonstration was "
@@ -206,6 +211,7 @@ public static class MusicScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            HomeAssistantScenarios.LoadsTheSkill,
             HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
@@ -214,7 +220,7 @@ public static class MusicScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^media_seek\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?media_seek\.sh\b"),
                     // 4200 - 180. A seek computed from Home Assistant's stale 3600 lands on 3420,
                     // and the failure this scenario was written for lands on 0 — neither matches.
                     Arg.Matches("command", @"--seek_position\s+""?40(1[0-9]|2[0-9])\b")
@@ -225,8 +231,9 @@ public static class MusicScenarios
         // anything else on the player is not. A rewind is a seek and nothing else — one field run
         // created a timer called "Rebobina" instead, which this forbids.
         Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
-        CallCeiling = 6,
-        Claims = [HomeAssistantPrompt.RelativeSeekReadsThePositionFirst.Id],
+        Ordering = [new OrderingConstraint("skill", "seek")],
+        CallCeiling = 7,
+        Claims = [HomeAssistantSkill.LoadsForAHomeRequest.Id, HomeAssistantSkill.RelativeSeekReadsThePositionFirst.Id],
         Policy = new RunPolicy(2, 3)
     };
 }
