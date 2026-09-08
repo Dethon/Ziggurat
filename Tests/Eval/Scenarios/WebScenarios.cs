@@ -41,12 +41,7 @@ public static class WebScenarios
     // Every scenario of the family requires the load before the first web call: the skill's
     // description is the trigger claim, and a page driven without the skill is the red that
     // claim exists to show.
-    private static CallExpectation LoadsTheSkill => new()
-    {
-        Label = "skill",
-        Tool = EvalTools.LoadSkill,
-        Arguments = [Arg.Is("skillName", WebBrowsingSkill.Name)]
-    };
+    private static CallExpectation LoadsTheSkill => CallExpectation.LoadsSkill(WebBrowsingSkill.Name);
 
     private static readonly string ASnapshotRef = $"^{ElementRef.Prefix}\\d+$";
 

@@ -23,17 +23,7 @@ public static class HomeAssistantScenarios
     // Every scenario of the family requires the load, before the home is touched: the skill's
     // description is the trigger claim, and a device switched without the skill is the red that
     // claim exists to show. The watch family has its own.
-    public static CallExpectation LoadsTheSkill => new()
-    {
-        Label = "skill",
-        Tool = EvalTools.LoadSkill,
-        Arguments = [Arg.Is("skillName", HomeAssistantSkill.Name)]
-    };
-
-    // Any load at all, for a scenario whose subject is elsewhere and that merely passes through
-    // the home — a mechanism choice, a spoken failure — so the load the stub asks for is not an
-    // unnecessary call there.
-    public static CallPermission MayLoadASkill => new(EvalTools.LoadSkill);
+    public static CallExpectation LoadsTheSkill => CallExpectation.LoadsSkill(HomeAssistantSkill.Name);
 
     public static IReadOnlyList<Scenario> All =>
     [
@@ -203,6 +193,7 @@ public static class HomeAssistantScenarios
         [
             HomeAssistantSkill.LoadsForAHomeRequest.Id,
             HomeAssistantPrompt.AreaSlugIsReadNotDerived.Id,
+            HomeAssistantPrompt.RoomRequestUsesTheRoomAction.Id,
             HomeAssistantSkill.ArgumentsComeFromHelp.Id
         ],
         Policy = new RunPolicy(2, 3)

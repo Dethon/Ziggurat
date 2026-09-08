@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Domain.DTOs;
+using Infrastructure.Agents.Skills;
 
 namespace Tests.Eval.Harness;
 
@@ -172,6 +173,16 @@ public sealed record CallExpectation
     public required string Tool { get; init; }
 
     public IReadOnlyList<ArgumentMatcher> Arguments { get; init; } = [];
+
+    // The one load a family requires, under the label its ordering constraints use: the skill's
+    // description is the trigger claim, and a task done without the skill is the red that claim
+    // exists to show.
+    public static CallExpectation LoadsSkill(string name) => new()
+    {
+        Label = "skill",
+        Tool = EvalTools.LoadSkill,
+        Arguments = [Arg.Is(SkillsProvider.SkillNameParameter, name)]
+    };
 }
 
 // A call the scenario tolerates, by tool, by path and — where the tool runs something — by the
@@ -183,6 +194,12 @@ public sealed record CallPermission(string Tool, string Path = "*", string Comma
     // which action ran has to tolerate the manual without tolerating the actions in that directory,
     // which a path-only permission cannot express.
     public static CallPermission Manual(string tool, string path) => new(tool, path, "*--help*");
+
+    // One named skill's load, for a scenario whose subject is elsewhere and that merely passes
+    // through that skill's territory — a mechanism choice, a spoken failure — so the load its stub
+    // asks for is not an unnecessary call there. Never a default, and never any skill: loading
+    // another one stays visible as the wrong choice.
+    public static CallPermission Load(string skill) => new(EvalTools.LoadSkill, skill);
 
     // Looking around, and reading the manuals of what is there. Every scenario whose subject is
     // which action ran needs exactly this pair, and writing it out per scenario is how one of them

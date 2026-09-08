@@ -1,4 +1,4 @@
-# jonas — 5460 tokens across 16 sections and 7 skills
+# jonas — 5447 tokens across 16 sections and 7 skills
 
   core_directive           CoreDirective         250 / 350    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               30 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -17,12 +17,12 @@
   timers_prompt            Client                533 / 900    Which mechanism a moment is — a countdown, a calendar alarm, a scheduled task — and the live satellite roster.
   date                     Date                    7 / 30     Today's date. Last of the static sections, because it is the only one that changes on its own.
   obsidian-vault           Skill                  98 / 120    body 1552 / 1800, served by mcp-vault
-  sandbox                  Skill                 112 / 130    body 927 / 1200, served by mcp-sandbox
+  sandbox                  Skill                  99 / 130    body 927 / 1200, served by mcp-sandbox
   web-browsing             Skill                 102 / 130    body 1261 / 1400, served by mcp-websearch
   home-watches             Skill                 103 / 120    body 1481 / 2200, served by mcp-homeassistant
-  home-assistant           Skill                 143 / 150    body 3207 / 3600, served by mcp-homeassistant
+  home-assistant           Skill                 143 / 150    body 3171 / 3600, served by mcp-homeassistant
   scheduling               Skill                 107 / 130    body 1057 / 1300, served by mcp-scheduling
-  countdown-timers         Skill                 123 / 130    body 548 / 900, served by mcp-timers
+  countdown-timers         Skill                 123 / 130    body 497 / 900, served by mcp-timers
 
 ================================================================================================
 
@@ -327,7 +327,7 @@ Today is Friday, 2026-05-15.
   </skill>
   <skill>
     <name>sandbox</name>
-    <description>Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone — or keeping working files in its persistent workspace (&quot;compute the sha256 of that file&quot;, &quot;run this python&quot;, &quot;clone the repo and count the lines&quot;). Not for reading or writing files on another mount. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, and how a container path maps to a virtual one.</description>
+    <description>Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone (&quot;compute the sha256 of that file&quot;, &quot;run this python&quot;, &quot;clone the repo and count the lines&quot;). Not for reading or writing files on another mount. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, and how a container path maps to a virtual one.</description>
   </skill>
   <skill>
     <name>scheduling</name>

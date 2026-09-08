@@ -36,13 +36,28 @@ mostly `home-assistant` on timer turns.
   or sandbox (which declared none). Every claim that stayed green became a `Guard` with a dated
   note, as the repo's convention wants; the trigger claims and the demonstrated ones stay cited.
 - **The eval's own vocabulary needed two loosenings:** command matchers accept a leading `./` (the
-  mount does), and `HomeAssistantScenarios.MayLoadASkill` permits any load on scenarios whose
-  subject is elsewhere.
+  mount does), and `CallPermission.Load(name)` tolerates one named skill's load on scenarios
+  whose subject is elsewhere.
 - **Recurring reds unrelated to any move**, each at threshold's edge in most passes: the
   night-time watch editing the seeded watch instead of adding one; the delegated research reply
   running over five sentences; "cinco minutos para el té" and "para la alarma que está sonando"
   attracting a `home-assistant` load under a ceiling of three or four. The last two should ease
   now that `countdown-timers` names "ringing now" — check ticket 10's result block.
+
+## Review fixes (after the ten gates)
+
+`/code-review` over `d7d369107..HEAD` found: three rule files stale against the split (fixed, with
+the new skill files in their `paths:`); the snooze rule stated in both stub and body (the body now
+keeps only "same summary and description"); the room-action rule undeclared (now
+`home.room-request-uses-the-room-action`, cited by the vacuum scenario); the scheduling stub
+declaring no claims (now two, guarded by the 2026-08-18 mechanism demonstration); two choosing
+sentences duplicated into the timers body (trimmed); the sandbox description broader than its stub
+(trimmed); wildcard load permissions (`CallPermission.Load(name)` now names the one skill a turn
+passes through — a load's `skillName` reads as its path — and `CallExpectation.LoadsSkill(name)`
+replaces five copies); the index registration duplicated in `AddSkill` (extracted). A final full
+pass over those fixes: 73/73, 223/228 (`…after-review-fixes.json`), 3 spurious loads. Left as
+judgement calls: the home stub at ~1,100 tokens keeps tool-level examples the gates justified; the
+`^(\./)?` command matchers stay inline rather than behind an `Arg.Action` helper.
 
 ## Still open
 

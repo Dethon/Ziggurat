@@ -1,4 +1,4 @@
-# nabu — 6208 tokens across 18 sections and 7 skills
+# nabu — 6195 tokens across 18 sections and 7 skills
 
   core_directive           CoreDirective         250 / 350    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               80 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -19,12 +19,12 @@
   voice                    ChannelOverride       576 / 800    Every reply is spoken aloud, so it is one short sentence of plain words.
   language                 Language              122 / 300    The reply language, stated absolutely, against a request that is otherwise all English.
   obsidian-vault           Skill                  98 / 120    body 1552 / 1800, served by mcp-vault
-  sandbox                  Skill                 112 / 130    body 927 / 1200, served by mcp-sandbox
+  sandbox                  Skill                  99 / 130    body 927 / 1200, served by mcp-sandbox
   web-browsing             Skill                 102 / 130    body 1261 / 1400, served by mcp-websearch
   home-watches             Skill                 103 / 120    body 1481 / 2200, served by mcp-homeassistant
-  home-assistant           Skill                 143 / 150    body 3207 / 3600, served by mcp-homeassistant
+  home-assistant           Skill                 143 / 150    body 3171 / 3600, served by mcp-homeassistant
   scheduling               Skill                 107 / 130    body 1057 / 1300, served by mcp-scheduling
-  countdown-timers         Skill                 123 / 130    body 548 / 900, served by mcp-timers
+  countdown-timers         Skill                 123 / 130    body 497 / 900, served by mcp-timers
 
 ================================================================================================
 
@@ -354,7 +354,7 @@ Los nombres propios (personas, lugares, títulos de obras) se dicen tal cual, si
   </skill>
   <skill>
     <name>sandbox</name>
-    <description>Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone — or keeping working files in its persistent workspace (&quot;compute the sha256 of that file&quot;, &quot;run this python&quot;, &quot;clone the repo and count the lines&quot;). Not for reading or writing files on another mount. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, and how a container path maps to a virtual one.</description>
+    <description>Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone (&quot;compute the sha256 of that file&quot;, &quot;run this python&quot;, &quot;clone the repo and count the lines&quot;). Not for reading or writing files on another mount. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, and how a container path maps to a virtual one.</description>
   </skill>
   <skill>
     <name>scheduling</name>

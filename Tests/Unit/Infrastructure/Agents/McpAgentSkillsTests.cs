@@ -91,10 +91,10 @@ public class McpAgentSkillsTests
         var load = captured.ShouldHaveSingleItem().ShouldNotBeNull().Tools.ShouldNotBeNull()
             .OfType<AIFunction>().Where(t => t.Name == SkillsProvider.LoadToolName).ShouldHaveSingleItem();
         load.Description.ShouldBe(SkillsProvider.LoadToolDescription);
-        var skillName = load.JsonSchema.GetProperty("properties").GetProperty("skillName");
+        var skillName = load.JsonSchema.GetProperty("properties").GetProperty(SkillsProvider.SkillNameParameter);
         skillName.GetProperty("type").GetString().ShouldBe("string");
         skillName.GetProperty("enum").EnumerateArray().Select(e => e.GetString()).ShouldBe([Skill, "other-skill"]);
-        load.JsonSchema.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ShouldBe(["skillName"]);
+        load.JsonSchema.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ShouldBe([SkillsProvider.SkillNameParameter]);
     }
 
     [Fact]
@@ -121,7 +121,7 @@ public class McpAgentSkillsTests
         await using var server = await StartAsync(new SkillText(Skill, "Does test things.", "# Test\n\nDo the thing."));
         var fake = new StreamingFakeChatClient(
             ToolApprovalResponseFactory.CreateToolCallResponse(
-                AgentSkillsProvider.LoadSkillToolName, "call-1", new Dictionary<string, object?> { ["skillName"] = Skill }),
+                AgentSkillsProvider.LoadSkillToolName, "call-1", new Dictionary<string, object?> { [SkillsProvider.SkillNameParameter] = Skill }),
             new ChatResponse([new ChatMessage(ChatRole.Assistant, "Done")]) { FinishReason = ChatFinishReason.Stop });
         var handler = new TestApprovalHandler(ToolApprovalResult.Rejected);
         var observer = new RecordingObserver();

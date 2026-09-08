@@ -8,7 +8,7 @@
 
 - [x] A full-tier eval pass runs on the base commit first and its scorecard is backed up.
 - [x] The server serves the stub as its prompt and the skill as resources; agent snapshots show the stub and the advertisement; the body snapshot is under its budget.
-- [x] The family's scenarios cite the trigger claim and require the load; mechanism scenarios still pass with no load required.
+- [x] The one scheduling scenario (a mechanism turn) cites the trigger claim and requires the load; the other mechanism scenarios pass with no scheduling load. The stub declares two choosing claims, guarded by the same 2026-08-18 demonstration as their timer twins.
 - [x] Every moved claim is cited or guarded as before; the commit notes each demonstrated red.
 - [x] A full-tier pass after the move shows no claim rate below the backed-up scorecard; the ceiling is lowered to remaining plus headroom.
 - [x] Spec: `.scratch/prompt-skills/spec.md` § Rollout.

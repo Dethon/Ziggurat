@@ -1,4 +1,4 @@
-# home-assistant — description 143 / 150 tokens, body 3207 / 3600 tokens, served by mcp-homeassistant
+# home-assistant — description 143 / 150 tokens, body 3171 / 3600 tokens, served by mcp-homeassistant
 
 ================================================================================================
 
@@ -118,9 +118,8 @@ alarm's time or message, delete it by uid and create the new one. That is intern
 state the new time and never narrate the delete — and never create a second event beside
 the old one as a way of "moving" it.
 
-Snooze: when the message context says the user just dismissed an alarm and they ask to
-snooze or be reminded again ("five more minutes"), create a new one-shot event on the
-alarms calendar at the requested offset with the same summary and description.
+Snooze: the new one-shot event after a dismissed alarm keeps the dismissed alarm's summary
+and description.
 
 ### Music playback
 

@@ -28,7 +28,8 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     public const string LoadToolDescription =
         "Loads one skill from the `<available_skills>` list. Call it only when the request is of that skill's kind, once per conversation, never to check what it does or to fill a pause.";
 
-    private const string SkillNameParameter = "skillName";
+    // The load tool's one argument, as the framework names it; the eval cites it by this name.
+    public const string SkillNameParameter = "skillName";
 
     private readonly Func<AgentSession?, IReadOnlyList<PromptSkill>> _skillsOf;
     private readonly AgentSkillsProvider _inner;

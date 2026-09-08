@@ -11,12 +11,7 @@ public static class TimerScenarios
     // Every scenario of the family requires the load before /timers is touched: the skill's
     // description is the trigger claim, and a countdown written without the skill is the red
     // that claim exists to show.
-    public static CallExpectation LoadsTheSkill => new()
-    {
-        Label = "skill",
-        Tool = EvalTools.LoadSkill,
-        Arguments = [Arg.Is("skillName", CountdownTimersSkill.Name)]
-    };
+    public static CallExpectation LoadsTheSkill => CallExpectation.LoadsSkill(CountdownTimersSkill.Name);
 
     public static IReadOnlyList<Scenario> All =>
         [PastaTimer, ExtendARunningTimer, WhatTimersExist, CancelTheTimer, TheErrandGoesInTheText];

@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Agents.Skills;
 using Microsoft.Extensions.AI;
 using Tests.Unit.Infrastructure.Helpers;
 
@@ -35,7 +36,7 @@ public static class ScriptedTurn
 
     // A skill load: the framework's own tool, named by the skill it fetches.
     public static Step Load(string skill, string result = "<instructions>…</instructions>") =>
-        new(EvalTools.LoadSkill, new Dictionary<string, object?> { ["skillName"] = skill }, result);
+        new(EvalTools.LoadSkill, new Dictionary<string, object?> { [SkillsProvider.SkillNameParameter] = skill }, result);
 
     // One tool call per iteration, in the order given, then a final assistant message. Concurrency
     // is not modelled here: what the ordering check is about is the order calls were issued in,

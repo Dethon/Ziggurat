@@ -29,12 +29,7 @@ public static class WatchScenarios
     // claim exists to show. The setup index read is required beside it, as the home family
     // requires it: a watch names an entity, and a run that skipped the index wrote the skill's
     // own example into the home (2026-09-08, twice in one pass) — the index is where the id is.
-    private static CallExpectation LoadsTheSkill => new()
-    {
-        Label = "skill",
-        Tool = EvalTools.LoadSkill,
-        Arguments = [Arg.Is("skillName", HomeWatchesSkill.Name)]
-    };
+    private static CallExpectation LoadsTheSkill => CallExpectation.LoadsSkill(HomeWatchesSkill.Name);
 
     // An announcement's target object naming the hub's room or the satellite in it — never the
     // word anywhere in the file, which a delivery address or the watch's name would satisfy, and

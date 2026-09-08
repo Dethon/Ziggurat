@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Infrastructure.Agents.Skills;
 
 namespace Tests.Eval.Harness;
 
@@ -94,8 +95,10 @@ public static class Arg
         new($"path matches /{pattern}/",
             args => Regex.IsMatch(PathOf(args) ?? "", pattern, RegexOptions.IgnoreCase));
 
+    // A load's skill name is its "path": what a permission on the load tool names, so a scenario
+    // tolerates one skill and not any.
     public static readonly string[] PathNames =
-        ["path", "filePath", "basePath", "sourcePath", "directoryPath"];
+        ["path", "filePath", "basePath", "sourcePath", "directoryPath", SkillsProvider.SkillNameParameter];
 
     public static string? PathOf(JsonElement args) =>
         PathNames

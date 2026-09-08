@@ -89,6 +89,10 @@ public static class HomeAssistantPrompt
         new("home.area-slug-is-read-not-derived",
             "An area id passed to an action is the slug read from the setup index, never one derived from the display name.");
 
+    public static readonly PromptClaim RoomRequestUsesTheRoomAction =
+        new("home.room-request-uses-the-room-action",
+            "A request that names a room runs the action that takes an area id, never the whole-house one.");
+
     public static readonly PromptClaim ReactingToTheHomeIsAWatch =
         new("home.reacting-to-the-home-is-a-watch",
             "A request to react to an entity changing becomes a watch under /ha/watches, never a schedule, a timer or a calendar event.");
@@ -97,6 +101,7 @@ public static class HomeAssistantPrompt
     [
         ExactlyWhatWasAsked,
         AreaSlugIsReadNotDerived,
+        RoomRequestUsesTheRoomAction,
         ReactingToTheHomeIsAWatch,
     ];
 }

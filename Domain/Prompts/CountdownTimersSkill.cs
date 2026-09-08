@@ -17,7 +17,6 @@ public static class CountdownTimersSkill
     public static readonly string Body = $$"""
         - Create: `{{VfsTextCreateTool.Name}}` at `/timers/<descriptive-id>/timer.json` with JSON
           `{"durationSeconds": <int>, "text"?: "<spoken message>", "target": {...} }`.
-          `durationSeconds` is capped at 4 hours — for anything longer use the alarms calendar.
           `target` is `{satelliteId | satelliteIds | room | all}`. On a voice turn, default to the
           **speaking room** (the room this request came from) unless another room is named. On any
           other channel there is no speaking room, and **nothing else supplies one**: not what the
@@ -26,9 +25,7 @@ public static class CountdownTimersSkill
           creating the timer, and never guess (a timer rings only on its target satellites, so a
           wrong or absent one either rings in an empty room or fails to arm). When `text` is
           omitted the timer announces itself as "<id> timer", so pick a descriptive id (e.g. `pasta`).
-          `text` is spoken to a person and is **never an instruction** to be carried out — if what
-          you are about to write there is a command ("apaga el aire"), you want a `/schedules`
-          one-shot instead.
+          `text` is spoken to a person and is **never an instruction** to be carried out.
         - Time left: `{{VfsFileReadTool.Name}}` on `/timers/<id>/status.json` → `remainingSeconds`
           and `firesAt`. When your reply is spoken, give only the remaining time; in a written reply
           include `firesAt` if the user asked when it fires.

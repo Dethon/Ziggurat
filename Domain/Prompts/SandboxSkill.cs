@@ -12,7 +12,7 @@ public static class SandboxSkill
 
     // The whole trigger: the one line about this skill that is in every turn.
     public const string Description =
-        "Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone — or keeping working files in its persistent workspace (\"compute the sha256 of that file\", \"run this python\", \"clone the repo and count the lines\"). Not for reading or writing files on another mount. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, and how a container path maps to a virtual one.";
+        "Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone (\"compute the sha256 of that file\", \"run this python\", \"clone the repo and count the lines\"). Not for reading or writing files on another mount. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, and how a container path maps to a virtual one.";
 
     public static string Body(string mountPoint, string workspace)
     {

@@ -194,7 +194,7 @@ public static class DelegationScenarios
             new CallPermission(EvalTools.WebBrowse),
             // A research request reads as a web task to the parent, which may load the skill
             // before deciding to hand the work away; the load is a call the ceiling carries.
-            new CallPermission(EvalTools.LoadSkill)
+            CallPermission.Load(WebBrowsingSkill.Name)
         ],
         // Either honest shape fits with one call of slack; delegating and then re-running the
         // whole research (the redo reflex the trust-the-result rule targets) does not.

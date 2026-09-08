@@ -129,7 +129,7 @@ public static class VoiceScenarios
         Instant = EvalInstant.Evening,
         // Nothing is required: the garage has no light, so the right number of successful actions
         // is none, and what is being checked is what the agent said about that.
-        Permitted = [.. CallPermission.Looking("/ha*"), HomeAssistantScenarios.MayLoadASkill],
+        Permitted = [.. CallPermission.Looking("/ha*"), CallPermission.Load(HomeAssistantSkill.Name)],
         CallCeiling = 7,
         Reply = new ReplyExpectation
         {
@@ -328,7 +328,7 @@ public static class VoiceScenarios
                 ]
             }
         ],
-        Permitted = [.. CallPermission.Looking("/ha*"), HomeAssistantScenarios.MayLoadASkill],
+        Permitted = [.. CallPermission.Looking("/ha*"), CallPermission.Load(HomeAssistantSkill.Name)],
         CallCeiling = 5,
         Reply = new ReplyExpectation
         {
@@ -375,7 +375,7 @@ public static class VoiceScenarios
         [
             new CallPermission(EvalTools.WebSearch),
             new CallPermission(EvalTools.WebBrowse),
-            new CallPermission(EvalTools.LoadSkill)
+            CallPermission.Load(WebBrowsingSkill.Name)
         ],
         // One worker tolerated, not required: the delegation reflex reaches research phrasing,
         // and a canned worker reads no page, so the parent still pays for the tail itself.

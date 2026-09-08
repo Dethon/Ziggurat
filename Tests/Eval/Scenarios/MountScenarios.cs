@@ -137,12 +137,7 @@ public static class MountScenarios
         [
             // Running anything is the sandbox skill's business; the transfer rule it also
             // exercises is the mounts section's and needs no load.
-            new CallExpectation
-            {
-                Label = "skill",
-                Tool = EvalTools.LoadSkill,
-                Arguments = [Arg.Is("skillName", SandboxSkill.Name)]
-            },
+            CallExpectation.LoadsSkill(SandboxSkill.Name),
             new CallExpectation
             {
                 Label = "transfer",
@@ -173,7 +168,7 @@ public static class MountScenarios
             new CallPermission(EvalTools.Exec, "/sandbox*"),
             // A copy out of the vault is a vault task to a model reading the stub; that load is
             // tolerated, and the transfer rule it cites is in the stub, not the body.
-            new CallPermission(EvalTools.LoadSkill)
+            CallPermission.Load(ObsidianVaultSkill.Name)
         ],
         CallCeiling = 8,
         Reply = new ReplyExpectation

@@ -34,7 +34,7 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
     // The prompt is the stub — which mechanism a request is — and the file's rules are the skill
     // the same server serves as a resource.
     [Fact]
-    public async Task McpServer_GetSchedulingPrompt_ChoosesTheMechanism_AndTheSkillExplainsCronAndScheduleFile()
+    public async Task McpServer_GetSchedulingPrompt_KeepsTheMechanismAndLeavesTheFileToTheSkill()
     {
         var client = await ConnectAsync();
 

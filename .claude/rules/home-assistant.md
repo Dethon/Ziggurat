@@ -4,6 +4,7 @@ paths:
   - "Domain/Tools/HomeAssistant/**"
   - "Domain/Prompts/HomeAssistantPrompt.cs"
   - "Domain/Prompts/HomeWatchesSkill.cs"
+  - "Domain/Prompts/HomeAssistantSkill.cs"
   - "Domain/Prompts/HomeAssistantSetupSummary.cs"
 ---
 

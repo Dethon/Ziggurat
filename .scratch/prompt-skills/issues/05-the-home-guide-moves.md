@@ -8,7 +8,7 @@
 
 - [x] A full-tier eval pass runs on the base commit first and its scorecard is backed up.
 - [x] The home server serves the stub as its prompt and two skills as resources; agent snapshots show the stub and both advertisements; the body snapshot is under its budget.
-- [x] The home and music families cite the trigger claim and require the load; mechanism scenarios still pass with no load required; a scenario is shown red with body prose deleted and the description intact.
+- [x] The home and music families cite the trigger claim and require the load; the mechanism scenarios that only choose (timer, schedule, six hours) pass with no load required, and the alarm-shape one requires it because its cited claim moved into the body; a scenario is shown red with body prose deleted and the description intact.
 - [x] Every moved claim is cited or guarded as before; the commit notes each demonstrated red.
 - [x] A full-tier pass after the move shows no claim rate below the backed-up scorecard; nabu's and jonas's standing token counts drop by the body; the ceiling's remaining figure is lowered.
 - [x] Spec: `.scratch/prompt-skills/spec.md` § The setup index, § Rollout.

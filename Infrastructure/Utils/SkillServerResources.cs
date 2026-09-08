@@ -29,15 +29,7 @@ public static class SkillServerResources
         ArgumentNullException.ThrowIfNull(skills);
 
         var index = Index(skills);
-        builder.Services.AddSingleton(McpServerResource.Create(
-            () => index,
-            new McpServerResourceCreateOptions
-            {
-                UriTemplate = IndexAddress,
-                Name = "skills",
-                Description = "The skills this server ships: name, description and where each body is.",
-                MimeType = IndexMimeType
-            }));
+        RegisterIndex(builder, index);
 
         foreach (var skill in skills)
         {
@@ -66,15 +58,7 @@ public static class SkillServerResources
         ArgumentNullException.ThrowIfNull(body);
 
         var index = Index([new SkillText(name, description, string.Empty)]);
-        builder.Services.AddSingleton(McpServerResource.Create(
-            () => index,
-            new McpServerResourceCreateOptions
-            {
-                UriTemplate = IndexAddress,
-                Name = "skills",
-                Description = "The skills this server ships: name, description and where each body is.",
-                MimeType = IndexMimeType
-            }));
+        RegisterIndex(builder, index);
         builder.Services.AddSingleton(sp => McpServerResource.Create(
             () => Body(new SkillText(name, description, body(sp))),
             new McpServerResourceCreateOptions
@@ -89,6 +73,18 @@ public static class SkillServerResources
     }
 
     public static string BodyAddress(string skillName) => $"{Scheme}{skillName}/SKILL.md";
+
+    // One index per server: a server calls one of the two registrations, never both.
+    private static void RegisterIndex(IMcpServerBuilder builder, string index) =>
+        builder.Services.AddSingleton(McpServerResource.Create(
+            () => index,
+            new McpServerResourceCreateOptions
+            {
+                UriTemplate = IndexAddress,
+                Name = "skills",
+                Description = "The skills this server ships: name, description and where each body is.",
+                MimeType = IndexMimeType
+            }));
 
     // What the index says about each skill: enough to advertise it and to fetch it, nothing of the
     // body. `type` names the shape of what the location holds, so a later kind of skill can sit in

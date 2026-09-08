@@ -1,3 +1,4 @@
+using Infrastructure.Agents.Skills;
 using Shouldly;
 using Tests.Eval.Fixtures;
 
@@ -859,6 +860,21 @@ public class ScenarioChecksTests
         failures.ShouldHaveSingleItem().ShouldContain($"unnecessary call: {EvalTools.LoadSkill}");
     }
 
+    // A permission names one skill: that load is tolerated, and another skill's load on the same
+    // turn is still the wrong choice.
+    [Fact]
+    public async Task APermissionNamingASkill_ToleratesThatLoad_AndNoOther()
+    {
+        var scenario = Timer() with { Permitted = [.. Timer().Permitted, CallPermission.Load("home-assistant")] };
+        var named = await ScriptedTurn.RunAsync(
+            "listo", ScriptedTurn.Load("home-assistant"), ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        var other = await ScriptedTurn.RunAsync(
+            "listo", ScriptedTurn.Load("home-watches"), ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        ScenarioChecks.Failures(scenario, named).ShouldBeEmpty();
+        ScenarioChecks.Failures(scenario, other).ShouldHaveSingleItem().ShouldContain("unnecessary call");
+    }
+
     private static Scenario RequiringTheLoad() => Timer() with
     {
         Required =
@@ -867,7 +883,7 @@ public class ScenarioChecksTests
             {
                 Label = "skill",
                 Tool = EvalTools.LoadSkill,
-                Arguments = [Arg.Is("skillName", "home-watches")]
+                Arguments = [Arg.Is(SkillsProvider.SkillNameParameter, "home-watches")]
             },
             .. Timer().Required
         ]

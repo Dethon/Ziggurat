@@ -13,12 +13,7 @@ public static class VaultScenarios
     // Every scenario of the family requires the load, before the vault is written to: the skill's
     // description is the trigger claim, and a note written without the skill is the red that claim
     // exists to show.
-    public static CallExpectation LoadsTheSkill => new()
-    {
-        Label = "skill",
-        Tool = EvalTools.LoadSkill,
-        Arguments = [Arg.Is("skillName", ObsidianVaultSkill.Name)]
-    };
+    public static CallExpectation LoadsTheSkill => CallExpectation.LoadsSkill(ObsidianVaultSkill.Name);
 
     public static IReadOnlyList<Scenario> All =>
     [

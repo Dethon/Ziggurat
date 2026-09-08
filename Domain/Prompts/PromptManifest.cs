@@ -174,7 +174,8 @@ public static class PromptManifest
             // The stub plus the live agent list the server appends: the file's rules are the
             // scheduling skill. Ratcheted from 2,000.
             TokenBudget = 700,
-            ServedBy = "mcp-scheduling"
+            ServedBy = "mcp-scheduling",
+            Claims = SchedulingPrompt.Claims
         },
         new()
         {

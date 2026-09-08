@@ -56,6 +56,8 @@ public static class MechanismScenarios
                 + "teaches it too, and deleting that takes the create path with it — so this claim cannot be "
                 + "falsified by deleting prose. The scenario is kept as a regression guard against a model "
                 + "that stops discriminating; it just cannot earn the citation."),
+            new Guard(SchedulingPrompt.NeverAHumanReminder.Id,
+                "The scheduling stub's own statement of the rule below, guarded by the same demonstration."),
             new Guard(TimerPrompt.SchedulesAreNeverHumanReminders.Id,
                 "Demonstrated on 2026-08-18 with the rule deleted from all three prompts: a ten-minute "
                 + "reminder still went to /timers rather than /schedules. Nothing tempts the model into "
@@ -96,12 +98,7 @@ public static class MechanismScenarios
         [
             // The file's fields are in the skill's body; the choice of a schedule over a timer
             // is made before it, in the stub.
-            new CallExpectation
-            {
-                Label = "skill",
-                Tool = EvalTools.LoadSkill,
-                Arguments = [Arg.Is("skillName", SchedulingSkill.Name)]
-            },
+            CallExpectation.LoadsSkill(SchedulingSkill.Name),
             new CallExpectation
             {
                 Label = "schedule",
@@ -127,7 +124,7 @@ public static class MechanismScenarios
             new CallPermission(EvalTools.Glob, "/ha*"),
             new CallPermission(EvalTools.Read, "/ha*"),
             new CallPermission(EvalTools.Info, "/ha*"),
-            HomeAssistantScenarios.MayLoadASkill
+            CallPermission.Load(HomeAssistantSkill.Name)
         ],
         Ordering = [new OrderingConstraint("skill", "schedule")],
         CallCeiling = 8,
@@ -138,7 +135,10 @@ public static class MechanismScenarios
                 "Demonstrated on 2026-08-18: with the two-step choice deleted from the timer, scheduling and "
                 + "Home Assistant prompts, 'apaga el aire dentro de una hora' still became a /schedules "
                 + "one-shot at the right absolute time. The model works out on its own that a timer only "
-                + "speaks, so the prose is redundant on this turn shape.")
+                + "speaks, so the prose is redundant on this turn shape."),
+            new Guard(SchedulingPrompt.DeferredActionIsASchedule.Id,
+                "The scheduling stub's own statement of the same rule, guarded by the same 2026-08-18 "
+                + "demonstration: the choice held with the paragraph deleted from all three prompts.")
         ],
         Policy = new RunPolicy(2, 3)
     };
@@ -238,7 +238,7 @@ public static class MechanismScenarios
         [
             .. CallPermission.Looking("/ha*"),
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*"),
-            HomeAssistantScenarios.MayLoadASkill
+            CallPermission.Load(HomeAssistantSkill.Name)
         ],
         CallCeiling = 7,
         Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],
