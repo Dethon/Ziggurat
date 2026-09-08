@@ -43,7 +43,7 @@ public static class WebScenarios
     // claim exists to show.
     private static CallExpectation LoadsTheSkill => CallExpectation.LoadsSkill(WebBrowsingSkill.Name);
 
-    private static readonly string ASnapshotRef = $"^{ElementRef.Prefix}\\d+$";
+    private static readonly string _aSnapshotRef = $"^{ElementRef.Prefix}\\d+$";
 
     // The answer is in the article and nowhere else: the search snippet describes the recipe
     // without giving the number. A model that answered from the result list has nothing to answer
@@ -195,7 +195,7 @@ public static class WebScenarios
                 Label = "name",
                 Tool = EvalTools.WebAction,
                 // A ref that came out of that snapshot, and the name the user gave.
-                Arguments = [Arg.Matches("ref", ASnapshotRef), Arg.Matches("value", "(?i)fran")]
+                Arguments = [Arg.Matches("ref", _aSnapshotRef), Arg.Matches("value", "(?i)fran")]
             }
         ],
         // The page has to be open before an element on it can be named.
@@ -406,7 +406,7 @@ public static class WebScenarios
                 Arguments =
                 [
                     Arg.Matches("action", "(?i)^type$"),
-                    Arg.Matches("ref", ASnapshotRef),
+                    Arg.Matches("ref", _aSnapshotRef),
                     Arg.Matches("value", "(?i)astro")
                 ]
             }
