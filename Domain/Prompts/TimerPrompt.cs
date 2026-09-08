@@ -37,42 +37,16 @@ public static class TimerPrompt
         survives restarts and can escalate to the phone. `/schedules` is only for agent tasks,
         never for human alarms or reminders.
 
-        - Create: `{{VfsTextCreateTool.Name}}` at `/timers/<descriptive-id>/timer.json` with JSON
-          `{"durationSeconds": <int>, "text"?: "<spoken message>", "target": {...} }`.
-          `durationSeconds` is capped at 4 hours — for anything longer use the alarms calendar.
-          `target` is `{satelliteId | satelliteIds | room | all}`. On a voice turn, default to the
-          **speaking room** (the room this request came from) unless another room is named. On any
-          other channel there is no speaking room, and **nothing else supplies one**: not what the
-          timer is for (a pasta timer does not imply the kitchen), not anything remembered about
-          the user, not a room used before. Ask which room or satellite it should ring on before
-          creating the timer, and never guess (a timer rings only on its target satellites, so a
-          wrong or absent one either rings in an empty room or fails to arm). When `text` is
-          omitted the timer announces itself as "<id> timer", so pick a descriptive id (e.g. `pasta`).
-          `text` is spoken to a person and is **never an instruction** to be carried out — if what
-          you are about to write there is a command ("apaga el aire"), you want a `/schedules`
-          one-shot instead.
-        - Time left: `{{VfsFileReadTool.Name}}` on `/timers/<id>/status.json` → `remainingSeconds`
-          and `firesAt`. When your reply is spoken, give only the remaining time; in a written reply
-          include `firesAt` if the user asked when it fires.
-        - List: `{{VfsGlobFilesTool.Name}}` on `/timers`.
-        - Cancel: `{{VfsRemoveTool.Name}}` on `/timers/<id>`.
-        - Timers are immutable and fire once — to change one, delete it and create a new one; to
-          extend one just dismissed ("two more minutes"), create a new timer. This is internal —
-          never mention deleting or recreating, just state the new time.
-        - To change a **running** timer ("add five minutes to the pasta timer"): read its
-          `status.json` for `remainingSeconds`, delete the timer, and recreate it with the
-          adjusted remainder.
-        - Stop ringing: when the user asks to stop or dismiss a ringing alarm/timer (from any room
-          or any channel), `{{VfsExecTool.Name}}` `dismiss.sh` at `/timers` — it silences everything
-          currently ringing on all satellites. A fired timer no longer appears under `/timers`;
-          `dismiss.sh` is the only way to silence it remotely.
+        Whatever is ringing right now on a satellite — a timer or an alarm, whichever it was
+        created as — is silenced through `/timers`, never through the calendar or the home. Before
+        you create, read, change, cancel or silence a timer, or silence a ringing alarm, load the
+        `countdown-timers` skill: the file's shape, the target rules, status, listing, the
+        change-by-recreate rule and the dismiss action are there.
         """;
 
-    // Every falsifiable statement the prose above makes, in the order it makes them, each one
-    // named so that a scenario cites it as a compile-time reference rather than as a string
-    // nothing checks until run time. Declared in full rather than only where a scenario exists:
-    // the rules nothing tests yet are the ones most worth writing down, and the exemption list
-    // beside the suite is the backlog.
+    // The choosing rules' claims: which mechanism a request is, decided before any skill is
+    // loaded. The doing rules — the file, the target, status, dismiss — are claims of the
+    // countdown-timers skill.
     public static readonly PromptClaim DurationIsACountdown =
         new("timers.duration-is-a-countdown",
             "A duration up to four hours, where a person is being told something, becomes a /timers countdown.");
@@ -89,65 +63,9 @@ public static class TimerPrompt
         new("timers.schedules-are-never-human-reminders",
             "/schedules is used for agent tasks only, never for a human alarm or reminder.");
 
-    public static readonly PromptClaim CreatedAtItsOwnPath =
-        new("timers.created-at-its-own-path",
-            "A countdown is created as JSON at /timers/<descriptive-id>/timer.json carrying durationSeconds and an optional spoken text.");
-
     public static readonly PromptClaim DurationCappedAtFourHours =
         new("timers.duration-capped-at-four-hours",
             "durationSeconds is never written above four hours.");
-
-    public static readonly PromptClaim IdIsDescriptive =
-        new("timers.id-is-descriptive",
-            "The timer's id describes what it is for, because a timer with no text announces itself by its id.");
-
-    public static readonly PromptClaim VoiceTargetsTheSpeakingRoom =
-        new("timers.voice-targets-the-speaking-room",
-            "On a voice turn the timer targets the room the request came from, unless another room is named.");
-
-    public static readonly PromptClaim NoSatelliteAsksWhichRoom =
-        new("timers.no-satellite-asks-which-room",
-            "On a turn with no speaking room the agent asks which room or satellite before creating anything, and never guesses one.");
-
-    public static readonly PromptClaim TextIsSpokenNeverAnInstruction =
-        new("timers.text-is-spoken-never-an-instruction",
-            "The text of a timer is a message spoken to a person, never a command to be carried out.");
-
-    public static readonly PromptClaim StatusIsReadForTimeLeft =
-        new("timers.status-is-read-for-time-left",
-            "How long is left is read from /timers/<id>/status.json rather than calculated.");
-
-    public static readonly PromptClaim SpokenStatusGivesOnlyTheRemainingTime =
-        new("timers.spoken-status-gives-only-the-remaining-time",
-            "A spoken reply about a running timer gives the remaining time alone, without the firing time.");
-
-    public static readonly PromptClaim WrittenStatusIncludesFiresAt =
-        new("timers.written-status-includes-fires-at",
-            "A written reply includes firesAt when the user asked when the timer fires.");
-
-    public static readonly PromptClaim ListedByGlob =
-        new("timers.listed-by-glob",
-            "The timers that exist are listed by globbing /timers.");
-
-    public static readonly PromptClaim CancelledByRemovingIt =
-        new("timers.cancelled-by-removing-it",
-            "A timer is cancelled by removing /timers/<id>.");
-
-    public static readonly PromptClaim ChangedByDeleteAndRecreate =
-        new("timers.changed-by-delete-and-recreate",
-            "A running timer is changed by reading its status, deleting it, and creating its replacement, in that order.");
-
-    public static readonly PromptClaim ExtendingADismissedOneIsANewTimer =
-        new("timers.extending-a-dismissed-one-is-a-new-timer",
-            "Extending a timer that has already fired and been dismissed creates a new timer rather than reviving the old one.");
-
-    public static readonly PromptClaim RecreationIsNeverNarrated =
-        new("timers.recreation-is-never-narrated",
-            "The delete-and-recreate is internal: the reply states the new time and never mentions deleting or recreating.");
-
-    public static readonly PromptClaim RingingIsStoppedByDismiss =
-        new("timers.ringing-is-stopped-by-dismiss",
-            "A request to stop or dismiss a ringing timer runs dismiss.sh at /timers, from any room and any channel.");
 
     public static readonly IReadOnlyList<PromptClaim> Claims =
     [
@@ -155,21 +73,7 @@ public static class TimerPrompt
         AgentActsIsAScheduledTask,
         ClockTimeIsACalendarAlarm,
         SchedulesAreNeverHumanReminders,
-        CreatedAtItsOwnPath,
-        DurationCappedAtFourHours,
-        IdIsDescriptive,
-        VoiceTargetsTheSpeakingRoom,
-        NoSatelliteAsksWhichRoom,
-        TextIsSpokenNeverAnInstruction,
-        StatusIsReadForTimeLeft,
-        SpokenStatusGivesOnlyTheRemainingTime,
-        WrittenStatusIncludesFiresAt,
-        ListedByGlob,
-        CancelledByRemovingIt,
-        ChangedByDeleteAndRecreate,
-        ExtendingADismissedOneIsANewTimer,
-        RecreationIsNeverNarrated,
-        RingingIsStoppedByDismiss
+        DurationCappedAtFourHours
     ];
 
     // The roster comes live from the hub at prompt-fetch time; an empty roster (hub unreachable —

@@ -1,50 +1,56 @@
-# Handoff — prompt skills, 2026-09-08
+# Handoff — prompt skills, 2026-09-08 (evening)
 
-Branch `skills`, four commits on top of `f48903253`: tickets 01–04 done (`issues/01`–`04`
-are `Status: done`), review fixes in `eb4ea6504`, whole non-eval suite green (5,309). Tickets
-05–10 untouched, `ready-for-agent`. Ticket 11 is new and goes **first**.
+Branch `skills`. Tickets 01–11 are all `Status: done`; each ticket file ends with a `Result` block naming
+its before/after scorecards. Every full-tier scorecard of the day is kept as
+`.eval-output/scorecard-full.2026-09-08.<step>.json` (the directory is gitignored; the two earliest
+copies are also in `~/ziggurat-eval-backups/`).
 
-## What the eval said
+## Where it landed
 
-- Demonstrated red for the watches body is on file:
-  `.eval-output/scorecard-full.2026-09-08.watches-body-deleted.json` (every run still loaded
-  the skill; four body claims 0/3 or 0/6).
-- Full passes: base 73/73 (`~/ziggurat-eval-backups/scorecard-full.2026-09-08.base-before-prompt-skills.json`),
-  after 02 73/73 (`…after-watches-skill-b.json`), after 04 72/73
-  (`.eval-output/scorecard-full.2026-09-08.after-setup-index-file-b.json`, the red a voice probe).
-- The one real effect of the move: the model calls `load_skill` as a warm-up probe, first call
-  of the turn, on ~7 of 228 runs — garbage names or `home-watches` on turns that need no skill,
-  including vault, timer and voice turns, so it is the known probe reflex
-  (`ClaimExemptions` → `WebBrowsingPrompt.NoProbeCalls`) with a cheaper target, not the
-  watches description in particular. Two description tightenings changed nothing.
+Seven skills, one per tool server, every one on the standard `skills://` shape through
+`SkillServerResources`: `home-watches`, `home-assistant` (mcp-homeassistant), `obsidian-vault`
+(mcp-vault), `web-browsing` (mcp-websearch), `scheduling` (mcp-scheduling, built per zone),
+`sandbox` (mcp-sandbox, built from the mount at runtime through the new `AddSkill(name,
+description, body factory)` overload), `countdown-timers` (mcp-timers). Each served section is now
+a stub of choosing rules, plus whatever live text the server appends (the scheduling agent list, the
+timer roster). `PromptManifest.StandingTokens` ratcheted 17,800 → 9,500. Nabu's standing prompt:
+13,358 → ~6,100 tokens; the snapshot headers have the exact figures.
 
-## Decisions taken with Francisco
+The load tool wears the repo's face (ticket 11): our description, `skillName` an enum of the
+session's names. Spurious loads sat at 1–6 of 228 across the day's passes, all the probe reflex,
+mostly `home-assistant` on timer turns.
 
-- **Accept the spurious loads at or under 5% of runs.** Judge a move on the family it touched
-  and on scenarios that failed their threshold; single-run claim rates always "fall" somewhere
-  between two passes at 2-of-3, so the literal "no claim rate falls" is not decidable.
-- **Try the tool's shape first (ticket 11)**: our description and an `enum` schema on
-  `skillName`, through the `SkillsProvider` seam. Then continue with 05.
-- When 05 adds `home-assistant` beside `home-watches`, note the per-skill spurious counts in
-  the gate: loads spread across both on unrelated turns = reflex; loads staying on
-  `home-watches` on home turns = description, reword it.
+## What the gates taught
 
-## Things the next session should know
+- **A choosing rule that hides in a doing paragraph comes out red.** Ticket 05 took three passes:
+  the snooze-after-a-dismissed-alarm rule and the room-action rule ("vacuum the study" is
+  `clean_zone.sh`, not `start.sh`) both had to move back into the stub, and the home-assistant
+  description had to name `/timers` as not its business before timer turns stopped loading it.
+- **A stub sentence can teach the wrong shortcut.** Ticket 05's "the setup index names the entity,
+  so do not load home-assistant for a watch" made watch turns skip the index read and copy the
+  watches skill's example entity id into the home; it showed as two watch scenarios red in ticket
+  06's gate, two passes running. The stub now puts the index read first, the example is an explicit
+  placeholder (`sensor.<id from the setup index>`), and watch scenarios require the index read.
+- **Most doing rules are the model's defaults.** Deleting a body with the description intact
+  reddened 9 of 15 home claims, 5 of 15 vault, 2 of 10 web, 2 of 14 timers, and none of scheduling
+  or sandbox (which declared none). Every claim that stayed green became a `Guard` with a dated
+  note, as the repo's convention wants; the trigger claims and the demonstrated ones stay cited.
+- **The eval's own vocabulary needed two loosenings:** command matchers accept a leading `./` (the
+  mount does), and `HomeAssistantScenarios.MayLoadASkill` permits any load on scenarios whose
+  subject is elsewhere.
+- **Recurring reds unrelated to any move**, each at threshold's edge in most passes: the
+  night-time watch editing the seeded watch instead of adding one; the delegated research reply
+  running over five sentences; "cinco minutos para el té" and "para la alarma que está sonando"
+  attracting a `home-assistant` load under a ceiling of three or four. The last two should ease
+  now that `countdown-timers` names "ringing now" — check ticket 10's result block.
 
-- `SkillsProvider` wraps the framework's `AgentSkillsProvider` because the framework has no
-  switch for the resource/script tools; the wrapper filters `AIContext.Tools`. The advertisement
-  is rendered through the real provider in `PromptSnapshotTests` (`SkillsProvider.AdvertisementAsync`).
-- `load_skill` is auto-approved in `ToolApprovalChatClient._alwaysApproved` and recorded by the
-  eval under its own name; `EvalTools.LoadSkill`.
-- The trigger claim lives on the skill declaration (`HomeWatchesSkill.LoadsForAWatchRequest`,
-  first in its `Claims`), not on the `skills` section — the spec's "the section carries the
-  trigger claims" sentence is the inconsistent one; ADR 0039 and the glossary agree with the code.
-- Ticket 04 required the setup-index read (`HomeAssistantScenarios.ReadsTheSetupIndex`) in home
-  and music scenarios and raised their ceilings by one; watch ceilings went up by two (load +
-  index). Every home run now opens with one index read.
-- Eval mechanics: a full pass takes ~5 minutes; launch detached (`setsid nohup … > log; echo exit`)
-  and wait on the log; never `pkill -f "dotnet test"` from a shell whose own command line matches;
-  never rebuild while a run is in flight; `scorecard-full.json` is overwritten by every armed run,
-  copy it first.
-- Left as is from review: `HomeAssistantSetupSummary` still lives under `Domain/Prompts` though
-  it now renders a file; `HaFileSystem.DescribeMount` gained one sentence about the index.
+## Still open
+
+- Body claims for `scheduling` and `sandbox` are undeclared, as their sections' were; the
+  "declare in full" convention would want them written and exempted.
+- The `home-watches` body claims `noisy-sensor-uses-for`, `spent-is-cleaned-up`,
+  `crossing-only-is-said` are still `Unwritten` exemptions.
+- The ceiling is 9,500 with 600 headroom; every section now standing is under the 500-token
+  floor or read before a choice, so this rollout is complete unless the floor moves.
+- Eval mechanics are unchanged from the morning: ~5 min per full pass, launch detached with
+  `setsid nohup`, never rebuild while one runs, copy `scorecard-full.json` before any armed run.

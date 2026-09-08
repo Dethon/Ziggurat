@@ -33,6 +33,7 @@ public static class MechanismScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
@@ -45,7 +46,7 @@ public static class MechanismScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Guards =
         [
             new Guard(TimerPrompt.DurationIsACountdown.Id,
@@ -65,7 +66,7 @@ public static class MechanismScenarios
         // word, and this is the scenario whose create call carries one.
         Judged =
         [
-            new JudgedCheck(TimerPrompt.IdIsDescriptive.Id,
+            new JudgedCheck(CountdownTimersSkill.IdIsDescriptive.Id,
                 "The user asked to be reminded to take out the rubbish ('que saque la basura'). "
                 + "Find the tool call that created the timer: its path is /timers/<id>/timer.json. "
                 + "Judge the <id> alone. Pass if the id names what the timer is for — the rubbish, "
@@ -262,6 +263,7 @@ public static class MechanismScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
@@ -275,10 +277,10 @@ public static class MechanismScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Guards =
         [
-            new Guard(TimerPrompt.VoiceTargetsTheSpeakingRoom.Id,
+            new Guard(CountdownTimersSkill.VoiceTargetsTheSpeakingRoom.Id,
                 "Demonstrated on 2026-08-18 with the rule deleted from the prompt and the mount, on a turn "
                 + "where the words point at another room (pasta, asked from the office): the model still "
                 + "targeted the office. Targeting the speaking room is its default whenever the decorated "
@@ -306,8 +308,9 @@ public static class MechanismScenarios
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
+        Required = [TimerScenarios.LoadsTheSkill],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 3,
+        CallCeiling = 4,
         Reply = new ReplyExpectation
         {
             // Creating nothing is half of it; a silent refusal would pass that half. What the
@@ -318,7 +321,7 @@ public static class MechanismScenarios
                     "habitación", "sala", "dónde", "cocina", "oficina", "despacho", "satélite")
             ]
         },
-        Claims = [TimerPrompt.NoSatelliteAsksWhichRoom.Id],
+        Claims = [CountdownTimersSkill.LoadsForATimerRequest.Id, CountdownTimersSkill.NoSatelliteAsksWhichRoom.Id],
         Policy = new RunPolicy(2, 3)
     };
 }

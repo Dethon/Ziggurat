@@ -74,9 +74,13 @@ public class PromptClaimTests
         timers.Claims.ShouldContain(c => c.Id == "timers.duration-is-a-countdown");
         timers.Claims.ShouldContain(c => c.Id == "timers.agent-acts-is-a-scheduled-task");
         timers.Claims.ShouldContain(c => c.Id == "timers.clock-time-is-a-calendar-alarm");
-        timers.Claims.ShouldContain(c => c.Id == "timers.voice-targets-the-speaking-room");
-        timers.Claims.ShouldContain(c => c.Id == "timers.no-satellite-asks-which-room");
-        timers.Claims.Count.ShouldBeGreaterThanOrEqualTo(10);
+        timers.Claims.Count.ShouldBeGreaterThanOrEqualTo(5);
+
+        // The doing rules moved with their prose into the countdown-timers skill.
+        var skill = PromptManifest.FindSkill(CountdownTimersSkill.Name).ShouldNotBeNull();
+        skill.Claims.ShouldContain(c => c.Id == "countdown-timers.voice-targets-the-speaking-room");
+        skill.Claims.ShouldContain(c => c.Id == "countdown-timers.no-satellite-asks-which-room");
+        skill.Claims.Count.ShouldBeGreaterThanOrEqualTo(10);
     }
 
     [Fact]

@@ -117,7 +117,7 @@ public class ScorecardLedgerTests : IDisposable
     {
         // The pair is a truth — one scenario demonstrated red, another asserts the same
         // behaviour as a side condition — so the strongest true statement wins.
-        var claim = Domain.Prompts.TimerPrompt.CreatedAtItsOwnPath.Id;
+        var claim = Domain.Prompts.CountdownTimersSkill.CreatedAtItsOwnPath.Id;
         var ledger = new ScorecardLedger(
             [Synthetic(cites: [claim]), Synthetic(guards: [claim])]);
 

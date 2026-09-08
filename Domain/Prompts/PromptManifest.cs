@@ -26,7 +26,7 @@ public static class PromptManifest
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated.
-    public const int StandingTokens = 10_000;
+    public const int StandingTokens = 9_500;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -187,9 +187,11 @@ public static class PromptManifest
         new()
         {
             Name = TimerPrompt.Name,
-            Purpose = "Timers and alarms on the satellites, named by the room they ring in.",
+            Purpose = "Which mechanism a moment is — a countdown, a calendar alarm, a scheduled task — and the live satellite roster.",
             Priority = PromptPriority.Client,
-            TokenBudget = 1_500,
+            // The stub plus the roster the server appends: the file's rules are the
+            // countdown-timers skill. Ratcheted from 1,500.
+            TokenBudget = 900,
             ServedBy = "mcp-timers",
             Claims = TimerPrompt.Claims
         },
@@ -292,6 +294,15 @@ public static class PromptManifest
             BodyBudget = 1_200,
             ServedBy = "mcp-sandbox",
             Claims = SandboxSkill.Claims
+        },
+        new()
+        {
+            Name = CountdownTimersSkill.Name,
+            Description = CountdownTimersSkill.Description,
+            DescriptionBudget = 130,
+            BodyBudget = 900,
+            ServedBy = "mcp-timers",
+            Claims = CountdownTimersSkill.Claims
         }
     ];
 

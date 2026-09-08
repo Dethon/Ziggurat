@@ -41,6 +41,7 @@ public static class DelegationScenarios
         ],
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "status",
@@ -49,7 +50,7 @@ public static class DelegationScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Tier = EvalTier.Smoke,
         Guards =
         [

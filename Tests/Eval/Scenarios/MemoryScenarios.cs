@@ -41,6 +41,7 @@ public static class MemoryScenarios
         ],
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
@@ -53,7 +54,7 @@ public static class MemoryScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Reply = new ReplyExpectation
         {
             Spoken = true,
