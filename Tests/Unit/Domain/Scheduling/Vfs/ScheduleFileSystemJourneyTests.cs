@@ -371,6 +371,22 @@ public class ScheduleFileSystemJourneyTests
         truncated.Truncated.ShouldBeTrue();
     }
 
+    // The dotted spelling of an action file, accepted by the HA mount and now by the timers one.
+    // Three exec-capable mounts disagreeing on it cost a call to find out which one this was.
+    [Fact]
+    public async Task Exec_RunNowWithADotSlashPrefix_TriggersTheSameFire()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule(id: "n", prompt: "p", nextRunAt: DateTime.UtcNow.AddDays(1)));
+        var fs = Build(store);
+
+        var result = (await fs.ExecAsync("/jonas/n", "./run_now.sh", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(0);
+        (store.Items["n"].NextRunAt <= DateTime.UtcNow).ShouldBeTrue();
+    }
+
     [Fact]
     public async Task Exec_RunNow_TriggersImmediateFire_AndUnknownCommandsOrSchedulesFail()
     {

@@ -262,7 +262,15 @@ public sealed class TimerFileSystem(
                 $"exec is only supported at the timers root: exec {TimerPath.DismissFileName}");
         }
 
+        // `./dismiss.sh` names the same action file as `dismiss.sh`: the HA mount strips the
+        // prefix before it looks an action up, and a mount that refused it taught the model only
+        // which mount it was standing on.
         var trimmed = command.Trim();
+        if (trimmed.StartsWith("./", StringComparison.Ordinal))
+        {
+            trimmed = trimmed[2..];
+        }
+
         if (node.Kind == TimerNodeKind.Root && trimmed != TimerPath.DismissFileName)
         {
             return Exec(

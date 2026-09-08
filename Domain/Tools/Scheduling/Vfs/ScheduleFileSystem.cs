@@ -400,7 +400,14 @@ public sealed class ScheduleFileSystem(
             return NotFound<FsExecResult>(path);
         }
 
+        // The dotted spelling of the action file, stripped the way every exec-capable mount
+        // strips it.
         var trimmed = command.Trim();
+        if (trimmed.StartsWith("./", StringComparison.Ordinal))
+        {
+            trimmed = trimmed[2..];
+        }
+
         if (trimmed != SchedulePath.RunNowFileName)
         {
             return Exec("", $"command not found: {trimmed}\navailable: {SchedulePath.RunNowFileName}", 127, path);

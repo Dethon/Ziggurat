@@ -336,6 +336,23 @@ public class TimerFileSystemJourneyTests
         result.Stdout.ShouldContain("nothing is ringing");
     }
 
+    // `./dismiss.sh` is how a model that has been told the mount holds an action *file* spells
+    // running it, and it is what the HA mount already accepts — it strips the prefix before it
+    // looks the action up. Rejecting it here made the two mounts disagree, and a model that tried
+    // the dotted form first paid a call to learn which mount it was on.
+    [Fact]
+    public async Task Exec_DismissWithADotSlashPrefix_RunsTheSameAction()
+    {
+        var (fs, _, _, dismisser) = Build();
+        dismisser.Ringing.Add(new DismissedAlert("pasta", AnnounceKind.Timer));
+
+        var result = (await fs.ExecAsync("/", "./dismiss.sh", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(0);
+        result.Stdout.ShouldContain("timer \"pasta\"");
+    }
+
     [Fact]
     public async Task Exec_UnknownCommand_Returns127()
     {
