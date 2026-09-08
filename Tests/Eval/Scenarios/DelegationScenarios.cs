@@ -190,11 +190,14 @@ public static class DelegationScenarios
         Permitted =
         [
             new CallPermission(EvalTools.WebSearch),
-            new CallPermission(EvalTools.WebBrowse)
+            new CallPermission(EvalTools.WebBrowse),
+            // A research request reads as a web task to the parent, which may load the skill
+            // before deciding to hand the work away; the load is a call the ceiling carries.
+            new CallPermission(EvalTools.LoadSkill)
         ],
         // Either honest shape fits with one call of slack; delegating and then re-running the
         // whole research (the redo reflex the trust-the-result rule targets) does not.
-        CallCeiling = 4,
+        CallCeiling = 5,
         Guards =
         [
             new Guard(SubAgentPrompt.TheResultIsNotRedone.Id,

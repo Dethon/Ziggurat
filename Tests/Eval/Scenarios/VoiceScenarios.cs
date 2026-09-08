@@ -348,12 +348,13 @@ public static class VoiceScenarios
         Permitted =
         [
             new CallPermission(EvalTools.WebSearch),
-            new CallPermission(EvalTools.WebBrowse)
+            new CallPermission(EvalTools.WebBrowse),
+            new CallPermission(EvalTools.LoadSkill)
         ],
         // One worker tolerated, not required: the delegation reflex reaches research phrasing,
         // and a canned worker reads no page, so the parent still pays for the tail itself.
         MayDelegateTo = ["jonas-worker"],
-        CallCeiling = 6,
+        CallCeiling = 7,
         Reply = new ReplyExpectation
         {
             Spoken = true,

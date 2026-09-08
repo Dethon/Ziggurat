@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Prompts;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Browser;
 using Infrastructure.Extensions;
@@ -25,6 +26,9 @@ public static class ConfigModule
                 .WithTools<McpWebSnapshotTool>()
                 .WithTools<McpWebActionTool>()
                 .WithTools<McpViewImageTool>()
+                // The skill that teaches this server's tools ships beside them, so a deployment
+                // without the browser cannot advertise how to drive one.
+                .AddSkills(WebBrowsingSkill.Text)
                 .WithPrompts<McpSystemPrompt>();
 
             return services;

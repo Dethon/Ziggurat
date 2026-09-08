@@ -26,7 +26,7 @@ public static class PromptManifest
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated.
-    public const int StandingTokens = 13_200;
+    public const int StandingTokens = 12_200;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -128,9 +128,10 @@ public static class PromptManifest
         new()
         {
             Name = WebBrowsingPrompt.Name,
-            Purpose = "Searching, loading and reading pages, and what to do when one refuses.",
+            Purpose = "That the browser exists, that a url comes from a search, and that no call is a probe.",
             Priority = PromptPriority.Client,
-            TokenBudget = 1_500,
+            // The stub: the workflow is the web-browsing skill. Ratcheted from 1,500.
+            TokenBudget = 400,
             ServedBy = "mcp-websearch",
             Claims = WebBrowsingPrompt.Claims
         },
@@ -260,6 +261,15 @@ public static class PromptManifest
             BodyBudget = 1_800,
             ServedBy = "mcp-vault",
             Claims = ObsidianVaultSkill.Claims
+        },
+        new()
+        {
+            Name = WebBrowsingSkill.Name,
+            Description = WebBrowsingSkill.Description,
+            DescriptionBudget = 130,
+            BodyBudget = 1_400,
+            ServedBy = "mcp-websearch",
+            Claims = WebBrowsingSkill.Claims
         }
     ];
 
