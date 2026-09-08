@@ -3,6 +3,8 @@ paths:
   - "McpServerHomeAssistant/**"
   - "Domain/Tools/HomeAssistant/**"
   - "Domain/Prompts/HomeAssistantPrompt.cs"
+  - "Domain/Prompts/HomeWatchesSkill.cs"
+  - "Domain/Prompts/HomeAssistantSetupSummary.cs"
 ---
 
 # Home Assistant
@@ -88,6 +90,17 @@ the measures the sensor's kind has. `FakeHomeAssistantSocket` answers the comman
 `Statistics` map; the real-container test imports rows with `recorder.import_statistics` and
 reads them back. A sensor that lacks a `state_class` (LibreLink's glucose did) gets one through
 HA's `customize:`; prod has that and `purge_keep_days: 90` since 2026-09-04.
+
+## The setup index is a file, and the watches guide is a skill
+
+`/ha/setup-index.md` is the one-page account of the home (`HomeAssistantSetupSummary`, rendered
+by `HaFileSystem` on every read from the catalog, the watches and the satellite roster), so it is
+as old as the read rather than as old as the conversation; the served `home_assistant_guide` is
+the static guide alone and says to read the file first. The doing rules of a watch live in the
+`home-watches` skill (`Domain/Prompts/HomeWatchesSkill.cs`), shipped by the server through
+`AddSkills` and loaded by the model with `load_skill`; the guide keeps the choosing rule — a
+change in the home is a watch — and a one-sentence stub. See `docs/adr/0039` and
+`.claude/rules/prompts.md`.
 
 ## Watches are Home Assistant automations, written as files
 

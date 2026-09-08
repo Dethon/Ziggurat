@@ -9,7 +9,7 @@
   sandbox_prompt           Client               1004 / 1400   The sandbox's layout, what may be run in it and what it refuses.
   websearch_prompt         Client               1368 / 1500   Searching, loading and reading pages, and what to do when one refuses.
   idealista_guide          Client                317 / 600    Property search: the filters that exist and how a listing is read back.
-  home_assistant_guide     Client               3996 / 5000   The house: its areas and entities, and how an intent becomes a service call.
+  home_assistant_guide     Client               3996 / 4500   The house: its areas and entities, and how an intent becomes a service call.
   date                     Date                    7 / 30     Today's date. Last of the static sections, because it is the only one that changes on its own.
   home-watches             Skill                 103 / 120    body 1424 / 2200, served by mcp-homeassistant
 

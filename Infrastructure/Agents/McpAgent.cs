@@ -50,6 +50,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly McpPromptCache? _promptCache;
     private readonly ReadImageSupport? _readImages;
 
+    private readonly SkillsProvider _skills;
     private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
     private int _isDisposed;
     private string? _reportedPromptWarnings;
@@ -104,6 +105,7 @@ public sealed class McpAgent : DisposableAgent
         _conversationId = spec.ConversationId;
         _promptCache = promptCache;
         _readImages = readImages;
+        _skills = new SkillsProvider(SkillsOf);
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = spec.DisplayName,
@@ -113,7 +115,7 @@ public sealed class McpAgent : DisposableAgent
             // The skills are the session's — they arrive with the servers it dialled — so the
             // provider asks for them by session, on each turn, and offers nothing to a session
             // whose servers ship none.
-            AIContextProviders = [new SkillsProvider(SkillsOf)]
+            AIContextProviders = [_skills]
         });
     }
 
@@ -136,6 +138,7 @@ public sealed class McpAgent : DisposableAgent
 
             _threadSessions.Clear();
         });
+        _skills.Dispose();
         _syncLock.Dispose();
     }
 

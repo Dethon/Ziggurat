@@ -11,7 +11,7 @@
   sandbox_prompt           Client               1004 / 1400   The sandbox's layout, what may be run in it and what it refuses.
   websearch_prompt         Client               1368 / 1500   Searching, loading and reading pages, and what to do when one refuses.
   idealista_guide          Client                317 / 600    Property search: the filters that exist and how a listing is read back.
-  home_assistant_guide     Client               3996 / 5000   The house: its areas and entities, and how an intent becomes a service call.
+  home_assistant_guide     Client               3996 / 4500   The house: its areas and entities, and how an intent becomes a service call.
   scheduling_prompt        Client               1360 / 2000   Scheduled tasks as files: creating, listing, editing and firing one.
   printing_prompt          Client                330 / 600    The printer's queue, the formats it takes and what it rejects.
   timers_prompt            Client                979 / 1500   Timers and alarms on the satellites, named by the room they ring in.

@@ -26,7 +26,7 @@ public static class PromptManifest
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated.
-    public const int StandingTokens = 18_300;
+    public const int StandingTokens = 17_800;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -155,10 +155,10 @@ public static class PromptManifest
             Name = HomeAssistantPrompt.Name,
             Purpose = "The house: its areas and entities, and how an intent becomes a service call.",
             Priority = PromptPriority.Client,
-            // The largest section by far, and the only one that grows with the deployment rather
-            // than with an edit: the setup index naming every area and entity is appended to it
-            // when the server serves it. Back to 5,000 when the watches moved into a skill.
-            TokenBudget = 5_000,
+            // Still the largest section, but static now: the setup index that grew with the
+            // deployment is a file the mount serves, and the watches are a skill. Ratcheted from
+            // 6,500 through 5,000 as each of them left.
+            TokenBudget = 4_500,
             ServedBy = "mcp-homeassistant",
             Claims = HomeAssistantPrompt.Claims
         },

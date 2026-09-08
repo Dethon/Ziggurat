@@ -17,6 +17,23 @@ internal static partial class McpSkillReader
 {
     public static async Task<PromptSkill[]> ReadAsync(McpClient client, ILogger? logger, CancellationToken ct)
     {
+        try
+        {
+            return await ReadIndexedAsync(client, logger, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A server whose listing or index is broken ships no skill this session; the
+            // session still builds, because a missing skill is the deployment's problem and
+            // not this turn's.
+            logger?.LogWarning(ex, "The skills of {Server} could not be read, so none of them are offered",
+                client.ServerInfo?.Name);
+            return [];
+        }
+    }
+
+    private static async Task<PromptSkill[]> ReadIndexedAsync(McpClient client, ILogger? logger, CancellationToken ct)
+    {
         var resources = await client.ListResourcesAsync(cancellationToken: ct);
         if (!resources.Any(r => string.Equals(r.Uri, SkillServerResources.IndexAddress, StringComparison.OrdinalIgnoreCase)))
         {
@@ -72,28 +89,18 @@ internal static partial class McpSkillReader
             return (null, null, text.Trim());
         }
 
-        string? name = null, description = null;
-        foreach (var line in match.Groups[1].Value.Split('\n'))
-        {
-            var separator = line.IndexOf(':');
-            if (separator < 0)
-            {
-                continue;
-            }
+        var fields = match.Groups[1].Value.Split('\n')
+            .Select(line => (Separator: line.IndexOf(':'), Line: line))
+            .Where(field => field.Separator > 0)
+            .ToDictionary(
+                field => field.Line[..field.Separator].Trim(),
+                field => field.Line[(field.Separator + 1)..].Trim(),
+                StringComparer.OrdinalIgnoreCase);
 
-            var key = line[..separator].Trim();
-            var value = line[(separator + 1)..].Trim();
-            if (key.Equals("name", StringComparison.OrdinalIgnoreCase))
-            {
-                name = value;
-            }
-            else if (key.Equals("description", StringComparison.OrdinalIgnoreCase))
-            {
-                description = value;
-            }
-        }
-
-        return (name, description, text[(match.Index + match.Length)..].Trim());
+        return (
+            fields.GetValueOrDefault("name"),
+            fields.GetValueOrDefault("description"),
+            text[(match.Index + match.Length)..].Trim());
     }
 
     [GeneratedRegex(@"\A﻿?---\s*\n(.*?)\n---\s*\n", RegexOptions.Singleline)]

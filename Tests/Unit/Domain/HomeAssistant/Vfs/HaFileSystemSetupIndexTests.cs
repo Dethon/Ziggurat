@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
+using Domain.Contracts;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Voice;
 using Domain.Exceptions;
 using Domain.Prompts;
 using Domain.Tools.HomeAssistant.Vfs;
@@ -24,7 +26,7 @@ public class HaFileSystemSetupIndexTests
         };
         var clock = new FakeTimeProvider();
         var provider = new HaCatalogProvider(() => client, clock);
-        return (new HaFileSystem(provider, () => client, timeProvider: clock), client, provider, clock);
+        return (new HaFileSystem(provider, () => client, timeProvider: clock, satellites: new FakeSatellites()), client, provider, clock);
     }
 
     [Fact]
@@ -61,9 +63,10 @@ public class HaFileSystemSetupIndexTests
         // the served prompt used to carry, watches line included.
         // A read numbers its lines, as every text read on this mount does; the words are the same.
         Unnumbered(read.Content).TrimEnd().ShouldBe(
-            (await new HomeAssistantSetupSummary(provider, new HaWatches(() => client, clock))
+            (await new HomeAssistantSetupSummary(provider, new HaWatches(() => client, clock), new FakeSatellites())
                 .GetAsync(CancellationToken.None)).TrimEnd());
         read.Content.ShouldContain("watches:");
+        read.Content.ShouldContain("voice satellites: kitchen-01 (room \"Kitchen\")");
         read.Content.ShouldContain("## Current Home Assistant setup");
         read.Content.ShouldContain("light.kitchen_(kitchen)");
     }
@@ -80,6 +83,15 @@ public class HaFileSystemSetupIndexTests
         clock.Advance(TimeSpan.FromMinutes(6));
 
         (await Read(fs)).ShouldContain("switch.new_plug_(new-plug)");
+    }
+
+    private sealed class FakeSatellites : ISatelliteCatalog
+    {
+        public Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<SatelliteDescriptor>>([new("kitchen-01", "Kitchen")]);
+
+        public Task<IReadOnlyList<string>> ResolveAsync(AnnounceTarget target, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
     }
 
     private static string Unnumbered(string content) =>

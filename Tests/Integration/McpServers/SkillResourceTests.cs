@@ -102,6 +102,30 @@ public class SkillResourceTests
         skill.Body.ShouldBe("# Surprise\n\nBoo.");
     }
 
+    // A server whose index is not what the reader expects ships no skill this session, and the
+    // session still builds: a broken skill is the deployment's problem, not this turn's.
+    [Fact]
+    public async Task AServerWhoseIndexIsBroken_ContributesNoSkill_AndTheSessionStillBuilds()
+    {
+        await using var server = await InMemoryMcpServer.StartAsync(services => services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<FailingTools>()
+            .Services.AddSingleton(McpServerResource.Create(
+                () => "this is not an index",
+                new McpServerResourceCreateOptions
+                {
+                    UriTemplate = SkillServerResources.IndexAddress,
+                    Name = "skills",
+                    MimeType = SkillServerResources.IndexMimeType
+                })));
+
+        await using var session = await BuildAsync(server.Endpoint);
+
+        session.Skills.ShouldBeEmpty();
+        session.ClientManager.Tools.ShouldNotBeEmpty();
+    }
+
     private static Task<ThreadSession> BuildAsync(string endpoint) =>
         ThreadSession.CreateAsync(
             [McpServerEndpoint.Configured(endpoint)], "skills-test", "fran", "skills test",
