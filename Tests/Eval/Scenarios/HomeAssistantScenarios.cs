@@ -1,4 +1,5 @@
 using Domain.Prompts;
+using Domain.Tools.HomeAssistant.Vfs;
 using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
 
@@ -10,6 +11,15 @@ namespace Tests.Eval.Scenarios;
 // and after the turn.
 public static class HomeAssistantScenarios
 {
+    // The index is the one read a home task starts with: it names every entity the turn will act
+    // on, so a scenario that needs a name to resolve requires it, and the ceiling counts it.
+    public static CallExpectation ReadsTheSetupIndex => new()
+    {
+        Label = "index",
+        Tool = EvalTools.Read,
+        Arguments = [Arg.Path("/ha/" + HaVfsPath.SetupIndexFileName)]
+    };
+
     public static IReadOnlyList<Scenario> All =>
     [
         TurnTheAirConditionerOn, SetTheTemperature, VacuumTheStudy,
@@ -34,6 +44,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "turn on",
@@ -54,7 +65,7 @@ public static class HomeAssistantScenarios
             new CallPermission(EvalTools.Exec, FakeHomeAssistant.AirConditionerDirectory)
         ],
         Changes = [new StateChange(FakeHomeAssistant.AirConditionerEntityId, "on")],
-        CallCeiling = 5,
+        CallCeiling = 6,
         Guards =
         [
             new Guard(HomeAssistantPrompt.ExactlyWhatWasAsked.Id,
@@ -86,6 +97,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "set",
@@ -107,7 +119,7 @@ public static class HomeAssistantScenarios
         [
             new StateChange($"{FakeHomeAssistant.AirConditionerEntityId}#temperature", "22")
         ],
-        CallCeiling = 5,
+        CallCeiling = 6,
         Guards =
         [
             new Guard(HomeAssistantPrompt.ExitCodeIsTheConfirmation.Id,
@@ -136,6 +148,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "clean",
@@ -155,7 +168,7 @@ public static class HomeAssistantScenarios
             new CallPermission(EvalTools.Exec, "*aspiradora*")
         ],
         Changes = [new StateChange(FakeHomeAssistant.VacuumEntityId, "cleaning")],
-        CallCeiling = 6,
+        CallCeiling = 7,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 1 },
         // Two claims on one call: the value of --cleaning_area_id is the frozen slug (the setup
         // index's only bridge between "estudio" and `despacho`), and the flag's *name* exists
@@ -189,6 +202,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "turn on",
@@ -206,7 +220,7 @@ public static class HomeAssistantScenarios
             new CallPermission(EvalTools.Exec, "*lavadora_(*")
         ],
         Changes = [new StateChange(FakeHomeAssistant.WashingMachineEntityId, "on")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 1 },
         Claims = [HomeAssistantPrompt.EntityNamedAsListed.Id],
         Policy = new RunPolicy(2, 3)
@@ -231,6 +245,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "play",
@@ -256,7 +271,7 @@ public static class HomeAssistantScenarios
         // retry — which is the contract's own "list the real items" done thoroughly. The claim
         // cited here is about the reply; playback-retry storms are what FavouriteMusic's tight
         // ceiling guards.
-        CallCeiling = 10,
+        CallCeiling = 11,
         Reply = new ReplyExpectation
         {
             Mentions = [new SpokenValue("what could not be played", "Faro del Sur", "emisora")],
@@ -293,6 +308,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "snooze",
@@ -313,7 +329,7 @@ public static class HomeAssistantScenarios
             .. CallPermission.Looking("/timers*"),
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
-        CallCeiling = 6,
+        CallCeiling = 7,
         Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],
         Claims = [HomeAssistantPrompt.SnoozeIsANewEvent.Id, CoreDirectivePrompt.NoPlaceholderToolCalls.Id],
         Policy = new RunPolicy(2, 3)
@@ -337,6 +353,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "list",
@@ -364,7 +381,7 @@ public static class HomeAssistantScenarios
             .. CallPermission.LookingAndManuals("/ha*"),
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
-        CallCeiling = 6,
+        CallCeiling = 7,
         Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "0")],
         Claims = [HomeAssistantPrompt.AlarmIsCancelledByUid.Id],
         Policy = new RunPolicy(2, 3)
@@ -388,6 +405,7 @@ public static class HomeAssistantScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "delete",
@@ -418,7 +436,7 @@ public static class HomeAssistantScenarios
             .. CallPermission.LookingAndManuals("/ha*"),
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
-        CallCeiling = 8,
+        CallCeiling = 9,
         // Declared as unchanged on purpose: one event before, one after. A create without the
         // delete leaves two, and the diff reports it.
         Claims = [HomeAssistantPrompt.AlarmIsChangedByDeleteAndCreate.Id, HomeAssistantPrompt.AlarmIsCancelledByUid.Id],

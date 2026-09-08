@@ -12,10 +12,12 @@ public static class HomeAssistantPrompt
         ## Home Assistant Control (`/ha` filesystem)
 
         Home Assistant is mounted at `/ha` and used through the standard filesystem
-        tools. The "## Current Home Assistant setup" index appended below lists every
-        device once, grouped under its room, and its header gives the rule for building
-        either full path form from an entry — use that summary to prevent unnecessary
-        exploration.
+        tools. The **setup index**, `/ha/setup-index.md`, lists every device once, grouped
+        under its room, with the rule for building either full path form from an entry, the
+        actions each class admits, the watches that exist and the rooms a voice can reach. It is
+        built when it is read, so it is never stale: `file_read /ha/setup-index.md` first, before
+        anything else in a home task, and re-read it when a name does not resolve. One read
+        replaces every exploratory `glob`.
 
         ### Scope
 
@@ -43,8 +45,8 @@ public static class HomeAssistantPrompt
 
         ### Workflow
 
-        1. Find the entity: `glob` under `/ha/entities/<class>` or
-           `/ha/areas/<room>`, or read the setup index. Do NOT glob to discover actions:
+        1. Find the entity in the setup index you read; `glob` under `/ha/entities/<class>` or
+           `/ha/areas/<room>` only for what the index does not settle. Do NOT glob to discover actions:
            the setup index lists them per class, and action files live in the entity
            directory, so `glob` `/ha/entities/<class>/*.sh` returns nothing.
         2. Inspect when you need an attribute as input: `file_read`
@@ -159,8 +161,9 @@ public static class HomeAssistantPrompt
         watches exist. The boundary with the other reactive tools: a clock time or date → the
         alarms calendar (a duration → `/timers`); an action to perform at a time → `/schedules`;
         **something in the home changing → a watch**, never a schedule that polls `history.sh`.
-        Before you write, change, pause or remove a watch, load the `home-watches` skill: it
-        carries the file's shape, the trigger and effect kinds, and the delivery rules.
+        Before you write, change, pause or remove a watch — and only then: no other home task
+        needs it — load the `home-watches` skill, which carries the file's shape, the trigger and
+        effect kinds, and the delivery rules.
 
         ### Music playback
 

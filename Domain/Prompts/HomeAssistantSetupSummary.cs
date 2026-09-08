@@ -4,9 +4,10 @@ using Domain.Tools.HomeAssistant.Vfs;
 
 namespace Domain.Prompts;
 
-// Builds the directory dump appended to HomeAssistantPrompt at MCP-prompt-fetch time. Backed by
-// the shared HaCatalogProvider cache. Returns "" when the catalog is empty so the caller falls
-// back to the static prompt alone.
+// Builds the setup index the mount serves as `/ha/setup-index.md`, on every read. It used to be
+// appended to the served prompt at fetch time and was as old as the conversation; as a file it is
+// as old as the read (docs/adr/0039). Backed by the shared HaCatalogProvider cache. Returns "" when
+// the catalog is empty.
 //
 // Each entity is listed ONCE, under its room, as the bare composed segment. It used to be listed
 // twice — once per tree — with the full path repeated on every line, which on the live house was

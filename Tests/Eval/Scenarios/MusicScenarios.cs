@@ -29,6 +29,7 @@ public static class MusicScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "browse",
@@ -58,7 +59,7 @@ public static class MusicScenarios
         Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
         // Tight on purpose: a model that guesses a title first gets a 500, and the browse and the
         // retry that follow put it over. That is the failure this scenario is named after.
-        CallCeiling = 5,
+        CallCeiling = 6,
         // The playlist rule alone. Demonstrated red by deleting it: the model played "mis
         // favoritos", took the 500, and spent the rest of the turn on an empty browse and a
         // --help.
@@ -96,6 +97,7 @@ public static class MusicScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "episodes",
@@ -125,7 +127,7 @@ public static class MusicScenarios
         ],
         Ordering = [new OrderingConstraint("episodes", "play")],
         Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
-        CallCeiling = 5,
+        CallCeiling = 6,
         // Demonstrated red by deleting the podcast bullet: with it gone the model read the
         // player's state and answered without playing anything at all.
         Claims = [HomeAssistantPrompt.EpisodePlaysOnlyByItsUri.Id],
@@ -153,6 +155,7 @@ public static class MusicScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "seek",
@@ -168,7 +171,7 @@ public static class MusicScenarios
         // Nothing else may be run: a play of any kind is an unnecessary call here, and that is
         // exactly the mistake the rule names. Reading an action's manual is not running it.
         Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Guards =
         [
             new Guard(HomeAssistantPrompt.RestartIsASeek.Id,
@@ -203,6 +206,7 @@ public static class MusicScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "seek",
@@ -221,7 +225,7 @@ public static class MusicScenarios
         // anything else on the player is not. A rewind is a seek and nothing else — one field run
         // created a timer called "Rebobina" instead, which this forbids.
         Permitted = [.. CallPermission.LookingAndManuals("/ha*")],
-        CallCeiling = 5,
+        CallCeiling = 6,
         Claims = [HomeAssistantPrompt.RelativeSeekReadsThePositionFirst.Id],
         Policy = new RunPolicy(2, 3)
     };

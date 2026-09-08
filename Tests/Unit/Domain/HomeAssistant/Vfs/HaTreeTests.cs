@@ -29,6 +29,7 @@ public class HaTreeTests
         dirs.ShouldContain("areas/salon/sensor.salon_temp");
         dirs.ShouldContain("areas/unassigned/light.kitchen");
 
+        files.ShouldContain(HaVfsPath.SetupIndexFileName);
         files.ShouldContain("entities/light/kitchen/state.json");
         files.ShouldContain("entities/light/kitchen/turn_on.sh");
         files.ShouldContain("entities/sensor/salon_temp/state.json");

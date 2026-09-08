@@ -87,7 +87,7 @@ public static class WatchScenarios
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(("above", "27")),
         Ordering = [new OrderingConstraint("skill", "watch")],
-        CallCeiling = 7,
+        CallCeiling = 8,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
         Claims =
         [
@@ -145,7 +145,7 @@ public static class WatchScenarios
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(("below", "55")),
         Ordering = [new OrderingConstraint("skill", "watch")],
-        CallCeiling = 7,
+        CallCeiling = 8,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
         Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.UrgencyIsAnInsistentAnnouncement.Id],
         Policy = new RunPolicy(2, 3)
@@ -186,7 +186,7 @@ public static class WatchScenarios
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(("above", "180")),
         Ordering = [new OrderingConstraint("skill", "watch")],
-        CallCeiling = 7,
+        CallCeiling = 8,
         Claims =
         [
             HomeWatchesSkill.LoadsForAWatchRequest.Id,
@@ -231,7 +231,7 @@ public static class WatchScenarios
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(("above", "180")),
         Ordering = [new OrderingConstraint("skill", "watch")],
-        CallCeiling = 7,
+        CallCeiling = 8,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
         Claims =
         [
@@ -272,7 +272,7 @@ public static class WatchScenarios
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(("below", "18"), ("above", "26")),
         Ordering = [new OrderingConstraint("skill", "watch")],
-        CallCeiling = 7,
+        CallCeiling = 8,
         Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.RangeIsTwoTriggers.Id],
         Policy = new RunPolicy(2, 3)
     };
@@ -310,7 +310,7 @@ public static class WatchScenarios
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(("below", "50")),
         Ordering = [new OrderingConstraint("skill", "watch")],
-        CallCeiling = 7,
+        CallCeiling = 8,
         Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.UrgencyIsAnInsistentAnnouncement.Id],
         Policy = new RunPolicy(2, 3)
     };
@@ -348,7 +348,7 @@ public static class WatchScenarios
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(),
         Ordering = [new OrderingConstraint("skill", "watch")],
-        CallCeiling = 7,
+        CallCeiling = 8,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
         Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.OneShotUsesOnce.Id],
         Policy = new RunPolicy(2, 3)
@@ -390,7 +390,7 @@ public static class WatchScenarios
         // still the one watch.
         Changes = [new StateChange(FakeHomeAssistant.ThresholdKey(FakeHomeAssistant.SugarWatchEntityId, "below"), "65")],
         Ordering = [new OrderingConstraint("skill", "edit")],
-        CallCeiling = 7,
+        CallCeiling = 8,
         Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.ChangeReplacesInPlace.Id],
         Policy = new RunPolicy(2, 3)
     };
@@ -428,7 +428,7 @@ public static class WatchScenarios
         ],
         Changes = [new StateChange(FakeHomeAssistant.SugarWatchEntityId, "off")],
         Ordering = [new OrderingConstraint("skill", "pause")],
-        CallCeiling = 7,
+        CallCeiling = 8,
         Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.PauseIsEnabledFalse.Id],
         Policy = new RunPolicy(2, 3)
     };
@@ -457,7 +457,7 @@ public static class WatchScenarios
         Permitted = LookingAtTheHome,
         Changes = [new StateChange(FakeHomeAssistant.WatchCountKey, "0")],
         Ordering = [new OrderingConstraint("skill", "delete")],
-        CallCeiling = 6,
+        CallCeiling = 7,
         Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.IsRemovedByDelete.Id],
         Policy = new RunPolicy(2, 3)
     };

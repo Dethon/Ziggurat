@@ -4,16 +4,12 @@ using ModelContextProtocol.Server;
 
 namespace McpServerHomeAssistant.McpPrompts;
 
+// The static guide alone. The setup index used to be appended here, as old as the conversation
+// that fetched it; it is now a file the mount builds on every read (docs/adr/0039).
 [McpServerPromptType]
-public class McpSystemPrompt(HomeAssistantSetupSummary summary)
+public class McpSystemPrompt
 {
     [McpServerPrompt(Name = HomeAssistantPrompt.Name)]
     [Description(HomeAssistantPrompt.Description)]
-    public async Task<string> GetSystemPromptAsync(CancellationToken ct)
-    {
-        var setup = await summary.GetAsync(ct);
-        return string.IsNullOrEmpty(setup)
-            ? HomeAssistantPrompt.SystemPrompt
-            : HomeAssistantPrompt.SystemPrompt + "\n\n" + setup;
-    }
+    public static string GetSystemPrompt() => HomeAssistantPrompt.SystemPrompt;
 }

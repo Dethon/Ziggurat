@@ -4,9 +4,9 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] With the fake client, listing the mount root shows the file; reading it yields the text the summary builder yields for the same catalog; adding an entity to the fake and reading again shows it.
-- [ ] The served home prompt is the static guide alone, and the prompt fixture's served text equals it.
-- [ ] Home Assistant, watch and music scenarios permit the read; the ones that need names to resolve require it; the full family passes at its previous rate with the index out of the prompt.
-- [ ] Spec: `.scratch/prompt-skills/spec.md` § The setup index.
+- [x] With the fake client, listing the mount root shows the file; reading it yields the text the summary builder yields for the same catalog; adding an entity to the fake and reading again shows it.
+- [x] The served home prompt is the static guide alone, and the prompt fixture's served text equals it.
+- [x] Home Assistant, watch and music scenarios permit the read; the ones that need names to resolve require it; the full family passes at its previous rate with the index out of the prompt.
+- [x] Spec: `.scratch/prompt-skills/spec.md` § The setup index.

@@ -235,7 +235,7 @@ public static class PromptManifest
         {
             Name = HomeWatchesSkill.Name,
             Description = HomeWatchesSkill.Description,
-            DescriptionBudget = 100,
+            DescriptionBudget = 120,
             BodyBudget = 2_200,
             ServedBy = "mcp-homeassistant",
             Claims = HomeWatchesSkill.Claims

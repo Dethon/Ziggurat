@@ -7,6 +7,7 @@ public class HaVfsPathTests
 {
     [Theory]
     [InlineData("", HaVfsKind.Root, null, null, null, null)]
+    [InlineData("setup-index.md", HaVfsKind.SetupIndexFile, null, null, null, null)]
     [InlineData("entities", HaVfsKind.EntitiesRoot, null, null, null, null)]
     [InlineData("areas", HaVfsKind.AreasRoot, null, null, null, null)]
     [InlineData("entities/light", HaVfsKind.ClassDir, "light", null, null, null)]

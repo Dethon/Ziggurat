@@ -5,6 +5,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Exceptions;
+using Domain.Prompts;
 using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
@@ -25,6 +26,11 @@ public sealed partial class HaFileSystem(
     // through one instance; a test that builds the mount alone gets its own.
     private readonly HaWatches _watches = watches ?? new HaWatches(clientFactory, timeProvider);
 
+    // The setup index, built from the same catalog, watches and satellites on every read. It used to
+    // be appended to the served prompt, where it was as old as the conversation; as a file it is as
+    // old as the read.
+    private HomeAssistantSetupSummary? _setupIndex;
+
     // Who is writing, for the one record on this mount that remembers its author: a watch runs its
     // prompts as the agent that created it. The call-tool filter enters the context; a test hands
     // one in directly.
@@ -32,12 +38,19 @@ public sealed partial class HaFileSystem(
 
     public const string Name = "ha";
 
+    // Not a field initialiser: the index shares this mount's watches instance, which a field
+    // initialiser before it cannot see.
+    private HomeAssistantSetupSummary SetupIndex =>
+        _setupIndex ??= new HomeAssistantSetupSummary(catalogProvider, _watches, satellites);
+
     public override string FilesystemName => Name;
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 
     public override string DescribeMount =>
-        "Home Assistant as a filesystem. Browse `/ha/entities/<class>/<id>/` or "
+        "Home Assistant as a filesystem. `read /ha/setup-index.md` first: the one-page index of every "
+        + "entity under its room, the actions per class, the watches and the voice rooms. Browse "
+        + "`/ha/entities/<class>/<id>/` or "
         + "`/ha/areas/<room>/<entity_id>/`. `read state.json` for live state; `read <service>.sh` "
         + "(or `exec '<service>.sh --help'`) for an action's arguments; `exec '<service>.sh --flag "
         + "value'` to control a device. NOT a shell — exec only runs the listed *.sh action files "
@@ -125,6 +138,11 @@ public sealed partial class HaFileSystem(
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
         var node = HaVfsPath.Parse(path);
+        if (node.Kind is HaVfsKind.SetupIndexFile)
+        {
+            return new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = true, Path = path, IsDirectory = false });
+        }
+
         if (IsWatchNode(node))
         {
             var (watchExists, watchIsDir) = await ResolveWatchAsync(node, ct);
@@ -140,6 +158,11 @@ public sealed partial class HaFileSystem(
     public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
     {
         var node = HaVfsPath.Parse(path);
+        if (node.Kind is HaVfsKind.SetupIndexFile)
+        {
+            return BuildReadResult(path, await SetupIndex.GetAsync(ct), offset, limit);
+        }
+
         if (node.Kind is HaVfsKind.WatchFile or HaVfsKind.WatchStatusFile)
         {
             return await ReadWatchAsync(path, node, offset, limit, ct);
