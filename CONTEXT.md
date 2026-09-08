@@ -637,6 +637,15 @@ and the home action happen the instant the watch fires; the prompt takes as long
 the agent does.
 _Avoid_: action (that is the home-action kind), consequence, handler
 
+## Home Assistant
+
+**Setup index**:
+The one-page account of the home the mount serves as a file: every entity under its
+room, the actions each class admits, the watches that exist and the rooms a voice can
+reach. It is built when it is read and read when a home task begins, so it is never
+older than the task and never carried in the prompt.
+_Avoid_: setup summary, entity list, home index, catalog dump
+
 ## Media library
 
 **Live download**:
@@ -702,6 +711,28 @@ accept and how much context they hold come from asking the host, and a host that
 cannot be asked offers none. Wherever the model is named it is marked as the host's,
 so a chart or a log never mistakes it for a hosted-provider model.
 _Avoid_: local model, lemonade patchable, GGUF model
+
+## Prompt
+
+**Base prompt**:
+The sections that are in an agent's instructions on every turn, assembled in a
+fixed order from what its servers and definition declare. It is what the model
+knows before it decides what to do; it never changes shape mid-conversation.
+_Avoid_: system prompt, standing sections, static prompt, core prompt
+
+**Skill**:
+A body of guidance the model loads itself when a request calls for it, offered by
+the tool server whose tools it explains and granted by the agent definition. Only
+its name and description sit in the base prompt; the body arrives as a tool result
+and stays in the conversation like any other. A skill teaches how to do a task, never
+which task to do — the choosing rules stay in the base prompt.
+_Avoid_: lazy section, on-demand prompt, guide, playbook
+
+**Trigger claim**:
+The claim a skill's description makes: that a request of a named kind loads it. It
+is declared beside the description and cited by every scenario of that task family,
+so a skill nobody loads is a red description, not a red body.
+_Avoid_: activation, routing rule, skill match
 
 ## Behavioural evaluation
 
