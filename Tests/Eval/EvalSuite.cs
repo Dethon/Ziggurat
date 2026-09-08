@@ -101,7 +101,9 @@ public static class EvalSuite
                 observations[index] = observed;
             }
 
-            return new RunReading(observed, ScenarioChecks.Exercised(scenario, recording));
+            return new RunReading(
+                observed, ScenarioChecks.Exercised(scenario, recording),
+                ScenarioChecks.KindOf(scenario, recording, observed));
         });
 
         var route = recordings.OrderBy(run => run.Key)
@@ -128,7 +130,8 @@ public static class EvalSuite
             failed,
             EvalRun.Decorated(scenario),
             await ProviderLookup.ResolveAsync(failedRoute, EvalGate.ApiKey ?? ""),
-            [$"passed {result.Passes} of {result.Attempts} runs, needed {policy.K}", .. failures]),
+            [$"passed {result.Passes} of {result.Attempts} runs, needed {policy.K}", .. failures],
+            ScenarioChecks.KindOf(scenario, failed, failures)),
             result.Passed);
 
         return new EvalOutcome(result, message, route);

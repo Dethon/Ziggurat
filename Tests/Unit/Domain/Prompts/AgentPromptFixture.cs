@@ -51,6 +51,15 @@ internal static class AgentPromptFixture
             [TimerPrompt.Name] = TimerPrompt.Build([])
         };
 
+    // What each server ships as skills, bound to the manifest exactly as the client manager binds
+    // what it reads off the wire: the served description and the served body, under the declaration.
+    public static IReadOnlyDictionary<string, PromptSkill> ServedSkills { get; } =
+        new[] { HomeWatchesSkill.Text }
+            .ToDictionary(
+                text => text.Name,
+                text => PromptManifest.BindSkill(text.Name, text.Description, text.Body),
+                StringComparer.OrdinalIgnoreCase);
+
     // The feature prompts, keyed by the feature name that turns them on — the same key the manifest
     // declares them under.
     public static IReadOnlyDictionary<string, string> FeatureText { get; } =
@@ -113,6 +122,7 @@ internal static class AgentPromptFixture
                 PromptManifest.Bind(PromptManifest.UserContext, SampleUserContext),
                 .. ServedSections(endpoints)
             ],
+            Skills = [.. SkillsOf(endpoints)],
             Selected = [.. selected.Select(s => PromptManifest.Selected(s)!)],
             CustomInstructions = customInstructions,
             Language = language,
@@ -136,7 +146,17 @@ internal static class AgentPromptFixture
             .SelectMany(service => PromptManifest.Declarations.Where(d => d.ServedBy == service))
             .Select(d => d.Bind(ServedText[d.Name]));
 
+    // The skills arrive with the servers, so an agent has exactly the skills of the services it dials.
+    public static IEnumerable<PromptSkill> SkillsOf(IEnumerable<string> endpoints) =>
+        endpoints
+            .Select(ServiceOf)
+            .SelectMany(service => PromptManifest.Skills.Where(s => s.ServedBy == service))
+            .Select(s => ServedSkills[s.Name]);
+
     public static string ServiceOf(string endpoint) => new Uri(endpoint).Host;
+
+    public static string SkillSnapshotPath(string name) =>
+        Path.Combine(McpServerRegistrations.RepoRoot, "Tests", "Snapshots", $"skill.{name}.md");
 
     public static string SnapshotPath(string id) =>
         Path.Combine(McpServerRegistrations.RepoRoot, "Tests", "Snapshots", $"prompt.{id}.txt");

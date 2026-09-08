@@ -13,6 +13,7 @@ using Domain.Prompts;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
+using Infrastructure.Agents.Skills;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -108,9 +109,16 @@ public sealed class McpAgent : DisposableAgent
             Name = spec.DisplayName,
             Description = spec.Description,
             ChatHistoryProvider = new RedisChatMessageStore(
-                stateStore, metricsPublisher, spec.ConversationId)
+                stateStore, metricsPublisher, spec.ConversationId),
+            // The skills are the session's — they arrive with the servers it dialled — so the
+            // provider asks for them by session, on each turn, and offers nothing to a session
+            // whose servers ship none.
+            AIContextProviders = [new SkillsProvider(SkillsOf)]
         });
     }
+
+    private IReadOnlyList<PromptSkill> SkillsOf(AgentSession? thread) =>
+        thread is not null && _threadSessions.TryGetValue(thread, out var session) ? session.Skills : [];
 
     public override async ValueTask DisposeAsync()
     {
@@ -401,6 +409,7 @@ public sealed class McpAgent : DisposableAgent
             Domain = _domainPrompts,
             FileSystem = session.FileSystemPrompts,
             Client = session.ClientManager.Prompts,
+            Skills = session.Skills,
             CustomInstructions = _customInstructions,
             Language = _language,
             Now = _timeProvider.GetLocalNow()

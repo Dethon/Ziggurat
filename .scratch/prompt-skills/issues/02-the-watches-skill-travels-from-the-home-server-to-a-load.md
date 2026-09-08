@@ -4,14 +4,14 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A full-tier eval pass runs on the base commit first and its scorecard is backed up outside the output directory.
-- [ ] The manifest declares the skill; claim coverage runs over the union of section and skill claims with no new exemptions; the `skills` section is declared and appears in every agent snapshot that has a skill.
-- [ ] An in-process home server lists the index resource and the body resource; the body's frontmatter name and description equal the declaration's; a real client reads both; the contract table fails if the server stops serving it.
-- [ ] A session built against real fixtures exposes the skill bound to its declaration; a server with no index contributes none; an undeclared skill binds under the default budget and is reported.
-- [ ] The agent's instructions end with the bare advertised list; the load tool is present, auto-approved and observed under its own name; the read-resource and run-script tools are absent.
-- [ ] Agent snapshots show the stub and the advertisement; `Tests/Snapshots` holds the skill's body snapshot under its budget; staleness checks every path the body teaches and both directions of served-versus-declared.
-- [ ] The watch scenarios cite the trigger claim and require the load; a scenario is shown red with the body's watch prose deleted and the description intact; the commit notes each demonstrated red.
-- [ ] A full-tier pass after the move shows no claim rate below the backed-up scorecard; the standing token count drops by the watches body; the ceiling's remaining figure is lowered to match.
-- [ ] Spec: `.scratch/prompt-skills/spec.md` § The manifest, § Transport and ownership, § Eval.
+- [x] A full-tier eval pass runs on the base commit first and its scorecard is backed up outside the output directory.
+- [x] The manifest declares the skill; claim coverage runs over the union of section and skill claims with no new exemptions; the `skills` section is declared and appears in every agent snapshot that has a skill.
+- [x] An in-process home server lists the index resource and the body resource; the body's frontmatter name and description equal the declaration's; a real client reads both; the contract table fails if the server stops serving it.
+- [x] A session built against real fixtures exposes the skill bound to its declaration; a server with no index contributes none; an undeclared skill binds under the default budget and is reported.
+- [x] The agent's instructions end with the bare advertised list; the load tool is present, auto-approved and observed under its own name; the read-resource and run-script tools are absent.
+- [x] Agent snapshots show the stub and the advertisement; `Tests/Snapshots` holds the skill's body snapshot under its budget; staleness checks every path the body teaches and both directions of served-versus-declared.
+- [x] The watch scenarios cite the trigger claim and require the load; a scenario is shown red with the body's watch prose deleted and the description intact; the commit notes each demonstrated red.
+- [x] A full-tier pass after the move shows no claim rate below the backed-up scorecard; the standing token count drops by the watches body; the ceiling's remaining figure is lowered to match.
+- [x] Spec: `.scratch/prompt-skills/spec.md` § The manifest, § Transport and ownership, § Eval.

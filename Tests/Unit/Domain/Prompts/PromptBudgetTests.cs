@@ -16,6 +16,8 @@ public class PromptBudgetTests
 
     public static TheoryData<string> Agents => [.. AgentPromptFixture.SnapshotIds];
 
+    public static TheoryData<string> Skills => [.. AgentPromptFixture.ServedSkills.Keys];
+
     [Theory]
     [MemberData(nameof(ServedSections))]
     public void Budget_EachServerPrompt_FitsItsDeclaredBudget(string name)
@@ -28,6 +30,24 @@ public class PromptBudgetTests
     public void Budget_EachFeaturePrompt_FitsItsDeclaredBudget(string name)
     {
         Fits(PromptManifest.Bind(name, AgentPromptFixture.FeatureText[name]));
+    }
+
+    // Two budgets per skill: the description is paid on every turn by every agent that has the
+    // skill, the body once by each conversation that loads it.
+    [Theory]
+    [MemberData(nameof(Skills))]
+    public void Budget_EachSkill_FitsItsDescriptionAndBodyBudgets(string name)
+    {
+        var skill = AgentPromptFixture.ServedSkills[name];
+
+        skill.DescriptionTokens.ShouldBeLessThanOrEqualTo(
+            skill.Declaration.DescriptionBudget,
+            $"'{name}' advertises at {skill.DescriptionTokens} tokens against a budget of " +
+            $"{skill.Declaration.DescriptionBudget}; every turn pays that");
+        skill.BodyTokens.ShouldBeLessThanOrEqualTo(
+            skill.Declaration.BodyBudget,
+            $"'{name}' loads {skill.BodyTokens} tokens against a budget of {skill.Declaration.BodyBudget}. " +
+            "Either trim it or raise the budget in PromptManifest and say why.");
     }
 
     [Fact]
@@ -75,11 +95,16 @@ public class PromptBudgetTests
     {
         var assembly = AgentPromptFixture.Assemble(agentId);
 
-        assembly.Sections.Sum(s => s.Declaration.TokenBudget)
-            .ShouldBeLessThanOrEqualTo(
-                PromptManifest.MaxAgentPromptTokens,
-                $"the sections '{agentId}' assembles are budgeted for more than the ceiling allows");
+        Declared(assembly).ShouldBeLessThanOrEqualTo(
+            PromptManifest.MaxAgentPromptTokens,
+            $"the sections '{agentId}' assembles are budgeted for more than the ceiling allows");
     }
+
+    // What an agent's standing prompt is budgeted to: every section at its budget, plus every
+    // skill's description at its budget — the bodies are not standing, so they are not here.
+    private static int Declared(PromptAssembly assembly) =>
+        assembly.Sections.Sum(s => s.Declaration.TokenBudget)
+        + assembly.Skills.Sum(s => s.Declaration.DescriptionBudget);
 
     // The ceiling is what the largest agent's sections are budgeted to, plus a fixed headroom. The
     // first figure is a ratchet: it is the largest declared sum rounded up to the hundred, so a
@@ -90,7 +115,7 @@ public class PromptBudgetTests
     {
         var largest = AgentPromptFixture.SnapshotIds
             .Select(AgentPromptFixture.Assemble)
-            .Max(assembly => assembly.Sections.Sum(s => s.Declaration.TokenBudget));
+            .Max(Declared);
 
         PromptManifest.StandingTokens.ShouldBe(
             (largest + 99) / 100 * 100,
@@ -104,7 +129,7 @@ public class PromptBudgetTests
     [Fact]
     public void Budget_LoweringTheStandingFigureBelowAnAgentsSections_FailsThatAgent()
     {
-        var declared = AgentPromptFixture.Assemble("nabu").Sections.Sum(s => s.Declaration.TokenBudget);
+        var declared = Declared(AgentPromptFixture.Assemble("nabu"));
 
         PromptManifest.FitsCeiling(declared).ShouldBeTrue();
         PromptManifest.FitsCeiling(declared, standingTokens: declared - PromptManifest.Headroom - 1)

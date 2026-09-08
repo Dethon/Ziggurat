@@ -151,4 +151,28 @@ public class PromptComposerTests
         result.IndexOf("VOICE RULES", StringComparison.Ordinal)
             .ShouldBeLessThan(result.IndexOf("## Idioma", StringComparison.Ordinal));
     }
+
+    // The section that explains the advertised list is worth its tokens only where there is a
+    // list: an agent whose servers ship no skill reads nothing about skills, and the framework
+    // appends nothing either.
+    [Fact]
+    public void Compose_WithNoSkills_HasNoSkillsSection()
+    {
+        Compose(Context()).ShouldNotContain("## Skills");
+    }
+
+    [Fact]
+    public void Compose_WithASkill_ExplainsTheListAndCarriesTheSkill()
+    {
+        var skill = PromptManifest.BindSkill(HomeWatchesSkill.Name, HomeWatchesSkill.Description, HomeWatchesSkill.Body);
+
+        var assembly = PromptComposer.Compose(Context() with { Skills = [skill] });
+
+        assembly.Text.ShouldContain("## Skills");
+        assembly.Text.ShouldContain("`load_skill`");
+        assembly.Skills.ShouldHaveSingleItem().Name.ShouldBe(HomeWatchesSkill.Name);
+        // The body is what a load costs, not what a turn costs.
+        assembly.TokenCount.ShouldBeLessThan(assembly.Sections.Sum(s => s.TokenCount) + skill.BodyTokens);
+        assembly.TokenCount.ShouldBe(assembly.Sections.Sum(s => s.TokenCount) + skill.DescriptionTokens);
+    }
 }

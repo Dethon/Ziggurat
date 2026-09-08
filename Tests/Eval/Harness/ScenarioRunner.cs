@@ -73,7 +73,8 @@ public static class ScenarioRunner
             passes >= policy.K, passes, completed,
             [.. taken.SelectMany(reading => reading.Failures)])
         {
-            Conditionals = Tallied(taken)
+            Conditionals = Tallied(taken),
+            Kinds = [.. taken.Select(reading => reading.Kind).OfType<FailureKind>()]
         };
 
         // The run's number travels with it so its reading lands in its own slot; the exception it
@@ -99,16 +100,19 @@ public static class ScenarioRunner
     private static IReadOnlyList<ClaimOutcome> Tallied(IReadOnlyList<RunReading> readings) =>
         readings
             .SelectMany(reading => reading.Exercised
-                .Select(claim => (Claim: claim, Passed: reading.Failures.Count == 0)))
+                .Select(claim => (Claim: claim, Passed: reading.Failures.Count == 0, reading.Kind)))
             .GroupBy(o => o.Claim)
             .Select(group => new ClaimOutcome(
-                group.Key, group.Count(o => o.Passed), group.Count()))
+                group.Key, group.Count(o => o.Passed), group.Count(),
+                group.Count(o => o.Kind == FailureKind.SkillNotLoaded),
+                group.Count(o => o.Kind == FailureKind.RuleIgnored)))
             .ToList();
 }
 
-// What one run reported: everything that failed, and the conditional claims whose material the
-// run actually produced.
-public sealed record RunReading(IReadOnlyList<string> Failures, IReadOnlyList<string> Exercised);
+// What one run reported: everything that failed, the conditional claims whose material the run
+// actually produced, and which kind of red it was — null on a green run.
+public sealed record RunReading(
+    IReadOnlyList<string> Failures, IReadOnlyList<string> Exercised, FailureKind? Kind = null);
 
 public sealed record ScenarioResult(
     bool Passed, int Passes, int Attempts, IReadOnlyList<string> Failures)
@@ -119,4 +123,12 @@ public sealed record ScenarioResult(
 
     // Conditional claims, each over the runs that exercised it rather than over Attempts.
     public IReadOnlyList<ClaimOutcome> Conditionals { get; init; } = [];
+
+    // One kind per failed run, in run order. Counted onto the scorecard so a red says which half
+    // of a skill to edit without opening a dump.
+    public IReadOnlyList<FailureKind> Kinds { get; init; } = [];
+
+    public int SkillNotLoaded => Kinds.Count(kind => kind == FailureKind.SkillNotLoaded);
+
+    public int RuleIgnored => Kinds.Count(kind => kind == FailureKind.RuleIgnored);
 }

@@ -129,4 +129,21 @@ public class FailureDumpTests : IDisposable
         Instant = new DateTimeOffset(2026, 8, 18, 20, 0, 0, TimeSpan.FromHours(2)),
         CallCeiling = 3
     };
+
+    [Fact]
+    public async Task ADump_NamesTheFailureKind_BesideTheRecording()
+    {
+        var recording = await ScriptedTurn.RunAsync("listo");
+        var scenario = Scenario();
+
+        var message = FailureDump
+            .Describe(_output, new FailedRun(
+                scenario, recording, TurnText(scenario), recording.Route,
+                ["required call 'skill' never happened"], FailureKind.SkillNotLoaded))
+            .ShouldNotBeNull();
+
+        message.ShouldContain("(skill not loaded)");
+        var path = message.Split('\n').First(l => l.Contains(_output)).Trim();
+        (await File.ReadAllTextAsync(path)).ShouldContain("Failure kind: skill not loaded");
+    }
 }

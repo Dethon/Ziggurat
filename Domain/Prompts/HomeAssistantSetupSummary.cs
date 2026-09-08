@@ -109,7 +109,7 @@ public class HomeAssistantSetupSummary(
             var listing = existing.Count == 0
                 ? "none yet"
                 : string.Join(", ", existing.Select(w => w.Spent ? $"`{w.Id}` (spent)" : w.Enabled ? $"`{w.Id}`" : $"`{w.Id}` (paused)"));
-            return $"watches: `/ha/watches/<id>/watch.json` — {existing.Count} defined ({listing}); see the guide's Watches section.";
+            return $"watches: `/ha/watches/<id>/watch.json` — {existing.Count} defined ({listing}); load the `home-watches` skill to write or change one.";
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -38,10 +38,29 @@ public class PromptClaimTests
     {
         // Readable in a scorecard and in a citation without looking anything up: the prefix says
         // which prose to delete when demonstrating a scenario red.
-        foreach (var declaration in PromptManifest.Declarations.Where(d => d.Claims.Count > 0))
+        var claimSets = PromptManifest.Declarations.Select(d => d.Claims)
+            .Concat(PromptManifest.Skills.Select(s => s.Claims))
+            .Where(claims => claims.Count > 0);
+
+        foreach (var claims in claimSets)
         {
-            var prefix = declaration.Claims.First().Id.Split('.')[0];
-            declaration.Claims.ShouldAllBe(c => c.Id.StartsWith(prefix + "."));
+            var prefix = claims.First().Id.Split('.')[0];
+            claims.ShouldAllBe(c => c.Id.StartsWith(prefix + "."));
+        }
+    }
+
+    // A skill's claims are prefixed with the skill's name, so a red says which body to delete
+    // prose from — and the trigger claim comes first, because it is the one every scenario of the
+    // family cites.
+    [Fact]
+    public void ASkillsClaims_ArePrefixedWithItsName_AndLeadWithTheTrigger()
+    {
+        foreach (var skill in PromptManifest.Skills)
+        {
+            skill.Claims.ShouldNotBeEmpty($"'{skill.Name}' claims nothing, so nothing tests it");
+            skill.Claims.ShouldAllBe(c => c.Id.StartsWith(skill.Name + "."));
+            skill.Claims[0].Statement.ShouldContain("loads", Case.Insensitive,
+                $"'{skill.Name}' must lead with its trigger claim");
         }
     }
 
@@ -91,6 +110,7 @@ public class PromptClaimTests
     [Fact]
     public void TheManifest_EnumeratesEveryClaimOfEverySection()
     {
-        PromptManifest.Claims.Count.ShouldBe(PromptManifest.Declarations.Sum(d => d.Claims.Count));
+        PromptManifest.Claims.Count.ShouldBe(
+            PromptManifest.Declarations.Sum(d => d.Claims.Count) + PromptManifest.Skills.Sum(s => s.Claims.Count));
     }
 }

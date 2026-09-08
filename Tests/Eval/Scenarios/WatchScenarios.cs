@@ -24,6 +24,16 @@ public static class WatchScenarios
 
     private static string Kind(string kind) => $@"""kind""\s*:\s*""{kind}""";
 
+    // Every scenario of the family requires the load, before the watch is touched: the skill's
+    // description is the trigger claim, and a watch written without the skill is the red that
+    // claim exists to show.
+    private static CallExpectation LoadsTheSkill => new()
+    {
+        Label = "skill",
+        Tool = EvalTools.LoadSkill,
+        Arguments = [Arg.Is("skillName", HomeWatchesSkill.Name)]
+    };
+
     // An announcement's target object naming the hub's room or the satellite in it — never the
     // word anywhere in the file, which a delivery address or the watch's name would satisfy, and
     // never the home's area slug, which the fake spells differently on purpose.
@@ -57,6 +67,7 @@ public static class WatchScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "watch",
@@ -75,16 +86,18 @@ public static class WatchScenarios
         ],
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(("above", "27")),
-        CallCeiling = 6,
+        Ordering = [new OrderingConstraint("skill", "watch")],
+        CallCeiling = 7,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
         Claims =
         [
+            HomeWatchesSkill.LoadsForAWatchRequest.Id,
             HomeAssistantPrompt.ReactingToTheHomeIsAWatch.Id,
-            HomeAssistantPrompt.WatchHomeActionIsAnActionsEffect.Id
+            HomeWatchesSkill.HomeActionIsAnActionsEffect.Id
         ],
         Judged =
         [
-            new JudgedCheck(HomeAssistantPrompt.WatchIsReadBackOnCreation.Id,
+            new JudgedCheck(HomeWatchesSkill.IsReadBackOnCreation.Id,
                 "The user asked for the living-room blinds to close when the living-room temperature "
                 + "passes 27 degrees, and the assistant created a watch for it. Judge the spoken reply "
                 + "alone. Pass if it reads the watch back: it names the blinds (or the living room) and "
@@ -112,6 +125,7 @@ public static class WatchScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "watch",
@@ -130,9 +144,10 @@ public static class WatchScenarios
         ],
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(("below", "55")),
-        CallCeiling = 6,
+        Ordering = [new OrderingConstraint("skill", "watch")],
+        CallCeiling = 7,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
-        Claims = [HomeAssistantPrompt.WatchUrgencyIsAnInsistentAnnouncement.Id],
+        Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.UrgencyIsAnInsistentAnnouncement.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -152,6 +167,7 @@ public static class WatchScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "watch",
@@ -169,11 +185,13 @@ public static class WatchScenarios
         ],
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(("above", "180")),
-        CallCeiling = 6,
+        Ordering = [new OrderingConstraint("skill", "watch")],
+        CallCeiling = 7,
         Claims =
         [
+            HomeWatchesSkill.LoadsForAWatchRequest.Id,
             HomeAssistantPrompt.ReactingToTheHomeIsAWatch.Id,
-            HomeAssistantPrompt.WatchDefaultsToAPromptDeliveredWhereAsked.Id
+            HomeWatchesSkill.DefaultsToAPromptDeliveredWhereAsked.Id
         ],
         Policy = new RunPolicy(2, 3)
     };
@@ -194,6 +212,7 @@ public static class WatchScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "watch",
@@ -211,12 +230,14 @@ public static class WatchScenarios
         ],
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(("above", "180")),
-        CallCeiling = 6,
+        Ordering = [new OrderingConstraint("skill", "watch")],
+        CallCeiling = 7,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
         Claims =
         [
-            HomeAssistantPrompt.WatchDefaultsToAPromptDeliveredWhereAsked.Id,
-            HomeAssistantPrompt.NabuNeverDeliversToTelegram.Id
+            HomeWatchesSkill.LoadsForAWatchRequest.Id,
+            HomeWatchesSkill.DefaultsToAPromptDeliveredWhereAsked.Id,
+            HomeWatchesSkill.NabuNeverDeliversToTelegram.Id
         ],
         Policy = new RunPolicy(2, 3)
     };
@@ -234,6 +255,7 @@ public static class WatchScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "watch",
@@ -249,8 +271,9 @@ public static class WatchScenarios
         ],
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(("below", "18"), ("above", "26")),
-        CallCeiling = 6,
-        Claims = [HomeAssistantPrompt.WatchRangeIsTwoTriggers.Id],
+        Ordering = [new OrderingConstraint("skill", "watch")],
+        CallCeiling = 7,
+        Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.RangeIsTwoTriggers.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -268,6 +291,7 @@ public static class WatchScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "watch",
@@ -285,8 +309,9 @@ public static class WatchScenarios
         ],
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(("below", "50")),
-        CallCeiling = 6,
-        Claims = [HomeAssistantPrompt.WatchUrgencyIsAnInsistentAnnouncement.Id],
+        Ordering = [new OrderingConstraint("skill", "watch")],
+        CallCeiling = 7,
+        Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.UrgencyIsAnInsistentAnnouncement.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -306,6 +331,7 @@ public static class WatchScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "watch",
@@ -321,9 +347,10 @@ public static class WatchScenarios
         ],
         Permitted = LookingAtTheHome,
         Changes = OneMoreWatch(),
-        CallCeiling = 6,
+        Ordering = [new OrderingConstraint("skill", "watch")],
+        CallCeiling = 7,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
-        Claims = [HomeAssistantPrompt.WatchOneShotUsesOnce.Id],
+        Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.OneShotUsesOnce.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -342,6 +369,7 @@ public static class WatchScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "edit",
@@ -361,8 +389,9 @@ public static class WatchScenarios
         // The outcome, not only the edit: the home's automation now fires below 65, and it is
         // still the one watch.
         Changes = [new StateChange(FakeHomeAssistant.ThresholdKey(FakeHomeAssistant.SugarWatchEntityId, "below"), "65")],
-        CallCeiling = 6,
-        Claims = [HomeAssistantPrompt.WatchChangeReplacesInPlace.Id],
+        Ordering = [new OrderingConstraint("skill", "edit")],
+        CallCeiling = 7,
+        Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.ChangeReplacesInPlace.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -380,6 +409,7 @@ public static class WatchScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "pause",
@@ -397,8 +427,9 @@ public static class WatchScenarios
             new CallPermission(EvalTools.Create, $"/ha/watches/{FakeHomeAssistant.SugarWatchId}/*")
         ],
         Changes = [new StateChange(FakeHomeAssistant.SugarWatchEntityId, "off")],
-        CallCeiling = 6,
-        Claims = [HomeAssistantPrompt.WatchPauseIsEnabledFalse.Id],
+        Ordering = [new OrderingConstraint("skill", "pause")],
+        CallCeiling = 7,
+        Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.PauseIsEnabledFalse.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -415,6 +446,7 @@ public static class WatchScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "delete",
@@ -424,8 +456,9 @@ public static class WatchScenarios
         ],
         Permitted = LookingAtTheHome,
         Changes = [new StateChange(FakeHomeAssistant.WatchCountKey, "0")],
-        CallCeiling = 5,
-        Claims = [HomeAssistantPrompt.WatchIsRemovedByDelete.Id],
+        Ordering = [new OrderingConstraint("skill", "delete")],
+        CallCeiling = 6,
+        Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.IsRemovedByDelete.Id],
         Policy = new RunPolicy(2, 3)
     };
 }

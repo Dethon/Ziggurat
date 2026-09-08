@@ -157,4 +157,29 @@ public class ScorecardTests : IDisposable
 
     private static JsonElement Read(string path) =>
         JsonDocument.Parse(File.ReadAllText(path)).RootElement.Clone();
+
+    // A red row says which kind of red it was, per scenario and per claim, so the reader knows
+    // whether to edit a skill's description or its body without opening the dump.
+    [Fact]
+    public void ARedRow_CarriesTheFailureKinds_AndAGreenRowCarriesNone()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
+            [
+                new ClaimOutcome("home-watches.loads-for-a-watch-request", 1, 3, SkillNotLoaded: 2),
+                new ClaimOutcome("home-watches.range-is-two-triggers", 2, 3, RuleIgnored: 1),
+                new ClaimOutcome("timers.duration-under-4h", 3, 3)
+            ],
+            [new ScenarioOutcome("a range to leave", 2, 3, RuleIgnored: 1)]);
+
+        var summary = Read(Path.Combine(_output, "scorecard-full.json"));
+        var claims = summary.GetProperty("claims");
+
+        claims.GetProperty("home-watches.loads-for-a-watch-request").GetProperty("failures")
+            .GetProperty("skillNotLoaded").GetInt32().ShouldBe(2);
+        claims.GetProperty("home-watches.range-is-two-triggers").GetProperty("failures")
+            .GetProperty("ruleIgnored").GetInt32().ShouldBe(1);
+        claims.GetProperty("timers.duration-under-4h").TryGetProperty("failures", out _).ShouldBeFalse();
+        summary.GetProperty("scenarios").GetProperty("a range to leave").GetProperty("failures")
+            .GetProperty("ruleIgnored").GetInt32().ShouldBe(1);
+    }
 }

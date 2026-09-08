@@ -75,6 +75,9 @@ public static class ConfigModule
                 .AddChannelServer(DeliveryPolicy.Broadcast, noOutboundSurface: true)
                 .AddFileSystemTools<HaFileSystem>()
                 .AddFileSystemResource<HaFileSystem>()
+                // The skills that teach this server's tools ship beside them, so a deployment
+                // without the home cannot advertise how to watch it.
+                .AddSkills(HomeWatchesSkill.Text)
                 .WithPrompts<McpSystemPrompt>();
 
             return services;

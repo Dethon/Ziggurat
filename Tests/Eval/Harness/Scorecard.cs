@@ -18,8 +18,10 @@ public static class Scorecard
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, $"scorecard-{tier.ToString().ToLowerInvariant()}.json");
 
-        var claimRows = Covered(Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs))), coverage);
-        var scenarioRows = Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs)));
+        var claimRows = Covered(
+            Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs, c.SkillNotLoaded, c.RuleIgnored))), coverage);
+        var scenarioRows = Tallied(
+            (scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs, s.SkillNotLoaded, s.RuleIgnored)));
 
         var summary = new JsonObject
         {
@@ -82,14 +84,15 @@ public static class Scorecard
         };
     }
 
-    private static JsonObject Tallied(IEnumerable<(string Key, int Passes, int Runs)> outcomes) =>
+    private static JsonObject Tallied(
+        IEnumerable<(string Key, int Passes, int Runs, int SkillNotLoaded, int RuleIgnored)> outcomes) =>
         outcomes
             .GroupBy(o => o.Key)
             .Aggregate(new JsonObject(), (node, group) =>
             {
                 var passes = group.Sum(o => o.Passes);
                 var runs = group.Sum(o => o.Runs);
-                node[group.Key] = new JsonObject
+                var row = new JsonObject
                 {
                     ["passes"] = passes,
                     ["runs"] = runs,
@@ -98,10 +101,25 @@ public static class Scorecard
                     // `0.0` would hide the second one behind the first.
                     ["rate"] = runs == 0 ? null : JsonValue.Create((double)passes / runs)
                 };
+
+                // Only where something failed: the kind says which half of a skill to edit —
+                // a missing load is the description's, an ignored rule the body's.
+                var notLoaded = group.Sum(o => o.SkillNotLoaded);
+                var ignored = group.Sum(o => o.RuleIgnored);
+                if (notLoaded + ignored > 0)
+                {
+                    row["failures"] = new JsonObject
+                    {
+                        [FailureKind.SkillNotLoaded.Key()] = notLoaded,
+                        [FailureKind.RuleIgnored.Key()] = ignored
+                    };
+                }
+
+                node[group.Key] = row;
                 return node;
             });
 }
 
-public sealed record ClaimOutcome(string Claim, int Passes, int Runs);
+public sealed record ClaimOutcome(string Claim, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0);
 
-public sealed record ScenarioOutcome(string Name, int Passes, int Runs);
+public sealed record ScenarioOutcome(string Name, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0);

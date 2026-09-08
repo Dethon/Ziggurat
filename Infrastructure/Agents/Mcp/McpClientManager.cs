@@ -30,18 +30,24 @@ internal sealed class McpClientManager : IAsyncDisposable
     public IReadOnlyList<AITool> Tools { get; }
     public IReadOnlyList<PromptSection> Prompts { get; }
 
+    // The skills the dialled servers ship, bound to their declarations. Read beside the prompts,
+    // through the same cache, from every server that publishes an index.
+    public IReadOnlyList<PromptSkill> Skills { get; }
+
     private bool _isDisposed;
 
     private McpClientManager(
         IReadOnlyList<McpClient> clients,
         IReadOnlyList<string> dialledEndpoints,
         IReadOnlyList<AITool> tools,
-        IReadOnlyList<PromptSection> prompts)
+        IReadOnlyList<PromptSection> prompts,
+        IReadOnlyList<PromptSkill> skills)
     {
         Clients = clients;
         DialledEndpoints = dialledEndpoints;
         Tools = tools;
         Prompts = prompts;
+        Skills = skills;
     }
 
     public static async Task<McpClientManager> CreateAsync(
@@ -59,10 +65,11 @@ internal sealed class McpClientManager : IAsyncDisposable
             name, description, endpoints, handlers, logger, ct);
         var toolsTask = LoadTools(clientsWithEndpoints, readImageStore, ct);
         var promptsTask = LoadPrompts(clientsWithEndpoints, userId, promptCache, ct);
-        await Task.WhenAll(toolsTask, promptsTask);
+        var skillsTask = LoadSkills(clientsWithEndpoints, promptCache, logger, ct);
+        await Task.WhenAll(toolsTask, promptsTask, skillsTask);
         var clients = clientsWithEndpoints.Select(c => c.Client).ToArray();
         var dialled = clientsWithEndpoints.Select(c => c.Address).ToArray();
-        return new McpClientManager(clients, dialled, await toolsTask, await promptsTask);
+        return new McpClientManager(clients, dialled, await toolsTask, await promptsTask, await skillsTask);
     }
 
     public async ValueTask DisposeAsync()
@@ -203,6 +210,26 @@ internal sealed class McpClientManager : IAsyncDisposable
             .Where(r => !string.IsNullOrWhiteSpace(r.Text))
             .Prepend(userContext)
             .ToArray();
+    }
+
+    // Every server that publishes resources may publish a skills index; one that does not ships no
+    // skills. Outposts come through here like any other server, and bind under the undeclared
+    // budgets like their prompts do. In dial order, so the advertisement is byte-stable across
+    // sessions of one deployment.
+    private static async Task<PromptSkill[]> LoadSkills(
+        IEnumerable<(McpClient Client, string ServerName, string Address)> clients,
+        McpPromptCache? promptCache,
+        ILogger? logger,
+        CancellationToken ct)
+    {
+        var perClient = await Task.WhenAll(clients
+            .Where(c => c.Client.ServerCapabilities.Resources is not null)
+            .Select(c => promptCache is null
+                ? McpSkillReader.ReadAsync(c.Client, logger, ct)
+                : promptCache.GetOrFetchAsync(
+                    c.ServerName + ":skills", ctk => McpSkillReader.ReadAsync(c.Client, logger, ctk), ct)));
+
+        return [.. perClient.SelectMany(s => s)];
     }
 
     // The name travels with the text. A server's prompt is words this repo did not write, so its

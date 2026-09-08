@@ -26,6 +26,10 @@ internal sealed class ThreadSession : IAsyncDisposable
     public IReadOnlyList<AITool> Tools => _data.Tools;
     public McpClientManager ClientManager => _data.ClientManager;
     public IReadOnlyList<PromptSection> FileSystemPrompts => _data.FileSystemPrompts;
+
+    // The skills this session's servers ship, granted by granting the servers: a worker allowed a
+    // server is taught its skills, and one that is not is not.
+    public IReadOnlyList<PromptSkill> Skills => _data.ClientManager.Skills;
     public IVirtualFileSystemRegistry? FileSystemRegistry => _data.FileSystemRegistry;
 
     // What this build made of the filesystems it found. Read once, by the step that writes each

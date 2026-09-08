@@ -1,23 +1,25 @@
 using System.Collections.Concurrent;
-using Domain.Prompts;
 
 namespace Infrastructure.Agents.Mcp;
 
+// What a server serves at warmup — its prompts, and its skills — kept for a short while so a burst
+// of session builds does not fetch the same words from the same server each time. Keyed by the
+// caller, so a server's prompts and its skills are two entries with one policy.
 public sealed class McpPromptCache(TimeProvider timeProvider, TimeSpan ttl)
 {
-    private sealed record CacheEntry(PromptSection[] Prompts, DateTimeOffset FetchedAt);
+    private sealed record CacheEntry(object Value, DateTimeOffset FetchedAt);
 
     private readonly ConcurrentDictionary<string, CacheEntry> _entries = new();
     private readonly ConcurrentDictionary<string, Task> _refreshes = new();
 
-    public async Task<PromptSection[]> GetOrFetchAsync(
-        string serverKey, Func<CancellationToken, Task<PromptSection[]>> fetch, CancellationToken ct)
+    public async Task<T> GetOrFetchAsync<T>(
+        string serverKey, Func<CancellationToken, Task<T>> fetch, CancellationToken ct) where T : class
     {
         if (!_entries.TryGetValue(serverKey, out var entry))
         {
-            var prompts = await fetch(ct);
-            _entries[serverKey] = new CacheEntry(prompts, timeProvider.GetUtcNow());
-            return prompts;
+            var fetched = await fetch(ct);
+            _entries[serverKey] = new CacheEntry(fetched, timeProvider.GetUtcNow());
+            return fetched;
         }
 
         if (timeProvider.GetUtcNow() - entry.FetchedAt >= ttl)
@@ -34,8 +36,8 @@ public sealed class McpPromptCache(TimeProvider timeProvider, TimeSpan ttl)
                     // Deliberately not the caller's token: the triggering session may end
                     // (or its client be disposed) before the refresh completes — both fail
                     // the fetch harmlessly and the next stale hit retries.
-                    var prompts = await fetch(CancellationToken.None);
-                    _entries[key] = new CacheEntry(prompts, timeProvider.GetUtcNow());
+                    var fetched = await fetch(CancellationToken.None);
+                    _entries[key] = new CacheEntry(fetched, timeProvider.GetUtcNow());
                 }
                 catch
                 {
@@ -48,6 +50,6 @@ public sealed class McpPromptCache(TimeProvider timeProvider, TimeSpan ttl)
             }));
         }
 
-        return entry.Prompts;
+        return (T)entry.Value;
     }
 }

@@ -17,11 +17,16 @@ public static class PromptManifest
     // server this repo owns.
     public const int UndeclaredBudget = 1_500;
 
+    // What a skill nobody declared may cost, description and body, before somebody has thought
+    // about it — the same rule as an undeclared prompt, for the same kind of server.
+    public const int UndeclaredSkillDescriptionBudget = 100;
+    public const int UndeclaredSkillBodyBudget = 1_500;
+
     // What the largest agent's standing sections are budgeted to, rounded up to the hundred. It is
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated.
-    public const int StandingTokens = 19_400;
+    public const int StandingTokens = 18_300;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -87,6 +92,13 @@ public static class PromptManifest
         },
         new()
         {
+            Name = SkillsSection,
+            Purpose = "What the advertised skill list is, and that a skill is loaded once, before acting, and only when a request calls for it.",
+            Priority = PromptPriority.Feature,
+            TokenBudget = 250
+        },
+        new()
+        {
             Name = FilesystemMounts,
             Purpose = "The mounts this session actually has, and which one a path belongs under.",
             Priority = PromptPriority.FileSystem,
@@ -145,8 +157,8 @@ public static class PromptManifest
             Priority = PromptPriority.Client,
             // The largest section by far, and the only one that grows with the deployment rather
             // than with an edit: the setup index naming every area and entity is appended to it
-            // when the server serves it. Raised from 5,000 when watches joined the guide.
-            TokenBudget = 6_500,
+            // when the server serves it. Back to 5,000 when the watches moved into a skill.
+            TokenBudget = 5_000,
             ServedBy = "mcp-homeassistant",
             Claims = HomeAssistantPrompt.Claims
         },
@@ -214,7 +226,24 @@ public static class PromptManifest
         }
     ];
 
+    // Every skill a server in this deployment ships, declared beside the sections. A skill is read
+    // on demand, so its body's budget is what one load costs a conversation and its description's
+    // budget is what every turn pays to advertise it.
+    public static IReadOnlyList<SkillDeclaration> Skills { get; } =
+    [
+        new()
+        {
+            Name = HomeWatchesSkill.Name,
+            Description = HomeWatchesSkill.Description,
+            DescriptionBudget = 100,
+            BodyBudget = 2_200,
+            ServedBy = "mcp-homeassistant",
+            Claims = HomeWatchesSkill.Claims
+        }
+    ];
+
     public const string CoreDirective = CoreDirectivePrompt.Name;
+    public const string SkillsSection = "skills";
     public const string Identity = "identity";
     public const string UserContext = "user_context";
     public const string Subagents = "subagents";
@@ -237,7 +266,18 @@ public static class PromptManifest
     // Aggregated across sections the way the declarations themselves are, so a scenario can cite
     // one id and a coverage test can enumerate every claim the deployment makes.
     public static IReadOnlyList<PromptClaim> Claims { get; } =
-        [.. Declarations.SelectMany(d => d.Claims)];
+        [.. Declarations.SelectMany(d => d.Claims), .. Skills.SelectMany(s => s.Claims)];
+
+    private static readonly Dictionary<string, SkillDeclaration> _skillsByName =
+        Skills.ToDictionary(s => s.Name, StringComparer.OrdinalIgnoreCase);
+
+    public static SkillDeclaration? FindSkill(string name) => _skillsByName.GetValueOrDefault(name);
+
+    // A skill a server served, under the declaration that governs it. An undeclared one is still
+    // offered, for the reason an undeclared prompt is still assembled: the deployment's business,
+    // not this turn's. It is marked, and the assembly says so.
+    public static PromptSkill BindSkill(string name, string description, string body) =>
+        (FindSkill(name) ?? UndeclaredSkill(name)).Bind(description, body);
 
     public static PromptDeclaration? Find(string name) => _byName.GetValueOrDefault(name);
 
@@ -273,6 +313,16 @@ public static class PromptManifest
                 $"{string.Join(", ", unknown)}. Available: {string.Join(", ", SelectableSections)}.");
         }
     }
+
+    private static SkillDeclaration UndeclaredSkill(string name) => new()
+    {
+        Name = name,
+        Description = string.Empty,
+        DescriptionBudget = UndeclaredSkillDescriptionBudget,
+        BodyBudget = UndeclaredSkillBodyBudget,
+        ServedBy = "undeclared",
+        Declared = false
+    };
 
     private static PromptDeclaration Undeclared(string name) => new()
     {

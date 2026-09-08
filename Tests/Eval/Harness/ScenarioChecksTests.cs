@@ -787,4 +787,89 @@ public class ScenarioChecksTests
         ],
         Ordering = [new OrderingConstraint("status", "delete")]
     };
+
+    // The one fork a skill adds. A scenario that requires a load fails one of two ways, and the
+    // kind says which half of the skill to edit: a load that never happened is the description's
+    // red, a load that happened before a rule was ignored is the body's.
+    [Fact]
+    public async Task ARequiredLoadThatNeverHappened_IsASkillNotLoadedFailure()
+    {
+        var recording = await ScriptedTurn.RunAsync("listo", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        var scenario = RequiringTheLoad();
+
+        var failures = ScenarioChecks.Failures(scenario, recording);
+
+        failures.ShouldContain(f => f.Contains("required call 'skill' never happened"));
+        ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.SkillNotLoaded);
+    }
+
+    [Fact]
+    public async Task ALoadThatHappened_AndACheckThatFailed_IsARuleIgnoredFailure()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Load("home-watches"),
+            ScriptedTurn.Call(Create, "/timers/wrong/timer.json"));
+        var scenario = RequiringTheLoad();
+
+        var failures = ScenarioChecks.Failures(scenario, recording);
+
+        failures.ShouldNotContain(f => f.Contains("required call 'skill'"));
+        failures.ShouldContain(f => f.Contains("required call 'create' never happened"));
+        ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.RuleIgnored);
+    }
+
+    // Loading another skill is the same absence: the one the scenario named was not loaded.
+    [Fact]
+    public async Task ALoadOfAnotherSkill_IsStillASkillNotLoadedFailure()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Load("vault"),
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        var scenario = RequiringTheLoad();
+
+        var failures = ScenarioChecks.Failures(scenario, recording);
+
+        ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.SkillNotLoaded);
+    }
+
+    [Fact]
+    public async Task AScenarioRequiringNoLoad_FailsAsARuleIgnored_AndPassesWithNoKind()
+    {
+        var red = await ScriptedTurn.RunAsync("listo", ScriptedTurn.Call(Create, "/timers/wrong/timer.json"));
+        var green = await ScriptedTurn.RunAsync("listo", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        ScenarioChecks.KindOf(Timer(), red, ScenarioChecks.Failures(Timer(), red)).ShouldBe(FailureKind.RuleIgnored);
+        ScenarioChecks.KindOf(Timer(), green, ScenarioChecks.Failures(Timer(), green)).ShouldBeNull();
+    }
+
+    // A load is an ordinary call: where no scenario requires or permits it, it is unnecessary,
+    // which is how loading the wrong skill shows as a wrong choice.
+    [Fact]
+    public async Task ALoadNoScenarioAskedFor_IsAnUnnecessaryCall()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Load("home-watches"),
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        var failures = ScenarioChecks.Failures(Timer(), recording);
+
+        failures.ShouldHaveSingleItem().ShouldContain($"unnecessary call: {EvalTools.LoadSkill}");
+    }
+
+    private static Scenario RequiringTheLoad() => Timer() with
+    {
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "skill",
+                Tool = EvalTools.LoadSkill,
+                Arguments = [Arg.Is("skillName", "home-watches")]
+            },
+            .. Timer().Required
+        ]
+    };
 }

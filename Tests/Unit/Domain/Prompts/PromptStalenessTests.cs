@@ -7,8 +7,11 @@ using Domain.Tools.HomeAssistant.Vfs;
 using Domain.Tools.Printing.Vfs;
 using Domain.Tools.Scheduling.Vfs;
 using Domain.Tools.Timers.Vfs;
+using Infrastructure.Utils;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using Shouldly;
+using Tests.Integration.McpServers;
 
 namespace Tests.Unit.Domain.Prompts;
 
@@ -37,7 +40,8 @@ public class PromptStalenessTests
     private static readonly string[] _nativePaths = ["/etc", "/home", "/tmp", "/usr", "/var", "/"];
 
     public static TheoryData<string> Sections =>
-        [.. AgentPromptFixture.ServedText.Keys.Concat(AgentPromptFixture.FeatureText.Keys)];
+        [.. AgentPromptFixture.ServedText.Keys.Concat(AgentPromptFixture.FeatureText.Keys)
+            .Concat(AgentPromptFixture.ServedSkills.Keys)];
 
     // Every prompt any server in this solution serves, found the way the agent finds them: by
     // asking, rather than by a list somebody maintains. A server that adds a prompt gets a budget
@@ -72,6 +76,37 @@ public class PromptStalenessTests
             .Where(d => d.ServedBy is not null)
             .Select(d => d.Name)
             .Where(name => !served.Contains(name))
+            .ShouldBeEmpty();
+    }
+
+    // Skills walk the same two directions as prompts. Found the way the agent finds them: off each
+    // server's real registration, as the resources it would publish.
+    [Fact]
+    public void Manifest_EverySkillAServerServes_IsDeclaredAndAttributedToThatServer()
+    {
+        var served = ServedSkills();
+
+        served.ShouldNotBeEmpty("no MCP server skills were found; the scan itself is broken");
+
+        foreach (var (name, service) in served)
+        {
+            var declaration = PromptManifest.FindSkill(name);
+
+            declaration.ShouldNotBeNull(
+                $"'{name}' is served by {service} but not declared in PromptManifest.Skills, so nothing " +
+                "budgets it or says what it claims");
+            declaration.ServedBy.ShouldBe(service, $"'{name}' is declared as served by another server");
+        }
+    }
+
+    [Fact]
+    public void Manifest_EverySkillDeclaration_MatchesASkillSomeServerActuallyServes()
+    {
+        var served = ServedSkills();
+
+        PromptManifest.Skills
+            .Where(s => !served.Contains((s.Name, s.ServedBy)))
+            .Select(s => $"{s.Name} from {s.ServedBy}")
             .ShouldBeEmpty();
     }
 
@@ -150,7 +185,28 @@ public class PromptStalenessTests
     private static string TextOf(string name) =>
         AgentPromptFixture.ServedText.TryGetValue(name, out var served)
             ? served
-            : AgentPromptFixture.FeatureText[name];
+            : AgentPromptFixture.FeatureText.TryGetValue(name, out var feature)
+                ? feature
+                : AgentPromptFixture.ServedSkills[name].Body;
+
+    // Every skill body resource each server's real registration publishes, named with the service
+    // the deployment dials that server as. The compose service name is the row's id under the
+    // `mcp-` prefix every tool server shares.
+    private static IReadOnlySet<(string Name, string Service)> ServedSkills() =>
+        McpServerRegistrations.All
+            .SelectMany(row =>
+            {
+                var services = new ServiceCollection();
+                row.Configure(services);
+                using var provider = services.BuildServiceProvider();
+                return provider.GetServices<McpServerResource>()
+                    .Select(resource => resource.ProtocolResourceTemplate.UriTemplate)
+                    .Where(uri => uri != SkillServerResources.IndexAddress
+                                  && uri.StartsWith("skills://", StringComparison.Ordinal))
+                    .Select(uri => (Name: uri["skills://".Length..].Split('/')[0], Service: "mcp-" + row.Id))
+                    .ToList();
+            })
+            .ToHashSet();
 
     // Loaded from the test output, where every server this solution builds has been copied. Asking
     // the assemblies rather than reading the source keeps the answer exactly what the SDK will
