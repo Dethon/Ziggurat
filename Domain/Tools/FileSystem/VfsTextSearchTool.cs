@@ -11,18 +11,11 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
     public const string Key = "search";
     public const string Name = "text_search";
 
-    // Interpolated, not spelled out: the budgets have one definition each, and prose carrying its
-    // own copy of a number goes silently wrong the day the constant moves.
-    public static readonly string ToolDescription = $"""
-        Searches for text across files in a filesystem, or within a single file.
-        Returns matching files with line numbers and context.
-
-        On a file mount a search over a directory is bounded twice: it stops after {DiskWalk.MaxEntriesScanned:N0} entries
-        have been enumerated and after {DiskWalk.MaxFilesRead:N0} files have been read, whichever comes first.
-        `budgetReached` says one of those ended the walk — distinct from `truncated`, which means
-        maxResults was reached — and `entriesScanned` beside `filesSearched` says how much of the
-        tree the answer covers. A large scan against zero files searched is a filePattern that
-        excluded everything, not an empty directory. Searching a single filePath walks nothing.
+    // The two walk budgets are not described here: the result that hits one explains it, in the
+    // `hint` below, so a request pays for the paragraph only on the turn it is true.
+    public const string ToolDescription = """
+        Searches for text across the files of a directory, or within a single file, and returns
+        the matches with line numbers and context. `truncated` means maxResults was reached.
         """;
 
     public async Task<JsonNode> RunAsync(
@@ -54,7 +47,7 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
             var fileResult = await fileResolution.Backend.SearchAsync(
                 query, regex, fileResolution.RelativePath, null, filePattern,
                 maxResults, contextLines, outputMode, cancellationToken);
-            return Normalize(fileResult, filePath, fileResolution).ToNode();
+            return WithHint(Normalize(fileResult, filePath, fileResolution));
         }
 
         if (directoryPath is null)
@@ -72,7 +65,30 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
         var result = await dirResolution.Backend.SearchAsync(
             query, regex, null, dirResolution.RelativePath, filePattern,
             maxResults, contextLines, outputMode, cancellationToken);
-        return Normalize(result, directoryPath, dirResolution).ToNode();
+        return WithHint(Normalize(result, directoryPath, dirResolution));
+    }
+
+    // Said only when true, and said beside the numbers the model would otherwise have to read
+    // against each other: a walk that stopped before the tree ended, and — the case no flag alone
+    // can explain — a large scan that read no file at all, which is a filePattern that excluded
+    // everything rather than an empty directory.
+    private static JsonNode WithHint(FsResult<FsSearchResult> result)
+    {
+        var node = result.ToNode();
+        if (result is not FsResult<FsSearchResult>.Ok { Value.BudgetReached: true } ok)
+        {
+            return node;
+        }
+
+        var search = ok.Value;
+        node["hint"] = search.FilesSearched == 0
+            ? $"The walk enumerated {search.EntriesScanned:N0} entries and read none of them before stopping: "
+              + "filePattern excluded every file it met. Widen filePattern, or scope directoryPath to where "
+              + "the files are."
+            : $"The walk stopped after {search.EntriesScanned:N0} entries and {search.FilesSearched:N0} files "
+              + "read, before the tree ended, so matches deeper in it are not here: scope directoryPath to a "
+              + "narrower directory, or tighten filePattern, for the rest.";
+        return node;
     }
 
     // Both halves of the invariant in one place. The caller named the scope, so it is echoed; the

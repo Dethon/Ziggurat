@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.Files;
 
 namespace Domain.Tools.FileSystem;
@@ -10,24 +12,14 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
     public const string Key = "glob";
     public const string Name = "glob";
 
-    // Interpolated, not spelled out: the budgets have one definition each, and prose carrying its
-    // own copy of a number goes silently wrong the day the constant moves.
-    public static readonly string ToolDescription = $$"""
-        Searches a filesystem for files and directories matching a glob pattern. The pattern
-        alone decides what matches — there is no mode. `*` matches one path segment, `**`
-        recurses, `?` matches one character. Brace alternation expands too:
-        `**/*.{jpg,png,gif}` matches any of the listed extensions. A trailing slash restricts the match to
-        directories (e.g. `*/`, `src/**/`); without it, both files and directories match.
-        Directory results are returned with a trailing slash so you can tell them apart; files
-        are not. Entries are full virtual paths (including the mount point), ready to pass straight
-        to other filesystem tools, and sorted within the response.
-
-        On a file mount the walk is bounded: it stops once it has the {{GlobFilesTool.FileResultCap}} entries the response
-        carries, and stops in any case after {{DiskWalk.MaxEntriesScanned:N0}} entries have been enumerated. `truncated` means
-        more matched than fit; `budgetReached` means the walk stopped before the tree ended, and
-        `entriesScanned` says how much of it the answer covers. An empty result with
-        `budgetReached` false means nothing matched; with it true, scope the basePath and try again
-        rather than refining the pattern.
+    // The walk's budget is not described here: it is explained by the result that hits it, in the
+    // `hint` below, so a request pays for the paragraph only on the turn it is true. The pattern
+    // syntax is on the parameter, where the model reads it when it writes one.
+    public static readonly string ToolDescription = $"""
+        Searches a filesystem for files and directories matching a glob pattern. Entries are full
+        virtual paths (mount point included), sorted, ready for the other filesystem tools;
+        directories carry a trailing slash, files do not. A response carries up to
+        {GlobFilesTool.FileResultCap} entries; `truncated` means more matched than fit.
         """;
 
     public async Task<JsonNode> RunAsync(
@@ -49,8 +41,23 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
         // The caller named the base path, never the entries, so every entry is translated rather
         // than echoed. That yields one uniform full-virtual-path format across every filesystem,
         // directly reusable as input to read/edit/info.
-        return result
+        var node = result
             .Map(glob => glob with { Entries = glob.Entries.Select(resolution.ToVirtualPath).ToList() })
             .ToNode();
+
+        // Said only when true, and said where the numbers are: a walk that stopped before the tree
+        // ended is the one case the model has to read differently, and an empty result under it is
+        // "not reached", never "nothing matched".
+        if (result is FsResult<FsGlobResult>.Ok { Value.BudgetReached: true } ok)
+        {
+            node["hint"] = ok.Value.Entries.Count == 0
+                ? $"Nothing matched within the {ok.Value.EntriesScanned:N0} entries the walk reached before "
+                  + "stopping, and the rest of the tree was not enumerated: scope basePath to a narrower "
+                  + "directory and search again rather than refining the pattern."
+                : $"The walk stopped after {ok.Value.EntriesScanned:N0} entries, before the tree ended, so "
+                  + "matches deeper in it are not here: scope basePath to a narrower directory for the rest.";
+        }
+
+        return node;
     }
 }

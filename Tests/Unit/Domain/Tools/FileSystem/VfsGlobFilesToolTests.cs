@@ -55,6 +55,45 @@ public class VfsGlobFilesToolTests
         Entries(result).ShouldBe(["/print-queue/note.txt", "/print-queue/status.json"]);
     }
 
+    // The walk's budget used to be explained in the tool's description, on every request of every
+    // conversation, for a case most walks never meet. The explanation now travels with the result
+    // that needs it: a walk that stopped before the tree ended says so and says what to do.
+    [Fact]
+    public async Task Run_BudgetReached_SaysSoInTheResult_AndHowToNarrow()
+    {
+        var tool = Build("/sandbox", "", new FsGlobResult
+        {
+            Entries = [],
+            Truncated = false,
+            Total = 0,
+            EntriesScanned = 50_000,
+            BudgetReached = true
+        }, out _);
+
+        var result = await tool.RunAsync("/sandbox", "**/*.csv", CancellationToken.None);
+
+        var hint = result["hint"]!.GetValue<string>();
+        hint.ShouldContain("50,000");
+        hint.ShouldContain("basePath");
+    }
+
+    [Fact]
+    public async Task Run_WalkEnded_CarriesNoHint()
+    {
+        var tool = Build("/sandbox", "", new FsGlobResult
+        {
+            Entries = [],
+            Truncated = false,
+            Total = 0,
+            EntriesScanned = 12,
+            BudgetReached = false
+        }, out _);
+
+        var result = await tool.RunAsync("/sandbox", "**/*.csv", CancellationToken.None);
+
+        result["hint"].ShouldBeNull();
+    }
+
     private static FsResult<FileSystemResolution> Resolved(
         IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
         new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));

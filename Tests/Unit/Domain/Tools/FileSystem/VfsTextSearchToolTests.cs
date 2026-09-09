@@ -66,6 +66,53 @@ public class VfsTextSearchToolTests
         result["results"]![0]!["file"]!.GetValue<string>().ShouldBe("/ha/light/kitchen/state.json");
     }
 
+    // Same bargain as the glob: the budget is explained by the result that hit it, not by the
+    // description every request pays for. The search has two budgets and the hint names which
+    // ended the walk, because "0 files searched" against a large scan is a filePattern that
+    // excluded everything, and only the hint can say so.
+    [Fact]
+    public async Task RunAsync_BudgetReached_SaysSoInTheResult_AndHowToNarrow()
+    {
+        _registry.Setup(r => r.Resolve("/sandbox"))
+            .Returns(Resolved(_backend.Object, "", "/sandbox"));
+        _backend.Setup(b => b.SearchAsync("needle", false, null, "", "*.xyz", 50, 1,
+                VfsTextSearchOutputMode.Content, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsSearchResult>.Ok(new FsSearchResult
+            {
+                Query = "needle",
+                Regex = false,
+                Path = "",
+                FilesSearched = 0,
+                FilesWithMatches = 0,
+                TotalMatches = 0,
+                Truncated = false,
+                EntriesScanned = 50_000,
+                BudgetReached = true,
+                Results = []
+            }));
+
+        var result = await _tool.RunAsync("needle", directoryPath: "/sandbox", filePattern: "*.xyz");
+
+        var hint = result!["hint"]!.GetValue<string>();
+        hint.ShouldContain("50,000");
+        hint.ShouldContain("filePattern");
+        hint.ShouldContain("directoryPath");
+    }
+
+    [Fact]
+    public async Task RunAsync_WalkEnded_CarriesNoHint()
+    {
+        _registry.Setup(r => r.Resolve("/vault/notes"))
+            .Returns(Resolved(_backend.Object, "notes"));
+        _backend.Setup(b => b.SearchAsync("api", false, null, "notes", null, 50, 1,
+                VfsTextSearchOutputMode.Content, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Found("notes/api.md"));
+
+        var result = await _tool.RunAsync("api", directoryPath: "/vault/notes");
+
+        result!["hint"].ShouldBeNull();
+    }
+
     private static FsResult<FsSearchResult> Found(string file) =>
         new FsResult<FsSearchResult>.Ok(new FsSearchResult
         {
