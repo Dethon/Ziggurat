@@ -27,13 +27,18 @@ public sealed class TimerFileSystem(
     // action are the countdown-timers skill's body, and a description that repeated them was a
     // reason to skip the load — a model with the JSON in front of it wrote the file and never
     // read the rules that go with it.
+    //
+    // It describes and does not command: a first cut said "before you create, read, change, cancel
+    // or silence one, load the skill", and a model reading "cancel" and "silence" loaded the timers
+    // skill for a calendar alarm's snooze and for a media restart. The skill's own description is
+    // the trigger; this line only says where the shape lives.
     public override string DescribeMount =>
         "Short countdown timers that ring on the voice satellites: each is a directory "
-        + "/timers/<id> with its timer.json and a read-only status.json, and dismiss.sh at /timers "
-        + "silences whatever is ringing (alarms and timers) from any room or channel. Before you "
-        + "create, read, change, cancel or silence one, load the `countdown-timers` skill — the "
-        + "file's shape and the target rules are there, not here. Use the HA alarms calendar for "
-        + "clock-time alarms/reminders, not timers.";
+        + "/timers/<id> holding its timer.json and a read-only status.json (remainingSeconds, "
+        + "firesAt), and dismiss.sh at /timers silences whatever is ringing (alarms and timers) "
+        + "from any room or channel. The file's shape and the target rules are in the "
+        + "`countdown-timers` skill, not here. Use the HA alarms calendar for clock-time "
+        + "alarms/reminders, not timers.";
 
     // The words the model reads about each operation, next to the behaviour they describe. They
     // name the mount's real files, which is what makes the timers surface usable without a probe.
