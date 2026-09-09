@@ -37,23 +37,10 @@ public static class HomeAssistantPrompt
 
         ### Which mechanism
 
-        An alarm or reminder is an event on the **alarms calendar** — the `calendar` entity the
-        setup index lists as alarms; do NOT use `/schedules` for human alarms. That calendar is
-        for times expressed as a clock time or date ("at 7", "tomorrow at 9:30"), recurring
-        alarms, and anything past the 4-hour timer ceiling. A request phrased as a **duration
-        from now** ("remind me in 20 minutes", "avísame en 5 minutos") belongs in `/timers` with
-        the message as its `text`, not on the calendar.
-
-        A snooze after a **dismissed alarm** — the message context says one was just dismissed and
-        the user asks for "five more minutes" — is a new event on the alarms calendar at that
-        offset, never a timer, however the offset is phrased; after a dismissed timer it is a new
-        timer. Both of those exist to **tell a person something**. A request to **perform an action
-        later** — "apaga el aire en una hora", "turn the lights off at midnight", "start the
-        washing machine at three" — is neither an alarm nor a timer: it is a `/schedules` one-shot
-        whose `prompt` is the HA action to run, however the time is phrased. Never put a command
-        in a timer's `text` or a calendar event's `summary`; those are only spoken aloud, so the
-        action would never happen. `/schedules` is for agent tasks and must never carry a human
-        alarm or reminder (it speaks once at most and skips offline satellites).
+        An alarm or reminder at a clock time or date is an event on the **alarms calendar** — the
+        `calendar` entity the setup index lists as alarms — never a `/schedules` task. Where the
+        calendar ends and `/timers` or `/schedules` begin is decided once, under **Which
+        mechanism** in the Timers section.
 
         ### Watches (reacting to the home)
 
@@ -61,10 +48,9 @@ public static class HomeAssistantPrompt
         condition: "warn me when Laura's sugar goes above 180", "close the blinds when the living
         room passes 27", "tell me when the washing machine finishes". It is a real Home Assistant
         automation, written as a file under `/ha/watches/<id>/`, and the setup index says which
-        watches exist. The boundary with the other reactive tools: a clock time or date → the
-        alarms calendar (a duration → `/timers`); an action to perform at a time → `/schedules`;
-        **something in the home changing → a watch**, never a schedule that polls `history.sh`.
-        Before you write, change, pause or remove a watch — and only then: no other home task
+        watches exist. **Something in the home changing is a watch**, never a schedule that polls
+        `history.sh`; a later moment that is a time rather than a change is decided under Which
+        mechanism in the Timers section. Before you write, change, pause or remove a watch — and only then: no other home task
         needs it — load the `home-watches` skill, which carries the file's shape, the trigger and
         effect kinds, and the delivery rules. A watch takes two calls before the write, like any
         home task — `domain__filesystem__file_read` on `/ha/setup-index.md` for the entity's id and

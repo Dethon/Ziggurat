@@ -284,6 +284,32 @@ public class PromptStalenessTests
             "FileSystemToolFeature.Callable so the model is told the name it can call");
     }
 
+    // The alarm-vs-timer-vs-schedule-vs-watch rule was stated four times across three sections —
+    // HA's "Which mechanism" and its watch boundary, Scheduled Tasks, both steps of Timers — about
+    // 500 tokens of every request saying one thing. It is stated once, under Timers, the last of
+    // the three and the closest to the conversation; the other two keep their own claim in one
+    // line and point there. These markers are the rule's own words, and each may occur in one
+    // section only.
+    [Theory]
+    [InlineData("HAPPEN")]
+    [InlineData("4-hour")]
+    [InlineData("dismissed alarm")]
+    [InlineData("however the time is phrased")]
+    public void TheMechanismRule_IsStatedOnce_UnderTimers(string marker)
+    {
+        var sections = new Dictionary<string, string>
+        {
+            [HomeAssistantPrompt.Name] = HomeAssistantPrompt.SystemPrompt,
+            [SchedulingPrompt.Name] = SchedulingPrompt.Prompt,
+            [TimerPrompt.Name] = TimerPrompt.Prompt
+        };
+
+        var holders = sections.Where(s => s.Value.Contains(marker)).Select(s => s.Key).ToList();
+
+        holders.ShouldBe([TimerPrompt.Name],
+            $"'{marker}' is part of the mechanism rule, which the Timers section states once");
+    }
+
     private static readonly string _promptSourceDirectory = Path.Combine(
         RepositoryRoot(), "Domain", "Prompts");
 

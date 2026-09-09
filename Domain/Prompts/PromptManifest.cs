@@ -26,7 +26,7 @@ public static class PromptManifest
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated.
-    public const int StandingTokens = 9_000;
+    public const int StandingTokens = 8_600;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -164,8 +164,9 @@ public static class PromptManifest
             Priority = PromptPriority.Client,
             // The stub of what was the largest section: the setup index is a file the mount
             // serves, the watches are a skill, and the doing rules are the home-assistant skill.
-            // Ratcheted from 6,500 through 5,000 and 4,500 as each of them left.
-            TokenBudget = 1_200,
+            // Ratcheted from 6,500 through 5,000, 4,500 and 1,200 as each of them left, the last
+            // when the mechanism rule moved to its one statement under Timers.
+            TokenBudget = 1_000,
             ServedBy = "mcp-homeassistant",
             Claims = HomeAssistantPrompt.Claims
         },
@@ -175,8 +176,9 @@ public static class PromptManifest
             Purpose = "That a schedule is a deferred action of the agent's own, never a human reminder, and that writing one loads the skill.",
             Priority = PromptPriority.Client,
             // The stub plus the live agent list the server appends: the file's rules are the
-            // scheduling skill. Ratcheted from 2,000.
-            TokenBudget = 700,
+            // scheduling skill. Ratcheted from 2,000, then from 700 when the mechanism rule moved
+            // to its one statement under Timers.
+            TokenBudget = 500,
             ServedBy = "mcp-scheduling",
             Claims = SchedulingPrompt.Claims
         },
