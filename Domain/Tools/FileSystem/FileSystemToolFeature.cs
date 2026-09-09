@@ -47,7 +47,7 @@ public class FileSystemToolFeature(
 
     public static readonly PromptClaim AnUnmountedPathIsAnswered =
         new("mounts.an-unmounted-path-is-answered",
-            "A path under none of the session's mounts is answered with a sentence saying it is not reachable, never hunted for through other tools or handed to a worker.");
+            "A path under none of the session's mounts is answered with a sentence saying it is not reachable, never hunted for through other tools, searched for across a mount or handed to a worker.");
 
     public static readonly IReadOnlyList<PromptClaim> Claims =
     [
@@ -154,7 +154,7 @@ public class FileSystemToolFeature(
             - Each mount is its own backend. Tools see only the filesystem of the mount you target — they cannot reach files on a different mount. If you need data from one mount available to a command on another (e.g. for `exec`), copy it across first.
             - `move` and `copy` accept source and destination on different mounts and handle the transfer natively (streaming for cross-FS, recursing into directories) — prefer a single `copy`/`move` call over reading on one mount and creating on another.
             - Paths are virtual: always include the mount prefix. Don't pass bare `/home/...` or `/notes/...` — start with one of the mount points listed above.
-            - A path that starts under none of these mounts is not reachable in this session, by any tool or by a worker — the mount list above is complete. Say so in one sentence instead of hunting for it: no retries under other spellings, no web tools, no delegation.
+            - A path that starts under none of these mounts is not reachable in this session, by any tool or by a worker — the mount list above is complete. Say so in one sentence instead of hunting for it: no retries under other spellings, no search of a mount for a folder of that name (a `find` over the sandbox, a glob from its root, a look through its home), no web tools, no delegation.
             """;
     }
 

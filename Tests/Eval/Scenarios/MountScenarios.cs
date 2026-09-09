@@ -87,7 +87,10 @@ public static class MountScenarios
             new CallPermission(EvalTools.Glob, "*"),
             new CallPermission(EvalTools.Info, "*"),
             new CallPermission(EvalTools.Read, "/media*"),
-            new CallPermission(EvalTools.Exec, "/sandbox*", "ls*/media/Movies*")
+            new CallPermission(EvalTools.Exec, "/sandbox*", "ls*/media/Movies*"),
+            // The one `ls` is an exec, and the sandbox section says every exec loads the sandbox
+            // skill first — so the load that check earns is the prompt obeyed, not a hunt.
+            CallPermission.Load(SandboxSkill.Name)
         ],
         // A worker is tolerated rather than required: about half the time this model hands the
         // impossible listing to one, and what the contract forbids is trying harder, not trying
