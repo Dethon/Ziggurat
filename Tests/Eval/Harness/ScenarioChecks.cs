@@ -239,15 +239,18 @@ public static class ScenarioChecks
             .ToList();
 
         // A refused attempt at a required call, corrected into it: the tool named the fix and the
-        // next call at the same tool and path is the one the scenario asks for. That round-trip is
-        // the refusal working, not a call the model should not have made; the ceiling still counts it.
+        // next call at the same tool, in the same directory, is the one the scenario asks for. The
+        // fix it named may be the body or the file's own name (a timer at /timers/te/te.json is
+        // sent to timer.json beside it), so the place is what has to agree, not the whole path.
+        // That round-trip is the refusal working, not a call the model should not have made; the
+        // ceiling still counts it.
         var corrected = scenario.Required
             .Select(e => Considered(recording).FirstOrDefault(call => Matches(e, call)))
             .Where(landed => landed is not null)
             .SelectMany(landed => Considered(recording)
                 .Where(call => call.Sequence < landed!.Sequence
                                && string.Equals(call.ToolName, landed.ToolName, StringComparison.Ordinal)
-                               && string.Equals(Path(call), Path(landed), StringComparison.Ordinal)
+                               && string.Equals(Directory(Path(call)), Directory(Path(landed)), StringComparison.Ordinal)
                                && Refused(call)))
             .ToHashSet();
 
@@ -261,6 +264,11 @@ public static class ScenarioChecks
             .Select(call =>
                 $"unnecessary call: {call.ToolName} {call.Arguments} is neither required nor permitted");
     }
+
+    // The virtual directory a path sits in: paths are mount-prefixed and '/'-separated, so the
+    // last segment is the file (or the timer directory a create names in place of its file).
+    private static string Directory(string path) =>
+        path.LastIndexOf('/') is var slash && slash > 0 ? path[..slash] : "";
 
     // Nothing was written: the tool threw, or answered with its error envelope — the VFS shape
     // and the MCP one both carry the refusal in the result text.

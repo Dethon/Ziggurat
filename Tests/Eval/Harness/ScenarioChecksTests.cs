@@ -568,6 +568,54 @@ public class ScenarioChecksTests
             .ShouldNotContain(f => f.Contains("unnecessary"));
     }
 
+    // The fix a refusal names can be the file's name rather than its body: a timer written at
+    // /timers/te/te.json is refused with the shape the mount wants, and the next create lands at
+    // timer.json in the same directory. Same tool, same place, nothing written — still the
+    // round-trip the refusal exists for.
+    [Fact]
+    public void ARefusedAttemptAtTheWrongFileName_CorrectedInTheSameDirectory_IsNotUnnecessary()
+    {
+        var recording = new Recording();
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 0, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/timers/pasta/pasta.json","content":"{\"durationSeconds\":480}"}""",
+            Result = """{"ok":false,"errorCode":"invalid_argument","message":"Create a timer at /<timerId>/timer.json (got 'pasta/pasta.json')"}"""
+        });
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 1, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/timers/pasta/timer.json","content":"{\"durationSeconds\":480}"}""",
+            Result = """{"status":"created"}"""
+        });
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldNotContain(f => f.Contains("unnecessary call"));
+    }
+
+    // A refusal somewhere else is not a step towards the required call: the mount that refused
+    // it is not the one the scenario is about, so the attempt stays a call nobody asked for.
+    [Fact]
+    public void ARefusedAttemptElsewhere_BeforeTheRequiredCall_IsStillUnnecessary()
+    {
+        var recording = new Recording();
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 0, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/schedules/nabu/pasta/schedule.json","content":"{}"}""",
+            Result = """{"ok":false,"errorCode":"invalid_argument","message":"prompt is required"}"""
+        });
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 1, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/timers/pasta/timer.json","content":"{\"durationSeconds\":480}"}""",
+            Result = """{"status":"created"}"""
+        });
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldContain(f => f.Contains("unnecessary call") && f.Contains("/schedules/"));
+    }
+
     [Fact]
     public void ARunThatTimedOut_FailsTheScenarioAndSaysSo()
     {
