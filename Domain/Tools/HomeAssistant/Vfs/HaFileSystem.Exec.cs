@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Exceptions;
@@ -70,6 +71,11 @@ public sealed partial class HaFileSystem
         catch (ArgumentException ex)
         {
             return done(2, "", ex.Message);
+        }
+
+        if (RewrittenMediaId(svc, data) is { } rewritten)
+        {
+            return done(2, "", rewritten);
         }
 
         NormalizeMediaSeek(svc, data);
@@ -145,6 +151,27 @@ public sealed partial class HaFileSystem
 
     // Music Assistant's `play_index` reads `seek_position` as falsy-or-set: a 0 means "no seek
     // requested", so it substitutes the item's stored resume point and the stream restarts half a
+    // A Music Assistant uri looks like `spotify--w2nq2jMe://podcast_episode/<id>`; a provider's own
+    // looks like `spotify:episode:<id>`. The second is what a model produces when it recognises the
+    // id inside the first and tidies the rest, and Music Assistant answers it with a bare 500 that
+    // cannot say which of the two things went wrong — so the model reads "wrong episode" and
+    // guesses another id, having already been handed the right one. Refused here, with the reason
+    // the 500 could not carry. A plain name is left alone: that is how most of these calls resolve.
+    private static string? RewrittenMediaId(HaServiceDefinition svc, JsonObject data)
+    {
+        if (!svc.Service.Equals("play_media", StringComparison.Ordinal)
+            || data["media_id"]?.GetValue<string>() is not { } id
+            || !Regex.IsMatch(id, @"^[a-z][a-z0-9_]*:[a-z_]+:[A-Za-z0-9]+$"))
+        {
+            return null;
+        }
+
+        return $"'{id}' is a provider's own uri, not the one this library plays. Use the uri the "
+               + "listing returned, exactly as the listing gave it — the `uri` field of the "
+               + "episode or item, with its `--` provider prefix and `://` intact. Do not shorten "
+               + "or convert it, and do not guess another id: the one you were given is correct.";
+    }
+
     // second behind where the listener already was. Seeking a podcast episode or audiobook to the
     // start is therefore impossible through the honest value. 1 second is truthy for MA and
     // indistinguishable from 0 to a listener.
