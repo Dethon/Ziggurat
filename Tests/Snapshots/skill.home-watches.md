@@ -1,4 +1,4 @@
-# home-watches — description 103 / 120 tokens, body 1579 / 2200 tokens, served by mcp-homeassistant
+# home-watches — description 103 / 120 tokens, body 1611 / 2200 tokens, served by mcp-homeassistant
 
 ================================================================================================
 
@@ -75,13 +75,15 @@ entity to Home Assistant, which has never heard of it.
   alone leaves it off.
 - `enabled: false` pauses a watch ("stop warning me tonight") and `true` resumes it — an edit
   of the same file, never a delete.
-- To change a watch (a new threshold, another room) `text_edit` its `watch.json`: the same
+- A watch is changed only when the user points at the one that exists ("warn me below 65,
+  not 70", "move that alarm to the bedroom"): `text_edit` its `watch.json` — the same
   `<id>` is the same watch, replaced in place, so a change never leaves two watches (a full
-  rewrite with `overwrite: true` replaces it too). That is for a change to the reaction that
-  exists ("warn me below 65, not 70"). A request that ADDS a reaction beside it — a second
-  threshold with its own effect, a night-only alarm next to a daytime warning — is a new
-  watch under its own id, and the existing one keeps running as it was: never overwrite a
-  watch the user did not ask to change. `domain__filesystem__remove` on `/ha/watches/<id>` removes it from the home.
+  rewrite with `overwrite: true` replaces it too). Every other request on an entity that
+  already has a watch is a NEW watch under its own id — a second threshold with its own
+  effect, a night-only alarm next to a daytime warning, an insistent alarm where a plain
+  warning exists — and the existing one keeps running as it was. A watch on the same
+  entity is not a reason to edit it: never overwrite a watch the user did not ask to
+  change. `domain__filesystem__remove` on `/ha/watches/<id>` removes it from the home.
 - `status.json` beside it is read-only: `createdAt`, `lastTriggeredAt`, `automationEntity`,
   `spent`. To list watches, `domain__filesystem__glob` on `/ha/watches/*/` and read each `watch.json`.
 - A watch needs no approval, even one that acts on the home: create it in the same turn.
