@@ -126,6 +126,7 @@ public sealed class EvalStack : IAsyncDisposable
         // Madrid, because the deployment's satellites are there and a scheduled time is only exact
         // once the zone is. The provider carries it so every server and the turn decoration agree.
         stack.Clock.SetLocalTimeZone(TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"));
+        stack.VoiceHub.Ringing = scenario.Turn.Ringing;
 
         var shipped = ShippedSettings(redisConnectionString);
 

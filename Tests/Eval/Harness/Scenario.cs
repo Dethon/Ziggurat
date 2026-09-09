@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Domain.DTOs;
+using Domain.DTOs.Voice;
 using Infrastructure.Agents.Skills;
 
 namespace Tests.Eval.Harness;
@@ -131,6 +132,10 @@ public sealed record EvalTurn
     public string? SatelliteId { get; init; }
 
     public string? DismissedAlert { get; init; }
+
+    // What is ringing on the satellites when the turn arrives: the alert a dismiss will silence
+    // and report. Null is silence, which is what every scenario not about a ringing alert means.
+    public DismissedAlert? Ringing { get; init; }
 
     // The channel the turn came in on, for a scenario whose subject is where an answer is sent
     // back. Null means the chat, or voice when a satellite is named — the two every other scenario

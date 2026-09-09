@@ -1,3 +1,4 @@
+using Domain.DTOs.Voice;
 using Domain.Prompts;
 using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
@@ -157,7 +158,11 @@ public static class VoiceScenarios
             Text = "para la alarma que está sonando",
             Sender = "fran",
             Room = "kitchen",
-            SatelliteId = "kitchen-01"
+            SatelliteId = "kitchen-01",
+            // The alarm that is ringing, so the dismiss reports it silenced. A hub with nothing
+            // ringing made the tool say so, and a model sent to stop an alarm that "is not
+            // ringing" went to the calendar and deleted the event.
+            Ringing = new DismissedAlert("Sacar la basura", AnnounceKind.Alarm)
         },
         Instant = EvalInstant.Evening,
         Required =
