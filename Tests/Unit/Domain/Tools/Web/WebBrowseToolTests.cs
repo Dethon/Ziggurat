@@ -36,8 +36,8 @@ public class WebBrowseToolTests
         // ends short of offset + maxLength. Paging by maxLength then skips what the back-up left —
         // including entries the envelope just promised lay ahead. The envelope names the exact
         // continuation the processor measured.
-        SetUpNavigate(Result("https://a.test/", Content: new string('x', 700),
-            ContentLength: 5000, Truncated: true) with
+        SetUpNavigate(Result("https://a.test/", content: new string('x', 700),
+            contentLength: 5000, truncated: true) with
         { NextOffset = 1680 });
 
         var result = await new TestableWebBrowseTool(_browser.Object).RunAsync(offset: 1000);
@@ -48,8 +48,8 @@ public class WebBrowseToolTests
     [Fact]
     public async Task APageThatFitsWhole_NamesNoNextOffset()
     {
-        SetUpNavigate(Result("https://a.test/", Content: "all of it",
-            ContentLength: 9, Truncated: false));
+        SetUpNavigate(Result("https://a.test/", content: "all of it",
+            contentLength: 9, truncated: false));
 
         var result = await new TestableWebBrowseTool(_browser.Object).RunAsync();
 
@@ -62,7 +62,7 @@ public class WebBrowseToolTests
     [Fact]
     public async Task APageTheServerDoesNotHave_IsReportedAsNotFound_NotAsAnEmptySuccess()
     {
-        SetUpNavigate(Result("https://a.test/archivo/2024", Content: "", ContentLength: 0) with
+        SetUpNavigate(Result("https://a.test/archivo/2024", content: "", contentLength: 0) with
         { HttpStatus = 404 });
 
         var result = await new TestableWebBrowseTool(_browser.Object).RunAsync();
@@ -75,7 +75,7 @@ public class WebBrowseToolTests
     [Fact]
     public async Task AServerError_IsReportedWithItsStatus()
     {
-        SetUpNavigate(Result("https://a.test/", Content: "", ContentLength: 0) with { HttpStatus = 503 });
+        SetUpNavigate(Result("https://a.test/", content: "", contentLength: 0) with { HttpStatus = 503 });
 
         var result = await new TestableWebBrowseTool(_browser.Object).RunAsync();
 
@@ -100,8 +100,8 @@ public class WebBrowseToolTests
             .ReturnsAsync(result);
 
     private static BrowseResult Result(
-        string url, string Content = "body", int ContentLength = 4, bool Truncated = false) =>
-        new("s", url, BrowseStatus.Success, "Title", Content, ContentLength, Truncated,
+        string url, string content = "body", int contentLength = 4, bool truncated = false) =>
+        new("s", url, BrowseStatus.Success, "Title", content, contentLength, truncated,
             null, null, null, null);
 
     private sealed class TestableWebBrowseTool(IWebBrowser browser) : WebBrowseTool(browser)
