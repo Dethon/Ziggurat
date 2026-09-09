@@ -97,6 +97,11 @@ public record BrowseResult(
 
     public int ImagesBeyondWindow { get; init; }
 
+    // What the server answered for the document that committed, when the browser saw one. A 404
+    // arrives as an empty page like any other, and without this a guessed url that does not exist
+    // reads as a page with nothing on it.
+    public int? HttpStatus { get; init; }
+
     // Where the next window starts, when the body was cut. The cut backs up — to a newline, past
     // a partial image entry — and appends a suffix, so no arithmetic on the body's length finds
     // this position.

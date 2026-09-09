@@ -76,12 +76,17 @@ public class WebBrowseTool(IWebBrowser browser)
             return new WebBrowseToolResult(error, null);
         }
 
+        // The server's own answer comes first: a 404 renders as an empty document and would
+        // otherwise be a "success" with no title and no content, which read as an empty page —
+        // and a model that had guessed the url went on to guess the next one.
         var envelope = new JsonObject
         {
-            ["status"] = result.Status switch
+            ["status"] = result switch
             {
-                BrowseStatus.CaptchaRequired => "captcha_required",
-                BrowseStatus.Partial => "partial",
+                { HttpStatus: 404 } => "not_found",
+                { HttpStatus: >= 400 } => "http_error",
+                { Status: BrowseStatus.CaptchaRequired } => "captcha_required",
+                { Status: BrowseStatus.Partial } => "partial",
                 _ => "success"
             },
             ["sessionId"] = result.SessionId,
@@ -90,6 +95,22 @@ public class WebBrowseTool(IWebBrowser browser)
             ["contentLength"] = result.ContentLength,
             ["truncated"] = result.Truncated
         };
+
+        if (result.HttpStatus is { } httpStatus)
+        {
+            envelope["httpStatus"] = httpStatus;
+        }
+
+        if (result.HttpStatus is 404)
+        {
+            envelope["hint"] = "The server has no page at this url. Do not try another spelling of "
+                               + "it: take the link from a page you have read or from a search result.";
+        }
+        else if (result.HttpStatus is >= 400)
+        {
+            envelope["hint"] = "The server answered with an error for this url; what loaded, if "
+                               + "anything, is its error page and not the content.";
+        }
 
         if (result.ImageCount > 0)
         {

@@ -254,7 +254,8 @@ public class PlaywrightWebBrowser(
         {
             ImageCount = processed.ImageCount,
             ImagesBeyondWindow = processed.ImagesBeyondWindow,
-            NextOffset = processed.NextOffset
+            NextOffset = processed.NextOffset,
+            HttpStatus = response?.Status
         };
     }
 

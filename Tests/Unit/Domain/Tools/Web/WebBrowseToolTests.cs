@@ -56,6 +56,44 @@ public class WebBrowseToolTests
         result.Envelope["nextOffset"].ShouldBeNull();
     }
 
+    // A url the server has no page for arrives as an empty document with a 404 behind it. Reported
+    // as a success with no title and no content, it read as "an empty page" — and a model that had
+    // guessed the url went on to guess the next one. The status is the difference.
+    [Fact]
+    public async Task APageTheServerDoesNotHave_IsReportedAsNotFound_NotAsAnEmptySuccess()
+    {
+        SetUpNavigate(Result("https://a.test/archivo/2024", Content: "", ContentLength: 0) with
+        { HttpStatus = 404 });
+
+        var result = await new TestableWebBrowseTool(_browser.Object).RunAsync();
+
+        result.Envelope["status"]!.GetValue<string>().ShouldBe("not_found");
+        result.Envelope["httpStatus"]!.GetValue<int>().ShouldBe(404);
+        result.Envelope["hint"]!.GetValue<string>().ShouldContain("no page at this url");
+    }
+
+    [Fact]
+    public async Task AServerError_IsReportedWithItsStatus()
+    {
+        SetUpNavigate(Result("https://a.test/", Content: "", ContentLength: 0) with { HttpStatus = 503 });
+
+        var result = await new TestableWebBrowseTool(_browser.Object).RunAsync();
+
+        result.Envelope["status"]!.GetValue<string>().ShouldBe("http_error");
+        result.Envelope["httpStatus"]!.GetValue<int>().ShouldBe(503);
+    }
+
+    [Fact]
+    public async Task APageThatLoaded_CarriesItsStatus_AndStaysASuccess()
+    {
+        SetUpNavigate(Result("https://a.test/") with { HttpStatus = 200 });
+
+        var result = await new TestableWebBrowseTool(_browser.Object).RunAsync();
+
+        result.Envelope["status"]!.GetValue<string>().ShouldBe("success");
+        result.Envelope["httpStatus"]!.GetValue<int>().ShouldBe(200);
+    }
+
     private void SetUpNavigate(BrowseResult result) =>
         _browser
             .Setup(b => b.NavigateAsync(It.IsAny<BrowseRequest>(), It.IsAny<CancellationToken>()))
