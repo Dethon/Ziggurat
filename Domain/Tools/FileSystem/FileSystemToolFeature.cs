@@ -10,6 +10,11 @@ public class FileSystemToolFeature(
 {
     private const string Feature = "filesystem";
 
+    // The name the model can actually call, built once here so a prompt that teaches a call can
+    // interpolate it instead of spelling the prefix — or, as the timers skill did, interpolating
+    // the bare leaf and teaching a tool that does not exist.
+    public static string Callable(string toolName) => $"domain__{Feature}__{toolName}";
+
     // The keys the feature config can enable, derived from the operations that have a domain tool
     // — so a new operation appears here as soon as it is added to the one list.
     public static readonly IReadOnlySet<string> AllToolKeys = FileSystemOperations.All

@@ -266,6 +266,39 @@ public class PromptStalenessTests
             "_(friendly-name) suffix a directory carries is not part of it");
     }
 
+    // The bare-name guard reads assembled text, so an interpolated `{{VfsExecTool.Name}}` slipped
+    // past it: the source spells no tool name at all, and the text it produces spells "exec". The
+    // whole countdown-timers skill taught five uncallable tools that way. Interpolate through
+    // FileSystemToolFeature.Callable instead, which builds the prefix the feature registers under.
+    [Fact]
+    public void NoPromptSource_InterpolatesABareToolName()
+    {
+        var offenders = Directory
+            .EnumerateFiles(PromptSourceDirectory, "*.cs")
+            .Where(file => Regex.IsMatch(File.ReadAllText(file), @"\{\{Vfs\w+Tool\.Name\}\}"))
+            .Select(Path.GetFileName)
+            .ToList();
+
+        offenders.ShouldBeEmpty(
+            "these prompts interpolate a tool's bare leaf name; wrap it in " +
+            "FileSystemToolFeature.Callable so the model is told the name it can call");
+    }
+
+    private static readonly string PromptSourceDirectory = Path.Combine(
+        RepositoryRoot(), "Domain", "Prompts");
+
+    private static string RepositoryRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "Domain", "Prompts")))
+        {
+            dir = dir.Parent;
+        }
+
+        return dir?.FullName ?? throw new InvalidOperationException("repository root not found");
+    }
+
     private static string TextOf(string name) =>
         AgentPromptFixture.ServedText.TryGetValue(name, out var served)
             ? served

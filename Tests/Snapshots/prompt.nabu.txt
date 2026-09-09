@@ -24,7 +24,7 @@
   home-watches             Skill                 103 / 120    body 1579 / 2200, served by mcp-homeassistant
   home-assistant           Skill                 143 / 150    body 3244 / 3600, served by mcp-homeassistant
   scheduling               Skill                 107 / 130    body 1091 / 1300, served by mcp-scheduling
-  countdown-timers         Skill                 123 / 130    body 497 / 900, served by mcp-timers
+  countdown-timers         Skill                 123 / 130    body 579 / 900, served by mcp-timers
 
 ================================================================================================
 
