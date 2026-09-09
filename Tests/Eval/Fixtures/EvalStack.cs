@@ -27,7 +27,6 @@ using McpServerWebSearch.Modules;
 using McpServerWebSearch.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -360,23 +359,13 @@ public sealed class EvalStack : IAsyncDisposable
     // channel — the boundary of an eval is the agent, and what a channel does with a reply
     // afterwards is covered by the channel and end-to-end suites — and the model is whatever
     // ZIGGURAT_EVAL_MODEL asks for, so a pass against another model needs no edit to the file.
-    private static AgentSettings ShippedSettings(string redisConnectionString)
-    {
-        var configuration = new ConfigurationBuilder()
-            .AddJsonFile(ShippedSettingsPath(), optional: false)
-            .AddUserSecrets<EvalStack>()
-            .AddEnvironmentVariables()
-            .Build();
-
-        var shipped = configuration.Get<AgentSettings>()
-                      ?? throw new InvalidOperationException("Agent/appsettings.json did not bind.");
-
-        return EvalModel.FromEnvironment(shipped) with
+    // Bound once per process, so an edit to the file mid-pass reaches no stack of it.
+    private static AgentSettings ShippedSettings(string redisConnectionString) =>
+        EvalModel.FromEnvironment(ShippedDefinition.Repository.Settings) with
         {
             Redis = new RedisConfiguration { ConnectionString = redisConnectionString },
             ChannelEndpoints = []
         };
-    }
 
     // The agent itself, built by the real factory. Only the configured endpoint urls are rewritten,
     // to the servers this stack hosts.
@@ -417,9 +406,6 @@ public sealed class EvalStack : IAsyncDisposable
         [.. agent.McpServerEndpoints
             .Select(endpoint => hosted.FirstOrDefault(h => endpoint.Contains(h.Key)).Value)
             .Where(rewritten => rewritten is not null)];
-
-    private static string ShippedSettingsPath() =>
-        Path.Combine(RepositoryRoot.Path, "Agent", "appsettings.json");
 
     public async ValueTask DisposeAsync()
     {
