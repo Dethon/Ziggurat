@@ -37,6 +37,14 @@ internal sealed class VirtualFileSystemRegistry : IVirtualFileSystemRegistry
 
     public FsResult<FileSystemResolution> Resolve(string virtualPath)
     {
+        // "ha/setup-index.md" names a mount and forgot the slash: it can mean nothing else, and
+        // refusing it with "paths start at a mount point" only bought the same call with the
+        // slash on. Anything that does not start with a mount's name is still refused below.
+        if (!virtualPath.StartsWith('/') && virtualPath.Length > 0)
+        {
+            virtualPath = "/" + virtualPath;
+        }
+
         var match = _mounts
             .Where(m => virtualPath.StartsWith(m.Key, StringComparison.OrdinalIgnoreCase)
                 && (virtualPath.Length == m.Key.Length || virtualPath[m.Key.Length] == '/'))
