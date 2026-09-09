@@ -156,7 +156,7 @@ public class PromptStalenessTests
     {
         var bare = Regex.Matches(
                 TextOf(name),
-                @"`(?<tool>file_read|file_write|text_search|text_create|text_edit|glob|exec|move|copy|remove|file_info)`?\s*[(`]?\s*(?<arg>/[A-Za-z0-9_./<>*-]+|path=|command=)")
+                @"`(?<tool>file_read|file_write|text_search|text_create|text_edit|glob|exec|move|copy|remove|file_info)`?\s*[(`]?\s*(?<arg>/[A-Za-z0-9_./<>*-]+|path=|command=|[a-z_.]+\.sh)")
             .Select(m => $"{m.Groups["tool"].Value} {m.Groups["arg"].Value}")
             .Distinct()
             .ToList();

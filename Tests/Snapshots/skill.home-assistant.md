@@ -1,4 +1,4 @@
-# home-assistant — description 143 / 150 tokens, body 3244 / 3600 tokens, served by mcp-homeassistant
+# home-assistant — description 143 / 150 tokens, body 3284 / 3600 tokens, served by mcp-homeassistant
 
 ================================================================================================
 
@@ -111,9 +111,9 @@ files: `create_event.sh`, `get_events.sh` and `delete_event.sh`. From the entity
   the cap is reached. **`insistent` must be present** — omitting it makes a
   one-shot announce, not an alarm.
 
-To see, change or cancel alarms: `exec get_events.sh` lists every event with its `uid`
+To see, change or cancel alarms: `domain__filesystem__exec get_events.sh` lists every event with its `uid`
 (no arguments covers the week ahead; `--days N` or `--start_date_time`/`--end_date_time`
-set the window). Cancel with `exec delete_event.sh --uid <uid>` — the uid comes from that
+set the window). Cancel with `domain__filesystem__exec delete_event.sh --uid <uid>` — the uid comes from that
 listing, never from memory; to drop one occurrence of a recurring alarm add
 `--recurrence_id <the listing's recurrence_id>`. There is no update action: to change an
 alarm's time or message, delete it by uid and create the new one. That is internal —
@@ -133,7 +133,7 @@ one. Default the target to the **speaking room**'s player (the room the request 
 from) unless another room is named; "everywhere" => run it on every room's MA player.
 
 - Tracks, artists, albums, radio: play directly by name from the player directory:
-  `exec music_assistant.play_media.sh --media_id "miles davis"` — add
+  `domain__filesystem__exec music_assistant.play_media.sh --media_id "miles davis"` — add
   `--media_type artist|album|track|radio` to disambiguate. Free-text names resolve
   through the streaming providers.
 - Playlists ("my playlist", "songs I like", "música favorita", any saved list): NEVER guess
@@ -143,18 +143,18 @@ from) unless another room is named; "everywhere" => run it on every room's MA pl
   not a judgement call about the phrasing: whenever you pass `--media_type playlist`, the
   `--media_id` value MUST be a title you read from a `browse_media.sh` listing
   in this same turn. List first:
-  `exec browse_media.sh --media_content_id playlists --media_content_type music_assistant`
+  `domain__filesystem__exec browse_media.sh --media_content_id playlists --media_content_type music_assistant`
   then play the exact title it returned:
-  `exec music_assistant.play_media.sh --media_id "<exact title>" --media_type playlist`.
+  `domain__filesystem__exec music_assistant.play_media.sh --media_id "<exact title>" --media_type playlist`.
   Inventing or translating a title (e.g. "Mi música favorita") does not fail cleanly — it
   comes back as a bare HA 500 that says nothing about what went wrong.
 - Podcasts: a SHOW plays by name, but a specific EPISODE never does. `play_media` looks a
   name up across tracks, albums, playlists, artists, radio and shows — never episodes — so an
   episode title resolves to the show and starts its **newest episode**, and reports success
   while doing it. An episode plays only by its exact uri. Get that uri first:
-  `exec music_assistant.podcast_episodes.sh --podcast "<show name>" --match "<words from the episode>"`
+  `domain__filesystem__exec music_assistant.podcast_episodes.sh --podcast "<show name>" --match "<words from the episode>"`
   then play what it returned:
-  `exec music_assistant.play_media.sh --media_id "<the episode's uri>"`.
+  `domain__filesystem__exec music_assistant.play_media.sh --media_id "<the episode's uri>"`.
   `--match` ignores case and accents; drop it to see the most recent titles, and widen it to
   fewer words if nothing matches. Do NOT look an episode up on Spotify or anywhere else on
   the web — that action already returns the id in playable form.
@@ -176,7 +176,7 @@ from) unless another room is named; "everywhere" => run it on every room's MA pl
 - Transport: `media_play.sh` / `media_pause.sh` / `media_next_track.sh` / `volume_set.sh`
   on the player.
 - "Play it from the beginning" / "start it over": use
-  `exec media_seek.sh --seek_position 1` on the player. Playing the uri again does NOT
+  `domain__filesystem__exec media_seek.sh --seek_position 1` on the player. Playing the uri again does NOT
   restart it — MA keeps a resume point per podcast episode and audiobook, and every play
   of that item starts there, reporting success while doing it. Stopping first changes
   nothing; the resume point just moves to where you stopped. `media_seek.sh` is the only
