@@ -16,10 +16,11 @@ public static class HomeAssistantPrompt
         under its room, with the rule for building either full path form from an entry, the
         actions each class admits, the watches that exist and the rooms a voice can reach. It is
         built when it is read, so it is never stale. A home task — switching, setting or reading a
-        device, a question about its past, an alarm or reminder, music — starts with two calls in
+        device, a question about its past, setting or moving an alarm or reminder, music — starts with two calls in
         the same turn, before anything else: load the `home-assistant` skill, which carries the
         layout, the workflow, how a result is read, history, alarms and music, and `domain__filesystem__file_read`
-        on `/ha/setup-index.md`. One read replaces every exploratory `glob`. A watch is the one home
+        on `/ha/setup-index.md`. One read replaces every exploratory `glob`. Silencing
+        something ringing is the exception: a `/timers` task, needing neither. A watch is the one home
         task with a skill of its own, below.
 
         ### Scope
@@ -29,6 +30,9 @@ public static class HomeAssistantPrompt
         say "turn on the AC and set it to 22", do both. Only infer additional actions
         when the request itself requires them (e.g. "cool the room" implies choosing
         mode/target).
+
+        Both directions. "Set the AC to 22" is `set_temperature.sh` alone — never
+        `turn_on.sh` first or alongside it, whether or not the device is already on.
 
         ### Which mechanism
 

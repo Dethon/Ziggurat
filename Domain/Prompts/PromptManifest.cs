@@ -26,7 +26,7 @@ public static class PromptManifest
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated.
-    public const int StandingTokens = 9_500;
+    public const int StandingTokens = 9_600;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -52,8 +52,11 @@ public static class PromptManifest
             Purpose = "The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.",
             Priority = PromptPriority.CoreDirective,
             // 250 covered the refusals prose alone; the tool-call rule landed exactly on it,
-            // leaving a section every agent reads one word from failing the build.
-            TokenBudget = 350,
+            // leaving a section every agent reads one word from failing the build. 400 for the
+            // irreversible-change carve-out: it is the one exception to "never hedge", and the
+            // words that keep a model from reading it as stop-and-wait are the words that earn
+            // its place — seven of the user's notes went the turn it was missing.
+            TokenBudget = 400,
             Conflict = ConflictPolicy.Governs(PromptRules.Refusals),
             Claims = CoreDirectivePrompt.Claims
         },

@@ -222,6 +222,33 @@ public class PromptStalenessTests
             Case.Insensitive,
             "the section that governs refusals has to say that asking before destroying " +
             "something unrecoverable is not the hedging it forbids");
+
+        // The first wording said only "ask one short question first", and gpt-5.6-luna read that
+        // as stop-and-wait: it asked without loading the vault skill or looking at the folder, and
+        // the scenario that wants the question went from 1.00 to 0.00 for the opposite reason it
+        // had failed on glm. The question is asked from the work, not instead of it.
+        text.ShouldContain("what it would",
+            Case.Insensitive,
+            "and has to say the looking still happens — the question names what would be lost, " +
+            "so the turn does the reading that finds out");
+    }
+
+    // The scope rule's three examples all run one way — asked to switch a device on, do not also
+    // choose its settings — and a model that reads them as a pattern rather than a principle
+    // completes the other direction happily: told "pon el aire del salón a veintidós grados",
+    // glm-5.3-flash ran `turn_on.sh && set_temperature.sh` and moved a device the turn never
+    // mentioned. The converse has to be an example too, not an inference from these.
+    [Fact]
+    public void HomeScope_SaysThatSettingAValue_DoesNotAlsoSwitchTheDeviceOn()
+    {
+        var scope = HomeAssistantPrompt.SystemPrompt;
+
+        scope.ShouldContain("turn_on.sh",
+            Case.Insensitive,
+            "the scope rule has to name the action a value-setting request must not add");
+        scope.ShouldContain("already",
+            Case.Insensitive,
+            "and say that a device's current state is not the turn's business to change");
     }
 
     private static string TextOf(string name) =>
