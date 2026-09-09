@@ -60,6 +60,23 @@ public class HaArgParserTests
         message.ShouldContain("name");
     }
 
+    // "Expected a --flag but found '&&'" names the symbol and not the rule, so a model that
+    // chained two actions read the failure as being about its *arguments* — glm-5.3-flash had the
+    // right episode uri, chained it after media_stop.sh, was told this, and went back to guessing
+    // the uri. One action per call is the thing it needed to hear.
+    [Theory]
+    [InlineData("&&")]
+    [InlineData("||")]
+    [InlineData(";")]
+    [InlineData("|")]
+    public void Parse_AShellOperator_SaysOneActionPerCall(string op)
+    {
+        var message = Should.Throw<ArgumentException>(
+            () => HaArgParser.Parse([op, "other.sh"], Svc(), "turn_on")).Message;
+
+        message.ShouldContain("one action per call", Case.Insensitive);
+    }
+
     [Fact]
     public void Parse_SingleSelectValidOption_Passes()
     {

@@ -98,7 +98,8 @@ public sealed partial class HaFileSystem(
         "Runs a Home Assistant action file (a service call). path is the entity directory CWD "
         + "(e.g. /ha/entities/light/kitchen); command is an action file invocation like "
         + "'turn_on.sh --brightness_pct 60'. Use '<service>.sh --help' to see arguments. This is "
-        + "NOT a shell — only *.sh action files run; anything else returns exit 127.";
+        + "NOT a shell — only *.sh action files run, one per call: no &&, no ;, no pipes, no "
+        + "chaining. Two actions are two calls. Anything else returns exit 127.";
 
     // Glob is uncapped: the result set is bounded by the home's entity count.
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
