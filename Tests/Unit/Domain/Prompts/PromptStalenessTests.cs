@@ -359,6 +359,21 @@ public class PromptStalenessTests
             "search first, whatever the site is called");
     }
 
+    // "Before you create, edit, rename, move or delete anything in it, load the skill" reads as
+    // before the write call, and told "borra todas las notas de la carpeta Proyectos"
+    // glm-5.3-flash listed the folder and asked its question with the skill never loaded, one run
+    // in three — nothing had been deleted yet, so by its reading the load was not due. The rule
+    // that says to ask lives in the skill, so the load is owed to the request, before the look
+    // and before the question.
+    [Fact]
+    public void VaultPrompt_SaysAWriteRequest_LoadsTheSkillBeforeTheLookAndTheQuestion()
+    {
+        VaultPrompt.Prompt.ShouldContain("before any question",
+            Case.Insensitive,
+            "the trigger has to be the request, or a model that asks first never loads the skill " +
+            "whose rule told it to ask");
+    }
+
     private static string TextOf(string name) =>
         AgentPromptFixture.ServedText.TryGetValue(name, out var served)
             ? served
