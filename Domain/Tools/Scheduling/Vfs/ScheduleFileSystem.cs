@@ -231,6 +231,15 @@ public sealed class ScheduleFileSystem(
     public override async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
+        // A schedule directory holds exactly one file, so a body written to `/<agentId>/<id>`
+        // can only mean that file: the same create, spelled without the suffix the mount
+        // documents. Refusing it bought nothing but a second call with the suffix on.
+        if (node.Kind == ScheduleNodeKind.ScheduleDir)
+        {
+            path = $"/{node.AgentId}/{node.ScheduleId}/{SchedulePath.ScheduleFileName}";
+            node = SchedulePath.Parse(path);
+        }
+
         if (node.Kind != ScheduleNodeKind.ScheduleFile || node.AgentId is null || node.ScheduleId is null)
         {
             return Invalid<FsCreateResult>($"Create a schedule at /<agentId>/<scheduleId>/schedule.json (got '{path}')");
