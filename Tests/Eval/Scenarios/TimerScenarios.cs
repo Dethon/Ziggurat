@@ -190,8 +190,9 @@ public static class TimerScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        // The glob, one status per timer, and one spare.
-        CallCeiling = 6,
+        // The skill, the glob, one status per timer, and two spare: a model that globs the
+        // timer files as well as the status files to name each one is thorough, not wrong.
+        CallCeiling = 7,
         Reply = new ReplyExpectation
         {
             Spoken = true,

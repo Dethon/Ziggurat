@@ -337,7 +337,11 @@ public static class ScenarioChecks
     // dumped; what it no longer does is redden whichever scenario it landed on.
     private static bool IsWarmUpProbe(ToolInvocation call)
     {
-        if (!call.ToolName.EndsWith(WebSearchTool.Name, StringComparison.Ordinal))
+        // The browse shape of the same tic: a placeholder page fetched for one character.
+        var budget = call.ToolName.EndsWith(WebSearchTool.Name, StringComparison.Ordinal) ? "maxResults"
+            : call.ToolName.EndsWith(WebBrowseTool.Name, StringComparison.Ordinal) ? "maxLength"
+            : null;
+        if (budget is null)
         {
             return false;
         }
@@ -345,8 +349,8 @@ public static class ScenarioChecks
         try
         {
             using var arguments = JsonDocument.Parse(call.Arguments);
-            return arguments.RootElement.TryGetProperty("maxResults", out var maxResults)
-                   && maxResults.TryGetInt32(out var wanted)
+            return arguments.RootElement.TryGetProperty(budget, out var asked)
+                   && asked.TryGetInt32(out var wanted)
                    && wanted <= 1;
         }
         catch (JsonException)

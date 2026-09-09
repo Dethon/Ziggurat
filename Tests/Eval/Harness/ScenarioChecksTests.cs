@@ -523,6 +523,51 @@ public class ScenarioChecksTests
             .ShouldNotContain(f => f.Contains("unnecessary call"));
     }
 
+    // The registry resolves "ha/setup-index.md" at /ha now, so the call the model made is the
+    // read the scenario asks for — and a matcher that took the spelling literally reported the
+    // required read as never made and the same call as unnecessary.
+    [Fact]
+    public void AMountPathMissingItsSlash_IsMatchedAsThatMount()
+    {
+        var scenario = Timer() with
+        {
+            Required =
+            [
+                new CallExpectation { Label = "index", Tool = Read, Arguments = [Arg.Path("/ha/setup-index.md")] }
+            ]
+        };
+        var recording = new Recording();
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 0, ToolName = Read, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"filePath":"ha/setup-index.md"}""", Result = "{}"
+        });
+
+        ScenarioChecks.Failures(scenario, recording)
+            .ShouldNotContain(f => f.Contains("never happened") || f.Contains("unnecessary"));
+    }
+
+    // The warm-up tic has a browse shape too: a placeholder page for one character, before the
+    // real work. Discounted the same way as the one-result search.
+    [Fact]
+    public void ABrowseOfAPlaceholderForOneCharacter_IsAWarmUpProbe()
+    {
+        var recording = new Recording();
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 0, ToolName = "mcp__localhost-1__web_browse", Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"url":"https://example.com","maxLength":1}""", Result = "{}"
+        });
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 1, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/timers/pasta/timer.json","content":"{}"}""", Result = "{}"
+        });
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldNotContain(f => f.Contains("unnecessary"));
+    }
+
     [Fact]
     public void ARunThatTimedOut_FailsTheScenarioAndSaysSo()
     {
