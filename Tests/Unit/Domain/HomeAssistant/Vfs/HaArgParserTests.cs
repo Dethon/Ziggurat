@@ -45,6 +45,21 @@ public class HaArgParserTests
             .Message.ShouldContain(messageContains);
     }
 
+    // "Run `x.sh --help` for the field list" costs a call the model may not spend: glm-5.3-flash
+    // guessed --name, was told to run --help, and guessed --search_query instead, then three more
+    // flags after that. The field list is in hand when the refusal is written, so it goes in the
+    // refusal.
+    [Fact]
+    public void Parse_UnknownArgument_NamesTheFieldsThatExist()
+    {
+        var message = Should.Throw<ArgumentException>(
+            () => HaArgParser.Parse(["--nope", "x"], Svc(), "turn_on")).Message;
+
+        message.ShouldContain("--nope");
+        message.ShouldContain("brightness_pct");
+        message.ShouldContain("name");
+    }
+
     [Fact]
     public void Parse_SingleSelectValidOption_Passes()
     {

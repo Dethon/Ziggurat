@@ -29,8 +29,17 @@ public static class HaArgParser
             var name = eq < 0 ? body : body[..eq];
             if (!svc.Fields.TryGetValue(name, out var field))
             {
+                // The list is in hand here, and sending the model for it costs a call it may
+                // spend on another guess instead — glm-5.3-flash answered this message with four
+                // more invented flags rather than one --help. Name them, and keep pointing at
+                // --help for the types and options the names alone do not give.
+                var known = svc.Fields.Count == 0
+                    ? "it takes none"
+                    : string.Join(", ", svc.Fields.Keys.Order().Select(f => $"--{f}"));
+
                 throw new ArgumentException(
-                    $"Unknown argument '--{name}'. Run `{command}.sh --help` for the field list.");
+                    $"Unknown argument '--{name}'. {command}.sh takes: {known}. "
+                    + $"Run `{command}.sh --help` for their types and options.");
             }
 
             string raw;
