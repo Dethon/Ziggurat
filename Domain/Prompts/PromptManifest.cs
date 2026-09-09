@@ -277,7 +277,10 @@ public static class PromptManifest
             Name = WebBrowsingSkill.Name,
             Description = WebBrowsingSkill.Description,
             DescriptionBudget = 130,
-            BodyBudget = 1_400,
+            // Raised from 1,400 when the web tools' descriptions gave up the snippet rule, the
+            // browse options, the other action verbs and the force essay: ~700 tokens that every
+            // request of every conversation paid, now ~250 paid once by a conversation that browses.
+            BodyBudget = 1_600,
             ServedBy = "mcp-websearch",
             Claims = WebBrowsingSkill.Claims
         },

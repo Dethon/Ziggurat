@@ -7,14 +7,11 @@ public class WebSearchTool(IWebSearchClient searchClient)
 {
     public const string Name = "web_search";
 
+    // What the tool does and what comes back. That a snippet is chosen by, never answered from,
+    // is the web-browsing skill's — loaded before any web call by rule, and not re-sent per request.
     protected const string Description = """
-                                         Searches the web and returns relevant results with titles, snippets, and URLs.
-                                         Use this to find current information about movies, TV shows, music, news, documentation, or any other topic.
-                                         Results include title, URL, snippet, domain, and publication date when available.
-                                         A snippet is the search engine's cached summary, written at crawl time — it can be
-                                         stale or wrong, and the page it points at wins where they disagree. Use snippets to
-                                         choose which result to open, never as the source of a factual answer: open the page
-                                         with web_browse and answer from what it says.
+                                         Searches the web. Each result carries title, URL, domain, the engine's cached
+                                         snippet, and the publication date when known.
                                          """;
 
     protected async Task<JsonNode> RunAsync(

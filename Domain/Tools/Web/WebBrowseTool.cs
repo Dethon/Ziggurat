@@ -9,25 +9,14 @@ public class WebBrowseTool(IWebBrowser browser)
 {
     public const string Name = "web_browse";
 
+    // What the tool does and what comes back; which parameter narrows what is on the parameters,
+    // and when to reach for each is the web-browsing skill's.
     protected const string Description =
         """
-        Navigates to a URL and returns page content as markdown.
-        Loads web pages only — http and https. It cannot read local files or directories:
-        file:// URLs are refused, and a filesystem path is not a URL.
-        Maintains a persistent browser session (cookies, login state preserved).
-        Automatically dismisses cookie popups, age gates, newsletter modals.
-
-        Use selector to extract specific elements (e.g., selector=".product-card").
-        Use maxLength/offset for pagination of long content.
-        Use useReadability=true for clean article extraction (strips ads, nav, sidebars).
-        Use scrollToLoad=true for pages with lazy-loaded content.
-        Use snapshot=true to include the accessibility tree in the same call when you intend
-        to interact with the page (saves a follow-up web_snapshot round trip).
-
-        Returns structured data (JSON-LD) when available on the page.
-
-        For interacting with pages (clicking, filling forms), use snapshot=true (or web_snapshot)
-        and then web_action.
+        Navigates to an http or https URL and returns the page as markdown, with its JSON-LD when
+        the page has any. Not a file reader: file:// and filesystem paths are refused. The browser
+        session persists across calls (cookies, logins), and cookie, age and newsletter popups are
+        dismissed on the way in.
         """;
 
     protected async Task<WebBrowseToolResult> RunAsync(

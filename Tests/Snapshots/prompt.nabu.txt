@@ -18,8 +18,8 @@
   voice                    ChannelOverride       602 / 800    Every reply is spoken aloud, so it is one short sentence of plain words.
   language                 Language              122 / 300    The reply language, stated absolutely, against a request that is otherwise all English.
   obsidian-vault           Skill                 107 / 120    body 1552 / 1800, served by mcp-vault
-  sandbox                  Skill                  99 / 130    body 927 / 1200, served by mcp-sandbox
-  web-browsing             Skill                 102 / 130    body 1261 / 1400, served by mcp-websearch
+  sandbox                  Skill                  99 / 130    body 956 / 1200, served by mcp-sandbox
+  web-browsing             Skill                 102 / 130    body 1514 / 1600, served by mcp-websearch
   home-watches             Skill                 103 / 120    body 1611 / 2200, served by mcp-homeassistant
   home-assistant           Skill                 150 / 150    body 3284 / 3600, served by mcp-homeassistant
   scheduling               Skill                 107 / 130    body 1091 / 1300, served by mcp-scheduling

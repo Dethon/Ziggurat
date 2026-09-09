@@ -11,14 +11,8 @@ public class WebSnapshotTool(IWebBrowser browser)
 
     protected const string Description =
         """
-        Returns the accessibility tree showing all elements: headings, text, buttons,
-        links, form fields, dropdowns, and their current state.
-
-        Each interactive element has a ref you use with web_action to interact with it.
-
-        Use this to understand page state and find elements before interacting.
-        Call after web_browse to see interactive elements, or after web_action when the
-        diff response isn't enough context.
+        Returns the current page's accessibility tree: every element with its state, and a ref
+        on each interactive one for web_action.
         """;
 
     protected async Task<WebSnapshotToolResult> RunAsync(

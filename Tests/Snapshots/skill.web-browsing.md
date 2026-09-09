@@ -1,4 +1,4 @@
-# web-browsing — description 102 / 130 tokens, body 1261 / 1400 tokens, served by mcp-websearch
+# web-browsing — description 102 / 130 tokens, body 1514 / 1600 tokens, served by mcp-websearch
 
 ================================================================================================
 
@@ -15,16 +15,20 @@ description: Any task on the web: searching for something, reading a page or its
 - **web_action** — interact with an element (or navigate back) by ref.
 - **view_image** — look at pictures on the page you browsed, by their image refs.
 
-See each tool's own description for arguments, action verbs, and defaults — don't restate them
-from memory.
+The parameters carry the arguments and their defaults — read them there rather than from
+memory.
 
 ### Core Workflow
 
-**Reading a page.** Call web_browse. If the response is truncated or you need a specific
-region, narrow it (the tool description shows how) before falling back to a second call.
-When the page you opened for an answer arrives truncated, read its remainder (offset)
-before opening a different page — the answer is usually in the tail you have not read,
-and another page's snippet is a promise, not the page.
+**Reading a page.** A search result's snippet is the engine's cached summary, written at
+crawl time: choose which result to open by it, never answer from it — the page wins where
+they disagree. Call web_browse. If the response is truncated or you need a specific region,
+narrow it before falling back to a second call: `selector` for one region, `useReadability`
+for a clean article without ads and navigation, `scrollToLoad` for lazy-loaded content,
+`offset` (the `nextOffset` the previous call returned) for the remainder. When the page you
+opened for an answer arrives truncated, read its remainder before opening a different
+page — the answer is usually in the tail you have not read, and another page's snippet is
+a promise, not the page.
 
 **Looking at a picture.** web_browse lists each image where it sits in the page text, as
 `[image i-1: what the page calls it]`. Pass those refs to view_image to see the pictures
@@ -43,6 +47,11 @@ dropdown appears in the diff, click the option you want, otherwise confirm the s
 with the appropriate key press.
 
 **Hover menus / tooltips.** Hover the trigger first; the diff reveals the menu refs to click.
+Focus does the same for a datepicker or a dropdown that opens on focus.
+
+**The other verbs.** `press` takes the key's name in `value` (Enter, Tab, Escape,
+ArrowDown); `select` takes the option's text; `drag` takes the destination ref in `endRef`;
+`clear` empties a field; `back` needs no ref.
 
 **Multi-page navigation.** Click links/buttons normally. Going back is web_action's back
 action, never a second web_browse of a page you already visited — knowing its URL does not
@@ -65,15 +74,16 @@ change that; a re-browse starts the page over and loses its state.
 
 | Situation                | Strategy                                                                |
 |--------------------------|-------------------------------------------------------------------------|
-| Content truncated        | Paginate or narrow the extraction (see web_browse description).         |
+| Content truncated        | Page with `offset`, or narrow with `selector` / `useReadability`.        |
 | Can't find element       | Re-snapshot to see what's actually there.                               |
 | Autocomplete not opening | Type the full value, then confirm with a key press.                     |
-| Lazy-loaded content      | Re-browse with scroll-to-load enabled (see web_browse description).     |
+| Lazy-loaded content      | Re-browse with `scrollToLoad`.                                          |
 | Session expired          | Re-browse to start a fresh session.                                     |
 | Modal blocking content   | Usually auto-dismissed; otherwise find a close button via snapshot.     |
 | Hidden hover content     | Hover the trigger to reveal it.                                         |
+| Image ref no longer resolves | Refs live in the session that listed them: re-browse the page for fresh ones. |
 | Need to go back          | Use web_action's back rather than re-browsing the previous URL.         |
-| Click times out on a ref | Retry once with the force option (see web_action description) only if you're certain the ref is correct. |
+        | Click times out on a ref | Retry once with `force` only if you're certain the ref is right. A click waits for the element to be visible, enabled and unobscured; an overlay with no ARIA role (a floating label, a decoration) is invisible to the snapshot yet intercepts the click, and `force` skips the wait. Those checks are also what catch a wrong ref or a real modal, so never force a first attempt. |
 
 ### Response Style
 

@@ -12,8 +12,8 @@
   home_assistant_guide     Client               1197 / 1200   The house: which mechanism a request is, and that a home task starts by loading the skill and reading the setup index.
   date                     Date                    7 / 30     Today's date. Last of the static sections, because it is the only one that changes on its own.
   obsidian-vault           Skill                 107 / 120    body 1552 / 1800, served by mcp-vault
-  sandbox                  Skill                  99 / 130    body 927 / 1200, served by mcp-sandbox
-  web-browsing             Skill                 102 / 130    body 1261 / 1400, served by mcp-websearch
+  sandbox                  Skill                  99 / 130    body 956 / 1200, served by mcp-sandbox
+  web-browsing             Skill                 102 / 130    body 1514 / 1600, served by mcp-websearch
   home-watches             Skill                 103 / 120    body 1611 / 2200, served by mcp-homeassistant
   home-assistant           Skill                 150 / 150    body 3284 / 3600, served by mcp-homeassistant
 
