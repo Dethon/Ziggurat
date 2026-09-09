@@ -234,7 +234,7 @@ public sealed class ScheduleFileSystem(
         // A schedule directory holds exactly one file, so a body written to `/<agentId>/<id>`
         // can only mean that file: the same create, spelled without the suffix the mount
         // documents. Refusing it bought nothing but a second call with the suffix on.
-        if (node.Kind == ScheduleNodeKind.ScheduleDir)
+        if (node.Kind == ScheduleNodeKind.ScheduleDir && !node.ScheduleId!.Contains('.'))
         {
             path = $"/{node.AgentId}/{node.ScheduleId}/{SchedulePath.ScheduleFileName}";
             node = SchedulePath.Parse(path);

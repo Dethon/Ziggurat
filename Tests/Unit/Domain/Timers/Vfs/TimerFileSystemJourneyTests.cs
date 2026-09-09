@@ -80,6 +80,20 @@ public class TimerFileSystemJourneyTests
         {"durationSeconds": 300, "text": "pasta is ready", "target": {"room": "Kitchen"}}
         """;
 
+    // A timer directory holds one writable file, so a body written to /<id> can only mean it —
+    // the same leniency the schedules mount has, for the same reason: the refusal only bought the
+    // same call with the file name on.
+    [Fact]
+    public async Task Create_AtTheTimerDirectory_IsTheTimerFile()
+    {
+        var (fs, store, _, _) = Build();
+
+        var created = await fs.CreateAsync("/pasta", PastaSpec, false, true, CancellationToken.None);
+
+        created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>().Value.FilePath.ShouldEndWith("/pasta/timer.json");
+        (await store.GetAsync("pasta", CancellationToken.None)).ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task CreateReadStatusCancel_FullJourney()
     {

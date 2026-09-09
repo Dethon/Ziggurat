@@ -33,6 +33,29 @@ public class VfsTextCreateToolTests
         return (registry, backend);
     }
 
+    // A backend that accepted a body at the schedule's directory wrote schedule.json under it.
+    // Echoing the caller's own path back said the file was where the caller aimed, and the model
+    // moved it "into place" — a move the mount refused, and a remove after that. The backend's
+    // answer wins when it extends the path the caller gave.
+    [Fact]
+    public async Task ABackendThatWroteUnderTheCallersPath_NamesTheFileItWrote()
+    {
+        var backend = new Mock<IFileSystemBackend>();
+        backend
+            .Setup(b => b.CreateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsCreateResult>.Ok(new FsCreateResult
+            {
+                Status = "created", FilePath = "/nabu/apagar-aire/schedule.json", Size = "34 B", Lines = 1
+            }));
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.Resolve("/schedules/nabu/apagar-aire"))
+            .Returns(Resolved(backend.Object, "nabu/apagar-aire", "/schedules"));
+
+        var node = await new VfsTextCreateTool(registry.Object).RunAsync("/schedules/nabu/apagar-aire", "{}");
+
+        node["filePath"]!.GetValue<string>().ShouldBe("/schedules/nabu/apagar-aire/schedule.json");
+    }
+
     [Fact]
     public async Task Body_NoNote_WhenContentArgWasString()
     {

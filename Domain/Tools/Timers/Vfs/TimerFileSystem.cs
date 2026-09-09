@@ -186,6 +186,14 @@ public sealed class TimerFileSystem(
         string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);
+        // A timer directory holds one writable file, so a body written to /<id> can only mean it.
+        // A segment with an extension is a file spelled wrong, not a directory, and stays refused.
+        if (node.Kind == TimerNodeKind.TimerDir && !node.TimerId!.Contains('.'))
+        {
+            path = $"/{node.TimerId}/{TimerPath.TimerFileName}";
+            node = TimerPath.Parse(path);
+        }
+
         if (node.Kind != TimerNodeKind.TimerFile || node.TimerId is null)
         {
             return Invalid<FsCreateResult>($"Create a timer at /<timerId>/{TimerPath.TimerFileName} (got '{path}')");
