@@ -164,8 +164,10 @@ public static class ScenarioChecks
 
     private static IEnumerable<string> Says(FileExpectation expectation, string content, string? before)
     {
+        // Case is the model's: "Migración de la base de datos" at the head of a line carries the
+        // 'migraci' a scenario asks for, and an ordinal check failed the append for capitalising.
         var missing = expectation.Contains
-            .Where(text => !content.Contains(text, StringComparison.Ordinal))
+            .Where(text => !content.Contains(text, StringComparison.OrdinalIgnoreCase))
             .Select(text => $"{expectation.Path} no longer carries '{text}'");
 
         var lingering = expectation.Absent

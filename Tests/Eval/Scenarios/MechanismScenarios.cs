@@ -105,7 +105,9 @@ public static class MechanismScenarios
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/schedules/[^/]+/[^/]+/schedule\.json$"),
+                    // With or without the file name: the mount accepts a body written to the
+                    // schedule directory as the schedule file, and the call is what is matched.
+                    Arg.PathMatches(@"^/schedules/[^/]+/[^/]+(/schedule\.json)?$"),
                     // 21:00 in Madrid, whichever of the three spellings the contract allows. What
                     // is pinned is the instant, never the model's choice of how to write a zone.
                     Arg.Body("content", Arg.Any(
