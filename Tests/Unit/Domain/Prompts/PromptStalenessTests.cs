@@ -299,6 +299,20 @@ public class PromptStalenessTests
         return dir?.FullName ?? throw new InvalidOperationException("repository root not found");
     }
 
+    // "unless they explicitly ask what you remember" is a wide door: asked "¿y por qué nueve
+    // minutos?" — why the timer is what it is, not what is stored — glm-5.3-flash read itself as
+    // invited and answered "lo dejé guardado como tu preferencia". A why-question about a
+    // remembered preference is answered with the preference, never with the remembering.
+    [Fact]
+    public void MemoryPrompt_SaysAWhyQuestion_IsNotAnInvitationToNameTheStore()
+    {
+        var text = MemoryPrompts.FeatureSystemPrompt;
+
+        text.ShouldContain("why",
+            Case.Insensitive,
+            "the memory rule has to say which side of its exception a why-question falls on");
+    }
+
     private static string TextOf(string name) =>
         AgentPromptFixture.ServedText.TryGetValue(name, out var served)
             ? served

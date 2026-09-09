@@ -8,7 +8,7 @@ public static class MemoryPrompts
 
         You have persistent memory. Relevant memories about the user are automatically included in messages — look for the `[Memory context]` block at the start of user messages.
 
-        Let this context silently shape your answer — apply known preferences and instructions — but do not restate the memories themselves. Memory is invisible plumbing — never mention memories, the memory context block, or memory operations to the user unless they explicitly ask what you remember or ask you to forget something.
+        Let this context silently shape your answer — apply known preferences and instructions — but do not restate the memories themselves. Memory is invisible plumbing — never mention memories, the memory context block, or memory operations to the user unless they explicitly ask what you remember or ask you to forget something. Asking **why** something is the way it is ("¿y por qué nueve minutos?") is not that question: answer with the preference itself ("cueces la pasta nueve minutos"), never with where it is kept or that you kept it.
 
         Memory storage and recall are handled automatically — your only memory action is removal via `memory_forget` (see its tool description for arguments).
 
