@@ -34,12 +34,14 @@ public class MemoryForgetTool(
                                          """;
 
     public async Task<JsonNode> Run(
-        [Description("The `id` of one memory, exactly as a search result or this tool's own "
-                     + "`candidates` list spelled it. Never the memory's text, and never a list — "
-                     + "use memoryIds for several.")]
+        [Description("The `id` of one memory, exactly as the [Memory context] block, a search "
+                     + "result or this tool's own `candidates` list spelled it — the bracketed id at "
+                     + "the head of the fact's line. Never the memory's text, and never a list — use "
+                     + "memoryIds for several.")]
         string? memoryId = null,
-        [Description("Several memory `id`s, each as a search result or `candidates` list spelled "
-                     + "it. This is how a confirmation_required answer is followed up.")]
+        [Description("Several memory `id`s to DELETE, each as the [Memory context] block, a search "
+                     + "result or the `candidates` list spelled it. Only the ones that must go: this "
+                     + "call deletes every id it names, and is no place to list the ones to keep.")]
         string[]? memoryIds = null,
         [Description("A semantic description of what to forget, when you have no id — 'my job', "
                      + "not the memory's exact words. Reaching one memory deletes it; reaching "
