@@ -23,15 +23,17 @@ public sealed class TimerFileSystem(
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 
+    // What the mount is, not how to drive it: the file's shape, the target rules and the dismiss
+    // action are the countdown-timers skill's body, and a description that repeated them was a
+    // reason to skip the load — a model with the JSON in front of it wrote the file and never
+    // read the rules that go with it.
     public override string DescribeMount =>
-        "Short countdown timers that ring on the voice satellites. Arm one by creating "
-        + "/timers/<descriptive-id>/timer.json with JSON {durationSeconds, text?, target} — target "
-        + "is {satelliteId | satelliteIds | room | all}; default it to the speaking room. Read "
-        + "/timers/<id>/status.json for remainingSeconds/firesAt; cancel by deleting /timers/<id>. "
-        + "Timers are immutable (delete and recreate) and fire once, ringing tone + message until "
-        + "dismissed by wake word/button or capped. Exec dismiss.sh at /timers to silence "
-        + "everything currently ringing (alarms and timers) from any room or channel. Use the HA "
-        + "alarms calendar for clock-time alarms/reminders, not timers.";
+        "Short countdown timers that ring on the voice satellites: each is a directory "
+        + "/timers/<id> with its timer.json and a read-only status.json, and dismiss.sh at /timers "
+        + "silences whatever is ringing (alarms and timers) from any room or channel. Before you "
+        + "create, read, change, cancel or silence one, load the `countdown-timers` skill — the "
+        + "file's shape and the target rules are there, not here. Use the HA alarms calendar for "
+        + "clock-time alarms/reminders, not timers.";
 
     // The words the model reads about each operation, next to the behaviour they describe. They
     // name the mount's real files, which is what makes the timers surface usable without a probe.
