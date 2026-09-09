@@ -1,10 +1,10 @@
-# obsidian-vault — description 98 / 120 tokens, body 1552 / 1800 tokens, served by mcp-vault
+# obsidian-vault — description 107 / 120 tokens, body 1552 / 1800 tokens, served by mcp-vault
 
 ================================================================================================
 
 ---
 name: obsidian-vault
-description: Creating, editing, renaming, moving or deleting anything in the Obsidian vault at `/vault` ("save this recipe", "add a tag to that note", "rename the heading", "delete those notes"). Not for reading a note or searching the vault. The layout, frontmatter and wikilink conventions, where a new note goes, what an edit must preserve, when to ask first, and what to do when a write is refused.
+description: Creating, editing, renaming, moving or deleting anything in the Obsidian vault at `/vault` ("save this recipe", "add a tag to that note", "add at the end of the note that…", "rename the heading", "delete those notes"). Not for reading a note or searching the vault. The layout, frontmatter and wikilink conventions, where a new note goes, what an edit must preserve, when to ask first, and what to do when a write is refused.
 ---
 
 ### Layout

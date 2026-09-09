@@ -1,4 +1,4 @@
-# jonas — 5774 tokens across 16 sections and 7 skills
+# jonas — 5783 tokens across 16 sections and 7 skills
 
   core_directive           CoreDirective         353 / 400    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               30 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -16,7 +16,7 @@
   printing_prompt          Client                336 / 600    The printer's queue, the formats it takes and what it rejects.
   timers_prompt            Client                533 / 900    Which mechanism a moment is — a countdown, a calendar alarm, a scheduled task — and the live satellite roster.
   date                     Date                    7 / 30     Today's date. Last of the static sections, because it is the only one that changes on its own.
-  obsidian-vault           Skill                  98 / 120    body 1552 / 1800, served by mcp-vault
+  obsidian-vault           Skill                 107 / 120    body 1552 / 1800, served by mcp-vault
   sandbox                  Skill                  99 / 130    body 927 / 1200, served by mcp-sandbox
   web-browsing             Skill                 102 / 130    body 1261 / 1400, served by mcp-websearch
   home-watches             Skill                 103 / 120    body 1579 / 2200, served by mcp-homeassistant
@@ -335,7 +335,7 @@ Today is Friday, 2026-05-15.
   </skill>
   <skill>
     <name>obsidian-vault</name>
-    <description>Creating, editing, renaming, moving or deleting anything in the Obsidian vault at `/vault` (&quot;save this recipe&quot;, &quot;add a tag to that note&quot;, &quot;rename the heading&quot;, &quot;delete those notes&quot;). Not for reading a note or searching the vault. The layout, frontmatter and wikilink conventions, where a new note goes, what an edit must preserve, when to ask first, and what to do when a write is refused.</description>
+    <description>Creating, editing, renaming, moving or deleting anything in the Obsidian vault at `/vault` (&quot;save this recipe&quot;, &quot;add a tag to that note&quot;, &quot;add at the end of the note that…&quot;, &quot;rename the heading&quot;, &quot;delete those notes&quot;). Not for reading a note or searching the vault. The layout, frontmatter and wikilink conventions, where a new note goes, what an edit must preserve, when to ask first, and what to do when a write is refused.</description>
   </skill>
   <skill>
     <name>sandbox</name>

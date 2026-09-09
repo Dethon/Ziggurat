@@ -10,7 +10,7 @@ public static class ObsidianVaultSkill
 
     // The whole trigger: the one line about this skill that is in every turn.
     public const string Description =
-        "Creating, editing, renaming, moving or deleting anything in the Obsidian vault at `/vault` (\"save this recipe\", \"add a tag to that note\", \"rename the heading\", \"delete those notes\"). Not for reading a note or searching the vault. The layout, frontmatter and wikilink conventions, where a new note goes, what an edit must preserve, when to ask first, and what to do when a write is refused.";
+        "Creating, editing, renaming, moving or deleting anything in the Obsidian vault at `/vault` (\"save this recipe\", \"add a tag to that note\", \"add at the end of the note that…\", \"rename the heading\", \"delete those notes\"). Not for reading a note or searching the vault. The layout, frontmatter and wikilink conventions, where a new note goes, what an edit must preserve, when to ask first, and what to do when a write is refused.";
 
     public const string Body =
         """
