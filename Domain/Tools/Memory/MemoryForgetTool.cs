@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -33,13 +34,26 @@ public class MemoryForgetTool(
                                          """;
 
     public async Task<JsonNode> Run(
+        [Description("The `id` of one memory, exactly as a search result or this tool's own "
+                     + "`candidates` list spelled it. Never the memory's text, and never a list — "
+                     + "use memoryIds for several.")]
         string? memoryId = null,
+        [Description("Several memory `id`s, each as a search result or `candidates` list spelled "
+                     + "it. This is how a confirmation_required answer is followed up.")]
         string[]? memoryIds = null,
+        [Description("A semantic description of what to forget, when you have no id — 'my job', "
+                     + "not the memory's exact words. Reaching one memory deletes it; reaching "
+                     + "several deletes nothing and returns them as candidates.")]
         string? query = null,
+        [Description("Optional: restrict a query to these categories.")]
         MemoryCategory[]? categories = null,
+        [Description("Optional: restrict a query to memories carrying these tags, comma-separated.")]
         string? tags = null,
+        [Description("Optional: restrict a query to memories older than this ISO-8601 date.")]
         string? olderThan = null,
+        [Description("Optional: restrict a query to memories at or below this importance.")]
         double? maxImportance = null,
+        [Description("Why this is being forgotten, in a few words. Recorded, never shown to the user.")]
         string? reason = null,
         CancellationToken ct = default)
     {
