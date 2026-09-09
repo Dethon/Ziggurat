@@ -34,8 +34,11 @@ public static class WatchScenarios
     // An announcement's target object naming the hub's room or the satellite in it — never the
     // word anywhere in the file, which a delivery address or the watch's name would satisfy, and
     // never the home's area slug, which the fake spells differently on purpose.
+    // Every spelling the timers contract allows for one satellite: the room, the id, or the id
+    // alone in the list form — a model that wrote `satelliteIds: ["office-01"]` obeyed the mount
+    // and failed a pattern that knew only the singular.
     private static string AnnounceTarget(string room, string satelliteId) =>
-        $@"""target""\s*:\s*\{{[^}}]*""(room""\s*:\s*""{room}""|satelliteId""\s*:\s*""{satelliteId}"")";
+        $@"""target""\s*:\s*\{{[^}}]*""(room""\s*:\s*""{room}""|satelliteId""\s*:\s*""{satelliteId}""|satelliteIds""\s*:\s*\[\s*""{satelliteId}""\s*\])";
 
     // Creating a watch beside the seeded one: the count becomes two, a new automation is on, and
     // the home holds the bounds the user named — read back from the automation, not from the file
