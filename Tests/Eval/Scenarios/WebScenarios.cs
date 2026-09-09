@@ -83,6 +83,11 @@ public static class WebScenarios
         // worker — so the detour is tolerated, declined, and paid for with one slack call.
         MayDelegateTo = ["jonas-worker"],
         WorkerAnswer = WorkerCannotBrowse,
+        // "El gazpacho de Almudena" names a person, and a recipe from a person is what a vault
+        // holds: one look there before the web is a reasonable reading of the turn, not a
+        // failure to search. The subject — the number comes from the page and not from the
+        // snippet — is untouched by it, and the ceiling keeps it to one look.
+        Permitted = [new CallPermission(EvalTools.Search, "/vault*")],
         CallCeiling = 6,
         Reply = new ReplyExpectation
         {

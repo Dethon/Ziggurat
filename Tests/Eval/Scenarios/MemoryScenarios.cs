@@ -243,7 +243,10 @@ public static class MemoryScenarios
             {
                 Label = "forget",
                 Tool = EvalTools.Forget,
-                Arguments = [Arg.Matches("query", "(?i)lisboa|viaje")]
+                // The store is Spanish and the model's query need not be: "preparing a trip to
+                // Lisbon" found and deleted the fact, and a pattern that took only the Spanish
+                // spellings failed the deletion it had just watched happen.
+                Arguments = [Arg.Matches("query", "(?i)lisbo|viaje|trip")]
             }
         ],
         CallCeiling = 2,
