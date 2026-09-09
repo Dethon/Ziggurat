@@ -249,6 +249,22 @@ public class MemoryForgetToolTests
         result["message"]!.GetValue<string>().ShouldBe("Either memoryId, memoryIds or query must be provided");
     }
 
+    // An id nothing has is a guess, and answering it with "success, nothing affected" let the
+    // guess look like a deletion. Refused, naming where the real ids are.
+    [Fact]
+    public async Task Run_AnUnknownMemoryId_IsRefused_NotAnEmptySuccess()
+    {
+        _store.Setup(s => s.GetByIdAsync(UserId, "mem_acme", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MemoryEntry?)null);
+
+        var result = await CreateTool().Run(memoryId: "mem_acme");
+
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.NotFound);
+        result["hint"]!.GetValue<string>().ShouldContain("[Memory context]");
+        _store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

@@ -14,8 +14,11 @@ public static class RecallBlock
     // for every historical user turn that carries one, and any drift rewrites the prompt prefix.
     public static string Render(MemoryContext context)
     {
+        // The id rides with the fact because memory_forget takes it "exactly as spelled", and
+        // this block is the only place a memory reaches the model: without it there was nothing to
+        // spell, and a model that reached for the by-id path invented one.
         var memoryLines = context.Memories
-            .Select(r => $"- {r.Memory.Content} ({r.Memory.Category.ToString().ToLowerInvariant()}, importance: {r.Memory.Importance:F1})");
+            .Select(r => $"- [{r.Memory.Id}] {r.Memory.Content} ({r.Memory.Category.ToString().ToLowerInvariant()}, importance: {r.Memory.Importance:F1})");
 
         var profileLine = context.Profile is not null
             ? [$"[User profile: {context.Profile.Summary}]"]

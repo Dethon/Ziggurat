@@ -78,7 +78,16 @@ public class MemoryForgetTool(
 
         if (!string.IsNullOrWhiteSpace(memoryId))
         {
-            return CreateSuccessResponse(await ForgetById(userId, memoryId, ct), reason);
+            var byId = await ForgetById(userId, memoryId, ct);
+            // An id nothing has is a guess, and "success, nothing affected" let the guess read as
+            // a deletion; the model then went looking for the fact by query, one call over.
+            return byId.Count == 0
+                ? ToolError.Create(
+                    ToolError.Codes.NotFound,
+                    $"No memory has the id '{memoryId}'.",
+                    "The ids are the bracketed ones in the [Memory context] block, exactly as "
+                    + "written there; pass one of those, or forget by query.")
+                : CreateSuccessResponse(byId, reason);
         }
 
         if (memoryIds is { Length: > 0 })
