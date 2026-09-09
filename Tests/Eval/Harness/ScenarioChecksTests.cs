@@ -481,6 +481,20 @@ public class ScenarioChecksTests
         failures.ShouldContain(f => f.Contains("/timers/pasta/timer.json") && f.Contains("wrong.json"));
     }
 
+    // A run that hits its own deadline used to throw out of the suite, so the scenario left no
+    // row on the scorecard at all: not a pass, not a fail, simply absent — and "an episode plays
+    // only by the uri the listing gave" vanished from two consecutive runs while looking, in the
+    // summary, like a scenario nobody had asked about. A model that flails until the clock runs
+    // out is a behavioural result, and it is the one this suite most wants to see.
+    [Fact]
+    public void ARunThatTimedOut_FailsTheScenarioAndSaysSo()
+    {
+        var recording = new Recording { TimedOut = true };
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldContain(f => f.Contains("timed out"));
+    }
+
     [Fact]
     public async Task ExceedingTheCeiling_Fails_AndTheRecordingKeptEveryCall()
     {

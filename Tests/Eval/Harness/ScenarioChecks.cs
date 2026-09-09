@@ -17,6 +17,7 @@ public static class ScenarioChecks
         .. MissingRequired(scenario, recording),
         .. Unnecessary(scenario, recording),
         .. OutOfOrder(scenario, recording),
+        .. TimedOut(recording),
         .. OverCeiling(scenario, recording),
         .. Answered(scenario, recording),
         .. Moved(scenario, recording),
@@ -273,6 +274,15 @@ public static class ScenarioChecks
     private static IEnumerable<ToolInvocation> Matches(
         Scenario scenario, string label, Recording recording) =>
         recording.Calls.Where(call => Matches(Expectation(scenario, label), call));
+
+    // First in the list because it explains every other failure under it: a turn cut off partway
+    // has whatever calls it had made and no reply, and reporting those as the model's choices
+    // would be reporting a sentence nobody finished.
+    private static IEnumerable<string> TimedOut(Recording recording) =>
+        recording.TimedOut
+            ? [$"the run timed out before the turn finished, after {recording.Calls.Count} calls; "
+               + "what follows is a partial turn"]
+            : [];
 
     private static IEnumerable<string> OverCeiling(Scenario scenario, Recording recording) =>
         Considered(recording).Count() > scenario.CallCeiling
