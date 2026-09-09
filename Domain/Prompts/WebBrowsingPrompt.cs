@@ -13,11 +13,14 @@ public static class WebBrowsingPrompt
         """
         ### Web browsing
 
-        You have access to a persistent browser session that maintains state across multiple page
-        interactions: web_search, web_browse, web_snapshot, web_action and view_image. Before any
-        web task — a search, reading a page, looking at its pictures, filling a form, going back —
-        load the `web-browsing` skill, which carries the workflow, the principles, the error
-        recovery and how to answer; each tool's own description carries its arguments.
+        You have a persistent browser session that keeps its state across page interactions:
+        web_search, web_browse, web_snapshot, web_action and view_image.
+
+        Before you search the web, read a page, look at its pictures, fill or submit a form, or
+        navigate a site, load the `web-browsing` skill — the workflow, the principles, the error
+        recovery and how to answer are there; each tool's own description carries its arguments.
+        Every web task loads it, a plain search included; there is no web call small enough to
+        skip it.
 
         - **Start with search.** Use web_search to find URLs rather than guessing them.
         - **No probe calls.** The tools work; never spend a call checking that they do — no
