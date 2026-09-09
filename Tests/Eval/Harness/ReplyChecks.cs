@@ -44,14 +44,19 @@ public static class ReplyChecks
         }
     }
 
-    // A single word before the answer is what the voice contract asks for ahead of slow work —
-    // "un momento", "consultando" — so a limit that counted it would fail a reply for obeying the
-    // rule beside the one being checked. Only the first sentence, and only if it is one word.
+    // A brief opener before the answer is what the voice contract asks for ahead of slow work, so
+    // a limit that counted it would fail a reply for obeying the rule beside the one being
+    // checked. Two words rather than one because the beat the rule means is "un momento" as often
+    // as "consultando", and a stripper that took only one word was really asking Spanish to pick
+    // the translated opener over the idiomatic one. Three is already a clause with a verb in it —
+    // "voy a mirarlo" — which is answer, and counts.
+    private const int LongestAcknowledgement = 2;
+
     private static string WithoutAcknowledgement(string reply)
     {
         var parts = Regex.Split(reply.Trim(), @"(?<=[.!?…])\s+");
 
-        return parts.Length > 1 && Words(parts[0]) == 1
+        return parts.Length > 1 && Words(parts[0]) <= LongestAcknowledgement
             ? string.Join(" ", parts.Skip(1))
             : reply;
     }

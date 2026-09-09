@@ -118,6 +118,30 @@ public class ReplyChecksTests
         failures.ShouldBeEmpty();
     }
 
+    // "Un momento" is the Spanish beat the rule's own 'Buscando.' stands for, and it is two words
+    // in every register that says it. A stripper that only took one word failed a reply for
+    // picking the idiomatic opener over a translated one.
+    [Fact]
+    public void ATwoWordAcknowledgement_DoesNotCountEither()
+    {
+        var failures = Failures(
+            new ReplyExpectation { MaxSentences = 1, MaxWords = 12 },
+            "Un momento.\nQuedan cinco minutos.");
+
+        failures.ShouldBeEmpty();
+    }
+
+    // The tolerance is for an opener, not for a first sentence of answer.
+    [Fact]
+    public void AThreeWordOpener_IsStillAnswerAndCounts()
+    {
+        var failures = Failures(
+            new ReplyExpectation { MaxSentences = 1 },
+            "Voy a mirarlo.\nQuedan cinco minutos.");
+
+        failures.ShouldHaveSingleItem().ShouldContain("2 sentences");
+    }
+
     [Fact]
     public void TwoSentencesOfAnswer_StillFailAOneSentenceLimit()
     {
