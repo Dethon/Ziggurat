@@ -56,6 +56,7 @@ public class RecallBlockTests
             "[Memory context]",
             $"- [m1] prefers tea over coffee (preference, importance: {0.9:F1})",
             $"- [m1] works at Contoso (fact, importance: {0.8:F1})",
+            RecallBlock.ExpiryCheck,
             "[End memory context]") + Environment.NewLine);
     }
 
@@ -77,7 +78,34 @@ public class RecallBlockTests
             "[Memory context]",
             $"- [m1] prefers tea over coffee (preference, importance: {0.9:F1})",
             "[User profile: Brief communicator]",
+            RecallBlock.ExpiryCheck,
             "[End memory context]") + Environment.NewLine);
+    }
+
+    // The system prompt's forget rule is read once, hundreds of lines above the conversation, and
+    // glm-5.3-flash answered "ya he vuelto de Lisboa" over a stored trip-in-preparation as small
+    // talk two runs in five with that rule sharpened twice. The block is the one text that
+    // arrives with the message, so the check rides at its foot — as one static line, because
+    // every historical turn is re-rendered on every request and a line that varied would cost
+    // the prompt cache.
+    [Fact]
+    public void Render_WithMemories_EndsWithTheExpiryCheck()
+    {
+        var context = new MemoryContext([Memory("preparing a trip to Lisbon", MemoryCategory.Project, 0.8)], null);
+
+        var block = RecallBlock.Render(context);
+
+        block.ShouldContain(RecallBlock.ExpiryCheck);
+        RecallBlock.ExpiryCheck.ShouldContain("memory_forget");
+    }
+
+    // Nothing listed is nothing to expire: an empty block carries no instruction.
+    [Fact]
+    public void Render_WithNoMemories_CarriesNoExpiryCheck()
+    {
+        var block = RecallBlock.Render(new MemoryContext([], null));
+
+        block.ShouldNotContain("memory_forget");
     }
 
     [Fact]
