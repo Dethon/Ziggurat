@@ -191,6 +191,20 @@ public class ReplyChecksTests
             .ShouldNotBeEmpty();
     }
 
+    // The one clause the mounts rule asks for, said as "no me es accesible … ninguna contiene tu
+    // carpeta", failed the scenario on 2026-09-09 with no call made and the mount list named
+    // correctly: the spellings had every negation but that one.
+    [Fact]
+    public void AnUnreachablePathExplainedAsInaccessible_Passes()
+    {
+        var expectation = Scenarios.MountScenarios.AMountThatIsNotThere.Reply!;
+
+        Failures(expectation,
+                "Lo siento, fran, pero `/media/Movies` no me es accesible: solo puedo ver los sistemas " +
+                "montados en esta sesión, y ninguna contiene tu carpeta de películas.")
+            .ShouldBeEmpty();
+    }
+
     private static IReadOnlyList<string> Failures(ReplyExpectation expectation, string reply) =>
         ReplyChecks.Failures(expectation, reply);
 }

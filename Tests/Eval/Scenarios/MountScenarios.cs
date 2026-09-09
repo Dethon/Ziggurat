@@ -107,7 +107,8 @@ public static class MountScenarios
             [
                 new SpokenValue("that it cannot reach it",
                     "no tengo", "no puedo", "no hay", "no está", "no existe", "no dispongo",
-                    "sin acceso", "no aparece")
+                    "sin acceso", "no aparece", "no me es accesible", "inaccesible",
+                    "no accesible", "ninguna contiene", "no encuentro")
             ]
         },
         Claims = [FileSystemToolFeature.AnUnmountedPathIsAnswered.Id],
