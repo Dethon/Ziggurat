@@ -413,6 +413,7 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         (domain, service) switch
         {
             ("media_player", "browse_media") => Browse(data),
+            ("media_player", "search_media") => NothingFound(),
             ("music_assistant", "play_media") when !Resolves(data) => Unresolvable(),
             ("media_player", "play_media") => Unresolvable(),
             _ => null
@@ -434,6 +435,17 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
                 }
             })
             : Unresolvable();
+
+    // What a real search answers when the catalog has nothing: a response with an empty result
+    // list, which is the shape the mount forwards. The generic "ok, nothing changed" this used to
+    // fall through to could not be told from a call that never answers, and a model went on
+    // rewording the search.
+    private static HttpResponseMessage NothingFound() =>
+        Json(new JsonObject
+        {
+            ["changed_states"] = new JsonArray(),
+            ["service_response"] = new JsonObject { ["result"] = new JsonArray() }
+        });
 
     private static readonly string[] _playlists =
         [FavouritesPlaylist, "Domingo por la mañana", "Gimnasio 2026"];

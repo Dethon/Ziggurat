@@ -203,6 +203,24 @@ public class FakeHomeAssistantTests
     }
 
     [Fact]
+    public async Task SearchingTheCatalogForNothing_AnswersWithAnEmptyResultList()
+    {
+        // A real search_media returns a response: {"result": [...]}. A fake that answered the
+        // generic "ok, nothing changed" left a model unable to tell "no results" from "this call
+        // does not answer", and it went on rewording the search.
+        var home = new FakeHomeAssistant();
+
+        var result = await Mount(home).ExecAsync(
+            Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
+            """search_media.sh --search_query "Radio Faro del Sur" """,
+            timeoutSeconds: null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0);
+        exec.Stdout.ShouldContain("\"result\":[]");
+    }
+
+    [Fact]
     public async Task PlayingAPlaylistTheLibraryDoesNotHave_FailsTheWayHomeAssistantFails()
     {
         // A 500 with nothing useful in it, which is exactly what a real home answers when
