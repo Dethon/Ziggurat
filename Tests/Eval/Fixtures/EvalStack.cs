@@ -355,10 +355,11 @@ public sealed class EvalStack : IAsyncDisposable
         return $"http://localhost:{port}/mcp";
     }
 
-    // The shipped configuration, with two edits and no third: the secrets come from user secrets
-    // rather than from the environment the container would have had, and nothing dials a channel —
-    // the boundary of an eval is the agent, and what a channel does with a reply afterwards is
-    // covered by the channel and end-to-end suites.
+    // The shipped configuration, with three edits and no fourth: the secrets come from user
+    // secrets rather than from the environment the container would have had, nothing dials a
+    // channel — the boundary of an eval is the agent, and what a channel does with a reply
+    // afterwards is covered by the channel and end-to-end suites — and the model is whatever
+    // ZIGGURAT_EVAL_MODEL asks for, so a pass against another model needs no edit to the file.
     private static AgentSettings ShippedSettings(string redisConnectionString)
     {
         var configuration = new ConfigurationBuilder()
@@ -370,7 +371,7 @@ public sealed class EvalStack : IAsyncDisposable
         var shipped = configuration.Get<AgentSettings>()
                       ?? throw new InvalidOperationException("Agent/appsettings.json did not bind.");
 
-        return shipped with
+        return EvalModel.FromEnvironment(shipped) with
         {
             Redis = new RedisConfiguration { ConnectionString = redisConnectionString },
             ChannelEndpoints = []
