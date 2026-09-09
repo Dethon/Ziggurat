@@ -1,4 +1,4 @@
-# nabu — 6399 tokens across 18 sections and 7 skills
+# nabu — 6418 tokens across 18 sections and 7 skills
 
   core_directive           CoreDirective         353 / 400    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               80 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -11,7 +11,7 @@
   sandbox_prompt           Client                164 / 250    That the sandbox is the one mount with exec, where its workspace is, and that a run loads the skill.
   websearch_prompt         Client                210 / 400    That the browser exists, that a url comes from a search, and that no call is a probe.
   idealista_guide          Client                317 / 600    Property search: the filters that exist and how a listing is read back.
-  home_assistant_guide     Client               1178 / 1200   The house: which mechanism a request is, and that a home task starts by loading the skill and reading the setup index.
+  home_assistant_guide     Client               1197 / 1200   The house: which mechanism a request is, and that a home task starts by loading the skill and reading the setup index.
   scheduling_prompt        Client                354 / 700    That a schedule is a deferred action of the agent's own, never a human reminder, and that writing one loads the skill.
   printing_prompt          Client                336 / 600    The printer's queue, the formats it takes and what it rejects.
   timers_prompt            Client                533 / 900    Which mechanism a moment is — a countdown, a calendar alarm, a scheduled task — and the live satellite roster.
@@ -21,7 +21,7 @@
   obsidian-vault           Skill                  98 / 120    body 1552 / 1800, served by mcp-vault
   sandbox                  Skill                  99 / 130    body 927 / 1200, served by mcp-sandbox
   web-browsing             Skill                 102 / 130    body 1261 / 1400, served by mcp-websearch
-  home-watches             Skill                 103 / 120    body 1500 / 2200, served by mcp-homeassistant
+  home-watches             Skill                 103 / 120    body 1579 / 2200, served by mcp-homeassistant
   home-assistant           Skill                 143 / 150    body 3244 / 3600, served by mcp-homeassistant
   scheduling               Skill                 107 / 130    body 1091 / 1300, served by mcp-scheduling
   countdown-timers         Skill                 123 / 130    body 497 / 900, served by mcp-timers
@@ -199,7 +199,8 @@ device, a question about its past, setting or moving an alarm or reminder, music
 the same turn, before anything else: load the `home-assistant` skill, which carries the
 layout, the workflow, how a result is read, history, alarms and music, and `domain__filesystem__file_read`
 on `/ha/setup-index.md`. One read replaces every exploratory `glob`. Silencing
-something ringing is the exception: a `/timers` task, needing neither. A watch is the one home
+something ringing is the exception: a `/timers` task, needing neither, and it ends when the
+thing stops — do not then go looking for what set it off. A watch is the one home
 task with a skill of its own, below.
 
 ### Scope

@@ -1,4 +1,4 @@
-# home-watches — description 103 / 120 tokens, body 1500 / 2200 tokens, served by mcp-homeassistant
+# home-watches — description 103 / 120 tokens, body 1579 / 2200 tokens, served by mcp-homeassistant
 
 ================================================================================================
 
@@ -13,6 +13,11 @@ The setup index you read this turn says which entities and which watches exist: 
 written from the request, the entity id the index lists and this guide, without listing or
 reading the other watches first. The example below is a shape, not a watch to copy — its
 entity id and wording are invented, and the real ones come from the index and the request.
+
+Every `entity_id` in a watch — trigger, condition or action target — is the bare id,
+`sensor.temperatura_salon`, without the `_(friendly-name)` suffix the entity's directory
+carries. That suffix belongs to paths you pass to a filesystem tool; a watch names the
+entity to Home Assistant, which has never heard of it.
 
 ```json
 {"name": "Greenhouse above 30",

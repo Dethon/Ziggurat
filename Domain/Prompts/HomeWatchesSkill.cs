@@ -20,6 +20,11 @@ public static class HomeWatchesSkill
         reading the other watches first. The example below is a shape, not a watch to copy — its
         entity id and wording are invented, and the real ones come from the index and the request.
 
+        Every `entity_id` in a watch — trigger, condition or action target — is the bare id,
+        `sensor.temperatura_salon`, without the `_(friendly-name)` suffix the entity's directory
+        carries. That suffix belongs to paths you pass to a filesystem tool; a watch names the
+        entity to Home Assistant, which has never heard of it.
+
         ```json
         {"name": "Greenhouse above 30",
          "triggers": [{"trigger": "numeric_state", "entity_id": "sensor.<id from the setup index>", "above": 30}],

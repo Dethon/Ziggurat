@@ -20,7 +20,8 @@ public static class HomeAssistantPrompt
         the same turn, before anything else: load the `home-assistant` skill, which carries the
         layout, the workflow, how a result is read, history, alarms and music, and `domain__filesystem__file_read`
         on `/ha/setup-index.md`. One read replaces every exploratory `glob`. Silencing
-        something ringing is the exception: a `/timers` task, needing neither. A watch is the one home
+        something ringing is the exception: a `/timers` task, needing neither, and it ends when the
+        thing stops — do not then go looking for what set it off. A watch is the one home
         task with a skill of its own, below.
 
         ### Scope

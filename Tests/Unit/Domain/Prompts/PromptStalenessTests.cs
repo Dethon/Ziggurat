@@ -251,6 +251,21 @@ public class PromptStalenessTests
             "and say that a device's current state is not the turn's business to change");
     }
 
+    // A watch's entity_id is the bare id, and every other rule about entities says to use the
+    // directory name verbatim — so "the id from the setup index" resolved, for glm-5.3-flash, to
+    // the directory the index lists: sensor.temperatura_salon_(temperatura-salon). The watch was
+    // otherwise perfect. The two spellings have to be told apart where the field is described.
+    [Fact]
+    public void WatchesSkill_SaysTheEntityIdIsTheBareId_NotTheDirectoryName()
+    {
+        var body = AgentPromptFixture.ServedSkills[HomeWatchesSkill.Name].Body;
+
+        body.ShouldContain("without the",
+            Case.Insensitive,
+            "the watch file's entity_id is the bare id, so the skill has to say that the " +
+            "_(friendly-name) suffix a directory carries is not part of it");
+    }
+
     private static string TextOf(string name) =>
         AgentPromptFixture.ServedText.TryGetValue(name, out var served)
             ? served
