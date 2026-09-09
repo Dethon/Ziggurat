@@ -284,7 +284,10 @@ public static class ScenarioChecks
         recording.TimedOut
             ? [$"the run timed out before the turn finished, after {recording.Calls.Count} calls; "
                + "what follows is a partial turn"]
-            : [];
+            : recording.ProviderError is { } error
+                ? [$"the provider failed the run after {recording.Calls.Count} calls: {error}; "
+                   + "what follows is a partial turn"]
+                : [];
 
     private static IEnumerable<string> OverCeiling(Scenario scenario, Recording recording) =>
         Considered(recording).Count() > scenario.CallCeiling

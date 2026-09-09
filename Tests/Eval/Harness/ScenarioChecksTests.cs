@@ -486,6 +486,17 @@ public class ScenarioChecksTests
     // only by the uri the listing gave" vanished from two consecutive runs while looking, in the
     // summary, like a scenario nobody had asked about. A model that flails until the clock runs
     // out is a behavioural result, and it is the one this suite most wants to see.
+    // A provider that answered 520 is a run that never happened, and throwing it dropped the
+    // scenario off the scorecard as if nobody had run it. It fails, and says whose fault it was.
+    [Fact]
+    public void ARunTheProviderFailed_FailsTheScenarioAndSaysSo()
+    {
+        var recording = new Recording { ProviderError = "HTTP 520 (: ) Provider returned error" };
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldContain(f => f.Contains("provider") && f.Contains("520"));
+    }
+
     [Fact]
     public void ARunThatTimedOut_FailsTheScenarioAndSaysSo()
     {

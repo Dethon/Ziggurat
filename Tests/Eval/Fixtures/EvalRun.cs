@@ -68,6 +68,13 @@ public static class EvalRun
         {
             recording.TimedOut = true;
         }
+        // The provider refusing the turn — an HTTP 5xx from the router, a dropped connection —
+        // is the same kind of result: a run that never finished, kept on the scorecard with its
+        // reason rather than thrown past it. A harness bug is not one of these and still throws.
+        catch (Exception ex) when (ex is System.ClientModel.ClientResultException or HttpRequestException)
+        {
+            recording.ProviderError = ex.Message.ReplaceLineEndings(" ").Trim();
+        }
         recording.StateAfter = stack.Home.Snapshot();
         recording.FilesAfter = EvalVault.Read(stack.VaultPath);
         recording.Delegations = stack.Workers.Delegations;

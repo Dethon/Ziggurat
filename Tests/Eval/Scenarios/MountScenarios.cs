@@ -171,6 +171,8 @@ public static class MountScenarios
             .. CallPermission.Looking("/sandbox*"),
             new CallPermission(EvalTools.Copy),
             new CallPermission(EvalTools.Exec, "/sandbox*"),
+            // Tidying the copy away after the checksum is read is not a second transfer.
+            new CallPermission(EvalTools.Remove, "/sandbox*"),
             // A copy out of the vault is a vault task to a model reading the stub; that load is
             // tolerated, and the transfer rule it cites is in the stub, not the body.
             CallPermission.Load(ObsidianVaultSkill.Name)

@@ -388,7 +388,10 @@ public static class WatchScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.SugarWatchPathPattern),
-                    Arg.Mentions("edits", @"below\\?""\s*:\s*65(?!\d)")
+                    // The number alone: an edit that replaced every "70" with "65" is the same
+                    // change and names no key. The state change below is what holds the file to
+                    // having landed on the right threshold.
+                    Arg.Mentions("edits", @"65(?!\d)")
                 ]
             }
         ],

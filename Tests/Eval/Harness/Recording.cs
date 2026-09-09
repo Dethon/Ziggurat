@@ -71,6 +71,11 @@ public sealed class Recording : IToolInvocationObserver
     // times out lands on the scorecard as a failure with a reason instead of vanishing from it.
     public bool TimedOut { get; set; }
 
+    // The provider refused the turn — a 5xx, a dropped connection — so the model never answered.
+    // Kept for the same reason as TimedOut: a thrown provider error dropped the scenario off the
+    // scorecard as one nobody ran.
+    public string? ProviderError { get; set; }
+
     // What the turn moved, computed in one place: the checks decide whether it was declared and
     // the dump prints it, and two copies of "different from before" is one copy too many.
     public IReadOnlyDictionary<string, string> Moved =>
