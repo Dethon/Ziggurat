@@ -212,6 +212,18 @@ public static partial class HtmlConverter
                     break;
                 case IElement { TagName: "SCRIPT" or "STYLE" or "NOSCRIPT" }:
                     break;
+                // A button is not a link: it has no address to write, and rendered as its bare
+                // text a row of them reads as a list of names — a model then composes the urls
+                // it cannot see. Marked, the text says it is something to click, through a
+                // snapshot's ref.
+                case IHtmlButtonElement button:
+                    var buttonText = button.TextContent.Trim();
+                    if (!string.IsNullOrEmpty(buttonText))
+                    {
+                        sb.Append($"[button: {buttonText}]");
+                    }
+
+                    break;
                 case IHtmlAnchorElement anchor:
                     var href = anchor.GetAttribute("href");
                     var linkText = anchor.TextContent.Trim();

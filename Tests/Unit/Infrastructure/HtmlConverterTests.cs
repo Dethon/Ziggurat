@@ -6,6 +6,19 @@ namespace Tests.Unit.Infrastructure;
 
 public class HtmlConverterTests
 {
+    // A button reads as plain text in markdown, and a page whose editions are reached by
+    // buttons read as a list of names — so a model composed the urls it could not see. Marked,
+    // the text says what it is: something to click through a snapshot's ref, not an address.
+    [Fact]
+    public void Convert_AButton_IsMarkedAsOne()
+    {
+        var markdown = HtmlConverter.Convert(
+            "<html><body><ul><li><button>La rifa de 2024</button></li></ul></body></html>",
+            WebFetchOutputFormat.Markdown);
+
+        markdown.ShouldContain("[button: La rifa de 2024]");
+    }
+
     [Fact]
     public void Convert_HtmlDeclaresLegacyCharset_PreservesUnicodeAccents()
     {
