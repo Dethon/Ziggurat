@@ -1,4 +1,4 @@
-# jonas — 5815 tokens across 16 sections and 7 skills
+# jonas — 5811 tokens across 16 sections and 7 skills
 
   core_directive           CoreDirective         353 / 400    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               30 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -22,7 +22,7 @@
   home-watches             Skill                 103 / 120    body 1611 / 2200, served by mcp-homeassistant
   home-assistant           Skill                 143 / 150    body 3284 / 3600, served by mcp-homeassistant
   scheduling               Skill                 107 / 130    body 1091 / 1300, served by mcp-scheduling
-  countdown-timers         Skill                 123 / 130    body 579 / 900, served by mcp-timers
+  countdown-timers         Skill                 119 / 130    body 579 / 900, served by mcp-timers
 
 ================================================================================================
 
@@ -323,7 +323,7 @@ change-by-recreate rule and the dismiss action are there.
 Today is Friday, 2026-05-15.
   <skill>
     <name>countdown-timers</name>
-    <description>Silencing whatever is ringing right now on a satellite (&quot;stop the alarm&quot;, &quot;para la alarma que está sonando&quot; — timer or alarm alike), and touching a countdown under `/timers`: setting one (&quot;timer for eight minutes&quot;, &quot;remind me in twenty&quot;), how long is left, listing, cancelling or adding time to one. Not for a future clock-time alarm on the calendar, a watch, or a scheduled task. The timer.json shape, the target rules, status.json, listing, change by delete and recreate, and dismiss.sh.</description>
+    <description>Silencing whatever is ringing right now on a satellite (&quot;stop the alarm&quot; — timer or alarm alike), and touching a countdown under `/timers`: setting one (&quot;timer for eight minutes&quot;, &quot;remind me in twenty&quot;), how long is left, listing, cancelling or adding time to one. Not for a clock-time alarm on the calendar or a snooze of one, a watch, a scheduled task, or moving a player (rewind, skip, seek). The timer.json shape, target rules, status.json, change by recreate, dismiss.sh.</description>
   </skill>
   <skill>
     <name>home-assistant</name>
