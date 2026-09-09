@@ -142,11 +142,45 @@ public sealed partial class HaFileSystem
             var hint = ex.StatusCode switch
             {
                 400 => $"\nRe-check the field types with `{serviceName}.sh --help`; don't retry the same shape.",
-                >= 500 => "\nThe arguments were accepted but the action failed inside Home Assistant — a named item may not exist. For media, list the library (`browse_media.sh`) and use an exact title instead of retrying guesses. For a podcast episode no title resolves and `browse_media.sh` cannot expand a show: list them with `music_assistant.podcast_episodes.sh` and play the uri it returns.",
+                >= 500 => ServerSideFailureHint(svc),
                 _ => ""
             };
             return done(1, "", $"{ex.Message}{hint}");
         }
+    }
+
+    // The one listing Music Assistant answers: anything else browse_media is asked for raises a
+    // BrowseError, which reaches the caller as the same bare 500 a bad name gets.
+    private const string LibraryListing =
+        "`browse_media.sh --media_content_id playlists --media_content_type music_assistant`";
+
+    // A 5xx says the payload was fine and the service failed — and what to do next depends on
+    // which service. Sending every one of them to "list the library (`browse_media.sh`)" sent a
+    // model whose play had failed to a browse with a guessed content id, which failed with the
+    // same 500 and the same advice, and round it went until the ceiling. The listing call is
+    // spelled out so it needs no guessing; a listing that failed says so, because "list the
+    // library" cannot be the recovery for the listing.
+    private static string ServerSideFailureHint(HaServiceDefinition svc)
+    {
+        if (svc.Service is "browse_media" or "search_media")
+        {
+            return "\nThe listing itself failed: this player cannot list that. The one listing that "
+                   + $"works is {LibraryListing}; nothing else lists the library. An item that is not "
+                   + "in it cannot be played — say so, and do not search or browse again.";
+        }
+
+        if (svc.Service is "play_media")
+        {
+            return "\nThe arguments were accepted but the action failed inside Home Assistant — the "
+                   + $"name did not resolve. List the library with {LibraryListing} and play an exact "
+                   + "title from it; if it is not there either, say so — do not retry a reworded name "
+                   + "or another uri shape. For a podcast episode no title resolves and the listing "
+                   + "cannot expand a show: list them with `music_assistant.podcast_episodes.sh` and "
+                   + "play the uri it returns.";
+        }
+
+        return "\nThe arguments were accepted but the action failed inside Home Assistant — a named "
+               + "item may not exist. Do not retry the same call; report what failed.";
     }
 
     // Music Assistant's `play_index` reads `seek_position` as falsy-or-set: a 0 means "no seek

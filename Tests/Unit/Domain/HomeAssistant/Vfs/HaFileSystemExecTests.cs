@@ -101,7 +101,7 @@ public class HaFileSystemExecTests
     }
 
     [Fact]
-    public async Task Exec_HaServerSideFailure_Returns1_WithResolveHint()
+    public async Task Exec_HaServerSideFailure_OnAPlainAction_SaysNotToRetry_AndNothingAboutMedia()
     {
         var fs = Build(out var client);
         client.CallHandler = (_, _, _, _) =>
@@ -111,8 +111,70 @@ public class HaFileSystemExecTests
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(1);
         exec.Stderr.ShouldContain("500");
-        exec.Stderr.ShouldContain("browse_media.sh");
+        exec.Stderr.ShouldContain("not retry");
+        exec.Stderr.ShouldNotContain("browse_media");
         exec.Stderr.ShouldNotContain("field types");
+    }
+
+    // A name that did not resolve: the recovery is one exact listing call, spelled out, not a
+    // bare `browse_media.sh` the model then has to guess arguments for — that bare spelling sent
+    // a model to a browse with the wrong content id, which fails with the same 500 and the same
+    // advice, round and round.
+    [Fact]
+    public async Task Exec_PlayMediaFails_NamesTheExactListingCall_AndTheEnd()
+    {
+        var fs = BuildPlayer(out var client);
+        client.CallHandler = (_, _, _, _) =>
+            throw new HomeAssistantException("Home Assistant returned 500: Server got itself in trouble", 500);
+        var result = await fs.ExecAsync("entities/media_player/kitchen",
+            "music_assistant.play_media.sh --media_id \"Radio Faro del Sur\" --media_type radio", null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(1);
+        exec.Stderr.ShouldContain("browse_media.sh --media_content_id playlists --media_content_type music_assistant");
+        exec.Stderr.ShouldContain("say so");
+    }
+
+    // The listing itself failing cannot be answered with "list the library": that is the call
+    // that just failed. It says which listing works and that nothing else lists the library.
+    [Theory]
+    [InlineData("browse_media.sh --media_content_id radio --media_content_type music_assistant")]
+    [InlineData("search_media.sh --search_query \"Radio Faro del Sur\"")]
+    public async Task Exec_ListingFails_SaysTheListingFailed_NotToListAgain(string command)
+    {
+        var fs = BuildPlayer(out var client);
+        client.CallHandler = (_, _, _, _) =>
+            throw new HomeAssistantException("Home Assistant returned 500: Server got itself in trouble", 500);
+        var result = await fs.ExecAsync("entities/media_player/kitchen", command, null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(1);
+        exec.Stderr.ShouldContain("listing itself failed");
+        exec.Stderr.ShouldContain("browse_media.sh --media_content_id playlists --media_content_type music_assistant");
+        exec.Stderr.ShouldNotContain("a named item may not exist");
+    }
+
+    private static HaFileSystem BuildPlayer(out FakeHaClient client)
+    {
+        client = new FakeHaClient
+        {
+            States = { Entity("media_player.kitchen", "idle") },
+            Services =
+            {
+                Service("music_assistant", "play_media", DomainTarget("media_player"),
+                    ("media_id", new HaServiceField { Required = true }),
+                    ("media_type", new HaServiceField())),
+                Service("media_player", "browse_media", AnyEntityTarget(),
+                    ("media_content_id", new HaServiceField()),
+                    ("media_content_type", new HaServiceField())),
+                Service("media_player", "search_media", AnyEntityTarget(),
+                    ("search_query", new HaServiceField { Required = true }),
+                    ("media_content_type", new HaServiceField()))
+            }
+        };
+        var local = client;
+        var provider = new HaCatalogProvider(() => local, new FakeTimeProvider());
+        return new HaFileSystem(provider, () => local);
     }
 
     [Fact]
