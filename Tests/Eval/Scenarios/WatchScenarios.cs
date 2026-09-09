@@ -464,8 +464,9 @@ public static class WatchScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            // The index is tolerated, not required: a removal names no entity, and the watch is
+            // found by listing /ha/watches — a model that went straight there did nothing wrong.
             LoadsTheSkill,
-            HomeAssistantScenarios.ReadsTheSetupIndex,
             new CallExpectation
             {
                 Label = "delete",
