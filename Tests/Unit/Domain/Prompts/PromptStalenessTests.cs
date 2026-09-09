@@ -374,6 +374,60 @@ public class PromptStalenessTests
             "whose rule told it to ask");
     }
 
+    // The mounts section says an unmounted path is not hunted for across a mount, and
+    // glm-5.3-flash still globbed the sandbox from its root and through its home for
+    // /media/Movies, one run in three: the sandbox is a Linux box with a /media of its own, so
+    // by its reading the path was a sandbox path and the hunt was a search. The sandbox's own
+    // stub is read after the mounts section, so it is the one that has to say one look is the
+    // whole search.
+    [Fact]
+    public void SandboxPrompt_SaysOneLookAtAnUnmountedPath_IsTheWholeSearch()
+    {
+        SandboxPrompt.Build("/sandbox", "/home/sandbox_user").ShouldContain("one look",
+            Case.Insensitive,
+            "the stub of the one mount with a real root has to bound the search for a path " +
+            "under no mount, or the mounts rule is read as applying to every other mount");
+    }
+
+    // The prompt's forget bullets name the turn shape now; the tool's own description, read at
+    // the moment the call is chosen, still said "clearly outdated" and nothing more, and the
+    // turn "ya he vuelto de Lisboa" was answered as small talk one run in three or four.
+    [Fact]
+    public void ForgetTool_SaysAPlanReportedDone_IsForgottenThatTurn()
+    {
+        global::Domain.Tools.Memory.MemoryForgetTool.Description.ShouldContain("reported done",
+            Case.Insensitive,
+            "the tool description is the last text read before the call is chosen, so it has " +
+            "to name the turn that expires a plan");
+    }
+
+    // "Stop the alarm" is the timers skill's, and "quita la alarma de sacar la basura" was read
+    // as the same request by glm-5.3-flash on every provider but Z.AI: countdown-timers loaded,
+    // dismiss.sh run against a silent house, the calendar event still there. An alarm named by
+    // what it is for is the calendar's, and the description that claims "stop the alarm" has to
+    // say so beside it.
+    [Fact]
+    public void TimersSkillDescription_SaysANamedAlarm_IsTheHomes()
+    {
+        CountdownTimersSkill.Description.ShouldContain("the home's",
+            Case.Sensitive,
+            "the description that owns 'stop the alarm' has to hand a named calendar alarm " +
+            "to the home skill, or removing one is read as silencing it");
+    }
+
+    // Told "ya no trabajo en Acme, ahora estoy en Globex", glm-5.3-flash forgot the old employer
+    // and then created a file under a mount that does not exist to keep the new one, two runs in
+    // three on some providers. "Storage is handled automatically" did not say that nothing is
+    // written anywhere; the rule has to name the note and the file it must not create.
+    [Fact]
+    public void MemoryPrompt_SaysNothingIsWrittenToKeepAFact()
+    {
+        MemoryPrompts.FeatureSystemPrompt.ShouldContain("no note, no file",
+            Case.Sensitive,
+            "a corrected fact tempts a model to store the correction; the rule has to name " +
+            "the file it must not write");
+    }
+
     private static string TextOf(string name) =>
         AgentPromptFixture.ServedText.TryGetValue(name, out var served)
             ? served

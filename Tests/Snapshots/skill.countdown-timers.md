@@ -1,10 +1,10 @@
-# countdown-timers — description 119 / 130 tokens, body 579 / 900 tokens, served by mcp-timers
+# countdown-timers — description 128 / 130 tokens, body 579 / 900 tokens, served by mcp-timers
 
 ================================================================================================
 
 ---
 name: countdown-timers
-description: Silencing whatever is ringing right now on a satellite ("stop the alarm" — timer or alarm alike), and touching a countdown under `/timers`: setting one ("timer for eight minutes", "remind me in twenty"), how long is left, listing, cancelling or adding time to one. Not for a clock-time alarm on the calendar or a snooze of one, a watch, a scheduled task, or moving a player (rewind, skip, seek). The timer.json shape, target rules, status.json, change by recreate, dismiss.sh.
+description: Silencing whatever is ringing right now on a satellite ("stop the alarm" — timer or alarm alike), and touching a countdown under `/timers`: setting one ("timer for eight minutes", "remind me in twenty"), how long is left, listing, cancelling or adding time to one. Not for a calendar alarm named by what it is for — removing, moving or snoozing "the dentist alarm" is the home's — nor a watch, a scheduled task or moving a player. The timer.json shape, target rules, status.json, change by recreate, dismiss.sh.
 ---
 
 - Create: `domain__filesystem__text_create` at `/timers/<descriptive-id>/timer.json` with JSON

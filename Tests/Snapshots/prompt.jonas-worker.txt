@@ -1,4 +1,4 @@
-# jonas-worker — 3498 tokens across 11 sections and 5 skills
+# jonas-worker — 3578 tokens across 11 sections and 5 skills
 
   core_directive           CoreDirective         353 / 400    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               26 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -6,7 +6,7 @@
   skills                   Feature               200 / 250    What the advertised skill list is, and that a skill is loaded once, before acting, and only when a request calls for it.
   filesystem_mounts        FileSystem             49 / 500    The mounts this session actually has, and which one a path belongs under.
   vault_prompt             Client                398 / 400    What the vault is, and that a task needing exec is transferred to the sandbox once.
-  sandbox_prompt           Client                164 / 250    That the sandbox is the one mount with exec, where its workspace is, and that a run loads the skill.
+  sandbox_prompt           Client                243 / 250    That the sandbox is the one mount with exec, where its workspace is, and that a run loads the skill.
   websearch_prompt         Client                189 / 400    That the browser exists, that a url comes from a search, and that no call is a probe.
   idealista_guide          Client                317 / 600    Property search: the filters that exist and how a listing is read back.
   home_assistant_guide     Client               1197 / 1200   The house: which mechanism a request is, and that a home task starts by loading the skill and reading the setup index.
@@ -15,7 +15,7 @@
   sandbox                  Skill                  99 / 130    body 927 / 1200, served by mcp-sandbox
   web-browsing             Skill                 102 / 130    body 1261 / 1400, served by mcp-websearch
   home-watches             Skill                 103 / 120    body 1611 / 2200, served by mcp-homeassistant
-  home-assistant           Skill                 143 / 150    body 3284 / 3600, served by mcp-homeassistant
+  home-assistant           Skill                 144 / 150    body 3284 / 3600, served by mcp-homeassistant
 
 ================================================================================================
 
@@ -70,6 +70,8 @@ The vault supports the standard filesystem operations except command execution. 
 You have access to a Linux sandbox container exposed as the virtual filesystem mounted at `/sandbox`. Among the filesystems available to you, the sandbox is the **only** one that supports command execution — other mounts return an "unsupported operation" error envelope if you try.
 
 Your **persistent workspace** is `/sandbox/home/sandbox_user`; it is the only place that is both writable and durable. Before you run anything here — a command, a script, an install — load the `sandbox` skill: the layout, what is preinstalled, how exit codes, output and timeouts come back and how a container path maps to a virtual one are there.
+
+A path the user names that is under no mount is not somewhere on this box either. One look at it, spelled as given, is the whole search: if it is not there, the answer is that it is not reachable — no `find`, no glob from the root, no look through the workspace or the system directories for a folder of that name.
 
 ### Web browsing
 
@@ -194,7 +196,7 @@ done with the action that takes one — "vacuum the study" is `clean_zone.sh
 Today is Friday, 2026-05-15.
   <skill>
     <name>home-assistant</name>
-    <description>Doing anything in the home through `/ha`: switching, setting or reading a device (&quot;turn on the AC&quot;, &quot;what is the thermostat at&quot;), its past (&quot;how was her glucose overnight&quot;), a future alarm or reminder on the alarms calendar (&quot;wake me at seven&quot;, &quot;move the trash alarm to ten&quot;), music, radio or a podcast on a room&apos;s player. Not for anything ringing right now (that is `/timers`, whatever it was created as), a countdown, a watch or a scheduled task. The entity layout, the exec workflow, how a result is read, history and statistics, alarm events, Music Assistant playback.</description>
+    <description>Doing anything in the home through `/ha`: switching, setting or reading a device (&quot;turn on the AC&quot;, &quot;what is the thermostat at&quot;), its past (&quot;how was her glucose overnight&quot;), a future alarm or reminder on the alarms calendar (&quot;wake me at seven&quot;, &quot;move or remove the trash alarm&quot;), music, radio or a podcast on a room&apos;s player. Not for anything ringing right now (that is `/timers`, whatever it was created as), a countdown, a watch or a scheduled task. The entity layout, the exec workflow, how a result is read, history and statistics, alarm events, Music Assistant playback.</description>
   </skill>
   <skill>
     <name>home-watches</name>

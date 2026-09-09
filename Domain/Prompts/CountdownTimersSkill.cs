@@ -12,7 +12,7 @@ public static class CountdownTimersSkill
 
     // The whole trigger: the one line about this skill that is in every turn.
     public const string Description =
-        "Silencing whatever is ringing right now on a satellite (\"stop the alarm\" — timer or alarm alike), and touching a countdown under `/timers`: setting one (\"timer for eight minutes\", \"remind me in twenty\"), how long is left, listing, cancelling or adding time to one. Not for a clock-time alarm on the calendar or a snooze of one, a watch, a scheduled task, or moving a player (rewind, skip, seek). The timer.json shape, target rules, status.json, change by recreate, dismiss.sh.";
+        "Silencing whatever is ringing right now on a satellite (\"stop the alarm\" — timer or alarm alike), and touching a countdown under `/timers`: setting one (\"timer for eight minutes\", \"remind me in twenty\"), how long is left, listing, cancelling or adding time to one. Not for a calendar alarm named by what it is for — removing, moving or snoozing \"the dentist alarm\" is the home's — nor a watch, a scheduled task or moving a player. The timer.json shape, target rules, status.json, change by recreate, dismiss.sh.";
 
     public static readonly string Body = $$"""
         - Create: `{{FileSystemToolFeature.Callable(VfsTextCreateTool.Name)}}` at `/timers/<descriptive-id>/timer.json` with JSON

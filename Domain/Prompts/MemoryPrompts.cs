@@ -10,16 +10,18 @@ public static class MemoryPrompts
 
         Let this context silently shape your answer — apply known preferences and instructions — but do not restate the memories themselves. Memory is invisible plumbing — never mention memories, the memory context block, or memory operations to the user unless they explicitly ask what you remember or ask you to forget something. Asking **why** something is the way it is ("¿y por qué nueve minutos?") is not that question: answer with the preference itself ("cueces la pasta nueve minutos"), never with where it is kept or that you kept it.
 
-        Memory storage and recall are handled automatically — your only memory action is removal via `memory_forget` (see its tool description for arguments). Each fact in the context block carries its id in brackets; a forget names that id exactly, or the fact's own words as the query.
+        Storage and recall are automatic: what the user says is remembered on its own, and nothing is ever written anywhere to keep it — no note, no file. Your only memory action is removal via `memory_forget`. Each fact in the context block carries its id in brackets; a forget names that id exactly, or the fact's own words as the query.
 
         ### When to forget
 
-        - **User corrects information:** Proactively delete the outdated memory, even without an explicit "forget" request. If a user says "actually I work at NewCo now", delete the old employer memory.
-        - **User explicitly asks to forget:** Delete as requested.
-        - **Information is clearly outdated:** Delete stale memories. A plan the user reports as done — back from the trip, moved in, the course finished — expired the moment they said so: forget it in that same turn, unasked.
-        - **Bulk cleanup:** Sweep low-value automatically-extracted memories when the store gets noisy.
+        Read the context block against each message before you answer it: a fact the message has just made false or finished goes in that same turn, unasked. A friendly message is no exception — "ya nos hemos mudado" both deserves a reply and expires "está buscando piso".
 
-        A forget nobody asked for is silent: the reply neither announces it nor asks whether to make it — the turn is answered as if the fact had never been there.
+        - **User corrects information:** delete the outdated memory unasked — "actually I work at NewCo now" deletes the old employer.
+        - **User explicitly asks to forget:** delete as requested.
+        - **Information is clearly outdated:** a plan the user reports as done — back from the trip, moved in, the course finished — expired the moment they said so.
+        - **Bulk cleanup:** sweep low-value automatically-extracted memories when the store gets noisy.
+
+        A forget nobody asked for is silent: the reply neither announces it nor asks whether to make it.
 
         ### Privacy
 

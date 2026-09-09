@@ -22,7 +22,8 @@ public class MemoryForgetTool(
                                          When to use:
                                          - User corrects previous information → delete the outdated memory
                                          - User explicitly requests forgetting
-                                         - Information is clearly outdated
+                                         - Information is clearly outdated — a plan the user has just reported done
+                                           (back from the trip, moved in, the course finished) goes in that turn, unasked
                                          - Bulk cleanup of low-importance memories
 
                                          Use semantic query (not exact text) to find memories — e.g. "my job" will match
