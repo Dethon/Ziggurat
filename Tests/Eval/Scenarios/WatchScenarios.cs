@@ -19,8 +19,11 @@ public static class WatchScenarios
 
     private const string WatchFile = @"^/ha/watches/[^/]+/watch\.json$";
 
+    // The home skill's load is tolerated beside the watches skill: a watch names an entity, the
+    // entity layout is the home skill's, and both models reach for it about one run in three.
+    // The watches skill stays required; this only stops the detour reading as a wrong choice.
     private static IReadOnlyList<CallPermission> LookingAtTheHome =>
-        [.. CallPermission.LookingAndManuals("/ha*")];
+        [.. CallPermission.LookingAndManuals("/ha*"), CallPermission.Load(HomeAssistantSkill.Name)];
 
     private static string Kind(string kind) => $@"""kind""\s*:\s*""{kind}""";
 

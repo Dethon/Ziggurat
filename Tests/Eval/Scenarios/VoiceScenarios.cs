@@ -43,7 +43,7 @@ public static class VoiceScenarios
             {
                 Label = "create",
                 Tool = EvalTools.Create,
-                Arguments = [Arg.PathMatches(@"^/timers/[^/]+/timer\.json$")]
+                Arguments = [Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$")]
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
@@ -206,7 +206,7 @@ public static class VoiceScenarios
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content", Arg.Number("durationSeconds", 120))
                 ]
             }
@@ -288,7 +288,7 @@ public static class VoiceScenarios
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content", Arg.Number("durationSeconds", 300))
                 ]
             }

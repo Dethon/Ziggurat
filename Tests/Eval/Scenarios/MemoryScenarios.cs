@@ -60,7 +60,7 @@ public static class MemoryScenarios
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content", Arg.Number("durationSeconds", 540))
                 ]
             }

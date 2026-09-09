@@ -40,7 +40,7 @@ public static class MechanismScenarios
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content", Arg.Number("durationSeconds", 600))
                 ]
             }
@@ -276,7 +276,7 @@ public static class MechanismScenarios
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content", Arg.Body("target", Arg.Any(
                         Arg.Is("room", "office"), Arg.Is("satelliteId", "office-01"))))
                 ]
