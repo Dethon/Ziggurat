@@ -1,4 +1,4 @@
-# home-assistant — description 143 / 150 tokens, body 3198 / 3600 tokens, served by mcp-homeassistant
+# home-assistant — description 143 / 150 tokens, body 3244 / 3600 tokens, served by mcp-homeassistant
 
 ================================================================================================
 
@@ -88,9 +88,11 @@ last few days: `history.sh`; averages, extremes and the long run: `statistics.sh
 ### Alarms & reminders
 
 An alarm or reminder is an event on the **alarms calendar** — the `calendar` entity the
-setup index lists as alarms (e.g. `alarms_(alarms)`). That directory serves three action
+setup index lists as alarms (e.g. `assistant_alarms_(assistant-alarms)` — the object id keeps
+its underscores and only the friendly half is hyphenated, so read the name rather than
+normalising one half to the other). That directory serves three action
 files: `create_event.sh`, `get_events.sh` and `delete_event.sh`. From the entity directory:
-`exec(command="create_event.sh --summary \"Take out the trash\"
+`domain__filesystem__exec(command="create_event.sh --summary \"Take out the trash\"
       --start_date_time \"2026-06-19 21:30:00\"
       --description '{\"target\":{\"room\":\"Kitchen\"},\"insistent\":{\"gapSeconds\":30,\"maxRepeats\":5}}'")`
 

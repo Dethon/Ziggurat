@@ -156,7 +156,7 @@ public class PromptStalenessTests
     {
         var bare = Regex.Matches(
                 TextOf(name),
-                @"`(?<tool>file_read|file_write|text_search|text_create|text_edit|glob|exec|move|copy|remove|file_info)`?\s*[(`]?\s*(?<arg>/[A-Za-z0-9_./<>*-]+|path=)")
+                @"`(?<tool>file_read|file_write|text_search|text_create|text_edit|glob|exec|move|copy|remove|file_info)`?\s*[(`]?\s*(?<arg>/[A-Za-z0-9_./<>*-]+|path=|command=)")
             .Select(m => $"{m.Groups["tool"].Value} {m.Groups["arg"].Value}")
             .Distinct()
             .ToList();
@@ -205,6 +205,23 @@ public class PromptStalenessTests
         }
 
         prompt.ShouldContain("Europe/Madrid");
+    }
+
+    // The core directive tells the model never to hedge and never to add an unsolicited warning,
+    // and it is the first section every agent reads. The one thing that must survive it is the
+    // question before an irreversible change: a bulk delete of the user's own notes is not a
+    // refusal, and a model that reads "your role is to assist, not to gatekeep" as covering it
+    // deletes seven notes and reports it done. glm-5.3-flash did exactly that, three runs of
+    // three; gpt-5.6-luna resolved the contradiction by judgement and hid it.
+    [Fact]
+    public void CoreDirective_CarvesOutTheQuestionBeforeAnIrreversibleChange()
+    {
+        var text = CoreDirectivePrompt.Instructions;
+
+        text.ShouldContain("irreversible",
+            Case.Insensitive,
+            "the section that governs refusals has to say that asking before destroying " +
+            "something unrecoverable is not the hedging it forbids");
     }
 
     private static string TextOf(string name) =>
