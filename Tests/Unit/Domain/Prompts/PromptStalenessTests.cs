@@ -274,7 +274,7 @@ public class PromptStalenessTests
     public void NoPromptSource_InterpolatesABareToolName()
     {
         var offenders = Directory
-            .EnumerateFiles(PromptSourceDirectory, "*.cs")
+            .EnumerateFiles(_promptSourceDirectory, "*.cs")
             .Where(file => Regex.IsMatch(File.ReadAllText(file), @"\{\{Vfs\w+Tool\.Name\}\}"))
             .Select(Path.GetFileName)
             .ToList();
@@ -284,7 +284,7 @@ public class PromptStalenessTests
             "FileSystemToolFeature.Callable so the model is told the name it can call");
     }
 
-    private static readonly string PromptSourceDirectory = Path.Combine(
+    private static readonly string _promptSourceDirectory = Path.Combine(
         RepositoryRoot(), "Domain", "Prompts");
 
     private static string RepositoryRoot()
