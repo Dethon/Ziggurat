@@ -57,7 +57,9 @@ public sealed class TimerFileSystem(
 
     public override string DescribeExec =>
         $"Silence every alert currently ringing: exec {TimerPath.DismissFileName} at the timers "
-        + "root. Not a shell — anything else returns exit 127.";
+        + "root. One call covers every satellite and both kinds, whatever set the alert off, so "
+        + "it is the whole of a silencing request — run it once and answer; there is no calendar "
+        + "or home entity to visit afterwards. Not a shell — anything else returns exit 127.";
 
     private const string DismissHelp =
         "# Dismiss everything currently ringing (alarms and timers) on all satellites:\n"
@@ -271,10 +273,21 @@ public sealed class TimerFileSystem(
             trimmed = trimmed[2..];
         }
 
+        // A refusal that names only the whole command line cannot say whether the script or its
+        // argument was wrong, and a model that guessed a flag reads it as the script being
+        // elsewhere and goes looking. Answer the two cases separately.
         if (node.Kind == TimerNodeKind.Root && trimmed != TimerPath.DismissFileName)
         {
+            var script = trimmed.Split(' ', 2)[0];
+
             return Exec(
-                "", $"command not found: {trimmed}\navailable: {TimerPath.DismissFileName}", 127, path);
+                "",
+                script == TimerPath.DismissFileName
+                    ? $"{TimerPath.DismissFileName} takes no arguments: it already silences every "
+                      + "alert on every satellite. Run it on its own."
+                    : $"command not found: {script}\navailable: {TimerPath.DismissFileName}",
+                127,
+                path);
         }
 
         IReadOnlyList<DismissedAlert> dismissed;
@@ -286,11 +299,17 @@ public sealed class TimerFileSystem(
         {
             return HubUnavailable<FsExecResult>("nothing was dismissed");
         }
-        var stdout = dismissed.Count == 0
-            ? "nothing is ringing\n"
+        // Both lines end the same way on purpose. "nothing is ringing" alone reads as a failure
+        // to find the alert rather than as the silence itself, and a model that cannot tell those
+        // apart goes looking for what was ringing somewhere else — through /ha, in practice. This
+        // call silences everything on every satellite in one go, so there is never a second place
+        // to look and never a reason to run it twice.
+        var what = dismissed.Count == 0
+            ? "nothing is ringing"
             : "dismissed " + string.Join(
-                " and ", dismissed.Select(d => $"{d.Kind.ToString().ToLowerInvariant()} \"{d.Text}\"")) + "\n";
-        return Exec(stdout, "", 0, path);
+                " and ", dismissed.Select(d => $"{d.Kind.ToString().ToLowerInvariant()} \"{d.Text}\""));
+
+        return Exec($"{what}; nothing further to do\n", "", 0, path);
     }
 
     private sealed record SpecDto

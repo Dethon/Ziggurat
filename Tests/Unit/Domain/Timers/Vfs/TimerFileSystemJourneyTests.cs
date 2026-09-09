@@ -353,6 +353,53 @@ public class TimerFileSystemJourneyTests
         result.Stdout.ShouldContain("timer \"pasta\"");
     }
 
+    // "nothing is ringing" is the same sentence whether the model has just silenced the alert
+    // itself or never found it, and a model that cannot tell those apart goes looking for the
+    // alarm somewhere else — glm-5.3-flash dismissed correctly, read the line, and then hunted
+    // through /ha for the calendar event behind it. The line has to close the task.
+    [Fact]
+    public async Task Exec_DismissWithNothingRinging_SaysTheSilenceIsTheAnswer()
+    {
+        var (fs, _, _, _) = Build();
+
+        var result = (await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(0);
+        result.Stdout.ShouldContain("nothing is ringing");
+        result.Stdout.ShouldContain("nothing further to do");
+    }
+
+    [Fact]
+    public async Task Exec_DismissThatSilencedSomething_SaysTheTaskIsDone()
+    {
+        var (fs, _, _, dismisser) = Build();
+        dismisser.Ringing.Add(new DismissedAlert("pasta", AnnounceKind.Timer));
+
+        var result = (await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.Stdout.ShouldContain("timer \"pasta\"");
+        result.Stdout.ShouldContain("nothing further to do");
+    }
+
+    // dismiss.sh takes no arguments, and a model that reaches for a plausible one ("--all", to
+    // be sure it covers every satellite) got a bare "command not found" naming the file it had
+    // just typed. The refusal has to say the flag is the problem, not the script, or the next
+    // guess is that the script is somewhere else.
+    [Fact]
+    public async Task Exec_DismissWithAnArgument_SaysTheScriptTakesNone()
+    {
+        var (fs, _, _, _) = Build();
+
+        var result = (await fs.ExecAsync("/", "dismiss.sh --all", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(127);
+        result.Stderr.ShouldContain("takes no arguments");
+        result.Stderr.ShouldContain("dismiss.sh");
+    }
+
     [Fact]
     public async Task Exec_UnknownCommand_Returns127()
     {

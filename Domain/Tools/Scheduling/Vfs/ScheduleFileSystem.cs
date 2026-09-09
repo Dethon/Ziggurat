@@ -408,9 +408,21 @@ public sealed class ScheduleFileSystem(
             trimmed = trimmed[2..];
         }
 
+        // Split the two refusals apart the way the timers mount does: a flag on the right script
+        // is a different mistake from the wrong script, and one message for both sends a model
+        // looking for a file that is already under its hand.
         if (trimmed != SchedulePath.RunNowFileName)
         {
-            return Exec("", $"command not found: {trimmed}\navailable: {SchedulePath.RunNowFileName}", 127, path);
+            var script = trimmed.Split(' ', 2)[0];
+
+            return Exec(
+                "",
+                script == SchedulePath.RunNowFileName
+                    ? $"{SchedulePath.RunNowFileName} takes no arguments: it fires this schedule "
+                      + "once, now. Run it on its own."
+                    : $"command not found: {script}\navailable: {SchedulePath.RunNowFileName}",
+                127,
+                path);
         }
 
         // Queue the schedule for the dispatcher's next tick by setting NextRunAt=now. LastRunAt is left
