@@ -57,7 +57,9 @@ public static class HomeAssistantScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.Path(FakeHomeAssistant.AirConditionerDirectory),
+                    // Either view: the setup index lists the area path first and the entities path
+                    // second, and both are the mount's own.
+                    Arg.PathMatches(FakeHomeAssistant.AirConditionerPathPattern),
                     Arg.Matches("command", @"^(\./)?turn_on\.sh")
                 ]
             }
@@ -68,7 +70,7 @@ public static class HomeAssistantScenarios
             new CallPermission(EvalTools.Read, "/ha*"),
             new CallPermission(EvalTools.Info, "/ha*"),
             new CallPermission(EvalTools.Search, "/ha*"),
-            new CallPermission(EvalTools.Exec, FakeHomeAssistant.AirConditionerDirectory)
+            new CallPermission(EvalTools.Exec, "*aire-salon)*")
         ],
         Changes = [new StateChange(FakeHomeAssistant.AirConditionerEntityId, "on")],
         Ordering = [new OrderingConstraint("skill", "turn on")],
@@ -113,7 +115,9 @@ public static class HomeAssistantScenarios
                 Tool = EvalTools.Exec,
                 Arguments =
                 [
-                    Arg.Path(FakeHomeAssistant.AirConditionerDirectory),
+                    // Either view: the setup index lists the area path first and the entities path
+                    // second, and both are the mount's own.
+                    Arg.PathMatches(FakeHomeAssistant.AirConditionerPathPattern),
                     Arg.Matches("command", @"^(\./)?set_temperature\.sh.*\b22\b")
                 ]
             }
@@ -122,7 +126,7 @@ public static class HomeAssistantScenarios
         [
             new CallPermission(EvalTools.Glob, "/ha*"),
             new CallPermission(EvalTools.Info, "/ha*"),
-            new CallPermission(EvalTools.Exec, FakeHomeAssistant.AirConditionerDirectory)
+            new CallPermission(EvalTools.Exec, "*aire-salon)*")
         ],
         Changes =
         [

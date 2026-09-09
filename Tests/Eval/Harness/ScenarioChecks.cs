@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Domain.DTOs;
 using Domain.Tools.Web;
 using Infrastructure.Agents.ChatClients;
@@ -237,8 +238,22 @@ public static class ScenarioChecks
                 Command: new ToolPatternMatcher([p.Command])))
             .ToList();
 
+        // A refused attempt at a required call, corrected into it: the tool named the fix and the
+        // next call at the same tool and path is the one the scenario asks for. That round-trip is
+        // the refusal working, not a call the model should not have made; the ceiling still counts it.
+        var corrected = scenario.Required
+            .Select(e => Considered(recording).FirstOrDefault(call => Matches(e, call)))
+            .Where(landed => landed is not null)
+            .SelectMany(landed => Considered(recording)
+                .Where(call => call.Sequence < landed!.Sequence
+                               && string.Equals(call.ToolName, landed.ToolName, StringComparison.Ordinal)
+                               && string.Equals(Path(call), Path(landed), StringComparison.Ordinal)
+                               && Refused(call)))
+            .ToHashSet();
+
         return Considered(recording)
             .Where(call => !string.Equals(call.ToolName, EvalTools.Subagent, StringComparison.Ordinal))
+            .Where(call => !corrected.Contains(call))
             .Where(call => !scenario.Required.Any(e => Matches(e, call))
                            && !permitted.Any(p => p.Tool.IsMatch(call.ToolName)
                                                   && p.Path.IsMatch(Path(call))
@@ -246,6 +261,13 @@ public static class ScenarioChecks
             .Select(call =>
                 $"unnecessary call: {call.ToolName} {call.Arguments} is neither required nor permitted");
     }
+
+    // Nothing was written: the tool threw, or answered with its error envelope — the VFS shape
+    // and the MCP one both carry the refusal in the result text.
+    private static bool Refused(ToolInvocation call) =>
+        call.Outcome != ToolInvocationOutcome.Completed
+        || (call.Result is { } result
+            && (Regex.IsMatch(result, @"""ok""\s*:\s*false") || Regex.IsMatch(result, @"""isError""\s*:\s*true")));
 
     // Pairwise and partial: the constraint is that one call precedes another, not that the
     // recording has a total order. Anything between them is somebody else's business.

@@ -43,7 +43,7 @@ public static class TimerScenarios
                 [
                     // The id is the model's to choose, so what is pinned is the shape the contract
                     // states: one directory per timer, holding timer.json.
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content",
                         Arg.Number("durationSeconds", 480),
                         // Targeted without being told, from the room the request came from —
@@ -113,7 +113,7 @@ public static class TimerScenarios
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     // Five minutes were left and two were asked for: the remainder is read rather
                     // than guessed, so anything but 420 means the status read did not inform the
                     // write.
@@ -283,7 +283,7 @@ public static class TimerScenarios
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content",
                         Arg.Number("durationSeconds", 1200),
                         Arg.Matches("text", "(?i)horno"))

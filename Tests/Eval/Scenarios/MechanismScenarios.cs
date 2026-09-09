@@ -240,7 +240,11 @@ public static class MechanismScenarios
         [
             .. CallPermission.Looking("/ha*"),
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*"),
-            CallPermission.Load(HomeAssistantSkill.Name)
+            CallPermission.Load(HomeAssistantSkill.Name),
+            // "In six hours" is read as a duration first, and the timers skill is the doing guide
+            // for the mechanism first considered; the ceiling rule then sends it to the calendar.
+            // The load is a detour the ceiling pays for, not the wrong mechanism.
+            CallPermission.Load(CountdownTimersSkill.Name)
         ],
         CallCeiling = 7,
         Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],

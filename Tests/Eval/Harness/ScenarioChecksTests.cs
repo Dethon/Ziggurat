@@ -1,3 +1,4 @@
+using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Skills;
 using Shouldly;
 using Tests.Eval.Fixtures;
@@ -495,6 +496,31 @@ public class ScenarioChecksTests
 
         ScenarioChecks.Failures(Timer(), recording)
             .ShouldContain(f => f.Contains("provider") && f.Contains("520"));
+    }
+
+    // A tool that refuses a first attempt and names the fix is the tool working: the corrected
+    // call is the required one, and the refused attempt before it — same tool, same path, nothing
+    // written — is the round-trip the refusal exists for, not a call the model should not have
+    // made. The ceiling still counts it, so a model that needs three refusals to land still shows.
+    [Fact]
+    public void ARefusedAttemptAtTheRequiredCall_CorrectedIntoIt_IsNotUnnecessary()
+    {
+        var recording = new Recording();
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 0, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/timers/pasta/timer.json","content":"{\"target\":{\"satellite\":\"x\"}}"}""",
+            Result = """{"ok":false,"errorCode":"invalid_argument","message":"target is required"}"""
+        });
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 1, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/timers/pasta/timer.json","content":"{\"target\":{\"room\":\"kitchen\"}}"}""",
+            Result = """{"status":"created"}"""
+        });
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldNotContain(f => f.Contains("unnecessary call"));
     }
 
     [Fact]
