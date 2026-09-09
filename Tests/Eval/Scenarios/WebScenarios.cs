@@ -90,7 +90,10 @@ public static class WebScenarios
             // for a url is part of what `Spoken` means.
             Spoken = true,
             MaxSentences = 2,
-            Mentions = [new SpokenValue("the resting time", "90", "noventa")]
+            // "hora y media" is ninety minutes said the way a person says it, and the voice rules
+            // ask for exactly that. A check that took only the digits failed the reply for
+            // obeying them.
+            Mentions = [new SpokenValue("the resting time", "90", "noventa", "hora y media")]
         },
         // The search is not cited: it is forced by the fixture rather than by the prose — a
         // loopback port cannot be guessed. The load is.
@@ -371,7 +374,10 @@ public static class WebScenarios
         Reply = new ReplyExpectation
         {
             MaxSentences = 3,
-            Mentions = [new SpokenValue("the resting time", "90", "noventa")]
+            // "hora y media" is ninety minutes said the way a person says it, and the voice rules
+            // ask for exactly that. A check that took only the digits failed the reply for
+            // obeying them.
+            Mentions = [new SpokenValue("the resting time", "90", "noventa", "hora y media")]
         },
         Claims = [WebBrowsingSkill.LoadsForAWebTask.Id, WebBrowsingPrompt.UrlComesFromASearch.Id],
         Policy = new RunPolicy(2, 3)

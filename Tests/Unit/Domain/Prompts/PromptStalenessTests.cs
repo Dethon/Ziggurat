@@ -313,6 +313,20 @@ public class PromptStalenessTests
             "the memory rule has to say which side of its exception a why-question falls on");
     }
 
+    // The vault prompt ends by inviting a free search of the notes, and nothing said when the
+    // notes are the wrong place to look. Asked "busca cuánto tiene que reposar el gazpacho de
+    // Almudena" — a recipe from a neighbourhood website, named nowhere in the vault —
+    // glm-5.3-flash searched /vault first, every run. A question about the world is a question
+    // for the web.
+    [Fact]
+    public void VaultPrompt_SaysWhichSearchesAreNotTheVaults()
+    {
+        VaultPrompt.Prompt.ShouldContain("the web",
+            Case.Insensitive,
+            "the section that invites searching the vault has to say what the vault is not for, " +
+            "or a question about the world is answered by grepping the user's notes");
+    }
+
     private static string TextOf(string name) =>
         AgentPromptFixture.ServedText.TryGetValue(name, out var served)
             ? served
