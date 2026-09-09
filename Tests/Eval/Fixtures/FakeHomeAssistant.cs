@@ -449,10 +449,17 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
 
     // A name resolves if the library has it, and a uri resolves if it is one the fake serves.
     // Everything else is a guess, and a guess is what the browse-first rule exists to prevent.
+    //
+    // "One the fake serves" has to include every uri the episode listing hands out, not only the
+    // episode already on the player: the mount answers podcast_episodes.sh from the Music
+    // Assistant fake, and a play of the uri it just returned was coming back as an unexplained
+    // 500. The scenario that asks for exactly that was therefore unpassable — the model did as
+    // the skill says, was refused, and had nothing left to try.
     private static bool Resolves(JsonObject data) =>
         data["media_id"]?.GetValue<string>() is { } id
         && (_playlists.Contains(id, StringComparer.OrdinalIgnoreCase)
             || id == PlayingEpisodeUri
+            || FakeMusicAssistantServer.ServesEpisodeUri(id)
             || _knownNames.Contains(id, StringComparer.OrdinalIgnoreCase));
 
     // Free-text names that resolve through the streaming providers, which is what the contract says
