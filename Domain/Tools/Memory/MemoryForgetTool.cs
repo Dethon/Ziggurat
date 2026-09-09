@@ -15,6 +15,9 @@ public class MemoryForgetTool(
 
     public const string Name = "memory_forget";
 
+    // Four filters (categories, tags, olderThan, maxImportance) used to widen this schema for a
+    // sweep nobody made through them: the recall block spells each memory's id and importance,
+    // so a sweep names ids. What is left is what a forget needs, re-sent on every request.
     public const string Description = """
                                          Removes memories. Use when information is outdated, wrong, or user
                                          explicitly asks you to forget something.
@@ -24,14 +27,12 @@ public class MemoryForgetTool(
                                          - User explicitly requests forgetting
                                          - Information is clearly outdated — a plan the user has just reported done
                                            (home from the conference, moved in, the course finished) goes in that turn, unasked
-                                         - Bulk cleanup of low-importance memories
+                                         - Bulk cleanup of low-importance memories, by the ids the context block shows
 
-                                         Use semantic query (not exact text) to find memories — e.g. "my job" will match
-                                         memories about employment. The search is nearest-first with no relevance floor,
-                                         so a query can reach memories unrelated to it: a query that reaches exactly one
-                                         memory deletes it, and one that reaches several deletes NOTHING and returns the
-                                         candidates instead — review them and call again with memoryIds naming only the
-                                         ones that should go.
+                                         A query is semantic, not the memory's exact text: nearest-first with no
+                                         relevance floor, so it can reach unrelated memories. Reaching exactly one
+                                         deletes it; reaching several deletes NOTHING and returns them as candidates
+                                         to name in memoryIds.
                                          """;
 
     public async Task<JsonNode> Run(
@@ -48,14 +49,6 @@ public class MemoryForgetTool(
                      + "not the memory's exact words. Reaching one memory deletes it; reaching "
                      + "several deletes nothing and returns them as candidates.")]
         string? query = null,
-        [Description("Optional: restrict a query to these categories.")]
-        MemoryCategory[]? categories = null,
-        [Description("Optional: restrict a query to memories carrying these tags, comma-separated.")]
-        string? tags = null,
-        [Description("Optional: restrict a query to memories older than this ISO-8601 date.")]
-        string? olderThan = null,
-        [Description("Optional: restrict a query to memories at or below this importance.")]
-        double? maxImportance = null,
         [Description("Why this is being forgotten, in a few words. Recorded, never shown to the user.")]
         string? reason = null,
         CancellationToken ct = default)
@@ -98,8 +91,7 @@ public class MemoryForgetTool(
             return CreateSuccessResponse(await ForgetByIds(userId, memoryIds, ct), reason);
         }
 
-        var candidates = await SearchCandidates(userId, query!, categories?.ToList(),
-            ParseTags(tags), ParseDate(olderThan), maxImportance, ct);
+        var candidates = await SearchCandidates(userId, query!, ct);
 
         // The search is a k-nearest query with no relevance floor, so "what it reached" is not
         // "what the user meant": one match acts, several become a question. Deleting them all
@@ -138,19 +130,15 @@ public class MemoryForgetTool(
     }
 
     private async Task<List<MemorySearchResult>> SearchCandidates(
-        string userId, string query, List<MemoryCategory>? parsedCategories, List<string>? parsedTags,
-        DateTimeOffset? olderThan, double? maxImportance, CancellationToken ct)
+        string userId, string query, CancellationToken ct)
     {
         var queryEmbedding = await embeddingService.GenerateEmbeddingAsync(query, ct);
 
         var results = await store.SearchAsync(
-            userId, query, queryEmbedding, parsedCategories, parsedTags,
+            userId, query, queryEmbedding, categories: null, tags: null,
             minImportance: null, limit: SearchLimit, ct);
 
-        return results
-            .Where(r => (!olderThan.HasValue || r.Memory.CreatedAt < olderThan.Value)
-                     && (!maxImportance.HasValue || r.Memory.Importance <= maxImportance.Value))
-            .ToList();
+        return [.. results];
     }
 
     private async Task<List<AffectedMemory>> DeleteAll(
@@ -186,28 +174,6 @@ public class MemoryForgetTool(
                 + "unrelated to the query. Call memory_forget again with memoryIds naming exactly "
                 + "the ones to remove."
         };
-    }
-
-    private static List<string>? ParseTags(string? tags)
-    {
-        if (string.IsNullOrWhiteSpace(tags))
-        {
-            return null;
-        }
-
-        return tags
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToList();
-    }
-
-    private static DateTimeOffset? ParseDate(string? date)
-    {
-        if (string.IsNullOrWhiteSpace(date))
-        {
-            return null;
-        }
-
-        return DateTimeOffset.TryParse(date, out var result) ? result : null;
     }
 
     private static string TruncateContent(string content)

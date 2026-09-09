@@ -32,4 +32,19 @@ public class MemoryToolParameterDescriptionTests
             .ShouldNotBeNull($"memory_forget's '{name}' reaches the model with no description, " +
                              "so its shape is a guess");
     }
+
+    // Every parameter is re-sent on every request of every conversation, and the four filters
+    // (categories, tags, olderThan, maxImportance) were dreaming-time knobs the model never used:
+    // a sweep names the ids the recall block shows, importance included. What the tool takes is
+    // what a forget needs and nothing that widens its schema for a case nobody has.
+    [Fact]
+    public void Forget_TakesOnlyWhatAForgetNeeds()
+    {
+        typeof(MemoryForgetTool)
+            .GetMethod(nameof(MemoryForgetTool.Run))!
+            .GetParameters()
+            .Where(p => p.ParameterType != typeof(CancellationToken))
+            .Select(p => p.Name)
+            .ShouldBe(["memoryId", "memoryIds", "query", "reason"]);
+    }
 }
