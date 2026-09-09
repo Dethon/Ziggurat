@@ -37,5 +37,11 @@ public class VaultMountDescriptionTests
         description.ShouldContain("Obsidian");
         description.ShouldContain("the web", Case.Insensitive,
             "the mount a model picks for a search has to say which searches are not its own");
+        // A booking on a site is not a question about the world, and the description that only
+        // named questions left glm-5.3-flash searching the vault for the site's name before
+        // filling its form.
+        description.ShouldContain("a booking", Case.Insensitive,
+            "a task on a site has to be named beside the questions, or the rule is read as " +
+            "questions only");
     }
 }

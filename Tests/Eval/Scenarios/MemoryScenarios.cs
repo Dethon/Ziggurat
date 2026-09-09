@@ -11,6 +11,15 @@ namespace Tests.Eval.Scenarios;
 // whether the right fact was retrieved, only what the agent did with the one it was handed.
 public static class MemoryScenarios
 {
+    // What a reply says when it names the remembering: the noun for a stored fact, the verb, the
+    // English word. Not "recuerd" bare — "algo que te lleves de recuerdo" is a souvenir, and a
+    // turn whose forget had just happened failed on it.
+    public static readonly string[] MemoryMentions =
+    [
+        "memoria", "memory", "recuerdo que", "lo recuerdo", "recuerdo de", "tus recuerdos",
+        "los recuerdos", "mis recuerdos", "recordar", "recordado", "recordaré", "recordando"
+    ];
+
     // A forget lands either way the tool allows: by the id the recall block spells — the first
     // declared fact, in every scenario here — or by a query in the fact's own words. Pinning the
     // query alone failed both models the moment the block started carrying ids and they used
@@ -73,7 +82,7 @@ public static class MemoryScenarios
             MaxSentences = 1,
             // The mechanism, in the three words a model reaches for when it explains where a
             // number came from. Silence about it is the whole contract here.
-            NeverSays = ["memoria", "recuerd", "según lo que sé"]
+            NeverSays = [.. MemoryMentions, "según lo que sé"]
         },
         Guards =
         [
@@ -126,7 +135,7 @@ public static class MemoryScenarios
         {
             // Storing the new employer is the extraction pipeline's job and happens out of this
             // turn, so what the reply must not do is announce either half as bookkeeping.
-            NeverSays = ["memoria", "memory", "recuerd"]
+            NeverSays = MemoryMentions
         },
         Guards =
         [
@@ -262,15 +271,9 @@ public static class MemoryScenarios
             }
         ],
         CallCeiling = 2,
-        Reply = new ReplyExpectation { NeverSays = ["memoria", "memory", "recuerd"] },
+        Reply = new ReplyExpectation { NeverSays = MemoryMentions },
         Claims = [MemoryPrompts.OutdatedFactsAreDeleted.Id],
-        // glm-5.3-flash answers this turn as small talk with no forget call about one run in
-        // three, after the prompt was made to name the turn shape (b2ec3ea23: a plan reported
-        // done expires at once) — four passes in a row sat at exactly two of three, and the
-        // fourth reddened at one. The behaviour is the model's, not a missing rule, so the
-        // denominator is the lever: two of four keeps the threshold and stops one abstaining run
-        // from deciding the row.
-        Policy = new RunPolicy(2, 4)
+        Policy = new RunPolicy(2, 3)
     };
 
     // The bulk-cleanup bullet, on the one store that is actually noisy: four facts that are

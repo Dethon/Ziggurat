@@ -27,8 +27,9 @@ public static class ConfigModule
                 + "Persistent host-mounted directory. Read/write text only (allowed extensions "
                 + "enforced); does NOT support fs_exec. See the Vault Filesystem (Obsidian) prompt "
                 + "for conventions. Holds what the user wrote and nothing else: a question about "
-                + "the world — a recipe, an opening time, what some site says — is answered from "
-                + "the web, not by searching here, however the request is phrased.",
+                + "the world or a task on a site — a recipe, an opening time, a booking, what some "
+                + "site says — is done on the web, not by searching here first, however the "
+                + "request is phrased.",
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.VaultPath),
                 settings.AllowedExtensions))

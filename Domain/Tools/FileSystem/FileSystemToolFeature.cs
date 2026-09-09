@@ -162,7 +162,10 @@ public class FileSystemToolFeature(
     {
         var line = $"- `{mount.MountPoint}` — {mount.Description}";
         return mount.Capabilities.Count > 0
-            ? $"{line}\n  - operations: {string.Join(", ", mount.Capabilities)}"
+            // Spelled as the model calls them: listed bare, the line taught a tool named
+            // `file_read`, and a model called exactly that before the not-found reply sent it
+            // to the real name.
+            ? $"{line}\n  - operations: {string.Join(", ", mount.Capabilities.Select(Callable))}"
             : line;
     }
 }

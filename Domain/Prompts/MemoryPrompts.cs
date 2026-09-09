@@ -18,7 +18,7 @@ public static class MemoryPrompts
 
         - **User corrects information:** delete the outdated memory unasked — "actually I work at NewCo now" deletes the old employer.
         - **User explicitly asks to forget:** delete as requested.
-        - **Information is clearly outdated:** a plan the user reports as done — back from the trip, moved in, the course finished — expired the moment they said so.
+        - **Information is clearly outdated:** a plan the user reports as done — home from the conference, moved in, the course finished — expired the moment they said so.
         - **Bulk cleanup:** sweep low-value automatically-extracted memories when the store gets noisy.
 
         A forget nobody asked for is silent: the reply neither announces it nor asks whether to make it.

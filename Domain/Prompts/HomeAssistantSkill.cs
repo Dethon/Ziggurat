@@ -11,7 +11,7 @@ public static class HomeAssistantSkill
 
     // The whole trigger: the one line about this skill that is in every turn.
     public const string Description =
-        "Doing anything in the home through `/ha`: switching, setting or reading a device (\"turn on the AC\", \"what is the thermostat at\"), its past (\"how was her glucose overnight\"), a future alarm or reminder on the alarms calendar (\"wake me at seven\", \"move or remove the trash alarm\"), music, radio or a podcast on a room's player. Not for anything ringing right now (that is `/timers`, whatever it was created as), a countdown, a watch or a scheduled task. The entity layout, the exec workflow, how a result is read, history and statistics, alarm events, Music Assistant playback.";
+        "Doing anything in the home through `/ha`: switching, setting or reading a device (\"turn on the AC\", \"what is the thermostat at\"), its past (\"how was her glucose overnight\"), a future alarm or reminder on the alarms calendar (\"wake me at seven\", \"move the trash alarm to ten\", \"cancel the dentist alarm\"), music, radio or a podcast on a room's player. Not for anything ringing right now (that is `/timers`, whatever it was created as), a countdown, a watch or a scheduled task. The entity layout, the exec workflow, how a result is read, history and statistics, alarm events, Music Assistant playback.";
 
     public const string Body =
         """

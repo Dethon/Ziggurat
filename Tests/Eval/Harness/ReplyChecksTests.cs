@@ -173,6 +173,24 @@ public class ReplyChecksTests
             .ShouldHaveSingleItem().ShouldContain("one-word acknowledgement");
     }
 
+    // "recuerd" caught "algo que te lleves de recuerdo" — a souvenir — on a turn whose forget had
+    // just happened, two runs of three on one provider. The fragments the memory scenarios share
+    // name the remembering, not the keepsake.
+    [Fact]
+    public void ASouvenir_IsNotAMentionOfMemory()
+    {
+        var expectation = new ReplyExpectation { NeverSays = Scenarios.MemoryScenarios.MemoryMentions };
+
+        Failures(expectation, "¿Algún sitio que recomendarías para el recuerdo, o algo que te lleves de recuerdo?")
+            .ShouldBeEmpty();
+        Failures(expectation, "Borro el recuerdo de que estabas preparando el viaje.")
+            .ShouldNotBeEmpty();
+        Failures(expectation, "Lo recuerdo: cueces la pasta nueve minutos.")
+            .ShouldNotBeEmpty();
+        Failures(expectation, "He actualizado tus recuerdos.")
+            .ShouldNotBeEmpty();
+    }
+
     private static IReadOnlyList<string> Failures(ReplyExpectation expectation, string reply) =>
         ReplyChecks.Failures(expectation, reply);
 }
