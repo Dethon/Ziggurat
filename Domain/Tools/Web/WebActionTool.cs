@@ -100,6 +100,16 @@ public class WebActionTool(IWebBrowser browser)
                     ToolError.Codes.Timeout,
                     "Element may be obscured by an overlay. Retry once with force=true if you're certain the ref is correct.",
                     null),
+                // A tab that navigated away from the ref's page is one step past it, and the way
+                // back to those refs is the browser's back — "browse it again" here sent a model
+                // to the second browse the back action exists to avoid.
+                WebActionStatus.RefSuperseded when result.Url is { } current
+                                                   && !string.Equals(current, result.RefUrl, StringComparison.Ordinal) => (
+                    ToolError.Codes.ElementNotFound,
+                    $"To act on {result.RefUrl} again, go back to it with web_action action 'back': "
+                    + "it returns that page's fresh refs. Do not browse it anew.",
+                    $"That ref belonged to {result.RefUrl}; the tab has since navigated to {current}, "
+                    + "which renumbered its refs."),
                 WebActionStatus.RefSuperseded => (
                     ToolError.Codes.ElementNotFound,
                     $"Call web_snapshot, or web_browse {result.RefUrl} again, and act with the fresh refs.",

@@ -378,7 +378,7 @@ public class PlaywrightWebBrowser(
                 TabOutcome<WebActionResult>.Ran ran => ran.Result,
                 TabOutcome<WebActionResult>.Superseded superseded => new WebActionResult(
                     request.SessionId, WebActionStatus.RefSuperseded,
-                    null, false, null, null, null, RefUrl: superseded.Url),
+                    superseded.CurrentUrl, false, null, null, null, RefUrl: superseded.Url),
                 TabOutcome<WebActionResult>.Closed closed => new WebActionResult(
                     request.SessionId, WebActionStatus.RefClosed,
                     null, false, null, null, null, RefUrl: closed.Url),

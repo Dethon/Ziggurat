@@ -233,7 +233,7 @@ public class BrowserSessionManager : IAsyncDisposable
     private TabOutcome<T>? ReRouteUnderLock<T>(string sessionId, string refString) =>
         RouteRef(sessionId, refString) switch
         {
-            RefRouting.Superseded superseded => new TabOutcome<T>.Superseded(superseded.Url),
+            RefRouting.Superseded superseded => new TabOutcome<T>.Superseded(superseded.Url, superseded.CurrentUrl),
             RefRouting.Closed closed => new TabOutcome<T>.Closed(closed.Url),
             _ => null
         };
@@ -372,7 +372,7 @@ public class BrowserSessionManager : IAsyncDisposable
                 return new TabOutcome<T>.NoSession();
             case RefRouting.Superseded superseded:
                 tab = null;
-                return new TabOutcome<T>.Superseded(superseded.Url);
+                return new TabOutcome<T>.Superseded(superseded.Url, superseded.CurrentUrl);
             case RefRouting.Closed closed:
                 tab = null;
                 return new TabOutcome<T>.Closed(closed.Url);
@@ -862,9 +862,10 @@ public abstract record TabOutcome<T>
 
     public sealed record NoSession : TabOutcome<T>;
 
-    // The ref's tab is open; a later stamp renumbered its refs. Url is the address to browse or
-    // snapshot for fresh ones.
-    public sealed record Superseded(string Url) : TabOutcome<T>;
+    // The ref's tab is open; a later stamp renumbered its refs. Url is the address the refs were
+    // stamped on; CurrentUrl is where that tab is now — the same page, refreshed, or the page a
+    // click moved it to, in which case the way back to Url is the browser's back.
+    public sealed record Superseded(string Url, string? CurrentUrl = null) : TabOutcome<T>;
 
     // The tab is gone — evicted, or closed by the site. Url names the page to browse again.
     public sealed record Closed(string Url) : TabOutcome<T>;
@@ -1035,7 +1036,7 @@ internal abstract record RefRouting
 
     // The tab is open; a later stamp renumbered its refs. Url is the address to browse (or
     // snapshot) for fresh ones.
-    public sealed record Superseded(string Url) : RefRouting;
+    public sealed record Superseded(string Url, string? CurrentUrl = null) : RefRouting;
 
     // The tab is gone; Url is the address the ref belonged to.
     public sealed record Closed(string Url) : RefRouting;
@@ -1208,7 +1209,7 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
                 { State: RefRangeState.Active } when _tabs.Contains(entry.Tab) && !entry.Tab.Page.IsClosed
                     => new RefRouting.Routed(entry.Tab),
                 { State: RefRangeState.Superseded } when _tabs.Contains(entry.Tab)
-                    => new RefRouting.Superseded(entry.Url),
+                    => new RefRouting.Superseded(entry.Url, entry.Tab.Page.IsClosed ? null : entry.Tab.Page.Url),
                 _ => new RefRouting.Closed(entry.Url)
             };
         }

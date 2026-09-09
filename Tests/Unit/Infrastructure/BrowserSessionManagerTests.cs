@@ -251,7 +251,7 @@ public class BrowserSessionManagerTests
 
         // The tab is open; only the numbers moved on.
         (await RouteAsync(manager, "s1", "e-2"))
-            .ShouldBe(new TabOutcome<IPage>.Superseded("https://a.test/"));
+            .ShouldBeOfType<TabOutcome<IPage>.Superseded>().Url.ShouldBe("https://a.test/");
         (await RouteAsync(manager, "s1", "e-5")).ShouldBeOfType<TabOutcome<IPage>.Ran>();
     }
 
@@ -273,9 +273,9 @@ public class BrowserSessionManagerTests
         });
 
         (await RouteAsync(manager, "s1", "i-1"))
-            .ShouldBe(new TabOutcome<IPage>.Superseded("https://a.test/"));
+            .ShouldBeOfType<TabOutcome<IPage>.Superseded>().Url.ShouldBe("https://a.test/");
         (await RouteAsync(manager, "s1", "e-1"))
-            .ShouldBe(new TabOutcome<IPage>.Superseded("https://a.test/"));
+            .ShouldBeOfType<TabOutcome<IPage>.Superseded>().Url.ShouldBe("https://a.test/");
     }
 
     [Fact]
@@ -491,7 +491,7 @@ public class BrowserSessionManagerTests
         await StampAsync(manager, "s1", RefNamespace.Element, 0);
 
         (await RouteAsync(manager, "s1", "e-1"))
-            .ShouldBe(new TabOutcome<IPage>.Superseded("https://a.test/"));
+            .ShouldBeOfType<TabOutcome<IPage>.Superseded>().Url.ShouldBe("https://a.test/");
     }
 
     [Fact]
