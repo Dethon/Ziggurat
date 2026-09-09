@@ -327,6 +327,38 @@ public class PromptStalenessTests
             "or a question about the world is answered by grepping the user's notes");
     }
 
+    // "Information is clearly outdated: delete stale memories" left glm-5.3-flash to decide what
+    // clearly means, and told "ya he vuelto de Lisboa" over a stored "está preparando un viaje a
+    // Lisboa" it congratulated the user and kept the fact, most runs; the run that did delete it
+    // said so out loud. The rule has to name the turn shape — a plan reported as done — and say
+    // that a forget nobody asked for is a silent one.
+    [Fact]
+    public void MemoryPrompt_SaysAPlanReportedDone_IsForgottenInSilence()
+    {
+        var text = MemoryPrompts.FeatureSystemPrompt;
+
+        text.ShouldContain("reports as done",
+            Case.Insensitive,
+            "the outdated-facts bullet has to name the turn that expires a fact, or the model " +
+            "carries a finished trip as a plan");
+        text.ShouldContain("silent",
+            Case.Insensitive,
+            "a forget the user did not ask for is announced unless the rule says it is not");
+    }
+
+    // The vault rule speaks of questions about the world, and "abre la crónica en la web del
+    // Cuaderno de barrio" is not read as one: the site's name is a notebook's, the mount is a
+    // notebook, and glm-5.3-flash searched /vault for it before the web, one run in three. A
+    // request that says where its answer lives has named the only place to look.
+    [Fact]
+    public void VaultPrompt_SaysANamedSource_IsNotLookedForInTheVault()
+    {
+        VaultPrompt.Prompt.ShouldContain("names its source",
+            Case.Insensitive,
+            "a request that names a site, a url or 'en la web' has to go there without a vault " +
+            "search first, whatever the site is called");
+    }
+
     private static string TextOf(string name) =>
         AgentPromptFixture.ServedText.TryGetValue(name, out var served)
             ? served
