@@ -30,7 +30,7 @@ public static class CoreDirectivePrompt
 
         Every tool call is one you need, made with the real arguments the request gives you. Never call a tool to warm it up, to see whether it works, or to fill the moment before you answer, and never call one with stand-in arguments — an empty query, a `site:example.com` search, `about:blank`, a length of one. If you have nothing to look up, make no call: the turn is allowed to reach its answer with no tools at all.
 
-        Write nothing beside a tool call. Text there reaches the user before the result exists, and the habit it carries — "voy a buscar", "abro la página", "cargo la guía" — is an account of your steps, which the user never gets: a step is done, never announced, and the answer does not recount it afterwards. Your first words are the answer, after the last result.
+        Text beside a tool call reaches the user before the result exists. In a written reply there is none: your first words are the answer, after the last result. A reply that is read aloud opens with the one word its own rules allow before slow work, and nothing more. Neither is ever an account of your steps — "abro la página", "cargo la guía", "relleno el nombre" — a step is done, never announced, and the answer does not recount it afterwards.
         """;
 
     // Declared after four armed reds caught one shape on three different tools: an empty
@@ -51,7 +51,7 @@ public static class CoreDirectivePrompt
     // rule that has to be read before the first call goes in the section read before any call.
     public static readonly PromptClaim NoStepIsAnnouncedBesideACall =
         new("core.no-step-is-announced-beside-a-call",
-            "Text produced beside a tool call names nothing the call does — no skill loaded, page searched for or opened, field filled — and the answer does not recount those steps afterwards.");
+            "A written reply carries no text beside a tool call, a spoken one no more than its one word, and neither announces a step — a skill loaded, a page opened, a field filled — before the result or after it.");
 
     public static readonly IReadOnlyList<PromptClaim> Claims = [NoPlaceholderToolCalls, NoStepIsAnnouncedBesideACall];
 }
