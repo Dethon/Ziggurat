@@ -103,7 +103,10 @@ public static class EvalSuite
 
             return new RunReading(
                 observed, ScenarioChecks.Exercised(scenario, recording),
-                ScenarioChecks.KindOf(scenario, recording, observed));
+                ScenarioChecks.KindOf(scenario, recording, observed))
+            {
+                Spend = recording.Spend
+            };
         });
 
         var route = recordings.OrderBy(run => run.Key)

@@ -35,6 +35,53 @@ public class ScorecardTests : IDisposable
     }
 
     [Fact]
+    public void AScenarioRow_SaysWhatItSpent_AndTheSummaryTotalsThePass()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
+            [new ClaimOutcome("timers.duration-under-4h", 2, 2)],
+            [
+                new ScenarioOutcome("a timer", 2, 2, Spend: new Spend(0.10m, 20_000, 15_000, 400, 4)),
+                new ScenarioOutcome("an alarm", 2, 2, Spend: new Spend(0.30m, 30_000, 15_000, 600, 6)),
+                // Never ran: no spend key at all, rather than a row that says it cost nothing.
+                new ScenarioOutcome("a watch", 0, 0)
+            ]);
+
+        var summary = Read(Path.Combine(_output, "scorecard-full.json"));
+        var scenarios = summary.GetProperty("scenarios");
+
+        var timer = scenarios.GetProperty("a timer").GetProperty("spend");
+        timer.GetProperty("cost").GetDecimal().ShouldBe(0.10m);
+        timer.GetProperty("inputTokens").GetInt64().ShouldBe(20_000);
+        timer.GetProperty("cachedInputTokens").GetInt64().ShouldBe(15_000);
+        timer.GetProperty("outputTokens").GetInt64().ShouldBe(400);
+        timer.GetProperty("requests").GetInt32().ShouldBe(4);
+        timer.GetProperty("cacheShare").GetDouble().ShouldBe(0.75, 0.001);
+        scenarios.GetProperty("a watch").TryGetProperty("spend", out _).ShouldBeFalse();
+
+        // The whole pass in one place, with the two numbers a maintainer acts on: what a run
+        // costs on average, and how much of the prompt the provider served from cache.
+        var spend = summary.GetProperty("summary").GetProperty("spend");
+        spend.GetProperty("cost").GetDecimal().ShouldBe(0.40m);
+        spend.GetProperty("costPerRun").GetDecimal().ShouldBe(0.10m);
+        spend.GetProperty("cacheShare").GetDouble().ShouldBe(0.6, 0.001);
+        spend.GetProperty("requests").GetInt32().ShouldBe(10);
+    }
+
+    [Fact]
+    public void ASpendNoProviderDetailed_LeavesCacheShareNull()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [],
+            [new ScenarioOutcome("a timer", 1, 1, Spend: new Spend(0.10m, 20_000, null, 400, 1))]);
+
+        var summary = Read(Path.Combine(_output, "scorecard-full.json"));
+
+        summary.GetProperty("scenarios").GetProperty("a timer").GetProperty("spend")
+            .GetProperty("cacheShare").ValueKind.ShouldBe(JsonValueKind.Null);
+        summary.GetProperty("summary").GetProperty("spend")
+            .GetProperty("cacheShare").ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Fact]
     public void AClaimNothingExercised_IsDistinguishableFromOneThatFailed()
     {
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),

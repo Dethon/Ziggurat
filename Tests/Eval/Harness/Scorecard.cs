@@ -20,8 +20,9 @@ public static class Scorecard
 
         var claimRows = Covered(
             Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs, c.SkillNotLoaded, c.RuleIgnored))), coverage);
-        var scenarioRows = Tallied(
-            (scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs, s.SkillNotLoaded, s.RuleIgnored)));
+        var scenarioRows = Priced(
+            Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs, s.SkillNotLoaded, s.RuleIgnored))),
+            scenarios ?? []);
 
         var summary = new JsonObject
         {
@@ -39,7 +40,11 @@ public static class Scorecard
             ["summary"] = new JsonObject
             {
                 ["claims"] = Totalled(claimRows),
-                ["scenarios"] = Totalled(scenarioRows)
+                ["scenarios"] = Totalled(scenarioRows),
+                // What the pass cost, in the two numbers a maintainer acts on: the price of an
+                // average run, and how much of the prompt the provider served from cache. The
+                // per-row spend says which scenario is expensive; this says whether the pass is.
+                ["spend"] = Spent(scenarios ?? [])
             },
             // Each claim row says how it is covered — "cited", "judged", or its exemption kind —
             // so a null rate stops meaning three different things.
@@ -52,6 +57,42 @@ public static class Scorecard
         File.WriteAllText(path, summary.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         return path;
     }
+
+    // A scenario's price beside its rate. Only where something was paid for: a scenario that did
+    // not run has no spend key, so "cost nothing" never stands in for "never ran".
+    private static JsonObject Priced(JsonObject rows, IEnumerable<ScenarioOutcome> outcomes)
+    {
+        foreach (var group in outcomes.GroupBy(outcome => outcome.Name))
+        {
+            var spend = Spend.Sum(group.Select(outcome => outcome.Spend ?? Spend.Nothing));
+            if (spend.Requests > 0 && rows[group.Key] is JsonObject row)
+            {
+                row["spend"] = Spelled(spend);
+            }
+        }
+
+        return rows;
+    }
+
+    private static JsonObject Spent(IEnumerable<ScenarioOutcome> outcomes)
+    {
+        var priced = outcomes.Where(outcome => outcome.Spend is { Requests: > 0 }).ToList();
+        var spend = Spend.Sum(priced.Select(outcome => outcome.Spend!));
+        var runs = priced.Sum(outcome => outcome.Runs);
+        var summary = Spelled(spend);
+        summary["costPerRun"] = runs == 0 ? null : JsonValue.Create(spend.Cost / runs);
+        return summary;
+    }
+
+    private static JsonObject Spelled(Spend spend) => new()
+    {
+        ["cost"] = spend.Cost,
+        ["inputTokens"] = spend.InputTokens,
+        ["cachedInputTokens"] = spend.CachedInputTokens,
+        ["outputTokens"] = spend.OutputTokens,
+        ["requests"] = spend.Requests,
+        ["cacheShare"] = spend.CacheShare
+    };
 
     private static JsonObject Covered(JsonObject claims, IReadOnlyDictionary<string, string>? coverage)
     {
@@ -122,4 +163,5 @@ public static class Scorecard
 
 public sealed record ClaimOutcome(string Claim, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0);
 
-public sealed record ScenarioOutcome(string Name, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0);
+public sealed record ScenarioOutcome(
+    string Name, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0, Spend? Spend = null);

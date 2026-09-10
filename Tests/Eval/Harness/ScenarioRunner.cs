@@ -74,7 +74,8 @@ public static class ScenarioRunner
             [.. taken.SelectMany(reading => reading.Failures)])
         {
             Conditionals = Tallied(taken),
-            Kinds = [.. taken.Select(reading => reading.Kind).OfType<FailureKind>()]
+            Kinds = [.. taken.Select(reading => reading.Kind).OfType<FailureKind>()],
+            Spend = Spend.Sum(taken.Select(reading => reading.Spend))
         };
 
         // The run's number travels with it so its reading lands in its own slot; the exception it
@@ -112,7 +113,11 @@ public static class ScenarioRunner
 // What one run reported: everything that failed, the conditional claims whose material the run
 // actually produced, and which kind of red it was — null on a green run.
 public sealed record RunReading(
-    IReadOnlyList<string> Failures, IReadOnlyList<string> Exercised, FailureKind? Kind = null);
+    IReadOnlyList<string> Failures, IReadOnlyList<string> Exercised, FailureKind? Kind = null)
+{
+    // What the run paid for, agent turns and judge verdicts together.
+    public Spend Spend { get; init; } = Spend.Nothing;
+}
 
 public sealed record ScenarioResult(
     bool Passed, int Passes, int Attempts, IReadOnlyList<string> Failures)
@@ -129,6 +134,9 @@ public sealed record ScenarioResult(
     public IReadOnlyList<FailureKind> Kinds { get; init; } = [];
 
     public int SkillNotLoaded => Kinds.Count(kind => kind == FailureKind.SkillNotLoaded);
+
+    // Over every run taken, so a scenario's row prices the scenario and not one of its runs.
+    public Spend Spend { get; init; } = Spend.Nothing;
 
     public int RuleIgnored => Kinds.Count(kind => kind == FailureKind.RuleIgnored);
 }

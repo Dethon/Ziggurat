@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs.Metrics;
 using Infrastructure.Agents.ChatClients;
 using Tests.Eval.Fixtures;
 
@@ -6,9 +7,14 @@ namespace Tests.Eval.Harness;
 
 // What one run of a scenario produced. Every assertion in the suite reads this and nothing else,
 // so what a scenario checks does not depend on where a tool lives or how the agent is built.
-public sealed class Recording : IToolInvocationObserver
+//
+// It is the run's metrics sink too: what the turn cost arrives on the same usage events the
+// deployment publishes, and a recording that heard them is how a scenario's row on the scorecard
+// gets a price.
+public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
 {
     private readonly List<ToolInvocation> _calls = [];
+    private readonly List<Spend> _spends = [];
     private readonly Lock _gate = new();
 
     // Sorted by the position the seam stamped, not by the order the observations arrived:
@@ -97,6 +103,33 @@ public sealed class Recording : IToolInvocationObserver
         lock (_gate)
         {
             _calls.Add(invocation);
+        }
+    }
+
+    // Every request the run paid for — the agent's turns and the judge's verdicts alike — summed.
+    public Spend Spend
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return Spend.Sum(_spends);
+            }
+        }
+    }
+
+    // Only the usage events are money; the rest of the stream is the deployment's telemetry and
+    // says nothing a scenario asserts on.
+    public void Publish(MetricEvent metricEvent)
+    {
+        if (metricEvent is not TokenUsageEvent usage)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            _spends.Add(Spend.Of(usage));
         }
     }
 }

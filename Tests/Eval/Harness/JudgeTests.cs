@@ -90,6 +90,25 @@ public class JudgeTests
     }
 
     [Fact]
+    public async Task TheJudgesOwnUsage_LandsOnTheRecordingItGraded()
+    {
+        // The judge is paid for out of the same key as the run, so its cost is the run's cost: a
+        // scorecard that left it out would understate every judged scenario by one request.
+        var check = new JudgedCheck("timers.id-is-descriptive", "Judge the id.");
+        var transport = new CannedJudge("""{"pass": true, "reason": "fine"}""")
+        {
+            Usage = new { prompt_tokens = 1_200, completion_tokens = 30, cost = 0.004 }
+        };
+        var recording = TheRecording();
+
+        await Judge.FailuresAsync(TheScenario(check), recording, "key", transport);
+
+        recording.Spend.ShouldBe(new Spend(0.004m, 1_200, null, 30, Requests: 1));
+        // Asked for explicitly: the router omits the breakdown unless the request says so.
+        transport.Requests[0].ShouldContain("\"usage\":{\"include\":true}");
+    }
+
+    [Fact]
     public async Task FailuresAsync_AFailingVerdict_NamesTheClaimAndTheJudgesReason()
     {
         var check = new JudgedCheck("web.steps-are-not-reported", "Judge the reply.");
@@ -204,6 +223,8 @@ public class JudgeTests
     {
         public List<string> Requests { get; } = [];
 
+        public object? Usage { get; init; }
+
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken ct)
         {
@@ -218,7 +239,8 @@ public class JudgeTests
 
             var body = new
             {
-                choices = new[] { new { message = new { content = verdict } } }
+                choices = new[] { new { message = new { content = verdict } } },
+                usage = Usage
             };
             return new HttpResponseMessage(HttpStatusCode.OK)
             {

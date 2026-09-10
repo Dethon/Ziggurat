@@ -109,7 +109,7 @@ public sealed class EvalStack : IAsyncDisposable
     public IAgentFactory Factory { get; private set; } = null!;
 
     public static async Task<EvalStack> StartAsync(
-        Scenario scenario, string redisConnectionString, IToolInvocationObserver observer)
+        Scenario scenario, string redisConnectionString, Recording recording)
     {
         // Started as far back as the oldest running timer needs, then wound forward to the turn's
         // own instant once everything is armed. A clock that only ever sat at the instant would
@@ -135,7 +135,7 @@ public sealed class EvalStack : IAsyncDisposable
         // option is not one.
         stack.Sandbox = await EvalSandbox.StartAsync();
 
-        stack.BuildAgentServices(shipped, observer, new Dictionary<string, string>
+        stack.BuildAgentServices(shipped, recording, new Dictionary<string, string>
         {
             ["mcp-timers"] = await stack.StartTimersAsync(scenario),
             ["mcp-scheduling"] = await stack.StartSchedulingAsync(shipped, redisConnectionString),
@@ -370,7 +370,7 @@ public sealed class EvalStack : IAsyncDisposable
     // The agent itself, built by the real factory. Only the configured endpoint urls are rewritten,
     // to the servers this stack hosts.
     private void BuildAgentServices(
-        AgentSettings shipped, IToolInvocationObserver observer,
+        AgentSettings shipped, Recording recording,
         IReadOnlyDictionary<string, string> hosted)
     {
         var settings = shipped with
@@ -382,7 +382,11 @@ public sealed class EvalStack : IAsyncDisposable
         services.AddLogging();
         services.AddAgent(settings);
         services.AddSubAgents(settings.SubAgents);
-        services.AddSingleton(observer);
+        services.AddSingleton<IToolInvocationObserver>(recording);
+        // Registered after the agent's own publisher so it wins the resolution: what the chat
+        // client reports as usage is the run's bill, and the recording is where the scorecard
+        // reads it from.
+        services.AddSingleton<IMetricsPublisher>(recording);
         services.AddSingleton<ISubAgentSpawner>(Workers);
 
         // The memory feature, the way the deployment enables it: both shipped assistants list

@@ -39,7 +39,8 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
             // The scenario's own rate, cited or not: a guard's drift is only a diff if the guard
             // has a number.
             state.Scenarios.Add(new ScenarioOutcome(
-                scenario.Name, result.Passes, result.Attempts, result.SkillNotLoaded, result.RuleIgnored));
+                scenario.Name, result.Passes, result.Attempts, result.SkillNotLoaded, result.RuleIgnored,
+                result.Spend));
         }
     }
 
