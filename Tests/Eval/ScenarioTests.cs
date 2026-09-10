@@ -11,7 +11,7 @@ namespace Tests.Eval;
 //
 // One class per scenario family rather than one for the suite: xUnit runs a class's cases
 // sequentially and parallelizes across classes, so the family classes are what lets ten scenarios
-// be in flight at once — and each of those puts its own k of N runs out together. Every class
+// be in flight at once — and each of those puts its own first wave of runs out together. Every class
 // fronts the same scorecard ledger, every run leases a Redis database of its own, and
 // EvalConcurrency bounds how many stacks the two kinds of parallelism can stand up at once.
 

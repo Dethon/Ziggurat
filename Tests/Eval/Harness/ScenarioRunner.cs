@@ -4,8 +4,8 @@ namespace Tests.Eval.Harness;
 
 // k of N, with no retry-until-green anywhere in it. The runs of one scenario go out together up
 // to the policy's width, because they are independent of each other and only their number is
-// declared; what stays serial is the decision to launch, so a threshold that has become
-// unreachable still stops the runs nobody has started yet.
+// declared; what stays serial is the decision to launch, so a threshold already met, or one that
+// has become unreachable, stops the runs nobody has started yet.
 public static class ScenarioRunner
 {
     public static Task<ScenarioResult> RunAsync(
@@ -32,6 +32,10 @@ public static class ScenarioRunner
             while (launched < policy.N
                    && running.Count < width
                    && !faulted
+                   // Met, counting the runs in flight as green the way the unreachable check
+                   // below does: the runs past the threshold are a denominator, not evidence,
+                   // and are only taken when the policy asks for every one of them.
+                   && (policy.Exhaustive || passes + running.Count < policy.K)
                    // Unreachable, not merely behind: even if everything still owed came back
                    // green, it could not reach k. The runs already in flight are counted as
                    // green here, because they are owed and nothing can be learned by guessing.

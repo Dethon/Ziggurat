@@ -65,7 +65,7 @@ public static class EvalSuite
         Skip.If(EvalGate.ApiKey is null, "openRouter:apiKey is not set in user secrets");
 
         var scenario = ByName(name);
-        var outcome = await RunAsync(scenario, policy(scenario));
+        var outcome = await RunAsync(scenario, EvalRuns.Applied(policy(scenario)));
 
         scorecard.Record(tier, scenario, outcome.Result);
         scorecard.Observe(outcome.Route);
