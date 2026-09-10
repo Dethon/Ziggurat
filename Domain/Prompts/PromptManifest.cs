@@ -26,7 +26,7 @@ public static class PromptManifest
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated.
-    public const int StandingTokens = 8_600;
+    public const int StandingTokens = 8_400;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -79,7 +79,10 @@ public static class PromptManifest
             Name = Subagents,
             Purpose = "When to delegate to a worker, and how to answer from what it returns.",
             Priority = PromptPriority.Feature,
-            TokenBudget = 600,
+            // Ratcheted from 600: the two when-to-delegate bullets the model was measured ignoring
+            // (2026-08-18, 2026-08-20) and the exploration one, none of them claimed, left; what
+            // stays is every sentence a claim or the voice override reads.
+            TokenBudget = 400,
             Conflict = ConflictPolicy.Governs(
                 PromptRules.ToolUse, PromptRules.Formatting, PromptRules.Verbosity),
             Claims = SubAgentPrompt.Claims
