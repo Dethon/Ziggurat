@@ -1,4 +1,4 @@
-# web-browsing — description 102 / 130 tokens, body 1596 / 1600 tokens, served by mcp-websearch
+# web-browsing — description 102 / 130 tokens, body 1594 / 1600 tokens, served by mcp-websearch
 
 ================================================================================================
 
@@ -93,9 +93,9 @@ change that; a re-browse starts the page over and loses its state.
 ### Response Style
 
 - Answer the question from what you found; never dump raw page content.
-- A written reply ends with the full url of the page it answered from, in the form
-  `(fuente: https://<host>/<path>)` in the reply's language, never the site's name in its
-  place — the user has to be able to open the source. A reply that is read aloud never
+- A written reply ends with a markdown link to the page it answered from,
+  `[page title](https://<host>/<path>)`, the full url inside it and never the site's name
+  alone — the user has to be able to open the source. A reply that is read aloud never
   carries a url.
 - If content is partial, fetch the missing part once, then answer with what you have; if you
   still cannot, say so in one clause — don't offer to get more.
