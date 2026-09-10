@@ -163,7 +163,21 @@ public class PlaywrightWebBrowser(
                 }
                 else
                 {
-                    await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new() { Timeout = 30000 });
+                    // The state, not the event. WaitForLoadStateAsync listens for DOMContentLoaded
+                    // and returns at once only if Playwright already recorded it — and on the first
+                    // page of a fresh context it sometimes has not, because the document finished
+                    // parsing before its bookkeeping was listening. The event never comes twice, so
+                    // the wait spent its whole thirty seconds on a document that had been complete
+                    // the entire time, and the navigation was reported Partial with its content
+                    // called incomplete. Probed live, readyState was 'complete' at the timeout.
+                    //
+                    // readyState is the same fact without the race: it is 'interactive' from the
+                    // moment DOMContentLoaded would have fired and 'complete' after load, so a
+                    // document that got there early answers immediately rather than never.
+                    await page.WaitForFunctionAsync(
+                        "() => document.readyState === 'interactive' || document.readyState === 'complete'",
+                        null,
+                        new() { Timeout = 30000 });
                 }
             }
             catch (TimeoutException)
