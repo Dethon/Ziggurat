@@ -251,6 +251,27 @@ public class PromptStalenessTests
             "and say that a device's current state is not the turn's business to change");
     }
 
+    // The announce effect described `target` and `insistent` as "exactly as an alarm's
+    // description has them" — a pointer to text the skill never carries, since a watch turn loads
+    // this skill alone. gpt-5.6-luna went looking for it (2026-09-10): the home-assistant skill,
+    // then countdown-timers for its "target rules", then both again — five loads on a turn that
+    // needs one. The shape has to be in the skill, and the skill has to say nothing else holds it.
+    [Fact]
+    public void WatchesSkill_CarriesTheAnnounceTargetAndInsistentShapes_Itself()
+    {
+        var body = AgentPromptFixture.ServedSkills[HomeWatchesSkill.Name].Body;
+
+        body.ShouldNotContain("as an alarm's description has them",
+            Case.Insensitive,
+            "a pointer at text that is not in front of the model sends it loading skills to find it");
+        body.ShouldContain("satelliteIds",
+            Case.Insensitive,
+            "the target's four shapes are spelled here");
+        body.ShouldContain("maxRepeats",
+            Case.Insensitive,
+            "and so are insistent's fields, so the shape is complete without another skill");
+    }
+
     // A watch's entity_id is the bare id, and every other rule about entities says to use the
     // directory name verbatim — so "the id from the setup index" resolved, for glm-5.3-flash, to
     // the directory the index lists: sensor.temperatura_salon_(temperatura-salon). The watch was

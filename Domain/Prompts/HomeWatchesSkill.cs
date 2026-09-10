@@ -53,14 +53,17 @@ public static class HomeWatchesSkill
             (the value, the trend from `history.sh`). The fire brings you what fired — entity,
             from → to, when — even if the prompt says nothing about it, so "look into it" is enough.
           - `{"kind": "announce", "text": "…", "target": {…}, "insistent": {…}}` — a fixed
-            sentence spoken in the home with no agent involved; `target` and `insistent` exactly as
-            an alarm's description has them, and `insistent` rings until acknowledged. `target.room`
-            is a room from the setup index's `voice satellites:` line, spelled as it is there (or one
-            of its satellite ids) — NEVER a Home Assistant area slug like `fran_s_office`; the write
-            is refused naming the satellites that exist. Add it only
-            when the request carries urgency — "wake me if her sugar drops under 60" is an insistent
-            announcement in the bedroom, usually followed by a `prompt` effect so the detail follows
-            on chat. It works while the assistant is down.
+            sentence spoken in the home with no agent involved. Its whole shape is here; no other
+            skill holds any of it. `target` is one of `{"room": "…"}`, `{"satelliteId": "…"}`,
+            `{"satelliteIds": [ … ]}` or `{"all": true}`; `target.room` is a room from the setup
+            index's `voice satellites:` line, spelled as it is there (or one of its satellite ids)
+            — NEVER a Home Assistant area slug like `fran_s_office`; the write is refused naming
+            the satellites that exist. `insistent` is always present and rings until acknowledged:
+            an object with optional `gapSeconds`, `maxRepeats` and `maxDurationSeconds`, and `{}`
+            takes every default. Add this effect only when the request carries urgency — "wake me
+            if her sugar drops under 60" is an insistent announcement in the bedroom, usually
+            followed by a `prompt` effect so the detail follows on chat. It works while the
+            assistant is down.
           - `{"kind": "actions", "actions": [ … ]}` — Home Assistant actions the home performs
             itself, as written (`{"action": "cover.close_cover", "target": {"entity_id":
             "cover.…"}}`): no agent, and it keeps working while the assistant is down.
