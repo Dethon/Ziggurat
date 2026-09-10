@@ -331,6 +331,23 @@ public class PromptStalenessTests
             $"'{marker}' is part of the mechanism rule, which the Timers section states once");
     }
 
+    // The one carve-out from "never hedge" has to be at least as wide as every rule that leans on
+    // it. The vault skill and the voice rules both promise a question before a change that cannot
+    // be restored; a carve-out written narrower than that — "in bulk" — makes a single
+    // unrecoverable overwrite read as ask-first in the skill and as gatekeeping in the section
+    // that governs Refusals, which is the clash the assembly cannot see for a skill.
+    [Fact]
+    public void TheIrreversibleCarveOut_IsNotNarrowerThanTheRulesThatLeanOnIt()
+    {
+        var narrowings = new[] { "in bulk", "en masa", "wholesale" };
+
+        var found = narrowings.Where(n => CoreDirectivePrompt.Instructions.Contains(n, StringComparison.OrdinalIgnoreCase));
+
+        found.ShouldBeEmpty(
+            "the vault skill and the voice rules ask before any change that cannot be restored, so "
+            + "the core directive's carve-out cannot be limited to bulk ones");
+    }
+
     private static readonly string _promptSourceDirectory = Path.Combine(
         RepositoryRoot(), "Domain", "Prompts");
 

@@ -1,5 +1,6 @@
 using Domain.Prompts;
 using Infrastructure.Agents;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
@@ -130,10 +131,53 @@ public class SkillResourceTests
         session.ClientManager.Tools.ShouldNotBeEmpty();
     }
 
-    private static Task<ThreadSession> BuildAsync(string endpoint) =>
+    // A read that failed is not an answer. The cache stores what a fetch returned, so a server
+    // that was restarting when its skills were read must leave the entry empty and be asked again
+    // by the next session — otherwise one bad moment silences its skills for the whole ttl, while
+    // the stub that tells the model to load them is cached separately and still says so.
+    [Fact]
+    public async Task AServerWhoseSkillsCouldNotBeRead_IsNotCachedAsHavingNone()
+    {
+        var failing = true;
+        await using var server = await InMemoryMcpServer.StartAsync(services => services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<FailingTools>()
+            .Services.AddSingleton(McpServerResource.Create(
+                () => failing
+                    ? throw new InvalidOperationException("the server is restarting")
+                    : SkillServerResources.Index([new SkillText("surprise-skill", "Does surprising things.", "Boo.")]),
+                new McpServerResourceCreateOptions
+                {
+                    UriTemplate = SkillServerResources.IndexAddress,
+                    Name = "skills",
+                    MimeType = SkillServerResources.IndexMimeType
+                }))
+            .AddSingleton(McpServerResource.Create(
+                () => SkillServerResources.Body(new SkillText("surprise-skill", "Does surprising things.", "Boo.")),
+                new McpServerResourceCreateOptions
+                {
+                    UriTemplate = SkillServerResources.BodyAddress("surprise-skill"),
+                    Name = "surprise-skill",
+                    MimeType = SkillServerResources.BodyMimeType
+                })));
+        var cache = new McpPromptCache(TimeProvider.System, TimeSpan.FromMinutes(1));
+
+        await using (var broken = await BuildAsync(server.Endpoint, cache))
+        {
+            broken.Skills.ShouldBeEmpty();
+        }
+
+        failing = false;
+        await using var recovered = await BuildAsync(server.Endpoint, cache);
+
+        recovered.Skills.Select(s => s.Name).ShouldBe(["surprise-skill"]);
+    }
+
+    private static Task<ThreadSession> BuildAsync(string endpoint, McpPromptCache? cache = null) =>
         ThreadSession.CreateAsync(
             [McpServerEndpoint.Configured(endpoint)], "skills-test", "fran", "skills test",
-            [], new HashSet<string>(), null, CancellationToken.None);
+            [], new HashSet<string>(), null, CancellationToken.None, cache);
 
     private static async Task<string> ReadAsync(RunningServer server, string uri)
     {

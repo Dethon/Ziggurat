@@ -13,26 +13,16 @@ namespace Infrastructure.Agents.Mcp;
 // the index names but the server cannot serve is logged and skipped rather than failing the
 // session — a skill that is missing is a call the model will not make, which is the deployment's
 // problem and not this turn's.
+//
+// A listing or index that *failed*, though, is not an answer, and this throws it. The caller
+// swallows it per session, so a session still builds; what must not happen is a cache storing the
+// empty list a swallow here would return — a server that was restarting for one fetch would then
+// have no skills for the whole ttl, and a refresh landing in that moment would replace a good
+// list with nothing, while the stub telling the model to load them is cached separately and goes
+// on saying so. A throw is what McpPromptCache's own failure handling is written against.
 internal static partial class McpSkillReader
 {
     public static async Task<PromptSkill[]> ReadAsync(McpClient client, ILogger? logger, CancellationToken ct)
-    {
-        try
-        {
-            return await ReadIndexedAsync(client, logger, ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // A server whose listing or index is broken ships no skill this session; the
-            // session still builds, because a missing skill is the deployment's problem and
-            // not this turn's.
-            logger?.LogWarning(ex, "The skills of {Server} could not be read, so none of them are offered",
-                client.ServerInfo?.Name);
-            return [];
-        }
-    }
-
-    private static async Task<PromptSkill[]> ReadIndexedAsync(McpClient client, ILogger? logger, CancellationToken ct)
     {
         var resources = await client.ListResourcesAsync(cancellationToken: ct);
         if (!resources.Any(r => string.Equals(r.Uri, SkillServerResources.IndexAddress, StringComparison.OrdinalIgnoreCase)))

@@ -224,12 +224,30 @@ internal sealed class McpClientManager : IAsyncDisposable
     {
         var perClient = await Task.WhenAll(clients
             .Where(c => c.Client.ServerCapabilities.Resources is not null)
-            .Select(c => promptCache is null
-                ? McpSkillReader.ReadAsync(c.Client, logger, ct)
-                : promptCache.GetOrFetchAsync(
-                    c.ServerName + ":skills", ctk => McpSkillReader.ReadAsync(c.Client, logger, ctk), ct)));
+            .Select(c => ReadSkillsAsync(c.Client, c.ServerName, promptCache, logger, ct)));
 
         return [.. perClient.SelectMany(s => s)];
+    }
+
+    // The swallow sits here rather than in the reader: a server whose skills could not be read
+    // ships none this session and the session still builds, but the failure reaches the cache
+    // first, so nothing stores an empty list as though the server had answered with one.
+    private static async Task<PromptSkill[]> ReadSkillsAsync(
+        McpClient client, string serverName, McpPromptCache? promptCache, ILogger? logger, CancellationToken ct)
+    {
+        try
+        {
+            return promptCache is null
+                ? await McpSkillReader.ReadAsync(client, logger, ct)
+                : await promptCache.GetOrFetchAsync(
+                    serverName + ":skills", ctk => McpSkillReader.ReadAsync(client, logger, ctk), ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger?.LogWarning(ex, "The skills of {Server} could not be read, so none of them are offered",
+                client.ServerInfo?.Name);
+            return [];
+        }
     }
 
     // The name travels with the text. A server's prompt is words this repo did not write, so its
