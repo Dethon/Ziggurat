@@ -130,7 +130,9 @@ public static class HomeAssistantSkill
         the old one as a way of "moving" it.
 
         Snooze: the new one-shot event after a dismissed alarm keeps the dismissed alarm's summary
-        and description.
+        and description. It is a create and nothing else: the dismissed alarm's own event stays
+        exactly as it is — never listed for, never deleted, never "moved" — because that event may
+        be a recurring alarm, and deleting it by uid drops every day it was set for.
 
         ### Music playback
 
@@ -247,7 +249,7 @@ public static class HomeAssistantSkill
 
     public static readonly PromptClaim SnoozeIsANewEvent =
         new("home-assistant.snooze-is-a-new-event",
-            "A snooze after a dismissed alarm is a new one-shot event at the requested offset with the same summary and description.");
+            "A snooze after a dismissed alarm is a new one-shot event at the requested offset with the same summary and description, created beside the dismissed alarm's event, which is never listed for or deleted.");
 
     public static readonly PromptClaim AlarmIsCancelledByUid =
         new("home-assistant.alarm-is-cancelled-by-uid",

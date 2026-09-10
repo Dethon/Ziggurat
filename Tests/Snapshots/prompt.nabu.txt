@@ -21,7 +21,7 @@
   sandbox                  Skill                  99 / 130    body 956 / 1200, served by mcp-sandbox
   web-browsing             Skill                 102 / 130    body 1594 / 1600, served by mcp-websearch
   home-watches             Skill                 103 / 120    body 1671 / 2200, served by mcp-homeassistant
-  home-assistant           Skill                 150 / 150    body 3300 / 3600, served by mcp-homeassistant
+  home-assistant           Skill                 150 / 150    body 3360 / 3600, served by mcp-homeassistant
   scheduling               Skill                 107 / 130    body 1091 / 1300, served by mcp-scheduling
   countdown-timers         Skill                 128 / 130    body 579 / 900, served by mcp-timers
 

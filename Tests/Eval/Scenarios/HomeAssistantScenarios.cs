@@ -315,7 +315,11 @@ public static class HomeAssistantScenarios
 
     // A dismissed calendar alarm and a request for five more minutes: the snooze is a new
     // one-shot event at the offset, with the same errand and still insistent — a snooze that
-    // announces once and gives up is not the alarm the user silenced.
+    // announces once and gives up is not the alarm the user silenced. The count ending at two
+    // is the other half: the dismissed alarm's own event survives. A model that lists the
+    // calendar, finds the same-named event and applies the "move" rule (delete by uid, then
+    // create) nets to one — and on a recurring alarm that delete drops every day it was set
+    // for. gpt-5.6-luna did exactly that in two runs of three on 2026-09-10.
     public static Scenario FiveMoreMinutesOfTheAlarm => new()
     {
         Name = "a snooze is a new event with the same summary",

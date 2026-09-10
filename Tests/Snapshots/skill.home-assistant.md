@@ -1,4 +1,4 @@
-# home-assistant — description 150 / 150 tokens, body 3300 / 3600 tokens, served by mcp-homeassistant
+# home-assistant — description 150 / 150 tokens, body 3360 / 3600 tokens, served by mcp-homeassistant
 
 ================================================================================================
 
@@ -122,7 +122,9 @@ state the new time and never narrate the delete — and never create a second ev
 the old one as a way of "moving" it.
 
 Snooze: the new one-shot event after a dismissed alarm keeps the dismissed alarm's summary
-and description.
+and description. It is a create and nothing else: the dismissed alarm's own event stays
+exactly as it is — never listed for, never deleted, never "moved" — because that event may
+be a recurring alarm, and deleting it by uid drops every day it was set for.
 
 ### Music playback
 
