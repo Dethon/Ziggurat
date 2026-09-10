@@ -329,7 +329,12 @@ public static class WebScenarios
             WebBrowsingSkill.PartialContentIsFetchedOnce.Id,
             // The written half; the spoken half is asserted wherever a reply is Spoken, because
             // the no-unspeakables check already forbids a url there.
-            WebBrowsingSkill.UrlsAreCitedOnlyInWriting.Id
+            WebBrowsingSkill.UrlsAreCitedOnlyInWriting.Id,
+            // The raffle total is matched in its Spanish spellings only, so a reply that drifts
+            // into English fails here on "1,842" — which is the claim: jonas has no pinned
+            // language and answered this Spanish turn in English (2026-09-10) until the rule
+            // for the unpinned case was written.
+            LanguagePrompt.ReplyFollowsTheMessage.Id
         ],
         Guards = [RawContentIsNeverDumped],
         Policy = new RunPolicy(2, 3)

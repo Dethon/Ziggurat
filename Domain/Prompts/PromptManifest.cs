@@ -239,7 +239,8 @@ public static class PromptManifest
             Purpose = "The reply language, stated absolutely, against a request that is otherwise all English.",
             Priority = PromptPriority.Language,
             TokenBudget = 300,
-            Conflict = ConflictPolicy.Governs(PromptRules.Language)
+            Conflict = ConflictPolicy.Governs(PromptRules.Language),
+            Claims = LanguagePrompt.Claims
         }
     ];
 

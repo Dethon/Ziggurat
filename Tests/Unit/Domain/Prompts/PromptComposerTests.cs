@@ -66,10 +66,12 @@ public class PromptComposerTests
         var result = Compose(Context(customInstructions: "CUSTOM", withSections: true));
 
         // Closest to the conversation, so they are the most recent guidance the model reads
-        // rather than something buried above every tool prompt.
-        result.ShouldEndWith("CUSTOM");
+        // rather than something buried above every tool prompt. Only the language rule, which
+        // every section above it contradicts by being written in English, is read after them.
         result.IndexOf("CUSTOM", StringComparison.Ordinal)
             .ShouldBeGreaterThan(result.IndexOf("CLIENT", StringComparison.Ordinal));
+        result.IndexOf("## Language", StringComparison.Ordinal)
+            .ShouldBeGreaterThan(result.IndexOf("CUSTOM", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -123,14 +125,18 @@ public class PromptComposerTests
             .ShouldBeGreaterThan(result.IndexOf("CUSTOM", StringComparison.Ordinal));
     }
 
+    // No pin is not no rule: the unpinned agent is told to follow the message, in the same
+    // place and after the same sections, because silence about the language in an English
+    // context reads as English (eval, 2026-09-10).
     [Fact]
-    public void Compose_NoLanguage_OmitsTheLanguageSection()
+    public void Compose_NoLanguage_TellsTheModelToFollowTheMessage_Last()
     {
         var result = Compose(Context(name: "Nabu", customInstructions: "CUSTOM", language: "   "));
 
-        result.ShouldEndWith("CUSTOM");
         result.ShouldNotContain("## Idioma");
-        result.ShouldNotContain("## Language");
+        result.ShouldContain("language the user wrote in");
+        result.IndexOf("## Language", StringComparison.Ordinal)
+            .ShouldBeGreaterThan(result.IndexOf("CUSTOM", StringComparison.Ordinal));
     }
 
     // A section an agent selected by name sits between its custom instructions and the language

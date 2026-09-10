@@ -9,11 +9,21 @@ namespace Tests.Unit.Domain.Prompts;
 // constant contains part of itself.
 public class LanguagePromptTests
 {
+    // An agent with no pinned language used to get no language section at all, and jonas answered
+    // a Spanish message in English (eval, 2026-09-10): the whole context it reads is English, so
+    // silence about the language is a vote for English. The unpinned case now gets the relative
+    // rule, stated the same defensive way as the pins — naming the English context as not counting.
     [Fact]
-    public void Build_NoLanguage_ReturnsNull()
+    public void Build_NoLanguage_TellsTheModelToFollowTheMessage()
     {
-        LanguagePrompt.Build(null).ShouldBeNull();
-        LanguagePrompt.Build("   ").ShouldBeNull();
+        foreach (var configured in new[] { null, "   " })
+        {
+            var result = LanguagePrompt.Build(configured)!;
+
+            result.ShouldStartWith("## Language");
+            result.ShouldContain("language the user wrote in");
+            result.ShouldContain("English", customMessage: "the rule has to say the English context does not count");
+        }
     }
 
     [Theory]
