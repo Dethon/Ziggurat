@@ -1,6 +1,6 @@
 # 0039 — A skill is loaded by the model and shipped by the server whose tools it teaches
 
-Status: proposed
+Status: accepted
 Date: 2026-09-08
 
 ## Context

@@ -117,4 +117,23 @@ public class McpPromptCacheTests
 
         await WaitForCachedValueAsync(cache, fetch, ["v2"]);
     }
+
+    // The entries are one dictionary of `object`, so the type a key was stored under is the
+    // caller's promise and nothing but this check keeps it. A server's prompts and its skills are
+    // two keys by convention (`name` and `name:skills`); the day a third caller reuses one, the
+    // failure should name the key and both types rather than surface as a bare cast deep in a
+    // session build.
+    [Fact]
+    public async Task GetOrFetchAsync_AKeyFetchedAsAnotherType_FailsNamingTheKeyAndBothTypes()
+    {
+        var cache = new McpPromptCache(new FakeTimeProvider(), _ttl);
+        await cache.GetOrFetchAsync("server-a", _ => Task.FromResult(Sections("p1")), CancellationToken.None);
+
+        var thrown = await Should.ThrowAsync<InvalidOperationException>(() =>
+            cache.GetOrFetchAsync("server-a", _ => Task.FromResult(new[] { "skill" }), CancellationToken.None));
+
+        thrown.Message.ShouldContain("server-a");
+        thrown.Message.ShouldContain(nameof(PromptSection));
+        thrown.Message.ShouldContain(nameof(String));
+    }
 }

@@ -7,7 +7,11 @@ namespace Infrastructure.Agents.Mcp;
 // caller, so a server's prompts and its skills are two entries with one policy.
 public sealed class McpPromptCache(TimeProvider timeProvider, TimeSpan ttl)
 {
-    private sealed record CacheEntry(object Value, DateTimeOffset FetchedAt);
+    // The value's type travels with it. One dictionary holds every caller's shape, so the type a
+    // key was stored under is the caller's promise and this is what keeps it: two callers sharing
+    // a key by accident is a wiring mistake, and it should say so by name rather than surface as a
+    // bare cast in the middle of a session build.
+    private sealed record CacheEntry(object Value, Type Type, DateTimeOffset FetchedAt);
 
     private readonly ConcurrentDictionary<string, CacheEntry> _entries = new();
     private readonly ConcurrentDictionary<string, Task> _refreshes = new();
@@ -18,8 +22,16 @@ public sealed class McpPromptCache(TimeProvider timeProvider, TimeSpan ttl)
         if (!_entries.TryGetValue(serverKey, out var entry))
         {
             var fetched = await fetch(ct);
-            _entries[serverKey] = new CacheEntry(fetched, timeProvider.GetUtcNow());
+            _entries[serverKey] = new CacheEntry(fetched, typeof(T), timeProvider.GetUtcNow());
             return fetched;
+        }
+
+        // Before the refresh, not after: a caller asking under the wrong type would otherwise
+        // start a background fetch that overwrites the entry with its own shape, and the throw
+        // would leave the real owner's next read broken.
+        if (entry.Type != typeof(T))
+        {
+            throw KeyReused(serverKey, entry.Type, typeof(T));
         }
 
         if (timeProvider.GetUtcNow() - entry.FetchedAt >= ttl)
@@ -37,7 +49,7 @@ public sealed class McpPromptCache(TimeProvider timeProvider, TimeSpan ttl)
                     // (or its client be disposed) before the refresh completes — both fail
                     // the fetch harmlessly and the next stale hit retries.
                     var fetched = await fetch(CancellationToken.None);
-                    _entries[key] = new CacheEntry(fetched, timeProvider.GetUtcNow());
+                    _entries[key] = new CacheEntry(fetched, typeof(T), timeProvider.GetUtcNow());
                 }
                 catch
                 {
@@ -50,6 +62,13 @@ public sealed class McpPromptCache(TimeProvider timeProvider, TimeSpan ttl)
             }));
         }
 
-        return (T)entry.Value;
+        return entry.Type == typeof(T)
+            ? (T)entry.Value
+            : throw KeyReused(serverKey, entry.Type, typeof(T));
     }
+
+    // Both types named, because the fix is to give one of the two callers its own key.
+    private static InvalidOperationException KeyReused(string serverKey, Type stored, Type asked) =>
+        new($"The cache key '{serverKey}' holds {stored.Name} and was fetched as {asked.Name}. "
+            + "Two callers are sharing one key; give each its own.");
 }
