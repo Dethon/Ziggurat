@@ -3,6 +3,9 @@ paths:
   - "McpServerHomeAssistant/**"
   - "Domain/Tools/HomeAssistant/**"
   - "Domain/Prompts/HomeAssistantPrompt.cs"
+  - "Domain/Prompts/HomeWatchesSkill.cs"
+  - "Domain/Prompts/HomeAssistantSkill.cs"
+  - "Domain/Prompts/HomeAssistantSetupSummary.cs"
 ---
 
 # Home Assistant
@@ -88,6 +91,21 @@ the measures the sensor's kind has. `FakeHomeAssistantSocket` answers the comman
 `Statistics` map; the real-container test imports rows with `recorder.import_statistics` and
 reads them back. A sensor that lacks a `state_class` (LibreLink's glucose did) gets one through
 HA's `customize:`; prod has that and `purge_keep_days: 90` since 2026-09-04.
+
+## The setup index is a file, and the guide is two skills and a stub
+
+`/ha/setup-index.md` is the one-page account of the home (`HomeAssistantSetupSummary`, rendered
+by `HaFileSystem` on every read from the catalog, the watches and the satellite roster), so it is
+as old as the read rather than as old as the conversation. The served `home_assistant_guide`
+(`Domain/Prompts/HomeAssistantPrompt.cs`) is the standing stub: scope, which mechanism a request
+is (calendar alarm, timer, schedule, watch), that an area id is read rather than derived, and the
+instruction to load the `home-assistant` skill and read the index in the same turn before any
+home task. The doing rules — layout, workflow, reading results, history, alarms, music — are the
+`home-assistant` skill (`Domain/Prompts/HomeAssistantSkill.cs`), which says to re-read the index
+when a name does not resolve; the doing rules of a watch are the `home-watches` skill
+(`Domain/Prompts/HomeWatchesSkill.cs`), the one home task that loads its own skill instead. Both
+are shipped by the server through `AddSkills` and loaded by the model with `load_skill`. See
+`docs/adr/0039` and `.claude/rules/prompts.md`.
 
 ## Watches are Home Assistant automations, written as files
 

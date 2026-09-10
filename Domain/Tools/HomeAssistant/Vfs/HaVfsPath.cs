@@ -2,7 +2,7 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 public enum HaVfsKind
 {
-    Root, EntitiesRoot, ClassDir, AreasRoot, AreaDir, EntityDir, StateFile, ActionFile,
+    Root, SetupIndexFile, EntitiesRoot, ClassDir, AreasRoot, AreaDir, EntityDir, StateFile, ActionFile,
     WatchesRoot, WatchDir, WatchFile, WatchStatusFile, Unknown
 }
 
@@ -17,6 +17,10 @@ public sealed record HaVfsNode(
 public static class HaVfsPath
 {
     public const string StateFileName = "state.json";
+
+    // The one-page account of the home, at the root: built when it is read, so it is never older
+    // than the task that reads it (docs/adr/0039).
+    public const string SetupIndexFileName = "setup-index.md";
     public const string WatchesRootName = "watches";
     public const string WatchFileName = "watch.json";
     public const string WatchStatusFileName = "status.json";
@@ -33,6 +37,7 @@ public static class HaVfsPath
 
         return segments[0] switch
         {
+            SetupIndexFileName when segments.Length == 1 => new HaVfsNode(HaVfsKind.SetupIndexFile),
             "entities" => ParseEntities(segments),
             "areas" => ParseAreas(segments),
             WatchesRootName => ParseWatches(segments),

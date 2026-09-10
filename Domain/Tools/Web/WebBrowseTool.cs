@@ -9,25 +9,14 @@ public class WebBrowseTool(IWebBrowser browser)
 {
     public const string Name = "web_browse";
 
+    // What the tool does and what comes back; which parameter narrows what is on the parameters,
+    // and when to reach for each is the web-browsing skill's.
     protected const string Description =
         """
-        Navigates to a URL and returns page content as markdown.
-        Loads web pages only — http and https. It cannot read local files or directories:
-        file:// URLs are refused, and a filesystem path is not a URL.
-        Maintains a persistent browser session (cookies, login state preserved).
-        Automatically dismisses cookie popups, age gates, newsletter modals.
-
-        Use selector to extract specific elements (e.g., selector=".product-card").
-        Use maxLength/offset for pagination of long content.
-        Use useReadability=true for clean article extraction (strips ads, nav, sidebars).
-        Use scrollToLoad=true for pages with lazy-loaded content.
-        Use snapshot=true to include the accessibility tree in the same call when you intend
-        to interact with the page (saves a follow-up web_snapshot round trip).
-
-        Returns structured data (JSON-LD) when available on the page.
-
-        For interacting with pages (clicking, filling forms), use snapshot=true (or web_snapshot)
-        and then web_action.
+        Navigates to an http or https URL and returns the page as markdown, with its JSON-LD when
+        the page has any. Not a file reader: file:// and filesystem paths are refused. The browser
+        session persists across calls (cookies, logins), and cookie, age and newsletter popups are
+        dismissed on the way in.
         """;
 
     protected async Task<WebBrowseToolResult> RunAsync(
@@ -76,12 +65,17 @@ public class WebBrowseTool(IWebBrowser browser)
             return new WebBrowseToolResult(error, null);
         }
 
+        // The server's own answer comes first: a 404 renders as an empty document and would
+        // otherwise be a "success" with no title and no content, which read as an empty page —
+        // and a model that had guessed the url went on to guess the next one.
         var envelope = new JsonObject
         {
-            ["status"] = result.Status switch
+            ["status"] = result switch
             {
-                BrowseStatus.CaptchaRequired => "captcha_required",
-                BrowseStatus.Partial => "partial",
+                { HttpStatus: 404 } => "not_found",
+                { HttpStatus: >= 400 } => "http_error",
+                { Status: BrowseStatus.CaptchaRequired } => "captcha_required",
+                { Status: BrowseStatus.Partial } => "partial",
                 _ => "success"
             },
             ["sessionId"] = result.SessionId,
@@ -90,6 +84,22 @@ public class WebBrowseTool(IWebBrowser browser)
             ["contentLength"] = result.ContentLength,
             ["truncated"] = result.Truncated
         };
+
+        if (result.HttpStatus is { } httpStatus)
+        {
+            envelope["httpStatus"] = httpStatus;
+        }
+
+        if (result.HttpStatus is 404)
+        {
+            envelope["hint"] = "The server has no page at this url. Do not try another spelling of "
+                               + "it: take the link from a page you have read or from a search result.";
+        }
+        else if (result.HttpStatus is >= 400)
+        {
+            envelope["hint"] = "The server answered with an error for this url; what loaded, if "
+                               + "anything, is its error page and not the content.";
+        }
 
         if (result.ImageCount > 0)
         {

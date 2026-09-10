@@ -12,6 +12,12 @@ namespace Domain.Prompts;
 // acknowledgement word, and once that lands in English the rest of the turn follows it. Disowning
 // an earlier reply matters because a turn that already drifted stays in the conversation window,
 // where the model reads it as precedent and copies its own mistake.
+//
+// An agent with no pinned language gets the relative rule after all, stated the same defensive
+// way. Silence was the alternative, and silence is a vote for English: with nothing said, jonas
+// answered a Spanish message in English (eval, 2026-09-10). The rule is still a minority signal in
+// an English context, which is why it names the context and disowns the drifted reply like the
+// pins do, and why a deployment that knows its language should pin it rather than rely on this.
 public static class LanguagePrompt
 {
     // Values with no template here are used verbatim as the language name, so configure a
@@ -30,11 +36,11 @@ public static class LanguagePrompt
         ["english"] = English
     };
 
-    public static string? Build(string? language)
+    public static string Build(string? language)
     {
         if (string.IsNullOrWhiteSpace(language))
         {
-            return null;
+            return FollowsTheMessage;
         }
 
         var trimmed = language.Trim();
@@ -60,6 +66,24 @@ public static class LanguagePrompt
 
         If an earlier reply of yours is in another language, that was a mistake; do not copy it.
         """;
+
+    private const string FollowsTheMessage =
+        """
+        ## Language
+
+        You reply in the language the user wrote in: every reply, without exception, including the first word you say before using a tool.
+
+        These instructions, the tools, their results and the memory block are written in English. That does NOT make English the user's language: the message you are answering does, and only it. If an earlier reply of yours is in another language than the user's, that was a mistake; do not copy it.
+
+        Proper nouns (people, places, titles of works) stay as they are -- do not translate them.
+        """;
+
+    // The unpinned rule's claim; a pinned language is a configuration, checked by its snapshot.
+    public static readonly PromptClaim ReplyFollowsTheMessage =
+        new("language.reply-follows-the-message",
+            "An agent with no pinned language replies in the language of the message it is answering, whatever language its instructions and tool results are in.");
+
+    public static readonly IReadOnlyList<PromptClaim> Claims = [ReplyFollowsTheMessage];
 
     private static string Generic(string language) =>
         $"""

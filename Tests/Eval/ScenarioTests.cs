@@ -11,7 +11,7 @@ namespace Tests.Eval;
 //
 // One class per scenario family rather than one for the suite: xUnit runs a class's cases
 // sequentially and parallelizes across classes, so the family classes are what lets ten scenarios
-// be in flight at once — and each of those puts its own k of N runs out together. Every class
+// be in flight at once — and each of those puts its own first wave of runs out together. Every class
 // fronts the same scorecard ledger, every run leases a Redis database of its own, and
 // EvalConcurrency bounds how many stacks the two kinds of parallelism can stand up at once.
 
@@ -229,7 +229,10 @@ public class ScenarioWiringTests
     [Fact]
     public void NoScenarioClass_HoldsMoreThanTheShardCeiling()
     {
+        // The changed tier is exempt: its rows are whatever the diff selected, on a pass whose
+        // point is the bill rather than the wall clock.
         var longest = Classes("Category", "Eval")
+            .Except(Classes("Tier", "Changed"))
             .Select(type => (Class: type.Name, Count: Named(type).Count()))
             .Where(held => held.Count > ShardCeiling)
             .ToList();

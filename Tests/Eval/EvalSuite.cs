@@ -34,11 +34,28 @@ public static class EvalSuite
     public static TheoryData<string> Named(EvalTier tier) =>
         Named(OfTier(tier));
 
+    // The changed tier's shards hold a placeholder when the diff selected nothing for them: a
+    // theory with no rows fails discovery, and a row that skips is a tier that is present.
     public static TheoryData<string> Named(EvalTier tier, int shard, int of) =>
-        Named(OfTier(tier), shard, of);
+        Named(tier, OfTier(tier), shard, of);
 
-    private static IEnumerable<Scenario> OfTier(EvalTier tier) =>
-        All.Where(s => tier == EvalTier.Full || s.Tier == tier);
+    // The same rule with the tier's scenarios handed in, so a test can state what a diff selected
+    // instead of asking the process — which is the caller's shell, not a claim about this code.
+    public static TheoryData<string> Named(
+        EvalTier tier, IEnumerable<Scenario> ofTier, int shard, int of)
+    {
+        var scenarios = ofTier.ToList();
+        return tier == EvalTier.Changed && !scenarios.Where((_, index) => index % of == shard).Any()
+            ? new TheoryData<string> { EvalChanges.NothingSelected }
+            : Named(scenarios, shard, of);
+    }
+
+    private static IEnumerable<Scenario> OfTier(EvalTier tier) => tier switch
+    {
+        EvalTier.Full => All,
+        EvalTier.Changed => EvalChanges.Selected,
+        _ => All.Where(s => s.Tier == tier)
+    };
 
     // Part of a family, for the families too long to be one class. A class's scenarios run one
     // after another, so the longest class is the tail every other class's slots wait on — an
@@ -63,9 +80,11 @@ public static class EvalSuite
     {
         Skip.IfNot(EvalGate.IsArmed, EvalGate.Reason);
         Skip.If(EvalGate.ApiKey is null, "openRouter:apiKey is not set in user secrets");
+        Skip.If(name == EvalChanges.NothingSelected,
+            $"the changed tier runs what a diff touched: set {EvalChanges.Variable}=<ref> (or 1 for master)");
 
         var scenario = ByName(name);
-        var outcome = await RunAsync(scenario, policy(scenario));
+        var outcome = await RunAsync(scenario, EvalRuns.Applied(policy(scenario)));
 
         scorecard.Record(tier, scenario, outcome.Result);
         scorecard.Observe(outcome.Route);
@@ -101,7 +120,12 @@ public static class EvalSuite
                 observations[index] = observed;
             }
 
-            return new RunReading(observed, ScenarioChecks.Exercised(scenario, recording));
+            return new RunReading(
+                observed, ScenarioChecks.Exercised(scenario, recording),
+                ScenarioChecks.KindOf(scenario, recording, observed))
+            {
+                Spend = recording.Spend
+            };
         });
 
         var route = recordings.OrderBy(run => run.Key)
@@ -128,7 +152,8 @@ public static class EvalSuite
             failed,
             EvalRun.Decorated(scenario),
             await ProviderLookup.ResolveAsync(failedRoute, EvalGate.ApiKey ?? ""),
-            [$"passed {result.Passes} of {result.Attempts} runs, needed {policy.K}", .. failures]),
+            [$"passed {result.Passes} of {result.Attempts} runs, needed {policy.K}", .. failures],
+            ScenarioChecks.KindOf(scenario, failed, failures)),
             result.Passed);
 
         return new EvalOutcome(result, message, route);

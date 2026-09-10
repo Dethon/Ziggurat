@@ -1,4 +1,6 @@
 using Domain.DTOs.Channel;
+using Domain.Prompts;
+using Infrastructure.Utils;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
@@ -29,8 +31,10 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
         await client.DisposeAsync();
     }
 
+    // The prompt is the stub — which mechanism a request is — and the file's rules are the skill
+    // the same server serves as a resource.
     [Fact]
-    public async Task McpServer_GetSchedulingPrompt_ExplainsCronAndScheduleFile()
+    public async Task McpServer_GetSchedulingPrompt_KeepsTheMechanismAndLeavesTheFileToTheSkill()
     {
         var client = await ConnectAsync();
 
@@ -39,9 +43,14 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
             .Select(m => m.Content)
             .OfType<TextContentBlock>()
             .Select(c => c.Text));
+        var skill = await client.ReadResourceAsync(
+            SkillServerResources.BodyAddress(SchedulingSkill.Name), cancellationToken: CancellationToken.None);
+        var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
 
-        text.ShouldContain("schedule.json");
-        text.ShouldContain("0 9 * * *");
+        text.ShouldContain("not an alarm clock");
+        text.ShouldContain(SchedulingSkill.Name);
+        body.ShouldContain("schedule.json");
+        body.ShouldContain("0 9 * * *");
 
         await client.DisposeAsync();
     }

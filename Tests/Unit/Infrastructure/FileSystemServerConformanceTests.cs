@@ -262,6 +262,19 @@ public class FileSystemServerConformanceTests
         built.ShouldNotContain("sandbox_user");
     }
 
+    // The skill body moved out of the prompt and took the layout with it, so it is built from the
+    // same two values and held to the same rule.
+    [Fact]
+    public void TheSandboxSkill_NamesTheMountPointAndWorkspaceItWasGiven()
+    {
+        var built = SandboxSkill.Body("/box", "home/someone");
+
+        built.ShouldContain("/box/home/someone");
+        built.ShouldContain("/box/etc");
+        built.ShouldNotContain("/sandbox");
+        built.ShouldNotContain("sandbox_user");
+    }
+
     [Fact]
     public void TheSandboxServer_BuildsItsPromptFromTheMountItPublishes()
     {

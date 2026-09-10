@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Agents.Skills;
 using Microsoft.Extensions.AI;
 using Tests.Unit.Infrastructure.Helpers;
 
@@ -33,6 +34,10 @@ public static class ScriptedTurn
         new("domain__filesystem_exec",
             new Dictionary<string, object?> { ["path"] = path, ["command"] = command }, result);
 
+    // A skill load: the framework's own tool, named by the skill it fetches.
+    public static Step Load(string skill, string result = "<instructions>…</instructions>") =>
+        new(EvalTools.LoadSkill, new Dictionary<string, object?> { [SkillsProvider.SkillNameParameter] = skill }, result);
+
     // One tool call per iteration, in the order given, then a final assistant message. Concurrency
     // is not modelled here: what the ordering check is about is the order calls were issued in,
     // and a scripted client that issued two at once would be testing the seam, not the check.
@@ -44,7 +49,7 @@ public static class ScriptedTurn
         var tools = steps
             .DistinctBy(s => s.Tool)
             .Select(step => (AITool)AIFunctionFactory.Create(
-                (string? path = null, string? command = null, string? query = null) =>
+                (string? path = null, string? command = null, string? query = null, string? skillName = null) =>
                     steps.First(s => s.Tool == step.Tool).Result,
                 step.Tool))
             .ToList();

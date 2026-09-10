@@ -7,8 +7,11 @@ using Domain.Tools.HomeAssistant.Vfs;
 using Domain.Tools.Printing.Vfs;
 using Domain.Tools.Scheduling.Vfs;
 using Domain.Tools.Timers.Vfs;
+using Infrastructure.Utils;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using Shouldly;
+using Tests.Integration.McpServers;
 
 namespace Tests.Unit.Domain.Prompts;
 
@@ -37,7 +40,8 @@ public class PromptStalenessTests
     private static readonly string[] _nativePaths = ["/etc", "/home", "/tmp", "/usr", "/var", "/"];
 
     public static TheoryData<string> Sections =>
-        [.. AgentPromptFixture.ServedText.Keys.Concat(AgentPromptFixture.FeatureText.Keys)];
+        [.. AgentPromptFixture.ServedText.Keys.Concat(AgentPromptFixture.FeatureText.Keys)
+            .Concat(AgentPromptFixture.ServedSkills.Keys)];
 
     // Every prompt any server in this solution serves, found the way the agent finds them: by
     // asking, rather than by a list somebody maintains. A server that adds a prompt gets a budget
@@ -75,6 +79,37 @@ public class PromptStalenessTests
             .ShouldBeEmpty();
     }
 
+    // Skills walk the same two directions as prompts. Found the way the agent finds them: off each
+    // server's real registration, as the resources it would publish.
+    [Fact]
+    public void Manifest_EverySkillAServerServes_IsDeclaredAndAttributedToThatServer()
+    {
+        var served = ServedSkills();
+
+        served.ShouldNotBeEmpty("no MCP server skills were found; the scan itself is broken");
+
+        foreach (var (name, service) in served)
+        {
+            var declaration = PromptManifest.FindSkill(name);
+
+            declaration.ShouldNotBeNull(
+                $"'{name}' is served by {service} but not declared in PromptManifest.Skills, so nothing " +
+                "budgets it or says what it claims");
+            declaration.ServedBy.ShouldBe(service, $"'{name}' is declared as served by another server");
+        }
+    }
+
+    [Fact]
+    public void Manifest_EverySkillDeclaration_MatchesASkillSomeServerActuallyServes()
+    {
+        var served = ServedSkills();
+
+        PromptManifest.Skills
+            .Where(s => !served.Contains((s.Name, s.ServedBy)))
+            .Select(s => $"{s.Name} from {s.ServedBy}")
+            .ShouldBeEmpty();
+    }
+
     // A server added to an agent's endpoints brings its prompt with it, into every one of that
     // agent's turns. This is where that arrival is noticed.
     [Fact]
@@ -108,6 +143,29 @@ public class PromptStalenessTests
         phantom.ShouldBeEmpty($"{name} names tools that are not exposed to the model");
     }
 
+    // A filesystem tool named as a call the model should make is named as the model can call it:
+    // `domain__filesystem__file_read`, never the bare `file_read`. The bare form is the tool's own
+    // name inside the feature, and a model that reads the prompt literally calls it and gets
+    // nothing back. gpt-5.6-luna mapped the bare name onto the real tool and hid this for as long
+    // as it was the only model the eval ran; glm-5.3-flash calls what the prompt actually says.
+    // Prose *about* a tool ("don't `file_read` them") is not a call, so only a name followed by an
+    // argument — a path, or a parenthesised call — has to carry the prefix.
+    [Theory]
+    [MemberData(nameof(Sections))]
+    public void Section_NamesAFilesystemCall_WithThePrefixTheModelCanCall(string name)
+    {
+        var bare = Regex.Matches(
+                TextOf(name),
+                @"`(?<tool>file_read|file_write|text_search|text_create|text_edit|glob|exec|move|copy|remove|file_info)`?\s*[(`]?\s*(?<arg>/[A-Za-z0-9_./<>*-]+|path=|command=|[a-z_.]+\.sh)")
+            .Select(m => $"{m.Groups["tool"].Value} {m.Groups["arg"].Value}")
+            .Distinct()
+            .ToList();
+
+        bare.ShouldBeEmpty(
+            $"{name} tells the model to call a filesystem tool by its bare name; the model can " +
+            "only call it as domain__filesystem__<name>");
+    }
+
     [Theory]
     [MemberData(nameof(Sections))]
     public void Section_EveryPathItTeaches_StartsAtAMountThatExists(string name)
@@ -129,11 +187,11 @@ public class PromptStalenessTests
             $"{name} teaches paths under roots nothing mounts: {string.Join(", ", stale)}");
     }
 
-    // The scheduling prompt is worked examples end to end, so it names more tools than any other.
+    // The scheduling skill is worked examples end to end, so it names more tools than any other.
     [Fact]
-    public void SchedulingPrompt_NamesTheToolLeavesThatAreActuallyExposed()
+    public void SchedulingSkill_NamesTheToolLeavesThatAreActuallyExposed()
     {
-        var prompt = AgentPromptFixture.ServedText[SchedulingPrompt.Name];
+        var prompt = AgentPromptFixture.ServedSkills[SchedulingSkill.Name].Body;
 
         foreach (var tool in (string[])
                  [
@@ -141,16 +199,324 @@ public class PromptStalenessTests
                      VfsMoveTool.Name, VfsRemoveTool.Name, VfsExecTool.Name
                  ])
         {
-            prompt.ShouldContain($"`{tool}`");
+            // Named as the model can call it: the bare leaf is the tool's name inside the feature,
+            // not the name the agent exposes.
+            prompt.ShouldContain($"domain__filesystem__{tool}");
         }
 
         prompt.ShouldContain("Europe/Madrid");
     }
 
+    // The core directive tells the model never to hedge and never to add an unsolicited warning,
+    // and it is the first section every agent reads. The one thing that must survive it is the
+    // question before an irreversible change: a bulk delete of the user's own notes is not a
+    // refusal, and a model that reads "your role is to assist, not to gatekeep" as covering it
+    // deletes seven notes and reports it done. glm-5.3-flash did exactly that, three runs of
+    // three; gpt-5.6-luna resolved the contradiction by judgement and hid it.
+    [Fact]
+    public void CoreDirective_CarvesOutTheQuestionBeforeAnIrreversibleChange()
+    {
+        var text = CoreDirectivePrompt.Instructions;
+
+        text.ShouldContain("irreversible",
+            Case.Insensitive,
+            "the section that governs refusals has to say that asking before destroying " +
+            "something unrecoverable is not the hedging it forbids");
+
+        // The first wording said only "ask one short question first", and gpt-5.6-luna read that
+        // as stop-and-wait: it asked without loading the vault skill or looking at the folder, and
+        // the scenario that wants the question went from 1.00 to 0.00 for the opposite reason it
+        // had failed on glm. The question is asked from the work, not instead of it.
+        text.ShouldContain("what it would",
+            Case.Insensitive,
+            "and has to say the looking still happens — the question names what would be lost, " +
+            "so the turn does the reading that finds out");
+    }
+
+    // The scope rule's three examples all run one way — asked to switch a device on, do not also
+    // choose its settings — and a model that reads them as a pattern rather than a principle
+    // completes the other direction happily: told "pon el aire del salón a veintidós grados",
+    // glm-5.3-flash ran `turn_on.sh && set_temperature.sh` and moved a device the turn never
+    // mentioned. The converse has to be an example too, not an inference from these.
+    [Fact]
+    public void HomeScope_SaysThatSettingAValue_DoesNotAlsoSwitchTheDeviceOn()
+    {
+        var scope = HomeAssistantPrompt.SystemPrompt;
+
+        scope.ShouldContain("turn_on.sh",
+            Case.Insensitive,
+            "the scope rule has to name the action a value-setting request must not add");
+        scope.ShouldContain("already",
+            Case.Insensitive,
+            "and say that a device's current state is not the turn's business to change");
+    }
+
+    // The announce effect described `target` and `insistent` as "exactly as an alarm's
+    // description has them" — a pointer to text the skill never carries, since a watch turn loads
+    // this skill alone. gpt-5.6-luna went looking for it (2026-09-10): the home-assistant skill,
+    // then countdown-timers for its "target rules", then both again — five loads on a turn that
+    // needs one. The shape has to be in the skill, and the skill has to say nothing else holds it.
+    [Fact]
+    public void WatchesSkill_CarriesTheAnnounceTargetAndInsistentShapes_Itself()
+    {
+        var body = AgentPromptFixture.ServedSkills[HomeWatchesSkill.Name].Body;
+
+        body.ShouldNotContain("as an alarm's description has them",
+            Case.Insensitive,
+            "a pointer at text that is not in front of the model sends it loading skills to find it");
+        body.ShouldContain("satelliteIds",
+            Case.Insensitive,
+            "the target's four shapes are spelled here");
+        body.ShouldContain("maxRepeats",
+            Case.Insensitive,
+            "and so are insistent's fields, so the shape is complete without another skill");
+    }
+
+    // A watch's entity_id is the bare id, and every other rule about entities says to use the
+    // directory name verbatim — so "the id from the setup index" resolved, for glm-5.3-flash, to
+    // the directory the index lists: sensor.temperatura_salon_(temperatura-salon). The watch was
+    // otherwise perfect. The two spellings have to be told apart where the field is described.
+    [Fact]
+    public void WatchesSkill_SaysTheEntityIdIsTheBareId_NotTheDirectoryName()
+    {
+        var body = AgentPromptFixture.ServedSkills[HomeWatchesSkill.Name].Body;
+
+        body.ShouldContain("without the",
+            Case.Insensitive,
+            "the watch file's entity_id is the bare id, so the skill has to say that the " +
+            "_(friendly-name) suffix a directory carries is not part of it");
+    }
+
+    // The bare-name guard reads assembled text, so an interpolated `{{VfsExecTool.Name}}` slipped
+    // past it: the source spells no tool name at all, and the text it produces spells "exec". The
+    // whole countdown-timers skill taught five uncallable tools that way. Interpolate through
+    // FileSystemToolFeature.Callable instead, which builds the prefix the feature registers under.
+    [Fact]
+    public void NoPromptSource_InterpolatesABareToolName()
+    {
+        var offenders = Directory
+            .EnumerateFiles(_promptSourceDirectory, "*.cs")
+            .Where(file => Regex.IsMatch(File.ReadAllText(file), @"\{\{Vfs\w+Tool\.Name\}\}"))
+            .Select(Path.GetFileName)
+            .ToList();
+
+        offenders.ShouldBeEmpty(
+            "these prompts interpolate a tool's bare leaf name; wrap it in " +
+            "FileSystemToolFeature.Callable so the model is told the name it can call");
+    }
+
+    // The alarm-vs-timer-vs-schedule-vs-watch rule was stated four times across three sections —
+    // HA's "Which mechanism" and its watch boundary, Scheduled Tasks, both steps of Timers — about
+    // 500 tokens of every request saying one thing. It is stated once, under Timers, the last of
+    // the three and the closest to the conversation; the other two keep their own claim in one
+    // line and point there. These markers are the rule's own words, and each may occur in one
+    // section only.
+    [Theory]
+    [InlineData("HAPPEN")]
+    [InlineData("4-hour")]
+    [InlineData("dismissed alarm")]
+    [InlineData("however the time is phrased")]
+    public void TheMechanismRule_IsStatedOnce_UnderTimers(string marker)
+    {
+        var sections = new Dictionary<string, string>
+        {
+            [HomeAssistantPrompt.Name] = HomeAssistantPrompt.SystemPrompt,
+            [SchedulingPrompt.Name] = SchedulingPrompt.Prompt,
+            [TimerPrompt.Name] = TimerPrompt.Prompt
+        };
+
+        var holders = sections.Where(s => s.Value.Contains(marker)).Select(s => s.Key).ToList();
+
+        holders.ShouldBe([TimerPrompt.Name],
+            $"'{marker}' is part of the mechanism rule, which the Timers section states once");
+    }
+
+    // The one carve-out from "never hedge" has to be at least as wide as every rule that leans on
+    // it. The vault skill and the voice rules both promise a question before a change that cannot
+    // be restored; a carve-out written narrower than that — "in bulk" — makes a single
+    // unrecoverable overwrite read as ask-first in the skill and as gatekeeping in the section
+    // that governs Refusals, which is the clash the assembly cannot see for a skill.
+    [Fact]
+    public void TheIrreversibleCarveOut_IsNotNarrowerThanTheRulesThatLeanOnIt()
+    {
+        var narrowings = new[] { "in bulk", "en masa", "wholesale" };
+
+        var found = narrowings.Where(n => CoreDirectivePrompt.Instructions.Contains(n, StringComparison.OrdinalIgnoreCase));
+
+        found.ShouldBeEmpty(
+            "the vault skill and the voice rules ask before any change that cannot be restored, so "
+            + "the core directive's carve-out cannot be limited to bulk ones");
+    }
+
+    private static readonly string _promptSourceDirectory = Path.Combine(
+        RepositoryRoot(), "Domain", "Prompts");
+
+    private static string RepositoryRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "Domain", "Prompts")))
+        {
+            dir = dir.Parent;
+        }
+
+        return dir?.FullName ?? throw new InvalidOperationException("repository root not found");
+    }
+
+    // "unless they explicitly ask what you remember" is a wide door: asked "¿y por qué nueve
+    // minutos?" — why the timer is what it is, not what is stored — glm-5.3-flash read itself as
+    // invited and answered "lo dejé guardado como tu preferencia". A why-question about a
+    // remembered preference is answered with the preference, never with the remembering.
+    [Fact]
+    public void MemoryPrompt_SaysAWhyQuestion_IsNotAnInvitationToNameTheStore()
+    {
+        var text = MemoryPrompts.FeatureSystemPrompt;
+
+        text.ShouldContain("why",
+            Case.Insensitive,
+            "the memory rule has to say which side of its exception a why-question falls on");
+    }
+
+    // The vault prompt ends by inviting a free search of the notes, and nothing said when the
+    // notes are the wrong place to look. Asked "busca cuánto tiene que reposar el gazpacho de
+    // Almudena" — a recipe from a neighbourhood website, named nowhere in the vault —
+    // glm-5.3-flash searched /vault first, every run. A question about the world is a question
+    // for the web.
+    [Fact]
+    public void VaultPrompt_SaysWhichSearchesAreNotTheVaults()
+    {
+        VaultPrompt.Prompt.ShouldContain("the web",
+            Case.Insensitive,
+            "the section that invites searching the vault has to say what the vault is not for, " +
+            "or a question about the world is answered by grepping the user's notes");
+    }
+
+    // "Information is clearly outdated: delete stale memories" left glm-5.3-flash to decide what
+    // clearly means, and told "ya he vuelto de Lisboa" over a stored "está preparando un viaje a
+    // Lisboa" it congratulated the user and kept the fact, most runs; the run that did delete it
+    // said so out loud. The rule has to name the turn shape — a plan reported as done — and say
+    // that a forget nobody asked for is a silent one.
+    [Fact]
+    public void MemoryPrompt_SaysAPlanReportedDone_IsForgottenInSilence()
+    {
+        var text = MemoryPrompts.FeatureSystemPrompt;
+
+        text.ShouldContain("reports as done",
+            Case.Insensitive,
+            "the outdated-facts bullet has to name the turn that expires a fact, or the model " +
+            "carries a finished trip as a plan");
+        text.ShouldContain("silent",
+            Case.Insensitive,
+            "a forget the user did not ask for is announced unless the rule says it is not");
+    }
+
+    // The vault rule speaks of questions about the world, and "abre la crónica en la web del
+    // Cuaderno de barrio" is not read as one: the site's name is a notebook's, the mount is a
+    // notebook, and glm-5.3-flash searched /vault for it before the web, one run in three. A
+    // request that says where its answer lives has named the only place to look.
+    [Fact]
+    public void VaultPrompt_SaysANamedSource_IsNotLookedForInTheVault()
+    {
+        VaultPrompt.Prompt.ShouldContain("names its source",
+            Case.Insensitive,
+            "a request that names a site, a url or 'en la web' has to go there without a vault " +
+            "search first, whatever the site is called");
+    }
+
+    // "Before you create, edit, rename, move or delete anything in it, load the skill" reads as
+    // before the write call, and told "borra todas las notas de la carpeta Proyectos"
+    // glm-5.3-flash listed the folder and asked its question with the skill never loaded, one run
+    // in three — nothing had been deleted yet, so by its reading the load was not due. The rule
+    // that says to ask lives in the skill, so the load is owed to the request, before the look
+    // and before the question.
+    [Fact]
+    public void VaultPrompt_SaysAWriteRequest_LoadsTheSkillBeforeTheLookAndTheQuestion()
+    {
+        VaultPrompt.Prompt.ShouldContain("before any question",
+            Case.Insensitive,
+            "the trigger has to be the request, or a model that asks first never loads the skill " +
+            "whose rule told it to ask");
+    }
+
+    // The mounts section says an unmounted path is not hunted for across a mount, and
+    // glm-5.3-flash still globbed the sandbox from its root and through its home for
+    // /media/Movies, one run in three: the sandbox is a Linux box with a /media of its own, so
+    // by its reading the path was a sandbox path and the hunt was a search. The sandbox's own
+    // stub is read after the mounts section, so it is the one that has to say one look is the
+    // whole search.
+    [Fact]
+    public void SandboxPrompt_SaysOneLookAtAnUnmountedPath_IsTheWholeSearch()
+    {
+        SandboxPrompt.Build("/sandbox", "/home/sandbox_user").ShouldContain("one look",
+            Case.Insensitive,
+            "the stub of the one mount with a real root has to bound the search for a path " +
+            "under no mount, or the mounts rule is read as applying to every other mount");
+    }
+
+    // The prompt's forget bullets name the turn shape now; the tool's own description, read at
+    // the moment the call is chosen, still said "clearly outdated" and nothing more, and the
+    // turn "ya he vuelto de Lisboa" was answered as small talk one run in three or four.
+    [Fact]
+    public void ForgetTool_SaysAPlanReportedDone_IsForgottenThatTurn()
+    {
+        global::Domain.Tools.Memory.MemoryForgetTool.Description.ShouldContain("reported done",
+            Case.Insensitive,
+            "the tool description is the last text read before the call is chosen, so it has " +
+            "to name the turn that expires a plan");
+    }
+
+    // "Stop the alarm" is the timers skill's, and "quita la alarma de sacar la basura" was read
+    // as the same request by glm-5.3-flash on every provider but Z.AI: countdown-timers loaded,
+    // dismiss.sh run against a silent house, the calendar event still there. An alarm named by
+    // what it is for is the calendar's, and the description that claims "stop the alarm" has to
+    // say so beside it.
+    [Fact]
+    public void TimersSkillDescription_SaysANamedAlarm_IsTheHomes()
+    {
+        CountdownTimersSkill.Description.ShouldContain("the home's",
+            Case.Sensitive,
+            "the description that owns 'stop the alarm' has to hand a named calendar alarm " +
+            "to the home skill, or removing one is read as silencing it");
+    }
+
+    // Told "ya no trabajo en Acme, ahora estoy en Globex", glm-5.3-flash forgot the old employer
+    // and then created a file under a mount that does not exist to keep the new one, two runs in
+    // three on some providers. "Storage is handled automatically" did not say that nothing is
+    // written anywhere; the rule has to name the note and the file it must not create.
+    [Fact]
+    public void MemoryPrompt_SaysNothingIsWrittenToKeepAFact()
+    {
+        MemoryPrompts.FeatureSystemPrompt.ShouldContain("no note, no file",
+            Case.Sensitive,
+            "a corrected fact tempts a model to store the correction; the rule has to name " +
+            "the file it must not write");
+    }
+
     private static string TextOf(string name) =>
         AgentPromptFixture.ServedText.TryGetValue(name, out var served)
             ? served
-            : AgentPromptFixture.FeatureText[name];
+            : AgentPromptFixture.FeatureText.TryGetValue(name, out var feature)
+                ? feature
+                : AgentPromptFixture.ServedSkills[name].Body;
+
+    // Every skill body resource each server's real registration publishes, named with the service
+    // the deployment dials that server as. The compose service name is the row's id under the
+    // `mcp-` prefix every tool server shares.
+    private static IReadOnlySet<(string Name, string Service)> ServedSkills() =>
+        McpServerRegistrations.All
+            .SelectMany(row =>
+            {
+                var services = new ServiceCollection();
+                row.Configure(services);
+                using var provider = services.BuildServiceProvider();
+                return provider.GetServices<McpServerResource>()
+                    .Select(resource => resource.ProtocolResourceTemplate.UriTemplate)
+                    .Where(uri => uri != SkillServerResources.IndexAddress
+                                  && uri.StartsWith("skills://", StringComparison.Ordinal))
+                    .Select(uri => (Name: uri["skills://".Length..].Split('/')[0], Service: "mcp-" + row.Id))
+                    .ToList();
+            })
+            .ToHashSet();
 
     // Loaded from the test output, where every server this solution builds has been copied. Asking
     // the assemblies rather than reading the source keeps the answer exactly what the SDK will

@@ -33,7 +33,7 @@ public static class FailureDump
         var path = Write(directory, run);
 
         return $"""
-                Scenario '{run.Scenario.Name}' failed:
+                Scenario '{run.Scenario.Name}' failed ({run.Kind?.Spelled() ?? "rule ignored"}):
                   {string.Join("\n  ", run.Failures)}
 
                 Full dump:
@@ -51,13 +51,16 @@ public static class FailureDump
 
     private static string Render(FailedRun run)
     {
-        var (scenario, recording, decoratedTurn, route, failures) = run;
+        var (scenario, recording, decoratedTurn, route, failures, kind) = run;
         var dump = new StringBuilder()
             .AppendLine($"# {scenario.Name}")
             .AppendLine()
             .AppendLine($"Agent: {scenario.AgentId}")
             .AppendLine($"Pinned instant: {scenario.Instant:O}")
             .AppendLine($"Claims: {string.Join(", ", scenario.Claims)}")
+            // Beside the recording it is read from: whether the skill was ever loaded decides
+            // which half of it the reader goes on to edit.
+            .AppendLine($"Failure kind: {kind?.Spelled() ?? "rule ignored"}")
             .AppendLine()
             // The configured model is in the system prompt section below; what a routing surprise
             // is diagnosed from is the one that actually answered.
@@ -158,4 +161,5 @@ public sealed record FailedRun(
     Recording Recording,
     string DecoratedTurn,
     ServedRoute? Route,
-    IReadOnlyList<string> Failures);
+    IReadOnlyList<string> Failures,
+    FailureKind? Kind = null);

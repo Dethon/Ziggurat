@@ -4,8 +4,8 @@ namespace Tests.Eval.Harness;
 
 // k of N, with no retry-until-green anywhere in it. The runs of one scenario go out together up
 // to the policy's width, because they are independent of each other and only their number is
-// declared; what stays serial is the decision to launch, so a threshold that has become
-// unreachable still stops the runs nobody has started yet.
+// declared; what stays serial is the decision to launch, so a threshold already met, or one that
+// has become unreachable, stops the runs nobody has started yet.
 public static class ScenarioRunner
 {
     public static Task<ScenarioResult> RunAsync(
@@ -32,6 +32,10 @@ public static class ScenarioRunner
             while (launched < policy.N
                    && running.Count < width
                    && !faulted
+                   // Met, counting the runs in flight as green the way the unreachable check
+                   // below does: the runs past the threshold are a denominator, not evidence,
+                   // and are only taken when the policy asks for every one of them.
+                   && (policy.Exhaustive || passes + running.Count < policy.K)
                    // Unreachable, not merely behind: even if everything still owed came back
                    // green, it could not reach k. The runs already in flight are counted as
                    // green here, because they are owed and nothing can be learned by guessing.
@@ -73,7 +77,9 @@ public static class ScenarioRunner
             passes >= policy.K, passes, completed,
             [.. taken.SelectMany(reading => reading.Failures)])
         {
-            Conditionals = Tallied(taken)
+            Conditionals = Tallied(taken),
+            Kinds = [.. taken.Select(reading => reading.Kind).OfType<FailureKind>()],
+            Spend = Spend.Sum(taken.Select(reading => reading.Spend))
         };
 
         // The run's number travels with it so its reading lands in its own slot; the exception it
@@ -99,16 +105,23 @@ public static class ScenarioRunner
     private static IReadOnlyList<ClaimOutcome> Tallied(IReadOnlyList<RunReading> readings) =>
         readings
             .SelectMany(reading => reading.Exercised
-                .Select(claim => (Claim: claim, Passed: reading.Failures.Count == 0)))
+                .Select(claim => (Claim: claim, Passed: reading.Failures.Count == 0, reading.Kind)))
             .GroupBy(o => o.Claim)
             .Select(group => new ClaimOutcome(
-                group.Key, group.Count(o => o.Passed), group.Count()))
+                group.Key, group.Count(o => o.Passed), group.Count(),
+                group.Count(o => o.Kind == FailureKind.SkillNotLoaded),
+                group.Count(o => o.Kind == FailureKind.RuleIgnored)))
             .ToList();
 }
 
-// What one run reported: everything that failed, and the conditional claims whose material the
-// run actually produced.
-public sealed record RunReading(IReadOnlyList<string> Failures, IReadOnlyList<string> Exercised);
+// What one run reported: everything that failed, the conditional claims whose material the run
+// actually produced, and which kind of red it was — null on a green run.
+public sealed record RunReading(
+    IReadOnlyList<string> Failures, IReadOnlyList<string> Exercised, FailureKind? Kind = null)
+{
+    // What the run paid for, agent turns and judge verdicts together.
+    public Spend Spend { get; init; } = Spend.Nothing;
+}
 
 public sealed record ScenarioResult(
     bool Passed, int Passes, int Attempts, IReadOnlyList<string> Failures)
@@ -119,4 +132,15 @@ public sealed record ScenarioResult(
 
     // Conditional claims, each over the runs that exercised it rather than over Attempts.
     public IReadOnlyList<ClaimOutcome> Conditionals { get; init; } = [];
+
+    // One kind per failed run, in run order. Counted onto the scorecard so a red says which half
+    // of a skill to edit without opening a dump.
+    public IReadOnlyList<FailureKind> Kinds { get; init; } = [];
+
+    public int SkillNotLoaded => Kinds.Count(kind => kind == FailureKind.SkillNotLoaded);
+
+    // Over every run taken, so a scenario's row prices the scenario and not one of its runs.
+    public Spend Spend { get; init; } = Spend.Nothing;
+
+    public int RuleIgnored => Kinds.Count(kind => kind == FailureKind.RuleIgnored);
 }

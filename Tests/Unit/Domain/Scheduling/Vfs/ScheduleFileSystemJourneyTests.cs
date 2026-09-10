@@ -49,6 +49,34 @@ public class ScheduleFileSystemJourneyTests
             CreatedAt = DateTime.UtcNow
         };
 
+    // The mount says the file is `/<agentId>/<id>/schedule.json`, and a model writes the body to
+    // `/<agentId>/<id>` anyway: there is exactly one file a schedule directory can hold, so the
+    // shorter spelling is not ambiguous — it is the same create, and refusing it only cost a
+    // second call that said the same thing with the suffix on.
+    [Fact]
+    public async Task Create_AtTheScheduleDirectory_IsTheScheduleFile()
+    {
+        var store = new FakeScheduleStore();
+        var fs = Build(store);
+
+        var create = await fs.CreateAsync("/jonas/morning-news", ValidSpec, false, true, CancellationToken.None);
+
+        var ok = create.ShouldBeOfType<FsResult<FsCreateResult>.Ok>().Value;
+        ok.FilePath.ShouldEndWith("/jonas/morning-news/schedule.json");
+        (await store.GetAsync("morning-news", CancellationToken.None)).ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Create_AtAnyOtherFileName_IsStillRefused_WithTheShape()
+    {
+        var fs = Build();
+
+        var create = await fs.CreateAsync("/jonas/morning-news/notes.txt", ValidSpec, false, true, CancellationToken.None);
+
+        var err = create.ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error;
+        err.Message.ShouldContain("/<agentId>/<scheduleId>/schedule.json");
+    }
+
     [Fact]
     public async Task Lifecycle_CreateGlobReadDelete_RoundTripsSchedule()
     {
@@ -369,6 +397,22 @@ public class ScheduleFileSystemJourneyTests
             .ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
         truncated.TotalMatches.ShouldBe(1);
         truncated.Truncated.ShouldBeTrue();
+    }
+
+    // The dotted spelling of an action file, accepted by the HA mount and now by the timers one.
+    // Three exec-capable mounts disagreeing on it cost a call to find out which one this was.
+    [Fact]
+    public async Task Exec_RunNowWithADotSlashPrefix_TriggersTheSameFire()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule(id: "n", prompt: "p", nextRunAt: DateTime.UtcNow.AddDays(1)));
+        var fs = Build(store);
+
+        var result = (await fs.ExecAsync("/jonas/n", "./run_now.sh", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(0);
+        (store.Items["n"].NextRunAt <= DateTime.UtcNow).ShouldBeTrue();
     }
 
     [Fact]

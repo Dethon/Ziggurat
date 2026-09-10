@@ -8,13 +8,29 @@ namespace Tests.Eval.Harness;
 public class ScenarioRunnerTests
 {
     [Fact]
-    public async Task ARunThatMeetsItsThreshold_Passes_AndEveryDeclaredRunIsTaken()
+    public async Task AScenarioThatReachesItsThreshold_TakesNoMoreRuns()
     {
-        // Every run of a passing scenario is taken, deliberately: stopping at the k-th pass would
-        // report a rate over however many runs it happened to take, and the scorecard compares
-        // rates across model versions.
+        // Two of three is met by two greens, and the third run was only ever a number on the
+        // scorecard: a pass that is green anyway does not pay for it (ADR-0040).
+        var launched = 0;
+
+        var result = await ScenarioRunner.RunAsync(new RunPolicy(2, 3), _ =>
+        {
+            Interlocked.Increment(ref launched);
+            return Task.FromResult(new RunReading([], []));
+        });
+
+        result.Passed.ShouldBeTrue();
+        result.Passes.ShouldBe(2);
+        result.Attempts.ShouldBe(2);
+        launched.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task AFailedRunInTheFirstWave_IsReplaced_UntilTheThresholdIsMet()
+    {
         var result = await ScenarioRunner.RunAsync(new RunPolicy(2, 3), index =>
-            Task.FromResult(new RunReading(index == 1 ? ["a failure"] : [], [])));
+            Task.FromResult(new RunReading(index == 0 ? ["a failure"] : [], [])));
 
         result.Passed.ShouldBeTrue();
         result.Passes.ShouldBe(2);
@@ -22,15 +38,36 @@ public class ScenarioRunnerTests
     }
 
     [Fact]
-    public async Task TheRunsOfOneScenario_AreInFlightTogether()
+    public async Task TheFirstWave_IsTheThreshold_AndNoWider()
     {
-        // Three runs used to be three model turns end to end, and a family's scenarios waited
-        // their turn behind them. Nothing about k of N asks for that: the runs are independent,
-        // and the only reason to take them one at a time is to stop early (below).
+        // The wave is k runs, not N: a third run in flight beside two greens is money spent on a
+        // result the policy has already reached.
+        var arrived = 0;
+        var both = new TaskCompletionSource();
+
+        var result = await ScenarioRunner.RunAsync(new RunPolicy(2, 3), async _ =>
+        {
+            if (Interlocked.Increment(ref arrived) == 2)
+            {
+                both.SetResult();
+            }
+
+            await both.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            return new RunReading([], []);
+        });
+
+        arrived.ShouldBe(2);
+        result.Attempts.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task AnExhaustivePolicy_TakesEveryDeclaredRun_Together()
+    {
+        // What a model-bump diff asks for: every rate over N, however green the first wave was.
         var arrived = 0;
         var all = new TaskCompletionSource();
 
-        var result = await ScenarioRunner.RunAsync(new RunPolicy(2, 3), async _ =>
+        var result = await ScenarioRunner.RunAsync(new RunPolicy(2, 3) { Exhaustive = true }, async _ =>
         {
             if (Interlocked.Increment(ref arrived) == 3)
             {
@@ -54,7 +91,8 @@ public class ScenarioRunnerTests
         var peak = 0;
         var wave = new TaskCompletionSource();
 
-        var result = await ScenarioRunner.RunAsync(new RunPolicy(2, 4) { Width = 2 }, async _ =>
+        var result = await ScenarioRunner.RunAsync(
+            new RunPolicy(2, 4) { Width = 2, Exhaustive = true }, async _ =>
         {
             lock (gate)
             {
@@ -157,7 +195,7 @@ public class ScenarioRunnerTests
         var settled = 0;
 
         var thrown = await Should.ThrowAsync<InvalidOperationException>(
-            ScenarioRunner.RunAsync(new RunPolicy(2, 3), async index =>
+            ScenarioRunner.RunAsync(new RunPolicy(2, 3) { Exhaustive = true }, async index =>
             {
                 await Task.Yield();
                 Interlocked.Increment(ref settled);

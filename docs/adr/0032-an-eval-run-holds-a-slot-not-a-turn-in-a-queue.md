@@ -1,6 +1,6 @@
 # 0032 — An eval run holds a slot, not a turn in a queue
 
-Status: accepted
+Status: accepted, amended by ADR-0040 (a scenario stops at its threshold; the uniform denominator below is an exhaustive pass's alone)
 Date: 2026-08-20
 
 ## Context

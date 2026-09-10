@@ -45,6 +45,38 @@ public class HaArgParserTests
             .Message.ShouldContain(messageContains);
     }
 
+    // "Run `x.sh --help` for the field list" costs a call the model may not spend: glm-5.3-flash
+    // guessed --name, was told to run --help, and guessed --search_query instead, then three more
+    // flags after that. The field list is in hand when the refusal is written, so it goes in the
+    // refusal.
+    [Fact]
+    public void Parse_UnknownArgument_NamesTheFieldsThatExist()
+    {
+        var message = Should.Throw<ArgumentException>(
+            () => HaArgParser.Parse(["--nope", "x"], Svc(), "turn_on")).Message;
+
+        message.ShouldContain("--nope");
+        message.ShouldContain("brightness_pct");
+        message.ShouldContain("name");
+    }
+
+    // "Expected a --flag but found '&&'" names the symbol and not the rule, so a model that
+    // chained two actions read the failure as being about its *arguments* — glm-5.3-flash had the
+    // right episode uri, chained it after media_stop.sh, was told this, and went back to guessing
+    // the uri. One action per call is the thing it needed to hear.
+    [Theory]
+    [InlineData("&&")]
+    [InlineData("||")]
+    [InlineData(";")]
+    [InlineData("|")]
+    public void Parse_AShellOperator_SaysOneActionPerCall(string op)
+    {
+        var message = Should.Throw<ArgumentException>(
+            () => HaArgParser.Parse([op, "other.sh"], Svc(), "turn_on")).Message;
+
+        message.ShouldContain("one action per call", Case.Insensitive);
+    }
+
     [Fact]
     public void Parse_SingleSelectValidOption_Passes()
     {

@@ -8,6 +8,11 @@ namespace Tests.Eval.Scenarios;
 // the model's default behaviour and protects nothing.
 public static class TimerScenarios
 {
+    // Every scenario of the family requires the load before /timers is touched: the skill's
+    // description is the trigger claim, and a countdown written without the skill is the red
+    // that claim exists to show.
+    public static CallExpectation LoadsTheSkill => CallExpectation.LoadsSkill(CountdownTimersSkill.Name);
+
     public static IReadOnlyList<Scenario> All =>
         [PastaTimer, ExtendARunningTimer, WhatTimersExist, CancelTheTimer, TheErrandGoesInTheText];
 
@@ -29,6 +34,7 @@ public static class TimerScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
@@ -37,7 +43,7 @@ public static class TimerScenarios
                 [
                     // The id is the model's to choose, so what is pinned is the shape the contract
                     // states: one directory per timer, holding timer.json.
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content",
                         Arg.Number("durationSeconds", 480),
                         // Targeted without being told, from the room the request came from —
@@ -51,8 +57,15 @@ public static class TimerScenarios
         // A model that looks before it writes is not doing anything unnecessary; one that writes
         // to /schedules or the calendar is, and neither is permitted here.
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
-        Claims = [TimerPrompt.CreatedAtItsOwnPath.Id],
+        CallCeiling = 5,
+        Claims = [CountdownTimersSkill.LoadsForATimerRequest.Id],
+        Guards =
+        [
+            new Guard(CountdownTimersSkill.CreatedAtItsOwnPath.Id,
+                "Demonstrated on 2026-09-08 with the whole countdown-timers body deleted and the description intact: "
+                + "the pasta timer was still written at its own path with its duration, three of three. The mount's "
+                + "description carries the file's shape, so the scenario guards.")
+        ],
         Policy = new RunPolicy(2, 3),
         Tier = EvalTier.Smoke
     };
@@ -81,6 +94,7 @@ public static class TimerScenarios
         ],
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "status",
@@ -99,7 +113,7 @@ public static class TimerScenarios
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     // Five minutes were left and two were asked for: the remainder is read rather
                     // than guessed, so anything but 420 means the status read did not inform the
                     // write.
@@ -116,7 +130,7 @@ public static class TimerScenarios
             new OrderingConstraint("status", "delete"),
             new OrderingConstraint("delete", "recreate")
         ],
-        CallCeiling = 6,
+        CallCeiling = 7,
         // The delete and recreate is internal: what the user asked for was two more minutes, and
         // the machinery behind that answer is not something they asked to hear about.
         Reply = new ReplyExpectation
@@ -124,11 +138,20 @@ public static class TimerScenarios
             Spoken = true,
             NeverSays = ["borr", "elimin", "recre", "de nuevo", "otro temporizador"]
         },
-        Claims =
+        Claims = [CountdownTimersSkill.LoadsForATimerRequest.Id],
+        Guards =
         [
-            TimerPrompt.ChangedByDeleteAndRecreate.Id,
-            TimerPrompt.StatusIsReadForTimeLeft.Id,
-            TimerPrompt.RecreationIsNeverNarrated.Id
+            new Guard(CountdownTimersSkill.ChangedByDeleteAndRecreate.Id,
+                "Demonstrated on 2026-09-08 with the whole countdown-timers body deleted and the description intact: "
+                + "the running timer was still read, removed and recreated with the remainder, three of three. "
+                + "Timers being immutable is in the mount's description, so the scenario guards."),
+            new Guard(CountdownTimersSkill.StatusIsReadForTimeLeft.Id,
+                "Demonstrated on 2026-09-08 with the whole countdown-timers body deleted and the description intact: "
+                + "the remainder still came from status.json, three of three; there is nowhere else to get it."),
+            new Guard(CountdownTimersSkill.RecreationIsNeverNarrated.Id,
+                "Demonstrated on 2026-09-08 with the whole countdown-timers body deleted and the description intact: "
+                + "the reply still stated the new time and never the delete, three of three. Not narrating "
+                + "plumbing is the voice section's rule too, so the scenario guards.")
         ],
         Policy = new RunPolicy(2, 3)
     };
@@ -158,6 +181,7 @@ public static class TimerScenarios
         ],
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "list",
@@ -166,8 +190,9 @@ public static class TimerScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        // The glob, one status per timer, and one spare.
-        CallCeiling = 5,
+        // The skill, the glob, one status per timer, and two spare: a model that globs the
+        // timer files as well as the status files to name each one is thorough, not wrong.
+        CallCeiling = 7,
         Reply = new ReplyExpectation
         {
             Spoken = true,
@@ -180,7 +205,14 @@ public static class TimerScenarios
                 new SpokenValue("its remaining time", "cincuenta", "50")
             ]
         },
-        Claims = [TimerPrompt.ListedByGlob.Id, VoicePrompt.SeveralSentencesOnlyWhenAsked.Id],
+        Claims = [CountdownTimersSkill.LoadsForATimerRequest.Id, VoicePrompt.SeveralSentencesOnlyWhenAsked.Id],
+        Guards =
+        [
+            new Guard(CountdownTimersSkill.ListedByGlob.Id,
+                "Demonstrated on 2026-09-08 with the whole countdown-timers body deleted and the description intact: "
+                + "two of three, the rate the scenario holds with the body in place; the deletion changed "
+                + "nothing measurable, so the scenario guards.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -205,6 +237,7 @@ public static class TimerScenarios
         ],
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "cancel",
@@ -213,9 +246,15 @@ public static class TimerScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 3,
+        CallCeiling = 4,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 1 },
-        Claims = [TimerPrompt.CancelledByRemovingIt.Id],
+        Claims = [CountdownTimersSkill.LoadsForATimerRequest.Id],
+        Guards =
+        [
+            new Guard(CountdownTimersSkill.CancelledByRemovingIt.Id,
+                "Demonstrated on 2026-09-08 with the whole countdown-timers body deleted and the description intact: "
+                + "the timer was still removed, three of three; a directory per timer teaches the cancel.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -238,13 +277,14 @@ public static class TimerScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content",
                         Arg.Number("durationSeconds", 1200),
                         Arg.Matches("text", "(?i)horno"))
@@ -252,8 +292,15 @@ public static class TimerScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
-        Claims = [TimerPrompt.TextIsSpokenNeverAnInstruction.Id],
+        CallCeiling = 5,
+        Claims = [CountdownTimersSkill.LoadsForATimerRequest.Id],
+        Guards =
+        [
+            new Guard(CountdownTimersSkill.TextIsSpokenNeverAnInstruction.Id,
+                "Demonstrated on 2026-09-08 with the whole countdown-timers body deleted and the description intact: "
+                + "the errand still landed in text as a message, three of three. The stub's mechanism rule "
+                + "already says a command is a schedule, so the scenario guards.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 }

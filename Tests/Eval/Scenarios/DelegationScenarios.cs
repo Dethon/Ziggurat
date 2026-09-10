@@ -41,6 +41,7 @@ public static class DelegationScenarios
         ],
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "status",
@@ -49,7 +50,7 @@ public static class DelegationScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Tier = EvalTier.Smoke,
         Guards =
         [
@@ -190,11 +191,14 @@ public static class DelegationScenarios
         Permitted =
         [
             new CallPermission(EvalTools.WebSearch),
-            new CallPermission(EvalTools.WebBrowse)
+            new CallPermission(EvalTools.WebBrowse),
+            // A research request reads as a web task to the parent, which may load the skill
+            // before deciding to hand the work away; the load is a call the ceiling carries.
+            CallPermission.Load(WebBrowsingSkill.Name)
         ],
         // Either honest shape fits with one call of slack; delegating and then re-running the
         // whole research (the redo reflex the trust-the-result rule targets) does not.
-        CallCeiling = 4,
+        CallCeiling = 5,
         Guards =
         [
             new Guard(SubAgentPrompt.TheResultIsNotRedone.Id,
@@ -211,7 +215,11 @@ public static class DelegationScenarios
         ],
         Reply = new ReplyExpectation
         {
-            MaxSentences = 5,
+            // Ten, not five: the canned chronicle carries seven facts, the user asked for something
+            // to forward, and the sentence counter counts each bullet — so a faithful list is an
+            // intro, seven facts and a sign-off. The judged synthesis check below fails padding;
+            // this cap only bounds a wall of text.
+            MaxSentences = 10,
             Mentions = [new SpokenValue("the raffle total", "1.842", "1842", "1 842")],
             // Which worker did what is nobody's business, in any of the words the model reaches
             // for when it starts explaining its help.

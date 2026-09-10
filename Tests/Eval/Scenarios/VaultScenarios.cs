@@ -10,6 +10,11 @@ namespace Tests.Eval.Scenarios;
 // recording. The assertion is the note's own text once the turn is over.
 public static class VaultScenarios
 {
+    // Every scenario of the family requires the load, before the vault is written to: the skill's
+    // description is the trigger claim, and a note written without the skill is the red that claim
+    // exists to show.
+    public static CallExpectation LoadsTheSkill => CallExpectation.LoadsSkill(ObsidianVaultSkill.Name);
+
     public static IReadOnlyList<Scenario> All =>
     [
         AnEditKeepsTheSyntaxAroundIt, ARenameFollowsItsLinks, ANewRecipeLandsInTheKitchen,
@@ -30,6 +35,7 @@ public static class VaultScenarios
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
+        Required = [LoadsTheSkill],
         Permitted =
         [
             new CallPermission(EvalTools.Glob, "/vault*"),
@@ -63,18 +69,19 @@ public static class VaultScenarios
             new FileExpectation { Path = $"{EvalVault.Mount}/.obsidian/app.json", Unchanged = true },
             new FileExpectation { Path = $"{EvalVault.Mount}/.obsidian/workspace.json", Unchanged = true }
         ],
-        CallCeiling = 6,
+        CallCeiling = 7,
+        Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id],
         Guards =
         [
-            new Guard(VaultPrompt.WikilinksAreNeverFixed.Id,
+            new Guard(ObsidianVaultSkill.WikilinksAreNeverFixed.Id,
                 "Demonstrated on 2026-08-18 with the wikilink rule deleted: the edit landed and every "
                 + "link came out untouched. This model does not tidy syntax it was not asked about, so "
                 + "the scenario guards against a future one rather than evidencing the prose."),
-            new Guard(VaultPrompt.EmbedsBlockIdsAndCalloutsSurvive.Id,
+            new Guard(ObsidianVaultSkill.EmbedsBlockIdsAndCalloutsSurvive.Id,
                 "Demonstrated on 2026-08-18 with the embed, block-id, tag and callout bullets deleted: "
                 + "an append left all four alone. Appending is a surgical edit by nature, so witnessing "
                 + "this needs a turn that rewrites the middle of a note."),
-            new Guard(VaultPrompt.ConfigurationIsOffLimits.Id,
+            new Guard(ObsidianVaultSkill.ConfigurationIsOffLimits.Id,
                 "Asserted as a side condition of the edit scenario — the configuration files must come "
                 + "out unchanged — but no scenario's subject is a turn that tempts the agent into them.")
         ],
@@ -82,7 +89,7 @@ public static class VaultScenarios
         // whole-file rewrite that preserved every listed piece of syntax.
         Judged =
         [
-            new JudgedCheck(VaultPrompt.EditsAreSurgical.Id,
+            new JudgedCheck(ObsidianVaultSkill.EditsAreSurgical.Id,
                 "The user asked for one line to be appended to the note ('que usé albahaca del "
                 + "mercado'). Compare the changed file's before and after. Pass only if the edit "
                 + "is surgical: the appended text is new, and every pre-existing line survives "
@@ -106,6 +113,7 @@ public static class VaultScenarios
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
+        Required = [LoadsTheSkill],
         Permitted =
         [
             new CallPermission(EvalTools.Glob, "/vault*"),
@@ -134,8 +142,8 @@ public static class VaultScenarios
                 Absent = ["[[Salsas|", "[[Salsas]]"]
             }
         ],
-        CallCeiling = 8,
-        Claims = [VaultPrompt.RenameUpdatesIncomingLinks.Id],
+        CallCeiling = 9,
+        Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id, ObsidianVaultSkill.RenameUpdatesIncomingLinks.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -153,6 +161,7 @@ public static class VaultScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
@@ -161,14 +170,15 @@ public static class VaultScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/vault*")],
-        CallCeiling = 6,
+        CallCeiling = 7,
+        Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id],
         Guards =
         [
-            new Guard(VaultPrompt.NewNoteFitsTheTree.Id,
+            new Guard(ObsidianVaultSkill.NewNoteFitsTheTree.Id,
                 "Demonstrated on 2026-08-18 with the fit-into-the-tree bullet deleted: the recipe still "
                 + "landed in Cocina beside the other two. A folder whose contents match the note is a "
                 + "stronger instruction than the sentence telling the model to look for one."),
-            new Guard(VaultPrompt.MarkdownIsTheNoteFormat.Id,
+            new Guard(ObsidianVaultSkill.MarkdownIsTheNoteFormat.Id,
                 "The create scenario pins a .md path, but as part of where the note lands rather than as "
                 + "a choice between accepted formats; a turn that tempts another extension is not written.")
         ],
@@ -187,6 +197,7 @@ public static class VaultScenarios
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
+        Required = [LoadsTheSkill],
         Permitted =
         [
             .. CallPermission.Looking("/vault*"),
@@ -208,8 +219,15 @@ public static class VaultScenarios
                 ]
             }
         ],
-        CallCeiling = 5,
-        Claims = [VaultPrompt.FrontmatterKeepsItsOtherKeys.Id],
+        CallCeiling = 6,
+        Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id],
+        Guards =
+        [
+            new Guard(ObsidianVaultSkill.FrontmatterKeepsItsOtherKeys.Id,
+                "Demonstrated on 2026-09-08 with the whole skill body deleted and the description intact: "
+                + "the tag was added and every other key survived, three of three. Leaving keys alone is "
+                + "this model's default, so the scenario guards the file rather than evidencing the prose.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -226,6 +244,7 @@ public static class VaultScenarios
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
+        Required = [LoadsTheSkill],
         Permitted =
         [
             .. CallPermission.Looking("/vault*"),
@@ -240,8 +259,15 @@ public static class VaultScenarios
                 Contains = ["<% tp.date.now() %>", "migraci"]
             }
         ],
-        CallCeiling = 5,
-        Claims = [VaultPrompt.TemplatesAreNotExpanded.Id],
+        CallCeiling = 6,
+        Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id],
+        Guards =
+        [
+            new Guard(ObsidianVaultSkill.TemplatesAreNotExpanded.Id,
+                "Demonstrated on 2026-09-08 with the whole skill body deleted and the description intact: "
+                + "the append landed and the placeholder survived, three of three. The model does not "
+                + "expand syntax it was not asked about, so the file assertion guards.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -258,6 +284,7 @@ public static class VaultScenarios
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
+        Required = [LoadsTheSkill],
         Permitted =
         [
             .. CallPermission.Looking("/vault*"),
@@ -279,8 +306,8 @@ public static class VaultScenarios
                 Absent = ["#Variantes"]
             }
         ],
-        CallCeiling = 8,
-        Claims = [VaultPrompt.HeadingsAreReferenceable.Id, BasePrompt.NoPlaceholderToolCalls.Id],
+        CallCeiling = 9,
+        Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id, ObsidianVaultSkill.HeadingsAreReferenceable.Id, CoreDirectivePrompt.NoPlaceholderToolCalls.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -296,6 +323,7 @@ public static class VaultScenarios
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
+        Required = [LoadsTheSkill],
         Permitted =
         [
             .. CallPermission.Looking("/vault*"),
@@ -310,8 +338,15 @@ public static class VaultScenarios
                 Contains = ["# 2026-08-17", "Compré albahaca", "huerto"]
             }
         ],
-        CallCeiling = 5,
-        Claims = [VaultPrompt.DailyNotesAreAppendedTo.Id],
+        CallCeiling = 6,
+        Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id],
+        Guards =
+        [
+            new Guard(ObsidianVaultSkill.DailyNotesAreAppendedTo.Id,
+                "Demonstrated on 2026-09-08 with the whole skill body deleted and the description intact: "
+                + "the daily note was appended to and nothing above the append moved, three of three. "
+                + "Appending is the model's default for a dated log, so the file assertion guards.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -328,6 +363,7 @@ public static class VaultScenarios
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
+        Required = [LoadsTheSkill],
         Permitted = [.. CallPermission.Looking("/vault*")],
         Files =
         [
@@ -339,19 +375,22 @@ public static class VaultScenarios
             new FileExpectation { Path = $"{EvalVault.Mount}/Proyectos/Huerto del balcón.md", Unchanged = true },
             new FileExpectation { Path = $"{EvalVault.Mount}/Proyectos/Copia de seguridad.md", Unchanged = true }
         ],
-        CallCeiling = 3,
+        CallCeiling = 4,
         Reply = new ReplyExpectation
         {
             // Whole words: the mentions matcher wants word boundaries, so "confirm" never
             // matches "Confirmas" and a bare "¿" never matches one glued to its word — the
-            // first armed run asked a perfect question and failed on exactly that.
+            // first armed run asked a perfect question and failed on exactly that. Every
+            // person of the verbs a question is asked with, then: "¿te confirmo el borrado?"
+            // was a perfect question too, and it failed on the conjugation.
             Mentions =
             [
                 new SpokenValue("the question before deleting",
-                    "seguro", "confirmas", "confirmar", "confirmes", "quieres", "borro", "elimino")
+                    "seguro", "confirmas", "confirmar", "confirmes", "confirmo", "quieres",
+                    "borro", "borrar", "elimino", "eliminar", "procedo", "adelante")
             ]
         },
-        Claims = [VaultPrompt.IrreversibleChangeIsAskedAbout.Id],
+        Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id, ObsidianVaultSkill.IrreversibleChangeIsAskedAbout.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -371,6 +410,7 @@ public static class VaultScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
@@ -390,8 +430,8 @@ public static class VaultScenarios
         ],
         // Looking around, the refused attempt and the accepted write is five calls on an honest
         // run; a second guessed extension pushes past six, which is the failure this bounds.
-        CallCeiling = 6,
-        Claims = [VaultPrompt.WritesAreTextOnly.Id],
+        CallCeiling = 7,
+        Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id, ObsidianVaultSkill.WritesAreTextOnly.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -411,6 +451,7 @@ public static class VaultScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
@@ -423,8 +464,8 @@ public static class VaultScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/vault*")],
-        CallCeiling = 5,
-        Claims = [VaultPrompt.NoNewTopLevelFolder.Id],
+        CallCeiling = 6,
+        Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id, ObsidianVaultSkill.NoNewTopLevelFolder.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -441,6 +482,7 @@ public static class VaultScenarios
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
+        Required = [LoadsTheSkill],
         Permitted =
         [
             .. CallPermission.Looking("/vault*"),
@@ -460,8 +502,17 @@ public static class VaultScenarios
             // Never beside the note: a copy at this path is the parallel layout the rule names.
             new FileExpectation { Path = $"{EvalVault.Mount}/Cocina/tarta.jpg", Deleted = true }
         ],
-        CallCeiling = 5,
-        Claims = [VaultPrompt.AttachmentsStayInTheirFolder.Id],
+        // One more than the load took: a glob for the note and one for the image are looking, and
+        // the ceiling was reporting that as a fault.
+        CallCeiling = 7,
+        Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id],
+        Guards =
+        [
+            new Guard(ObsidianVaultSkill.AttachmentsStayInTheirFolder.Id,
+                "Demonstrated on 2026-09-08 with the whole skill body deleted and the description intact: "
+                + "the image was referenced from its folder and never moved, three of three. A folder "
+                + "already holding the attachments teaches the choice, so the scenario guards.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 }

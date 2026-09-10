@@ -4,14 +4,21 @@ namespace Domain.Prompts;
 // rather than only the text is the point: a snapshot can print what each one cost, a test can ask
 // where the voice rules landed relative to the formatting they override, and a warning can name
 // the section that grew instead of reporting that the prompt did.
-public sealed record PromptAssembly(IReadOnlyList<PromptSection> Sections, IReadOnlyList<string> Warnings)
+public sealed record PromptAssembly(
+    IReadOnlyList<PromptSection> Sections,
+    IReadOnlyList<PromptSkill> Skills,
+    IReadOnlyList<string> Warnings)
 {
     public string Text => string.Join("\n\n", Sections.Select(s => s.Text));
 
-    public int TokenCount => Sections.Sum(s => s.TokenCount);
+    // The standing cost: what every turn pays. A skill's body is not in it — that is paid once, by
+    // the conversation that loads it — but its description is, because the advertisement is.
+    public int TokenCount => Sections.Sum(s => s.TokenCount) + Skills.Sum(s => s.DescriptionTokens);
 
-    public static PromptAssembly Build(string agentId, IEnumerable<PromptSection> sections)
+    public static PromptAssembly Build(
+        string agentId, IEnumerable<PromptSection> sections, IEnumerable<PromptSkill>? skills = null)
     {
+        var offered = (skills ?? []).ToList();
         var ordered = sections
             .Where(s => !string.IsNullOrWhiteSpace(s.Text))
             .Where(s => s.Declaration.Audience.Includes(agentId))
@@ -22,8 +29,26 @@ public sealed record PromptAssembly(IReadOnlyList<PromptSection> Sections, IRead
 
         return new PromptAssembly(
             ordered,
-            [.. Undeclared(ordered).Concat(OverBudget(ordered)).Concat(Contradictions(ordered))]);
+            offered,
+            [
+                .. Undeclared(ordered), .. OverBudget(ordered), .. Contradictions(ordered),
+                .. UndeclaredSkills(offered), .. OverBudgetSkills(offered)
+            ]);
     }
+
+    private static IEnumerable<string> UndeclaredSkills(IReadOnlyList<PromptSkill> skills) =>
+        skills
+            .Where(s => !s.Declaration.Declared)
+            .Select(s =>
+                $"skill '{s.Name}' is not declared in the manifest; it is advertised at " +
+                $"{s.DescriptionTokens} tokens with a body of {s.BodyTokens} and no budget");
+
+    private static IEnumerable<string> OverBudgetSkills(IReadOnlyList<PromptSkill> skills) =>
+        skills
+            .Where(s => s.IsOverBudget)
+            .Select(s =>
+                $"skill '{s.Name}' is {s.DescriptionTokens} tokens of description and {s.BodyTokens} of " +
+                $"body, over its budgets of {s.Declaration.DescriptionBudget} and {s.Declaration.BodyBudget}");
 
     private static IEnumerable<string> Undeclared(IReadOnlyList<PromptSection> sections) =>
         sections

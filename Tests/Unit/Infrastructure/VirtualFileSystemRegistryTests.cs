@@ -54,6 +54,22 @@ public class VirtualFileSystemRegistryTests
         _registry.GetMounts().Select(m => m.Name).ShouldBe(["laptop"]);
     }
 
+    // "ha/setup-index.md" names a mount and forgot the slash. It cannot mean anything else, and
+    // refusing it with "paths start at a mount point" bought one more call that said the same
+    // thing with the slash on.
+    [Fact]
+    public void Resolve_APathMissingItsLeadingSlash_ResolvesAtTheMountItNames()
+    {
+        var backend = CreateMockBackend("ha");
+        _registry.Mount(new FileSystemMount("ha", "/ha", "The home"), backend);
+
+        var resolution = Resolve("ha/setup-index.md");
+
+        resolution.Backend.ShouldBe(backend);
+        resolution.RelativePath.ShouldBe("setup-index.md");
+        resolution.MountPoint.ShouldBe("/ha");
+    }
+
     [Fact]
     public void Resolve_MatchingMount_ReturnsBackendAndRelativePath()
     {

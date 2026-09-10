@@ -92,4 +92,38 @@ public class PromptManifestTests
         PromptAssembly.Build("any-agent", [section])
             .Warnings.ShouldContain(w => w.Contains("surprise_prompt") && w.Contains("not declared"));
     }
+
+    [Fact]
+    public void BindSkill_ASkillNoServerDeclared_IsOfferedAndReported()
+    {
+        var skill = PromptManifest.BindSkill("surprise-skill", "Does surprising things.", "# Surprise\n\nBoo.");
+
+        skill.Declaration.Declared.ShouldBeFalse();
+        skill.Declaration.BodyBudget.ShouldBe(PromptManifest.UndeclaredSkillBodyBudget);
+        PromptAssembly.Build("any-agent", [], [skill])
+            .Warnings.ShouldContain(w => w.Contains("surprise-skill") && w.Contains("not declared"));
+    }
+
+    [Fact]
+    public void Build_ASkillOverItsBodyBudget_IsReported()
+    {
+        var declaration = PromptManifest.FindSkill(HomeWatchesSkill.Name).ShouldNotBeNull();
+        var skill = declaration.Bind(HomeWatchesSkill.Description, new string('x', (declaration.BodyBudget + 1) * 4));
+
+        PromptAssembly.Build("any-agent", [], [skill])
+            .Warnings.ShouldContain(w => w.Contains(HomeWatchesSkill.Name) && w.Contains("over its budgets"));
+    }
+
+    [Fact]
+    public void Skills_EachOne_IsServedByAServerAndDescribedInOneLine()
+    {
+        foreach (var skill in PromptManifest.Skills)
+        {
+            skill.ServedBy.ShouldStartWith("mcp-", Case.Sensitive, $"'{skill.Name}' names no compose service");
+            skill.Description.ShouldNotContain("\n", Case.Sensitive, $"'{skill.Name}'");
+            skill.DescriptionBudget.ShouldBeGreaterThan(0);
+            skill.BodyBudget.ShouldBeGreaterThan(0);
+            PromptManifest.Find(skill.Name).ShouldBeNull($"'{skill.Name}' is both a section and a skill");
+        }
+    }
 }

@@ -42,8 +42,10 @@ public class VfsTextCreateTool(IVirtualFileSystemRegistry registry)
 
         // Each backend names the file it wrote in whatever spelling it uses, and two mounts disagree
         // about the same file. Echoing the caller's own path means a follow-up edit targets the file
-        // this create just made.
-        var created = result.Map(create => create with { FilePath = filePath });
+        // this create just made — unless the backend wrote under that path: a body aimed at a
+        // schedule's or a timer's directory lands in the one file it holds, and echoing the
+        // directory back had a model "moving it into place" afterwards.
+        var created = result.Map(create => create with { FilePath = Written(filePath, resolution, create.FilePath) });
 
         if (TextArg.WasCoercedArg(arguments, "content") && created.TryGetValue(out var value, out _))
         {
@@ -51,5 +53,15 @@ public class VfsTextCreateTool(IVirtualFileSystemRegistry registry)
         }
 
         return created.ToNode();
+    }
+
+    private static string Written(string callerPath, FileSystemResolution resolution, string backendPath)
+    {
+        var callerRelative = resolution.RelativePath.Trim('/');
+        var backendRelative = backendPath.Trim('/');
+        return backendRelative.Length > callerRelative.Length
+               && backendRelative.StartsWith(callerRelative + "/", StringComparison.Ordinal)
+            ? $"{resolution.MountPoint.TrimEnd('/')}/{backendRelative}"
+            : callerPath;
     }
 }

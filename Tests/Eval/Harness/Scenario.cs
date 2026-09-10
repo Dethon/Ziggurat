@@ -1,5 +1,7 @@
 using System.Text.RegularExpressions;
 using Domain.DTOs;
+using Domain.DTOs.Voice;
+using Infrastructure.Agents.Skills;
 
 namespace Tests.Eval.Harness;
 
@@ -131,6 +133,10 @@ public sealed record EvalTurn
 
     public string? DismissedAlert { get; init; }
 
+    // What is ringing on the satellites when the turn arrives: the alert a dismiss will silence
+    // and report. Null is silence, which is what every scenario not about a ringing alert means.
+    public DismissedAlert? Ringing { get; init; }
+
     // The channel the turn came in on, for a scenario whose subject is where an answer is sent
     // back. Null means the chat, or voice when a satellite is named — the two every other scenario
     // already implies.
@@ -143,24 +149,34 @@ public sealed record RunPolicy(int K, int N)
 {
     public static RunPolicy Once { get; } = new(1, 1);
 
-    // How many of the N runs may be in flight at once. All of them, because the runs are
-    // independent — one full stack and one turn each — and taking them in turn made a family's
-    // wall clock the sum of every run in it.
-    //
-    // What that costs is the early stop: a scenario whose threshold has already become
-    // unreachable has its remaining runs already going, so a hard failure now spends the whole N
-    // where a serial pass would have spent K-1 fewer. That is at most one extra run per scenario
-    // that fails, on a pass that is red anyway, and it buys a uniform denominator — every
-    // scorecard rate is over N — for the diff a model bump is read through. A scenario that
-    // would rather have the saving asks for it by narrowing this.
-    public int Width { get; init; } = N;
+    // Take every declared run, however green the first wave was. Off by default (ADR-0040): a
+    // scenario stops once k runs have passed, because the runs past the threshold were only ever
+    // a denominator, and a pass that is green anyway does not pay for them. On, every rate on the
+    // scorecard is over N — what a model-bump diff wants — and the runs go out together.
+    public bool Exhaustive { get; init; }
+
+    private readonly int? _width;
+
+    // How many of the N runs may be in flight at once. The threshold's worth by default, so that
+    // the first wave is exactly the runs a green scenario needs and a failed run is replaced by
+    // the next; every declared run when exhaustive, because then they are all owed and taking
+    // them in turn made a family's wall clock the sum of every run in it (ADR-0032). A scenario
+    // that would rather spend less on a red narrows this itself.
+    public int Width
+    {
+        get => _width ?? (Exhaustive ? N : K);
+        init => _width = value;
+    }
 }
 
 public enum EvalTier
 {
     // One canary per family at a single run: what a prompt author runs while editing one section.
     Smoke,
-    Full
+    Full,
+    // The scenarios a diff touched, at their declared thresholds. No scenario declares this one:
+    // it is a tier that runs, never a tier a scenario is a canary for.
+    Changed
 }
 
 // A call the scenario requires, matched by tool and by whatever its arguments have to say. The
@@ -172,6 +188,16 @@ public sealed record CallExpectation
     public required string Tool { get; init; }
 
     public IReadOnlyList<ArgumentMatcher> Arguments { get; init; } = [];
+
+    // The one load a family requires, under the label its ordering constraints use: the skill's
+    // description is the trigger claim, and a task done without the skill is the red that claim
+    // exists to show.
+    public static CallExpectation LoadsSkill(string name) => new()
+    {
+        Label = "skill",
+        Tool = EvalTools.LoadSkill,
+        Arguments = [Arg.Is(SkillsProvider.SkillNameParameter, name)]
+    };
 }
 
 // A call the scenario tolerates, by tool, by path and — where the tool runs something — by the
@@ -183,6 +209,12 @@ public sealed record CallPermission(string Tool, string Path = "*", string Comma
     // which action ran has to tolerate the manual without tolerating the actions in that directory,
     // which a path-only permission cannot express.
     public static CallPermission Manual(string tool, string path) => new(tool, path, "*--help*");
+
+    // One named skill's load, for a scenario whose subject is elsewhere and that merely passes
+    // through that skill's territory — a mechanism choice, a spoken failure — so the load its stub
+    // asks for is not an unnecessary call there. Never a default, and never any skill: loading
+    // another one stays visible as the wrong choice.
+    public static CallPermission Load(string skill) => new(EvalTools.LoadSkill, skill);
 
     // Looking around, and reading the manuals of what is there. Every scenario whose subject is
     // which action ran needs exactly this pair, and writing it out per scenario is how one of them

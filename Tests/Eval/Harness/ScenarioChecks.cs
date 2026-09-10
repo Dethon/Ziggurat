@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Domain.DTOs;
 using Domain.Tools.Web;
 using Infrastructure.Agents.ChatClients;
@@ -17,6 +18,7 @@ public static class ScenarioChecks
         .. MissingRequired(scenario, recording),
         .. Unnecessary(scenario, recording),
         .. OutOfOrder(scenario, recording),
+        .. TimedOut(recording),
         .. OverCeiling(scenario, recording),
         .. Answered(scenario, recording),
         .. Moved(scenario, recording),
@@ -25,6 +27,22 @@ public static class ScenarioChecks
         .. ConditionallyDelegated(scenario, recording),
         .. Forgot(scenario, recording)
     ];
+
+    // Which red this is. A turn the provider refused or that ran out of time is neither prose's
+    // fault: the model never answered, so its silence says nothing about a description. Otherwise
+    // a required load that did not happen — or happened for another skill, which is the same
+    // absence — is the description's failure; anything else, the load included and a behaviour
+    // missing, is the body's. Null for a run with nothing to explain.
+    public static FailureKind? KindOf(Scenario scenario, Recording recording, IReadOnlyList<string> failures) =>
+        failures.Count == 0
+            ? null
+            : recording.ProviderError is not null || recording.TimedOut
+                ? FailureKind.RunFailed
+                : scenario.Required
+                    .Where(expectation => new ToolPatternMatcher([expectation.Tool]).IsMatch(EvalTools.LoadSkill))
+                    .Any(expectation => Match(expectation, recording) is null)
+                    ? FailureKind.SkillNotLoaded
+                    : FailureKind.RuleIgnored;
 
     // The conditional half of Delegated: a run that handed nothing to the profile owes nothing
     // here, but every delegation it did receive must carry the condition's context — a split
@@ -151,8 +169,10 @@ public static class ScenarioChecks
 
     private static IEnumerable<string> Says(FileExpectation expectation, string content, string? before)
     {
+        // Case is the model's: "Migración de la base de datos" at the head of a line carries the
+        // 'migraci' a scenario asks for, and an ordinal check failed the append for capitalising.
         var missing = expectation.Contains
-            .Where(text => !content.Contains(text, StringComparison.Ordinal))
+            .Where(text => !content.Contains(text, StringComparison.OrdinalIgnoreCase))
             .Select(text => $"{expectation.Path} no longer carries '{text}'");
 
         var lingering = expectation.Absent
@@ -222,8 +242,25 @@ public static class ScenarioChecks
                 Command: new ToolPatternMatcher([p.Command])))
             .ToList();
 
+        // A refused attempt at a required call, corrected into it: the tool named the fix and the
+        // next call at the same tool, in the same directory, is the one the scenario asks for. The
+        // fix it named may be the body or the file's own name (a timer at /timers/te/te.json is
+        // sent to timer.json beside it), so the place is what has to agree, not the whole path.
+        // That round-trip is the refusal working, not a call the model should not have made; the
+        // ceiling still counts it.
+        var corrected = scenario.Required
+            .Select(e => Considered(recording).FirstOrDefault(call => Matches(e, call)))
+            .Where(landed => landed is not null)
+            .SelectMany(landed => Considered(recording)
+                .Where(call => call.Sequence < landed!.Sequence
+                               && string.Equals(call.ToolName, landed.ToolName, StringComparison.Ordinal)
+                               && string.Equals(Directory(Path(call)), Directory(Path(landed)), StringComparison.Ordinal)
+                               && Refused(call)))
+            .ToHashSet();
+
         return Considered(recording)
             .Where(call => !string.Equals(call.ToolName, EvalTools.Subagent, StringComparison.Ordinal))
+            .Where(call => !corrected.Contains(call))
             .Where(call => !scenario.Required.Any(e => Matches(e, call))
                            && !permitted.Any(p => p.Tool.IsMatch(call.ToolName)
                                                   && p.Path.IsMatch(Path(call))
@@ -231,6 +268,18 @@ public static class ScenarioChecks
             .Select(call =>
                 $"unnecessary call: {call.ToolName} {call.Arguments} is neither required nor permitted");
     }
+
+    // The virtual directory a path sits in: paths are mount-prefixed and '/'-separated, so the
+    // last segment is the file (or the timer directory a create names in place of its file).
+    private static string Directory(string path) =>
+        path.LastIndexOf('/') is var slash && slash > 0 ? path[..slash] : "";
+
+    // Nothing was written: the tool threw, or answered with its error envelope — the VFS shape
+    // and the MCP one both carry the refusal in the result text.
+    private static bool Refused(ToolInvocation call) =>
+        call.Outcome != ToolInvocationOutcome.Completed
+        || (call.Result is { } result
+            && (Regex.IsMatch(result, @"""ok""\s*:\s*false") || Regex.IsMatch(result, @"""isError""\s*:\s*true")));
 
     // Pairwise and partial: the constraint is that one call precedes another, not that the
     // recording has a total order. Anything between them is somebody else's business.
@@ -262,6 +311,18 @@ public static class ScenarioChecks
         Scenario scenario, string label, Recording recording) =>
         recording.Calls.Where(call => Matches(Expectation(scenario, label), call));
 
+    // First in the list because it explains every other failure under it: a turn cut off partway
+    // has whatever calls it had made and no reply, and reporting those as the model's choices
+    // would be reporting a sentence nobody finished.
+    private static IEnumerable<string> TimedOut(Recording recording) =>
+        recording.TimedOut
+            ? [$"the run timed out before the turn finished, after {recording.Calls.Count} calls; "
+               + "what follows is a partial turn"]
+            : recording.ProviderError is { } error
+                ? [$"the provider failed the run after {recording.Calls.Count} calls: {error}; "
+                   + "what follows is a partial turn"]
+                : [];
+
     private static IEnumerable<string> OverCeiling(Scenario scenario, Recording recording) =>
         Considered(recording).Count() > scenario.CallCeiling
             ? [$"call ceiling exceeded: {Considered(recording).Count()} calls against a ceiling of " +
@@ -288,7 +349,11 @@ public static class ScenarioChecks
     // dumped; what it no longer does is redden whichever scenario it landed on.
     private static bool IsWarmUpProbe(ToolInvocation call)
     {
-        if (!call.ToolName.EndsWith(WebSearchTool.Name, StringComparison.Ordinal))
+        // The browse shape of the same tic: a placeholder page fetched for one character.
+        var budget = call.ToolName.EndsWith(WebSearchTool.Name, StringComparison.Ordinal) ? "maxResults"
+            : call.ToolName.EndsWith(WebBrowseTool.Name, StringComparison.Ordinal) ? "maxLength"
+            : null;
+        if (budget is null)
         {
             return false;
         }
@@ -296,8 +361,8 @@ public static class ScenarioChecks
         try
         {
             using var arguments = JsonDocument.Parse(call.Arguments);
-            return arguments.RootElement.TryGetProperty("maxResults", out var maxResults)
-                   && maxResults.TryGetInt32(out var wanted)
+            return arguments.RootElement.TryGetProperty(budget, out var asked)
+                   && asked.TryGetInt32(out var wanted)
                    && wanted <= 1;
         }
         catch (JsonException)

@@ -1,5 +1,7 @@
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Domain.Prompts;
+using Infrastructure.Utils;
 using Mcp.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -82,6 +84,33 @@ public class McpServerContractTests
         tools.ShouldContain(ChannelProtocol.SendReplyTool, $"{id} must advertise send_reply");
         tools.ShouldContain(ChannelProtocol.RequestApprovalTool, $"{id} must advertise request_approval");
     }
+
+    // One row per skill the manifest declares: the server it names publishes the index and the
+    // skill's body. A server that stops shipping a skill its tools are taught by fails here, before
+    // an agent finds the advertisement gone.
+    [Theory]
+    [MemberData(nameof(Skills))]
+    public void EveryServer_ServesEverySkillTheManifestSaysItDoes(string skillName)
+    {
+        var declaration = PromptManifest.FindSkill(skillName)!;
+        using var server = new ConfiguredServer(McpServerRegistrations.Get(declaration.ServedBy["mcp-".Length..]));
+
+        var addresses = server.Provider.GetServices<McpServerResource>()
+            .Select(resource => resource.ProtocolResourceTemplate.UriTemplate)
+            .ToList();
+
+        addresses.ShouldContain(SkillServerResources.IndexAddress,
+            $"{declaration.ServedBy} must publish the skills index");
+        addresses.ShouldContain(SkillServerResources.BodyAddress(skillName),
+            $"{declaration.ServedBy} must publish the body of '{skillName}'");
+    }
+
+    public static TheoryData<string> Skills =>
+        PromptManifest.Skills.Select(s => s.Name).Aggregate(new TheoryData<string>(), (data, name) =>
+        {
+            data.Add(name);
+            return data;
+        });
 
     public static TheoryData<string> DualRoleServers => McpServerRegistrations.Ids(
         McpServerRegistrations.All.Where(row => row.Role == McpServerRole.DualRole));

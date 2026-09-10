@@ -38,6 +38,35 @@ binding its text, never an argument about where a `Prepend` goes.
   distinct set — a prompt that grew is a worse outcome than a turn that fails, and a server that
   grows its prompt must not take the agent down. What fails a build is `PromptBudgetTests`.
 
+## A skill is a section the model reads on demand
+
+The glossary (`CONTEXT.md` § Prompt) pins three words. The **base prompt** is every section an
+agent reads on every turn. A **skill** is a body the model loads with one `load_skill` call when a
+request calls for it; only its name and one-line description stand in the base prompt. A **trigger
+claim** is what that description asserts: a request of a named kind loads it. ADR 0039 is the
+decision; these are the rules the next section lands on.
+
+- **Timing decides what moves, never subject.** A rule the model needs *before* it decides what to
+  do — which mechanism, which tool, which mount — stays in the base prompt. A rule it needs only
+  *while* doing the thing — a file's layout, an action's arguments, how a result is read — moves into
+  a skill. A section with both splits into a standing stub carrying the choosing rules and their
+  claims, plus a body; the stub names the skill in one sentence.
+- **The size floor is about 500 tokens.** Below it the advertisement and the load hop cost more than
+  the body sheds, so the section stays whole. Persona, identity, delegation, memory, the mounts
+  list, voice, language, printing and Idealista stay for that reason or because they are read before
+  any choice.
+- **A skill is a manifest entry.** `PromptManifest.Skills` declares each one beside the sections:
+  name, the description that is the advertisement, a description budget, a body budget, the server
+  that serves it and its claims. Its text lives in `Domain/Prompts` beside its name constant, like a
+  section's, and the server publishes it through the hosting helper — never a hand-written resource.
+- **The ceiling ratchets.** `PromptManifest.StandingTokens` is the largest agent's declared sections
+  rounded up to the hundred, and the budget tests refuse a figure left where it was. A move lowers
+  it by editing that one number.
+- **Red for a skill claim is demonstrated with the body's prose deleted and the description
+  intact.** That reddens the body claim. A red with the description deleted is a missing load — the
+  trigger claim's red, cited by every scenario of the family — and says nothing about the body. The
+  commit that cites a skill claim notes which demonstration it made.
+
 ## The tests are the point
 
 - `Tests/Snapshots/prompt.*.txt` hold each agent's whole assembled prompt, with a per-section
@@ -47,7 +76,10 @@ binding its text, never an argument about where a `Prepend` goes.
   serves is declared, every declaration matches a prompt some server still serves, every service an
   agent dials has its prompts declared, no section names an `fs_`-prefixed tool, and every path a
   section teaches starts at a mount that exists. It caught `/Movies/Action/` in the library prompt,
-  where the real path is `/media/Movies/Action/`.
+  where the real path is `/media/Movies/Action/`. Skills are walked the same way, in both
+  directions, and a skill body's paths are checked like a section's.
+- `Tests/Snapshots/skill.*.md` hold each skill's body under its budget, so a body that grows is a
+  diff somebody reads; the agent snapshots show the advertised list exactly as the model sees it.
 - `VoiceOverridesFormattingTests` proves the spoken rules beat the screen-oriented ones for the
   agent that actually speaks, and ties the section's declared channel to the routing default that
   sends that channel's messages to it.

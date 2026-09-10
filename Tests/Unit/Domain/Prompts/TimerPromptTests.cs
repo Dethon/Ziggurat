@@ -21,7 +21,7 @@ public class TimerPromptTests
     }
 
     [Fact]
-    public void Build_EmptyRoster_IsExactlyTheBasePrompt()
+    public void Build_EmptyRoster_IsExactlyTheRosterlessPrompt()
     {
         // Fail-open shape: when the hub cannot be asked at prompt-fetch time the prompt degrades
         // to the static idiom text, which already tells the agent to ask which room.

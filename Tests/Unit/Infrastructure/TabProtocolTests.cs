@@ -84,7 +84,7 @@ public class TabProtocolTests
         again.ShouldBeOfType<TabOutcome<string>.Ran>();
         pages.Count.ShouldBe(1);
         (await RouteAsync(manager, "s1", "i-1"))
-            .ShouldBe(new TabOutcome<IPage>.Superseded("https://a.test/"));
+            .ShouldBeOfType<TabOutcome<IPage>.Superseded>().Url.ShouldBe("https://a.test/");
     }
 
     [Fact]
@@ -344,7 +344,11 @@ public class TabProtocolTests
             return Task.FromResult(true);
         });
 
-        (await RouteAsync(manager, "s1", "i-1")).ShouldBeOfType<TabOutcome<IPage>.Superseded>();
+        // The wall names where the tab went, so the caller can be told to go back rather than
+        // to browse the ref's page anew.
+        var superseded = (await RouteAsync(manager, "s1", "i-1")).ShouldBeOfType<TabOutcome<IPage>.Superseded>();
+        superseded.Url.ShouldBe("https://a.test/");
+        superseded.CurrentUrl.ShouldBe("https://a.test/other");
     }
 
     [Fact]
@@ -385,7 +389,7 @@ public class TabProtocolTests
             return Task.FromResult(true);
         });
 
-        outcome.ShouldBe(new TabOutcome<bool>.Superseded("https://a.test/"));
+        outcome.ShouldBeOfType<TabOutcome<bool>.Superseded>().Url.ShouldBe("https://a.test/");
         ran.ShouldBeFalse();
     }
 
@@ -666,7 +670,7 @@ public class TabProtocolTests
         release.SetResult();
         await holder;
 
-        (await queued).ShouldBe(new TabOutcome<bool>.Superseded("https://a.test/"));
+        (await queued).ShouldBeOfType<TabOutcome<bool>.Superseded>().Url.ShouldBe("https://a.test/");
         ran.ShouldBeFalse();
     }
 

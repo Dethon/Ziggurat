@@ -7,38 +7,15 @@ public class WebActionTool(IWebBrowser browser)
 {
     public const string Name = "web_action";
 
+    // What the tool does and what comes back. The verbs are the `action` enum and `value` says
+    // what each takes; when to type rather than fill, and when `force` is allowed, are the
+    // web-browsing skill's — the essay on the flag lived here and cost every request of every
+    // conversation, web or not.
     protected const string Description =
         """
-        Interacts with an element on the current page by ref from web_snapshot.
-        Returns a diff showing only what changed — unless the action caused navigation,
-        in which case the full new page snapshot is returned instead.
-        Use web_snapshot with a selector if you need more context after a diff.
-
-        Actions requiring ref:
-        - 'click': Click the element
-        - 'type': Type character-by-character (triggers autocomplete). Set value to text.
-        - 'fill': Set input value directly (no keystroke events). Set value to text.
-        - 'select': Select native dropdown option. Set value to option text.
-        - 'press': Press keyboard key. Set value to key name (Enter, Tab, Escape, ArrowDown).
-        - 'clear': Clear input field.
-        - 'hover': Hover over element (triggers tooltips, menus).
-        - 'focus': Focus element (triggers datepickers, dropdowns that open on focus).
-        - 'drag': Drag element to target. Set endRef to destination element ref.
-
-        Actions NOT requiring ref (return full snapshot):
-        - 'back': Navigate back in browser history.
-
-        Workflow: web_snapshot -> find ref -> web_action(ref, action) -> read snapshot in response.
-        For autocomplete: type partial text -> response shows options -> click option ref.
-
-        force: only set this on a click that returned 'Timeout'. By default, clicks wait until the
-        element is visible, stable, enabled, and not obscured by another element. Some pages layer
-        a non-semantic <label>, decorative overlay, or floating placeholder over an input — those
-        elements have no ARIA role, so they don't appear in the web_snapshot but they intercept
-        hit-testing and the click hangs until timeout. force=true skips those checks and dispatches
-        the click directly on the target ref. Do NOT set force on the first attempt: the default
-        checks are also what catches genuine "wrong ref / element gone / a real modal is in the
-        way" bugs, and forcing them silently makes a click land on the wrong thing.
+        Acts on one element of the current page by its ref, or navigates back. Returns a diff of
+        what changed, with the refs the change added; an action that navigated returns the new
+        page's full snapshot instead.
         """;
 
     protected async Task<WebActionResult> ExecuteAsync(
@@ -100,6 +77,16 @@ public class WebActionTool(IWebBrowser browser)
                     ToolError.Codes.Timeout,
                     "Element may be obscured by an overlay. Retry once with force=true if you're certain the ref is correct.",
                     null),
+                // A tab that navigated away from the ref's page is one step past it, and the way
+                // back to those refs is the browser's back — "browse it again" here sent a model
+                // to the second browse the back action exists to avoid.
+                WebActionStatus.RefSuperseded when result.Url is { } current
+                                                   && !string.Equals(current, result.RefUrl, StringComparison.Ordinal) => (
+                    ToolError.Codes.ElementNotFound,
+                    $"To act on {result.RefUrl} again, go back to it with web_action action 'back': "
+                    + "it returns that page's fresh refs. Do not browse it anew.",
+                    $"That ref belonged to {result.RefUrl}; the tab has since navigated to {current}, "
+                    + "which renumbered its refs."),
                 WebActionStatus.RefSuperseded => (
                     ToolError.Codes.ElementNotFound,
                     $"Call web_snapshot, or web_browse {result.RefUrl} again, and act with the fresh refs.",

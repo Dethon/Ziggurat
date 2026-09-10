@@ -23,6 +23,10 @@ public sealed record PromptContext
 
     public IReadOnlyList<PromptSection> Client { get; init; } = [];
 
+    // The skills this session's servers ship. Only their advertisement reaches the base prompt;
+    // the framework appends the list itself, and the composer adds the section that explains it.
+    public IReadOnlyList<PromptSkill> Skills { get; init; } = [];
+
     public string? CustomInstructions { get; init; }
 
     public string? Language { get; init; }
@@ -39,9 +43,10 @@ public static class PromptComposer
     {
         IEnumerable<PromptSection> sections =
         [
-            PromptManifest.Bind(PromptManifest.CoreDirective, BasePrompt.Instructions),
+            PromptManifest.Bind(PromptManifest.CoreDirective, CoreDirectivePrompt.Instructions),
             .. Identity(context),
             .. context.Domain,
+            .. Optional(PromptManifest.SkillsSection, context.Skills.Count > 0 ? SkillsPrompt.Instructions : null),
             .. context.FileSystem,
             .. context.Client,
             PromptManifest.Bind(PromptManifest.Date, Today(context.Now)),
@@ -50,7 +55,7 @@ public static class PromptComposer
             .. Optional(PromptManifest.Language, LanguagePrompt.Build(context.Language))
         ];
 
-        return PromptAssembly.Build(context.AgentId, sections);
+        return PromptAssembly.Build(context.AgentId, sections, context.Skills);
     }
 
     private static IEnumerable<PromptSection> Identity(PromptContext context) =>

@@ -2,6 +2,7 @@ using Domain.Tools.FileSystem;
 using Domain.Tools.Memory;
 using Domain.Tools.SubAgents;
 using Domain.Tools.Web;
+using Infrastructure.Agents.Skills;
 
 namespace Tests.Eval.Harness;
 
@@ -16,6 +17,11 @@ public static class EvalTools
     // which worker ran and what it was told, so the call itself answers to that declaration rather
     // than to the permitted set.
     public static readonly string Subagent = "domain__subagents__" + SubAgentRunTool.Name;
+
+    // The framework's own tool, on the same pipeline as every other, so it is recorded under its
+    // own name with no server prefix: a skill load is required where the family cites the trigger
+    // claim, permitted where a scenario tolerates it, and an unnecessary call anywhere else.
+    public static readonly string LoadSkill = SkillsProvider.LoadToolName;
 
     // The only memory action there is: storing and recalling happen without the agent asking.
     public static readonly string Forget = "domain__memory__" + MemoryForgetTool.Name;

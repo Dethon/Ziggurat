@@ -92,7 +92,12 @@ public class FileSystemToolFeatureTests
         var feature = new FileSystemToolFeature(registry.Object);
 
         feature.Prompt.ShouldNotBeNull();
-        feature.Prompt.ShouldContain("operations: file_read, glob, text_search, file_info, exec");
+        // Spelled as the model calls them. Listed bare, the line taught a tool named `file_read`,
+        // and glm-5.3-flash called exactly that — eleven times in one day's dumps — before the
+        // not-found reply sent it to the real name; a call that exists is one fewer to correct.
+        feature.Prompt.ShouldContain(
+            "operations: domain__filesystem__file_read, domain__filesystem__glob, "
+            + "domain__filesystem__text_search, domain__filesystem__file_info, domain__filesystem__exec");
     }
 
     // This is the one prompt built per agent from its actual mount set, so its fixed text must

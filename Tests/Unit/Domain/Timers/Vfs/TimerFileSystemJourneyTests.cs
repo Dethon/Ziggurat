@@ -80,6 +80,20 @@ public class TimerFileSystemJourneyTests
         {"durationSeconds": 300, "text": "pasta is ready", "target": {"room": "Kitchen"}}
         """;
 
+    // A timer directory holds one writable file, so a body written to /<id> can only mean it —
+    // the same leniency the schedules mount has, for the same reason: the refusal only bought the
+    // same call with the file name on.
+    [Fact]
+    public async Task Create_AtTheTimerDirectory_IsTheTimerFile()
+    {
+        var (fs, store, _, _) = Build();
+
+        var created = await fs.CreateAsync("/pasta", PastaSpec, false, true, CancellationToken.None);
+
+        created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>().Value.FilePath.ShouldEndWith("/pasta/timer.json");
+        (await store.GetAsync("pasta", CancellationToken.None)).ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task CreateReadStatusCancel_FullJourney()
     {
@@ -334,6 +348,70 @@ public class TimerFileSystemJourneyTests
 
         result.ExitCode.ShouldBe(0);
         result.Stdout.ShouldContain("nothing is ringing");
+    }
+
+    // `./dismiss.sh` is how a model that has been told the mount holds an action *file* spells
+    // running it, and it is what the HA mount already accepts — it strips the prefix before it
+    // looks the action up. Rejecting it here made the two mounts disagree, and a model that tried
+    // the dotted form first paid a call to learn which mount it was on.
+    [Fact]
+    public async Task Exec_DismissWithADotSlashPrefix_RunsTheSameAction()
+    {
+        var (fs, _, _, dismisser) = Build();
+        dismisser.Ringing.Add(new DismissedAlert("pasta", AnnounceKind.Timer));
+
+        var result = (await fs.ExecAsync("/", "./dismiss.sh", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(0);
+        result.Stdout.ShouldContain("timer \"pasta\"");
+    }
+
+    // "nothing is ringing" is the same sentence whether the model has just silenced the alert
+    // itself or never found it, and a model that cannot tell those apart goes looking for the
+    // alarm somewhere else — glm-5.3-flash dismissed correctly, read the line, and then hunted
+    // through /ha for the calendar event behind it. The line has to close the task.
+    [Fact]
+    public async Task Exec_DismissWithNothingRinging_SaysTheSilenceIsTheAnswer()
+    {
+        var (fs, _, _, _) = Build();
+
+        var result = (await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(0);
+        result.Stdout.ShouldContain("nothing is ringing");
+        result.Stdout.ShouldContain("nothing further to do");
+    }
+
+    [Fact]
+    public async Task Exec_DismissThatSilencedSomething_SaysTheTaskIsDone()
+    {
+        var (fs, _, _, dismisser) = Build();
+        dismisser.Ringing.Add(new DismissedAlert("pasta", AnnounceKind.Timer));
+
+        var result = (await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.Stdout.ShouldContain("timer \"pasta\"");
+        result.Stdout.ShouldContain("nothing further to do");
+    }
+
+    // dismiss.sh takes no arguments, and a model that reaches for a plausible one ("--all", to
+    // be sure it covers every satellite) got a bare "command not found" naming the file it had
+    // just typed. The refusal has to say the flag is the problem, not the script, or the next
+    // guess is that the script is somewhere else.
+    [Fact]
+    public async Task Exec_DismissWithAnArgument_SaysTheScriptTakesNone()
+    {
+        var (fs, _, _, _) = Build();
+
+        var result = (await fs.ExecAsync("/", "dismiss.sh --all", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(127);
+        result.Stderr.ShouldContain("takes no arguments");
+        result.Stderr.ShouldContain("dismiss.sh");
     }
 
     [Fact]

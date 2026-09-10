@@ -14,6 +14,11 @@ public sealed class FakeVoiceHub : HttpMessageHandler
 
     public FakeVoiceHub(params SatelliteDescriptor[] roster) => _roster = roster;
 
+    // What is ringing when the turn arrives, as the scenario declared it. A dismiss answers with it
+    // once and then finds silence — the real hub's shape. Without it every dismiss answered
+    // "nothing is ringing", and a model asked to stop a ringing alarm went looking for it elsewhere.
+    public DismissedAlert? Ringing { get; set; }
+
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -39,7 +44,9 @@ public sealed class FakeVoiceHub : HttpMessageHandler
 
         if (path.EndsWith("api/voice/dismiss"))
         {
-            return Json(Array.Empty<string>());
+            var dismissed = Ringing is { } ringing ? new[] { ringing } : [];
+            Ringing = null;
+            return Json(dismissed);
         }
 
         return new HttpResponseMessage(HttpStatusCode.NotFound);

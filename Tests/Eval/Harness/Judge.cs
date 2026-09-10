@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.DTOs.Metrics;
 
 namespace Tests.Eval.Harness;
 
@@ -41,7 +42,7 @@ public static class Judge
         var verdicts = new List<string>();
         foreach (var check in ScenarioChecks.JudgedNow(scenario, recording))
         {
-            var verdict = await AskAsync(client, Material(scenario, recording, check));
+            var verdict = await AskAsync(client, Material(scenario, recording, check), recording);
             if (verdict is null)
             {
                 // Never a pass: a judge outage grading everything green would hide a regression
@@ -110,7 +111,7 @@ public static class Judge
     private const int RateLimitAttempts = 4;
     private static readonly TimeSpan _rateLimitDelay = TimeSpan.FromSeconds(2);
 
-    private static async Task<Verdict?> AskAsync(HttpClient client, string material)
+    private static async Task<Verdict?> AskAsync(HttpClient client, string material, Recording recording)
     {
         var misses = 0;
         var rateLimited = 0;
@@ -122,6 +123,9 @@ public static class Judge
                 {
                     ["model"] = Model,
                     ["temperature"] = 0,
+                    // The judge is paid for out of the run's key, so its bill is the run's: the
+                    // breakdown only arrives when asked for, and the recording is where it lands.
+                    ["usage"] = new JsonObject { ["include"] = true },
                     ["messages"] = new JsonArray(
                         new JsonObject { ["role"] = "system", ["content"] = SystemPrompt },
                         new JsonObject { ["role"] = "user", ["content"] = material })
@@ -143,6 +147,7 @@ public static class Judge
                 }
 
                 using var answer = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                Charge(answer.RootElement, recording);
                 var content = answer.RootElement
                     .GetProperty("choices")[0]
                     .GetProperty("message")
@@ -167,6 +172,39 @@ public static class Judge
 
         return null;
     }
+
+    // What the router said this verdict cost, onto the recording of the run it graded. Tolerant
+    // of a body with no usage at all: an answer that did not say what it cost is still an answer.
+    private static void Charge(JsonElement answer, Recording recording)
+    {
+        if (!answer.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        recording.Publish(new TokenUsageEvent
+        {
+            Sender = "judge",
+            Model = Model,
+            InputTokens = Number(usage, "prompt_tokens"),
+            OutputTokens = Number(usage, "completion_tokens"),
+            Cost = usage.TryGetProperty("cost", out var cost) && cost.ValueKind == JsonValueKind.Number
+                ? cost.GetDecimal()
+                : 0m,
+            CachedInputTokens =
+                usage.TryGetProperty("prompt_tokens_details", out var details)
+                && details.ValueKind == JsonValueKind.Object
+                && details.TryGetProperty("cached_tokens", out var cached)
+                && cached.ValueKind == JsonValueKind.Number
+                    ? cached.GetInt64()
+                    : null
+        });
+    }
+
+    private static int Number(JsonElement usage, string name) =>
+        usage.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
+            ? value.GetInt32()
+            : 0;
 
     // The verdict out of whatever prose the model wrapped it in: the first JSON object carrying a
     // boolean `pass`. A model that answered anything else has not answered.

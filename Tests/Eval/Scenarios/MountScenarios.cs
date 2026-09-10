@@ -77,12 +77,20 @@ public static class MountScenarios
         },
         Instant = EvalInstant.Evening,
         // Looking anywhere is fine — finding out which mounts exist is the sane first move. What
-        // the scenario is about is what happens next.
+        // the scenario is about is what happens next. One `ls` of the named path on the sandbox
+        // is the same look as the glob and the file_info this already tolerated, made through the
+        // one mount that is a Linux box with a /media of its own: a model that takes the user's
+        // path as a path there checks it once and answers. The hunt that follows — other
+        // spellings, a find over the root, a second worker — is what the ceiling still measures.
         Permitted =
         [
             new CallPermission(EvalTools.Glob, "*"),
             new CallPermission(EvalTools.Info, "*"),
-            new CallPermission(EvalTools.Read, "/media*")
+            new CallPermission(EvalTools.Read, "/media*"),
+            new CallPermission(EvalTools.Exec, "/sandbox*", "ls*/media/Movies*"),
+            // The one `ls` is an exec, and the sandbox section says every exec loads the sandbox
+            // skill first — so the load that check earns is the prompt obeyed, not a hunt.
+            CallPermission.Load(SandboxSkill.Name)
         ],
         // A worker is tolerated rather than required: about half the time this model hands the
         // impossible listing to one, and what the contract forbids is trying harder, not trying
@@ -99,7 +107,8 @@ public static class MountScenarios
             [
                 new SpokenValue("that it cannot reach it",
                     "no tengo", "no puedo", "no hay", "no está", "no existe", "no dispongo",
-                    "sin acceso", "no aparece")
+                    "sin acceso", "no aparece", "no me es accesible", "inaccesible",
+                    "no accesible", "ninguna contiene", "no encuentro")
             ]
         },
         Claims = [FileSystemToolFeature.AnUnmountedPathIsAnswered.Id],
@@ -135,6 +144,9 @@ public static class MountScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            // Running anything is the sandbox skill's business; the transfer rule it also
+            // exercises is the mounts section's and needs no load.
+            CallExpectation.LoadsSkill(SandboxSkill.Name),
             new CallExpectation
             {
                 Label = "transfer",
@@ -156,15 +168,20 @@ public static class MountScenarios
                 ]
             }
         ],
-        Ordering = [new OrderingConstraint("transfer", "hash")],
+        Ordering = [new OrderingConstraint("skill", "hash"), new OrderingConstraint("transfer", "hash")],
         Permitted =
         [
             .. CallPermission.Looking("/vault*"),
             .. CallPermission.Looking("/sandbox*"),
             new CallPermission(EvalTools.Copy),
-            new CallPermission(EvalTools.Exec, "/sandbox*")
+            new CallPermission(EvalTools.Exec, "/sandbox*"),
+            // Tidying the copy away after the checksum is read is not a second transfer.
+            new CallPermission(EvalTools.Remove, "/sandbox*"),
+            // A copy out of the vault is a vault task to a model reading the stub; that load is
+            // tolerated, and the transfer rule it cites is in the stub, not the body.
+            CallPermission.Load(ObsidianVaultSkill.Name)
         ],
-        CallCeiling = 6,
+        CallCeiling = 8,
         Reply = new ReplyExpectation
         {
             // Only bytes that actually went through a real hasher produce this prefix; a model
@@ -173,6 +190,7 @@ public static class MountScenarios
         },
         Claims =
         [
+            SandboxSkill.LoadsForARun.Id,
             FileSystemToolFeature.ExecWorkGoesWhereExecLives.Id,
             FileSystemToolFeature.TransferIsOneCall.Id
         ],

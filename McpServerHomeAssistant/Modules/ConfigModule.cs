@@ -65,9 +65,6 @@ public static class ConfigModule
                     timeProvider: sp.GetRequiredService<TimeProvider>(),
                     watches: sp.GetRequiredService<HaWatches>(),
                     satellites: sp.GetRequiredService<ISatelliteCatalog>()))
-                .AddSingleton(sp => new HomeAssistantSetupSummary(
-                    sp.GetRequiredService<HaCatalogProvider>(), sp.GetRequiredService<HaWatches>(),
-                    sp.GetRequiredService<ISatelliteCatalog>()))
                 .AddToolServer(settings, ToolResponse.Create)
                 // Broadcast, so an agent that is merely reconnecting still receives a fire; the
                 // callback answers Home Assistant 503 only when nobody is registered at all, and
@@ -75,6 +72,9 @@ public static class ConfigModule
                 .AddChannelServer(DeliveryPolicy.Broadcast, noOutboundSurface: true)
                 .AddFileSystemTools<HaFileSystem>()
                 .AddFileSystemResource<HaFileSystem>()
+                // The skills that teach this server's tools ship beside them, so a deployment
+                // without the home cannot advertise how to watch it.
+                .AddSkills(HomeWatchesSkill.Text, HomeAssistantSkill.Text)
                 .WithPrompts<McpSystemPrompt>();
 
             return services;

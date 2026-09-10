@@ -12,7 +12,7 @@ public class McpSystemPrompt(ScheduleSetupSummary summary)
     public string GetSchedulingPrompt()
     {
         var setup = summary.Get();
-        var prompt = SchedulingPrompt.Build(TimeZoneInfo.Local.Id);
+        var prompt = SchedulingPrompt.Prompt;
         return string.IsNullOrEmpty(setup)
             ? prompt
             : prompt + "\n\n" + setup;

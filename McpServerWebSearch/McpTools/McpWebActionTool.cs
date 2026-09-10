@@ -17,7 +17,7 @@ public class McpWebActionTool(IWebBrowser browser)
     [Description(Description)]
     public async Task<CallToolResult> Run(
         RequestContext<CallToolRequestParams> context,
-        [Description("Element ref from WebSnapshot (required for click, type, fill, select, press, clear, hover, drag)")]
+        [Description("Element ref from a snapshot or a diff; required for every action but back")]
         string? @ref = null,
         [Description("Action to perform on the element")]
         WebActionType action = WebActionType.Click,
@@ -27,7 +27,7 @@ public class McpWebActionTool(IWebBrowser browser)
         string? endRef = null,
         [Description("Wait for page navigation after action (for clicks that load new pages)")]
         bool waitForNavigation = false,
-        [Description("Retry-only flag for click after a Timeout. Bypasses actionability checks (visible/stable/enabled/not-obscured) and dispatches the click directly on the ref. Use when a non-semantic overlay (e.g. a floating <label>) hides the input from hit-testing but the snapshot shows the right element. Never set on the first attempt.")]
+        [Description("Only on a retry of a click that returned Timeout: skips the visible/stable/enabled/unobscured checks and clicks the ref directly. Never on a first attempt.")]
         bool force = false,
         CancellationToken ct = default)
     {

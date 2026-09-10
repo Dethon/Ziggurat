@@ -185,6 +185,11 @@ public static partial class HtmlConverter
         return md.Trim();
     }
 
+    // TextContent is the markup's own spacing: newlines between children, indentation, runs of
+    // spaces. Anything rendered on one line has to lose them.
+    private static string CollapseWhitespace(string text) =>
+        string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
     private static void ListImagesWithin(IElement element, StringBuilder sb)
     {
         foreach (var img in element.QuerySelectorAll("img").OfType<IHtmlImageElement>())
@@ -211,6 +216,25 @@ public static partial class HtmlConverter
 
                     break;
                 case IElement { TagName: "SCRIPT" or "STYLE" or "NOSCRIPT" }:
+                    break;
+                // A button is not a link: it has no address to write, and rendered as its bare
+                // text a row of them reads as a list of names — a model then composes the urls
+                // it cannot see. Marked, the text says it is something to click, through a
+                // snapshot's ref.
+                case IHtmlButtonElement button:
+                    // One line, whatever the markup's own newlines and indentation: a marker
+                    // broken across lines stops reading as one thing to click.
+                    var buttonText = CollapseWhitespace(button.TextContent);
+                    if (!string.IsNullOrEmpty(buttonText))
+                    {
+                        sb.Append($"[button: {buttonText}]");
+                    }
+
+                    // Flattened to its text like a link, and owed the same debt: no picture
+                    // contributes to that text, so an image-only button — a gallery thumbnail, an
+                    // icon that opens a viewer — would lose its entry and its ref with it.
+                    ListImagesWithin(button, sb);
+
                     break;
                 case IHtmlAnchorElement anchor:
                     var href = anchor.GetAttribute("href");

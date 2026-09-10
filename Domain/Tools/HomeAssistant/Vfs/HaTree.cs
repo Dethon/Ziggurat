@@ -28,7 +28,7 @@ public static class HaTree
 
     public static IReadOnlyList<string> Files(HaCatalog catalog, IReadOnlyList<string>? watchIds = null)
     {
-        var files = new List<string>();
+        var files = new List<string> { HaVfsPath.SetupIndexFileName };
         files.AddRange((watchIds ?? []).SelectMany(id => new[]
         {
             $"{HaVfsPath.WatchesRootName}/{id}/{HaVfsPath.WatchFileName}",

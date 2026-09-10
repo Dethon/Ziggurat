@@ -19,7 +19,16 @@ public static class HaArgParser
             var token = tokens[i];
             if (!token.StartsWith("--", StringComparison.Ordinal))
             {
-                throw new ArgumentException($"Expected a --flag but found '{token}'.");
+                // A shell operator is a different mistake from a stray word, and naming only the
+                // symbol let a model read the whole failure as being about its arguments:
+                // glm-5.3-flash chained a correct episode uri after media_stop.sh, was told
+                // "Expected a --flag but found '&&'", and went back to guessing the uri.
+                throw new ArgumentException(
+                    token is "&&" or "||" or ";" or "|" or "&"
+                        ? $"'{token}' is not supported here: this is not a shell. Run one action "
+                          + "per call — make this call again with the single action you want, "
+                          + "then the next one separately."
+                        : $"Expected a --flag but found '{token}'.");
             }
 
             // Accept both GNU long-option forms: `--flag value` and `--flag=value`. Split on the
@@ -29,8 +38,17 @@ public static class HaArgParser
             var name = eq < 0 ? body : body[..eq];
             if (!svc.Fields.TryGetValue(name, out var field))
             {
+                // The list is in hand here, and sending the model for it costs a call it may
+                // spend on another guess instead — glm-5.3-flash answered this message with four
+                // more invented flags rather than one --help. Name them, and keep pointing at
+                // --help for the types and options the names alone do not give.
+                var known = svc.Fields.Count == 0
+                    ? "it takes none"
+                    : string.Join(", ", svc.Fields.Keys.Order().Select(f => $"--{f}"));
+
                 throw new ArgumentException(
-                    $"Unknown argument '--{name}'. Run `{command}.sh --help` for the field list.");
+                    $"Unknown argument '--{name}'. {command}.sh takes: {known}. "
+                    + $"Run `{command}.sh --help` for their types and options.");
             }
 
             string raw;

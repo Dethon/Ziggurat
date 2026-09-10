@@ -157,6 +157,12 @@ public sealed class FakeMusicAssistantServer : IAsyncDisposable
 
     public const double QueueElapsedTime = 4200;
 
+    // The uris the episode listing hands out. FakeHomeAssistant's play_media resolves against this
+    // set, so the two fakes cannot disagree about which episode is playable: a uri this listing
+    // returns is one that play accepts, which is the whole contract the episode rule rests on.
+    public static bool ServesEpisodeUri(string uri) =>
+        Episodes().Any(e => e?["uri"]?.GetValue<string>() == uri);
+
     private static JsonArray Episodes() => new(
         Item("292. La guerra por el agua: el recurso imprescindible", "spotify--w2nq2jMe://podcast_episode/5V4Bf", 5279),
         Item("291. La geopolítica de la cerámica", "spotify--w2nq2jMe://podcast_episode/3bjld", 4100),

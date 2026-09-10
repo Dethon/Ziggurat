@@ -52,11 +52,29 @@ public static class EvalRun
         using var cancellation = new CancellationTokenSource(_budget);
         var thread = await agent.CreateSessionAsync(cancellation.Token);
 
-        var response = await agent.RunAsync(
-            Messages(scenario, conversationId, stack.Memory.Context), thread,
-            cancellationToken: cancellation.Token);
+        // A deadline reached is a result, not an accident: the scenario keeps its row and says
+        // the turn never finished. Throwing here dropped the scenario off the scorecard entirely,
+        // which reads as a scenario nobody ran rather than one the model could not finish.
+        try
+        {
+            var response = await agent.RunAsync(
+                Messages(scenario, conversationId, stack.Memory.Context), thread,
+                cancellationToken: cancellation.Token);
 
-        recording.Reply = response.Text;
+            recording.Reply = response.Text;
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or TaskCanceledException
+                                   && cancellation.IsCancellationRequested)
+        {
+            recording.TimedOut = true;
+        }
+        // The provider refusing the turn — an HTTP 5xx from the router, a dropped connection —
+        // is the same kind of result: a run that never finished, kept on the scorecard with its
+        // reason rather than thrown past it. A harness bug is not one of these and still throws.
+        catch (Exception ex) when (ex is System.ClientModel.ClientResultException or HttpRequestException)
+        {
+            recording.ProviderError = ex.Message.ReplaceLineEndings(" ").Trim();
+        }
         recording.StateAfter = stack.Home.Snapshot();
         recording.FilesAfter = EvalVault.Read(stack.VaultPath);
         recording.Delegations = stack.Workers.Delegations;

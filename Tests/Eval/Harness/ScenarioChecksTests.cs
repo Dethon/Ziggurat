@@ -1,3 +1,5 @@
+using Infrastructure.Agents.ChatClients;
+using Infrastructure.Agents.Skills;
 using Shouldly;
 using Tests.Eval.Fixtures;
 
@@ -480,6 +482,149 @@ public class ScenarioChecksTests
         failures.ShouldContain(f => f.Contains("/timers/pasta/timer.json") && f.Contains("wrong.json"));
     }
 
+    // A run that hits its own deadline used to throw out of the suite, so the scenario left no
+    // row on the scorecard at all: not a pass, not a fail, simply absent — and "an episode plays
+    // only by the uri the listing gave" vanished from two consecutive runs while looking, in the
+    // summary, like a scenario nobody had asked about. A model that flails until the clock runs
+    // out is a behavioural result, and it is the one this suite most wants to see.
+    // A provider that answered 520 is a run that never happened, and throwing it dropped the
+    // scenario off the scorecard as if nobody had run it. It fails, and says whose fault it was.
+    [Fact]
+    public void ARunTheProviderFailed_FailsTheScenarioAndSaysSo()
+    {
+        var recording = new Recording { ProviderError = "HTTP 520 (: ) Provider returned error" };
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldContain(f => f.Contains("provider") && f.Contains("520"));
+    }
+
+    // A tool that refuses a first attempt and names the fix is the tool working: the corrected
+    // call is the required one, and the refused attempt before it — same tool, same path, nothing
+    // written — is the round-trip the refusal exists for, not a call the model should not have
+    // made. The ceiling still counts it, so a model that needs three refusals to land still shows.
+    [Fact]
+    public void ARefusedAttemptAtTheRequiredCall_CorrectedIntoIt_IsNotUnnecessary()
+    {
+        var recording = new Recording();
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 0, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/timers/pasta/timer.json","content":"{\"target\":{\"satellite\":\"x\"}}"}""",
+            Result = """{"ok":false,"errorCode":"invalid_argument","message":"target is required"}"""
+        });
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 1, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/timers/pasta/timer.json","content":"{\"target\":{\"room\":\"kitchen\"}}"}""",
+            Result = """{"status":"created"}"""
+        });
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldNotContain(f => f.Contains("unnecessary call"));
+    }
+
+    // The registry resolves "ha/setup-index.md" at /ha now, so the call the model made is the
+    // read the scenario asks for — and a matcher that took the spelling literally reported the
+    // required read as never made and the same call as unnecessary.
+    [Fact]
+    public void AMountPathMissingItsSlash_IsMatchedAsThatMount()
+    {
+        var scenario = Timer() with
+        {
+            Required =
+            [
+                new CallExpectation { Label = "index", Tool = Read, Arguments = [Arg.Path("/ha/setup-index.md")] }
+            ]
+        };
+        var recording = new Recording();
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 0, ToolName = Read, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"filePath":"ha/setup-index.md"}""", Result = "{}"
+        });
+
+        ScenarioChecks.Failures(scenario, recording)
+            .ShouldNotContain(f => f.Contains("never happened") || f.Contains("unnecessary"));
+    }
+
+    // The warm-up tic has a browse shape too: a placeholder page for one character, before the
+    // real work. Discounted the same way as the one-result search.
+    [Fact]
+    public void ABrowseOfAPlaceholderForOneCharacter_IsAWarmUpProbe()
+    {
+        var recording = new Recording();
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 0, ToolName = "mcp__localhost-1__web_browse", Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"url":"https://example.com","maxLength":1}""", Result = "{}"
+        });
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 1, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/timers/pasta/timer.json","content":"{}"}""", Result = "{}"
+        });
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldNotContain(f => f.Contains("unnecessary"));
+    }
+
+    // The fix a refusal names can be the file's name rather than its body: a timer written at
+    // /timers/te/te.json is refused with the shape the mount wants, and the next create lands at
+    // timer.json in the same directory. Same tool, same place, nothing written — still the
+    // round-trip the refusal exists for.
+    [Fact]
+    public void ARefusedAttemptAtTheWrongFileName_CorrectedInTheSameDirectory_IsNotUnnecessary()
+    {
+        var recording = new Recording();
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 0, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/timers/pasta/pasta.json","content":"{\"durationSeconds\":480}"}""",
+            Result = """{"ok":false,"errorCode":"invalid_argument","message":"Create a timer at /<timerId>/timer.json (got 'pasta/pasta.json')"}"""
+        });
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 1, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/timers/pasta/timer.json","content":"{\"durationSeconds\":480}"}""",
+            Result = """{"status":"created"}"""
+        });
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldNotContain(f => f.Contains("unnecessary call"));
+    }
+
+    // A refusal somewhere else is not a step towards the required call: the mount that refused
+    // it is not the one the scenario is about, so the attempt stays a call nobody asked for.
+    [Fact]
+    public void ARefusedAttemptElsewhere_BeforeTheRequiredCall_IsStillUnnecessary()
+    {
+        var recording = new Recording();
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 0, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/schedules/nabu/pasta/schedule.json","content":"{}"}""",
+            Result = """{"ok":false,"errorCode":"invalid_argument","message":"prompt is required"}"""
+        });
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 1, ToolName = Create, Outcome = ToolInvocationOutcome.Completed,
+            Arguments = """{"path":"/timers/pasta/timer.json","content":"{\"durationSeconds\":480}"}""",
+            Result = """{"status":"created"}"""
+        });
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldContain(f => f.Contains("unnecessary call") && f.Contains("/schedules/"));
+    }
+
+    [Fact]
+    public void ARunThatTimedOut_FailsTheScenarioAndSaysSo()
+    {
+        var recording = new Recording { TimedOut = true };
+
+        ScenarioChecks.Failures(Timer(), recording)
+            .ShouldContain(f => f.Contains("timed out"));
+    }
+
     [Fact]
     public async Task ExceedingTheCeiling_Fails_AndTheRecordingKeptEveryCall()
     {
@@ -786,5 +931,120 @@ public class ScenarioChecksTests
             }
         ],
         Ordering = [new OrderingConstraint("status", "delete")]
+    };
+
+    // The one fork a skill adds. A scenario that requires a load fails one of two ways, and the
+    // kind says which half of the skill to edit: a load that never happened is the description's
+    // red, a load that happened before a rule was ignored is the body's.
+    [Fact]
+    public async Task ARequiredLoadThatNeverHappened_IsASkillNotLoadedFailure()
+    {
+        var recording = await ScriptedTurn.RunAsync("listo", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        var scenario = RequiringTheLoad();
+
+        var failures = ScenarioChecks.Failures(scenario, recording);
+
+        failures.ShouldContain(f => f.Contains("required call 'skill' never happened"));
+        ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.SkillNotLoaded);
+    }
+
+    [Fact]
+    public async Task ALoadThatHappened_AndACheckThatFailed_IsARuleIgnoredFailure()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Load("home-watches"),
+            ScriptedTurn.Call(Create, "/timers/wrong/timer.json"));
+        var scenario = RequiringTheLoad();
+
+        var failures = ScenarioChecks.Failures(scenario, recording);
+
+        failures.ShouldNotContain(f => f.Contains("required call 'skill'"));
+        failures.ShouldContain(f => f.Contains("required call 'create' never happened"));
+        ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.RuleIgnored);
+    }
+
+    // Loading another skill is the same absence: the one the scenario named was not loaded.
+    [Fact]
+    public async Task ALoadOfAnotherSkill_IsStillASkillNotLoadedFailure()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Load("vault"),
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        var scenario = RequiringTheLoad();
+
+        var failures = ScenarioChecks.Failures(scenario, recording);
+
+        ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.SkillNotLoaded);
+    }
+
+    // A turn the provider refused never reached the model, so nothing it did or did not do is
+    // evidence about a description. Reading it as a missing load points the next edit at a
+    // description that was never read, on whichever scenario an outage happened to land on.
+    [Fact]
+    public async Task ATurnTheProviderRefused_IsNeitherTheDescriptionsFaultNorTheBodys()
+    {
+        var recording = await ScriptedTurn.RunAsync("");
+        recording.ProviderError = "520 upstream error";
+        var scenario = RequiringTheLoad();
+
+        var failures = ScenarioChecks.Failures(scenario, recording);
+
+        ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.RunFailed);
+    }
+
+    [Fact]
+    public async Task AScenarioRequiringNoLoad_FailsAsARuleIgnored_AndPassesWithNoKind()
+    {
+        var red = await ScriptedTurn.RunAsync("listo", ScriptedTurn.Call(Create, "/timers/wrong/timer.json"));
+        var green = await ScriptedTurn.RunAsync("listo", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        ScenarioChecks.KindOf(Timer(), red, ScenarioChecks.Failures(Timer(), red)).ShouldBe(FailureKind.RuleIgnored);
+        ScenarioChecks.KindOf(Timer(), green, ScenarioChecks.Failures(Timer(), green)).ShouldBeNull();
+    }
+
+    // A load is an ordinary call: where no scenario requires or permits it, it is unnecessary,
+    // which is how loading the wrong skill shows as a wrong choice.
+    [Fact]
+    public async Task ALoadNoScenarioAskedFor_IsAnUnnecessaryCall()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Load("home-watches"),
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        var failures = ScenarioChecks.Failures(Timer(), recording);
+
+        failures.ShouldHaveSingleItem().ShouldContain($"unnecessary call: {EvalTools.LoadSkill}");
+    }
+
+    // A permission names one skill: that load is tolerated, and another skill's load on the same
+    // turn is still the wrong choice.
+    [Fact]
+    public async Task APermissionNamingASkill_ToleratesThatLoad_AndNoOther()
+    {
+        var scenario = Timer() with { Permitted = [.. Timer().Permitted, CallPermission.Load("home-assistant")] };
+        var named = await ScriptedTurn.RunAsync(
+            "listo", ScriptedTurn.Load("home-assistant"), ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        var other = await ScriptedTurn.RunAsync(
+            "listo", ScriptedTurn.Load("home-watches"), ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        ScenarioChecks.Failures(scenario, named).ShouldBeEmpty();
+        ScenarioChecks.Failures(scenario, other).ShouldHaveSingleItem().ShouldContain("unnecessary call");
+    }
+
+    private static Scenario RequiringTheLoad() => Timer() with
+    {
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "skill",
+                Tool = EvalTools.LoadSkill,
+                Arguments = [Arg.Is(SkillsProvider.SkillNameParameter, "home-watches")]
+            },
+            .. Timer().Required
+        ]
     };
 }

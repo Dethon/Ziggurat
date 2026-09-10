@@ -6,6 +6,7 @@ using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Metrics;
+using Infrastructure.Agents.Skills;
 using Infrastructure.Metrics;
 using Infrastructure.Utils;
 using Microsoft.Extensions.AI;
@@ -21,6 +22,12 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly string _conversationId;
     private readonly IToolInvocationObserver? _observer;
     private int _observed;
+
+    // Approved for every agent without a whitelist entry: loading a skill reads prose this repo
+    // ships and changes nothing, and a load that stalled a turn on a prompt nobody sees would cost
+    // the very round trip the skill exists to save (docs/adr/0039).
+    private static readonly HashSet<string> _alwaysApproved =
+        new([SkillsProvider.LoadToolName], StringComparer.OrdinalIgnoreCase);
 
     public ToolApprovalChatClient(
         IChatClient innerClient,
@@ -56,7 +63,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             toolName,
             ToReadOnlyDictionary(context.CallContent.Arguments));
 
-        if (_patternMatcher.IsMatch(toolName) || _dynamicallyApproved.Contains(toolName))
+        if (_alwaysApproved.Contains(toolName) || _patternMatcher.IsMatch(toolName) || _dynamicallyApproved.Contains(toolName))
         {
             // The notification is display-only; overlapping it with the invocation keeps a
             // channel round trip off the tool's critical path. A notify failure still

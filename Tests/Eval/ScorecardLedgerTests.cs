@@ -34,6 +34,22 @@ public class ScorecardLedgerTests : IDisposable
     }
 
     [Fact]
+    public void AResultsSpend_RidesItsScenarioRow()
+    {
+        _ledger.Record(EvalTier.Full, _first, new ScenarioResult(true, 2, 2, [])
+        {
+            Spend = new Spend(0.25m, 40_000, 30_000, 800, 4)
+        });
+        _ledger.WriteAll(_output, Unresolved);
+
+        var spend = Read("scorecard-full.json").GetProperty("scenarios")
+            .GetProperty(_first.Name).GetProperty("spend");
+
+        spend.GetProperty("cost").GetDecimal().ShouldBe(0.25m);
+        spend.GetProperty("cacheShare").GetDouble().ShouldBe(0.75, 0.001);
+    }
+
+    [Fact]
     public void NothingRecorded_WritesNoFile()
     {
         _ledger.WriteAll(_output, Unresolved);
@@ -117,7 +133,7 @@ public class ScorecardLedgerTests : IDisposable
     {
         // The pair is a truth — one scenario demonstrated red, another asserts the same
         // behaviour as a side condition — so the strongest true statement wins.
-        var claim = Domain.Prompts.TimerPrompt.CreatedAtItsOwnPath.Id;
+        var claim = Domain.Prompts.CountdownTimersSkill.CreatedAtItsOwnPath.Id;
         var ledger = new ScorecardLedger(
             [Synthetic(cites: [claim]), Synthetic(guards: [claim])]);
 

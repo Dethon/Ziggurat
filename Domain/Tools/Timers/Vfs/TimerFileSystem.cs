@@ -23,15 +23,22 @@ public sealed class TimerFileSystem(
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 
+    // What the mount is, not how to drive it: the file's shape, the target rules and the dismiss
+    // action are the countdown-timers skill's body, and a description that repeated them was a
+    // reason to skip the load — a model with the JSON in front of it wrote the file and never
+    // read the rules that go with it.
+    //
+    // It describes and does not command: a first cut said "before you create, read, change, cancel
+    // or silence one, load the skill", and a model reading "cancel" and "silence" loaded the timers
+    // skill for a calendar alarm's snooze and for a media restart. The skill's own description is
+    // the trigger; this line only says where the shape lives.
     public override string DescribeMount =>
-        "Short countdown timers that ring on the voice satellites. Arm one by creating "
-        + "/timers/<descriptive-id>/timer.json with JSON {durationSeconds, text?, target} — target "
-        + "is {satelliteId | satelliteIds | room | all}; default it to the speaking room. Read "
-        + "/timers/<id>/status.json for remainingSeconds/firesAt; cancel by deleting /timers/<id>. "
-        + "Timers are immutable (delete and recreate) and fire once, ringing tone + message until "
-        + "dismissed by wake word/button or capped. Exec dismiss.sh at /timers to silence "
-        + "everything currently ringing (alarms and timers) from any room or channel. Use the HA "
-        + "alarms calendar for clock-time alarms/reminders, not timers.";
+        "Short countdown timers that ring on the voice satellites: each is a directory "
+        + "/timers/<id> holding its timer.json and a read-only status.json (remainingSeconds, "
+        + "firesAt), and dismiss.sh at /timers silences whatever is ringing (alarms and timers) "
+        + "from any room or channel. The file's shape and the target rules are in the "
+        + "`countdown-timers` skill, not here. Use the HA alarms calendar for clock-time "
+        + "alarms/reminders, not timers.";
 
     // The words the model reads about each operation, next to the behaviour they describe. They
     // name the mount's real files, which is what makes the timers surface usable without a probe.
@@ -57,7 +64,9 @@ public sealed class TimerFileSystem(
 
     public override string DescribeExec =>
         $"Silence every alert currently ringing: exec {TimerPath.DismissFileName} at the timers "
-        + "root. Not a shell — anything else returns exit 127.";
+        + "root. One call covers every satellite and both kinds, whatever set the alert off, so "
+        + "it is the whole of a silencing request — run it once and answer; there is no calendar "
+        + "or home entity to visit afterwards. Not a shell — anything else returns exit 127.";
 
     private const string DismissHelp =
         "# Dismiss everything currently ringing (alarms and timers) on all satellites:\n"
@@ -177,6 +186,14 @@ public sealed class TimerFileSystem(
         string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);
+        // A timer directory holds one writable file, so a body written to /<id> can only mean it.
+        // A segment with an extension is a file spelled wrong, not a directory, and stays refused.
+        if (node.Kind == TimerNodeKind.TimerDir && !node.TimerId!.Contains('.'))
+        {
+            path = $"/{node.TimerId}/{TimerPath.TimerFileName}";
+            node = TimerPath.Parse(path);
+        }
+
         if (node.Kind != TimerNodeKind.TimerFile || node.TimerId is null)
         {
             return Invalid<FsCreateResult>($"Create a timer at /<timerId>/{TimerPath.TimerFileName} (got '{path}')");
@@ -262,11 +279,30 @@ public sealed class TimerFileSystem(
                 $"exec is only supported at the timers root: exec {TimerPath.DismissFileName}");
         }
 
+        // `./dismiss.sh` names the same action file as `dismiss.sh`: the HA mount strips the
+        // prefix before it looks an action up, and a mount that refused it taught the model only
+        // which mount it was standing on.
         var trimmed = command.Trim();
+        if (trimmed.StartsWith("./", StringComparison.Ordinal))
+        {
+            trimmed = trimmed[2..];
+        }
+
+        // A refusal that names only the whole command line cannot say whether the script or its
+        // argument was wrong, and a model that guessed a flag reads it as the script being
+        // elsewhere and goes looking. Answer the two cases separately.
         if (node.Kind == TimerNodeKind.Root && trimmed != TimerPath.DismissFileName)
         {
+            var script = trimmed.Split(' ', 2)[0];
+
             return Exec(
-                "", $"command not found: {trimmed}\navailable: {TimerPath.DismissFileName}", 127, path);
+                "",
+                script == TimerPath.DismissFileName
+                    ? $"{TimerPath.DismissFileName} takes no arguments: it already silences every "
+                      + "alert on every satellite. Run it on its own."
+                    : $"command not found: {script}\navailable: {TimerPath.DismissFileName}",
+                127,
+                path);
         }
 
         IReadOnlyList<DismissedAlert> dismissed;
@@ -278,11 +314,17 @@ public sealed class TimerFileSystem(
         {
             return HubUnavailable<FsExecResult>("nothing was dismissed");
         }
-        var stdout = dismissed.Count == 0
-            ? "nothing is ringing\n"
+        // Both lines end the same way on purpose. "nothing is ringing" alone reads as a failure
+        // to find the alert rather than as the silence itself, and a model that cannot tell those
+        // apart goes looking for what was ringing somewhere else — through /ha, in practice. This
+        // call silences everything on every satellite in one go, so there is never a second place
+        // to look and never a reason to run it twice.
+        var what = dismissed.Count == 0
+            ? "nothing is ringing"
             : "dismissed " + string.Join(
-                " and ", dismissed.Select(d => $"{d.Kind.ToString().ToLowerInvariant()} \"{d.Text}\"")) + "\n";
-        return Exec(stdout, "", 0, path);
+                " and ", dismissed.Select(d => $"{d.Kind.ToString().ToLowerInvariant()} \"{d.Text}\""));
+
+        return Exec($"{what}; nothing further to do\n", "", 0, path);
     }
 
     private sealed record SpecDto

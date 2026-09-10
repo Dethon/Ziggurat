@@ -33,19 +33,20 @@ public static class MechanismScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content", Arg.Number("durationSeconds", 600))
                 ]
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Guards =
         [
             new Guard(TimerPrompt.DurationIsACountdown.Id,
@@ -55,6 +56,8 @@ public static class MechanismScenarios
                 + "teaches it too, and deleting that takes the create path with it — so this claim cannot be "
                 + "falsified by deleting prose. The scenario is kept as a regression guard against a model "
                 + "that stops discriminating; it just cannot earn the citation."),
+            new Guard(SchedulingPrompt.NeverAHumanReminder.Id,
+                "The scheduling stub's own statement of the rule below, guarded by the same demonstration."),
             new Guard(TimerPrompt.SchedulesAreNeverHumanReminders.Id,
                 "Demonstrated on 2026-08-18 with the rule deleted from all three prompts: a ten-minute "
                 + "reminder still went to /timers rather than /schedules. Nothing tempts the model into "
@@ -65,7 +68,7 @@ public static class MechanismScenarios
         // word, and this is the scenario whose create call carries one.
         Judged =
         [
-            new JudgedCheck(TimerPrompt.IdIsDescriptive.Id,
+            new JudgedCheck(CountdownTimersSkill.IdIsDescriptive.Id,
                 "The user asked to be reminded to take out the rubbish ('que saque la basura'). "
                 + "Find the tool call that created the timer: its path is /timers/<id>/timer.json. "
                 + "Judge the <id> alone. Pass if the id names what the timer is for — the rubbish, "
@@ -93,13 +96,18 @@ public static class MechanismScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            // The file's fields are in the skill's body; the choice of a schedule over a timer
+            // is made before it, in the stub.
+            CallExpectation.LoadsSkill(SchedulingSkill.Name),
             new CallExpectation
             {
                 Label = "schedule",
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/schedules/[^/]+/[^/]+/schedule\.json$"),
+                    // With or without the file name: the mount accepts a body written to the
+                    // schedule directory as the schedule file, and the call is what is matched.
+                    Arg.PathMatches(@"^/schedules/[^/]+/[^/]+(/schedule\.json)?$"),
                     // 21:00 in Madrid, whichever of the three spellings the contract allows. What
                     // is pinned is the instant, never the model's choice of how to write a zone.
                     Arg.Body("content", Arg.Any(
@@ -117,16 +125,22 @@ public static class MechanismScenarios
             new CallPermission(EvalTools.Info, "/schedules*"),
             new CallPermission(EvalTools.Glob, "/ha*"),
             new CallPermission(EvalTools.Read, "/ha*"),
-            new CallPermission(EvalTools.Info, "/ha*")
+            new CallPermission(EvalTools.Info, "/ha*"),
+            CallPermission.Load(HomeAssistantSkill.Name)
         ],
-        CallCeiling = 6,
+        Ordering = [new OrderingConstraint("skill", "schedule")],
+        CallCeiling = 8,
+        Claims = [SchedulingSkill.LoadsForAScheduleRequest.Id],
         Guards =
         [
             new Guard(TimerPrompt.AgentActsIsAScheduledTask.Id,
                 "Demonstrated on 2026-08-18: with the two-step choice deleted from the timer, scheduling and "
                 + "Home Assistant prompts, 'apaga el aire dentro de una hora' still became a /schedules "
                 + "one-shot at the right absolute time. The model works out on its own that a timer only "
-                + "speaks, so the prose is redundant on this turn shape.")
+                + "speaks, so the prose is redundant on this turn shape."),
+            new Guard(SchedulingPrompt.DeferredActionIsASchedule.Id,
+                "The scheduling stub's own statement of the same rule, guarded by the same 2026-08-18 "
+                + "demonstration: the choice held with the paragraph deleted from all three prompts.")
         ],
         Policy = new RunPolicy(2, 3)
     };
@@ -147,6 +161,9 @@ public static class MechanismScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            // The event's shape — target, insistent — is in the skill's body, so the load is
+            // required here; the choice of the calendar over a timer is made before it.
+            HomeAssistantScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "alarm",
@@ -154,7 +171,7 @@ public static class MechanismScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^create_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?create_event\.sh\b"),
                     Arg.Matches("command", @"2026-08-18[ T]07:00"),
                     // The description's JSON shape: without insistent the event is a one-shot
                     // announce that speaks once into a bedroom at seven and gives up.
@@ -171,11 +188,12 @@ public static class MechanismScenarios
             .. CallPermission.Looking("/ha*"),
             new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
         ],
-        CallCeiling = 6,
+        Ordering = [new OrderingConstraint("skill", "alarm")],
+        CallCeiling = 7,
         Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],
         // What is cited is the description's shape: target and insistent are only in the prose,
         // and an event without them is an announce pretending to be an alarm.
-        Claims = [HomeAssistantPrompt.AlarmCarriesTargetAndInsistent.Id],
+        Claims = [HomeAssistantSkill.LoadsForAHomeRequest.Id, HomeAssistantSkill.AlarmCarriesTargetAndInsistent.Id],
         Guards =
         [
             new Guard(TimerPrompt.ClockTimeIsACalendarAlarm.Id,
@@ -213,7 +231,7 @@ public static class MechanismScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^create_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?create_event\.sh\b"),
                     Arg.Matches("command", @"2026-08-18[ T]02:00")
                 ]
             }
@@ -221,9 +239,14 @@ public static class MechanismScenarios
         Permitted =
         [
             .. CallPermission.Looking("/ha*"),
-            new CallPermission(EvalTools.Exec, "*assistant_alarms_(*")
+            new CallPermission(EvalTools.Exec, "*assistant_alarms_(*"),
+            CallPermission.Load(HomeAssistantSkill.Name),
+            // "In six hours" is read as a duration first, and the timers skill is the doing guide
+            // for the mechanism first considered; the ceiling rule then sends it to the calendar.
+            // The load is a detour the ceiling pays for, not the wrong mechanism.
+            CallPermission.Load(CountdownTimersSkill.Name)
         ],
-        CallCeiling = 6,
+        CallCeiling = 7,
         Changes = [new StateChange(FakeHomeAssistant.AlarmsEventCountKey, "2")],
         Claims = [TimerPrompt.DurationCappedAtFourHours.Id],
         Policy = new RunPolicy(2, 3)
@@ -246,23 +269,24 @@ public static class MechanismScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content", Arg.Body("target", Arg.Any(
                         Arg.Is("room", "office"), Arg.Is("satelliteId", "office-01"))))
                 ]
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Guards =
         [
-            new Guard(TimerPrompt.VoiceTargetsTheSpeakingRoom.Id,
+            new Guard(CountdownTimersSkill.VoiceTargetsTheSpeakingRoom.Id,
                 "Demonstrated on 2026-08-18 with the rule deleted from the prompt and the mount, on a turn "
                 + "where the words point at another room (pasta, asked from the office): the model still "
                 + "targeted the office. Targeting the speaking room is its default whenever the decorated "
@@ -290,8 +314,9 @@ public static class MechanismScenarios
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
+        Required = [TimerScenarios.LoadsTheSkill],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 3,
+        CallCeiling = 4,
         Reply = new ReplyExpectation
         {
             // Creating nothing is half of it; a silent refusal would pass that half. What the
@@ -302,7 +327,7 @@ public static class MechanismScenarios
                     "habitación", "sala", "dónde", "cocina", "oficina", "despacho", "satélite")
             ]
         },
-        Claims = [TimerPrompt.NoSatelliteAsksWhichRoom.Id],
+        Claims = [CountdownTimersSkill.LoadsForATimerRequest.Id, CountdownTimersSkill.NoSatelliteAsksWhichRoom.Id],
         Policy = new RunPolicy(2, 3)
     };
 }

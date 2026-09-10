@@ -52,9 +52,9 @@ public class PromptComposerTests
     {
         var result = Compose(Context(withSections: true));
 
-        result.ShouldStartWith(BasePrompt.Instructions);
+        result.ShouldStartWith(CoreDirectivePrompt.Instructions);
         var date = result.IndexOf("Today is", StringComparison.Ordinal);
-        date.ShouldBeGreaterThan(result.IndexOf(BasePrompt.Instructions, StringComparison.Ordinal));
+        date.ShouldBeGreaterThan(result.IndexOf(CoreDirectivePrompt.Instructions, StringComparison.Ordinal));
         date.ShouldBeGreaterThan(result.IndexOf("DOMAIN", StringComparison.Ordinal));
         date.ShouldBeGreaterThan(result.IndexOf("FS", StringComparison.Ordinal));
         date.ShouldBeGreaterThan(result.IndexOf("CLIENT", StringComparison.Ordinal));
@@ -66,10 +66,12 @@ public class PromptComposerTests
         var result = Compose(Context(customInstructions: "CUSTOM", withSections: true));
 
         // Closest to the conversation, so they are the most recent guidance the model reads
-        // rather than something buried above every tool prompt.
-        result.ShouldEndWith("CUSTOM");
+        // rather than something buried above every tool prompt. Only the language rule, which
+        // every section above it contradicts by being written in English, is read after them.
         result.IndexOf("CUSTOM", StringComparison.Ordinal)
             .ShouldBeGreaterThan(result.IndexOf("CLIENT", StringComparison.Ordinal));
+        result.IndexOf("## Language", StringComparison.Ordinal)
+            .ShouldBeGreaterThan(result.IndexOf("CUSTOM", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -98,7 +100,7 @@ public class PromptComposerTests
     {
         var result = Compose(Context(name: "Mycroft", description: "Voice assistant.", withSections: true));
 
-        result.IndexOf(BasePrompt.Instructions, StringComparison.Ordinal)
+        result.IndexOf(CoreDirectivePrompt.Instructions, StringComparison.Ordinal)
             .ShouldBeLessThan(result.IndexOf("## Identity", StringComparison.Ordinal));
         result.IndexOf("## Identity", StringComparison.Ordinal)
             .ShouldBeLessThan(result.IndexOf("DOMAIN", StringComparison.Ordinal));
@@ -123,14 +125,18 @@ public class PromptComposerTests
             .ShouldBeGreaterThan(result.IndexOf("CUSTOM", StringComparison.Ordinal));
     }
 
+    // No pin is not no rule: the unpinned agent is told to follow the message, in the same
+    // place and after the same sections, because silence about the language in an English
+    // context reads as English (eval, 2026-09-10).
     [Fact]
-    public void Compose_NoLanguage_OmitsTheLanguageSection()
+    public void Compose_NoLanguage_TellsTheModelToFollowTheMessage_Last()
     {
         var result = Compose(Context(name: "Nabu", customInstructions: "CUSTOM", language: "   "));
 
-        result.ShouldEndWith("CUSTOM");
         result.ShouldNotContain("## Idioma");
-        result.ShouldNotContain("## Language");
+        result.ShouldContain("language the user wrote in");
+        result.IndexOf("## Language", StringComparison.Ordinal)
+            .ShouldBeGreaterThan(result.IndexOf("CUSTOM", StringComparison.Ordinal));
     }
 
     // A section an agent selected by name sits between its custom instructions and the language
@@ -150,5 +156,29 @@ public class PromptComposerTests
             .ShouldBeGreaterThan(result.IndexOf("CUSTOM", StringComparison.Ordinal));
         result.IndexOf("VOICE RULES", StringComparison.Ordinal)
             .ShouldBeLessThan(result.IndexOf("## Idioma", StringComparison.Ordinal));
+    }
+
+    // The section that explains the advertised list is worth its tokens only where there is a
+    // list: an agent whose servers ship no skill reads nothing about skills, and the framework
+    // appends nothing either.
+    [Fact]
+    public void Compose_WithNoSkills_HasNoSkillsSection()
+    {
+        Compose(Context()).ShouldNotContain("## Skills");
+    }
+
+    [Fact]
+    public void Compose_WithASkill_ExplainsTheListAndCarriesTheSkill()
+    {
+        var skill = PromptManifest.BindSkill(HomeWatchesSkill.Name, HomeWatchesSkill.Description, HomeWatchesSkill.Body);
+
+        var assembly = PromptComposer.Compose(Context() with { Skills = [skill] });
+
+        assembly.Text.ShouldContain("## Skills");
+        assembly.Text.ShouldContain("`load_skill`");
+        assembly.Skills.ShouldHaveSingleItem().Name.ShouldBe(HomeWatchesSkill.Name);
+        // The body is what a load costs, not what a turn costs.
+        assembly.TokenCount.ShouldBeLessThan(assembly.Sections.Sum(s => s.TokenCount) + skill.BodyTokens);
+        assembly.TokenCount.ShouldBe(assembly.Sections.Sum(s => s.TokenCount) + skill.DescriptionTokens);
     }
 }

@@ -311,6 +311,42 @@ public sealed class EvalWeb : IAsyncDisposable
     // armed runs read the truncated half, found day after day of charanga and no figure, and
     // reasonably abandoned the page for the archive's snippet — finishing a truncated page has
     // to be the evidence-driven move, not a leap of faith the filler argues against.
+    //
+    // Deterministic is not identical: the days shared one paragraph word for word until an armed
+    // run on 2026-09-09 counted twenty-four copies, told the user the site looked mispublished
+    // and spent its reply on the warning. Each day now keeps the skeleton and draws its workshop,
+    // its tortilla verdict and its verbena from cycles of coprime lengths, so no two of the
+    // twenty-four read alike and the page still says the same thing every run. None of the
+    // details carries a figure: the raffle total stays the only number worth quoting.
+    private static readonly string[] _workshops =
+    [
+        "se pintaron caretas", "se montaron cometas", "se aprendió a hacer pan",
+        "se modelaron figuras de barro", "se tejieron pulseras de hilo"
+    ];
+
+    private static readonly string[] _tortillas =
+    [
+        "con más discusión que nunca sobre el punto de la cebolla",
+        "que ganó por fin la tortilla sin cebolla de la panadería",
+        "que acabó en empate y en reparto del premio",
+        "con el jurado infantil votando a mano alzada",
+        "que esta vez se decidió por el punto de cuajado",
+        "con la de la calle del Pozo fuera del podio por primera vez",
+        "que se llevó la abuela de siempre sin sorpresa alguna"
+    ];
+
+    private static readonly string[] _verbenas =
+    [
+        "con la orquesta de siempre, que repitió el pasodoble dos veces porque la pista no se vaciaba",
+        "con un grupo de versiones que se atrevió con la jota y salió aplaudido",
+        "con la charanga sustituyendo a la orquesta, que llegó tarde por la carretera cortada",
+        "con un discomóvil que dejó la pista a los más jóvenes",
+        "con la orquesta tocando bajo una llovizna que no espantó a nadie",
+        "con el coro parroquial abriendo la noche y la orquesta cerrándola",
+        "con una tuna que recorrió los bares antes de subir al escenario",
+        "con la orquesta de siempre y un fin de fiesta de fuegos desde el puente"
+    ];
+
     private static string Chronicle()
     {
         var days = string.Join("\n", Enumerable.Range(1, 24).Select(day => $"""
@@ -319,13 +355,13 @@ public sealed class EvalWeb : IAsyncDisposable
             con el pasacalles de la charanga por la calle Mayor y el reparto de chocolate con
             churros en la plaza. A media mañana los mayores jugaron su campeonato de petanca
             junto al quiosco, y los pequeños llenaron los talleres de la carpa municipal, donde
-            este año se pintaron caretas, se montaron cometas y se aprendió a hacer pan. Por la
-            tarde hubo concurso de tortillas frente al centro cívico — con más discusión que
-            nunca sobre el punto de la cebolla — y la verbena se alargó hasta bien entrada la
-            noche con la orquesta de siempre, que repitió el pasodoble dos veces porque la pista
-            no se vaciaba. Los vecinos de la calle del Pozo volvieron a ganar el premio al balcón
-            mejor engalanado, y la comisión recordó por megafonía que los boletos de la rifa
-            solidaria seguían a la venta en la caseta de la entrada.</p>
+            ese día {_workshops[(day - 1) % _workshops.Length]}. Por la tarde hubo concurso de
+            tortillas frente al centro cívico — {_tortillas[(day - 1) % _tortillas.Length]} —
+            y la verbena se alargó hasta bien entrada la noche
+            {_verbenas[(day - 1) % _verbenas.Length]}. Los vecinos de la calle del Pozo
+            volvieron a ganar el premio al balcón mejor engalanado, y la comisión recordó por
+            megafonía que los boletos de la rifa solidaria seguían a la venta en la caseta de la
+            entrada.</p>
             """));
 
         return Page("Crónica de las fiestas del barrio", $"""

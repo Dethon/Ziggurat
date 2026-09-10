@@ -24,15 +24,8 @@ public class ViewImageTool(IWebBrowser browser)
 
     protected const string Description =
         """
-        Looks at images on the page you last browsed, by the refs web_browse listed.
-        Pass the refs from the image entries in the page text — they look like i-1, i-2.
-        These are not the e-1 style refs web_action uses; the two are separate namespaces.
-
-        Up to 8 images per call. Ask for more and the first 8 come back with the rest named,
-        so nothing is lost — call again for those.
-
-        The refs live in the browser session that listed them and expire with it. If a ref no
-        longer resolves, browse the page again to get fresh ones.
+        Shows the pictures of the page you last browsed, by the i-N refs web_browse listed beside
+        them, up to 8 per call; asking for more returns the first 8 and names the rest.
         """;
 
     protected async Task<ViewImageToolResult> RunAsync(

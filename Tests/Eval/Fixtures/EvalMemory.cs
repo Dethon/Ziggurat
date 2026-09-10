@@ -59,9 +59,13 @@ public sealed class EvalMemory(IReadOnlyList<RememberedFact> facts) : IMemorySto
         }
     }
 
+    // The id a declared fact carries, by its position in the scenario's list: the recall block
+    // spells it to the model, and a forget that names it is the exact deletion the tool asks for.
+    public static string IdOf(int index) => $"eval-memory-{index}";
+
     private static MemoryEntry Entry(RememberedFact fact, int index) => new()
     {
-        Id = $"eval-memory-{index}",
+        Id = IdOf(index),
         UserId = EvalRun.UserId,
         Category = fact.Category,
         Content = fact.Content,

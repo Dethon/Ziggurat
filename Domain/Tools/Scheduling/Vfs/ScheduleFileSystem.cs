@@ -231,6 +231,15 @@ public sealed class ScheduleFileSystem(
     public override async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
+        // A schedule directory holds exactly one file, so a body written to `/<agentId>/<id>`
+        // can only mean that file: the same create, spelled without the suffix the mount
+        // documents. Refusing it bought nothing but a second call with the suffix on.
+        if (node.Kind == ScheduleNodeKind.ScheduleDir && !node.ScheduleId!.Contains('.'))
+        {
+            path = $"/{node.AgentId}/{node.ScheduleId}/{SchedulePath.ScheduleFileName}";
+            node = SchedulePath.Parse(path);
+        }
+
         if (node.Kind != ScheduleNodeKind.ScheduleFile || node.AgentId is null || node.ScheduleId is null)
         {
             return Invalid<FsCreateResult>($"Create a schedule at /<agentId>/<scheduleId>/schedule.json (got '{path}')");
@@ -400,10 +409,29 @@ public sealed class ScheduleFileSystem(
             return NotFound<FsExecResult>(path);
         }
 
+        // The dotted spelling of the action file, stripped the way every exec-capable mount
+        // strips it.
         var trimmed = command.Trim();
+        if (trimmed.StartsWith("./", StringComparison.Ordinal))
+        {
+            trimmed = trimmed[2..];
+        }
+
+        // Split the two refusals apart the way the timers mount does: a flag on the right script
+        // is a different mistake from the wrong script, and one message for both sends a model
+        // looking for a file that is already under its hand.
         if (trimmed != SchedulePath.RunNowFileName)
         {
-            return Exec("", $"command not found: {trimmed}\navailable: {SchedulePath.RunNowFileName}", 127, path);
+            var script = trimmed.Split(' ', 2)[0];
+
+            return Exec(
+                "",
+                script == SchedulePath.RunNowFileName
+                    ? $"{SchedulePath.RunNowFileName} takes no arguments: it fires this schedule "
+                      + "once, now. Run it on its own."
+                    : $"command not found: {script}\navailable: {SchedulePath.RunNowFileName}",
+                127,
+                path);
         }
 
         // Queue the schedule for the dispatcher's next tick by setting NextRunAt=now. LastRunAt is left

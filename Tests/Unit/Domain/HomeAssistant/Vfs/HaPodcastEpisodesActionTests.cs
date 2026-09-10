@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
@@ -22,7 +23,8 @@ public class HaPodcastEpisodesActionTests
         var ha = new FakeHaClient
         {
             States = { Entity("media_player.speaker", "idle", ("friendly_name", JsonValue.Create("speaker-fran-office"))) },
-            Services = { Service("music_assistant", "play_media", DomainTarget("media_player")) }
+            Services = { Service("music_assistant", "play_media", DomainTarget("media_player"),
+                ("media_id", new HaServiceField()), ("media_type", new HaServiceField())) }
         };
         var ma = new FakeMusicAssistantClient
         {
@@ -49,6 +51,35 @@ public class HaPodcastEpisodesActionTests
     private static async Task<FsExecResult> Exec(HaFileSystem fs, string command) =>
         (await fs.ExecAsync(PlayerDir, command, null, CancellationToken.None))
         .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+    // The uri this action hands back carries its provider prefix and `://`. A model that knows
+    // Spotify recognises the id inside it and "tidies" the rest into `spotify:episode:<id>`, which
+    // Music Assistant answers with a bare 500 — a refusal that cannot say whether the episode or
+    // the uri was wrong. glm-5.3-flash read it as the episode and spent four runs guessing further
+    // ids, having already been handed the right one. The rewrite is recognisable, so it is refused
+    // with the reason before it reaches a 500 that cannot carry one.
+    [Theory]
+    [InlineData("spotify:episode:4Fk1sWv0xKvJ6teiCpTAJN")]
+    [InlineData("spotify:track:1a2b3c")]
+    public async Task Exec_PlayMediaWithAProviderNativeUri_IsRefusedWithTheReason(string mediaId)
+    {
+        var exec = await Exec(
+            Build(out _), $"music_assistant.play_media.sh --media_id \"{mediaId}\"");
+
+        exec.ExitCode.ShouldBe(2);
+        exec.Stderr.ShouldContain("as the listing gave it", Case.Insensitive);
+    }
+
+    [Theory]
+    [InlineData(PalantirUri)]
+    [InlineData("miles davis")]
+    public async Task Exec_PlayMediaWithAUriTheListingGaveOrAPlainName_IsNotRefused(string mediaId)
+    {
+        var exec = await Exec(
+            Build(out _), $"music_assistant.play_media.sh --media_id \"{mediaId}\"");
+
+        exec.ExitCode.ShouldNotBe(2);
+    }
 
     [Fact]
     public async Task Exec_PodcastByName_ResolvesShowThenReturnsEpisodeUris()

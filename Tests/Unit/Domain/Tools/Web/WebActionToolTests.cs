@@ -27,6 +27,24 @@ public class WebActionToolTests
         hint.ShouldContain("web_browse");
     }
 
+    // A ref from the page the click left behind: the tab moved on to the next page, and "browse
+    // it again" is the second browse the browser's own back exists to avoid. The wall names both
+    // addresses and the recovery is the back action.
+    [Fact]
+    public async Task ASupersededRef_WhoseTabHasNavigatedOn_SaysToGoBack_NotToBrowseAgain()
+    {
+        var envelope = await RunAsync(new WebActionResult(
+            "s", WebActionStatus.RefSuperseded, "https://shop.test/product/42", false, null, null, null,
+            RefUrl: "https://shop.test/product"));
+
+        var message = envelope["message"]!.GetValue<string>();
+        message.ShouldContain("https://shop.test/product");
+        message.ShouldContain("https://shop.test/product/42");
+        var hint = envelope["hint"]!.GetValue<string>();
+        hint.ShouldContain("back");
+        hint.ShouldNotContain("web_browse");
+    }
+
     [Fact]
     public async Task ARefWhoseTabWasClosed_NamesTheUrlToBrowseAgain()
     {

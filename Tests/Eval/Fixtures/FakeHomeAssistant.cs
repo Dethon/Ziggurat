@@ -413,6 +413,7 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         (domain, service) switch
         {
             ("media_player", "browse_media") => Browse(data),
+            ("media_player", "search_media") => NothingFound(),
             ("music_assistant", "play_media") when !Resolves(data) => Unresolvable(),
             ("media_player", "play_media") => Unresolvable(),
             _ => null
@@ -435,6 +436,17 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             })
             : Unresolvable();
 
+    // What a real search answers when the catalog has nothing: a response with an empty result
+    // list, which is the shape the mount forwards. The generic "ok, nothing changed" this used to
+    // fall through to could not be told from a call that never answers, and a model went on
+    // rewording the search.
+    private static HttpResponseMessage NothingFound() =>
+        Json(new JsonObject
+        {
+            ["changed_states"] = new JsonArray(),
+            ["service_response"] = new JsonObject { ["result"] = new JsonArray() }
+        });
+
     private static readonly string[] _playlists =
         [FavouritesPlaylist, "Domingo por la mañana", "Gimnasio 2026"];
 
@@ -449,10 +461,17 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
 
     // A name resolves if the library has it, and a uri resolves if it is one the fake serves.
     // Everything else is a guess, and a guess is what the browse-first rule exists to prevent.
+    //
+    // "One the fake serves" has to include every uri the episode listing hands out, not only the
+    // episode already on the player: the mount answers podcast_episodes.sh from the Music
+    // Assistant fake, and a play of the uri it just returned was coming back as an unexplained
+    // 500. The scenario that asks for exactly that was therefore unpassable — the model did as
+    // the skill says, was refused, and had nothing left to try.
     private static bool Resolves(JsonObject data) =>
         data["media_id"]?.GetValue<string>() is { } id
         && (_playlists.Contains(id, StringComparer.OrdinalIgnoreCase)
             || id == PlayingEpisodeUri
+            || FakeMusicAssistantServer.ServesEpisodeUri(id)
             || _knownNames.Contains(id, StringComparer.OrdinalIgnoreCase));
 
     // Free-text names that resolve through the streaming providers, which is what the contract says

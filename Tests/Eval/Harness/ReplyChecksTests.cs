@@ -118,6 +118,30 @@ public class ReplyChecksTests
         failures.ShouldBeEmpty();
     }
 
+    // "Un momento" is the Spanish beat the rule's own 'Buscando.' stands for, and it is two words
+    // in every register that says it. A stripper that only took one word failed a reply for
+    // picking the idiomatic opener over a translated one.
+    [Fact]
+    public void ATwoWordAcknowledgement_DoesNotCountEither()
+    {
+        var failures = Failures(
+            new ReplyExpectation { MaxSentences = 1, MaxWords = 12 },
+            "Un momento.\nQuedan cinco minutos.");
+
+        failures.ShouldBeEmpty();
+    }
+
+    // The tolerance is for an opener, not for a first sentence of answer.
+    [Fact]
+    public void AThreeWordOpener_IsStillAnswerAndCounts()
+    {
+        var failures = Failures(
+            new ReplyExpectation { MaxSentences = 1 },
+            "Voy a mirarlo.\nQuedan cinco minutos.");
+
+        failures.ShouldHaveSingleItem().ShouldContain("2 sentences");
+    }
+
     [Fact]
     public void TwoSentencesOfAnswer_StillFailAOneSentenceLimit()
     {
@@ -147,6 +171,45 @@ public class ReplyChecksTests
     {
         Failures(new ReplyExpectation { AcknowledgesFirst = true }, reply)
             .ShouldHaveSingleItem().ShouldContain("one-word acknowledgement");
+    }
+
+    // "recuerd" caught "algo que te lleves de recuerdo" — a souvenir — on a turn whose forget had
+    // just happened, two runs of three on one provider. The fragments the memory scenarios share
+    // name the remembering, not the keepsake.
+    [Fact]
+    public void ASouvenir_IsNotAMentionOfMemory()
+    {
+        var expectation = new ReplyExpectation { NeverSays = Scenarios.MemoryScenarios.MemoryMentions };
+
+        Failures(expectation, "¿Algún sitio que recomendarías para el recuerdo, o algo que te lleves de recuerdo?")
+            .ShouldBeEmpty();
+        Failures(expectation, "Borro el recuerdo de que estabas preparando el viaje.")
+            .ShouldNotBeEmpty();
+        Failures(expectation, "Lo recuerdo: cueces la pasta nueve minutos.")
+            .ShouldNotBeEmpty();
+        Failures(expectation, "He actualizado tus recuerdos.")
+            .ShouldNotBeEmpty();
+
+        // The bare noun with an article in front is the mechanism named as plainly as it can be,
+        // and the phrase list walked straight past it.
+        Failures(expectation, "He eliminado ese recuerdo.")
+            .ShouldNotBeEmpty();
+        Failures(expectation, "Recuerdo borrado.")
+            .ShouldNotBeEmpty();
+    }
+
+    // The one clause the mounts rule asks for, said as "no me es accesible … ninguna contiene tu
+    // carpeta", failed the scenario on 2026-09-09 with no call made and the mount list named
+    // correctly: the spellings had every negation but that one.
+    [Fact]
+    public void AnUnreachablePathExplainedAsInaccessible_Passes()
+    {
+        var expectation = Scenarios.MountScenarios.AMountThatIsNotThere.Reply!;
+
+        Failures(expectation,
+                "Lo siento, fran, pero `/media/Movies` no me es accesible: solo puedo ver los sistemas " +
+                "montados en esta sesión, y ninguna contiene tu carpeta de películas.")
+            .ShouldBeEmpty();
     }
 
     private static IReadOnlyList<string> Failures(ReplyExpectation expectation, string reply) =>

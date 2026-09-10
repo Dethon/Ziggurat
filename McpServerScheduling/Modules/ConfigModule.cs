@@ -39,6 +39,9 @@ public static class ConfigModule
             .AddChannelServer(DeliveryPolicy.GateOnLive, noOutboundSurface: true)
             .AddFileSystemTools<ScheduleFileSystem>()
             .AddFileSystemResource<ScheduleFileSystem>()
+            // The skill that teaches this server's files ships beside them, in the zone the
+            // server reads cron and runAt in.
+            .AddSkills(SchedulingSkill.For(TimeZoneInfo.Local.Id))
             .WithPrompts<McpSystemPrompt>();
 
         return services;

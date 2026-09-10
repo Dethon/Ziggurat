@@ -30,7 +30,7 @@ public static class WebScenarios
 
     // Declared by both halves — the spoken research scenario and the written chronicle one —
     // because neither declaration may lie about being the only witness.
-    private static Guard RawContentIsNeverDumped => new(WebBrowsingPrompt.RawContentIsNeverDumped.Id,
+    private static Guard RawContentIsNeverDumped => new(WebBrowsingSkill.RawContentIsNeverDumped.Id,
         "Asserted as a side condition on both halves now: the spoken research scenario is "
         + "bounded to two sentences, and the chronicle scenario bounds a written reply to four "
         + "against a thirty-thousand-character page. No scenario's subject is the dumping "
@@ -38,7 +38,12 @@ public static class WebScenarios
 
     // The shape a snapshot stamps, spelled from the prefix the stamping code owns: a hardcoded
     // copy here failed every correct run when the session-unique rename turned 'e1' into 'e-1'.
-    private static readonly string ASnapshotRef = $"^{ElementRef.Prefix}\\d+$";
+    // Every scenario of the family requires the load before the first web call: the skill's
+    // description is the trigger claim, and a page driven without the skill is the red that
+    // claim exists to show.
+    private static CallExpectation LoadsTheSkill => CallExpectation.LoadsSkill(WebBrowsingSkill.Name);
+
+    private static readonly string _aSnapshotRef = $"^{ElementRef.Prefix}\\d+$";
 
     // The answer is in the article and nowhere else: the search snippet describes the recipe
     // without giving the number. A model that answered from the result list has nothing to answer
@@ -57,6 +62,7 @@ public static class WebScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "search",
@@ -77,17 +83,26 @@ public static class WebScenarios
         // worker — so the detour is tolerated, declined, and paid for with one slack call.
         MayDelegateTo = ["jonas-worker"],
         WorkerAnswer = WorkerCannotBrowse,
-        CallCeiling = 5,
+        // "El gazpacho de Almudena" names a person, and a recipe from a person is what a vault
+        // holds: one look there before the web is a reasonable reading of the turn, not a
+        // failure to search. The subject — the number comes from the page and not from the
+        // snippet — is untouched by it, and the ceiling keeps it to one look.
+        Permitted = [new CallPermission(EvalTools.Search, "/vault*")],
+        CallCeiling = 6,
         Reply = new ReplyExpectation
         {
             // Spoken, so the source url the written contract asks for must not appear — the check
             // for a url is part of what `Spoken` means.
             Spoken = true,
             MaxSentences = 2,
-            Mentions = [new SpokenValue("the resting time", "90", "noventa")]
+            // "hora y media" is ninety minutes said the way a person says it, and the voice rules
+            // ask for exactly that. A check that took only the digits failed the reply for
+            // obeying them.
+            Mentions = [new SpokenValue("the resting time", "90", "noventa", "hora y media")]
         },
-        // No citation: searching is forced by the fixture rather than by the prose — a loopback
-        // port cannot be guessed.
+        // The search is not cited: it is forced by the fixture rather than by the prose — a
+        // loopback port cannot be guessed. The load is.
+        Claims = [WebBrowsingSkill.LoadsForAWebTask.Id],
         Guards = [RawContentIsNeverDumped],
         Policy = new RunPolicy(2, 3),
         // This family's canary: search, open, read, answer is the shape the other two vary.
@@ -109,6 +124,7 @@ public static class WebScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "open",
@@ -120,16 +136,17 @@ public static class WebScenarios
         MayDelegateTo = ["jonas-worker"],
         WorkerAnswer = WorkerCannotBrowse,
         // Search, open, and one recovery — plus the delegation detour the declined worker costs.
-        CallCeiling = 5,
+        CallCeiling = 6,
         Reply = new ReplyExpectation
         {
             // The stale time may well appear beside the new one — "antes a las nueve, ahora a las
             // diez y media" is a good answer. What cannot be missing is the time that is true.
             Mentions = [new SpokenValue("the current opening time", "10:30", "10.30")]
         },
+        Claims = [WebBrowsingSkill.LoadsForAWebTask.Id],
         Guards =
         [
-            new Guard(WebBrowsingPrompt.AnswerComesFromWhatWasRead.Id,
+            new Guard(WebBrowsingSkill.AnswerComesFromWhatWasRead.Id,
                 "Demonstrated on 2026-08-19 with both sentences deleted — the paragraph telling it to "
                 + "read the page and the bullet telling it to answer from what it found: the museum's "
                 + "opening time still came back as the page's 10:30 rather than the snippet's 9:00. "
@@ -160,13 +177,19 @@ public static class WebScenarios
             // worker, and it does exactly that on about half of the runs where the turn reads like
             // research — the per-run coin recorded with the subagent claims in SubAgentPrompt, and
             // not what this scenario is about.
-            Text = "Abre el formulario de reservas del taller del Cuaderno de barrio y reserva el "
-                   + "turno del sábado a las 12:00 a nombre de Fran; dime el código de la reserva.",
+            // "en la web del": the site's name reads in Spanish as a notebook, so a request that
+            // does not say it is a site is a request to search the vault, and a model that reads
+            // the vault prompt literally does exactly that. The two scenarios that always carried
+            // these words never searched the vault; the two that did not, did.
+            Text = "Abre el formulario de reservas del taller en la web del Cuaderno de barrio y "
+                   + "reserva el turno del sábado a las 12:00 a nombre de Fran; dime el código "
+                   + "de la reserva.",
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "open",
@@ -185,7 +208,7 @@ public static class WebScenarios
                 Label = "name",
                 Tool = EvalTools.WebAction,
                 // A ref that came out of that snapshot, and the name the user gave.
-                Arguments = [Arg.Matches("ref", ASnapshotRef), Arg.Matches("value", "(?i)fran")]
+                Arguments = [Arg.Matches("ref", _aSnapshotRef), Arg.Matches("value", "(?i)fran")]
             }
         ],
         // The page has to be open before an element on it can be named.
@@ -199,7 +222,7 @@ public static class WebScenarios
         ],
         MayDelegateTo = ["jonas-worker"],
         WorkerAnswer = WorkerCannotBrowse,
-        CallCeiling = 10,
+        CallCeiling = 11,
         Reply = new ReplyExpectation
         {
             // Only the confirmation page carries it, and only a submission produces that page.
@@ -212,18 +235,37 @@ public static class WebScenarios
         // the model did instead of snapshotting was hand the whole booking to a worker, which is
         // the same reflex the delegation guards record: without the prose it does not attempt
         // the interaction at all.
-        Claims = [WebBrowsingPrompt.RefsComeFromASnapshot.Id],
+        Claims = [WebBrowsingSkill.LoadsForAWebTask.Id],
+        Guards =
+        [
+            new Guard(WebBrowsingSkill.RefsComeFromASnapshot.Id,
+                "Demonstrated on 2026-09-08 with the whole skill body deleted and the description intact: "
+                + "the form was still snapshotted, filled by its refs and submitted, four of four. A ref "
+                + "that was never seen addresses nothing, so the tools teach this on their own; the "
+                + "booking code guards.")
+        ],
         // The reply of the one scenario that takes many steps is where narrating them tempts.
         Judged =
         [
-            new JudgedCheck(WebBrowsingPrompt.StepsAreNotReported.Id,
+            new JudgedCheck(WebBrowsingSkill.StepsAreNotReported.Id,
                 "Read the assistant's reply. It must carry the outcome — the booking made and its "
                 + "confirmation code — without an account of how it was done. Fail if the reply "
                 + "narrates the process: pages opened, forms filled, buttons clicked, snapshots "
                 + "taken, tools or workers used. Naming the workshop, the day, the time and the "
                 + "code is the outcome and passes; 'I opened the form and typed your name' is a "
                 + "step and fails."),
-            new JudgedCheck(WebBrowsingPrompt.BrowseReadsAndSnapshotStructures.Id,
+            // The same reply, read for what was said beside the calls rather than after them: a
+            // model that opens with "voy a ello: cargo la guía y busco la página" beside its first
+            // call has announced two steps before the skill's own rule was in the conversation,
+            // and the channel streams that line to the user like any other.
+            new JudgedCheck(CoreDirectivePrompt.NoStepIsAnnouncedBesideACall.Id,
+                "Read the assistant's reply from its first word. Anything before the outcome was "
+                + "said beside a tool call, before any result existed. Fail if any of it announces "
+                + "or narrates a step: loading a guide or skill, searching, opening a page, "
+                + "filling a field, submitting. A short acknowledgement that names no step "
+                + "('Voy a ello.', 'Un momento.') passes, and so does a reply that is the "
+                + "outcome alone."),
+            new JudgedCheck(WebBrowsingSkill.BrowseReadsAndSnapshotStructures.Id,
                 "Look at the tool calls. web_browse fetches a page's content (and, with "
                 + "snapshot=true, its interactive structure in the same call); web_snapshot "
                 + "fetches structure alone. Fail if the flow paid twice for the same thing: a "
@@ -254,6 +296,7 @@ public static class WebScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "open",
@@ -273,7 +316,7 @@ public static class WebScenarios
         // in fetched-once.
         MayDelegateTo = ["jonas-worker"],
         WorkerAnswer = WorkerCannotBrowse,
-        CallCeiling = 5,
+        CallCeiling = 6,
         Reply = new ReplyExpectation
         {
             // Four sentences bounds the written reply against a page that is thirty thousand
@@ -293,10 +336,16 @@ public static class WebScenarios
         },
         Claims =
         [
-            WebBrowsingPrompt.PartialContentIsFetchedOnce.Id,
+            WebBrowsingSkill.LoadsForAWebTask.Id,
+            WebBrowsingSkill.PartialContentIsFetchedOnce.Id,
             // The written half; the spoken half is asserted wherever a reply is Spoken, because
             // the no-unspeakables check already forbids a url there.
-            WebBrowsingPrompt.UrlsAreCitedOnlyInWriting.Id
+            WebBrowsingSkill.UrlsAreCitedOnlyInWriting.Id,
+            // The raffle total is matched in its Spanish spellings only, so a reply that drifts
+            // into English fails here on "1,842" — which is the claim: jonas has no pinned
+            // language and answered this Spanish turn in English (2026-09-10) until the rule
+            // for the unpinned case was written.
+            LanguagePrompt.ReplyFollowsTheMessage.Id
         ],
         Guards = [RawContentIsNeverDumped],
         Policy = new RunPolicy(2, 3)
@@ -319,6 +368,7 @@ public static class WebScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "search",
@@ -341,13 +391,16 @@ public static class WebScenarios
         // declined worker reads no page, so the parent still has to search and open.
         MayDelegateTo = ["jonas-worker"],
         WorkerAnswer = WorkerCannotBrowse,
-        CallCeiling = 5,
+        CallCeiling = 6,
         Reply = new ReplyExpectation
         {
             MaxSentences = 3,
-            Mentions = [new SpokenValue("the resting time", "90", "noventa")]
+            // "hora y media" is ninety minutes said the way a person says it, and the voice rules
+            // ask for exactly that. A check that took only the digits failed the reply for
+            // obeying them.
+            Mentions = [new SpokenValue("the resting time", "90", "noventa", "hora y media")]
         },
-        Claims = [WebBrowsingPrompt.UrlComesFromASearch.Id],
+        Claims = [WebBrowsingSkill.LoadsForAWebTask.Id, WebBrowsingPrompt.UrlComesFromASearch.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -360,13 +413,17 @@ public static class WebScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "Apúntame a la actividad de astronomía en la azotea, a nombre de Fran, y dime "
-                   + "el código de inscripción.",
+            // The site is named for the same reason the booking scenarios name it: this scenario's
+            // subject is type-vs-fill, and a request that names no source at all makes the model
+            // guess where to look before it can reach the field this is about.
+            Text = "Apúntame en la web del Cuaderno de barrio a la actividad de astronomía en la "
+                   + "azotea, a nombre de Fran, y dime el código de inscripción.",
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "open",
@@ -384,7 +441,7 @@ public static class WebScenarios
                 Arguments =
                 [
                     Arg.Matches("action", "(?i)^type$"),
-                    Arg.Matches("ref", ASnapshotRef),
+                    Arg.Matches("ref", _aSnapshotRef),
                     Arg.Matches("value", "(?i)astro")
                 ]
             }
@@ -403,7 +460,7 @@ public static class WebScenarios
         // that keeps wandering breaks it.
         MayDelegateTo = ["jonas-worker"],
         WorkerAnswer = WorkerCannotBrowse,
-        CallCeiling = 12,
+        CallCeiling = 13,
         Reply = new ReplyExpectation
         {
             // Only the confirmation page carries it, and the confirmation only exists for a form
@@ -411,7 +468,14 @@ public static class WebScenarios
             // because the suggestions are driven by key events a fill never sends.
             Mentions = [new SpokenValue("the signup code", EvalWeb.SignupCode)]
         },
-        Claims = [WebBrowsingPrompt.TypeReactsAndFillSets.Id],
+        Claims = [WebBrowsingSkill.LoadsForAWebTask.Id],
+        Guards =
+        [
+            new Guard(WebBrowsingSkill.TypeReactsAndFillSets.Id,
+                "Demonstrated on 2026-09-08 with the whole skill body deleted and the description intact: "
+                + "the autocomplete was typed into and its option clicked, four of four. The field's own "
+                + "behaviour in the diff teaches the choice; the confirmation code guards.")
+        ],
         Policy = new RunPolicy(2, 4)
     };
 
@@ -433,6 +497,7 @@ public static class WebScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "open",
@@ -463,7 +528,7 @@ public static class WebScenarios
         // worker and one spare — and the spare survives a declined-worker detour, which armed
         // runs showed costing exactly the call the old ceiling had no room for. Re-browsing the
         // archive instead of going back still misses the required back.
-        CallCeiling = 10,
+        CallCeiling = 11,
         Reply = new ReplyExpectation
         {
             MaxSentences = 4,
@@ -473,7 +538,14 @@ public static class WebScenarios
                 new SpokenValue("the 2025 total", EvalWeb.Raffle2025Total, "1577", "1 577")
             ]
         },
-        Claims = [WebBrowsingPrompt.BackIsAnAction.Id],
+        Claims = [WebBrowsingSkill.LoadsForAWebTask.Id],
+        Guards =
+        [
+            new Guard(WebBrowsingSkill.BackIsAnAction.Id,
+                "Demonstrated on 2026-09-08 with the whole skill body deleted and the description intact: "
+                + "three of four, the same rate the scenario holds with the body in place. The deletion "
+                + "changed nothing measurable, so the scenario guards rather than cites.")
+        ],
         Policy = new RunPolicy(2, 4)
     };
 
@@ -486,7 +558,7 @@ public static class WebScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "Abre el formulario de materiales del taller del Cuaderno de barrio y "
+            Text = "Abre el formulario de materiales del taller en la web del Cuaderno de barrio y "
                    + "apúntame al lote de Cerámica sábado: Fran, teléfono 600111222, correo "
                    + "fran@example.com. Dime el código.",
             Sender = "fran"
@@ -494,6 +566,7 @@ public static class WebScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            LoadsTheSkill,
             new CallExpectation
             {
                 Label = "open",
@@ -517,12 +590,19 @@ public static class WebScenarios
         // The straight flow is six calls: open with refs, three fills, a select, the submit.
         // A declined-worker detour, its search and one stray call fit; a snapshot between every
         // action still does not — that storm costs eleven or more.
-        CallCeiling = 9,
+        CallCeiling = 10,
         Reply = new ReplyExpectation
         {
             Mentions = [new SpokenValue("the materials code", EvalWeb.MaterialsCode)]
         },
-        Claims = [WebBrowsingPrompt.ActionsChainFromTheDiff.Id],
+        Claims = [WebBrowsingSkill.LoadsForAWebTask.Id],
+        Guards =
+        [
+            new Guard(WebBrowsingSkill.ActionsChainFromTheDiff.Id,
+                "Demonstrated on 2026-09-08 with the whole skill body deleted and the description intact: "
+                + "the static form was chained from one snapshot's refs, four of four. Each action's diff "
+                + "hands back the next refs, so the model has no reason to snapshot again; the ceiling guards.")
+        ],
         Policy = new RunPolicy(2, 4)
     };
 }

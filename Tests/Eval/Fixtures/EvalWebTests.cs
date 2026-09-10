@@ -128,6 +128,27 @@ public class EvalWebTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TheChronicle_TellsADifferentDayEachDay()
+    {
+        // The filler has to be filler a reader would pass over, not a defect a reader would
+        // report: an armed run on 2026-09-09 read twenty-four word-for-word copies of one
+        // paragraph, told the user the site looked mispublished, and spent the reply's length on
+        // the warning. Each day keeps the shared skeleton and carries something its own.
+        var page = await _browsing.NavigateAsync(new BrowseRequest(
+            "proof-chronicle-days", _web.ChronicleUrl, MaxLength: 100_000));
+
+        var days = System.Text.RegularExpressions.Regex
+            .Split(page.Content.ShouldNotBeNull(), @"^## Día \d+\s*$", System.Text.RegularExpressions.RegexOptions.Multiline)
+            .Skip(1)
+            .Select(body => body.Split("## El cierre")[0])
+            .Select(body => System.Text.RegularExpressions.Regex.Replace(body, @"\d+", "").Trim())
+            .ToList();
+
+        days.Count.ShouldBe(24);
+        days.Distinct().Count().ShouldBe(24, "every day reads as the same day with its number changed");
+    }
+
+    [Fact]
     public async Task TypingInTheActivityField_OpensSuggestions_AndPickingOneSignsUp()
     {
         // The reactive field the type-vs-fill rule needs, driven end to end: the suggestions only

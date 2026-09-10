@@ -3,6 +3,7 @@ paths:
   - "McpServerWebSearch/**"
   - "Domain/Tools/Web/**"
   - "Domain/Prompts/WebBrowsingPrompt.cs"
+  - "Domain/Prompts/WebBrowsingSkill.cs"
   - "Domain/Contracts/IWebBrowser.cs"
   - "Infrastructure/Clients/Browser/**"
   - "DockerCompose/camoufox/**"
@@ -10,7 +11,7 @@ paths:
 
 # Web Browsing Architecture
 
-McpServerWebSearch exposes the `web_*` browse tools over `PlaywrightWebBrowser`, a WebSocket to Camoufox. The accessibility snapshot assigns interactive element refs (`e-1`, `e-2`, …) that `web_action` then addresses, pages are kept alive per session with cookie persistence, and cookie banners, newsletters and age gates are auto-dismissed.
+McpServerWebSearch exposes the `web_*` browse tools. The `websearch_prompt` (`Domain/Prompts/WebBrowsingPrompt.cs`) is the standing stub — the browser exists, a url comes from a search, no call is a probe — and the workflow, principles, error recovery and answer style are the `web-browsing` skill (`Domain/Prompts/WebBrowsingSkill.cs`, shipped through `AddSkills`; `docs/adr/0039`). The tools run over `PlaywrightWebBrowser`, a WebSocket to Camoufox. The accessibility snapshot assigns interactive element refs (`e-1`, `e-2`, …) that `web_action` then addresses, pages are kept alive per session with cookie persistence, and cookie banners, newsletters and age gates are auto-dismissed.
 
 ## Tabs
 

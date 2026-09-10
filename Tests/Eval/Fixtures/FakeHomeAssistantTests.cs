@@ -203,6 +203,24 @@ public class FakeHomeAssistantTests
     }
 
     [Fact]
+    public async Task SearchingTheCatalogForNothing_AnswersWithAnEmptyResultList()
+    {
+        // A real search_media returns a response: {"result": [...]}. A fake that answered the
+        // generic "ok, nothing changed" left a model unable to tell "no results" from "this call
+        // does not answer", and it went on rewording the search.
+        var home = new FakeHomeAssistant();
+
+        var result = await Mount(home).ExecAsync(
+            Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
+            """search_media.sh --search_query "Radio Faro del Sur" """,
+            timeoutSeconds: null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0);
+        exec.Stdout.ShouldContain("\"result\":[]");
+    }
+
+    [Fact]
     public async Task PlayingAPlaylistTheLibraryDoesNotHave_FailsTheWayHomeAssistantFails()
     {
         // A 500 with nothing useful in it, which is exactly what a real home answers when
@@ -255,6 +273,26 @@ public class FakeHomeAssistantTests
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(0);
         exec.Stdout.ShouldContain("podcast_episode/4Fk1sWv0xKvJ6teiCpTAJN");
+    }
+
+    // The other half of the same contract, and the half nobody had written: the uri the listing
+    // hands out has to be one the fake will then play. It was not — Resolves accepted only the
+    // episode already on the player (5V4Bf), so the Palantir uri the listing returns (4Fk…) came
+    // back as an unexplained 500. The scenario built on this was unpassable, and glm-5.3-flash
+    // failed it four runs a night for doing exactly what the skill asks.
+    [Fact]
+    public async Task PlayingTheUriThatListingGave_Resolves()
+    {
+        await using var music = await FakeMusicAssistantServer.StartAsync();
+        var home = new FakeHomeAssistant();
+
+        var result = await Mount(home, music).ExecAsync(
+            Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
+            """music_assistant.play_media.sh --media_id "spotify--w2nq2jMe://podcast_episode/4Fk1sWv0xKvJ6teiCpTAJN" """,
+            timeoutSeconds: null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0);
     }
 
     [Fact]

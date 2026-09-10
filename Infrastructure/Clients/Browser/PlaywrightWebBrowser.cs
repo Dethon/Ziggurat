@@ -198,9 +198,12 @@ public class PlaywrightWebBrowser(
                 );
             }
 
-            // Refresh page after setting cookie
-            await page.ReloadAsync(new PageReloadOptions
+            // Refresh page after setting cookie. The reload's response replaces the challenge's:
+            // a DataDome or Cloudflare interstitial answers 403, and keeping that status made the
+            // envelope report an http error over the content the solve had just unlocked.
+            var reloaded = await page.ReloadAsync(new PageReloadOptions
             { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 30000 });
+            response = reloaded ?? response;
             html = await page.ContentAsync();
             captchaRetries++;
         }
@@ -254,7 +257,8 @@ public class PlaywrightWebBrowser(
         {
             ImageCount = processed.ImageCount,
             ImagesBeyondWindow = processed.ImagesBeyondWindow,
-            NextOffset = processed.NextOffset
+            NextOffset = processed.NextOffset,
+            HttpStatus = response?.Status
         };
     }
 
@@ -377,7 +381,7 @@ public class PlaywrightWebBrowser(
                 TabOutcome<WebActionResult>.Ran ran => ran.Result,
                 TabOutcome<WebActionResult>.Superseded superseded => new WebActionResult(
                     request.SessionId, WebActionStatus.RefSuperseded,
-                    null, false, null, null, null, RefUrl: superseded.Url),
+                    superseded.CurrentUrl, false, null, null, null, RefUrl: superseded.Url),
                 TabOutcome<WebActionResult>.Closed closed => new WebActionResult(
                     request.SessionId, WebActionStatus.RefClosed,
                     null, false, null, null, null, RefUrl: closed.Url),

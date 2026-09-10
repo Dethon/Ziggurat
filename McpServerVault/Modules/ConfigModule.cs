@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Prompts;
 using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Infrastructure.Clients;
@@ -25,13 +26,19 @@ public static class ConfigModule
                 + "embeds, frontmatter, and tags; the user edits the same files in Obsidian. "
                 + "Persistent host-mounted directory. Read/write text only (allowed extensions "
                 + "enforced); does NOT support fs_exec. See the Vault Filesystem (Obsidian) prompt "
-                + "for conventions.",
+                + "for conventions. Holds what the user wrote and nothing else: a question about "
+                + "the world or a task on a site — a recipe, an opening time, a booking, what some "
+                + "site says — is done on the web, not by searching here first, however the "
+                + "request is phrased.",
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.VaultPath),
                 settings.AllowedExtensions))
             .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<TextDiskFileSystem>()
             .AddFileSystemResource<TextDiskFileSystem>()
+            // The skill that teaches this server's tools ships beside them, so a deployment
+            // without the vault cannot advertise how to write a note.
+            .AddSkills(ObsidianVaultSkill.Text)
             .WithPrompts<McpSystemPrompt>();
 
         return services;

@@ -27,7 +27,6 @@ using McpServerWebSearch.Modules;
 using McpServerWebSearch.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -110,7 +109,7 @@ public sealed class EvalStack : IAsyncDisposable
     public IAgentFactory Factory { get; private set; } = null!;
 
     public static async Task<EvalStack> StartAsync(
-        Scenario scenario, string redisConnectionString, IToolInvocationObserver observer)
+        Scenario scenario, string redisConnectionString, Recording recording)
     {
         // Started as far back as the oldest running timer needs, then wound forward to the turn's
         // own instant once everything is armed. A clock that only ever sat at the instant would
@@ -126,6 +125,7 @@ public sealed class EvalStack : IAsyncDisposable
         // Madrid, because the deployment's satellites are there and a scheduled time is only exact
         // once the zone is. The provider carries it so every server and the turn decoration agree.
         stack.Clock.SetLocalTimeZone(TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"));
+        stack.VoiceHub.Ringing = scenario.Turn.Ringing;
 
         var shipped = ShippedSettings(redisConnectionString);
 
@@ -135,7 +135,7 @@ public sealed class EvalStack : IAsyncDisposable
         // option is not one.
         stack.Sandbox = await EvalSandbox.StartAsync();
 
-        stack.BuildAgentServices(shipped, observer, new Dictionary<string, string>
+        stack.BuildAgentServices(shipped, recording, new Dictionary<string, string>
         {
             ["mcp-timers"] = await stack.StartTimersAsync(scenario),
             ["mcp-scheduling"] = await stack.StartSchedulingAsync(shipped, redisConnectionString),
@@ -354,32 +354,23 @@ public sealed class EvalStack : IAsyncDisposable
         return $"http://localhost:{port}/mcp";
     }
 
-    // The shipped configuration, with two edits and no third: the secrets come from user secrets
-    // rather than from the environment the container would have had, and nothing dials a channel —
-    // the boundary of an eval is the agent, and what a channel does with a reply afterwards is
-    // covered by the channel and end-to-end suites.
-    private static AgentSettings ShippedSettings(string redisConnectionString)
-    {
-        var configuration = new ConfigurationBuilder()
-            .AddJsonFile(ShippedSettingsPath(), optional: false)
-            .AddUserSecrets<EvalStack>()
-            .AddEnvironmentVariables()
-            .Build();
-
-        var shipped = configuration.Get<AgentSettings>()
-                      ?? throw new InvalidOperationException("Agent/appsettings.json did not bind.");
-
-        return shipped with
+    // The shipped configuration, with three edits and no fourth: the secrets come from user
+    // secrets rather than from the environment the container would have had, nothing dials a
+    // channel — the boundary of an eval is the agent, and what a channel does with a reply
+    // afterwards is covered by the channel and end-to-end suites — and the model is whatever
+    // ZIGGURAT_EVAL_MODEL asks for, so a pass against another model needs no edit to the file.
+    // Bound once per process, so an edit to the file mid-pass reaches no stack of it.
+    private static AgentSettings ShippedSettings(string redisConnectionString) =>
+        EvalModel.FromEnvironment(ShippedDefinition.Repository.Settings) with
         {
             Redis = new RedisConfiguration { ConnectionString = redisConnectionString },
             ChannelEndpoints = []
         };
-    }
 
     // The agent itself, built by the real factory. Only the configured endpoint urls are rewritten,
     // to the servers this stack hosts.
     private void BuildAgentServices(
-        AgentSettings shipped, IToolInvocationObserver observer,
+        AgentSettings shipped, Recording recording,
         IReadOnlyDictionary<string, string> hosted)
     {
         var settings = shipped with
@@ -391,7 +382,11 @@ public sealed class EvalStack : IAsyncDisposable
         services.AddLogging();
         services.AddAgent(settings);
         services.AddSubAgents(settings.SubAgents);
-        services.AddSingleton(observer);
+        services.AddSingleton<IToolInvocationObserver>(recording);
+        // Registered after the agent's own publisher so it wins the resolution: what the chat
+        // client reports as usage is the run's bill, and the recording is where the scorecard
+        // reads it from.
+        services.AddSingleton<IMetricsPublisher>(recording);
         services.AddSingleton<ISubAgentSpawner>(Workers);
 
         // The memory feature, the way the deployment enables it: both shipped assistants list
@@ -415,9 +410,6 @@ public sealed class EvalStack : IAsyncDisposable
         [.. agent.McpServerEndpoints
             .Select(endpoint => hosted.FirstOrDefault(h => endpoint.Contains(h.Key)).Value)
             .Where(rewritten => rewritten is not null)];
-
-    private static string ShippedSettingsPath() =>
-        Path.Combine(RepositoryRoot.Path, "Agent", "appsettings.json");
 
     public async ValueTask DisposeAsync()
     {

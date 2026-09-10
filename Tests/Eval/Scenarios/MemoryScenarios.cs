@@ -1,5 +1,7 @@
+using System.Text.RegularExpressions;
 using Domain.DTOs;
 using Domain.Prompts;
+using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
 
 namespace Tests.Eval.Scenarios;
@@ -9,6 +11,32 @@ namespace Tests.Eval.Scenarios;
 // whether the right fact was retrieved, only what the agent did with the one it was handed.
 public static class MemoryScenarios
 {
+    // What a reply says when it names the remembering: the noun for a stored fact, the verb, the
+    // English word. Not "recuerd" bare — "algo que te lleves de recuerdo" is a souvenir, and a
+    // turn whose forget had just happened failed on it.
+    public static readonly string[] MemoryMentions =
+    [
+        "memoria", "memory", "recuerdo que", "lo recuerdo", "recuerdo de", "tus recuerdos",
+        "los recuerdos", "mis recuerdos", "recordar", "recordado", "recordaré", "recordando",
+        // The bare noun as the object of what was just done to it: "he eliminado ese recuerdo",
+        // "recuerdo borrado". A determiner alone does not separate the senses — "para el recuerdo"
+        // is the keepsake — so what is matched is the noun beside the verb that acts on it.
+        "ese recuerdo", "este recuerdo", "esos recuerdos", "estos recuerdos",
+        "recuerdo borrado", "recuerdo eliminado", "recuerdo guardado", "recuerdo actualizado",
+        "borrado el recuerdo", "eliminado el recuerdo", "guardado el recuerdo",
+        "borrado ese recuerdo", "eliminado ese recuerdo", "guardado ese recuerdo"
+    ];
+
+    // A forget lands either way the tool allows: by the id the recall block spells — the first
+    // declared fact, in every scenario here — or by a query in the fact's own words. Pinning the
+    // query alone failed both models the moment the block started carrying ids and they used
+    // them, which is the exact deletion the tool asks for.
+    private static ArgumentMatcher ForgetsTheFirstFact(string queryPattern) =>
+        Arg.Any(
+            Arg.Is("memoryId", EvalMemory.IdOf(0)),
+            Arg.Mentions("memoryIds", Regex.Escape(EvalMemory.IdOf(0))),
+            Arg.Matches("query", queryPattern));
+
     public static IReadOnlyList<Scenario> All =>
     [
         PastaTheWayHeCooksIt, NoLongerAtAcme, ForgetTheFlat,
@@ -41,26 +69,27 @@ public static class MemoryScenarios
         ],
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content", Arg.Number("durationSeconds", 540))
                 ]
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Reply = new ReplyExpectation
         {
             Spoken = true,
             MaxSentences = 1,
             // The mechanism, in the three words a model reaches for when it explains where a
             // number came from. Silence about it is the whole contract here.
-            NeverSays = ["memoria", "recuerd", "según lo que sé"]
+            NeverSays = [.. MemoryMentions, "según lo que sé"]
         },
         Guards =
         [
@@ -105,7 +134,7 @@ public static class MemoryScenarios
             {
                 Label = "forget",
                 Tool = EvalTools.Forget,
-                Arguments = [Arg.Matches("query", "(?i)acme|trabaj|empleo|empresa")]
+                Arguments = [ForgetsTheFirstFact("(?i)acme|trabaj|empleo|empresa")]
             }
         ],
         CallCeiling = 2,
@@ -113,7 +142,7 @@ public static class MemoryScenarios
         {
             // Storing the new employer is the extraction pipeline's job and happens out of this
             // turn, so what the reply must not do is announce either half as bookkeeping.
-            NeverSays = ["memoria", "memory", "recuerd"]
+            NeverSays = MemoryMentions
         },
         Guards =
         [
@@ -156,7 +185,7 @@ public static class MemoryScenarios
             {
                 Label = "forget",
                 Tool = EvalTools.Forget,
-                Arguments = [Arg.Matches("query", "(?i)piso|chamber|alquiler")]
+                Arguments = [ForgetsTheFirstFact("(?i)piso|chamber|alquiler")]
             }
         ],
         CallCeiling = 2,
@@ -242,11 +271,14 @@ public static class MemoryScenarios
             {
                 Label = "forget",
                 Tool = EvalTools.Forget,
-                Arguments = [Arg.Matches("query", "(?i)lisboa|viaje")]
+                // The store is Spanish and the model's query need not be: "preparing a trip to
+                // Lisbon" found and deleted the fact, and a pattern that took only the Spanish
+                // spellings failed the deletion it had just watched happen.
+                Arguments = [ForgetsTheFirstFact("(?i)lisbo|viaje|trip")]
             }
         ],
         CallCeiling = 2,
-        Reply = new ReplyExpectation { NeverSays = ["memoria", "memory", "recuerd"] },
+        Reply = new ReplyExpectation { NeverSays = MemoryMentions },
         Claims = [MemoryPrompts.OutdatedFactsAreDeleted.Id],
         Policy = new RunPolicy(2, 3)
     };

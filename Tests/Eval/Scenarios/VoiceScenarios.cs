@@ -1,3 +1,4 @@
+using Domain.DTOs.Voice;
 using Domain.Prompts;
 using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
@@ -37,15 +38,16 @@ public static class VoiceScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
                 Tool = EvalTools.Create,
-                Arguments = [Arg.PathMatches(@"^/timers/[^/]+/timer\.json$")]
+                Arguments = [Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$")]
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Reply = new ReplyExpectation
         {
             MaxSentences = 1,
@@ -79,6 +81,7 @@ public static class VoiceScenarios
         Armed = [_pasta],
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "status",
@@ -87,7 +90,7 @@ public static class VoiceScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Reply = new ReplyExpectation
         {
             MaxSentences = 1,
@@ -99,8 +102,14 @@ public static class VoiceScenarios
         },
         Claims =
         [
-            VoicePrompt.FactIsTheValueAlone.Id,
-            TimerPrompt.SpokenStatusGivesOnlyTheRemainingTime.Id
+            VoicePrompt.FactIsTheValueAlone.Id
+        ],
+        Guards =
+        [
+            new Guard(CountdownTimersSkill.SpokenStatusGivesOnlyTheRemainingTime.Id,
+                "Demonstrated on 2026-09-08 with the whole countdown-timers body deleted and the description intact: "
+                + "the spoken answer still gave the remaining time alone, three of three. The voice section's "
+                + "value-alone rule covers it, so the scenario guards.")
         ],
         Policy = new RunPolicy(2, 3)
     };
@@ -121,8 +130,8 @@ public static class VoiceScenarios
         Instant = EvalInstant.Evening,
         // Nothing is required: the garage has no light, so the right number of successful actions
         // is none, and what is being checked is what the agent said about that.
-        Permitted = [.. CallPermission.Looking("/ha*")],
-        CallCeiling = 6,
+        Permitted = [.. CallPermission.Looking("/ha*"), CallPermission.Load(HomeAssistantSkill.Name)],
+        CallCeiling = 7,
         Reply = new ReplyExpectation
         {
             MaxSentences = 1,
@@ -133,7 +142,7 @@ public static class VoiceScenarios
         Claims =
         [
             VoicePrompt.FailureIsOneClause.Id, VoicePrompt.NothingUnspeakable.Id,
-            BasePrompt.NoPlaceholderToolCalls.Id
+            CoreDirectivePrompt.NoPlaceholderToolCalls.Id
         ],
         Policy = new RunPolicy(2, 3)
     };
@@ -149,11 +158,16 @@ public static class VoiceScenarios
             Text = "para la alarma que está sonando",
             Sender = "fran",
             Room = "kitchen",
-            SatelliteId = "kitchen-01"
+            SatelliteId = "kitchen-01",
+            // The alarm that is ringing, so the dismiss reports it silenced. A hub with nothing
+            // ringing made the tool say so, and a model sent to stop an alarm that "is not
+            // ringing" went to the calendar and deleted the event.
+            Ringing = new DismissedAlert("Sacar la basura", AnnounceKind.Alarm)
         },
         Instant = EvalInstant.Evening,
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "dismiss",
@@ -162,8 +176,8 @@ public static class VoiceScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
-        Claims = [TimerPrompt.RingingIsStoppedByDismiss.Id],
+        CallCeiling = 5,
+        Claims = [CountdownTimersSkill.LoadsForATimerRequest.Id, CountdownTimersSkill.RingingIsStoppedByDismiss.Id],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -185,20 +199,28 @@ public static class VoiceScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content", Arg.Number("durationSeconds", 120))
                 ]
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
-        Claims = [TimerPrompt.ExtendingADismissedOneIsANewTimer.Id],
+        CallCeiling = 5,
+        Claims = [CountdownTimersSkill.LoadsForATimerRequest.Id],
+        Guards =
+        [
+            new Guard(CountdownTimersSkill.ExtendingADismissedOneIsANewTimer.Id,
+                "Demonstrated on 2026-09-08 with the whole countdown-timers body deleted and the description intact: "
+                + "two more minutes after the ring still became a new timer, three of three; the old one is "
+                + "gone from /timers, so there is nothing else to do.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -217,6 +239,7 @@ public static class VoiceScenarios
         Armed = [_pasta],
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "status",
@@ -225,12 +248,19 @@ public static class VoiceScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 4,
+        CallCeiling = 5,
         Reply = new ReplyExpectation
         {
             Mentions = [new SpokenValue("the firing time", "20:05", "8:05")]
         },
-        Claims = [TimerPrompt.WrittenStatusIncludesFiresAt.Id],
+        Claims = [CountdownTimersSkill.LoadsForATimerRequest.Id],
+        Guards =
+        [
+            new Guard(CountdownTimersSkill.WrittenStatusIncludesFiresAt.Id,
+                "Demonstrated on 2026-09-08 with the whole countdown-timers body deleted and the description intact: "
+                + "the written answer still carried firesAt, three of three; status.json hands it over beside "
+                + "the remainder.")
+        ],
         Policy = new RunPolicy(2, 3)
     };
 
@@ -251,19 +281,20 @@ public static class VoiceScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
+            TimerScenarios.LoadsTheSkill,
             new CallExpectation
             {
                 Label = "create",
                 Tool = EvalTools.Create,
                 Arguments =
                 [
-                    Arg.PathMatches(@"^/timers/[^/]+/timer\.json$"),
+                    Arg.PathMatches(@"^/timers/[^/]+(/timer\.json)?$"),
                     Arg.Body("content", Arg.Number("durationSeconds", 300))
                 ]
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],
-        CallCeiling = 3,
+        CallCeiling = 4,
         Reply = new ReplyExpectation
         {
             Spoken = true,
@@ -302,8 +333,8 @@ public static class VoiceScenarios
                 ]
             }
         ],
-        Permitted = [.. CallPermission.Looking("/ha*")],
-        CallCeiling = 4,
+        Permitted = [.. CallPermission.Looking("/ha*"), CallPermission.Load(HomeAssistantSkill.Name)],
+        CallCeiling = 5,
         Reply = new ReplyExpectation
         {
             Spoken = true,
@@ -348,12 +379,13 @@ public static class VoiceScenarios
         Permitted =
         [
             new CallPermission(EvalTools.WebSearch),
-            new CallPermission(EvalTools.WebBrowse)
+            new CallPermission(EvalTools.WebBrowse),
+            CallPermission.Load(WebBrowsingSkill.Name)
         ],
         // One worker tolerated, not required: the delegation reflex reaches research phrasing,
         // and a canned worker reads no page, so the parent still pays for the tail itself.
         MayDelegateTo = ["jonas-worker"],
-        CallCeiling = 6,
+        CallCeiling = 7,
         Reply = new ReplyExpectation
         {
             Spoken = true,

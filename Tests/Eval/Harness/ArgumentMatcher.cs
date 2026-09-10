@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Infrastructure.Agents.Skills;
 
 namespace Tests.Eval.Harness;
 
@@ -94,14 +95,24 @@ public static class Arg
         new($"path matches /{pattern}/",
             args => Regex.IsMatch(PathOf(args) ?? "", pattern, RegexOptions.IgnoreCase));
 
+    // A load's skill name is its "path": what a permission on the load tool names, so a scenario
+    // tolerates one skill and not any.
     public static readonly string[] PathNames =
-        ["path", "filePath", "basePath", "sourcePath", "directoryPath"];
+        ["path", "filePath", "basePath", "sourcePath", "directoryPath", SkillsProvider.SkillNameParameter];
 
+    // A file path is read the way the registry reads it: "ha/setup-index.md" names the mount and
+    // forgot the slash, and resolves at /ha. A skill's name is not a path and is left alone.
     public static string? PathOf(JsonElement args) =>
         PathNames
-            .Select(name => Read(args, name))
-            .FirstOrDefault(element => element is { ValueKind: JsonValueKind.String })
-            ?.GetString();
+            .Select(name => (Name: name, Element: Read(args, name)))
+            .Where(found => found.Element is { ValueKind: JsonValueKind.String })
+            .Select(found => found.Name == SkillsProvider.SkillNameParameter
+                ? found.Element!.Value.GetString()
+                : Rooted(found.Element!.Value.GetString()))
+            .FirstOrDefault();
+
+    private static string? Rooted(string? path) =>
+        path is { Length: > 0 } && !path.StartsWith('/') ? "/" + path : path;
 
     public static ArgumentMatcher Number(string name, double value) =>
         new($"{name} = {value}",

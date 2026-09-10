@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Prompts;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Clients.Voice;
 using Infrastructure.Timers;
@@ -44,6 +45,8 @@ public static class ConfigModule
             .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<TimerFileSystem>()
             .AddFileSystemResource<TimerFileSystem>()
+            // The skill that teaches this server's files ships beside them.
+            .AddSkills(CountdownTimersSkill.Text)
             .WithPrompts<TimersSystemPrompt>();
 
         return services;
