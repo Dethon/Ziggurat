@@ -193,8 +193,11 @@ public sealed partial class HaFileSystem
     // the 500 could not carry. A plain name is left alone: that is how most of these calls resolve.
     private static string? RewrittenMediaId(HaServiceDefinition svc, JsonObject data)
     {
+        // Read as a string only if it is one: media_id is an object selector, so a list is legal
+        // and GetValue<string>() on an array throws where nothing catches it.
         if (!svc.Service.Equals("play_media", StringComparison.Ordinal)
-            || data["media_id"]?.GetValue<string>() is not { } id
+            || data["media_id"] is not JsonValue value
+            || !value.TryGetValue<string>(out var id)
             || !Regex.IsMatch(id, @"^[a-z][a-z0-9_]*:[a-z_]+:[A-Za-z0-9]+$"))
         {
             return null;

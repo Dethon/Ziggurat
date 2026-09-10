@@ -216,6 +216,32 @@ public class HaFileSystemExecTests
         exec.Stderr.ShouldNotContain("Did you mean");
     }
 
+    // media_id is an object selector, so a list is a legal value and Music Assistant documents one
+    // for queueing several items. The provider-uri refusal reads the field as a string, and a
+    // string read of an array throws where nothing catches it: the call died before reaching the
+    // house instead of playing two tracks.
+    [Fact]
+    public async Task Exec_PassesAListValuedMediaId_ThroughToTheService()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("media_player.office", "idle") },
+            Services =
+            {
+                Service("music_assistant", "play_media", DomainTarget("media_player"),
+                    ("media_id", new HaServiceField { Required = true, Selector = JsonNode.Parse("""{"object":{"multiple":true}}""") }))
+            }
+        };
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
+
+        var result = await fs.ExecAsync("entities/media_player/office",
+            """music_assistant.play_media.sh --media_id '["Track A","Track B"]'""", null, CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
+        client.LastCall!.Value.Data!["media_id"]!.AsArray().Select(n => n!.GetValue<string>())
+            .ShouldBe(["Track A", "Track B"]);
+    }
+
     [Fact]
     public async Task Exec_RoutesCrossDomainMusicAssistantService_ByQualifiedName()
     {

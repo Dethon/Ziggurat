@@ -278,6 +278,29 @@ public class BrowserSessionManagerTests
             .ShouldBeOfType<TabOutcome<IPage>.Superseded>().Url.ShouldBe("https://a.test/");
     }
 
+    // The wall that sends the model back is about the tab having moved, and a redirect is not a
+    // move: the ref carries the address that was asked for, the page reports the one it landed on,
+    // and "https://a.test" against "https://a.test/" is the same page. Reporting a current url
+    // there tells the model to go back from a page it never left.
+    [Fact]
+    public async Task ARefRenumberedOnAPageReachedByRedirect_NamesNoCurrentUrl()
+    {
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        // Asked for the bare host; the browser lands on the slashed spelling, as it always does.
+        await manager.OnCurrentTabAsync("s1", StampPolicy.None, _ => Task.FromResult(true));
+        await BrowseAsync(manager, ctx, "s1", "https://a.test");
+        pages[0].Url = "https://a.test/";
+        await StampAsync(manager, "s1", RefNamespace.Element, 3);
+        await StampAsync(manager, "s1", RefNamespace.Element, 3);
+
+        var superseded = (await RouteAsync(manager, "s1", "e-2"))
+            .ShouldBeOfType<TabOutcome<IPage>.Superseded>();
+
+        superseded.CurrentUrl.ShouldBeNull();
+    }
+
     [Fact]
     public async Task ARefFromAnEvictedTab_AnswersClosed_NamingTheUrlItBelongedTo()
     {
