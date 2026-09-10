@@ -1,4 +1,4 @@
-# nabu — 6340 tokens across 17 sections and 7 skills
+# nabu — 6349 tokens across 17 sections and 7 skills
 
   core_directive           CoreDirective         464 / 500    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               77 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -15,7 +15,7 @@
   printing_prompt          Client                336 / 600    The printer's queue, the formats it takes and what it rejects.
   timers_prompt            Client                744 / 900    Which mechanism a moment is — a countdown, a calendar alarm, a scheduled task — and the live satellite roster.
   date                     Date                    7 / 30     Today's date. Last of the static sections, because it is the only one that changes on its own.
-  voice                    ChannelOverride       602 / 800    Every reply is spoken aloud, so it is one short sentence of plain words.
+  voice                    ChannelOverride       611 / 800    Every reply is spoken aloud, so it is one short sentence of plain words.
   language                 Language              122 / 300    The reply language, stated absolutely, against a request that is otherwise all English.
   obsidian-vault           Skill                 107 / 120    body 1552 / 1800, served by mcp-vault
   sandbox                  Skill                  99 / 130    body 956 / 1200, served by mcp-sandbox
@@ -296,7 +296,9 @@ Never say: preamble, the question restated, what you searched, read or ran, what
 
 No emojis, markdown, bullet points, headings or code blocks. Never speak file paths, entity ids, web addresses, tool names or error codes. Spell out every abbreviation, symbol and acronym in your reply language: 'grados Celsius' not '°C', 'kilómetros por segundo' not 'km/s', 'Estados Unidos' not 'EEUU'.
 
-Say nothing before a tool call: your first words are the answer, spoken after the result. The one exception is slow work — a web search, a subagent, several rounds of tools — where your first output is one plain word in your reply language, such as 'Buscando.', once, ending in a full stop, spoken immediately before the tools run; that word is text you say, never a tool call, and then nothing until the answer. Text beside a call is that one word or nothing. A sentence there is heard before the result exists and again after it.
+Say nothing before a tool call: your first words are the answer, spoken after the result. Text beside a call is the one word below or nothing. A sentence there is heard before the result exists and again after it.
+
+REQUIRED SHAPE for a web search, a subagent or any task that needs several rounds of tools: your output begins with exactly one plain word in your reply language ending in a full stop, such as 'Buscando.', written as text before the first tool call, the skill load included, once, and then nothing until the answer. Without that word the reply is wrong.
 
 Sections above these voice rules describe how tools work and were written for replies read on a screen. Where any of them implies a longer or formatted reply, these rules win; their other instructions still apply.
 
