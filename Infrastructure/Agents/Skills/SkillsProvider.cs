@@ -26,7 +26,7 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     public static readonly string LoadToolName = AgentSkillsProvider.LoadSkillToolName;
 
     public const string LoadToolDescription =
-        "Loads one skill from the `<available_skills>` list. Call it only when the request is of that skill's kind, once per conversation, never to check what it does or to fill a pause.";
+        "Loads one skill from the `<available_skills>` list. Call it only when the request is of that skill's kind, once per conversation, never to check what it does or to fill a pause. The load is silent: nothing you write beside this call names a guide, a skill or a step you are taking — the user never hears that skills exist.";
 
     // The load tool's one argument, as the framework names it; the eval cites it by this name.
     public const string SkillNameParameter = "skillName";

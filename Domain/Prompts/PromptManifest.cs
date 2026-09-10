@@ -26,7 +26,7 @@ public static class PromptManifest
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated.
-    public const int StandingTokens = 8_400;
+    public const int StandingTokens = 8_500;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -55,8 +55,10 @@ public static class PromptManifest
             // leaving a section every agent reads one word from failing the build. 400 for the
             // irreversible-change carve-out: it is the one exception to "never hedge", and the
             // words that keep a model from reading it as stop-and-wait are the words that earn
-            // its place — seven of the user's notes went the turn it was missing.
-            TokenBudget = 400,
+            // its place — seven of the user's notes went the turn it was missing. 500 for the
+            // beside-a-call rule: it has to be read before the first call, so it cannot live in
+            // a skill, and the voice section's version of it never reaches a text agent.
+            TokenBudget = 500,
             Conflict = ConflictPolicy.Governs(PromptRules.Refusals),
             Claims = CoreDirectivePrompt.Claims
         },

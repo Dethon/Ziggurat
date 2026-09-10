@@ -254,6 +254,17 @@ public static class WebScenarios
                 + "taken, tools or workers used. Naming the workshop, the day, the time and the "
                 + "code is the outcome and passes; 'I opened the form and typed your name' is a "
                 + "step and fails."),
+            // The same reply, read for what was said beside the calls rather than after them: a
+            // model that opens with "voy a ello: cargo la guía y busco la página" beside its first
+            // call has announced two steps before the skill's own rule was in the conversation,
+            // and the channel streams that line to the user like any other.
+            new JudgedCheck(CoreDirectivePrompt.NoStepIsAnnouncedBesideACall.Id,
+                "Read the assistant's reply from its first word. Anything before the outcome was "
+                + "said beside a tool call, before any result existed. Fail if any of it announces "
+                + "or narrates a step: loading a guide or skill, searching, opening a page, "
+                + "filling a field, submitting. A short acknowledgement that names no step "
+                + "('Voy a ello.', 'Un momento.') passes, and so does a reply that is the "
+                + "outcome alone."),
             new JudgedCheck(WebBrowsingSkill.BrowseReadsAndSnapshotStructures.Id,
                 "Look at the tool calls. web_browse fetches a page's content (and, with "
                 + "snapshot=true, its interactive structure in the same call); web_snapshot "

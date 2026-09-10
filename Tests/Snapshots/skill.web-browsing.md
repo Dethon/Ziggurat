@@ -1,4 +1,4 @@
-# web-browsing — description 102 / 130 tokens, body 1514 / 1600 tokens, served by mcp-websearch
+# web-browsing — description 102 / 130 tokens, body 1558 / 1600 tokens, served by mcp-websearch
 
 ================================================================================================
 
@@ -19,6 +19,9 @@ The parameters carry the arguments and their defaults — read them there rather
 memory.
 
 ### Core Workflow
+
+**Every web call is silent.** Nothing is written beside it — not "voy a buscar", not "ya lo
+abro" — and the reply, after the last result, is the answer, never the route to it.
 
 **Reading a page.** A search result's snippet is the engine's cached summary, written at
 crawl time: choose which result to open by it, never answer from it — the page wins where

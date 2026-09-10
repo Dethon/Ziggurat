@@ -26,6 +26,9 @@ public static class WebBrowsingSkill
 
         ### Core Workflow
 
+        **Every web call is silent.** Nothing is written beside it — not "voy a buscar", not "ya lo
+        abro" — and the reply, after the last result, is the answer, never the route to it.
+
         **Reading a page.** A search result's snippet is the engine's cached summary, written at
         crawl time: choose which result to open by it, never answer from it — the page wins where
         they disagree. Call web_browse. If the response is truncated or you need a specific region,
