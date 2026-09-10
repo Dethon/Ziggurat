@@ -229,7 +229,10 @@ public class ScenarioWiringTests
     [Fact]
     public void NoScenarioClass_HoldsMoreThanTheShardCeiling()
     {
+        // The changed tier is exempt: its rows are whatever the diff selected, on a pass whose
+        // point is the bill rather than the wall clock.
         var longest = Classes("Category", "Eval")
+            .Except(Classes("Tier", "Changed"))
             .Select(type => (Class: type.Name, Count: Named(type).Count()))
             .Where(held => held.Count > ShardCeiling)
             .ToList();

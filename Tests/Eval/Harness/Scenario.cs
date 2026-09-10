@@ -173,7 +173,10 @@ public enum EvalTier
 {
     // One canary per family at a single run: what a prompt author runs while editing one section.
     Smoke,
-    Full
+    Full,
+    // The scenarios a diff touched, at their declared thresholds. No scenario declares this one:
+    // it is a tier that runs, never a tier a scenario is a canary for.
+    Changed
 }
 
 // A call the scenario requires, matched by tool and by whatever its arguments have to say. The

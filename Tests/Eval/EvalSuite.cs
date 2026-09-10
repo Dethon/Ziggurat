@@ -34,11 +34,19 @@ public static class EvalSuite
     public static TheoryData<string> Named(EvalTier tier) =>
         Named(OfTier(tier));
 
+    // The changed tier's shards hold a placeholder when the diff selected nothing for them: a
+    // theory with no rows fails discovery, and a row that skips is a tier that is present.
     public static TheoryData<string> Named(EvalTier tier, int shard, int of) =>
-        Named(OfTier(tier), shard, of);
+        tier == EvalTier.Changed && !OfTier(tier).Where((_, index) => index % of == shard).Any()
+            ? new TheoryData<string> { EvalChanges.NothingSelected }
+            : Named(OfTier(tier), shard, of);
 
-    private static IEnumerable<Scenario> OfTier(EvalTier tier) =>
-        All.Where(s => tier == EvalTier.Full || s.Tier == tier);
+    private static IEnumerable<Scenario> OfTier(EvalTier tier) => tier switch
+    {
+        EvalTier.Full => All,
+        EvalTier.Changed => EvalChanges.Selected,
+        _ => All.Where(s => s.Tier == tier)
+    };
 
     // Part of a family, for the families too long to be one class. A class's scenarios run one
     // after another, so the longest class is the tail every other class's slots wait on — an
@@ -63,6 +71,8 @@ public static class EvalSuite
     {
         Skip.IfNot(EvalGate.IsArmed, EvalGate.Reason);
         Skip.If(EvalGate.ApiKey is null, "openRouter:apiKey is not set in user secrets");
+        Skip.If(name == EvalChanges.NothingSelected,
+            $"the changed tier runs what a diff touched: set {EvalChanges.Variable}=<ref> (or 1 for master)");
 
         var scenario = ByName(name);
         var outcome = await RunAsync(scenario, EvalRuns.Applied(policy(scenario)));
