@@ -17,7 +17,14 @@ public static class MemoryScenarios
     public static readonly string[] MemoryMentions =
     [
         "memoria", "memory", "recuerdo que", "lo recuerdo", "recuerdo de", "tus recuerdos",
-        "los recuerdos", "mis recuerdos", "recordar", "recordado", "recordaré", "recordando"
+        "los recuerdos", "mis recuerdos", "recordar", "recordado", "recordaré", "recordando",
+        // The bare noun as the object of what was just done to it: "he eliminado ese recuerdo",
+        // "recuerdo borrado". A determiner alone does not separate the senses — "para el recuerdo"
+        // is the keepsake — so what is matched is the noun beside the verb that acts on it.
+        "ese recuerdo", "este recuerdo", "esos recuerdos", "estos recuerdos",
+        "recuerdo borrado", "recuerdo eliminado", "recuerdo guardado", "recuerdo actualizado",
+        "borrado el recuerdo", "eliminado el recuerdo", "guardado el recuerdo",
+        "borrado ese recuerdo", "eliminado ese recuerdo", "guardado ese recuerdo"
     ];
 
     // A forget lands either way the tool allows: by the id the recall block spells — the first

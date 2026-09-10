@@ -189,6 +189,13 @@ public class ReplyChecksTests
             .ShouldNotBeEmpty();
         Failures(expectation, "He actualizado tus recuerdos.")
             .ShouldNotBeEmpty();
+
+        // The bare noun with an article in front is the mechanism named as plainly as it can be,
+        // and the phrase list walked straight past it.
+        Failures(expectation, "He eliminado ese recuerdo.")
+            .ShouldNotBeEmpty();
+        Failures(expectation, "Recuerdo borrado.")
+            .ShouldNotBeEmpty();
     }
 
     // The one clause the mounts rule asks for, said as "no me es accesible … ninguna contiene tu

@@ -28,17 +28,21 @@ public static class ScenarioChecks
         .. Forgot(scenario, recording)
     ];
 
-    // Which of the two reds this is. A required load that did not happen — or happened for another
-    // skill, which is the same absence — is the description's failure; anything else, the load
-    // included and a behaviour missing, is the body's. Null for a run with nothing to explain.
+    // Which red this is. A turn the provider refused or that ran out of time is neither prose's
+    // fault: the model never answered, so its silence says nothing about a description. Otherwise
+    // a required load that did not happen — or happened for another skill, which is the same
+    // absence — is the description's failure; anything else, the load included and a behaviour
+    // missing, is the body's. Null for a run with nothing to explain.
     public static FailureKind? KindOf(Scenario scenario, Recording recording, IReadOnlyList<string> failures) =>
         failures.Count == 0
             ? null
-            : scenario.Required
-                .Where(expectation => new ToolPatternMatcher([expectation.Tool]).IsMatch(EvalTools.LoadSkill))
-                .Any(expectation => Match(expectation, recording) is null)
-                ? FailureKind.SkillNotLoaded
-                : FailureKind.RuleIgnored;
+            : recording.ProviderError is not null || recording.TimedOut
+                ? FailureKind.RunFailed
+                : scenario.Required
+                    .Where(expectation => new ToolPatternMatcher([expectation.Tool]).IsMatch(EvalTools.LoadSkill))
+                    .Any(expectation => Match(expectation, recording) is null)
+                    ? FailureKind.SkillNotLoaded
+                    : FailureKind.RuleIgnored;
 
     // The conditional half of Delegated: a run that handed nothing to the profile owes nothing
     // here, but every delegation it did receive must carry the condition's context — a split

@@ -37,9 +37,18 @@ public static class EvalSuite
     // The changed tier's shards hold a placeholder when the diff selected nothing for them: a
     // theory with no rows fails discovery, and a row that skips is a tier that is present.
     public static TheoryData<string> Named(EvalTier tier, int shard, int of) =>
-        tier == EvalTier.Changed && !OfTier(tier).Where((_, index) => index % of == shard).Any()
+        Named(tier, OfTier(tier), shard, of);
+
+    // The same rule with the tier's scenarios handed in, so a test can state what a diff selected
+    // instead of asking the process — which is the caller's shell, not a claim about this code.
+    public static TheoryData<string> Named(
+        EvalTier tier, IEnumerable<Scenario> ofTier, int shard, int of)
+    {
+        var scenarios = ofTier.ToList();
+        return tier == EvalTier.Changed && !scenarios.Where((_, index) => index % of == shard).Any()
             ? new TheoryData<string> { EvalChanges.NothingSelected }
-            : Named(OfTier(tier), shard, of);
+            : Named(scenarios, shard, of);
+    }
 
     private static IEnumerable<Scenario> OfTier(EvalTier tier) => tier switch
     {

@@ -37,13 +37,30 @@ public class EvalChangesTests
             ["Domain/Prompts/TimerPrompt.cs", "Tests/Eval/Scenarios/TimerScenarios.cs", "Domain/Prompts/New.cs"]);
     }
 
+    // The selection is handed in rather than read off the process: asking EvalChanges.Selected
+    // here would make the assertion a claim about the caller's shell, and a bare `dotnet test`
+    // with ZIGGURAT_EVAL_CHANGED exported would shell out to git at discovery and fail.
     [Fact]
-    public void WhenNothingIsAsked_TheTierHoldsOnePlaceholderRow_PerShard()
+    public void WhenNothingIsSelected_TheTierHoldsOnePlaceholderRow_PerShard()
     {
         // A theory with no rows fails discovery; a row that skips is a tier that is present.
-        var rows = ((IEnumerable<object[]>)EvalSuite.Named(EvalTier.Changed, 0, of: 4))
+        var rows = ((IEnumerable<object[]>)EvalSuite.Named(EvalTier.Changed, [], 0, of: 4))
             .Select(row => (string)row[0]).ToList();
 
         rows.ShouldBe([EvalChanges.NothingSelected]);
+    }
+
+    // The other half of the same rule: a shard the selection did reach names its scenarios and
+    // carries no placeholder.
+    [Fact]
+    public void WhenAShardHasSelectedScenarios_ItNamesThem()
+    {
+        var selected = EvalSuite.All.Take(4).ToList();
+
+        var rows = ((IEnumerable<object[]>)EvalSuite.Named(EvalTier.Changed, selected, 0, of: 4))
+            .Select(row => (string)row[0]).ToList();
+
+        rows.ShouldBe([selected[0].Name]);
+        rows.ShouldNotContain(EvalChanges.NothingSelected);
     }
 }

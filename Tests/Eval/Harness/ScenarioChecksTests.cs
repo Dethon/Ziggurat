@@ -979,6 +979,21 @@ public class ScenarioChecksTests
         ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.SkillNotLoaded);
     }
 
+    // A turn the provider refused never reached the model, so nothing it did or did not do is
+    // evidence about a description. Reading it as a missing load points the next edit at a
+    // description that was never read, on whichever scenario an outage happened to land on.
+    [Fact]
+    public async Task ATurnTheProviderRefused_IsNeitherTheDescriptionsFaultNorTheBodys()
+    {
+        var recording = await ScriptedTurn.RunAsync("");
+        recording.ProviderError = "520 upstream error";
+        var scenario = RequiringTheLoad();
+
+        var failures = ScenarioChecks.Failures(scenario, recording);
+
+        ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.RunFailed);
+    }
+
     [Fact]
     public async Task AScenarioRequiringNoLoad_FailsAsARuleIgnored_AndPassesWithNoKind()
     {
