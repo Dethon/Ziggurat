@@ -91,7 +91,16 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
 
         var (x, y) = await CentreOfAsync(page, ".hearth-rows");
         await DragAsync(cdp, x, y + 40, y - 40, 16, 12, frameMs: 28);
-        await page.WaitForTimeoutAsync(500);
+
+        // The scroll, not half a second of hoping for it. A flick keeps moving after the finger
+        // leaves, so how long it takes to leave zero belongs to the machine: half a second is
+        // plenty on a quiet one and not always enough on a loaded one, where this failed as the
+        // handler swallowing a scroll that was merely late. Waiting for the state itself both
+        // returns the moment it arrives and says the same thing on any machine.
+        await page.WaitForFunctionAsync(
+            "() => document.querySelector('.hearth-rows').scrollTop > 0",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 10_000 });
 
         var scrollTop = await page.EvaluateAsync<double>(
             "() => document.querySelector('.hearth-rows').scrollTop");

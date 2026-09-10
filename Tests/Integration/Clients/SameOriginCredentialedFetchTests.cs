@@ -27,7 +27,12 @@ public class SameOriginCredentialedFetchTests(IsolatedSessionBrowserFixture fixt
 
             var imageUrl = $"{HermeticPage.AnchorUrl}gallery/pic.jpg";
             var jpeg = Convert.FromBase64String(OnePixelJpegBase64);
-            await fixture.Browser.RouteOnContextAsync(imageUrl, route =>
+            // On the session's own page rather than the context: a context route outlives the case
+            // that made it, and the backend is refcounted across the whole run, so every repetition
+            // left one more handler behind for Playwright to consult on every request the context
+            // made. A page route dies with the session this case closes in its finally, which is
+            // the lifetime the arrangement actually has.
+            await fixture.Browser.RouteOnSessionAsync(sessionId, imageUrl, route =>
             {
                 var cookie = route.Request.Headers.GetValueOrDefault("cookie") ?? "";
                 return cookie.Contains("auth=yes", StringComparison.Ordinal)

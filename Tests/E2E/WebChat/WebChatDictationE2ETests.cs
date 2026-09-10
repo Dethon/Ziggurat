@@ -12,6 +12,10 @@ namespace Tests.E2E.WebChat;
 public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
     : DictationE2EBase(fixture)
 {
+    // Short enough that the cap case need not wait out the stack's two minutes, and long enough
+    // that opening the microphone and the press that precedes it both fit inside it comfortably.
+    private const int CapMs = 4_000;
+
     // The whole of a good dictation: a held microphone, a finger that drifts a little while it is
     // held, words in the composer, and a recording whose bytes are what whisper can actually read.
     [SkippableFact]
@@ -138,6 +142,16 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         Fixture.Transcript = "se paró solo";
 
         var page = await OpenAsync();
+
+        // The stack's cap is two minutes, which is the number every other case here needs to be
+        // out of its way. This case is the cap, so it shortens it for its own page — and pins it,
+        // because the limits response lands whenever the connection produces it and would
+        // otherwise put the stack's number back over the top of this one.
+        await page.EvaluateAsync(
+            "() => { const d = window.dictation;"
+            + " d.configure({ maxMs: " + CapMs + ", minMs: d._limits.minMs });"
+            + " d.configure = () => {}; }");
+
         var cdp = await page.Context.NewCDPSessionAsync(page);
         var mic = await PressableMicAsync(page);
 
@@ -149,10 +163,7 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.Locator("textarea.chat-input"))
             .ToHaveValueAsync(
                 "se paró solo",
-                new LocatorAssertionsToHaveValueOptions
-                {
-                    Timeout = (float)Fixture.RecordingCap.TotalMilliseconds + 30_000
-                });
+                new LocatorAssertionsToHaveValueOptions { Timeout = CapMs + 30_000 });
 
         await TouchAsync(cdp, "touchEnd");
     }

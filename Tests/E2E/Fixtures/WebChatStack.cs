@@ -119,10 +119,16 @@ internal sealed class WebChatStack
         }
     }
 
-    // Short enough that a test can hold the microphone past it without a two-minute wait. The
-    // browser learns it from the limits call, so this is also what proves the client carries no
-    // cap of its own.
-    public TimeSpan RecordingCap { get; } = TimeSpan.FromSeconds(4);
+    // Long enough that no gesture a case makes can run into it. It used to be four seconds, so the
+    // one case about the cap could hold the microphone past it without a two-minute wait — but a
+    // cap is stack-wide, and every other dictation case inherited it. A hold plus eight CDP moves
+    // is about a second on a quiet machine and past four seconds on a loaded one, at which point
+    // the cap ended the recording mid-swipe and transcribed it: the discard case found the words
+    // it had just thrown away sitting in the composer, and reported it as the discard leaking.
+    //
+    // The case that is about the cap shortens it for its own page instead, which it can because
+    // the browser learns the number from .NET and carries none of its own.
+    public TimeSpan RecordingCap { get; } = TimeSpan.FromMinutes(2);
 
     // A collection's own slice of the stack: the first dropdown index of its block of users, and
     // the space its pages live in. Reserved once per collection, in whatever order they start.

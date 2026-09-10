@@ -341,9 +341,42 @@ public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
         var sessionId = $"test-{Guid.NewGuid():N}";
         try
         {
+            // display:block, and the 404 awaited before the measurement rather than raced.
+            //
+            // A broken image keeps the box its markup asked for only until the failure lands. After
+            // that Firefox lays it out as the alt text instead — measured live at 85x19, whatever
+            // width and height say — because an inline replaced element with nothing to replace it
+            // sizes to its content. The annotator reads getBoundingClientRect, so the picture this
+            // case sizes at 300px filtered out as furniture, nothing was stamped, and the ref the
+            // fetch asked for named nothing: NotAnImageRef, which is not a claim this case makes.
+            // Whether the annotate beat the 404 was the machine's to decide and a loaded one
+            // decided against, which is why it only ever failed in a busy run.
+            //
+            // As a block the CSS dimensions are authoritative whether or not the bytes arrive, so
+            // the box stays the size the case asked for and the collapse stops being a race. What
+            // is under test is unchanged: an image the page lays out and has no bytes for.
             await PrepareAsync(
                 sessionId,
-                """<img id="gone" src="/no-such-picture.jpg" style="width:300px;height:300px" alt="A rotted link">""");
+                """
+                <img id="gone" src="/no-such-picture.jpg" alt="A rotted link"
+                     style="display:block;width:300px;height:300px">
+                """);
+
+            // The request is over and the bytes never arrived: complete with no intrinsic size is
+            // exactly the state this case is about, so it is waited for rather than assumed.
+            await fixture.Browser.EvaluateOnSessionAsync<int>(
+                sessionId,
+                """
+                async () => {
+                    const img = document.getElementById('gone');
+                    await new Promise(r => {
+                        if (img.complete) return r();
+                        img.onload = r;
+                        img.onerror = r;
+                    });
+                    return document.body.offsetHeight;
+                }
+                """);
             await fixture.Browser.AnnotateImagesOnSessionAsync(sessionId);
 
             var fetched = await fixture.Browser.FetchImagesAsync(new ImageFetchRequest(sessionId, ["i-1"]));
