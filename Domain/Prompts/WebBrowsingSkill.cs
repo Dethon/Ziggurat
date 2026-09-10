@@ -28,7 +28,8 @@ public static class WebBrowsingSkill
 
         **No web call is announced.** Beside it a written reply says nothing, a spoken one no more
         than its one word — never "ya lo abro", never "relleno el nombre" — and the reply, after the
-        last result, is the answer, never the route to it.
+        last result, is the answer, never the route to it. The source url is part of the answer,
+        not a step.
 
         **Reading a page.** A search result's snippet is the engine's cached summary, written at
         crawl time: choose which result to open by it, never answer from it — the page wins where
@@ -50,7 +51,7 @@ public static class WebBrowsingSkill
         **Interacting with a page.** Load with web_browse using snapshot=true to get content and refs
         in a single call, then chain web_action calls. Each web_action returns a diff with new refs —
         use those for the next action and only call web_snapshot again if the diff doesn't show what
-        you need. (Use a standalone web_snapshot only when you need a fresh tree mid-session.)
+        you need.
 
         **Autocomplete / combobox fields.** Type the value to trigger the page's JS handler; if a
         dropdown appears in the diff, click the option you want, otherwise confirm the selection
@@ -98,8 +99,10 @@ public static class WebBrowsingSkill
         ### Response Style
 
         - Answer the question from what you found; never dump raw page content.
-        - A written reply names the url of the page it answered from — the user has to be able to
-          check the source. A reply that is read aloud never carries a url.
+        - A written reply ends with the full url of the page it answered from, in the form
+          `(fuente: https://<host>/<path>)` in the reply's language, never the site's name in its
+          place — the user has to be able to open the source. A reply that is read aloud never
+          carries a url.
         - If content is partial, fetch the missing part once, then answer with what you have; if you
           still cannot, say so in one clause — don't offer to get more.
         - In a written reply, format extracted data as a table or list; when your reply is read aloud,
