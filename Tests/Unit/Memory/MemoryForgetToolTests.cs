@@ -148,6 +148,55 @@ public class MemoryForgetToolTests
         _store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    // The plural form is the same guess with a list around it: an id nothing has, answered with
+    // "success, nothing affected", reads as a deletion that happened.
+    [Fact]
+    public async Task Run_MemoryIdsNamingNothing_IsRefused_NotAnEmptySuccess()
+    {
+        _store.Setup(s => s.GetByIdAsync(UserId, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MemoryEntry?)null);
+
+        var result = await CreateTool().Run(memoryIds: ["mem_acme", "mem_ghost"]);
+
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.NotFound);
+        _store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // A list where only some ids exist is not a refusal: the ones that were there are forgotten,
+    // and the answer names the ones that were not, so the model does not read a partial pass as a
+    // whole one.
+    [Fact]
+    public async Task Run_MemoryIdsPartlyUnknown_ForgetsWhatExists_AndNamesTheRest()
+    {
+        var flat = CreateMemory("mem1", "Busca piso de alquiler en Chamberí", MemoryCategory.Project);
+        _store.Setup(s => s.GetByIdAsync(UserId, "mem1", It.IsAny<CancellationToken>())).ReturnsAsync(flat);
+        _store.Setup(s => s.GetByIdAsync(UserId, "mem_ghost", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MemoryEntry?)null);
+        StubDelete("mem1");
+
+        var result = await CreateTool().Run(memoryIds: ["mem1", "mem_ghost"]);
+
+        result["affectedCount"]!.GetValue<int>().ShouldBe(1);
+        result["unknownIds"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldBe(["mem_ghost"]);
+    }
+
+    // The ids are written bracketed in the memory block, so a model copying one as it reads it
+    // passes the brackets too. Answering that with "no memory has the id '[mem1]'" and a hint
+    // saying "exactly as written there" is a loop; the brackets are stripped instead.
+    [Fact]
+    public async Task Run_ABracketedMemoryId_IsReadAsTheIdInside()
+    {
+        var flat = CreateMemory("mem1", "Busca piso de alquiler en Chamberí", MemoryCategory.Project);
+        _store.Setup(s => s.GetByIdAsync(UserId, "mem1", It.IsAny<CancellationToken>())).ReturnsAsync(flat);
+        StubDelete("mem1");
+
+        var result = await CreateTool().Run(memoryId: "[mem1]");
+
+        result["affectedCount"]!.GetValue<int>().ShouldBe(1);
+        _store.Verify(s => s.DeleteAsync(UserId, "mem1", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

@@ -80,7 +80,7 @@ public class MemoryForgetTool(
             return byId.Count == 0
                 ? ToolError.Create(
                     ToolError.Codes.NotFound,
-                    $"No memory has the id '{memoryId}'.",
+                    $"No memory has the id '{NormalizeId(memoryId)}'.",
                     "The ids are the bracketed ones in the [Memory context] block, exactly as "
                     + "written there; pass one of those, or forget by query.")
                 : CreateSuccessResponse(byId, reason);
@@ -88,7 +88,25 @@ public class MemoryForgetTool(
 
         if (memoryIds is { Length: > 0 })
         {
-            return CreateSuccessResponse(await ForgetByIds(userId, memoryIds, ct), reason);
+            var asked = memoryIds
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Select(NormalizeId)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            var byIds = await ForgetByIds(userId, asked, ct);
+            var unknown = asked.Where(id => !byIds.Any(a => string.Equals(a.Id, id, StringComparison.Ordinal))).ToList();
+
+            // The same guess as the singular form, with a list around it: a list naming nothing is
+            // refused rather than answered "success, nothing affected". A list that partly landed
+            // is a success that names what was not there, so a partial pass is not read as a whole
+            // one.
+            return unknown.Count == asked.Count
+                ? ToolError.Create(
+                    ToolError.Codes.NotFound,
+                    $"No memory has any of these ids: {string.Join(", ", unknown.Select(id => $"'{id}'"))}.",
+                    "The ids are the bracketed ones in the [Memory context] block, exactly as "
+                    + "written there; pass those, or forget by query.")
+                : CreateSuccessResponse(byIds, reason, unknown);
         }
 
         var candidates = await SearchCandidates(userId, query!, ct);
@@ -105,9 +123,15 @@ public class MemoryForgetTool(
         return CreateSuccessResponse(affected, reason);
     }
 
+    // The block writes an id in brackets, so a model copying one as it reads it brings them
+    // along. Refusing that with "exactly as written there" is a loop the model cannot leave.
+    private static string NormalizeId(string memoryId) =>
+        memoryId.Trim() is ['[', .. var inner, ']'] ? inner.Trim() : memoryId.Trim();
+
     private async Task<List<AffectedMemory>> ForgetById(
         string userId, string memoryId, CancellationToken ct)
     {
+        memoryId = NormalizeId(memoryId);
         var memory = await store.GetByIdAsync(userId, memoryId, ct);
         if (memory is null)
         {
@@ -183,7 +207,8 @@ public class MemoryForgetTool(
             : content;
     }
 
-    private static JsonObject CreateSuccessResponse(List<AffectedMemory> affected, string? reason)
+    private static JsonObject CreateSuccessResponse(
+        List<AffectedMemory> affected, string? reason, IReadOnlyList<string>? unknownIds = null)
     {
         var response = new JsonObject
         {
@@ -196,6 +221,12 @@ public class MemoryForgetTool(
         if (!string.IsNullOrWhiteSpace(reason))
         {
             response["reason"] = reason;
+        }
+
+        // Named so a list that partly landed is not read as a whole one.
+        if (unknownIds is { Count: > 0 })
+        {
+            response["unknownIds"] = new JsonArray([.. unknownIds.Select(id => JsonValue.Create(id))]);
         }
 
         return response;

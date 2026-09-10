@@ -198,9 +198,12 @@ public class PlaywrightWebBrowser(
                 );
             }
 
-            // Refresh page after setting cookie
-            await page.ReloadAsync(new PageReloadOptions
+            // Refresh page after setting cookie. The reload's response replaces the challenge's:
+            // a DataDome or Cloudflare interstitial answers 403, and keeping that status made the
+            // envelope report an http error over the content the solve had just unlocked.
+            var reloaded = await page.ReloadAsync(new PageReloadOptions
             { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 30000 });
+            response = reloaded ?? response;
             html = await page.ContentAsync();
             captchaRetries++;
         }

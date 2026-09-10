@@ -19,6 +19,32 @@ public class HtmlConverterTests
         markdown.ShouldContain("[button: La rifa de 2024]");
     }
 
+    // The button case flattens its subtree to text, and text is not where a picture survives — the
+    // same hole the anchor case was given ListImagesWithin for. An image-only button (a gallery
+    // thumbnail, an icon that opens a viewer) otherwise loses its entry and its ref with it.
+    [Fact]
+    public void Convert_AnImageInsideAButton_IsStillListed()
+    {
+        var markdown = HtmlConverter.Convert(
+            """<html><body><button><img src="/thumb.jpg" alt="Vista de la sala" data-img-w="300" data-img-h="300" data-img-ref="i-4"></button></body></html>""",
+            WebFetchOutputFormat.Markdown);
+
+        markdown.ShouldContain("i-4");
+        markdown.ShouldContain("Vista de la sala");
+    }
+
+    // TextContent keeps the markup's own newlines and indentation, so a button written across
+    // several lines marked up as a multi-line block: the marker has to read as one thing.
+    [Fact]
+    public void Convert_AButtonWrittenAcrossLines_IsMarkedOnOneLine()
+    {
+        var markdown = HtmlConverter.Convert(
+            "<html><body><button>\n  <span>Icono</span>\n  Comprar ahora\n</button></body></html>",
+            WebFetchOutputFormat.Markdown);
+
+        markdown.ShouldContain("[button: Icono Comprar ahora]");
+    }
+
     [Fact]
     public void Convert_HtmlDeclaresLegacyCharset_PreservesUnicodeAccents()
     {
