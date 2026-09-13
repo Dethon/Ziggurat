@@ -21,19 +21,19 @@ like it.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A message whose patchable model is a Lemonade model enqueues nothing for extraction.
-- [ ] That same message still gets its recall block attached — asserted in the same test, because
+- [x] A message whose patchable model is a Lemonade model enqueues nothing for extraction.
+- [x] That same message still gets its recall block attached — asserted in the same test, because
       the one-way boundary is the point and splitting it lets a later change break half of it
       silently.
-- [ ] A message patched to a hosted model still enqueues, unchanged.
-- [ ] A message with no patchable model at all still enqueues, unchanged.
-- [ ] An unremembered user on a Lemonade turn enqueues nothing, and does not become remembered by
+- [x] A message patched to a hosted model still enqueues, unchanged.
+- [x] A message with no patchable model at all still enqueues, unchanged.
+- [x] An unremembered user on a Lemonade turn enqueues nothing, and does not become remembered by
       that turn.
-- [ ] An agent with the `memory` feature disabled behaves exactly as before; the two gates do not
+- [x] An agent with the `memory` feature disabled behaves exactly as before; the two gates do not
       interact.
-- [ ] A Lemonade model is identified through the existing helper for its namespaced form — no new
+- [x] A Lemonade model is identified through the existing helper for its namespaced form — no new
       marker, no capability inference, no new configuration key.
-- [ ] The memory anchor's existing pinned test stays green and gains no additions.
-- [ ] No new setting can turn this off.
+- [x] The memory anchor's existing pinned test stays green and gains no additions.
+- [x] No new setting can turn this off.

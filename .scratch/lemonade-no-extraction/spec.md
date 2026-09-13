@@ -1,6 +1,6 @@
 # A turn addressed to the Lemonade chat host is never extracted from
 
-Status: ready-for-agent
+Status: done
 ADR: `docs/adr/0042-a-turn-addressed-to-the-local-box-is-never-extracted-from.md`
 
 ## Problem Statement

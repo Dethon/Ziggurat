@@ -20,15 +20,15 @@ document.
 **Blocked by:** 01, 02 — it documents what they did, and the glossary sentence is still true until
 01 lands.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The Lemonade chat host glossary entry no longer names memory extraction as an exception to
+- [x] The Lemonade chat host glossary entry no longer names memory extraction as an exception to
       "nothing answers in its place".
-- [ ] The rest of that entry — the address-is-configuration point, the distinction from the
+- [x] The rest of that entry — the address-is-configuration point, the distinction from the
       deployment's own Lemonade, the with-no-address-it-does-not-exist rule — is unchanged.
-- [ ] The memory architecture rule attributes the extraction enqueue to the recall hook rather
+- [x] The memory architecture rule attributes the extraction enqueue to the recall hook rather
       than the chat monitor.
-- [ ] The rule's surrounding contracts — the anchor's correctness argument, the local-embeddings
+- [x] The rule's surrounding contracts — the anchor's correctness argument, the local-embeddings
       rule, the marker cross-check — are unchanged.
-- [ ] Neither document gains implementation detail; the glossary stays a glossary.
-- [ ] ADR 0042 is referenced from wherever a reader would next ask "why".
+- [x] Neither document gains implementation detail; the glossary stays a glossary.
+- [x] ADR 0042 is referenced from wherever a reader would next ask "why".

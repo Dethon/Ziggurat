@@ -26,16 +26,16 @@ asserting on the bytes each host received; an unoffered model is a variation on 
 **Blocked by:** None — can start immediately. Independent of 01: this touches the agent's model
 resolution, not the memory subsystem, and does not read 01's gate.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A turn patched to a Lemonade model the agent does not offer raises the Lemonade chat host
+- [x] A turn patched to a Lemonade model the agent does not offer raises the Lemonade chat host
       failure.
-- [ ] On that failure the hosted stub captured nothing — the turn is not answered in its place.
-- [ ] The failure reaches the person rather than being swallowed as a transient error.
-- [ ] A hosted model id the agent does not offer still falls back quietly to the agent's own
+- [x] On that failure the hosted stub captured nothing — the turn is not answered in its place.
+- [x] The failure reaches the person rather than being swallowed as a transient error.
+- [x] A hosted model id the agent does not offer still falls back quietly to the agent's own
       model, exactly as today.
-- [ ] An unrecognised reasoning effort still falls back quietly to the agent's own effort, exactly
+- [x] An unrecognised reasoning effort still falls back quietly to the agent's own effort, exactly
       as today.
-- [ ] A Lemonade model the agent *does* offer still reaches the host; the existing tests covering
+- [x] A Lemonade model the agent *does* offer still reaches the host; the existing tests covering
       this stay green.
-- [ ] A deployment with no Lemonade chat host configured is unaffected.
+- [x] A deployment with no Lemonade chat host configured is unaffected.
