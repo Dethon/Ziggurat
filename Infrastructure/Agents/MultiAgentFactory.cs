@@ -76,7 +76,8 @@ public sealed class MultiAgentFactory(
         AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
     {
         var spec = AgentSpecProjection.ForAgent(
-            definition, agentKey, userId, openRouterConfig, _patchableModels, _logger);
+            definition, agentKey, userId, openRouterConfig, _patchableModels,
+            _lemonadeHost is { IsConfigured: true } host ? host.Address : null, _logger);
 
         return Build(spec, approvalHandler);
     }

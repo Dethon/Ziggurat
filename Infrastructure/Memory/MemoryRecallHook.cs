@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
@@ -44,6 +45,15 @@ public class MemoryRecallHook(
         {
             return;
         }
+
+        // The second reason nothing is written to memory, stated beside the first. A person picks
+        // a model on their own box so that what they type stays there, and extraction sends
+        // exactly their own words to a hosted model — so a turn addressed to the box is not
+        // extracted from. It reads what the turn *asked for*, because that is all there is here:
+        // this runs before the agent, so no host has been chosen yet, and the gate therefore
+        // fails closed. Recall below is deliberately not skipped with it: the box may read what
+        // the agent already knew, and the boundary is one-way on purpose.
+        var isLemonadeTurn = LemonadeModelId.IsLemonade(message.GetConfigPatch()?.Model);
 
         try
         {
@@ -108,11 +118,14 @@ public class MemoryRecallHook(
                 }
             });
 
-            await extractionQueue.EnqueueAsync(
-                new MemoryExtractionRequest(userId, stateKey, anchor, conversationId, agentId)
-                {
-                    FallbackContent = messageText
-                }, ct);
+            if (!isLemonadeTurn)
+            {
+                await extractionQueue.EnqueueAsync(
+                    new MemoryExtractionRequest(userId, stateKey, anchor, conversationId, agentId)
+                    {
+                        FallbackContent = messageText
+                    }, ct);
+            }
 
             // Same duration as the latency event the scope publishes, taken off the scope rather
             // than from a second stopwatch.

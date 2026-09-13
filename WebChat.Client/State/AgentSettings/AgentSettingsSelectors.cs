@@ -34,17 +34,26 @@ public static class AgentSettingsSelectors
             : new AgentConfigPatch { Model = model, ReasoningEffort = effort };
     }
 
+    // The model a person picked is theirs and is never edited here. A model the catalogue stopped
+    // listing used to be swapped for the agent's default, which quietly changed what answered:
+    // most sharply when the Lemonade chat host goes down, because discovery fails closed and
+    // empties every one of its models at once, so the next turn went to a hosted provider with no
+    // patch at all — unrefused, and extracted from. Keeping it sends it, and the server says what
+    // it is: a Lemonade model it cannot serve fails the turn by name, a hosted one it does not
+    // offer warns and answers on the agent's own. See docs/adr/0042.
+    //
+    // Effort still falls back. It is a small fixed vocabulary the server warns and continues on,
+    // so a stale one costs nothing, and no host disappears underneath it.
     public static AgentModelSettings Sanitize(AgentModelSettings settings, AgentCatalogEntry agent)
     {
-        var modelValid = settings.Model is { } model &&
-                         (agent.PatchableModels ?? []).Any(m =>
-                             string.Equals(m.Id, model, StringComparison.OrdinalIgnoreCase));
         var effortValid = settings.ReasoningEffort is { } effort &&
                           (agent.PatchableReasoningEfforts ?? []).Contains(
                               effort, StringComparer.OrdinalIgnoreCase);
 
+        // No model stored is not a stale pick — it is a client that has never chosen — so it
+        // still takes the agent's own, which is what the menu shows as selected.
         return new AgentModelSettings(
-            modelValid ? settings.Model : agent.DefaultModel,
+            settings.Model ?? agent.DefaultModel,
             effortValid ? settings.ReasoningEffort : agent.DefaultReasoningEffort);
     }
 

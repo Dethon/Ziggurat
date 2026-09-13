@@ -54,7 +54,7 @@ public sealed class AgentSpecProjectionTests
 
     private static AgentSpec AgentSpec() => AgentSpecProjection.ForAgent(
         _agentDefinition, new AgentKey("conv-1", "jack"), "fran", _openRouter,
-        new FixedPatchableModelSource(["model-a", "model-b"]), null);
+        new FixedPatchableModelSource(["model-a", "model-b"]), lemonadeHostAddress: null, logger: null);
 
     private static AgentSpec SubAgentSpec() => AgentSpecProjection.ForSubAgent(
         _subAgentDefinition, new SpawnContext("conv-1", "fran", ["allow-*"], UsesOutposts: false),

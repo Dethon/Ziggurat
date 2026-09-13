@@ -46,6 +46,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IMetricsPublisher _metricsPublisher;
     private readonly string _model;
     private readonly IPatchableModelSource _patchableModels;
+    private readonly string? _lemonadeHostAddress;
     private readonly string _conversationId;
     private readonly McpPromptCache? _promptCache;
     private readonly ReadImageSupport? _readImages;
@@ -102,6 +103,7 @@ public sealed class McpAgent : DisposableAgent
         _metricsPublisher = metricsPublisher;
         _model = spec.Model;
         _patchableModels = spec.PatchableModels;
+        _lemonadeHostAddress = spec.LemonadeHostAddress;
         _conversationId = spec.ConversationId;
         _promptCache = promptCache;
         _readImages = readImages;
@@ -228,18 +230,25 @@ public sealed class McpAgent : DisposableAgent
         CancellationToken cancellationToken = default)
     {
         var messageList = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
-        var turnConfig = ResolveTurnConfig(messageList, options);
-        return WithLlmLatencyAsync(
-            RunCoreStreamingInnerAsync(messageList, thread, options, turnConfig, cancellationToken),
-            turnConfig.ModelOverride ?? _model,
-            cancellationToken);
+        return RunTurnAsync(messageList, thread, options, cancellationToken);
     }
 
-    private async IAsyncEnumerable<AgentResponseUpdate> WithLlmLatencyAsync(
-        IAsyncEnumerable<AgentResponseUpdate> source,
-        string? effectiveModel,
+    // An iterator, so that nothing below runs until the stream is enumerated — resolving the patch
+    // included. A Lemonade model the host does not offer throws out of that resolution, and the
+    // conversation group folds a throw into an error reply only while enumerating: raised at call
+    // time it is a turn that failed to set up, which ends the group and answers nothing. The base
+    // RunStreamingAsync happens to defer as well, but that is the library's shape, not a contract
+    // this agent leans on.
+    private async IAsyncEnumerable<AgentResponseUpdate> RunTurnAsync(
+        IReadOnlyList<ChatMessage> messageList,
+        AgentSession? thread,
+        AgentRunOptions? options,
         [EnumeratorCancellation] CancellationToken ct)
     {
+        var turnConfig = ResolveTurnConfig(messageList, options);
+        var effectiveModel = turnConfig.ModelOverride ?? _model;
+        var source = RunCoreStreamingInnerAsync(messageList, thread, options, turnConfig, ct);
+
         using var total = _metricsPublisher.MeasureLatency(
             LatencyStage.LlmTotal, _conversationId, model: effectiveModel);
         // The first token is a point inside the total span, not a span of its own, so its scope is
@@ -320,6 +329,24 @@ public sealed class McpAgent : DisposableAgent
 
         if (resolved is null)
         {
+            // A Lemonade model the host does not offer is the one rejection that fails the turn.
+            // Falling back would answer with a hosted provider a turn the person addressed to
+            // their own machine, and say so only in a log line nobody reads. Discovery fails
+            // closed, so this is most of what an outage of the box now costs. The Lemonade case
+            // alone throws: a rejected hosted id, and a rejected effort below, keep the
+            // warn-and-continue, because widening it turns every drifted client into failed turns.
+            if (LemonadeModelId.IsLemonade(patchedModel))
+            {
+                // With no host configured there is no box to name and no Lemonade model was ever
+                // offered, so the only way here is a client that outlived the configuration. Say
+                // that, rather than naming an address that does not exist.
+                throw _lemonadeHostAddress is { } address
+                    ? new LemonadeChatHostException(
+                        address, $"it does not offer the model '{LemonadeModelId.Bare(patchedModel)}'")
+                    : new LemonadeChatHostException(
+                        "no configured address", "this deployment has no Lemonade chat host");
+            }
+
             LogRejectedPatch("model", patchedModel, _model);
         }
 

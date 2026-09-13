@@ -367,7 +367,8 @@ _Avoid_: anchor index, offset, cursor
 **Unremembered user**:
 A user with no stored memory entries. They may still have a personality profile, and
 their turns are still considered for extraction, so they can stop being one at any
-turn.
+turn — except on a turn addressed to the Lemonade chat host, which is never extracted
+from and so can never be the turn that enrols them.
 _Avoid_: user with no memories, new user, memoryless user, "skip recall" user
 
 ## Voice satellite
@@ -700,8 +701,7 @@ an address that is configuration and nothing else. It is not the Lemonade that v
 dictation and memory recall talk to: that one is part of the deployment, this one is
 somebody's own box, and it may not be there. With no address configured it does not
 exist. When it is unreachable a turn that asked for it fails, and nothing answers in
-its place; the memory extraction that follows such a turn is the one exception, and
-falls back to the deployment's own extraction model.
+its place. A turn addressed to it is never extracted from, reachable or not.
 _Avoid_: lemonade, local model server, local LLM host, second Lemonade
 
 **Lemonade model**:

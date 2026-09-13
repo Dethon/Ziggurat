@@ -56,4 +56,9 @@ public sealed record AgentSpec
     // Asked per turn rather than copied here: part of the list is discovered while the agent
     // runs, so a spec holding the ids would refuse a model that appeared after it was built.
     public required IPatchableModelSource PatchableModels { get; init; }
+
+    // The address the Lemonade chat host is configured at, carried here only so that refusing a
+    // Lemonade model the host does not offer can name the box the person was asking for. Null
+    // where no host is configured, which is also where no Lemonade model can ever be named.
+    public string? LemonadeHostAddress { get; init; }
 }
