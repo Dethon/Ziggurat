@@ -1,5 +1,7 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
@@ -267,6 +269,98 @@ public class MemoryRecallHookTests
         var request = await _queue.ReadAllAsync(CancellationToken.None).FirstAsync();
         request.UserId.ShouldBe("user1");
         request.FallbackContent.ShouldBe("Hello");
+    }
+
+    // A person picks a model on their own box so that what they type stays there. Extraction
+    // would send exactly their own words to a hosted model, so a turn that asked for the box is
+    // not extracted from at all. Recall is deliberately not suppressed with it: the box may read
+    // what the agent already knew, and nothing from the turn goes out to be summarised. Both
+    // halves are asserted here together, because a later change that breaks one of them silently
+    // is the failure this test exists to catch.
+    [Fact]
+    public async Task EnrichAsync_ALemonadeTurn_EnqueuesNothingButStillGetsItsRecallBlock()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+        message.SetConfigPatch(new AgentConfigPatch { Model = LemonadeModelId.Namespaced("local-model") });
+        var session = CreateSessionWithStateKey("state-test");
+        GiveTheTurnAMemoryToRecall();
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
+
+        await NothingWasEnqueued();
+        message.GetMemoryContext().ShouldNotBeNull().Memories.ShouldNotBeEmpty();
+    }
+
+    [Fact]
+    public async Task EnrichAsync_AHostedModelPatch_IsStillEnqueued()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+        message.SetConfigPatch(new AgentConfigPatch { Model = "z-ai/glm-5.2" });
+        var session = CreateSessionWithStateKey("state-test");
+        GiveTheTurnAMemoryToRecall();
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
+
+        _queue.Complete();
+        var request = await _queue.ReadAllAsync(CancellationToken.None).FirstAsync();
+        request.UserId.ShouldBe("user1");
+    }
+
+    [Fact]
+    public async Task EnrichAsync_NoPatchAtAll_IsStillEnqueued()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+        var session = CreateSessionWithStateKey("state-test");
+        GiveTheTurnAMemoryToRecall();
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
+
+        _queue.Complete();
+        var request = await _queue.ReadAllAsync(CancellationToken.None).FirstAsync();
+        request.UserId.ShouldBe("user1");
+    }
+
+    // The unremembered user is the case where the skip could most plausibly be argued away —
+    // there is nothing stored yet, so nothing to protect. There is: their first words are still
+    // their words, and the local box must not be the thing that enrols them.
+    [Fact]
+    public async Task EnrichAsync_AnUnrememberedUserOnALemonadeTurn_EnqueuesNothing()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+        message.SetConfigPatch(new AgentConfigPatch { Model = LemonadeModelId.Namespaced("local-model") });
+        var session = CreateSessionWithStateKey("state-test");
+        GiveTheUserNoMemories();
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
+
+        await NothingWasEnqueued();
+    }
+
+    private async Task NothingWasEnqueued()
+    {
+        _queue.Complete();
+        (await _queue.ReadAllAsync(CancellationToken.None).ToListAsync()).ShouldBeEmpty();
+    }
+
+    private static MemorySearchResult RecalledMemory() =>
+        new(new MemoryEntry
+        {
+            Id = "mem_1", UserId = "user1", Category = MemoryCategory.Preference,
+            Content = "Prefers concise responses", Importance = 0.9, Confidence = 0.8,
+            CreatedAt = DateTimeOffset.UtcNow, LastAccessedAt = DateTimeOffset.UtcNow
+        }, 0.92);
+
+    private void GiveTheTurnAMemoryToRecall()
+    {
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
+            .ReturnsAsync((ChatMessage[]?)null);
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_testEmbedding);
+        _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(),
+                It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(),
+                It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([RecalledMemory()]);
     }
 
     [Fact]
