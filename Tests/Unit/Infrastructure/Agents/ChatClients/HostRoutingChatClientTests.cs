@@ -1,18 +1,22 @@
 using System.Net;
 using System.Text.Json.Nodes;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
+using Domain.Monitor;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
+using Tests.Unit.Domain;
 using WebChat.Client.Services.Streaming;
 
 namespace Tests.Unit.Infrastructure.Agents.ChatClients;
@@ -262,6 +266,40 @@ public sealed class HostRoutingChatClientTests
 
         error.Message.ShouldContain(LemonadeAddress);
         TransientErrorFilter.IsTransientErrorMessage(error.Message).ShouldBeFalse();
+        openRouter.CapturedBody.ShouldBeNull();
+    }
+
+    // The refusal is only loud if it reaches the person. It is raised before any stream exists,
+    // and the conversation group wraps enumeration in its error handling but not the call: thrown
+    // at call time it is a "turn setup failed", which ends the group and answers nothing. So the
+    // throw has to be deferred to enumeration — a property of the agent's streaming entry, not of
+    // the turn — and this drives the real agent through the monitor with a channel so a change to
+    // that entry, in this code or in the agent library's, fails here rather than in a silent chat.
+    [Fact]
+    public async Task ALemonadeRefusal_ReachesTheChannelAsAnErrorReply_NotAsAGroupTeardown()
+    {
+        var openRouter = new CapturingSseHandler();
+        await using var agent = Agent(
+            Routing(openRouter, new CapturingSseHandler()),
+            offering: ["z-ai/glm-5.2"]);
+        var channel = MonitorTestMocks.CreateChannel(messages: MonitorTestMocks.CreateChannelMessage() with
+        {
+            ConfigPatch = new AgentConfigPatch { Model = LemonadeModel }
+        });
+        var monitor = new ChatMonitor(
+            [channel],
+            new FakeAgentFactory(agent),
+            MonitorTestMocks.CreateThreadResolver(),
+            NoOpMetricsPublisher.Instance,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object);
+
+        await monitor.Monitor(CancellationToken.None);
+
+        var error = channel.SentReplies.Single(r => r.ContentType == ReplyContentType.Error);
+        error.Content.ShouldContain(LemonadeAddress);
+        error.Content.ShouldContain(LemonadeModelId.Bare(LemonadeModel));
+        channel.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
         openRouter.CapturedBody.ShouldBeNull();
     }
 

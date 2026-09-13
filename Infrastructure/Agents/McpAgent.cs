@@ -230,18 +230,25 @@ public sealed class McpAgent : DisposableAgent
         CancellationToken cancellationToken = default)
     {
         var messageList = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
-        var turnConfig = ResolveTurnConfig(messageList, options);
-        return WithLlmLatencyAsync(
-            RunCoreStreamingInnerAsync(messageList, thread, options, turnConfig, cancellationToken),
-            turnConfig.ModelOverride ?? _model,
-            cancellationToken);
+        return RunTurnAsync(messageList, thread, options, cancellationToken);
     }
 
-    private async IAsyncEnumerable<AgentResponseUpdate> WithLlmLatencyAsync(
-        IAsyncEnumerable<AgentResponseUpdate> source,
-        string? effectiveModel,
+    // An iterator, so that nothing below runs until the stream is enumerated — resolving the patch
+    // included. A Lemonade model the host does not offer throws out of that resolution, and the
+    // conversation group folds a throw into an error reply only while enumerating: raised at call
+    // time it is a turn that failed to set up, which ends the group and answers nothing. The base
+    // RunStreamingAsync happens to defer as well, but that is the library's shape, not a contract
+    // this agent leans on.
+    private async IAsyncEnumerable<AgentResponseUpdate> RunTurnAsync(
+        IReadOnlyList<ChatMessage> messageList,
+        AgentSession? thread,
+        AgentRunOptions? options,
         [EnumeratorCancellation] CancellationToken ct)
     {
+        var turnConfig = ResolveTurnConfig(messageList, options);
+        var effectiveModel = turnConfig.ModelOverride ?? _model;
+        var source = RunCoreStreamingInnerAsync(messageList, thread, options, turnConfig, ct);
+
         using var total = _metricsPublisher.MeasureLatency(
             LatencyStage.LlmTotal, _conversationId, model: effectiveModel);
         // The first token is a point inside the total span, not a span of its own, so its scope is
