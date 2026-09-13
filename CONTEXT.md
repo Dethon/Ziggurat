@@ -700,8 +700,8 @@ an address that is configuration and nothing else. It is not the Lemonade that v
 dictation and memory recall talk to: that one is part of the deployment, this one is
 somebody's own box, and it may not be there. With no address configured it does not
 exist. When it is unreachable a turn that asked for it fails, and nothing answers in
-its place; the memory extraction that follows such a turn is the one exception, and
-falls back to the deployment's own extraction model.
+its place — and nothing follows it out either: a turn addressed to it is never
+extracted from.
 _Avoid_: lemonade, local model server, local LLM host, second Lemonade
 
 **Lemonade model**:
