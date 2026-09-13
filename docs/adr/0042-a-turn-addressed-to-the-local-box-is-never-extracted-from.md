@@ -107,3 +107,9 @@ degradation is more machinery than refusing it.
 - `.claude/rules/memory-architecture.md` attributes the extraction enqueue to `ChatMonitor`; it
   is the recall hook that queues. The line is corrected alongside this change, since the gate
   lands in exactly the method the rule misnames.
+- **The boundary is per-enqueue, and that is the whole of it.** A Lemonade turn persists like any
+  other, so a later hosted turn's `ExtractionWindow` can carry its messages as `[context -N]`.
+  That is intended and not a leak: the person went back to a hosted model, and the conversation
+  they are having there is the conversation they are having. What this ADR withholds is the turn
+  addressed to the box, not every sentence the box ever saw. "The harm is the send" above governs
+  the enqueue that turn would have caused — it is not an argument for scrubbing history.
