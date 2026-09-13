@@ -107,6 +107,15 @@ degradation is more machinery than refusing it.
 - `.claude/rules/memory-architecture.md` attributes the extraction enqueue to `ChatMonitor`; it
   is the recall hook that queues. The line is corrected alongside this change, since the gate
   lands in exactly the method the rule misnames.
+- **The client had to stop sanitizing for the loud fallback to mean anything.** WebChat's
+  `AgentSettingsSelectors.Sanitize` replaced a model the catalogue stopped listing with the
+  agent's default on every catalogue push. Discovery failing closed empties every Lemonade model
+  at once, so in exactly the outage this ADR is about, the person's pick was swapped out before
+  they could send a turn — and that turn then went to a hosted provider carrying no patch at all,
+  unrefused and extracted from. `Sanitize` now leaves the model alone, for hosted picks too: no
+  pick is ever edited behind the person's back, and the server is what says what happened to it.
+  A stale reasoning effort still falls back, and a client with nothing stored still takes the
+  agent's default — neither is a pick.
 - **The boundary is per-enqueue, and that is the whole of it.** A Lemonade turn persists like any
   other, so a later hosted turn's `ExtractionWindow` can carry its messages as `[context -N]`.
   That is intended and not a leak: the person went back to a hosted model, and the conversation

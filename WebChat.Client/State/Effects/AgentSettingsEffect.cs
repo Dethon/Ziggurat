@@ -36,9 +36,9 @@ public sealed class AgentSettingsEffect : IDisposable
     }
 
     // Every catalog, not only the first. An agent this client has not seen yet takes its
-    // persisted settings; one it already knows is re-sanitized against the fresh entry, so a
-    // model the agent stopped offering falls back to that agent's default rather than being
-    // sent on every turn for the server to reject.
+    // persisted settings; one it already knows is re-sanitized against the fresh entry, which
+    // now settles a stale reasoning effort and deliberately leaves the model alone — a pick the
+    // catalogue stopped listing is still the person's pick, and the server is what says so.
     public async Task ReconcileAsync(IReadOnlyList<AgentCatalogEntry> agents)
     {
         foreach (var agent in agents)

@@ -49,14 +49,45 @@ public class AgentSettingsSelectorsTests
         AgentSettingsSelectors.GetConfigPatch(state, [_jack], "ghost").ShouldBeNull();
     }
 
+    // A model the catalogue no longer lists is kept, not swapped for the default. Replacing it
+    // silently changed which model answered without telling anyone, and the person's own pick is
+    // the last thing that should be edited behind their back. The server decides what to do with
+    // it: a Lemonade model it cannot serve fails the turn by name, a hosted one it does not offer
+    // warns and answers on the agent's own. Either way the choice stays where the person left it.
     [Fact]
-    public void Sanitize_NonWhitelistedModel_FallsBackToDefault()
+    public void Sanitize_ANonWhitelistedModel_IsKeptRatherThanSwappedForTheDefault()
     {
         var sanitized = AgentSettingsSelectors.Sanitize(new AgentModelSettings("old/model", "low"), _jack);
 
-        sanitized.ShouldBe(new AgentModelSettings("openai/gpt-5.6-luna", "low"));
+        sanitized.ShouldBe(new AgentModelSettings("old/model", "low"));
     }
 
+    // The outage case ADR 0042 is chiefly about. Discovery fails closed, so a box that goes down
+    // empties every Lemonade id out of the catalogue. Dropping the pick here would send the next
+    // turn with no patch at all — answered by a hosted provider, extracted from, and never
+    // refused — which is the silent reroute the ADR exists to forbid.
+    [Fact]
+    public void Sanitize_ALemonadeModelWhoseHostWentDown_IsKeptSoTheServerCanRefuseIt()
+    {
+        var sanitized = AgentSettingsSelectors.Sanitize(new AgentModelSettings("lemonade/local", "low"), _jack);
+
+        sanitized.Model.ShouldBe("lemonade/local");
+    }
+
+    // The two halves joined: surviving Sanitize is only worth anything if the kept pick is still
+    // put on the wire, which is what lets the server refuse it by name instead of answering.
+    [Fact]
+    public void AKeptLemonadeModel_IsStillSentAsAPatch()
+    {
+        var kept = AgentSettingsSelectors.Sanitize(new AgentModelSettings("lemonade/local", "low"), _jack);
+
+        AgentSettingsSelectors.GetConfigPatch(StateWith(kept), [_jack], "jack")
+            .ShouldBe(new AgentConfigPatch { Model = "lemonade/local" });
+    }
+
+    // Effort keeps its fallback while the model no longer has one. An effort is a small set of
+    // fixed words the server warns and continues on, so a stale one costs nothing and showing it
+    // as selected when it is not honoured would be the lie. A model names what answers.
     [Fact]
     public void Sanitize_UnknownEffort_FallsBackToDefault()
     {
@@ -65,8 +96,8 @@ public class AgentSettingsSelectorsTests
         sanitized.ShouldBe(new AgentModelSettings("z-ai/glm-5.2", "low"));
     }
 
-    // A Lemonade id is a valid override exactly while the catalogue lists it, by id like any
-    // other; one that vanished from the host is dropped to the default like any other.
+    // A Lemonade id is an override like any other, by id, and survives the catalogue listing it
+    // or not — the vanished case is its own test above, because it is the one the outage hits.
     [Fact]
     public void Sanitize_ALemonadeModel_IsValidWhileTheCatalogueListsIt()
     {
@@ -77,8 +108,6 @@ public class AgentSettingsSelectorsTests
 
         AgentSettingsSelectors.Sanitize(new AgentModelSettings("lemonade/local", "low"), withLemonade)
             .Model.ShouldBe("lemonade/local");
-        AgentSettingsSelectors.Sanitize(new AgentModelSettings("lemonade/local", "low"), _jack)
-            .Model.ShouldBe("openai/gpt-5.6-luna");
     }
 
     // The lemon is a function of the id alone: the catalogue carries no provider field, and the

@@ -33,17 +33,21 @@ undoes it.
 Lemonade patch to read — but there is also no local turn, because the turn genuinely went to a
 hosted model. The gate is still correct; the person just did not get the box they asked for.
 
-**Blocked by:** none. Needs a decision on what WebChat should do when the model a person picked
-has gone away: keep sending it so the server can refuse it loudly, or tell them in the client.
+**Resolved:** keep sending it, and for every model rather than only Lemonade ones. `Sanitize` no
+longer replaces a model at all — a pick the catalogue stopped listing is still the person's pick,
+and the server is what says what happened to it. A stale reasoning effort still falls back, since
+it is a fixed vocabulary the server warns and continues on and no host disappears underneath it.
 
-**Status:** needs-triage
+**Status:** done
 
-- [ ] A person whose picked Lemonade model disappears is told, rather than silently moved to a
-      hosted default.
-- [ ] `Sanitize`'s existing behaviour for hosted models is unchanged — a drifted hosted pick
-      still falls back quietly, matching ticket 02's scoping guard.
-- [ ] `Sanitize_ALemonadeModel_IsValidWhileTheCatalogueListsIt`
+- [x] A person whose picked Lemonade model disappears keeps it, so the turn carries the patch and
+      the server refuses it by name instead of answering from a hosted provider unannounced.
+- [x] A drifted hosted pick is also kept — the decision was widened to every model, so nothing is
+      ever swapped behind the person's back. The server still warns and answers on the agent's
+      own, so ticket 02's scoping guard is untouched.
+- [x] A client with nothing stored still takes the agent's default: no pick is not a stale pick.
+- [x] `Sanitize_ALemonadeModel_IsValidWhileTheCatalogueListsIt`
       (`Tests/Unit/WebChat.Client/State/AgentSettingsSelectorsTests.cs:71`) stays green or is
       deliberately replaced.
-- [ ] ADR 0042 is amended: as shipped, its outage guarantee holds only until the catalogue
-      reaches the client.
+- [x] ADR 0042's Consequences records the client half — with `Sanitize` fixed, the outage
+      guarantee now holds past the catalogue reaching the client, which is what it always claimed.

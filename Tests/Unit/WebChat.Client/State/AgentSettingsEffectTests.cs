@@ -67,18 +67,19 @@ public sealed class AgentSettingsEffectTests : IDisposable
         _store.State.ByAgent["jack"].ShouldBe(new AgentModelSettings("openai/gpt-5.6-luna", "low"));
     }
 
-    // The live catalog is the only place a narrowing shows up. Leaving the old selection in
-    // place means every turn sends a model the server rejects, while the menu shows it as the
-    // current one.
+    // A narrowing catalog no longer undoes the pick. It used to, so that a turn would not carry
+    // a model the server rejects — but the reject is the point: a Lemonade host that went down
+    // empties every one of its models at once, and swapping the pick sent the next turn to a
+    // hosted provider with no patch and no way for the person to know. See docs/adr/0042.
     [Fact]
-    public void SetAgents_LiveCatalogNarrowsTheModels_ResanitizesAKnownAgent()
+    public void SetAgents_LiveCatalogNarrowsTheModels_KeepsThePick()
     {
         _dispatcher.Dispatch(new SetAgents([_jack]));
         _dispatcher.Dispatch(new SetAgentModel("jack", "z-ai/glm-5.2"));
 
         _dispatcher.Dispatch(new SetAgents([_jackNarrowed]));
 
-        _store.State.ByAgent["jack"].Model.ShouldBe("openai/gpt-5.6-luna");
+        _store.State.ByAgent["jack"].Model.ShouldBe("z-ai/glm-5.2");
     }
 
     [Fact]
