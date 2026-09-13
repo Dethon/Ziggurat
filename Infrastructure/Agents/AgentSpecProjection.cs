@@ -18,6 +18,7 @@ internal static class AgentSpecProjection
         string userId,
         OpenRouterConfig openRouterConfig,
         IPatchableModelSource patchableModels,
+        string? lemonadeHostAddress,
         ILogger? logger) => new()
         {
             AgentId = definition.Id,
@@ -47,7 +48,8 @@ internal static class AgentSpecProjection
             Language = definition.Language,
             KeepsHistory = true,
             RecordsOutpostVerdicts = true,
-            PatchableModels = patchableModels
+            PatchableModels = patchableModels,
+            LemonadeHostAddress = lemonadeHostAddress
         };
 
     public static AgentSpec ForSubAgent(

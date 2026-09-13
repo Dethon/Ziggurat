@@ -245,6 +245,55 @@ public sealed class HostRoutingChatClientTests
         error.Message.ShouldContain(LemonadeAddress);
     }
 
+    // Discovery fails closed, so an outage of the box empties the offered list and every Lemonade
+    // model becomes unoffered. Falling back to OpenRouter here would answer with the cloud a turn
+    // the person addressed to their own machine, and tell them only in a log line. It fails
+    // instead, named after the box so they know which one to look at.
+    [Fact]
+    public async Task ALemonadeModelTheAgentDoesNotOffer_FailsTheTurnRatherThanReachingOpenRouter()
+    {
+        var openRouter = new CapturingSseHandler();
+        await using var agent = Agent(
+            Routing(openRouter, new CapturingSseHandler()),
+            offering: ["z-ai/glm-5.2"]);
+
+        var error = await Should.ThrowAsync<LemonadeChatHostException>(
+            () => agent.RunStreamingAsync([Patched(LemonadeModel)]).ToListAsync().AsTask());
+
+        error.Message.ShouldContain(LemonadeAddress);
+        TransientErrorFilter.IsTransientErrorMessage(error.Message).ShouldBeFalse();
+        openRouter.CapturedBody.ShouldBeNull();
+    }
+
+    // The scoping guard. Model-override resolution shares its rejection path with reasoning
+    // effort, and widening the throw to either of these would turn every client with a drifted
+    // model list into failed turns.
+    [Fact]
+    public async Task AHostedModelTheAgentDoesNotOffer_StillFallsBackQuietlyToTheAgentsOwn()
+    {
+        var openRouter = new CapturingSseHandler();
+        await using var agent = Agent(
+            Routing(openRouter, new CapturingSseHandler()),
+            offering: ["z-ai/glm-5.2"]);
+
+        await agent.RunStreamingAsync([Patched("some/unoffered-model")]).ToListAsync();
+
+        JsonNode.Parse(openRouter.CapturedBody!)!["model"]!.GetValue<string>().ShouldBe("configured/model");
+    }
+
+    [Fact]
+    public async Task AnUnrecognisedReasoningEffort_StillFallsBackQuietlyToTheAgentsOwn()
+    {
+        var openRouter = new CapturingSseHandler();
+        await using var agent = Agent(Routing(openRouter, new CapturingSseHandler()));
+
+        var message = new ChatMessage(ChatRole.User, "hi");
+        message.SetConfigPatch(new AgentConfigPatch { ReasoningEffort = "enormous" });
+        await agent.RunStreamingAsync([message]).ToListAsync();
+
+        JsonNode.Parse(openRouter.CapturedBody!)!["reasoning"]!["effort"]!.GetValue<string>().ShouldBe("high");
+    }
+
     private static HostRoutingChatClient Routing(
         HttpMessageHandler openRouter, HttpMessageHandler lemonade, string? apiKey = null) =>
         new(
@@ -261,14 +310,17 @@ public sealed class HostRoutingChatClientTests
             providerRouting: new ProviderRouting { Sort = ProviderSort.Latency },
             transportHandler: handler);
 
-    private static McpAgent Agent(IChatClient client, IMetricsPublisher? metrics = null) =>
+    private static McpAgent Agent(
+        IChatClient client, IMetricsPublisher? metrics = null, IReadOnlyList<string>? offering = null) =>
         new(
             TestAgentSpec.Default with
             {
                 UserId = "fran",
                 Model = "configured/model",
                 ReasoningEffort = "high",
-                PatchableModels = new FixedPatchableModelSource(["z-ai/glm-5.2", LemonadeModel])
+                PatchableModels = new FixedPatchableModelSource(
+                    offering ?? ["z-ai/glm-5.2", LemonadeModel]),
+                LemonadeHostAddress = LemonadeAddress
             },
             client,
             new Mock<IThreadStateStore>().Object,

@@ -46,6 +46,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IMetricsPublisher _metricsPublisher;
     private readonly string _model;
     private readonly IPatchableModelSource _patchableModels;
+    private readonly string? _lemonadeHostAddress;
     private readonly string _conversationId;
     private readonly McpPromptCache? _promptCache;
     private readonly ReadImageSupport? _readImages;
@@ -102,6 +103,7 @@ public sealed class McpAgent : DisposableAgent
         _metricsPublisher = metricsPublisher;
         _model = spec.Model;
         _patchableModels = spec.PatchableModels;
+        _lemonadeHostAddress = spec.LemonadeHostAddress;
         _conversationId = spec.ConversationId;
         _promptCache = promptCache;
         _readImages = readImages;
@@ -320,6 +322,19 @@ public sealed class McpAgent : DisposableAgent
 
         if (resolved is null)
         {
+            // A Lemonade model the host does not offer is the one rejection that fails the turn.
+            // Falling back would answer with a hosted provider a turn the person addressed to
+            // their own machine, and say so only in a log line nobody reads. Discovery fails
+            // closed, so this is most of what an outage of the box now costs. The Lemonade case
+            // alone throws: a rejected hosted id, and a rejected effort below, keep the
+            // warn-and-continue, because widening it turns every drifted client into failed turns.
+            if (LemonadeModelId.IsLemonade(patchedModel))
+            {
+                throw new LemonadeChatHostException(
+                    _lemonadeHostAddress ?? "an address that is not configured",
+                    $"it does not offer the model '{LemonadeModelId.Bare(patchedModel)}'");
+            }
+
             LogRejectedPatch("model", patchedModel, _model);
         }
 
