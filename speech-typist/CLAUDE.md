@@ -36,7 +36,11 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
   refused with `409 slots_pinned_error` so nothing is typed at all. Measured against the live
   instance on 2026-08-14, which answers `Whisper-Large-v3-Turbo-ES`; compose's
   `${STT_MODEL:-Whisper-Large-v3-Turbo}` fallback is *not* what runs. Ask the server rather than
-  assuming: `curl -s http://ai370:13305/api/v1/health | grep -o '"model_loaded":"[^"]*"'`.
+  assuming: `curl -s http://192.168.5.45:13305/api/v1/health | grep -o '"model_loaded":"[^"]*"'`.
+- **The base URL names an address, not the host.** `ai370` never had a DNS record; Windows found
+  it through NetBIOS and LLMNR, answered by Samba's `nmbd` and `wsdd2` on the host, until a
+  Windows 11 26H2 update in September 2026 stopped the resolver falling back to either and every
+  dictation failed. An address asks nothing of the resolver. A test pins it.
 - **The base URL is `/v1`, not `/api/v1`.** Lemonade serves both; health lives under `/api/v1`
   and the OpenAI-compatible routes under `/v1`. The wrong one parses fine and 404s only when
   somebody is mid-sentence. A test pins it.

@@ -177,15 +177,16 @@ pub const DEFAULTS: &str = r#"# speech-typist — hold a key, talk, and the word
 # with the executable. Every value below is the default; delete a line to keep the default.
 
 [lemonade]
-# The Lemonade host as seen from this desktop. The compose-internal "lemonade:13305" means
-# nothing from here, so this names the host instead.
-base_url = "http://ai370:13305/v1"
+# The Lemonade host as seen from this desktop, by address. The compose-internal "lemonade:13305"
+# means nothing from here, and the host's name is not safe either: "ai370" has no DNS record and
+# was only ever found by NetBIOS and LLMNR, which a Windows 11 update stopped consulting.
+base_url = "http://192.168.5.45:13305/v1"
 # The transcription model Lemonade currently has LOADED, which must be named exactly. Lemonade
 # holds one transcription model at a time and the deployed one is pinned, so asking for any other
 # name is refused with 409 slots_pinned_error and nothing is typed at all. Kept in agreement with
 # the stack's STT_MODEL by hand: compose's &stt-model anchor keeps four sides in lockstep and
 # cannot reach this file, which is outside compose. Ask the server what it has:
-#   curl -s http://ai370:13305/api/v1/health | grep -o '"model_loaded":"[^"]*"'
+#   curl -s http://192.168.5.45:13305/api/v1/health | grep -o '"model_loaded":"[^"]*"'
 model = "Whisper-Large-v3-Turbo-ES"
 # Per-segment. A request that outlives it is retried once and then that segment is dropped.
 request_timeout_secs = 30
@@ -370,6 +371,21 @@ mod tests {
 
         assert!(!base_url.contains("lemonade:"), "{base_url} means nothing from a desktop");
         assert!(base_url.starts_with("http://"));
+    }
+
+    #[test]
+    fn the_base_url_default_is_an_address_because_the_host_name_was_only_ever_a_courtesy() {
+        // "ai370" never had a DNS record: Windows found it through NetBIOS and LLMNR, answered by
+        // Samba's nmbd and wsdd2 on the host itself, until a Windows 11 26H2 update (September
+        // 2026) stopped the resolver falling back to either and every dictation failed with the
+        // error ring. An address asks nothing of the resolver.
+        let base_url = Config::default().lemonade.base_url;
+        let host = base_url.trim_start_matches("http://").split([':', '/']).next().unwrap();
+
+        assert!(
+            host.parse::<std::net::IpAddr>().is_ok(),
+            "{host} is a name, and a single-label name is resolved by multicast or not at all"
+        );
     }
 
     #[test]

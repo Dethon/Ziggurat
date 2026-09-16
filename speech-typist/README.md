@@ -24,12 +24,14 @@ settings travel if you carry the executable on a stick.
 
 ## Settings worth knowing about
 
-- `lemonade.base_url` — the Lemonade host as seen from this desktop. The compose-internal
-  `lemonade:13305` means nothing from here.
+- `lemonade.base_url` — the Lemonade host as seen from this desktop, by address. The
+  compose-internal `lemonade:13305` means nothing from here, and the host's name is not reliable
+  either: `ai370` has no DNS record and was only found by NetBIOS and LLMNR, which a Windows 11
+  update stopped consulting.
 - `lemonade.model` — the model Lemonade currently has **loaded**, named exactly. Get it wrong and
   every dictation fails with a 409: Lemonade holds one transcription model at a time and the
   deployed one is pinned, so it refuses to swap rather than obliging. Ask the server what it has:
-  `curl -s http://ai370:13305/api/v1/health | grep -o '"model_loaded":"[^"]*"'`.
+  `curl -s http://192.168.5.45:13305/api/v1/health | grep -o '"model_loaded":"[^"]*"'`.
 - `audio.device_name` — a case-insensitive fragment of a microphone's name. Empty means the system
   default. The tray's **Microphones** submenu lists what Windows calls the devices it can see.
 - `detector.*` — where a dictation is cut into segments. Raise the thresholds in a loud room.

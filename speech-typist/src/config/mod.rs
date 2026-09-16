@@ -56,8 +56,11 @@ pub struct DictationConfig {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct LemonadeConfig {
-    /// Names the Lemonade host, not the compose-internal `lemonade:13305`, which means nothing
-    /// from a Windows desktop.
+    /// The Lemonade host as an address, not the compose-internal `lemonade:13305`, which means
+    /// nothing from a Windows desktop — and not the host's name either. `ai370` has no DNS
+    /// record: Windows found it by NetBIOS and LLMNR, answered by Samba's nmbd and wsdd2 on the
+    /// host itself, until a Windows 11 26H2 update in September 2026 stopped the resolver falling
+    /// back to either. An address asks nothing of the resolver.
     pub base_url: String,
     /// Must name the transcription model Lemonade currently has loaded. Lemonade holds one
     /// transcription model at a time and the deployed one is pinned, so asking for a different
@@ -74,7 +77,7 @@ pub struct LemonadeConfig {
 impl Default for LemonadeConfig {
     fn default() -> Self {
         Self {
-            base_url: "http://ai370:13305/v1".into(),
+            base_url: "http://192.168.5.45:13305/v1".into(),
             model: "Whisper-Large-v3-Turbo-ES".into(),
             request_timeout_secs: 30,
             max_prompt_chars: 700,
