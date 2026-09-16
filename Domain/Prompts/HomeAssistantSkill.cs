@@ -40,7 +40,12 @@ public static class HomeAssistantSkill
         1. Find the entity in the setup index you read; `domain__filesystem__glob` under `/ha/entities/<class>` or
            `/ha/areas/<room>` only for what the index does not settle. Do NOT glob to discover actions:
            the setup index lists them per class, and action files live in the entity
-           directory, so a glob of `/ha/entities/<class>/*.sh` returns nothing.
+           directory, so a glob of `/ha/entities/<class>/*.sh` returns nothing. An entity line
+           that goes on after ` — ` already names the action, its flag and the choices it
+           takes (`turn_on.sh --activity: Netflix, YouTube`): act on it directly, with no
+           `state.json` read and no `--help`. `turn_on.sh` on a remote or a media player is
+           how a TV is switched on, even when its state reads `unavailable`; the app opens
+           in the same call.
         2. Inspect when you need an attribute as input: `domain__filesystem__file_read` on
            `/ha/.../state.json`.
         3. Learn an action's arguments: `domain__filesystem__exec` of `<service>.sh --help`. The `.sh` files are
@@ -55,7 +60,9 @@ public static class HomeAssistantSkill
           `changed[]` verbatim, and do NOT read `state.json` afterwards to check it
           worked. HA applies the action right away but only stores the new value after a
           short delay, so a read taken now returns the OLD value and would wrongly look
-          unchanged. Trust the `exitCode` and `changed[]`; never re-read to verify.
+          unchanged. Trust the `exitCode` and `changed[]`; never re-read to verify. An empty
+          `changed[]` after a command, an app launch or a button press is normal — the effect
+          arrives later — and is still a success.
         - `exitCode` 2 = bad argument: re-run `--help` and rebuild; don't repeat the
           same shape.
         - `exitCode` 1 = HA rejected the call; `stderr` has the reason.

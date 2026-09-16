@@ -28,9 +28,11 @@ public sealed class HaCatalogProvider(
     private static readonly TimeSpan _failureCacheTtl = TimeSpan.FromSeconds(30);
 
     // Single template render returns one JSON object covering every area and its entities —
-    // the REST API has no other path into the area registry.
+    // the REST API has no other path into the area registry. The same render lists the entities
+    // the registry hides: the states endpoint serves them regardless, and hidden in the home means
+    // hidden from the agent too (docs/adr/0043).
     private const string AreaTemplate =
-        """{"areas":[{% for aid in areas() %}{% if not loop.first %},{% endif %}{"id":{{aid|tojson}},"name":{{area_name(aid)|tojson}},"entities":{{area_entities(aid)|list|tojson}}}{% endfor %}]}""";
+        """{"areas":[{% for aid in areas() %}{% if not loop.first %},{% endif %}{"id":{{aid|tojson}},"name":{{area_name(aid)|tojson}},"entities":{{area_entities(aid)|list|tojson}}}{% endfor %}],"hidden":{{states|map(attribute='entity_id')|select('is_hidden_entity')|list|tojson}}}""";
 
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
     private readonly ILogger<HaCatalogProvider> _logger = logger ?? NullLogger<HaCatalogProvider>.Instance;
@@ -77,7 +79,9 @@ public sealed class HaCatalogProvider(
             var allServices = extraServices is null or []
                 ? services.Result
                 : [.. services.Result.Where(s => !extraServices.Any(e => SameAction(e, s))), .. extraServices];
-            return (new HaCatalog(states.Result, allServices, areas.Result) { HomeZone = zone.Result }, true);
+            var hidden = areas.Result.Hidden;
+            var visible = states.Result.Where(e => !hidden.Contains(e.EntityId)).ToList();
+            return (new HaCatalog(visible, allServices, areas.Result.Areas) { HomeZone = zone.Result }, true);
         }
         // Let cancellation propagate without writing the cache — otherwise a cancelled request would
         // poison the (process-wide) cache with an empty catalog for the negative TTL, blinding
@@ -116,29 +120,36 @@ public sealed class HaCatalogProvider(
         }
     }
 
-    private static async Task<IReadOnlyList<HaAreaEntities>> LoadAreasAsync(IHomeAssistantClient client, CancellationToken ct)
+    private sealed record Registry(IReadOnlyList<HaAreaEntities> Areas, IReadOnlySet<string> Hidden)
+    {
+        public static Registry Empty { get; } = new([], new HashSet<string>(StringComparer.Ordinal));
+    }
+
+    private static async Task<Registry> LoadAreasAsync(IHomeAssistantClient client, CancellationToken ct)
     {
         var rendered = await client.RenderTemplateAsync(AreaTemplate, ct);
         if (string.IsNullOrWhiteSpace(rendered))
         {
-            return [];
+            return Registry.Empty;
         }
         try
         {
             var payload = JsonSerializer.Deserialize<AreaPayload>(rendered);
-            return payload?.Areas?
+            var areas = payload?.Areas?
                 .Select(a => new HaAreaEntities(a.Id, a.Name, a.Entities ?? []))
                 .ToList() ?? [];
+            return new Registry(areas, (payload?.Hidden ?? []).ToHashSet(StringComparer.Ordinal));
         }
         catch (JsonException)
         {
-            return [];
+            return Registry.Empty;
         }
     }
 
     private sealed record AreaPayload
     {
         [JsonPropertyName("areas")] public IReadOnlyList<AreaDto>? Areas { get; init; }
+        [JsonPropertyName("hidden")] public IReadOnlyList<string>? Hidden { get; init; }
     }
 
     private sealed record AreaDto

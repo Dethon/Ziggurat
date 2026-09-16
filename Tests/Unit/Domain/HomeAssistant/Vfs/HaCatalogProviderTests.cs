@@ -27,6 +27,28 @@ public class HaCatalogProviderTests
         catalog.Areas.ShouldContain(a => a.Id == "salon" && a.EntityIds.Contains("light.kitchen"));
     }
 
+    // An entity hidden in Home Assistant's registry is off its own dashboards, and the states
+    // endpoint still lists it. The wake button the TV's turn_on automation presses was one: listed
+    // under the TV's room, the model pressed it by hand and then went looking for what else it
+    // needed. Hidden means hidden from the agent too — it never enters the catalog, so no tree,
+    // no index line and no path resolves to it.
+    [Fact]
+    public async Task GetAsync_AnEntityTheRegistryHides_IsLeftOutOfTheCatalog()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("light.kitchen", "off"), Entity("button.tv_wake", "unknown") },
+            AreaTemplateJson =
+                """{"areas":[{"id":"salon","name":"Salón","entities":["light.kitchen","button.tv_wake"]}],"hidden":["button.tv_wake"]}"""
+        };
+        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
+
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.Entities.Select(e => e.EntityId).ShouldBe(["light.kitchen"]);
+        catalog.EntityIdsInArea("salon").ShouldBe(["light.kitchen"]);
+    }
+
     // A served action with the same name as one Home Assistant publishes replaces it rather than
     // sitting beside it: the calendar's create_event is served here (Home Assistant's own cannot
     // take a recurrence rule), and two definitions of one action file would resolve to whichever

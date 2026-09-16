@@ -187,3 +187,23 @@ agent can say means "second zero".
 `HaFileSystem.NormalizeMediaSeek` therefore rewrites a `media_player.media_seek` of 0 to 1 second:
 truthy for MA, inaudible to a listener. Keep that rewrite as long as MA reads the field this way —
 without it "play it from the beginning" silently becomes "jump back half a second".
+
+## The setup index says what an entity offers; the registry says what it hides
+
+"Turn on the TV and put Crunchyroll" took ten model turns on a 36-second task, seven of them
+spent learning that `remote.turn_on --activity <app>` opens an app and which apps exist. Two
+things fix that, both in `docs/adr/0043`:
+
+- **A choosing entity's index line carries its choices and the action that takes them.**
+  `HomeAssistantSetupSummary` appends ` — <service>.sh --<flag>: a, b, c` for the lists that ARE
+  an action's argument (`activity_list` → `turn_on --activity`, `source_list` → `select_source
+  --source`, `options` → `select_option --option`), only when the entity admits that action and
+  the list is non-empty. The header says the segment stops at the dash. Widen the table only for
+  a list that is literally a flag's value — a climate's mode lists would say a lot for a call the
+  model already knows.
+- **An entity hidden in Home Assistant's registry never enters the catalog.** The states endpoint
+  serves hidden entities regardless, so `HaCatalogProvider`'s area template also renders the
+  `is_hidden_entity` list and the provider drops those states before the catalog is built — no
+  tree entry, no index line, no path resolves. Hide an entity in HA (the entity's settings →
+  Visibility) when it exists for an automation rather than for a person: the TV's wake button and
+  the automation that presses it were the first two.
