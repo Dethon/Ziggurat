@@ -245,6 +245,21 @@ public class HaWatchesTests
         watch["userId"]!.GetValue<string>().ShouldBe("fran");
     }
 
+    // The status file's instants are said on the home's clock, like every other stamp on the mount.
+    [Fact]
+    public async Task Read_StatusFile_StampsOnTheHomesClock()
+    {
+        var fs = Build(out var client);
+        client.TimeZone = "Europe/Madrid";
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+        client.Automations["assistant_watch_blinds-when-hot"].LastTriggered = _now.AddMinutes(30);
+
+        var status = await Read(fs, "watches/blinds-when-hot/status.json");
+
+        status["createdAt"]!.GetValue<string>().ShouldBe("2026-09-05T12:00:00+02:00");
+        status["lastTriggeredAt"]!.GetValue<string>().ShouldBe("2026-09-05T12:30:00+02:00");
+    }
+
     [Fact]
     public async Task Read_StatusFile_CarriesCreatedAtLastTriggeredEntityAndSpent()
     {

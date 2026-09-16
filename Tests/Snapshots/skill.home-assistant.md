@@ -1,4 +1,4 @@
-# home-assistant — description 150 / 150 tokens, body 3537 / 3600 tokens, served by mcp-homeassistant
+# home-assistant — description 150 / 150 tokens, body 3571 / 3600 tokens, served by mcp-homeassistant
 
 ================================================================================================
 
@@ -83,8 +83,9 @@ retention (10 days unless this home raised it, and nothing tells you which): an 
 window means nothing was recorded in it, so widen it or try a nearer one before saying
 the past is gone. A value that changes every minute makes a long list: pass `--every
 <minutes>` to get min/max/mean/last per bucket instead (numeric states only) — the
-right call for a whole day. The instants in the output carry their UTC offset; say them
-in the user's local time.
+right call for a whole day. Every instant this mount shows — a `state.json`'s
+`last_changed`, a change's `at`, a row's `start` — is already on the home's clock, the
+same clock as the current time you are given: read it as local and never convert it.
 
 Sensors whose `state.json` carries a `state_class` (the setup index's `every entity with
 state_class` line) also have `statistics.sh`: Home Assistant's own hourly mean/min/max

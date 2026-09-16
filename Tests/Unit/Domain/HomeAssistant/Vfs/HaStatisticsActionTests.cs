@@ -229,4 +229,22 @@ public class HaStatisticsActionTests
         exec.ExitCode.ShouldBe(1);
         exec.Stderr.ShouldContain("Invalid start_time");
     }
+
+    // Compiled rows come stamped in UTC like the recorder's changes; they are said on the home's clock.
+    [Fact]
+    public async Task Rows_AreStampedOnTheHomesClock()
+    {
+        var fs = Build(out var client);
+        client.TimeZone = "Europe/Madrid";
+        client.Statistics.Add(Row("2026-09-04T12:00:00+00:00", mean: 21.5, min: 21, max: 22));
+
+        var exec = await Exec(fs, "statistics.sh");
+
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
+        var row = payload["rows"]![0]!;
+        row["start"]!.GetValue<string>().ShouldBe("2026-09-04T14:00:00+02:00");
+        row["end"]!.GetValue<string>().ShouldBe("2026-09-04T15:00:00+02:00");
+        payload["window"]!["end"]!.GetValue<string>().ShouldBe("2026-09-04T18:00:00+02:00");
+    }
 }

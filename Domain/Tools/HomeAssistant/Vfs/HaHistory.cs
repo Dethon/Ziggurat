@@ -10,10 +10,9 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 //
 // The window's strings cross to Home Assistant as written (HaDateTimeText). The instants that come
 // back are Home Assistant's own — always UTC, whatever the home's zone: the history endpoint formats
-// `last_changed` from a UTC timestamp — and a listing renders them as they came; the prompt tells
-// the model to say them in the user's time. A summary is the one place the home's clock matters (a
-// day bucket should open at the home's midnight), so it takes the zone the catalog read from the
-// home's configuration, and buckets on UTC, saying so, when there is none.
+// `last_changed` from a UTC timestamp — and are said on the home's clock, the zone the catalog read
+// from the home's configuration (HaDateTimeText.Stamp). A summary's buckets follow that clock too
+// (a day bucket opens at the home's midnight), and bucket on UTC, saying so, when there is none.
 internal static class HaHistory
 {
     public static async Task<(int Code, string Stdout, string Stderr)> RunAsync(
@@ -22,7 +21,7 @@ internal static class HaHistory
     {
         try
         {
-            var (start, end) = HaWindow.Resolve(data, time, "hours", TimeSpan.FromHours, HaHistoryActions.DefaultHours);
+            var (start, end) = HaWindow.Resolve(data, time, "hours", TimeSpan.FromHours, HaHistoryActions.DefaultHours, homeZone);
             var every = HaWindow.WholeNumber(data, "every");
             var limit = HaWindow.WholeNumber(data, "limit");
             if (every is not null && limit is not null)
@@ -47,7 +46,7 @@ internal static class HaHistory
             }
             else
             {
-                List(payload, changes, limit ?? HaHistoryActions.DefaultLimit);
+                List(payload, changes, limit ?? HaHistoryActions.DefaultLimit, homeZone);
             }
 
             if (changes.Count == 0)
@@ -70,13 +69,13 @@ internal static class HaHistory
         }
     }
 
-    private static void List(JsonObject payload, IReadOnlyList<HaStateChange> changes, int limit)
+    private static void List(JsonObject payload, IReadOnlyList<HaStateChange> changes, int limit, TimeZoneInfo? zone)
     {
         var truncated = changes.Count > limit;
         var shown = truncated ? changes.Skip(changes.Count - limit).ToList() : changes;
 
         payload["changes"] = new JsonArray(shown
-            .Select(c => (JsonNode?)new JsonObject { ["at"] = Stamp(c.At), ["state"] = c.State })
+            .Select(c => (JsonNode?)new JsonObject { ["at"] = HaDateTimeText.Stamp(c.At, zone), ["state"] = c.State })
             .ToArray());
         payload["count"] = changes.Count;
         payload["truncated"] = truncated;
@@ -121,7 +120,7 @@ internal static class HaHistory
                 var values = ordered.Select(s => s.Value).ToList();
                 return (JsonNode?)new JsonObject
                 {
-                    ["at"] = Stamp(BucketStart(g.Key, bucketSeconds, zone)),
+                    ["at"] = HaDateTimeText.Stamp(BucketStart(g.Key, bucketSeconds, zone), zone),
                     ["min"] = values.Min(),
                     ["max"] = values.Max(),
                     ["mean"] = Math.Round(values.Average(), meanDecimals),
@@ -191,7 +190,4 @@ internal static class HaHistory
         }
         return new DateTimeOffset(wall, zone.GetUtcOffset(wall));
     }
-
-    private static string Stamp(DateTimeOffset at) =>
-        at.ToString(HaDateTimeText.Format, CultureInfo.InvariantCulture);
 }

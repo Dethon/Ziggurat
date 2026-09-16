@@ -65,13 +65,19 @@ ListHistoryAsync` (asked with `minimal_response&no_attributes`, so a change is s
 instant). Window strings cross as written (naive = HA's zone), like the calendar's; the shared
 arithmetic is `HaDateTimeText`. Plain listing keeps the latest `--limit` changes; `--every N`
 buckets numeric states per N minutes (min/max/mean/last/samples) and is an argument error on an
-entity with no numeric state, or beside `--limit`. **The recorder stamps every change in UTC
+entity with no numeric state, or beside `--limit`. **Home Assistant stamps everything in UTC
 whatever the home's zone** (`recorder/history/__init__.py` formats `last_changed` from a UTC
-timestamp), so buckets cannot follow the stamps' offset: `HaCatalogProvider` reads the home's zone
-once from `GET /api/config` (`IHomeAssistantClient.GetTimeZoneAsync`, `HaCatalog.HomeZone`) and
-`HaHistory` aligns buckets to that clock, so a day bucket opens at the home's midnight; a zone it
-cannot read or resolve leaves the catalog whole and buckets on UTC, logged once as a warning, and
-the payload's `bucket_zone` says which. An empty window under `--every` is an empty summary with
+timestamp, and a state's `last_changed`/`last_updated` come the same way), so `HaCatalogProvider`
+reads the home's zone once from `GET /api/config` (`IHomeAssistantClient.GetTimeZoneAsync`,
+`HaCatalog.HomeZone`) and **every instant the mount says goes through `HaDateTimeText.Stamp` on
+that clock**: `state.json`'s stamps, a listing's changes, a summary's buckets, a statistics row,
+a watch's `status.json`, the window an action echoes. A real turn read a glucose `last_updated`
+of `02:13+00:00` beside a turn prefix saying 04:13 local and called a thirty-second-old reading
+two hours old; the skill now tells the model the stamps are local and never to convert. Buckets
+align to the same clock, so a day bucket opens at the home's midnight; a zone it cannot read or
+resolve leaves the catalog whole, keeps the stamps as they came and buckets on UTC, logged once as
+a warning, and the payload's `bucket_zone` says which. The model-facing JSON uses relaxed escaping
+so an offset's `+` is not written `\u002B`. An empty window under `--every` is an empty summary with
 the retention note, never an error. The seeded test container is `time_zone: UTC`, so only the unit test with Madrid
 stamps pins this. The first entry is the state at the window's start,
 stamped there (pinned by `HomeAssistantClientTests.ListHistoryAsync_FirstElement_IsTheStateAtTheWindowsStart_StampedThere` against the real recorder). What

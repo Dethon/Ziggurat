@@ -212,7 +212,7 @@ public sealed partial class HaFileSystem(
         return await SearchNodesAsync(
             scoped,
             (entity, _) => ValueTask.FromResult<(string, string?)>(
-                (CanonicalStatePath(entity), HaStateRenderer.ToJson(entity))),
+                (CanonicalStatePath(entity), HaStateRenderer.ToJson(entity, homeZone: catalog.HomeZone))),
             new FsSearchScan
             {
                 Query = query,
@@ -265,7 +265,8 @@ public sealed partial class HaFileSystem(
             return NotFound(path);
         }
 
-        return BuildReadResult(path, HaStateRenderer.ToJson(entity, await LivePositionAsync(entity, ct)), offset, limit);
+        var homeZone = (await catalogProvider.GetAsync(ct)).HomeZone;
+        return BuildReadResult(path, HaStateRenderer.ToJson(entity, await LivePositionAsync(entity, ct), homeZone), offset, limit);
     }
 
     // The position Home Assistant stores is stale between state transitions, so for a Music

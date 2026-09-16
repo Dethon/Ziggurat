@@ -4,11 +4,13 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 // The window a recorder read covers, resolved once for both reads: a length counted back from the
 // end (now, or the end given), or an explicit start that excludes the length. Strings stay the
-// caller's (HaDateTimeText).
+// caller's (HaDateTimeText); the one the mount makes up, now, is said on the home's clock since
+// the payload echoes it.
 internal static class HaWindow
 {
     public static (string Start, string End) Resolve(
-        JsonObject data, TimeProvider time, string lengthArgument, Func<double, TimeSpan> length, double defaultLength)
+        JsonObject data, TimeProvider time, string lengthArgument, Func<double, TimeSpan> length, double defaultLength,
+        TimeZoneInfo? homeZone = null)
     {
         var given = Positive(data, lengthArgument);
         var start = Text(data, "start_date_time");
@@ -19,7 +21,7 @@ internal static class HaWindow
             throw new ArgumentException($"Give either --{lengthArgument} or --start_date_time, not both.");
         }
 
-        var now = HaDateTimeText.Now(time);
+        var now = HaDateTimeText.Now(time, homeZone);
         if (start is not null)
         {
             return (start, end ?? now);

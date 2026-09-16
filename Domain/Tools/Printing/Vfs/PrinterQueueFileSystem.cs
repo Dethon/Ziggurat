@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -16,8 +18,11 @@ public sealed class PrinterQueueFileSystem(
     IPrinterClient printer,
     PrintQueueGate gate,
     string supportedFormats,
-    TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
+    TimeSpan? regexMatchTimeout = null,
+    TimeProvider? timeProvider = null) : FileSystemBackendBase
 {
+    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+
     public const string Name = "print-queue";
 
     public override string FilesystemName => Name;
@@ -124,10 +129,12 @@ public sealed class PrinterQueueFileSystem(
         });
     }
 
+    // Read by a model, not a browser: an offset's `+` is written as itself, not as `\u002B`.
     private static readonly JsonSerializerOptions _json = new()
     {
         WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
@@ -502,7 +509,7 @@ public sealed class PrinterQueueFileSystem(
             state = !e.IsSubmitted
                 ? PrintJobState.Queued.ToString()
                 : active.TryGetValue(e.JobId!.Value, out var job) ? job.State.ToString() : PrintJobState.Processing.ToString(),
-            submittedAt = e.SubmittedAt?.UtcDateTime.ToString("O"),
+            submittedAt = ToZone(e.SubmittedAt),
             sizeBytes = e.SizeBytes
         }).OrderBy(r => r.filename);
 
@@ -554,4 +561,10 @@ public sealed class PrinterQueueFileSystem(
             Truncated = false
         });
 
+    // A stamp in status.json is read beside a turn prefix that speaks local time, so it is said in
+    // the operating zone (the timers' rule); a UTC one there was taken as local and mis-aged a job.
+    private string? ToZone(DateTimeOffset? at) =>
+        at is { } instant
+            ? TimeZoneInfo.ConvertTime(instant, _time.LocalTimeZone).ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture)
+            : null;
 }
