@@ -49,6 +49,16 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public const string KitchenSpeakerEntityId = "media_player.altavoz_cocina";
     public const string KitchenTvEntityId = "media_player.tv_cocina";
 
+    // The living room's television, as the prod one is: a remote whose turn_on takes an app, and
+    // which reads `unavailable` while the set is off. Home Assistant serves such an entity as a
+    // restored stub with no lists; the catalog provider puts the list it saw while the TV was on
+    // back on the stub, and this is the home as the mount then sees it — the list is on the
+    // entity, the state is not. A launch lands as `current_activity`, the fact a scenario about
+    // opening an app declares as its change.
+    public const string TvRemoteEntityId = "remote.tv_salon";
+    public static readonly string TvRemoteActivityKey = $"{TvRemoteEntityId}#current_activity";
+    public static readonly string[] TvApps = ["Netflix", "YouTube", "Plex", "Crunchyroll", "Disney+"];
+
     // What the user calls their favourites and what the playlist is called are different strings.
     // That gap is the whole subject of the browse-before-you-play rule.
     public const string FavouritesPlaylist = "Liked Songs dethonv";
@@ -78,6 +88,11 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public static readonly string KitchenSpeakerDirectory = Directory(KitchenSpeakerEntityId, "Altavoz Cocina");
     public static readonly string VacuumDirectory = Directory(VacuumEntityId, "Aspiradora");
     public static readonly string WashingMachineDirectory = Directory(WashingMachineEntityId, "Lavadora");
+    public static readonly string TvRemoteDirectory = Directory(TvRemoteEntityId, "TV Salón");
+
+    // The living-room TV's remote, either view.
+    public static readonly string TvRemotePathPattern =
+        $@"(^|/)({HaCatalog.ClassOf(TvRemoteEntityId)}\.)?{HaCatalog.ObjectOf(TvRemoteEntityId)}_\(";
 
     // The washing machine reached under /ha/entities or under its area — and only with the
     // composed `..._(<friendly-name>)` suffix a listing returns: the entity-named-as-listed
@@ -508,6 +523,9 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
 
         _entities[entityId] = service switch
         {
+            // A remote switched on with an app: the set comes on and the app is what it shows.
+            "turn_on" when data["activity"] is { } activity =>
+                (entity with { State = "on" }).WithAttribute("current_activity", activity.DeepClone()),
             "turn_on" => entity with { State = "on" },
             "turn_off" => entity with { State = "off" },
             "toggle" => entity with { State = entity.State == "on" ? "off" : "on" },
@@ -540,7 +558,8 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             ["areas"] = new JsonArray(
                 Area(KitchenAreaSlug, "Cocina", KitchenLightEntityId, WashingMachineEntityId,
                     KitchenSpeakerEntityId, KitchenTvEntityId),
-                Area("salon", "Salón", AirConditionerEntityId, SalonTemperatureEntityId, SalonBlindsEntityId),
+                Area("salon", "Salón", AirConditionerEntityId, SalonTemperatureEntityId, SalonBlindsEntityId,
+                    TvRemoteEntityId),
                 Area(StudyAreaSlug, "Estudio", VacuumEntityId))
         }.ToJsonString();
 
@@ -591,6 +610,12 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         {
             ["app_id"] = "tv",
             ["device_class"] = "tv"
+        }),
+        new(TvRemoteEntityId, "unavailable", "TV Salón", new JsonObject
+        {
+            ["restored"] = true,
+            ["activity_list"] = new JsonArray([.. TvApps.Select(app => (JsonNode)app)]),
+            ["current_activity"] = null
         })
     ];
 

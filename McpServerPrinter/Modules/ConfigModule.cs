@@ -35,7 +35,8 @@ public static class ConfigModule
                 sp.GetRequiredService<IPrintSpool>(),
                 sp.GetRequiredService<IPrinterClient>(),
                 sp.GetRequiredService<PrintQueueGate>(),
-                settings.SupportedFormats))
+                settings.SupportedFormats,
+                timeProvider: sp.GetRequiredService<TimeProvider>()))
             .AddHostedService<PrintSubmissionWorker>();
 
         services

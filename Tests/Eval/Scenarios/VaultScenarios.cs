@@ -464,7 +464,12 @@ public static class VaultScenarios
             }
         ],
         Permitted = [.. CallPermission.Looking("/vault*")],
-        CallCeiling = 6,
+        // Load, two globs, the create, and room for three reads: whether a padel note is a project
+        // or a loose idea is not written on the folder names, and deepseek-v4.1-flash opened the
+        // Inbox's one note, the daily note and the project note to decide (2026-09-17, a red at
+        // six for a create that landed exactly right). The claims are proven by the create's
+        // path; the ceiling is here to show a folder-by-folder crawl, which eight still does.
+        CallCeiling = 8,
         Claims = [ObsidianVaultSkill.LoadsForAVaultWrite.Id, ObsidianVaultSkill.NoNewTopLevelFolder.Id],
         Policy = new RunPolicy(2, 3)
     };

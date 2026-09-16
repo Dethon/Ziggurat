@@ -212,6 +212,24 @@ public class HaHistoryActionTests
         payload.ContainsKey("changes").ShouldBeFalse();
     }
 
+    // The recorder's stamps are UTC whatever the home's zone; a listing says them on the home's
+    // clock, the window's echo included, so "when did it last change" needs no conversion.
+    [Fact]
+    public async Task List_StampsChangesAndTheWindow_OnTheHomesClock()
+    {
+        var fs = Build(out var client);
+        client.TimeZone = "Europe/Madrid";
+        client.History.Add(Change("100", "2026-09-04T02:13:23+00:00"));
+
+        var exec = await Exec(fs, "history.sh");
+
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
+        payload["changes"]![0]!["at"]!.GetValue<string>().ShouldBe("2026-09-04T04:13:23+02:00");
+        payload["window"]!["end"]!.GetValue<string>().ShouldBe("2026-09-04T18:00:00+02:00");
+        payload["window"]!["start"]!.GetValue<string>().ShouldBe("2026-09-03T18:00:00+02:00");
+    }
+
     // The recorder stamps every change in UTC whatever the home's zone (Home Assistant's history
     // endpoint formats `last_changed` from a UTC timestamp), so the buckets cannot follow the
     // stamps' offset: they follow the home's clock, read from its configuration, and a day bucket

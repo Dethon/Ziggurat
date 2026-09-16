@@ -86,6 +86,70 @@ public class HomeAssistantSetupSummaryTests
         text.ShouldNotContain("switch.bare_(");
     }
 
+    // "Turn on the TV and put Crunchyroll" took ten model turns: the index named the remote and its
+    // actions, but not that `turn_on.sh --activity <app>` is how an app opens nor which apps exist,
+    // so the model read state.json three times and `--help` five before it found `activity_list`.
+    // The choices an entity offers are the argument its action takes, so the entity's own line
+    // says both — one line per choosing entity, against seven round trips.
+    [Fact]
+    public async Task GetAsync_AnEntityWithChoices_SaysThemOnItsLine_WithTheActionThatTakesThem()
+    {
+        var client = new FakeHaClient
+        {
+            States =
+            {
+                Entity("remote.tv", "on",
+                    ("friendly_name", JsonValue.Create("TV")),
+                    ("activity_list", new JsonArray("Crunchyroll", "Netflix"))),
+                Entity("media_player.tv", "on",
+                    ("friendly_name", JsonValue.Create("TV")),
+                    ("source_list", new JsonArray("HDMI 1", "HDMI 2"))),
+                Entity("select.mode", "eco",
+                    ("friendly_name", JsonValue.Create("Mode")),
+                    ("options", new JsonArray("eco", "boost"))),
+            },
+            Services =
+            {
+                Service("remote", "turn_on", DomainTarget("remote")),
+                Service("media_player", "select_source", DomainTarget("media_player")),
+                Service("select", "select_option", DomainTarget("select")),
+            }
+        };
+
+        var text = await Build(client).GetAsync(CancellationToken.None);
+
+        text.ShouldContain("remote.tv_(tv) — turn_on.sh --activity: Crunchyroll, Netflix\n");
+        text.ShouldContain("media_player.tv_(tv) — select_source.sh --source: HDMI 1, HDMI 2\n");
+        text.ShouldContain("select.mode_(mode) — select_option.sh --option: eco, boost\n");
+        // The header has to say the segment stops at the dash, or the model copies the whole line.
+        text.ShouldContain("` — `");
+    }
+
+    // A list the entity cannot act on is not an offer; an empty one is not a list. Neither earns
+    // a suffix.
+    [Fact]
+    public async Task GetAsync_ChoicesWithoutTheirAction_OrEmpty_LeaveTheLineBare()
+    {
+        var client = new FakeHaClient
+        {
+            States =
+            {
+                Entity("remote.tv", "on",
+                    ("friendly_name", JsonValue.Create("TV")),
+                    ("activity_list", new JsonArray("Crunchyroll"))),
+                Entity("select.mode", "eco",
+                    ("friendly_name", JsonValue.Create("Mode")),
+                    ("options", new JsonArray())),
+            },
+            Services = { Service("select", "select_option", DomainTarget("select")) }
+        };
+
+        var text = await Build(client).GetAsync(CancellationToken.None);
+
+        text.ShouldContain("remote.tv_(tv)\n");
+        text.ShouldContain("select.mode_(mode)\n");
+    }
+
     [Fact]
     public async Task GetAsync_EmptyCatalog_ReturnsEmpty()
     {

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Exceptions;
@@ -12,11 +11,12 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 internal static class HaStatistics
 {
     public static async Task<(int Code, string Stdout, string Stderr)> RunAsync(
-        IHomeAssistantClient client, string entityId, JsonObject data, TimeProvider time, CancellationToken ct)
+        IHomeAssistantClient client, string entityId, JsonObject data, TimeProvider time, TimeZoneInfo? homeZone,
+        CancellationToken ct)
     {
         try
         {
-            var (start, end) = HaWindow.Resolve(data, time, "days", TimeSpan.FromDays, HaStatisticsActions.DefaultDays);
+            var (start, end) = HaWindow.Resolve(data, time, "days", TimeSpan.FromDays, HaStatisticsActions.DefaultDays, homeZone);
             var period = HaWindow.Text(data, "period") ?? HaStatisticsActions.DefaultPeriod;
             var limit = HaWindow.WholeNumber(data, "limit") ?? HaStatisticsActions.DefaultLimit;
 
@@ -31,7 +31,7 @@ internal static class HaStatistics
                 ["entity_id"] = entityId,
                 ["window"] = new JsonObject { ["start"] = start, ["end"] = end },
                 ["period"] = period,
-                ["rows"] = new JsonArray(shown.Select(Render).ToArray()),
+                ["rows"] = new JsonArray(shown.Select(row => Render(row, homeZone)).ToArray()),
                 ["count"] = rows.Count,
                 ["truncated"] = truncated
             };
@@ -61,9 +61,10 @@ internal static class HaStatistics
         }
     }
 
-    private static JsonNode? Render(HaStatisticsRow row)
+    // Rows come stamped in UTC like the recorder's changes and are said on the home's clock.
+    private static JsonNode? Render(HaStatisticsRow row, TimeZoneInfo? zone)
     {
-        var node = new JsonObject { ["start"] = Stamp(row.Start), ["end"] = Stamp(row.End) };
+        var node = new JsonObject { ["start"] = HaDateTimeText.Stamp(row.Start, zone), ["end"] = HaDateTimeText.Stamp(row.End, zone) };
         Put(node, "mean", row.Mean);
         Put(node, "min", row.Min);
         Put(node, "max", row.Max);
@@ -80,7 +81,4 @@ internal static class HaStatistics
             node[name] = number;
         }
     }
-
-    private static string Stamp(DateTimeOffset at) =>
-        at.ToString(HaDateTimeText.Format, CultureInfo.InvariantCulture);
 }

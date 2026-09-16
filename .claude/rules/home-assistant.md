@@ -65,13 +65,19 @@ ListHistoryAsync` (asked with `minimal_response&no_attributes`, so a change is s
 instant). Window strings cross as written (naive = HA's zone), like the calendar's; the shared
 arithmetic is `HaDateTimeText`. Plain listing keeps the latest `--limit` changes; `--every N`
 buckets numeric states per N minutes (min/max/mean/last/samples) and is an argument error on an
-entity with no numeric state, or beside `--limit`. **The recorder stamps every change in UTC
+entity with no numeric state, or beside `--limit`. **Home Assistant stamps everything in UTC
 whatever the home's zone** (`recorder/history/__init__.py` formats `last_changed` from a UTC
-timestamp), so buckets cannot follow the stamps' offset: `HaCatalogProvider` reads the home's zone
-once from `GET /api/config` (`IHomeAssistantClient.GetTimeZoneAsync`, `HaCatalog.HomeZone`) and
-`HaHistory` aligns buckets to that clock, so a day bucket opens at the home's midnight; a zone it
-cannot read or resolve leaves the catalog whole and buckets on UTC, logged once as a warning, and
-the payload's `bucket_zone` says which. An empty window under `--every` is an empty summary with
+timestamp, and a state's `last_changed`/`last_updated` come the same way), so `HaCatalogProvider`
+reads the home's zone once from `GET /api/config` (`IHomeAssistantClient.GetTimeZoneAsync`,
+`HaCatalog.HomeZone`) and **every instant the mount says goes through `HaDateTimeText.Stamp` on
+that clock**: `state.json`'s stamps, a listing's changes, a summary's buckets, a statistics row,
+a watch's `status.json`, the window an action echoes. A real turn read a glucose `last_updated`
+of `02:13+00:00` beside a turn prefix saying 04:13 local and called a thirty-second-old reading
+two hours old; the skill now tells the model the stamps are local and never to convert. Buckets
+align to the same clock, so a day bucket opens at the home's midnight; a zone it cannot read or
+resolve leaves the catalog whole, keeps the stamps as they came and buckets on UTC, logged once as
+a warning, and the payload's `bucket_zone` says which. The model-facing JSON uses relaxed escaping
+so an offset's `+` is not written `\u002B`. An empty window under `--every` is an empty summary with
 the retention note, never an error. The seeded test container is `time_zone: UTC`, so only the unit test with Madrid
 stamps pins this. The first entry is the state at the window's start,
 stamped there (pinned by `HomeAssistantClientTests.ListHistoryAsync_FirstElement_IsTheStateAtTheWindowsStart_StampedThere` against the real recorder). What
@@ -187,3 +193,29 @@ agent can say means "second zero".
 `HaFileSystem.NormalizeMediaSeek` therefore rewrites a `media_player.media_seek` of 0 to 1 second:
 truthy for MA, inaudible to a listener. Keep that rewrite as long as MA reads the field this way —
 without it "play it from the beginning" silently becomes "jump back half a second".
+
+## The setup index says what an entity offers; the registry says what it hides
+
+"Turn on the TV and put Crunchyroll" took ten model turns on a 36-second task, seven of them
+spent learning that `remote.turn_on --activity <app>` opens an app and which apps exist. Two
+things fix that:
+
+- **A choosing entity's index line carries its choices and the action that takes them.**
+  `HomeAssistantSetupSummary` appends ` — <service>.sh --<flag>: a, b, c` for the lists that ARE
+  an action's argument (`activity_list` → `turn_on --activity`, `source_list` → `select_source
+  --source`, `options` → `select_option --option`), only when the entity admits that action and
+  the list is non-empty. The header says the segment stops at the dash. Widen the table only for
+  a list that is literally a flag's value — a climate's mode lists would say a lot for a call the
+  model already knows.
+- **A choice list seen once outlives the entity going unavailable.** HA serves an unavailable
+  entity as a `restored` stub with no lists, so a catalog built while the TV is off would offer
+  no apps at the one moment they are asked for. `HaCatalogProvider` remembers each entity's
+  choice lists (`HaCatalog.ChoiceHints` names them) and puts them back only on a restored stub;
+  the memory is process-wide, like the cache, and refills within a TTL of the entity being seen
+  on again.
+- **An entity hidden in Home Assistant's registry never enters the catalog.** The states endpoint
+  serves hidden entities regardless, so `HaCatalogProvider`'s area template also renders the
+  `is_hidden_entity` list and the provider drops those states before the catalog is built — no
+  tree entry, no index line, no path resolves. Hide an entity in HA (the entity's settings →
+  Visibility) when it exists for an automation rather than for a person: the TV's wake button and
+  the automation that presses it were the first two.

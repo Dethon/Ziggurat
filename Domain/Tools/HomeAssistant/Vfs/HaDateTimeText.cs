@@ -12,8 +12,17 @@ internal static partial class HaDateTimeText
 {
     public const string Format = "yyyy-MM-dd'T'HH:mm:sszzz";
 
-    public static string Now(TimeProvider time) =>
-        time.GetUtcNow().ToString(Format, CultureInfo.InvariantCulture);
+    // Every instant the mount says — a state's `last_changed`, a recorded change, a compiled row, a
+    // watch's `createdAt`, the window an action echoes — is said on the home's clock, the clock the
+    // turn prefix speaks. Home Assistant stamps them all in UTC whatever the home's zone, and a
+    // real turn read `02:13+00:00` beside a prefix saying 04:13 and called a fresh reading two
+    // hours old. Without a known zone the stamp stays as it came rather than guessing this
+    // process's.
+    public static string Stamp(DateTimeOffset at, TimeZoneInfo? zone) =>
+        (zone is null ? at : TimeZoneInfo.ConvertTime(at, zone)).ToString(Format, CultureInfo.InvariantCulture);
+
+    public static string Now(TimeProvider time, TimeZoneInfo? zone = null) =>
+        Stamp(time.GetUtcNow(), zone);
 
     // Moves a date-time string by a span, giving back the same shape it came in: a naive
     // "2026-09-02 21:30:00" stays naive with its space, a "2026-09-03T07:00:00+02:00" keeps its

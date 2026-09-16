@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Exceptions;
 using Domain.Tools.HomeAssistant.Vfs;
@@ -22,6 +23,32 @@ public class HaFileSystemReadTests
         var local = client;
         var provider = new HaCatalogProvider(() => local, new FakeTimeProvider());
         return new HaFileSystem(provider, () => local);
+    }
+
+    // The mount reads the home's zone from its configuration once (the catalog), and every
+    // state.json stamps on that clock — a read and a search alike, since both render the file.
+    [Fact]
+    public async Task ReadAsync_StateJson_StampsOnTheHomesClock()
+    {
+        var fs = Build(out var client);
+        client.TimeZone = "Europe/Madrid";
+
+        var read = (await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+
+        read.Content.ShouldContain("\"last_changed\": \"2026-05-23T11:14:02+02:00\"");
+    }
+
+    [Fact]
+    public async Task SearchAsync_StateJson_StampsOnTheHomesClock()
+    {
+        var fs = Build(out var client);
+        client.TimeZone = "Europe/Madrid";
+
+        var search = (await fs.SearchAsync("last_changed", false, null, null, null, 10, 0, VfsTextSearchOutputMode.Content, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
+
+        search.Results.SelectMany(r => r.Matches!).ShouldContain(m => m.Text.Contains("2026-05-23T11:14:02+02:00"));
     }
 
     [Fact]

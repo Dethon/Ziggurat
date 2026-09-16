@@ -66,4 +66,44 @@ public class HaStateRendererTests
         json.ShouldContain("\"media_position\": 12");
         json.ShouldNotContain("media_position_source");
     }
+
+    // A real turn: the glucose sensor's state.json said `last_updated: 02:13+00:00` at 04:13 local,
+    // and the agent, told the local time by its turn prefix, answered "two hours old" for a reading
+    // thirty seconds old. Home Assistant stamps every state in UTC whatever the home's zone, so the
+    // file says the instants on the home's clock — the same clock the turn prefix speaks — and the
+    // reader needs no arithmetic.
+    [Fact]
+    public void ToJson_WithTheHomesZone_StampsOnTheHomesClock()
+    {
+        var madrid = TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid");
+
+        var json = HaStateRenderer.ToJson(Entity("sensor.glucose", "78"), homeZone: madrid);
+
+        json.ShouldContain("\"last_changed\": \"2026-05-23T11:14:02+02:00\"");
+        json.ShouldContain("\"last_updated\": \"2026-05-23T11:14:02+02:00\"");
+        json.ShouldNotContain("+00:00");
+    }
+
+    [Fact]
+    public void ToJson_LivePositionStamp_FollowsTheHomesClockToo()
+    {
+        var madrid = TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid");
+        var entity = Entity("media_player.office", "playing", ("media_position", JsonValue.Create(0)));
+
+        var json = HaStateRenderer.ToJson(entity, new MaQueuePosition
+        {
+            ElapsedTime = 10,
+            LastUpdated = DateTimeOffset.Parse("2026-05-23T09:24:02Z")
+        }, madrid);
+
+        json.ShouldContain("\"media_position_updated_at\": \"2026-05-23T11:24:02+02:00\"");
+    }
+
+    // A home whose zone could not be read keeps the stamps as they came rather than guessing.
+    [Fact]
+    public void ToJson_WithoutAHomeZone_KeepsTheStampsAsTheyCame()
+    {
+        HaStateRenderer.ToJson(Entity("sensor.glucose", "78"))
+            .ShouldContain("\"last_changed\": \"2026-05-23T09:14:02+00:00\"");
+    }
 }

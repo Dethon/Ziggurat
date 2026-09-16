@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,77 @@ public class HaCatalogProviderTests
         catalog.Entities.Count.ShouldBe(1);
         catalog.Services.Count.ShouldBe(1);
         catalog.Areas.ShouldContain(a => a.Id == "salon" && a.EntityIds.Contains("light.kitchen"));
+    }
+
+    // An entity hidden in Home Assistant's registry is off its own dashboards, and the states
+    // endpoint still lists it. The wake button the TV's turn_on automation presses was one: listed
+    // under the TV's room, the model pressed it by hand and then went looking for what else it
+    // needed. Hidden means hidden from the agent too — it never enters the catalog, so no tree,
+    // no index line and no path resolves to it.
+    [Fact]
+    public async Task GetAsync_AnEntityTheRegistryHides_IsLeftOutOfTheCatalog()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("light.kitchen", "off"), Entity("button.tv_wake", "unknown") },
+            AreaTemplateJson =
+                """{"areas":[{"id":"salon","name":"Salón","entities":["light.kitchen","button.tv_wake"]}],"hidden":["button.tv_wake"]}"""
+        };
+        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
+
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.Entities.Select(e => e.EntityId).ShouldBe(["light.kitchen"]);
+        catalog.EntityIdsInArea("salon").ShouldBe(["light.kitchen"]);
+    }
+
+    // An unavailable entity comes back from the states endpoint as a `restored` stub — friendly
+    // name, supported features, nothing else — so a TV that is off has no `activity_list`, and the
+    // catalog built while it is off says nothing about its apps. That is the moment the list is
+    // needed: "turn on the TV and put Plex" met an index with no apps, and the model searched the
+    // home for the word instead. A choice list, once seen, is kept for the entity until it is
+    // seen again.
+    [Fact]
+    public async Task GetAsync_AChoiceListSeenOnce_OutlivesTheEntityGoingUnavailable()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("remote.tv", "on", ("activity_list", new JsonArray("Plex", "Netflix"))) }
+        };
+        var time = new FakeTimeProvider();
+        var provider = new HaCatalogProvider(() => client, time);
+        await provider.GetAsync(CancellationToken.None);
+
+        client.States.Clear();
+        client.States.Add(Entity("remote.tv", "unavailable", ("restored", JsonValue.Create(true))));
+        time.Advance(TimeSpan.FromMinutes(6));
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        var remote = catalog.EntityById("remote.tv").ShouldNotBeNull();
+        remote.State.ShouldBe("unavailable");
+        remote.Attributes["activity_list"]!.AsArray().Select(v => v!.GetValue<string>()).ShouldBe(["Plex", "Netflix"]);
+        remote.Attributes.ShouldContainKey("restored");
+    }
+
+    // The memory is of the list, not of the entity: a list that changed is replaced, and a list
+    // the entity itself no longer serves while available is not put back.
+    [Fact]
+    public async Task GetAsync_AChoiceListTheEntityServesAgain_IsTheNewOne()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("remote.tv", "on", ("activity_list", new JsonArray("Plex"))) }
+        };
+        var time = new FakeTimeProvider();
+        var provider = new HaCatalogProvider(() => client, time);
+        await provider.GetAsync(CancellationToken.None);
+
+        client.States.Clear();
+        client.States.Add(Entity("remote.tv", "on", ("activity_list", new JsonArray("Plex", "DAZN"))));
+        time.Advance(TimeSpan.FromMinutes(6));
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.EntityById("remote.tv")!.Attributes["activity_list"]!.AsArray().Count.ShouldBe(2);
     }
 
     // A served action with the same name as one Home Assistant publishes replaces it rather than

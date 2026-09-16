@@ -16,7 +16,7 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 public class HaStatisticsActionTests
 {
     private const string TempDir = "entities/sensor/temperature_(temperature)";
-    private static readonly DateTimeOffset Now = new(2026, 9, 4, 16, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _now = new(2026, 9, 4, 16, 0, 0, TimeSpan.Zero);
 
     private static HaFileSystem Build(out FakeHaClient client)
     {
@@ -34,7 +34,7 @@ public class HaStatisticsActionTests
             Services = { Service("light", "turn_on", DomainTarget("light")) }
         };
         var local = client;
-        var time = new FakeTimeProvider(Now);
+        var time = new FakeTimeProvider(_now);
         var provider = new HaCatalogProvider(() => local, time,
             extraServices: [HaHistoryActions.History, HaStatisticsActions.Statistics]);
         return new HaFileSystem(provider, () => local, timeProvider: time);
@@ -228,5 +228,23 @@ public class HaStatisticsActionTests
 
         exec.ExitCode.ShouldBe(1);
         exec.Stderr.ShouldContain("Invalid start_time");
+    }
+
+    // Compiled rows come stamped in UTC like the recorder's changes; they are said on the home's clock.
+    [Fact]
+    public async Task Rows_AreStampedOnTheHomesClock()
+    {
+        var fs = Build(out var client);
+        client.TimeZone = "Europe/Madrid";
+        client.Statistics.Add(Row("2026-09-04T12:00:00+00:00", mean: 21.5, min: 21, max: 22));
+
+        var exec = await Exec(fs, "statistics.sh");
+
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
+        var row = payload["rows"]![0]!;
+        row["start"]!.GetValue<string>().ShouldBe("2026-09-04T14:00:00+02:00");
+        row["end"]!.GetValue<string>().ShouldBe("2026-09-04T15:00:00+02:00");
+        payload["window"]!["end"]!.GetValue<string>().ShouldBe("2026-09-04T18:00:00+02:00");
     }
 }

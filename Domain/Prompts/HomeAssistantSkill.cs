@@ -40,7 +40,14 @@ public static class HomeAssistantSkill
         1. Find the entity in the setup index you read; `domain__filesystem__glob` under `/ha/entities/<class>` or
            `/ha/areas/<room>` only for what the index does not settle. Do NOT glob to discover actions:
            the setup index lists them per class, and action files live in the entity
-           directory, so a glob of `/ha/entities/<class>/*.sh` returns nothing.
+           directory, so a glob of `/ha/entities/<class>/*.sh` returns nothing. An entity line
+           that goes on after ` — ` already names the action, its flag and the choices it
+           takes (`turn_on.sh --activity: Netflix, YouTube`): act on it directly, with no
+           `state.json` read and no `--help`. `turn_on.sh` on a remote or a media player is
+           how a TV is switched on, even when its state reads `unavailable`; the app opens
+           in the same call. A name reaches you through speech recognition: take the nearest
+           listed choice or entity ("flex" is Plex) rather than searching the home for the
+           literal word, and say so only when nothing is close.
         2. Inspect when you need an attribute as input: `domain__filesystem__file_read` on
            `/ha/.../state.json`.
         3. Learn an action's arguments: `domain__filesystem__exec` of `<service>.sh --help`. The `.sh` files are
@@ -55,7 +62,9 @@ public static class HomeAssistantSkill
           `changed[]` verbatim, and do NOT read `state.json` afterwards to check it
           worked. HA applies the action right away but only stores the new value after a
           short delay, so a read taken now returns the OLD value and would wrongly look
-          unchanged. Trust the `exitCode` and `changed[]`; never re-read to verify.
+          unchanged. Trust the `exitCode` and `changed[]`; never re-read to verify. An empty
+          `changed[]` after a command, an app launch or a button press is normal — the effect
+          arrives later — and is still a success.
         - `exitCode` 2 = bad argument: re-run `--help` and rebuild; don't repeat the
           same shape.
         - `exitCode` 1 = HA rejected the call; `stderr` has the reason.
@@ -82,8 +91,9 @@ public static class HomeAssistantSkill
         window means nothing was recorded in it, so widen it or try a nearer one before saying
         the past is gone. A value that changes every minute makes a long list: pass `--every
         <minutes>` to get min/max/mean/last per bucket instead (numeric states only) — the
-        right call for a whole day. The instants in the output carry their UTC offset; say them
-        in the user's local time.
+        right call for a whole day. Every instant this mount shows — a `state.json`'s
+        `last_changed`, a change's `at`, a row's `start` — is already on the home's clock, the
+        same clock as the current time you are given: read it as local and never convert it.
 
         Sensors whose `state.json` carries a `state_class` (the setup index's `every entity with
         state_class` line) also have `statistics.sh`: Home Assistant's own hourly mean/min/max
@@ -283,6 +293,18 @@ public static class HomeAssistantSkill
         new("home-assistant.relative-seek-reads-the-position-first",
             "A rewind or skip-forward reads media_position and seeks to that value plus or minus the offset, never to a bare offset and never as a timer.");
 
+    public static readonly PromptClaim IndexLineChoicesAreActedOnDirectly =
+        new("home-assistant.index-line-choices-are-acted-on-directly",
+            "An entity line that names an action, its flag and the choices it takes is acted on in one call, with no state.json read and no --help first, and turn_on switches a TV on even when its state reads unavailable.");
+
+    public static readonly PromptClaim SpokenNameTakesTheNearestChoice =
+        new("home-assistant.spoken-name-takes-the-nearest-choice",
+            "A name that came through speech recognition takes the nearest listed choice or entity rather than a search of the home for the literal word.");
+
+    public static readonly PromptClaim EmptyChangedIsASuccess =
+        new("home-assistant.empty-changed-is-a-success",
+            "An empty changed[] after a command, an app launch or a button press is reported as success, never as a failure or a doubt.");
+
     public static readonly PromptClaim ThePastIsReadFromHistory =
         new("home-assistant.past-is-read-from-history",
             "A question about the past or a trend of a value is answered from history.sh's recorded changes or statistics.sh's compiled rows, never from state.json or repeated reads of it.");
@@ -304,6 +326,9 @@ public static class HomeAssistantSkill
         TheWebIsNoMediaFallback,
         RestartIsASeek,
         RelativeSeekReadsThePositionFirst,
+        IndexLineChoicesAreActedOnDirectly,
+        SpokenNameTakesTheNearestChoice,
+        EmptyChangedIsASuccess,
         ThePastIsReadFromHistory
     ];
 }

@@ -26,7 +26,24 @@ public class PrinterQueueFileSystemTests : IDisposable
         _coordinator = new PrintQueueCoordinator(_spool, _printer, _gate, _clock,
             TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
         return new PrinterQueueFileSystem(
-            _spool, _printer, _gate, "text,jpeg,pwg-raster,urf,pcl", regexMatchTimeout);
+            _spool, _printer, _gate, "text,jpeg,pwg-raster,urf,pcl", regexMatchTimeout, _clock);
+    }
+
+    // status.json's submittedAt is read beside a turn prefix that speaks local time; a UTC stamp
+    // there is read as local and mis-ages the job, so it is said in the operating zone like a timer.
+    [Fact]
+    public async Task StatusJson_SaysSubmittedAt_InTheOperatingZone()
+    {
+        _clock.SetLocalTimeZone(TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"));
+        var fs = Build();
+        await fs.CreateAsync("note.txt", "print me", false, true, CancellationToken.None);
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        await _coordinator.SubmitDueAsync(CancellationToken.None);
+
+        var status = (await fs.ReadAsync("status.json", null, null, CancellationToken.None)).ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+
+        status.Content.ShouldContain("2026-06-01T14:00:01+02:00");
+        status.Content.ShouldNotContain("Z\"");
     }
 
     [Fact]

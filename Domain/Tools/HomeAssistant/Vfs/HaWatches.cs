@@ -115,11 +115,12 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
     public Task DeleteAsync(string watchId, CancellationToken ct) =>
         clientFactory().DeleteAutomationConfigAsync(HaWatchAutomation.AutomationId(watchId), ct);
 
-    // The read-only status beside the file: what the automation knows and the file does not.
-    public static string RenderStatus(HaWatch watch) => new JsonObject
+    // The read-only status beside the file: what the automation knows and the file does not. Its
+    // instants are said on the home's clock like every stamp on the mount (HaDateTimeText.Stamp).
+    public static string RenderStatus(HaWatch watch, TimeZoneInfo? homeZone = null) => new JsonObject
     {
-        ["createdAt"] = watch.Meta.CreatedAt.ToString("o"),
-        ["lastTriggeredAt"] = watch.State?.LastTriggered?.ToString("o"),
+        ["createdAt"] = HaDateTimeText.Stamp(watch.Meta.CreatedAt, homeZone),
+        ["lastTriggeredAt"] = watch.State?.LastTriggered is { } triggered ? HaDateTimeText.Stamp(triggered, homeZone) : null,
         ["automationEntity"] = watch.State?.EntityId,
         ["enabled"] = watch.Enabled,
         ["spent"] = watch.Spent

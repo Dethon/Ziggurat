@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
@@ -6,7 +7,13 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 public static class HaStateRenderer
 {
-    private static readonly JsonSerializerOptions _indented = new() { WriteIndented = true };
+    // A file a model reads, not a page a browser renders: an offset's `+` and a name's accent are
+    // written as themselves, not as `\u002B` and `\u00E1`.
+    private static readonly JsonSerializerOptions _indented = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 
     public const string PositionKey = "media_position";
     public const string PositionSourceKey = "media_position_source";
@@ -15,14 +22,16 @@ public static class HaStateRenderer
     // place beside a substituted number would date it wrongly.
     public const string PositionUpdatedKey = "media_position_updated_at";
 
-    public static string ToJson(HaEntityState entity, MaQueuePosition? livePosition = null)
+    // The stamps are said on the home's clock (HaDateTimeText.Stamp): Home Assistant's are UTC,
+    // and a reader told the local time by its turn prefix takes a raw one as local.
+    public static string ToJson(HaEntityState entity, MaQueuePosition? livePosition = null, TimeZoneInfo? homeZone = null)
     {
         var attributes = new JsonObject(
             entity.Attributes
                 .OrderBy(a => a.Key, StringComparer.Ordinal)
                 .Select(a => new KeyValuePair<string, JsonNode?>(a.Key, a.Value?.DeepClone())));
 
-        ApplyLivePosition(attributes, livePosition);
+        ApplyLivePosition(attributes, livePosition, homeZone);
 
         var root = new JsonObject
         {
@@ -31,11 +40,11 @@ public static class HaStateRenderer
         };
         if (entity.LastChanged is { } changed)
         {
-            root["last_changed"] = changed.ToString("O");
+            root["last_changed"] = HaDateTimeText.Stamp(changed, homeZone);
         }
         if (entity.LastUpdated is { } updated)
         {
-            root["last_updated"] = updated.ToString("O");
+            root["last_updated"] = HaDateTimeText.Stamp(updated, homeZone);
         }
         root["attributes"] = attributes;
 
@@ -48,7 +57,7 @@ public static class HaStateRenderer
     // wrong origin and clamps to the start of the episode. Music Assistant's queue keeps the real
     // number, so when it answers for this player its value replaces HA's stale one, labelled so the
     // reader knows which of the two it got.
-    private static void ApplyLivePosition(JsonObject attributes, MaQueuePosition? livePosition)
+    private static void ApplyLivePosition(JsonObject attributes, MaQueuePosition? livePosition, TimeZoneInfo? homeZone)
     {
         if (livePosition is null)
         {
@@ -57,6 +66,6 @@ public static class HaStateRenderer
 
         attributes[PositionKey] = JsonValue.Create(Math.Round(livePosition.ElapsedTime));
         attributes[PositionSourceKey] = JsonValue.Create("music_assistant");
-        attributes[PositionUpdatedKey] = JsonValue.Create(livePosition.LastUpdated.ToString("O"));
+        attributes[PositionUpdatedKey] = JsonValue.Create(HaDateTimeText.Stamp(livePosition.LastUpdated, homeZone));
     }
 }

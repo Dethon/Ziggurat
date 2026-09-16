@@ -99,7 +99,8 @@ public sealed partial class HaFileSystem
             // Served here: long-term statistics are a WebSocket command and nothing else.
             if (HaStatisticsActions.IsStatistics(svc))
             {
-                var (code, output, error) = await HaStatistics.RunAsync(clientFactory(), entityId, data, _time, effectiveCt);
+                var (code, output, error) = await HaStatistics.RunAsync(
+                    clientFactory(), entityId, data, _time, catalog.HomeZone, effectiveCt);
                 return done(code, output, error);
             }
 

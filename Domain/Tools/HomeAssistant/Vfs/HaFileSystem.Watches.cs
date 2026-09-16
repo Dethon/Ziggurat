@@ -35,7 +35,9 @@ public sealed partial class HaFileSystem
             return NotFound(path);
         }
 
-        var text = node.Kind == HaVfsKind.WatchFile ? watch.Spec.ToJson() : HaWatches.RenderStatus(watch);
+        var text = node.Kind == HaVfsKind.WatchFile
+            ? watch.Spec.ToJson()
+            : HaWatches.RenderStatus(watch, (await catalogProvider.GetAsync(ct)).HomeZone);
         return BuildReadResult(path, text, offset, limit);
     }
 
