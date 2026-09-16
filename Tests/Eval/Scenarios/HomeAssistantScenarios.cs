@@ -29,7 +29,7 @@ public static class HomeAssistantScenarios
     [
         TurnTheAirConditionerOn, SetTheTemperature, VacuumTheStudy,
         TurnOnTheWashingMachine, TheStationThatCannotBePlayed, FiveMoreMinutesOfTheAlarm,
-        CancelTheTrashAlarm, MoveTheTrashAlarm
+        CancelTheTrashAlarm, MoveTheTrashAlarm, TheTvAndAnApp, TheAppAsSpeechHeardIt
     ];
 
     // "Turn on the AC" and stop: the prompt's own example of the thing not to do is picking a mode
@@ -483,6 +483,135 @@ public static class HomeAssistantScenarios
             HomeAssistantSkill.LoadsForAHomeRequest.Id,
             HomeAssistantSkill.AlarmIsChangedByDeleteAndCreate.Id,
             HomeAssistantSkill.AlarmIsCancelledByUid.Id
+        ],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // "Turn on the TV and put Crunchyroll" took ten model turns on prod, seven of them finding
+    // that turn_on --activity opens an app and which apps there are. The index line now says
+    // both, so the turn is the skill, the index and one exec: the permitted set tolerates no
+    // state.json read and no --help, and the ceiling is where a lookup would show. The TV reads
+    // `unavailable` — the state a switched-off set has — and the fake answers the launch with an
+    // empty changed[], the two facts the skill says are not failures.
+    public static Scenario TheTvAndAnApp => new()
+    {
+        Name = "an app on the index line opens in one call",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "enciende la tele del salón y pon Crunchyroll",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            LoadsTheSkill,
+            ReadsTheSetupIndex,
+            new CallExpectation
+            {
+                Label = "launch",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.PathMatches(FakeHomeAssistant.TvRemotePathPattern),
+                    Arg.Matches("command", @"^(\./)?turn_on\.sh\b"),
+                    Arg.Matches("command", @"--activity[= ]+""?Crunchyroll""?\s*$")
+                ]
+            }
+        ],
+        Permitted =
+        [
+            new CallPermission(EvalTools.Glob, "/ha*"),
+            new CallPermission(EvalTools.Info, "/ha*")
+        ],
+        Changes =
+        [
+            new StateChange(FakeHomeAssistant.TvRemoteEntityId, "on"),
+            new StateChange(FakeHomeAssistant.TvRemoteActivityKey, "Crunchyroll")
+        ],
+        Ordering = [new OrderingConstraint("skill", "launch")],
+        CallCeiling = 4,
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            MaxSentences = 1,
+            NeverSays = ["exit", "changed", "stderr"]
+        },
+        Claims =
+        [
+            HomeAssistantSkill.LoadsForAHomeRequest.Id,
+            HomeAssistantSkill.IndexLineChoicesAreActedOnDirectly.Id
+        ],
+        Judged =
+        [
+            new JudgedCheck(HomeAssistantSkill.EmptyChangedIsASuccess.Id,
+                "The user asked for the living-room TV on with Crunchyroll. The launch answered exit "
+                + "code 0 with an empty changed list, which is how a TV answers: the effect arrives "
+                + "later. Read the assistant's reply. Pass only if it reports the TV on and Crunchyroll "
+                + "opening as done. Fail a reply that says it failed, could not, is not sure, that "
+                + "nothing changed, or that the TV is unavailable.")
+        ],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // "Pon flex" is how speech recognition delivers Plex, and the prod turn that asked it sent
+    // the model searching the home for the word. The index line lists the apps, one of them is a
+    // letter away, and that is the one to open: the permitted set tolerates no search, and the
+    // required call names Plex.
+    public static Scenario TheAppAsSpeechHeardIt => new()
+    {
+        Name = "a spoken app name takes the nearest listed choice",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "enciende la tele del salón y pon flex",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            LoadsTheSkill,
+            ReadsTheSetupIndex,
+            new CallExpectation
+            {
+                Label = "launch",
+                Tool = EvalTools.Exec,
+                Arguments =
+                [
+                    Arg.PathMatches(FakeHomeAssistant.TvRemotePathPattern),
+                    Arg.Matches("command", @"^(\./)?turn_on\.sh\b"),
+                    Arg.Matches("command", @"--activity[= ]+""?Plex""?\s*$")
+                ]
+            }
+        ],
+        Permitted =
+        [
+            new CallPermission(EvalTools.Glob, "/ha*"),
+            new CallPermission(EvalTools.Info, "/ha*")
+        ],
+        Changes =
+        [
+            new StateChange(FakeHomeAssistant.TvRemoteEntityId, "on"),
+            new StateChange(FakeHomeAssistant.TvRemoteActivityKey, "Plex")
+        ],
+        Ordering = [new OrderingConstraint("skill", "launch")],
+        CallCeiling = 4,
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            MaxSentences = 1,
+            Mentions = [new SpokenValue("the app opened", "Plex")],
+            NeverSays = ["flex"]
+        },
+        Claims =
+        [
+            HomeAssistantSkill.LoadsForAHomeRequest.Id,
+            HomeAssistantSkill.SpokenNameTakesTheNearestChoice.Id,
+            HomeAssistantSkill.IndexLineChoicesAreActedOnDirectly.Id
         ],
         Policy = new RunPolicy(2, 3)
     };

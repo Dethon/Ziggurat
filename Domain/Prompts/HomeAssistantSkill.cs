@@ -293,6 +293,18 @@ public static class HomeAssistantSkill
         new("home-assistant.relative-seek-reads-the-position-first",
             "A rewind or skip-forward reads media_position and seeks to that value plus or minus the offset, never to a bare offset and never as a timer.");
 
+    public static readonly PromptClaim IndexLineChoicesAreActedOnDirectly =
+        new("home-assistant.index-line-choices-are-acted-on-directly",
+            "An entity line that names an action, its flag and the choices it takes is acted on in one call, with no state.json read and no --help first, and turn_on switches a TV on even when its state reads unavailable.");
+
+    public static readonly PromptClaim SpokenNameTakesTheNearestChoice =
+        new("home-assistant.spoken-name-takes-the-nearest-choice",
+            "A name that came through speech recognition takes the nearest listed choice or entity rather than a search of the home for the literal word.");
+
+    public static readonly PromptClaim EmptyChangedIsASuccess =
+        new("home-assistant.empty-changed-is-a-success",
+            "An empty changed[] after a command, an app launch or a button press is reported as success, never as a failure or a doubt.");
+
     public static readonly PromptClaim ThePastIsReadFromHistory =
         new("home-assistant.past-is-read-from-history",
             "A question about the past or a trend of a value is answered from history.sh's recorded changes or statistics.sh's compiled rows, never from state.json or repeated reads of it.");
@@ -314,6 +326,9 @@ public static class HomeAssistantSkill
         TheWebIsNoMediaFallback,
         RestartIsASeek,
         RelativeSeekReadsThePositionFirst,
+        IndexLineChoicesAreActedOnDirectly,
+        SpokenNameTakesTheNearestChoice,
+        EmptyChangedIsASuccess,
         ThePastIsReadFromHistory
     ];
 }

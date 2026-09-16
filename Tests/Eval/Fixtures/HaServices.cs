@@ -65,6 +65,11 @@ internal static class HaServices
                 Text("media_id", required: true), Text("media_type"), Text("artist"), Text("album"),
                 Text("enqueue"), Text("radio_mode")),
             Service("transfer_queue", "Moves the queue to another player.", Text("source_player"))),
+        // A remote's turn_on takes the app to open, which is how a Google TV is driven: the
+        // scenarios about the index line's choices assert on exactly this argument.
+        Domain("remote",
+            Service("turn_on", "Sends the power on command, optionally opening an activity.", Text("activity")),
+            Service("turn_off", "Sends the power off command.")),
         Domain("cover",
             Service("open_cover", "Opens a cover."),
             Service("close_cover", "Closes a cover."),

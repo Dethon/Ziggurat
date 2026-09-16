@@ -18,6 +18,33 @@ namespace Tests.Eval.Fixtures;
 // service call — so that a failure in the eval means the agent got it wrong rather than the fake.
 public class FakeHomeAssistantTests
 {
+    // The living-room TV as the prod one arrives: a remote that is `unavailable` while the set is
+    // off, with the app list the mount keeps for it. Its index line has to carry the apps and the
+    // action that takes them, and the launch has to land as the app the fake reports current —
+    // the fact a scenario about the line declares as its change.
+    [Fact]
+    public async Task TheTvRemote_SaysItsAppsOnItsIndexLine_AndALaunchBecomesTheCurrentActivity()
+    {
+        var home = new FakeHomeAssistant();
+        var mount = Mount(home);
+
+        var index = (await mount.ReadAsync(Relative("/ha/" + HaVfsPath.SetupIndexFileName), null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
+        var line = index.Split('\n').Single(l => l.Contains(HaCatalog.ObjectOf(FakeHomeAssistant.TvRemoteEntityId) + "_("));
+        line.ShouldContain("turn_on.sh --activity: ");
+        line.ShouldContain("Crunchyroll");
+        line.ShouldContain("Plex");
+
+        var result = await mount.ExecAsync(
+            Relative(FakeHomeAssistant.TvRemoteDirectory), "turn_on.sh --activity Crunchyroll", timeoutSeconds: null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0, exec.Stderr);
+        JsonNode.Parse(exec.Stdout)!["changed"]!.AsArray().Count.ShouldBe(0);
+        home.Snapshot()[FakeHomeAssistant.TvRemoteEntityId].ShouldBe("on");
+        home.Snapshot()[FakeHomeAssistant.TvRemoteActivityKey].ShouldBe("Crunchyroll");
+    }
+
     [Fact]
     public async Task TheAlarmsCalendar_OffersCreateListAndDelete_AsActionFiles()
     {
