@@ -192,7 +192,7 @@ without it "play it from the beginning" silently becomes "jump back half a secon
 
 "Turn on the TV and put Crunchyroll" took ten model turns on a 36-second task, seven of them
 spent learning that `remote.turn_on --activity <app>` opens an app and which apps exist. Two
-things fix that, both in `docs/adr/0043`:
+things fix that:
 
 - **A choosing entity's index line carries its choices and the action that takes them.**
   `HomeAssistantSetupSummary` appends ` — <service>.sh --<flag>: a, b, c` for the lists that ARE
@@ -201,6 +201,12 @@ things fix that, both in `docs/adr/0043`:
   the list is non-empty. The header says the segment stops at the dash. Widen the table only for
   a list that is literally a flag's value — a climate's mode lists would say a lot for a call the
   model already knows.
+- **A choice list seen once outlives the entity going unavailable.** HA serves an unavailable
+  entity as a `restored` stub with no lists, so a catalog built while the TV is off would offer
+  no apps at the one moment they are asked for. `HaCatalogProvider` remembers each entity's
+  choice lists (`HaCatalog.ChoiceHints` names them) and puts them back only on a restored stub;
+  the memory is process-wide, like the cache, and refills within a TTL of the entity being seen
+  on again.
 - **An entity hidden in Home Assistant's registry never enters the catalog.** The states endpoint
   serves hidden entities regardless, so `HaCatalogProvider`'s area template also renders the
   `is_hidden_entity` list and the provider drops those states before the catalog is built — no

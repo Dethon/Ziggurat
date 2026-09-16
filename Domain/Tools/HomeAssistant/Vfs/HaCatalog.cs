@@ -19,6 +19,18 @@ public sealed record HaCatalog(
 
     public static HaCatalog Empty { get; } = new([], [], []);
 
+    // The attribute lists that ARE an action's argument: an app to open, a source, an option.
+    // The setup index says them on the entity's line with the action that takes them, and the
+    // provider keeps them for an entity that has gone unavailable (whose state is then a stub).
+    // Only lists that are literally a flag's value belong here — a climate's mode lists would
+    // spend many tokens on a call the model already makes without help.
+    public static IReadOnlyList<(string Attribute, string Service, string Argument)> ChoiceHints { get; } =
+    [
+        ("activity_list", "turn_on", "activity"),
+        ("source_list", "select_source", "source"),
+        ("options", "select_option", "option"),
+    ];
+
     public IReadOnlyList<string> ClassDomains() => Entities
         .Select(e => ClassOf(e.EntityId))
         .Distinct(StringComparer.Ordinal)

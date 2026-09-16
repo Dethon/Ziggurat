@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Logging;
@@ -47,6 +48,55 @@ public class HaCatalogProviderTests
 
         catalog.Entities.Select(e => e.EntityId).ShouldBe(["light.kitchen"]);
         catalog.EntityIdsInArea("salon").ShouldBe(["light.kitchen"]);
+    }
+
+    // An unavailable entity comes back from the states endpoint as a `restored` stub — friendly
+    // name, supported features, nothing else — so a TV that is off has no `activity_list`, and the
+    // catalog built while it is off says nothing about its apps. That is the moment the list is
+    // needed: "turn on the TV and put Plex" met an index with no apps, and the model searched the
+    // home for the word instead. A choice list, once seen, is kept for the entity until it is
+    // seen again.
+    [Fact]
+    public async Task GetAsync_AChoiceListSeenOnce_OutlivesTheEntityGoingUnavailable()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("remote.tv", "on", ("activity_list", new JsonArray("Plex", "Netflix"))) }
+        };
+        var time = new FakeTimeProvider();
+        var provider = new HaCatalogProvider(() => client, time);
+        await provider.GetAsync(CancellationToken.None);
+
+        client.States.Clear();
+        client.States.Add(Entity("remote.tv", "unavailable", ("restored", JsonValue.Create(true))));
+        time.Advance(TimeSpan.FromMinutes(6));
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        var remote = catalog.EntityById("remote.tv").ShouldNotBeNull();
+        remote.State.ShouldBe("unavailable");
+        remote.Attributes["activity_list"]!.AsArray().Select(v => v!.GetValue<string>()).ShouldBe(["Plex", "Netflix"]);
+        remote.Attributes.ShouldContainKey("restored");
+    }
+
+    // The memory is of the list, not of the entity: a list that changed is replaced, and a list
+    // the entity itself no longer serves while available is not put back.
+    [Fact]
+    public async Task GetAsync_AChoiceListTheEntityServesAgain_IsTheNewOne()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("remote.tv", "on", ("activity_list", new JsonArray("Plex"))) }
+        };
+        var time = new FakeTimeProvider();
+        var provider = new HaCatalogProvider(() => client, time);
+        await provider.GetAsync(CancellationToken.None);
+
+        client.States.Clear();
+        client.States.Add(Entity("remote.tv", "on", ("activity_list", new JsonArray("Plex", "DAZN"))));
+        time.Advance(TimeSpan.FromMinutes(6));
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.EntityById("remote.tv")!.Attributes["activity_list"]!.AsArray().Count.ShouldBe(2);
     }
 
     // A served action with the same name as one Home Assistant publishes replaces it rather than

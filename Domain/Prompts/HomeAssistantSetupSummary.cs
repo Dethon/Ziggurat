@@ -28,17 +28,6 @@ public class HomeAssistantSetupSummary(
         + "on after ` — ` names the action and argument that take the choices it lists (an app to "
         + "open, a source, an option); the segment is what stands before the dash.";
 
-    // The choices an entity offers are the argument one of its actions takes. Said on the entity's
-    // line, they spare the state.json read that finds the list and the --help that finds the flag:
-    // "turn on the TV and put Crunchyroll" spent seven turns on exactly those two lookups. Only
-    // the lists that ARE an action's argument, and only when the entity admits that action — a
-    // climate's four mode lists would say a lot for a call the model already knows how to make.
-    private static readonly IReadOnlyList<(string Attribute, string Service, string Argument)> _choiceHints =
-    [
-        ("activity_list", "turn_on", "activity"),
-        ("source_list", "select_source", "source"),
-        ("options", "select_option", "option"),
-    ];
 
     private const string ActionsHeader =
         "Action files live in the ENTITY directory (`/ha/entities/<class>/<id>/<action>.sh`), "
@@ -150,12 +139,16 @@ public class HomeAssistantSetupSummary(
                 HaSlug.Compose(entity.EntityId, HaCatalog.FriendlyName(entity)) + ChoiceSuffix(entity, catalog))
             .ToList();
 
+    // The choices an entity offers are the argument one of its actions takes. Said on the entity's
+    // line, they spare the state.json read that finds the list and the --help that finds the flag:
+    // "turn on the TV and put Crunchyroll" spent seven turns on exactly those two lookups. Only
+    // when the entity admits the action, so a list is never an offer the directory cannot honour.
     private static string ChoiceSuffix(HaEntityState entity, HaCatalog catalog)
     {
         var admitted = HaActionResolver.ServicesFor(entity, catalog.Services)
             .Select(svc => svc.Service)
             .ToHashSet(StringComparer.Ordinal);
-        return _choiceHints
+        return HaCatalog.ChoiceHints
             .Where(hint => admitted.Contains(hint.Service))
             .Select(hint => (hint, choices: Choices(entity, hint.Attribute)))
             .Where(x => x.choices.Count > 0)

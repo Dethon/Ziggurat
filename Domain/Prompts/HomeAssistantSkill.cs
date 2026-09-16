@@ -45,7 +45,9 @@ public static class HomeAssistantSkill
            takes (`turn_on.sh --activity: Netflix, YouTube`): act on it directly, with no
            `state.json` read and no `--help`. `turn_on.sh` on a remote or a media player is
            how a TV is switched on, even when its state reads `unavailable`; the app opens
-           in the same call.
+           in the same call. A name reaches you through speech recognition: take the nearest
+           listed choice or entity ("flex" is Plex) rather than searching the home for the
+           literal word, and say so only when nothing is close.
         2. Inspect when you need an attribute as input: `domain__filesystem__file_read` on
            `/ha/.../state.json`.
         3. Learn an action's arguments: `domain__filesystem__exec` of `<service>.sh --help`. The `.sh` files are

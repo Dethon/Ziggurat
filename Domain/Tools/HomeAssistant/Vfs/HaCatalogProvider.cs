@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
 using Microsoft.Extensions.Logging;
@@ -30,7 +31,7 @@ public sealed class HaCatalogProvider(
     // Single template render returns one JSON object covering every area and its entities —
     // the REST API has no other path into the area registry. The same render lists the entities
     // the registry hides: the states endpoint serves them regardless, and hidden in the home means
-    // hidden from the agent too (docs/adr/0043).
+    // hidden from the agent too.
     private const string AreaTemplate =
         """{"areas":[{% for aid in areas() %}{% if not loop.first %},{% endif %}{"id":{{aid|tojson}},"name":{{area_name(aid)|tojson}},"entities":{{area_entities(aid)|list|tojson}}}{% endfor %}],"hidden":{{states|map(attribute='entity_id')|select('is_hidden_entity')|list|tojson}}}""";
 
@@ -39,6 +40,7 @@ public sealed class HaCatalogProvider(
     private readonly SemaphoreSlim _gate = new(1, 1);
     private HaCatalog _cached = HaCatalog.Empty;
     private DateTimeOffset _expiry = DateTimeOffset.MinValue;
+    private readonly Dictionary<string, Dictionary<string, JsonNode?>> _rememberedChoices = new(StringComparer.Ordinal);
 
     public async Task<HaCatalog> GetAsync(CancellationToken ct)
     {
@@ -80,7 +82,10 @@ public sealed class HaCatalogProvider(
                 ? services.Result
                 : [.. services.Result.Where(s => !extraServices.Any(e => SameAction(e, s))), .. extraServices];
             var hidden = areas.Result.Hidden;
-            var visible = states.Result.Where(e => !hidden.Contains(e.EntityId)).ToList();
+            var visible = states.Result
+                .Where(e => !hidden.Contains(e.EntityId))
+                .Select(WithRememberedChoices)
+                .ToList();
             return (new HaCatalog(visible, allServices, areas.Result.Areas) { HomeZone = zone.Result }, true);
         }
         // Let cancellation propagate without writing the cache — otherwise a cancelled request would
@@ -91,6 +96,41 @@ public sealed class HaCatalogProvider(
             return (HaCatalog.Empty, false);
         }
     }
+
+    // An unavailable entity is served as a `restored` stub — friendly name, supported features and
+    // nothing else — so a TV that is off has no `activity_list`, and the catalog built then would
+    // offer no apps at the one moment they are asked for. A choice list seen while the entity was
+    // available is kept for it, and put back only while its state is that stub; a list the entity
+    // serves again replaces the memory. Process-wide like the cache itself: a restart while the TV
+    // is off forgets until it is next seen on, which the 5-minute TTL then picks up.
+    private HaEntityState WithRememberedChoices(HaEntityState entity)
+    {
+        var served = HaCatalog.ChoiceHints
+            .Select(h => h.Attribute)
+            .Where(entity.Attributes.ContainsKey)
+            .ToList();
+        if (served.Count > 0)
+        {
+            _rememberedChoices[entity.EntityId] = served.ToDictionary(a => a, a => entity.Attributes[a], StringComparer.Ordinal);
+            return entity;
+        }
+        if (!IsRestoredStub(entity) || !_rememberedChoices.TryGetValue(entity.EntityId, out var remembered))
+        {
+            return entity;
+        }
+        return entity with
+        {
+            Attributes = entity.Attributes
+                .Concat(remembered)
+                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal)
+        };
+    }
+
+    private static bool IsRestoredStub(HaEntityState entity) =>
+        entity.Attributes.TryGetValue("restored", out var node)
+        && node is JsonValue value
+        && value.TryGetValue<bool>(out var restored)
+        && restored;
 
     private static bool SameAction(HaServiceDefinition a, HaServiceDefinition b) =>
         a.Domain.Equals(b.Domain, StringComparison.Ordinal) && a.Service.Equals(b.Service, StringComparison.Ordinal);
