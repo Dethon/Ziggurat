@@ -1,0 +1,39 @@
+APPROVAL  (approve if p>=0.9, decline if p<=0.1 on 'approved' AND answered; else re-ask)
+ok    913ms  'sí'                                                    want=True got=True approved=0.96 declined=0.02
+BAD   926ms  'vale'                                                  want=True got=None approved=0.58 declined=0.11
+ok    877ms  'adelante'                                              want=True got=True approved=0.95 declined=0.03
+ok    867ms  'hazlo'                                                 want=True got=True approved=0.94 declined=0.02
+ok    954ms  'venga, dale'                                           want=True got=True approved=0.94 declined=0.04
+ok   1675ms  'por supuesto'                                          want=True got=True approved=0.95 declined=0.03
+ok   1031ms  'sí, claro que sí'                                      want=True got=True approved=0.97 declined=0.02
+ok   1040ms  'go ahead'                                              want=True got=True approved=0.95 declined=0.03
+ok   1083ms  'do it'                                                 want=True got=True approved=0.94 declined=0.03
+ok    830ms  'no'                                                    want=False got=False approved=0.02 declined=0.97
+ok    868ms  'mejor no'                                              want=False got=False approved=0.03 declined=0.94
+ok    913ms  'ni se te ocurra'                                       want=False got=False approved=0.02 declined=0.98
+BAD   911ms  'déjalo'                                                want=False got=None approved=0.54 declined=0.76
+ok   1601ms  'espera, no lo hagas'                                   want=False got=False approved=0.02 declined=0.97
+ok   1821ms  'no, gracias'                                           want=False got=False approved=0.02 declined=0.97
+ok    872ms  "don't"                                                 want=False got=False approved=0.03 declined=0.96
+BAD   819ms  'never mind'                                            want=False got=None approved=0.06 declined=0.67
+ok    846ms  'no sé'                                                 want=None got=None approved=0.04 declined=0.18
+ok   1643ms  '¿qué has dicho?'                                       want=None got=None approved=0.05 declined=0.18
+ok   1872ms  'eh...'                                                 want=None got=None approved=0.12 declined=0.22
+ok    860ms  '¿cuáles notas?'                                        want=None got=None approved=0.06 declined=0.23
+ok   3679ms  'sí... bueno, no, espera'                               want=None got=None approved=0.18 declined=0.68
+ok   1338ms  'thank you.'                                            want=None got=None approved=0.11 declined=0.16
+ok   2235ms  'subtítulos realizados por la comunidad de amara.org'   want=None got=None approved=0.08 declined=0.24
+
+approval 21/24   latency median 940ms
+
+--- conditional answers, prompt "¿Apruebas apagar las luces del salón y de la cocina? Di sí o no.",
+--- questions worded "permission to do exactly that, all of it, without changing or narrowing it" /
+--- "refuse it, or tell the assistant not to do it as asked" (jev-1.13.0):
+ok  want=None got=None approved=0.03 declined=0.69  'sí, pero la de la cocina no'
+ok  want=None got=None approved=0.02 declined=0.84  'no, solo la del salón'
+ok  want=True got=True approved=0.92 declined=0.02  'sí a todo'
+ok  want=False got=False approved=0.03 declined=0.92  'no, ninguna'
+BAD want=True got=None approved=0.88 declined=0.02  'sí sí'
+ok  want=False got=False approved=0.07 declined=0.91  'que no, hombre'
+BAD want=True got=None approved=0.73 declined=0.08  'sí... bueno, vale'
+ok  want=None got=None approved=0.02 declined=0.12  'no lo sé, ¿qué luces?'
