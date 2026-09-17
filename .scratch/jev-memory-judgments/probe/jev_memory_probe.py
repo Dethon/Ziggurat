@@ -3,7 +3,13 @@
 
 Synthetic data only. Key: $TYPESAFE_API_KEY, else ~/.config/typesafe/key.
 """
-import http.client, json, os, pathlib, statistics, sys, time
+import http.client
+import json
+import os
+import pathlib
+import statistics
+import sys
+import time
 
 MODEL = os.environ.get("JEV_MODEL", "jev-1.13.0")
 
