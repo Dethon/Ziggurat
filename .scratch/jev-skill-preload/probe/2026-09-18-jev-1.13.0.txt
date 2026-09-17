@@ -1,0 +1,102 @@
+model=jev-latest skills=['countdown-timers', 'home-assistant', 'home-watches', 'obsidian-vault', 'sandbox', 'scheduling', 'web-browsing']
+
+SKILLS  [choice] [nouls]
+ok  ok   2083ms  'enciende la luz del salón'
+        want=['home-assistant'] choice=home-assistant (1.00) nouls: home-assistant=0.95, sandbox=0.02, scheduling=0.02  in_tok=2178
+ok  ok   1620ms  'turn on the AC in the bedroom'
+        want=['home-assistant'] choice=home-assistant (1.00) nouls: home-assistant=0.97, scheduling=0.03, home-watches=0.02  in_tok=2179
+ok  ok    976ms  '¿a cuánto está el termostato?'
+        want=['home-assistant'] choice=home-assistant (1.00) nouls: home-assistant=0.97, web-browsing=0.07, sandbox=0.05  in_tok=2181
+ok  ok   2949ms  '¿cómo ha tenido la glucosa esta noche?'
+        want=['home-assistant'] choice=home-assistant (1.00) nouls: home-assistant=0.90, web-browsing=0.16, home-watches=0.07  in_tok=2185
+ok  ok    968ms  'despiértame mañana a las siete'
+        want=['home-assistant'] choice=home-assistant (1.00) nouls: home-assistant=0.91, scheduling=0.22, countdown-timers=0.07  in_tok=2181
+ok  ok   1616ms  'pon la radio en la cocina'
+        want=['home-assistant'] choice=home-assistant (1.00) nouls: home-assistant=0.96, web-browsing=0.03, countdown-timers=0.02  in_tok=2178
+ok  ok    866ms  'sube el volumen de la música'
+        want=['home-assistant'] choice=home-assistant (1.00) nouls: home-assistant=0.95, sandbox=0.03, home-watches=0.02  in_tok=2179
+ok  ok   2851ms  'cancela la alarma del dentista'
+        want=['home-assistant'] choice=home-assistant (0.99) nouls: home-assistant=0.95, countdown-timers=0.16, scheduling=0.15  in_tok=2180
+ok  ok    875ms  'pon un temporizador de ocho minutos'
+        want=['countdown-timers'] choice=countdown-timers (1.00) nouls: countdown-timers=0.94, sandbox=0.07, scheduling=0.06  in_tok=2181
+ok  BAD   881ms  'recuérdame en veinte minutos que saque la pizza'
+        want=['countdown-timers'] choice=countdown-timers (0.89) nouls: countdown-timers=0.91, home-assistant=0.60, scheduling=0.59  in_tok=2185
+BAD BAD   864ms  'para la alarma'
+        want=['countdown-timers'] choice=home-assistant (0.83) nouls: home-assistant=0.76, countdown-timers=0.67, scheduling=0.24  in_tok=2175
+ok  ok   1715ms  'how long is left on the timer?'
+        want=['countdown-timers'] choice=countdown-timers (1.00) nouls: countdown-timers=0.94, sandbox=0.07, home-assistant=0.06  in_tok=2180
+ok  BAD   863ms  'avísame cuando el azúcar pase de 180'
+        want=['home-watches'] choice=home-watches (0.94) nouls: home-watches=0.96, home-assistant=0.67, countdown-timers=0.32  in_tok=2184
+BAD BAD  1855ms  'dime cuando termine la lavadora'
+        want=['home-watches'] choice=home-assistant (0.74) nouls: home-assistant=0.83, home-watches=0.70, countdown-timers=0.39  in_tok=2179
+ok  BAD   800ms  'close the blinds when it gets hot'
+        want=['home-watches'] choice=home-watches (0.92) nouls: home-watches=0.89, home-assistant=0.85, scheduling=0.17  in_tok=2179
+ok  BAD   833ms  'apaga el aire dentro de una hora'
+        want=['scheduling'] choice=scheduling (0.56) nouls: scheduling=0.79, home-assistant=0.62, countdown-timers=0.45  in_tok=2180
+ok  BAD  2912ms  'todas las mañanas a las nueve mándame las noticias'
+        want=['scheduling'] choice=scheduling (1.00) nouls: scheduling=0.96, web-browsing=0.69, home-assistant=0.44  in_tok=2187
+ok  BAD   926ms  'cancel the nightly check'
+        want=['scheduling'] choice=scheduling (0.99) nouls: scheduling=0.96, home-assistant=0.59, home-watches=0.32  in_tok=2176
+ok  ok    970ms  'calcula el sha256 de ese archivo'
+        want=['sandbox'] choice=sandbox (1.00) nouls: sandbox=0.93, web-browsing=0.07, home-assistant=0.03  in_tok=2182
+ok  ok    904ms  'clone the repo and count the lines'
+        want=['sandbox'] choice=sandbox (1.00) nouls: sandbox=0.96, web-browsing=0.28, obsidian-vault=0.07  in_tok=2179
+ok  ok   1563ms  'guarda esta receta en mis notas'
+        want=['obsidian-vault'] choice=obsidian-vault (0.99) nouls: obsidian-vault=0.83, web-browsing=0.11, home-assistant=0.06  in_tok=2179
+ok  ok    832ms  'añade una etiqueta a esa nota'
+        want=['obsidian-vault'] choice=obsidian-vault (1.00) nouls: obsidian-vault=0.97, web-browsing=0.09, home-assistant=0.06  in_tok=2180
+ok  ok    857ms  'borra esas notas'
+        want=['obsidian-vault'] choice=obsidian-vault (1.00) nouls: obsidian-vault=0.95, home-assistant=0.09, scheduling=0.06  in_tok=2176
+ok  ok    863ms  'busca cuánto tiene que reposar el gazpacho'
+        want=['web-browsing'] choice=web-browsing (0.84) nouls: web-browsing=0.78, countdown-timers=0.04, home-assistant=0.02  in_tok=2184
+ok  ok    976ms  'what does the site say about opening hours?'
+        want=['web-browsing'] choice=web-browsing (1.00) nouls: web-browsing=0.97, sandbox=0.08, home-assistant=0.03  in_tok=2181
+ok  ok   2988ms  'busca una receta de gazpacho y guárdala en mis notas'
+        want=['obsidian-vault', 'web-browsing'] choice=web-browsing (0.99) nouls: web-browsing=0.89, obsidian-vault=0.69, home-assistant=0.05  in_tok=2187
+ok  ok   1915ms  'apaga las luces y avísame cuando termine la lavadora'
+        want=['home-assistant', 'home-watches'] choice=home-assistant (0.87) nouls: home-assistant=0.88, home-watches=0.84, scheduling=0.41  in_tok=2185
+ok  ok    934ms  'hola, ¿qué tal?'
+        want=none choice=none (1.00) nouls: web-browsing=0.03, countdown-timers=0.02, home-assistant=0.02  in_tok=2178
+ok  ok    859ms  'gracias'
+        want=none choice=none (1.00) nouls: countdown-timers=0.03, home-assistant=0.03, web-browsing=0.03  in_tok=2174
+ok  ok   1745ms  '¿cuánto es 17 por 23?'
+        want=none choice=none (0.97) nouls: sandbox=0.03, web-browsing=0.03, countdown-timers=0.01  in_tok=2186
+ok  ok   1559ms  'explícame qué es un agujero negro'
+        want=none choice=none (1.00) nouls: web-browsing=0.07, countdown-timers=0.01, home-assistant=0.01  in_tok=2181
+ok  ok    939ms  '¿qué dice mi nota sobre el gazpacho?'
+        want=none choice=none (0.61) nouls: web-browsing=0.23, home-assistant=0.21, sandbox=0.04  in_tok=2184
+ok  ok    864ms  'what did I tell you about my sister?'
+        want=none choice=none (0.97) nouls: home-assistant=0.04, obsidian-vault=0.04, web-browsing=0.04  in_tok=2181
+ok  ok   1531ms  'tell me a joke'
+        want=none choice=none (1.00) nouls: web-browsing=0.04, home-assistant=0.02, sandbox=0.02  in_tok=2176
+
+choice 32/34   nouls(exact set @0.5) 26/34
+latency ms: median 969  p90 2851  max 2988
+
+APPROVAL  (approve if p>=0.9, decline if p<=0.1 on 'approved' AND answered; else re-ask)
+ok    913ms  'sí'                                                    want=True got=True approved=0.96 declined=0.02
+BAD   926ms  'vale'                                                  want=True got=None approved=0.58 declined=0.11
+ok    877ms  'adelante'                                              want=True got=True approved=0.95 declined=0.03
+ok    867ms  'hazlo'                                                 want=True got=True approved=0.94 declined=0.02
+ok    954ms  'venga, dale'                                           want=True got=True approved=0.94 declined=0.04
+ok   1675ms  'por supuesto'                                          want=True got=True approved=0.95 declined=0.03
+ok   1031ms  'sí, claro que sí'                                      want=True got=True approved=0.97 declined=0.02
+ok   1040ms  'go ahead'                                              want=True got=True approved=0.95 declined=0.03
+ok   1083ms  'do it'                                                 want=True got=True approved=0.94 declined=0.03
+ok    830ms  'no'                                                    want=False got=False approved=0.02 declined=0.97
+ok    868ms  'mejor no'                                              want=False got=False approved=0.03 declined=0.94
+ok    913ms  'ni se te ocurra'                                       want=False got=False approved=0.02 declined=0.98
+BAD   911ms  'déjalo'                                                want=False got=None approved=0.54 declined=0.76
+ok   1601ms  'espera, no lo hagas'                                   want=False got=False approved=0.02 declined=0.97
+ok   1821ms  'no, gracias'                                           want=False got=False approved=0.02 declined=0.97
+ok    872ms  "don't"                                                 want=False got=False approved=0.03 declined=0.96
+BAD   819ms  'never mind'                                            want=False got=None approved=0.06 declined=0.67
+ok    846ms  'no sé'                                                 want=None got=None approved=0.04 declined=0.18
+ok   1643ms  '¿qué has dicho?'                                       want=None got=None approved=0.05 declined=0.18
+ok   1872ms  'eh...'                                                 want=None got=None approved=0.12 declined=0.22
+ok    860ms  '¿cuáles notas?'                                        want=None got=None approved=0.06 declined=0.23
+ok   3679ms  'sí... bueno, no, espera'                               want=None got=None approved=0.18 declined=0.68
+ok   1338ms  'thank you.'                                            want=None got=None approved=0.11 declined=0.16
+ok   2235ms  'subtítulos realizados por la comunidad de amara.org'   want=None got=None approved=0.08 declined=0.24
+
+approval 21/24   latency median 940ms

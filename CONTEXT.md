@@ -721,18 +721,27 @@ knows before it decides what to do; it never changes shape mid-conversation.
 _Avoid_: system prompt, standing sections, static prompt, core prompt
 
 **Skill**:
-A body of guidance the model loads itself when a request calls for it, offered by
-the tool server whose tools it explains and granted by the agent definition. Only
-its name and description sit in the base prompt; the body arrives as a tool result
-and stays in the conversation like any other. A skill teaches how to do a task, never
+A body of guidance loaded when a request calls for it — by the model, or ahead of
+it by a **preload** — offered by the tool server whose tools it explains and granted
+by the agent definition. Only its name and description sit in the base prompt; the
+body arrives as a tool result and stays in the conversation like any other. A skill teaches how to do a task, never
 which task to do — the choosing rules stay in the base prompt.
 _Avoid_: lazy section, on-demand prompt, guide, playbook
 
 **Trigger claim**:
-The claim a skill's description makes: that a request of a named kind loads it. It
-is declared beside the description and cited by every scenario of that task family,
-so a skill nobody loads is a red description, not a red body.
+The claim a skill's description makes: that a request of a named kind gets it
+loaded, whoever loads it. It is declared beside the description and cited by every
+scenario of that task family, so a skill nobody loads is a red description, not a
+red body; the scorecard says which loader it was.
 _Avoid_: activation, routing rule, skill match
+
+**Preload**:
+A skill put into the conversation by the host before the model's first call,
+because a typed judgment of the request against the skills' descriptions was
+confident. It leaves the conversation exactly as a load by the model would have,
+is never made twice for one skill, and its absence — an unsure, late or missing
+judgment — is simply the model loading for itself.
+_Avoid_: pre-load by channel, skill suggestion, hint, auto-load
 
 ## Behavioural evaluation
 

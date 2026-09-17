@@ -76,11 +76,32 @@ and after: Home Assistant (guide, with watches as a second skill), vault, web br
 scheduling, sandbox, timers. Equal behaviour with fewer standing tokens and better authoring is
 worth merging; a regression is not.
 
+**Refined 2026-09-18: the host may load first, and a trigger claim no longer says who loaded.**
+"The model triggers a load; the host never does" was decided when the only host-side trigger on
+offer was a blunt one — by channel, or on a first tool call — and it would have hidden whether a
+description worked. What changed is the trigger: a small hosted model (TypeSafe's Jev) that
+answers typed questions with probabilities reads the same descriptions the model reads and,
+measured on the seven shipped ones over 34 Spanish and English requests, picked right on 32 with
+both misses under 0.9 confidence and no wrong pick above it, in about 110 ms at the server. So
+the host now **preloads**: asked while memory recall runs and under a deadline, a confident
+answer puts the body into the conversation exactly as a `load_skill` call would have left it,
+and the turn's first round trip — the 1.15 s this ADR accepted — is spent on the task. Below the
+bar, late, or down, nothing happens and the model loads for itself; the load tool stays. The
+eval preloads too, because a composition no deployment uses is not worth measuring, and that
+changes what a **trigger claim** asserts: a request of the named kind *gets the skill loaded*,
+by either loader, with the scorecard saying which. The objection this ADR raised is answered by
+that split rather than by keeping the host out — a description that works only on Jev, or only
+on the model, is visible as a lopsided column. The description stays the whole trigger and the
+one advertisement; it now has two readers. Everything else above stands: what moves is decided
+by timing, the server ships the skill, a body is static and is never loaded twice. A turn
+addressed to the local box is never sent to Jev, the boundary ADR 0042 drew. Spec:
+`.scratch/jev-skill-preload/spec.md`.
+
 ## Considered options
 
 - **Host pre-loads by channel or on first tool call.** Rejected: a passing scenario could no
   longer say whether the model chose the skill or the host forced it, and the description would
-  never be tested.
+  never be tested. A host trigger that reads the description itself is the 2026-09-18 refinement.
 - **The framework's MCP skills source.** Alpha only at the shipped version; rejected for now in
   favour of the standard resource shape and a reader in the repo. Swapping in the framework's
   source later is a one-file change because the wire shape is the same.
