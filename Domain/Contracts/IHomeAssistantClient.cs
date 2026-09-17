@@ -54,12 +54,13 @@ public interface IHomeAssistantClient
     // home's zone, so anything aligned to the home's clock (a day bucket at its midnight) needs this.
     Task<string?> GetTimeZoneAsync(CancellationToken ct = default);
 
-    // The entity registry's capabilities for these entities — a media player's `source_list`, a
-    // select's `options` — which Home Assistant persists and keeps current from every state write,
-    // so they outlive the entity going unavailable. The WebSocket command
-    // `config/entity_registry/get_entries` is the one read that serves them. Only entities with
-    // capabilities are in the answer; no ids asks nothing.
-    Task<IReadOnlyDictionary<string, JsonObject>> ListCapabilitiesAsync(
+    // The entity registry's entries for these entities: the platform and config entry each
+    // belongs to, and its capabilities — a media player's `source_list`, a select's `options` —
+    // which Home Assistant persists and keeps current from every state write. All of it outlives
+    // the entity going unavailable and its integration failing to load. The WebSocket command
+    // `config/entity_registry/get_entries` is the one read that serves it. Only entities the
+    // registry knows are in the answer; no ids asks nothing.
+    Task<IReadOnlyDictionary<string, HaRegistryEntry>> ListRegistryEntriesAsync(
         IReadOnlyList<string> entityIds, CancellationToken ct = default);
 
     // The apps an Android TV Remote entry is configured with, by the names its options give them —
@@ -82,6 +83,17 @@ public interface IHomeAssistantClient
     Task UpsertAutomationConfigAsync(string id, JsonObject config, CancellationToken ct = default);
 
     Task DeleteAutomationConfigAsync(string id, CancellationToken ct = default);
+}
+
+// One entity registry entry, the part of it the catalog reads. `Capabilities` is null for an
+// entity whose kind persists none (a remote, a light).
+[PublicAPI]
+public record HaRegistryEntry
+{
+    public required string EntityId { get; init; }
+    public string? Platform { get; init; }
+    public string? ConfigEntryId { get; init; }
+    public JsonObject? Capabilities { get; init; }
 }
 
 // One automation as its entity state describes it. `ConfigId` is the `id` attribute the config API

@@ -52,9 +52,10 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     // The living room's television, as the prod one is: a remote whose turn_on takes an app, and
     // which reads `unavailable` while the set is off. Home Assistant then serves the entity with
     // its name and features and no lists; the apps live in the Android TV Remote entry's options,
-    // which this home serves the way the real one does — through the entry's options flow — and
-    // the catalog provider reads them back for a remote that serves none. A launch lands as
-    // `current_activity`, the fact a scenario about opening an app declares as its change.
+    // which this home serves the way the real one does — the registry (StartSocketAsync) names the
+    // entry, the entry's options flow lists the apps — and the catalog provider reads them back
+    // for a remote that serves none. A launch lands as `current_activity`, the fact a scenario
+    // about opening an app declares as its change.
     public const string TvRemoteEntityId = "remote.tv_salon";
     public const string TvRemoteConfigEntryId = "01FAKEANDROIDTVREMOTEENTRY";
     public static readonly string TvRemoteActivityKey = $"{TvRemoteEntityId}#current_activity";
@@ -566,10 +567,20 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
                     KitchenSpeakerEntityId, KitchenTvEntityId),
                 Area("salon", "Salón", AirConditionerEntityId, SalonTemperatureEntityId, SalonBlindsEntityId,
                     TvRemoteEntityId),
-                Area(StudyAreaSlug, "Estudio", VacuumEntityId)),
-            ["androidtv"] = new JsonArray(
-                new JsonObject { ["entity"] = TvRemoteEntityId, ["entry"] = TvRemoteConfigEntryId })
+                Area(StudyAreaSlug, "Estudio", VacuumEntityId))
         }.ToJsonString();
+
+    // The websocket side of this home, wired the way the stack wires it: the same calendar store,
+    // every mutation recorded beside the REST calls, and the entity registry naming the TV remote's
+    // platform and config entry — the one place that survives the set being off when the home
+    // starts, which is how the catalog finds the entry whose options list the apps.
+    public async Task<FakeHomeAssistantSocket> StartSocketAsync()
+    {
+        var socket = await FakeHomeAssistantSocket.StartAsync(Calendar, Token);
+        socket.Recorder = Record;
+        socket.Registry[TvRemoteEntityId] = new("androidtv_remote", TvRemoteConfigEntryId);
+        return socket;
+    }
 
     // The TV entry's options flow, as Home Assistant opens it: the first form's `apps` select
     // labels each configured app `Name (key)` after an "Add new" entry. Opened flows are counted

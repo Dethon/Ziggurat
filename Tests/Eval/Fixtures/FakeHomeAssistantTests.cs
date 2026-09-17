@@ -27,7 +27,8 @@ public class FakeHomeAssistantTests
     public async Task TheTvRemote_SaysItsAppsOnItsIndexLine_AndALaunchBecomesTheCurrentActivity()
     {
         var home = new FakeHomeAssistant();
-        var mount = Mount(home);
+        await using var socket = await Socket(home);
+        var mount = Mount(home, socket: socket);
 
         var index = (await mount.ReadAsync(Relative("/ha/" + HaVfsPath.SetupIndexFileName), null, null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
@@ -451,14 +452,7 @@ public class FakeHomeAssistantTests
     private static HomeAssistantClient Client(FakeHomeAssistant home) => new(
         new HttpClient(home) { BaseAddress = new Uri("http://home-assistant.eval") }, FakeHomeAssistant.Token);
 
-    // The websocket side of the home, wired the way the stack wires it: the same calendar store,
-    // and every mutation recorded beside the REST calls.
-    private static async Task<FakeHomeAssistantSocket> Socket(FakeHomeAssistant home)
-    {
-        var socket = await FakeHomeAssistantSocket.StartAsync(home.Calendar, FakeHomeAssistant.Token);
-        socket.Recorder = home.Record;
-        return socket;
-    }
+    private static Task<FakeHomeAssistantSocket> Socket(FakeHomeAssistant home) => home.StartSocketAsync();
 
     private static HaFileSystem Mount(
         FakeHomeAssistant? home = null, FakeMusicAssistantServer? music = null, FakeHomeAssistantSocket? socket = null)

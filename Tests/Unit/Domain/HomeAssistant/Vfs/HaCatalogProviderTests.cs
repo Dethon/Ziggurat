@@ -65,10 +65,10 @@ public class HaCatalogProviderTests
                 Entity("media_player.receiver", "unavailable"),
                 Entity("select.mop_mode", "unavailable", ("restored", JsonValue.Create(true)))
             },
-            Capabilities =
+            Registry =
             {
-                ["media_player.receiver"] = new JsonObject { ["source_list"] = new JsonArray("TV", "Bluetooth") },
-                ["select.mop_mode"] = new JsonObject { ["options"] = new JsonArray("standard", "deep"), ["min"] = 1 }
+                ["media_player.receiver"] = Capabilities("media_player.receiver", new JsonObject { ["source_list"] = new JsonArray("TV", "Bluetooth") }),
+                ["select.mop_mode"] = Capabilities("select.mop_mode", new JsonObject { ["options"] = new JsonArray("standard", "deep"), ["min"] = 1 })
             }
         };
         var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
@@ -81,7 +81,7 @@ public class HaCatalogProviderTests
         select.Attributes["options"]!.AsArray().Select(v => v!.GetValue<string>()).ShouldBe(["standard", "deep"]);
         select.Attributes.ShouldNotContainKey("min");
         select.Attributes.ShouldContainKey("restored");
-        client.CapabilityReads.ShouldHaveSingleItem().ShouldBe(["media_player.receiver", "select.mop_mode"], ignoreOrder: true);
+        client.RegistryReads.ShouldHaveSingleItem().ShouldBe(["media_player.receiver", "select.mop_mode"], ignoreOrder: true);
     }
 
     // The registry is asked only for what the states endpoint left blank: an available entity is
@@ -97,14 +97,14 @@ public class HaCatalogProviderTests
                 Entity("light.kitchen", "off"),
                 Entity("select.mop_mode", "unavailable", ("options", new JsonArray("standard")))
             },
-            Capabilities = { ["media_player.receiver"] = new JsonObject { ["source_list"] = new JsonArray("TV", "Bluetooth") } }
+            Registry = { ["media_player.receiver"] = Capabilities("media_player.receiver", new JsonObject { ["source_list"] = new JsonArray("TV", "Bluetooth") }) }
         };
         var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
 
         var catalog = await provider.GetAsync(CancellationToken.None);
 
         catalog.EntityById("media_player.receiver")!.Attributes["source_list"]!.AsArray().Count.ShouldBe(1);
-        client.CapabilityReads.ShouldBeEmpty();
+        client.RegistryReads.ShouldBeEmpty();
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public class HaCatalogProviderTests
         var client = new FakeHaClient
         {
             States = { Entity("media_player.receiver", "unavailable"), Entity("light.kitchen", "off") },
-            CapabilitiesFailure = new HttpRequestException("websocket unreachable"),
+            RegistryFailure = new HttpRequestException("websocket unreachable"),
             TimeZone = "Europe/Madrid"
         };
         var log = new CapturingLoggerProvider(LogLevel.Warning);
@@ -132,14 +132,16 @@ public class HaCatalogProviderTests
     // at the one moment the apps are asked for ("turn on the TV and put Plex"). Home Assistant keeps
     // the apps in the Android TV Remote entry's options, which the catalog reads back for exactly
     // the remotes that serve no list: nothing remembered from a warmer moment, nothing the set has
-    // to be on for.
+    // to be on for. The entry is the one the registry names for the remote, because the
+    // integration's own entities are nowhere while the set is off at the home's start — a real
+    // index built four minutes after a restart listed the TV with no apps for that reason.
     [Fact]
     public async Task GetAsync_AnAndroidTvRemoteServingNoApps_ListsTheOnesItsEntryIsConfiguredWith()
     {
         var client = new FakeHaClient
         {
             States = { Entity("remote.tv", "unavailable", ("supported_features", JsonValue.Create(4))) },
-            AreaTemplateJson = """{"areas":[],"androidtv":[{"entity":"remote.tv","entry":"entry-1"}]}""",
+            Registry = { ["remote.tv"] = AndroidTv("remote.tv", "entry-1") },
             AndroidTvApps = { ["entry-1"] = ["Plex", "Netflix"] }
         };
         var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
@@ -153,21 +155,34 @@ public class HaCatalogProviderTests
     }
 
     // A remote that serves its list is taken at its word: the options are not read, so a home with
-    // the TV on costs no flow per catalog build.
+    // the TV on costs no flow per catalog build. And only that integration's remotes are asked —
+    // another platform's options flow is a different form, and its media player is no remote.
     [Fact]
-    public async Task GetAsync_AnAndroidTvRemoteServingItsApps_IsLeftAsServed()
+    public async Task GetAsync_ARemoteServingItsApps_OrOfAnotherPlatform_OpensNoFlow()
     {
         var client = new FakeHaClient
         {
-            States = { Entity("remote.tv", "on", ("activity_list", new JsonArray("Plex"))) },
-            AreaTemplateJson = """{"areas":[],"androidtv":[{"entity":"remote.tv","entry":"entry-1"}]}""",
-            AndroidTvApps = { ["entry-1"] = ["Plex", "DAZN"] }
+            States =
+            {
+                Entity("remote.tv", "on", ("activity_list", new JsonArray("Plex"))),
+                Entity("remote.hub", "unavailable"),
+                Entity("media_player.tv", "unavailable")
+            },
+            Registry =
+            {
+                ["remote.tv"] = AndroidTv("remote.tv", "entry-1"),
+                ["remote.hub"] = new HaRegistryEntry { EntityId = "remote.hub", Platform = "harmony", ConfigEntryId = "entry-2" },
+                ["media_player.tv"] = AndroidTv("media_player.tv", "entry-1")
+            },
+            AndroidTvApps = { ["entry-1"] = ["Plex", "DAZN"], ["entry-2"] = ["Watch TV"] }
         };
         var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
 
         var catalog = await provider.GetAsync(CancellationToken.None);
 
         catalog.EntityById("remote.tv")!.Attributes["activity_list"]!.AsArray().Count.ShouldBe(1);
+        catalog.EntityById("remote.hub")!.Attributes.ShouldNotContainKey("activity_list");
+        catalog.EntityById("media_player.tv")!.Attributes.ShouldNotContainKey("activity_list");
         client.AndroidTvAppsReads.ShouldBeEmpty();
     }
 
@@ -180,7 +195,7 @@ public class HaCatalogProviderTests
         var client = new FakeHaClient
         {
             States = { Entity("remote.tv", "unavailable"), Entity("light.kitchen", "off") },
-            AreaTemplateJson = """{"areas":[],"androidtv":[{"entity":"remote.tv","entry":"entry-1"}]}""",
+            Registry = { ["remote.tv"] = AndroidTv("remote.tv", "entry-1") },
             AndroidTvAppsFailure = new HttpRequestException("options unreachable"),
             TimeZone = "Europe/Madrid"
         };

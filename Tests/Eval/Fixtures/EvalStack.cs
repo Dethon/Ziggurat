@@ -224,8 +224,7 @@ public sealed class EvalStack : IAsyncDisposable
     private async Task<string> StartHomeAssistantAsync()
     {
         Music = await FakeMusicAssistantServer.StartAsync();
-        HomeSocket = await FakeHomeAssistantSocket.StartAsync(Home.Calendar, FakeHomeAssistant.Token);
-        HomeSocket.Recorder = Home.Record;
+        HomeSocket = await Home.StartSocketAsync();
 
         var port = TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();

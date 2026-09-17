@@ -230,14 +230,15 @@ public class HomeAssistantClient(HttpClient httpClient, string token, TimeSpan? 
             : [];
     }
 
-    // The registry answers an object keyed by the ids asked, each an extended entry or null; the
-    // entry's `capabilities` is an object or null. A `remote` has none, whatever it serves.
-    public async Task<IReadOnlyDictionary<string, JsonObject>> ListCapabilitiesAsync(
+    // The registry answers an object keyed by the ids asked, each an extended entry or null for an
+    // id it does not know; an entry's `capabilities` is an object or null (a `remote` has none,
+    // whatever it serves), and an empty object is as good as none.
+    public async Task<IReadOnlyDictionary<string, HaRegistryEntry>> ListRegistryEntriesAsync(
         IReadOnlyList<string> entityIds, CancellationToken ct = default)
     {
         if (entityIds.Count == 0)
         {
-            return new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+            return new Dictionary<string, HaRegistryEntry>(StringComparer.Ordinal);
         }
         var result = await SendCommandAsync(new JsonObject
         {
@@ -245,16 +246,26 @@ public class HomeAssistantClient(HttpClient httpClient, string token, TimeSpan? 
             ["entity_ids"] = new JsonArray([.. entityIds.Select(id => (JsonNode)id)])
         }, ct);
 
-        var capabilities = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        var entries = new Dictionary<string, HaRegistryEntry>(StringComparer.Ordinal);
         foreach (var (entityId, entry) in result as JsonObject ?? [])
         {
-            if (entry?["capabilities"] is JsonObject { Count: > 0 } found)
+            if (entry is not JsonObject found)
             {
-                capabilities[entityId] = found;
+                continue;
             }
+            entries[entityId] = new HaRegistryEntry
+            {
+                EntityId = entityId,
+                Platform = Text(found, "platform"),
+                ConfigEntryId = Text(found, "config_entry_id"),
+                Capabilities = found["capabilities"] is JsonObject { Count: > 0 } capabilities ? capabilities : null
+            };
         }
-        return capabilities;
+        return entries;
     }
+
+    private static string? Text(JsonObject node, string name) =>
+        node[name] is JsonValue value && value.TryGetValue<string>(out var text) && text.Length > 0 ? text : null;
 
     // The options flow is the one window onto an entry's options. Opening it (`POST .../options/
     // flow {handler}`) answers the first step; for the Android TV Remote integration that is a form

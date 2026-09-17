@@ -41,11 +41,13 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
 
     public sealed record StatisticsRequest(IReadOnlyList<string> StatisticIds, string Start, string End, string Period);
 
-    // The entity registry's capabilities per entity id, as `config/entity_registry/get_entries`
-    // answers them: an id the registry knows without capabilities answers null for them, an id it
-    // does not know answers null for the entry.
-    public Dictionary<string, JsonObject?> Capabilities { get; } = [];
-    public IReadOnlyList<string>? LastCapabilitiesRequest { get; private set; }
+    // The entity registry's entries per entity id, as `config/entity_registry/get_entries`
+    // answers them: an id the registry knows answers its platform, config entry and capabilities
+    // (null for a kind that persists none), an id it does not know answers null for the entry.
+    public Dictionary<string, RegistryEntry> Registry { get; } = [];
+    public IReadOnlyList<string>? LastRegistryRequest { get; private set; }
+
+    public sealed record RegistryEntry(string Platform, string ConfigEntryId, JsonObject? Capabilities = null);
 
     private FakeHomeAssistantSocket(IHost host, string baseUrl, int port, string token, FakeCalendarStore calendar)
     {
@@ -197,16 +199,17 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
     private JsonObject RegistryEntries(int id, JsonObject request)
     {
         var ids = request["entity_ids"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
-        LastCapabilitiesRequest = ids;
+        LastRegistryRequest = ids;
         var result = new JsonObject();
         foreach (var entityId in ids)
         {
-            result[entityId] = Capabilities.TryGetValue(entityId, out var capabilities)
+            result[entityId] = Registry.TryGetValue(entityId, out var entry)
                 ? new JsonObject
                 {
                     ["entity_id"] = entityId,
-                    ["platform"] = "fake",
-                    ["capabilities"] = capabilities?.DeepClone()
+                    ["platform"] = entry.Platform,
+                    ["config_entry_id"] = entry.ConfigEntryId,
+                    ["capabilities"] = entry.Capabilities?.DeepClone()
                 }
                 : null;
         }
