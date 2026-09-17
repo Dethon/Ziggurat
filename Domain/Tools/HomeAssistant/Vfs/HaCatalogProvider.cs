@@ -31,16 +31,18 @@ public sealed class HaCatalogProvider(
     // Single template render returns one JSON object covering every area and its entities —
     // the REST API has no other path into the area registry. The same render lists the entities
     // the registry hides: the states endpoint serves them regardless, and hidden in the home means
-    // hidden from the agent too.
+    // hidden from the agent too. And it names each Android TV Remote's config entry, the one place
+    // the TV's apps are kept while the set is off (see WithConfiguredAppsAsync).
     private const string AreaTemplate =
-        """{"areas":[{% for aid in areas() %}{% if not loop.first %},{% endif %}{"id":{{aid|tojson}},"name":{{area_name(aid)|tojson}},"entities":{{area_entities(aid)|list|tojson}}}{% endfor %}],"hidden":{{states|map(attribute='entity_id')|select('is_hidden_entity')|list|tojson}}}""";
+        """{"areas":[{% for aid in areas() %}{% if not loop.first %},{% endif %}{"id":{{aid|tojson}},"name":{{area_name(aid)|tojson}},"entities":{{area_entities(aid)|list|tojson}}}{% endfor %}],"hidden":{{states|map(attribute='entity_id')|select('is_hidden_entity')|list|tojson}},"androidtv":[{% for e in integration_entities('androidtv_remote') if e.startswith('remote.') %}{% if not loop.first %},{% endif %}{"entity":{{e|tojson}},"entry":{{config_entry_id(e)|tojson}}}{% endfor %}]}""";
+
+    private const string ActivityListAttribute = "activity_list";
 
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
     private readonly ILogger<HaCatalogProvider> _logger = logger ?? NullLogger<HaCatalogProvider>.Instance;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private HaCatalog _cached = HaCatalog.Empty;
     private DateTimeOffset _expiry = DateTimeOffset.MinValue;
-    private readonly Dictionary<string, Dictionary<string, JsonNode?>> _rememberedChoices = new(StringComparer.Ordinal);
 
     public async Task<HaCatalog> GetAsync(CancellationToken ct)
     {
@@ -82,10 +84,8 @@ public sealed class HaCatalogProvider(
                 ? services.Result
                 : [.. services.Result.Where(s => !extraServices.Any(e => SameAction(e, s))), .. extraServices];
             var hidden = areas.Result.Hidden;
-            var visible = states.Result
-                .Where(e => !hidden.Contains(e.EntityId))
-                .Select(WithRememberedChoices)
-                .ToList();
+            var visible = states.Result.Where(e => !hidden.Contains(e.EntityId)).ToList();
+            await WithConfiguredAppsAsync(client, visible, areas.Result.AndroidTvEntries, _logger, ct);
             return (new HaCatalog(visible, allServices, areas.Result.Areas) { HomeZone = zone.Result }, true);
         }
         // Let cancellation propagate without writing the cache — otherwise a cancelled request would
@@ -97,40 +97,48 @@ public sealed class HaCatalogProvider(
         }
     }
 
-    // An unavailable entity is served as a `restored` stub — friendly name, supported features and
-    // nothing else — so a TV that is off has no `activity_list`, and the catalog built then would
-    // offer no apps at the one moment they are asked for. A choice list seen while the entity was
-    // available is kept for it, and put back only while its state is that stub; a list the entity
-    // serves again replaces the memory. Process-wide like the cache itself: a restart while the TV
-    // is off forgets until it is next seen on, which the 5-minute TTL then picks up.
-    private HaEntityState WithRememberedChoices(HaEntityState entity)
+    // The living-room TV goes `unavailable` seconds into standby, and the states endpoint then
+    // serves its remote with a name and its features and no `activity_list` — at the one moment
+    // the apps are asked for. Home Assistant keeps the apps in the Android TV Remote entry's
+    // options, so a remote of that integration serving no list gets the list its entry is
+    // configured with: nothing this process remembers from a warmer moment, nothing the set has to
+    // be on for. A remote serving its list is taken at its word, so a home with the TV on opens no
+    // flow. A read that fails leaves the remote as served and the catalog whole, said in the log.
+    private static async Task WithConfiguredAppsAsync(
+        IHomeAssistantClient client, List<HaEntityState> entities,
+        IReadOnlyDictionary<string, string> androidTvEntries, ILogger logger, CancellationToken ct)
     {
-        var served = HaCatalog.ChoiceHints
-            .Select(h => h.Attribute)
-            .Where(entity.Attributes.ContainsKey)
-            .ToList();
-        if (served.Count > 0)
+        for (var i = 0; i < entities.Count; i++)
         {
-            _rememberedChoices[entity.EntityId] = served.ToDictionary(a => a, a => entity.Attributes[a], StringComparer.Ordinal);
-            return entity;
+            var entity = entities[i];
+            if (entity.Attributes.ContainsKey(ActivityListAttribute)
+                || !androidTvEntries.TryGetValue(entity.EntityId, out var entry))
+            {
+                continue;
+            }
+            try
+            {
+                var apps = await client.ListAndroidTvAppsAsync(entry, ct);
+                if (apps.Count == 0)
+                {
+                    continue;
+                }
+                entities[i] = entity with
+                {
+                    Attributes = entity.Attributes
+                        .Append(new KeyValuePair<string, JsonNode?>(
+                            ActivityListAttribute, new JsonArray([.. apps.Select(app => (JsonNode)app)])))
+                        .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal)
+                };
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex,
+                    "Could not read the apps {Entity} is configured with (entry {Entry}); its index line lists none",
+                    entity.EntityId, entry);
+            }
         }
-        if (!IsRestoredStub(entity) || !_rememberedChoices.TryGetValue(entity.EntityId, out var remembered))
-        {
-            return entity;
-        }
-        return entity with
-        {
-            Attributes = entity.Attributes
-                .Concat(remembered)
-                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal)
-        };
     }
-
-    private static bool IsRestoredStub(HaEntityState entity) =>
-        entity.Attributes.TryGetValue("restored", out var node)
-        && node is JsonValue value
-        && value.TryGetValue<bool>(out var restored)
-        && restored;
 
     private static bool SameAction(HaServiceDefinition a, HaServiceDefinition b) =>
         a.Domain.Equals(b.Domain, StringComparison.Ordinal) && a.Service.Equals(b.Service, StringComparison.Ordinal);
@@ -160,9 +168,13 @@ public sealed class HaCatalogProvider(
         }
     }
 
-    private sealed record Registry(IReadOnlyList<HaAreaEntities> Areas, IReadOnlySet<string> Hidden)
+    private sealed record Registry(
+        IReadOnlyList<HaAreaEntities> Areas,
+        IReadOnlySet<string> Hidden,
+        IReadOnlyDictionary<string, string> AndroidTvEntries)
     {
-        public static Registry Empty { get; } = new([], new HashSet<string>(StringComparer.Ordinal));
+        public static Registry Empty { get; } = new(
+            [], new HashSet<string>(StringComparer.Ordinal), new Dictionary<string, string>(StringComparer.Ordinal));
     }
 
     private static async Task<Registry> LoadAreasAsync(IHomeAssistantClient client, CancellationToken ct)
@@ -178,7 +190,11 @@ public sealed class HaCatalogProvider(
             var areas = payload?.Areas?
                 .Select(a => new HaAreaEntities(a.Id, a.Name, a.Entities ?? []))
                 .ToList() ?? [];
-            return new Registry(areas, (payload?.Hidden ?? []).ToHashSet(StringComparer.Ordinal));
+            var androidTv = (payload?.AndroidTv ?? [])
+                .Where(e => e.Entity.Length > 0 && !string.IsNullOrEmpty(e.Entry))
+                .GroupBy(e => e.Entity, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First().Entry!, StringComparer.Ordinal);
+            return new Registry(areas, (payload?.Hidden ?? []).ToHashSet(StringComparer.Ordinal), androidTv);
         }
         catch (JsonException)
         {
@@ -190,6 +206,13 @@ public sealed class HaCatalogProvider(
     {
         [JsonPropertyName("areas")] public IReadOnlyList<AreaDto>? Areas { get; init; }
         [JsonPropertyName("hidden")] public IReadOnlyList<string>? Hidden { get; init; }
+        [JsonPropertyName("androidtv")] public IReadOnlyList<AndroidTvDto>? AndroidTv { get; init; }
+    }
+
+    private sealed record AndroidTvDto
+    {
+        [JsonPropertyName("entity")] public string Entity { get; init; } = string.Empty;
+        [JsonPropertyName("entry")] public string? Entry { get; init; }
     }
 
     private sealed record AreaDto

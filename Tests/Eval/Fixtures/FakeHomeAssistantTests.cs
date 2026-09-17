@@ -19,9 +19,10 @@ namespace Tests.Eval.Fixtures;
 public class FakeHomeAssistantTests
 {
     // The living-room TV as the prod one arrives: a remote that is `unavailable` while the set is
-    // off, with the app list the mount keeps for it. Its index line has to carry the apps and the
-    // action that takes them, and the launch has to land as the app the fake reports current —
-    // the fact a scenario about the line declares as its change.
+    // off and serves no app list, the apps living in its entry's options. Its index line has to
+    // carry the apps and the action that takes them, read through the options flow and leaving no
+    // flow open, and the launch has to land as the app the fake reports current — the fact a
+    // scenario about the line declares as its change.
     [Fact]
     public async Task TheTvRemote_SaysItsAppsOnItsIndexLine_AndALaunchBecomesTheCurrentActivity()
     {
@@ -34,6 +35,7 @@ public class FakeHomeAssistantTests
         line.ShouldContain("turn_on.sh --activity: ");
         line.ShouldContain("Crunchyroll");
         line.ShouldContain("Plex");
+        home.OpenOptionsFlows.ShouldBe(0);
 
         var result = await mount.ExecAsync(
             Relative(FakeHomeAssistant.TvRemoteDirectory), "turn_on.sh --activity Crunchyroll", timeoutSeconds: null, CancellationToken.None);

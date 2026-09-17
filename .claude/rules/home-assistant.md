@@ -207,12 +207,22 @@ things fix that:
   the list is non-empty. The header says the segment stops at the dash. Widen the table only for
   a list that is literally a flag's value — a climate's mode lists would say a lot for a call the
   model already knows.
-- **A choice list seen once outlives the entity going unavailable.** HA serves an unavailable
-  entity as a `restored` stub with no lists, so a catalog built while the TV is off would offer
-  no apps at the one moment they are asked for. `HaCatalogProvider` remembers each entity's
-  choice lists (`HaCatalog.ChoiceHints` names them) and puts them back only on a restored stub;
-  the memory is process-wide, like the cache, and refills within a TTL of the entity being seen
-  on again.
+- **An off TV's apps come from its integration's options, not from a memory.** The set goes
+  `unavailable` seconds into standby and the states endpoint then serves its remote with a name
+  and its features and no `activity_list` — at the one moment the apps are asked for. HA keeps
+  the Android TV Remote apps only in the config entry's options (the entity registry holds no
+  capabilities for a `remote`, and the integration's media player leaves `source_list` empty),
+  and no API serves an entry's options; the one window onto them is the entry's options flow,
+  whose first form lists each app as `Name (key)`. So `HaCatalogProvider`'s area template also
+  names each `androidtv_remote` remote's entry (`integration_entities` + `config_entry_id`), and
+  a remote of that integration that serves no list gets the one
+  `IHomeAssistantClient.ListAndroidTvAppsAsync` reads: open the flow, read the form, delete the
+  flow unanswered (nothing saved, nothing reloaded). A remote serving its list is taken at its
+  word, so a home with the TV on opens no flow; a read that fails leaves the remote as served
+  and is logged. There is deliberately no process-wide memory of a list seen while the set was
+  on: it was empty after every restart with the TV off, and it never fired on prod anyway,
+  because a live disconnect is served without the `restored` flag the memory keyed on. The eval's
+  fake home serves the flow and a bare unavailable stub the way prod does.
 - **An entity hidden in Home Assistant's registry never enters the catalog.** The states endpoint
   serves hidden entities regardless, so `HaCatalogProvider`'s area template also renders the
   `is_hidden_entity` list and the provider drops those states before the catalog is built — no

@@ -54,6 +54,14 @@ public interface IHomeAssistantClient
     // home's zone, so anything aligned to the home's clock (a day bucket at its midnight) needs this.
     Task<string?> GetTimeZoneAsync(CancellationToken ct = default);
 
+    // The apps an Android TV Remote entry is configured with, by the names its options give them —
+    // the remote's `activity_list`, which `remote.turn_on --activity` takes. The states endpoint
+    // drops that list the moment the set is off, and no API serves an entry's options, so they are
+    // read where Home Assistant shows them: the entry's options flow, opened, read at its first
+    // form and deleted unanswered. An app given no name is no activity and is left out; a flow
+    // that does not open on the form (an entry not loaded) is an empty list.
+    Task<IReadOnlyList<string>> ListAndroidTvAppsAsync(string configEntryId, CancellationToken ct = default);
+
     // The automation config API, which is how a watch lives in the home. Automations are listed
     // from their entity states — the one place on/off and `last_triggered` exist; the config API
     // has no list — and each config is read, written and deleted by the id the state's `id`

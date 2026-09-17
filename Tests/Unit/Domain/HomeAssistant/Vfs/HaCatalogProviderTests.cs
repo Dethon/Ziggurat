@@ -50,53 +50,72 @@ public class HaCatalogProviderTests
         catalog.EntityIdsInArea("salon").ShouldBe(["light.kitchen"]);
     }
 
-    // An unavailable entity comes back from the states endpoint as a `restored` stub — friendly
-    // name, supported features, nothing else — so a TV that is off has no `activity_list`, and the
-    // catalog built while it is off says nothing about its apps. That is the moment the list is
-    // needed: "turn on the TV and put Plex" met an index with no apps, and the model searched the
-    // home for the word instead. A choice list, once seen, is kept for the entity until it is
-    // seen again.
+    // The living-room TV goes `unavailable` seconds into standby, and the states endpoint then
+    // serves its remote with a friendly name and its features, nothing else — no `activity_list`,
+    // at the one moment the apps are asked for ("turn on the TV and put Plex"). Home Assistant keeps
+    // the apps in the Android TV Remote entry's options, which the catalog reads back for exactly
+    // the remotes that serve no list: nothing remembered from a warmer moment, nothing the set has
+    // to be on for.
     [Fact]
-    public async Task GetAsync_AChoiceListSeenOnce_OutlivesTheEntityGoingUnavailable()
+    public async Task GetAsync_AnAndroidTvRemoteServingNoApps_ListsTheOnesItsEntryIsConfiguredWith()
     {
         var client = new FakeHaClient
         {
-            States = { Entity("remote.tv", "on", ("activity_list", new JsonArray("Plex", "Netflix"))) }
+            States = { Entity("remote.tv", "unavailable", ("supported_features", JsonValue.Create(4))) },
+            AreaTemplateJson = """{"areas":[],"androidtv":[{"entity":"remote.tv","entry":"entry-1"}]}""",
+            AndroidTvApps = { ["entry-1"] = ["Plex", "Netflix"] }
         };
-        var time = new FakeTimeProvider();
-        var provider = new HaCatalogProvider(() => client, time);
-        await provider.GetAsync(CancellationToken.None);
+        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
 
-        client.States.Clear();
-        client.States.Add(Entity("remote.tv", "unavailable", ("restored", JsonValue.Create(true))));
-        time.Advance(TimeSpan.FromMinutes(6));
         var catalog = await provider.GetAsync(CancellationToken.None);
 
         var remote = catalog.EntityById("remote.tv").ShouldNotBeNull();
         remote.State.ShouldBe("unavailable");
         remote.Attributes["activity_list"]!.AsArray().Select(v => v!.GetValue<string>()).ShouldBe(["Plex", "Netflix"]);
-        remote.Attributes.ShouldContainKey("restored");
+        remote.Attributes["supported_features"]!.GetValue<int>().ShouldBe(4);
     }
 
-    // The memory is of the list, not of the entity: a list that changed is replaced, and a list
-    // the entity itself no longer serves while available is not put back.
+    // A remote that serves its list is taken at its word: the options are not read, so a home with
+    // the TV on costs no flow per catalog build.
     [Fact]
-    public async Task GetAsync_AChoiceListTheEntityServesAgain_IsTheNewOne()
+    public async Task GetAsync_AnAndroidTvRemoteServingItsApps_IsLeftAsServed()
     {
         var client = new FakeHaClient
         {
-            States = { Entity("remote.tv", "on", ("activity_list", new JsonArray("Plex"))) }
+            States = { Entity("remote.tv", "on", ("activity_list", new JsonArray("Plex"))) },
+            AreaTemplateJson = """{"areas":[],"androidtv":[{"entity":"remote.tv","entry":"entry-1"}]}""",
+            AndroidTvApps = { ["entry-1"] = ["Plex", "DAZN"] }
         };
-        var time = new FakeTimeProvider();
-        var provider = new HaCatalogProvider(() => client, time);
-        await provider.GetAsync(CancellationToken.None);
+        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
 
-        client.States.Clear();
-        client.States.Add(Entity("remote.tv", "on", ("activity_list", new JsonArray("Plex", "DAZN"))));
-        time.Advance(TimeSpan.FromMinutes(6));
         var catalog = await provider.GetAsync(CancellationToken.None);
 
-        catalog.EntityById("remote.tv")!.Attributes["activity_list"]!.AsArray().Count.ShouldBe(2);
+        catalog.EntityById("remote.tv")!.Attributes["activity_list"]!.AsArray().Count.ShouldBe(1);
+        client.AndroidTvAppsReads.ShouldBeEmpty();
+    }
+
+    // The options are a convenience for one index line, not the catalog's substance: a read that
+    // fails leaves the remote as the states endpoint served it and the catalog whole, said once in
+    // the log rather than blanking the mount for the failure TTL.
+    [Fact]
+    public async Task GetAsync_AnAppsReadThatFails_LeavesTheRemoteAsServed_KeepsTheCatalog_AndWarns()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("remote.tv", "unavailable"), Entity("light.kitchen", "off") },
+            AreaTemplateJson = """{"areas":[],"androidtv":[{"entity":"remote.tv","entry":"entry-1"}]}""",
+            AndroidTvAppsFailure = new HttpRequestException("options unreachable"),
+            TimeZone = "Europe/Madrid"
+        };
+        var log = new CapturingLoggerProvider(LogLevel.Warning);
+        var provider = new HaCatalogProvider(
+            () => client, new FakeTimeProvider(), logger: new Logger<HaCatalogProvider>(new LoggerFactory([log])));
+
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.Entities.Count.ShouldBe(2);
+        catalog.EntityById("remote.tv")!.Attributes.ShouldNotContainKey("activity_list");
+        log.Messages.ShouldHaveSingleItem().ShouldContain("remote.tv");
     }
 
     // A served action with the same name as one Home Assistant publishes replaces it rather than
