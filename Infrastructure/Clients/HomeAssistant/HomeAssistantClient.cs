@@ -230,6 +230,101 @@ public class HomeAssistantClient(HttpClient httpClient, string token, TimeSpan? 
             : [];
     }
 
+    // The registry answers an object keyed by the ids asked, each an extended entry or null for an
+    // id it does not know; an entry's `capabilities` is an object or null (a `remote` has none,
+    // whatever it serves), and an empty object is as good as none.
+    public async Task<IReadOnlyDictionary<string, HaRegistryEntry>> ListRegistryEntriesAsync(
+        IReadOnlyList<string> entityIds, CancellationToken ct = default)
+    {
+        if (entityIds.Count == 0)
+        {
+            return new Dictionary<string, HaRegistryEntry>(StringComparer.Ordinal);
+        }
+        var result = await SendCommandAsync(new JsonObject
+        {
+            ["type"] = "config/entity_registry/get_entries",
+            ["entity_ids"] = new JsonArray([.. entityIds.Select(id => (JsonNode)id)])
+        }, ct);
+
+        var entries = new Dictionary<string, HaRegistryEntry>(StringComparer.Ordinal);
+        foreach (var (entityId, entry) in result as JsonObject ?? [])
+        {
+            if (entry is not JsonObject found)
+            {
+                continue;
+            }
+            entries[entityId] = new HaRegistryEntry
+            {
+                EntityId = entityId,
+                Platform = Text(found, "platform"),
+                ConfigEntryId = Text(found, "config_entry_id"),
+                Capabilities = found["capabilities"] is JsonObject { Count: > 0 } capabilities ? capabilities : null
+            };
+        }
+        return entries;
+    }
+
+    private static string? Text(JsonObject node, string name) =>
+        node[name] is JsonValue value && value.TryGetValue<string>(out var text) && text.Length > 0 ? text : null;
+
+    // The options flow is the one window onto an entry's options. Opening it (`POST .../options/
+    // flow {handler}`) answers the first step; for the Android TV Remote integration that is a form
+    // whose `apps` select lists every configured app as `Name (key)` after an "Add new" entry, the
+    // key being what the label ends with. Deleting the flow closes it without saving, so the entry
+    // is neither changed nor reloaded — and it is deleted whatever the form said, or a flow would
+    // stay open in the home for every catalog build.
+    public async Task<IReadOnlyList<string>> ListAndroidTvAppsAsync(string configEntryId, CancellationToken ct = default)
+    {
+        using var response = await PostJsonAsync(OptionsFlowPath, new JsonObject { ["handler"] = configEntryId }, ct);
+        await EnsureOkAsync(response, ct);
+        var flow = await response.Content.ReadFromJsonAsync<JsonNode>(_json, ct);
+        try
+        {
+            return flow?["type"]?.GetValue<string>() == "form" ? AppsOnTheForm(flow) : [];
+        }
+        finally
+        {
+            if (flow?["flow_id"]?.GetValue<string>() is { Length: > 0 } flowId)
+            {
+                await AbortOptionsFlowAsync(flowId, ct);
+            }
+        }
+    }
+
+    private const string OptionsFlowPath = "api/config/config_entries/options/flow";
+
+    private static IReadOnlyList<string> AppsOnTheForm(JsonNode flow)
+    {
+        var apps = (flow["data_schema"] as JsonArray)?
+            .FirstOrDefault(field => field?["name"]?.GetValue<string>() == "apps");
+        var options = apps?["selector"]?["select"]?["options"] as JsonArray;
+        return options?
+            .Select(option => (Value: option?["value"]?.GetValue<string>(), Label: option?["label"]?.GetValue<string>()))
+            .Where(o => o.Value is not null && o.Label is not null && o.Value != "add_new")
+            .Select(o => AppName(o.Label!, o.Value!))
+            .Where(name => name.Length > 0)
+            .ToList() ?? [];
+    }
+
+    // `Name (key)`, or the bare key for an app that was given no name — which the remote itself
+    // lists as "" and cannot be asked for.
+    private static string AppName(string label, string key)
+    {
+        var suffix = $" ({key})";
+        return label.EndsWith(suffix, StringComparison.Ordinal) ? label[..^suffix.Length].Trim() : string.Empty;
+    }
+
+    private async Task AbortOptionsFlowAsync(string flowId, CancellationToken ct)
+    {
+        using var request = NewRequest(HttpMethod.Delete, $"{OptionsFlowPath}/{Uri.EscapeDataString(flowId)}");
+        using var response = await httpClient.SendAsync(request, ct);
+        // A flow the home already closed (404) is the outcome wanted; anything else is said.
+        if (response.StatusCode != HttpStatusCode.NotFound)
+        {
+            await EnsureOkAsync(response, ct);
+        }
+    }
+
     // Automations are listed from the states endpoint: the config API has no list, and the entity
     // state is the only place on/off and last_triggered exist. The `id` attribute is the config id.
     public async Task<IReadOnlyList<HaAutomationState>> ListAutomationsAsync(CancellationToken ct = default)

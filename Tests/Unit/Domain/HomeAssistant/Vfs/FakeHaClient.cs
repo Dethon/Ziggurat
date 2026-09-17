@@ -55,6 +55,45 @@ public class FakeHaClient : IHomeAssistantClient
     public virtual Task<string?> GetTimeZoneAsync(CancellationToken ct = default)
         => TimeZoneFailure is null ? Task.FromResult(TimeZone) : Task.FromException<string?>(TimeZoneFailure);
 
+    // The entity registry's entries per entity id, and which ids each read asked for.
+    public Dictionary<string, HaRegistryEntry> Registry { get; init; } = new(StringComparer.Ordinal);
+    public List<IReadOnlyList<string>> RegistryReads { get; } = [];
+    public Exception? RegistryFailure { get; set; }
+
+    public virtual Task<IReadOnlyDictionary<string, HaRegistryEntry>> ListRegistryEntriesAsync(
+        IReadOnlyList<string> entityIds, CancellationToken ct = default)
+    {
+        RegistryReads.Add(entityIds);
+        if (RegistryFailure is not null)
+        {
+            return Task.FromException<IReadOnlyDictionary<string, HaRegistryEntry>>(RegistryFailure);
+        }
+        return Task.FromResult<IReadOnlyDictionary<string, HaRegistryEntry>>(
+            entityIds.Where(Registry.ContainsKey).ToDictionary(id => id, id => Registry[id], StringComparer.Ordinal));
+    }
+
+    public static HaRegistryEntry Capabilities(string entityId, JsonObject capabilities) =>
+        new() { EntityId = entityId, Platform = "fake", ConfigEntryId = "entry-fake", Capabilities = capabilities };
+
+    public static HaRegistryEntry AndroidTv(string entityId, string configEntryId) =>
+        new() { EntityId = entityId, Platform = "androidtv_remote", ConfigEntryId = configEntryId };
+
+    // The Android TV Remote side: the apps each config entry's options name, keyed by entry id,
+    // and which entries were asked.
+    public Dictionary<string, IReadOnlyList<string>> AndroidTvApps { get; init; } = new(StringComparer.Ordinal);
+    public List<string> AndroidTvAppsReads { get; } = [];
+    public Exception? AndroidTvAppsFailure { get; set; }
+
+    public virtual Task<IReadOnlyList<string>> ListAndroidTvAppsAsync(string configEntryId, CancellationToken ct = default)
+    {
+        AndroidTvAppsReads.Add(configEntryId);
+        if (AndroidTvAppsFailure is not null)
+        {
+            return Task.FromException<IReadOnlyList<string>>(AndroidTvAppsFailure);
+        }
+        return Task.FromResult(AndroidTvApps.TryGetValue(configEntryId, out var apps) ? apps : (IReadOnlyList<string>)[]);
+    }
+
     // The calendar side: what the listing answers, and what was created or deleted through it.
     public List<HaCalendarEvent> CalendarEvents { get; init; } = [];
     public (string EntityId, string Start, string End)? LastCalendarWindow { get; private set; }

@@ -50,12 +50,14 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public const string KitchenTvEntityId = "media_player.tv_cocina";
 
     // The living room's television, as the prod one is: a remote whose turn_on takes an app, and
-    // which reads `unavailable` while the set is off. Home Assistant serves such an entity as a
-    // restored stub with no lists; the catalog provider puts the list it saw while the TV was on
-    // back on the stub, and this is the home as the mount then sees it — the list is on the
-    // entity, the state is not. A launch lands as `current_activity`, the fact a scenario about
-    // opening an app declares as its change.
+    // which reads `unavailable` while the set is off. Home Assistant then serves the entity with
+    // its name and features and no lists; the apps live in the Android TV Remote entry's options,
+    // which this home serves the way the real one does — the registry (StartSocketAsync) names the
+    // entry, the entry's options flow lists the apps — and the catalog provider reads them back
+    // for a remote that serves none. A launch lands as `current_activity`, the fact a scenario
+    // about opening an app declares as its change.
     public const string TvRemoteEntityId = "remote.tv_salon";
+    public const string TvRemoteConfigEntryId = "01FAKEANDROIDTVREMOTEENTRY";
     public static readonly string TvRemoteActivityKey = $"{TvRemoteEntityId}#current_activity";
     public static readonly string[] TvApps = ["Netflix", "YouTube", "Plex", "Crunchyroll", "Disney+"];
 
@@ -280,6 +282,11 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         if (path.Contains("/api/config/automation/config/"))
         {
             return await AutomationConfigAsync(request, path, cancellationToken);
+        }
+
+        if (path.Contains("/api/config/config_entries/options/flow"))
+        {
+            return await OptionsFlowAsync(request, cancellationToken);
         }
 
         // The home's configuration: the one place its zone is stated. The fake home keeps Madrid
@@ -563,6 +570,64 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
                 Area(StudyAreaSlug, "Estudio", VacuumEntityId))
         }.ToJsonString();
 
+    // The websocket side of this home, wired the way the stack wires it: the same calendar store,
+    // every mutation recorded beside the REST calls, and the entity registry naming the TV remote's
+    // platform and config entry — the one place that survives the set being off when the home
+    // starts, which is how the catalog finds the entry whose options list the apps.
+    public async Task<FakeHomeAssistantSocket> StartSocketAsync()
+    {
+        var socket = await FakeHomeAssistantSocket.StartAsync(Calendar, Token);
+        socket.Recorder = Record;
+        socket.Registry[TvRemoteEntityId] = new("androidtv_remote", TvRemoteConfigEntryId);
+        return socket;
+    }
+
+    // The TV entry's options flow, as Home Assistant opens it: the first form's `apps` select
+    // labels each configured app `Name (key)` after an "Add new" entry. Opened flows are counted
+    // so a test can say the catalog closed what it opened.
+    private int _openOptionsFlows;
+
+    public int OpenOptionsFlows => Volatile.Read(ref _openOptionsFlows);
+
+    private async Task<HttpResponseMessage> OptionsFlowAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        if (request.Method == HttpMethod.Delete)
+        {
+            Interlocked.Decrement(ref _openOptionsFlows);
+            return Json(new JsonObject { ["type"] = "abort" });
+        }
+        var body = JsonNode.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+        if (body?["handler"]?.GetValue<string>() != TvRemoteConfigEntryId)
+        {
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("""{"message":"Invalid handler specified"}""")
+            };
+        }
+        Interlocked.Increment(ref _openOptionsFlows);
+        var options = new JsonArray(new JsonObject { ["value"] = "add_new", ["label"] = "Add new" });
+        foreach (var app in TvApps)
+        {
+            var link = $"{app.ToLowerInvariant().Replace("+", "plus")}://";
+            options.Add(new JsonObject { ["value"] = link, ["label"] = $"{app} ({link})" });
+        }
+        return Json(new JsonObject
+        {
+            ["type"] = "form",
+            ["flow_id"] = Guid.NewGuid().ToString("N"),
+            ["handler"] = TvRemoteConfigEntryId,
+            ["step_id"] = "init",
+            ["data_schema"] = new JsonArray(
+                new JsonObject
+                {
+                    ["name"] = "apps",
+                    ["optional"] = true,
+                    ["selector"] = new JsonObject { ["select"] = new JsonObject { ["options"] = options, ["mode"] = "dropdown" } }
+                },
+                new JsonObject { ["name"] = "enable_ime", ["type"] = "boolean", ["required"] = true, ["default"] = true })
+        });
+    }
+
     private static JsonNode Area(string id, string name, params string[] entities) =>
         new JsonObject
         {
@@ -611,12 +676,7 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             ["app_id"] = "tv",
             ["device_class"] = "tv"
         }),
-        new(TvRemoteEntityId, "unavailable", "TV Salón", new JsonObject
-        {
-            ["restored"] = true,
-            ["activity_list"] = new JsonArray([.. TvApps.Select(app => (JsonNode)app)]),
-            ["current_activity"] = null
-        })
+        new(TvRemoteEntityId, "unavailable", "TV Salón", new JsonObject { ["supported_features"] = 4 })
     ];
 
     private static string Directory(string entityId, string friendlyName) =>

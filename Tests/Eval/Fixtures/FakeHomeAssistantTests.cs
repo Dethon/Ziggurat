@@ -19,14 +19,16 @@ namespace Tests.Eval.Fixtures;
 public class FakeHomeAssistantTests
 {
     // The living-room TV as the prod one arrives: a remote that is `unavailable` while the set is
-    // off, with the app list the mount keeps for it. Its index line has to carry the apps and the
-    // action that takes them, and the launch has to land as the app the fake reports current —
-    // the fact a scenario about the line declares as its change.
+    // off and serves no app list, the apps living in its entry's options. Its index line has to
+    // carry the apps and the action that takes them, read through the options flow and leaving no
+    // flow open, and the launch has to land as the app the fake reports current — the fact a
+    // scenario about the line declares as its change.
     [Fact]
     public async Task TheTvRemote_SaysItsAppsOnItsIndexLine_AndALaunchBecomesTheCurrentActivity()
     {
         var home = new FakeHomeAssistant();
-        var mount = Mount(home);
+        await using var socket = await Socket(home);
+        var mount = Mount(home, socket: socket);
 
         var index = (await mount.ReadAsync(Relative("/ha/" + HaVfsPath.SetupIndexFileName), null, null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
@@ -34,6 +36,7 @@ public class FakeHomeAssistantTests
         line.ShouldContain("turn_on.sh --activity: ");
         line.ShouldContain("Crunchyroll");
         line.ShouldContain("Plex");
+        home.OpenOptionsFlows.ShouldBe(0);
 
         var result = await mount.ExecAsync(
             Relative(FakeHomeAssistant.TvRemoteDirectory), "turn_on.sh --activity Crunchyroll", timeoutSeconds: null, CancellationToken.None);
@@ -449,14 +452,7 @@ public class FakeHomeAssistantTests
     private static HomeAssistantClient Client(FakeHomeAssistant home) => new(
         new HttpClient(home) { BaseAddress = new Uri("http://home-assistant.eval") }, FakeHomeAssistant.Token);
 
-    // The websocket side of the home, wired the way the stack wires it: the same calendar store,
-    // and every mutation recorded beside the REST calls.
-    private static async Task<FakeHomeAssistantSocket> Socket(FakeHomeAssistant home)
-    {
-        var socket = await FakeHomeAssistantSocket.StartAsync(home.Calendar, FakeHomeAssistant.Token);
-        socket.Recorder = home.Record;
-        return socket;
-    }
+    private static Task<FakeHomeAssistantSocket> Socket(FakeHomeAssistant home) => home.StartSocketAsync();
 
     private static HaFileSystem Mount(
         FakeHomeAssistant? home = null, FakeMusicAssistantServer? music = null, FakeHomeAssistantSocket? socket = null)

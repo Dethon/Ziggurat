@@ -41,6 +41,14 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
 
     public sealed record StatisticsRequest(IReadOnlyList<string> StatisticIds, string Start, string End, string Period);
 
+    // The entity registry's entries per entity id, as `config/entity_registry/get_entries`
+    // answers them: an id the registry knows answers its platform, config entry and capabilities
+    // (null for a kind that persists none), an id it does not know answers null for the entry.
+    public Dictionary<string, RegistryEntry> Registry { get; } = [];
+    public IReadOnlyList<string>? LastRegistryRequest { get; private set; }
+
+    public sealed record RegistryEntry(string Platform, string ConfigEntryId, JsonObject? Capabilities = null);
+
     private FakeHomeAssistantSocket(IHost host, string baseUrl, int port, string token, FakeCalendarStore calendar)
     {
         _host = host;
@@ -124,6 +132,10 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
         {
             return StatisticsDuringPeriod(id, request);
         }
+        if (type == "config/entity_registry/get_entries")
+        {
+            return RegistryEntries(id, request);
+        }
         if (type is not ("calendar/event/create" or "calendar/event/delete"))
         {
             return Error(id, "unknown_command", $"Unknown command: {type}");
@@ -178,6 +190,28 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
         foreach (var statisticId in ids.Where(Statistics.ContainsKey))
         {
             result[statisticId] = Statistics[statisticId].DeepClone();
+        }
+        var frame = Result(id);
+        frame["result"] = result;
+        return frame;
+    }
+
+    private JsonObject RegistryEntries(int id, JsonObject request)
+    {
+        var ids = request["entity_ids"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
+        LastRegistryRequest = ids;
+        var result = new JsonObject();
+        foreach (var entityId in ids)
+        {
+            result[entityId] = Registry.TryGetValue(entityId, out var entry)
+                ? new JsonObject
+                {
+                    ["entity_id"] = entityId,
+                    ["platform"] = entry.Platform,
+                    ["config_entry_id"] = entry.ConfigEntryId,
+                    ["capabilities"] = entry.Capabilities?.DeepClone()
+                }
+                : null;
         }
         var frame = Result(id);
         frame["result"] = result;

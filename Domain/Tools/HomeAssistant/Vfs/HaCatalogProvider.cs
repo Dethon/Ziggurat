@@ -35,12 +35,14 @@ public sealed class HaCatalogProvider(
     private const string AreaTemplate =
         """{"areas":[{% for aid in areas() %}{% if not loop.first %},{% endif %}{"id":{{aid|tojson}},"name":{{area_name(aid)|tojson}},"entities":{{area_entities(aid)|list|tojson}}}{% endfor %}],"hidden":{{states|map(attribute='entity_id')|select('is_hidden_entity')|list|tojson}}}""";
 
+    private const string ActivityListAttribute = "activity_list";
+    private const string AndroidTvPlatform = "androidtv_remote";
+
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
     private readonly ILogger<HaCatalogProvider> _logger = logger ?? NullLogger<HaCatalogProvider>.Instance;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private HaCatalog _cached = HaCatalog.Empty;
     private DateTimeOffset _expiry = DateTimeOffset.MinValue;
-    private readonly Dictionary<string, Dictionary<string, JsonNode?>> _rememberedChoices = new(StringComparer.Ordinal);
 
     public async Task<HaCatalog> GetAsync(CancellationToken ct)
     {
@@ -82,10 +84,8 @@ public sealed class HaCatalogProvider(
                 ? services.Result
                 : [.. services.Result.Where(s => !extraServices.Any(e => SameAction(e, s))), .. extraServices];
             var hidden = areas.Result.Hidden;
-            var visible = states.Result
-                .Where(e => !hidden.Contains(e.EntityId))
-                .Select(WithRememberedChoices)
-                .ToList();
+            var visible = states.Result.Where(e => !hidden.Contains(e.EntityId)).ToList();
+            await WithPersistedChoicesAsync(client, visible, _logger, ct);
             return (new HaCatalog(visible, allServices, areas.Result.Areas) { HomeZone = zone.Result }, true);
         }
         // Let cancellation propagate without writing the cache — otherwise a cancelled request would
@@ -97,40 +97,99 @@ public sealed class HaCatalogProvider(
         }
     }
 
-    // An unavailable entity is served as a `restored` stub — friendly name, supported features and
-    // nothing else — so a TV that is off has no `activity_list`, and the catalog built then would
-    // offer no apps at the one moment they are asked for. A choice list seen while the entity was
-    // available is kept for it, and put back only while its state is that stub; a list the entity
-    // serves again replaces the memory. Process-wide like the cache itself: a restart while the TV
-    // is off forgets until it is next seen on, which the 5-minute TTL then picks up.
-    private HaEntityState WithRememberedChoices(HaEntityState entity)
+    // An entity that goes unavailable is served with a name and its features and none of the
+    // lists its index line is made of — at the one moment "put it on Bluetooth" needs them. What
+    // the states endpoint left blank is put back from where Home Assistant persists it, so nothing
+    // here remembers a warmer moment, nothing has to be on, and nothing has to have loaded:
+    //
+    //   - the entity registry keeps `source_list` and `options` as an entity's capabilities,
+    //     current from its last state write, so every unavailable entity serving no choice list
+    //     is looked up there in one command and gets exactly the choice lists the registry holds;
+    //   - a `remote`'s `activity_list` is no capability, so an Android TV Remote's apps are read
+    //     from its config entry's options instead (WithConfiguredAppsAsync) — the entry named by
+    //     the same registry entry, never by the integration's live entities: a set that is off
+    //     when the home starts leaves its integration unloaded until it is next seen (its setup
+    //     raises ConfigEntryNotReady), and a template's `integration_entities` then lists nothing.
+    //
+    // An available entity is taken at its word, so a home with everything on reads neither; a read
+    // that fails leaves the entities as served and the catalog whole, said once in the log.
+    private static async Task WithPersistedChoicesAsync(
+        IHomeAssistantClient client, List<HaEntityState> entities, ILogger logger, CancellationToken ct)
     {
-        var served = HaCatalog.ChoiceHints
-            .Select(h => h.Attribute)
-            .Where(entity.Attributes.ContainsKey)
+        var blank = entities
+            .Select((entity, index) => (entity, index))
+            .Where(e => e.entity.State == "unavailable" && !ServesAnyChoiceList(e.entity))
             .ToList();
-        if (served.Count > 0)
+        if (blank.Count == 0)
         {
-            _rememberedChoices[entity.EntityId] = served.ToDictionary(a => a, a => entity.Attributes[a], StringComparer.Ordinal);
-            return entity;
+            return;
         }
-        if (!IsRestoredStub(entity) || !_rememberedChoices.TryGetValue(entity.EntityId, out var remembered))
+        IReadOnlyDictionary<string, HaRegistryEntry> registry;
+        try
         {
-            return entity;
+            registry = await client.ListRegistryEntriesAsync([.. blank.Select(e => e.entity.EntityId)], ct);
         }
-        return entity with
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Attributes = entity.Attributes
-                .Concat(remembered)
-                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal)
-        };
+            logger.LogWarning(ex,
+                "Could not read the entity registry for {Count} unavailable entities; their index lines list no choices",
+                blank.Count);
+            return;
+        }
+        foreach (var (entity, index) in blank)
+        {
+            if (!registry.TryGetValue(entity.EntityId, out var entry))
+            {
+                continue;
+            }
+            var lists = HaCatalog.ChoiceHints
+                .Select(h => h.Attribute)
+                .Where(a => entry.Capabilities?[a] is JsonArray { Count: > 0 })
+                .Select(a => new KeyValuePair<string, JsonNode?>(a, entry.Capabilities![a]!.DeepClone()))
+                .ToList();
+            if (lists.Count > 0)
+            {
+                entities[index] = WithAttributes(entity, lists);
+            }
+            else if (entry.Platform == AndroidTvPlatform && entry.ConfigEntryId is { } configEntry
+                     && HaCatalog.ClassOf(entity.EntityId) == "remote")
+            {
+                entities[index] = await WithConfiguredAppsAsync(client, entity, configEntry, logger, ct);
+            }
+        }
     }
 
-    private static bool IsRestoredStub(HaEntityState entity) =>
-        entity.Attributes.TryGetValue("restored", out var node)
-        && node is JsonValue value
-        && value.TryGetValue<bool>(out var restored)
-        && restored;
+    private static bool ServesAnyChoiceList(HaEntityState entity) =>
+        HaCatalog.ChoiceHints.Any(h => entity.Attributes.ContainsKey(h.Attribute));
+
+    private static HaEntityState WithAttributes(HaEntityState entity, IEnumerable<KeyValuePair<string, JsonNode?>> added) =>
+        entity with
+        {
+            Attributes = entity.Attributes.Concat(added).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal)
+        };
+
+    // The living-room TV goes `unavailable` seconds into standby, and the states endpoint then
+    // serves its remote with a name and its features and no `activity_list`. Home Assistant keeps
+    // the apps in the Android TV Remote entry's options, which the options flow serves whether or
+    // not the entry is loaded, so the remote gets the list its entry is configured with.
+    private static async Task<HaEntityState> WithConfiguredAppsAsync(
+        IHomeAssistantClient client, HaEntityState entity, string configEntry, ILogger logger, CancellationToken ct)
+    {
+        try
+        {
+            var apps = await client.ListAndroidTvAppsAsync(configEntry, ct);
+            return apps.Count == 0
+                ? entity
+                : WithAttributes(entity, [new(ActivityListAttribute, new JsonArray([.. apps.Select(app => (JsonNode)app)]))]);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex,
+                "Could not read the apps {Entity} is configured with (entry {Entry}); its index line lists none",
+                entity.EntityId, configEntry);
+            return entity;
+        }
+    }
 
     private static bool SameAction(HaServiceDefinition a, HaServiceDefinition b) =>
         a.Domain.Equals(b.Domain, StringComparison.Ordinal) && a.Service.Equals(b.Service, StringComparison.Ordinal);

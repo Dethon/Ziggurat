@@ -54,6 +54,23 @@ public interface IHomeAssistantClient
     // home's zone, so anything aligned to the home's clock (a day bucket at its midnight) needs this.
     Task<string?> GetTimeZoneAsync(CancellationToken ct = default);
 
+    // The entity registry's entries for these entities: the platform and config entry each
+    // belongs to, and its capabilities — a media player's `source_list`, a select's `options` —
+    // which Home Assistant persists and keeps current from every state write. All of it outlives
+    // the entity going unavailable and its integration failing to load. The WebSocket command
+    // `config/entity_registry/get_entries` is the one read that serves it. Only entities the
+    // registry knows are in the answer; no ids asks nothing.
+    Task<IReadOnlyDictionary<string, HaRegistryEntry>> ListRegistryEntriesAsync(
+        IReadOnlyList<string> entityIds, CancellationToken ct = default);
+
+    // The apps an Android TV Remote entry is configured with, by the names its options give them —
+    // the remote's `activity_list`, which `remote.turn_on --activity` takes. The states endpoint
+    // drops that list the moment the set is off, and no API serves an entry's options, so they are
+    // read where Home Assistant shows them: the entry's options flow, opened, read at its first
+    // form and deleted unanswered. An app given no name is no activity and is left out; a flow
+    // that does not open on the form (an entry not loaded) is an empty list.
+    Task<IReadOnlyList<string>> ListAndroidTvAppsAsync(string configEntryId, CancellationToken ct = default);
+
     // The automation config API, which is how a watch lives in the home. Automations are listed
     // from their entity states — the one place on/off and `last_triggered` exist; the config API
     // has no list — and each config is read, written and deleted by the id the state's `id`
@@ -66,6 +83,17 @@ public interface IHomeAssistantClient
     Task UpsertAutomationConfigAsync(string id, JsonObject config, CancellationToken ct = default);
 
     Task DeleteAutomationConfigAsync(string id, CancellationToken ct = default);
+}
+
+// One entity registry entry, the part of it the catalog reads. `Capabilities` is null for an
+// entity whose kind persists none (a remote, a light).
+[PublicAPI]
+public record HaRegistryEntry
+{
+    public required string EntityId { get; init; }
+    public string? Platform { get; init; }
+    public string? ConfigEntryId { get; init; }
+    public JsonObject? Capabilities { get; init; }
 }
 
 // One automation as its entity state describes it. `ConfigId` is the `id` attribute the config API
