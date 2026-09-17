@@ -50,6 +50,83 @@ public class HaCatalogProviderTests
         catalog.EntityIdsInArea("salon").ShouldBe(["light.kitchen"]);
     }
 
+    // What holds for the TV holds for anything that chooses: a receiver's `source_list` and a
+    // select's `options` leave the states endpoint with the entity going unavailable. Home
+    // Assistant's entity registry persists both as the entity's capabilities, so an unavailable
+    // entity serving no choice list gets the registry's — and only the choice lists, not the rest
+    // of what the registry holds, because the index line is what the read is for.
+    [Fact]
+    public async Task GetAsync_AnUnavailableEntityServingNoChoices_ListsTheRegistrysCapabilities()
+    {
+        var client = new FakeHaClient
+        {
+            States =
+            {
+                Entity("media_player.receiver", "unavailable"),
+                Entity("select.mop_mode", "unavailable", ("restored", JsonValue.Create(true)))
+            },
+            Capabilities =
+            {
+                ["media_player.receiver"] = new JsonObject { ["source_list"] = new JsonArray("TV", "Bluetooth") },
+                ["select.mop_mode"] = new JsonObject { ["options"] = new JsonArray("standard", "deep"), ["min"] = 1 }
+            }
+        };
+        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
+
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.EntityById("media_player.receiver")!.Attributes["source_list"]!.AsArray()
+            .Select(v => v!.GetValue<string>()).ShouldBe(["TV", "Bluetooth"]);
+        var select = catalog.EntityById("select.mop_mode")!;
+        select.Attributes["options"]!.AsArray().Select(v => v!.GetValue<string>()).ShouldBe(["standard", "deep"]);
+        select.Attributes.ShouldNotContainKey("min");
+        select.Attributes.ShouldContainKey("restored");
+        client.CapabilityReads.ShouldHaveSingleItem().ShouldBe(["media_player.receiver", "select.mop_mode"], ignoreOrder: true);
+    }
+
+    // The registry is asked only for what the states endpoint left blank: an available entity is
+    // taken at its word (a list it serves, or none), and a home with everything on asks nothing.
+    [Fact]
+    public async Task GetAsync_AnAvailableEntity_IsNotLookedUpInTheRegistry()
+    {
+        var client = new FakeHaClient
+        {
+            States =
+            {
+                Entity("media_player.receiver", "on", ("source_list", new JsonArray("TV"))),
+                Entity("light.kitchen", "off"),
+                Entity("select.mop_mode", "unavailable", ("options", new JsonArray("standard")))
+            },
+            Capabilities = { ["media_player.receiver"] = new JsonObject { ["source_list"] = new JsonArray("TV", "Bluetooth") } }
+        };
+        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
+
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.EntityById("media_player.receiver")!.Attributes["source_list"]!.AsArray().Count.ShouldBe(1);
+        client.CapabilityReads.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task GetAsync_ARegistryReadThatFails_LeavesTheEntitiesAsServed_KeepsTheCatalog_AndWarns()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("media_player.receiver", "unavailable"), Entity("light.kitchen", "off") },
+            CapabilitiesFailure = new HttpRequestException("websocket unreachable"),
+            TimeZone = "Europe/Madrid"
+        };
+        var log = new CapturingLoggerProvider(LogLevel.Warning);
+        var provider = new HaCatalogProvider(
+            () => client, new FakeTimeProvider(), logger: new Logger<HaCatalogProvider>(new LoggerFactory([log])));
+
+        var catalog = await provider.GetAsync(CancellationToken.None);
+
+        catalog.Entities.Count.ShouldBe(2);
+        catalog.EntityById("media_player.receiver")!.Attributes.ShouldNotContainKey("source_list");
+        log.Messages.ShouldHaveSingleItem().ShouldContain("registry");
+    }
+
     // The living-room TV goes `unavailable` seconds into standby, and the states endpoint then
     // serves its remote with a friendly name and its features, nothing else — no `activity_list`,
     // at the one moment the apps are asked for ("turn on the TV and put Plex"). Home Assistant keeps

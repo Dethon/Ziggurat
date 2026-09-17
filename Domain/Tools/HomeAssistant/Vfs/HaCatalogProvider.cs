@@ -85,6 +85,7 @@ public sealed class HaCatalogProvider(
                 : [.. services.Result.Where(s => !extraServices.Any(e => SameAction(e, s))), .. extraServices];
             var hidden = areas.Result.Hidden;
             var visible = states.Result.Where(e => !hidden.Contains(e.EntityId)).ToList();
+            await WithRegistryChoicesAsync(client, visible, _logger, ct);
             await WithConfiguredAppsAsync(client, visible, areas.Result.AndroidTvEntries, _logger, ct);
             return (new HaCatalog(visible, allServices, areas.Result.Areas) { HomeZone = zone.Result }, true);
         }
@@ -97,13 +98,74 @@ public sealed class HaCatalogProvider(
         }
     }
 
+    // An entity that goes unavailable is served with a name and its features and none of the
+    // lists its index line is made of — at the one moment "put it on Bluetooth" needs them. Two
+    // reads put the lists back from where Home Assistant keeps them, so nothing here remembers a
+    // warmer moment and nothing has to be on:
+    //
+    //   - the entity registry persists `source_list` and `options` as an entity's capabilities,
+    //     current from its last state write, so every unavailable entity serving no choice list
+    //     is looked up there and gets exactly the choice lists the registry holds;
+    //   - a `remote`'s `activity_list` is no capability, so the Android TV Remote's apps are read
+    //     from its entry's options instead (WithConfiguredAppsAsync).
+    //
+    // An available entity is taken at its word, so a home with everything on reads neither; a read
+    // that fails leaves the entities as served and the catalog whole, said once in the log.
+    private static async Task WithRegistryChoicesAsync(
+        IHomeAssistantClient client, List<HaEntityState> entities, ILogger logger, CancellationToken ct)
+    {
+        var blank = entities
+            .Select((entity, index) => (entity, index))
+            .Where(e => e.entity.State == "unavailable" && !ServesAnyChoiceList(e.entity))
+            .ToList();
+        if (blank.Count == 0)
+        {
+            return;
+        }
+        IReadOnlyDictionary<string, JsonObject> capabilities;
+        try
+        {
+            capabilities = await client.ListCapabilitiesAsync([.. blank.Select(e => e.entity.EntityId)], ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex,
+                "Could not read the entity registry's capabilities for {Count} unavailable entities; their index lines list no choices",
+                blank.Count);
+            return;
+        }
+        foreach (var (entity, index) in blank)
+        {
+            if (!capabilities.TryGetValue(entity.EntityId, out var found))
+            {
+                continue;
+            }
+            var lists = HaCatalog.ChoiceHints
+                .Select(h => h.Attribute)
+                .Where(a => found[a] is JsonArray { Count: > 0 })
+                .Select(a => new KeyValuePair<string, JsonNode?>(a, found[a]!.DeepClone()))
+                .ToList();
+            if (lists.Count > 0)
+            {
+                entities[index] = WithAttributes(entity, lists);
+            }
+        }
+    }
+
+    private static bool ServesAnyChoiceList(HaEntityState entity) =>
+        HaCatalog.ChoiceHints.Any(h => entity.Attributes.ContainsKey(h.Attribute));
+
+    private static HaEntityState WithAttributes(HaEntityState entity, IEnumerable<KeyValuePair<string, JsonNode?>> added) =>
+        entity with
+        {
+            Attributes = entity.Attributes.Concat(added).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal)
+        };
+
     // The living-room TV goes `unavailable` seconds into standby, and the states endpoint then
-    // serves its remote with a name and its features and no `activity_list` — at the one moment
-    // the apps are asked for. Home Assistant keeps the apps in the Android TV Remote entry's
-    // options, so a remote of that integration serving no list gets the list its entry is
-    // configured with: nothing this process remembers from a warmer moment, nothing the set has to
-    // be on for. A remote serving its list is taken at its word, so a home with the TV on opens no
-    // flow. A read that fails leaves the remote as served and the catalog whole, said in the log.
+    // serves its remote with a name and its features and no `activity_list`. Home Assistant keeps
+    // the apps in the Android TV Remote entry's options, so a remote of that integration serving
+    // no list gets the list its entry is configured with. A remote serving its list is taken at
+    // its word, so a home with the TV on opens no flow.
     private static async Task WithConfiguredAppsAsync(
         IHomeAssistantClient client, List<HaEntityState> entities,
         IReadOnlyDictionary<string, string> androidTvEntries, ILogger logger, CancellationToken ct)
@@ -123,13 +185,8 @@ public sealed class HaCatalogProvider(
                 {
                     continue;
                 }
-                entities[i] = entity with
-                {
-                    Attributes = entity.Attributes
-                        .Append(new KeyValuePair<string, JsonNode?>(
-                            ActivityListAttribute, new JsonArray([.. apps.Select(app => (JsonNode)app)])))
-                        .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal)
-                };
+                entities[i] = WithAttributes(entity,
+                    [new(ActivityListAttribute, new JsonArray([.. apps.Select(app => (JsonNode)app)]))]);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

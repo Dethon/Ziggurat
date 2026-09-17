@@ -41,6 +41,12 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
 
     public sealed record StatisticsRequest(IReadOnlyList<string> StatisticIds, string Start, string End, string Period);
 
+    // The entity registry's capabilities per entity id, as `config/entity_registry/get_entries`
+    // answers them: an id the registry knows without capabilities answers null for them, an id it
+    // does not know answers null for the entry.
+    public Dictionary<string, JsonObject?> Capabilities { get; } = [];
+    public IReadOnlyList<string>? LastCapabilitiesRequest { get; private set; }
+
     private FakeHomeAssistantSocket(IHost host, string baseUrl, int port, string token, FakeCalendarStore calendar)
     {
         _host = host;
@@ -124,6 +130,10 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
         {
             return StatisticsDuringPeriod(id, request);
         }
+        if (type == "config/entity_registry/get_entries")
+        {
+            return RegistryEntries(id, request);
+        }
         if (type is not ("calendar/event/create" or "calendar/event/delete"))
         {
             return Error(id, "unknown_command", $"Unknown command: {type}");
@@ -178,6 +188,27 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
         foreach (var statisticId in ids.Where(Statistics.ContainsKey))
         {
             result[statisticId] = Statistics[statisticId].DeepClone();
+        }
+        var frame = Result(id);
+        frame["result"] = result;
+        return frame;
+    }
+
+    private JsonObject RegistryEntries(int id, JsonObject request)
+    {
+        var ids = request["entity_ids"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
+        LastCapabilitiesRequest = ids;
+        var result = new JsonObject();
+        foreach (var entityId in ids)
+        {
+            result[entityId] = Capabilities.TryGetValue(entityId, out var capabilities)
+                ? new JsonObject
+                {
+                    ["entity_id"] = entityId,
+                    ["platform"] = "fake",
+                    ["capabilities"] = capabilities?.DeepClone()
+                }
+                : null;
         }
         var frame = Result(id);
         frame["result"] = result;

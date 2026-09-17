@@ -230,6 +230,32 @@ public class HomeAssistantClient(HttpClient httpClient, string token, TimeSpan? 
             : [];
     }
 
+    // The registry answers an object keyed by the ids asked, each an extended entry or null; the
+    // entry's `capabilities` is an object or null. A `remote` has none, whatever it serves.
+    public async Task<IReadOnlyDictionary<string, JsonObject>> ListCapabilitiesAsync(
+        IReadOnlyList<string> entityIds, CancellationToken ct = default)
+    {
+        if (entityIds.Count == 0)
+        {
+            return new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        }
+        var result = await SendCommandAsync(new JsonObject
+        {
+            ["type"] = "config/entity_registry/get_entries",
+            ["entity_ids"] = new JsonArray([.. entityIds.Select(id => (JsonNode)id)])
+        }, ct);
+
+        var capabilities = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        foreach (var (entityId, entry) in result as JsonObject ?? [])
+        {
+            if (entry?["capabilities"] is JsonObject { Count: > 0 } found)
+            {
+                capabilities[entityId] = found;
+            }
+        }
+        return capabilities;
+    }
+
     // The options flow is the one window onto an entry's options. Opening it (`POST .../options/
     // flow {handler}`) answers the first step; for the Android TV Remote integration that is a form
     // whose `apps` select lists every configured app as `Name (key)` after an "Add new" entry, the

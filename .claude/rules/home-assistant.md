@@ -207,22 +207,29 @@ things fix that:
   the list is non-empty. The header says the segment stops at the dash. Widen the table only for
   a list that is literally a flag's value — a climate's mode lists would say a lot for a call the
   model already knows.
-- **An off TV's apps come from its integration's options, not from a memory.** The set goes
-  `unavailable` seconds into standby and the states endpoint then serves its remote with a name
-  and its features and no `activity_list` — at the one moment the apps are asked for. HA keeps
-  the Android TV Remote apps only in the config entry's options (the entity registry holds no
-  capabilities for a `remote`, and the integration's media player leaves `source_list` empty),
-  and no API serves an entry's options; the one window onto them is the entry's options flow,
-  whose first form lists each app as `Name (key)`. So `HaCatalogProvider`'s area template also
-  names each `androidtv_remote` remote's entry (`integration_entities` + `config_entry_id`), and
-  a remote of that integration that serves no list gets the one
-  `IHomeAssistantClient.ListAndroidTvAppsAsync` reads: open the flow, read the form, delete the
-  flow unanswered (nothing saved, nothing reloaded). A remote serving its list is taken at its
-  word, so a home with the TV on opens no flow; a read that fails leaves the remote as served
-  and is logged. There is deliberately no process-wide memory of a list seen while the set was
-  on: it was empty after every restart with the TV off, and it never fired on prod anyway,
-  because a live disconnect is served without the `restored` flag the memory keyed on. The eval's
-  fake home serves the flow and a bare unavailable stub the way prod does.
+- **An unavailable entity's choice lists come from where Home Assistant keeps them, not from a
+  memory.** The set goes `unavailable` seconds into standby and the states endpoint then serves
+  the entity with a name and its features and no lists — at the one moment the apps are asked
+  for. Two reads put them back (`HaCatalogProvider.WithRegistryChoicesAsync` and
+  `WithConfiguredAppsAsync`), and only for what the states endpoint left blank, so a home with
+  everything on reads neither:
+  - the **entity registry** persists `source_list` and `options` as an entity's capabilities,
+    current from its last state write, served by the WebSocket command
+    `config/entity_registry/get_entries` (`IHomeAssistantClient.ListCapabilitiesAsync`). Every
+    unavailable entity serving no choice list is looked up in one command, and gets exactly the
+    choice lists the registry holds, not the rest of its capabilities.
+  - a `remote`'s `activity_list` is **no capability** (and the Android TV Remote's media player
+    leaves `source_list` empty), so the TV's apps are read from the one place HA keeps them, the
+    config entry's options — whose only window is the entry's options flow, opened, read at its
+    first form (each app labelled `Name (key)`) and deleted unanswered, so nothing is saved or
+    reloaded (`ListAndroidTvAppsAsync`). The area template names each `androidtv_remote`
+    remote's entry (`integration_entities` + `config_entry_id`).
+  A read that fails leaves the entities as served and the catalog whole, logged. There is
+  deliberately no process-wide memory of a list seen while the entity was on: it was empty after
+  every restart with the set off, and it never fired on prod anyway, because a live disconnect is
+  served without the `restored` flag it keyed on. The eval's fake home serves the flow and a bare
+  unavailable stub the way prod does; `FakeHomeAssistantSocket` answers the registry command from
+  its `Capabilities` map.
 - **An entity hidden in Home Assistant's registry never enters the catalog.** The states endpoint
   serves hidden entities regardless, so `HaCatalogProvider`'s area template also renders the
   `is_hidden_entity` list and the provider drops those states before the catalog is built — no

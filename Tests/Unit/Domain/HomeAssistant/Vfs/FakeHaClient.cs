@@ -55,6 +55,23 @@ public class FakeHaClient : IHomeAssistantClient
     public virtual Task<string?> GetTimeZoneAsync(CancellationToken ct = default)
         => TimeZoneFailure is null ? Task.FromResult(TimeZone) : Task.FromException<string?>(TimeZoneFailure);
 
+    // The entity registry's capabilities per entity id, and which ids each read asked for.
+    public Dictionary<string, JsonObject> Capabilities { get; init; } = new(StringComparer.Ordinal);
+    public List<IReadOnlyList<string>> CapabilityReads { get; } = [];
+    public Exception? CapabilitiesFailure { get; set; }
+
+    public virtual Task<IReadOnlyDictionary<string, JsonObject>> ListCapabilitiesAsync(
+        IReadOnlyList<string> entityIds, CancellationToken ct = default)
+    {
+        CapabilityReads.Add(entityIds);
+        if (CapabilitiesFailure is not null)
+        {
+            return Task.FromException<IReadOnlyDictionary<string, JsonObject>>(CapabilitiesFailure);
+        }
+        return Task.FromResult<IReadOnlyDictionary<string, JsonObject>>(
+            entityIds.Where(Capabilities.ContainsKey).ToDictionary(id => id, id => Capabilities[id], StringComparer.Ordinal));
+    }
+
     // The Android TV Remote side: the apps each config entry's options name, keyed by entry id,
     // and which entries were asked.
     public Dictionary<string, IReadOnlyList<string>> AndroidTvApps { get; init; } = new(StringComparer.Ordinal);

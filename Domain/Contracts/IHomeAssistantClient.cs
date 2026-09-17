@@ -54,6 +54,14 @@ public interface IHomeAssistantClient
     // home's zone, so anything aligned to the home's clock (a day bucket at its midnight) needs this.
     Task<string?> GetTimeZoneAsync(CancellationToken ct = default);
 
+    // The entity registry's capabilities for these entities — a media player's `source_list`, a
+    // select's `options` — which Home Assistant persists and keeps current from every state write,
+    // so they outlive the entity going unavailable. The WebSocket command
+    // `config/entity_registry/get_entries` is the one read that serves them. Only entities with
+    // capabilities are in the answer; no ids asks nothing.
+    Task<IReadOnlyDictionary<string, JsonObject>> ListCapabilitiesAsync(
+        IReadOnlyList<string> entityIds, CancellationToken ct = default);
+
     // The apps an Android TV Remote entry is configured with, by the names its options give them —
     // the remote's `activity_list`, which `remote.turn_on --activity` takes. The states endpoint
     // drops that list the moment the set is off, and no API serves an entry's options, so they are
