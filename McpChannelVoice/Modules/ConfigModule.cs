@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Clients.Transcription;
+using Infrastructure.Judgments;
 using Infrastructure.Metrics;
 using Mcp.Hosting;
 using McpChannelVoice.McpTools;
@@ -142,6 +143,16 @@ public static class ConfigModule
 
         services.AddSingleton<ReplyTextAccumulator>();
         services.AddSingleton<ReplySpeaker>();
+
+        // The approval tool reads a spoken answer through Jev, with the word list behind it. This
+        // host already takes Infrastructure for the transcription client, and the judge is the
+        // same kind of reason.
+        services
+            .AddTypeSafeJudge(settings.TypeSafe)
+            .AddSingleton<IApprovalReader>(sp => new JudgedApprovalReader(
+                sp.GetRequiredService<Domain.Judgments.IJudge>(),
+                settings.Approval.Judgment,
+                sp.GetRequiredService<TimeProvider>()));
 
         services.AddSingleton<ITextToSpeech>(sp =>
             McpChannelVoice.Services.Tts.SilenceTrimmingTextToSpeech.Wrap(

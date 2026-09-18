@@ -31,4 +31,17 @@ public record VoiceEvent : MetricEvent
     public double? CompressionRatio { get; init; }
     public double? WakeRms { get; init; }
     public double? WakeScore { get; init; }
+    // An approval's answer: who read it (one of ApprovalDeciders) and, when the judge answered,
+    // its two probabilities. The judge's latency rides DurationMs on the same event.
+    public string? DecidedBy { get; init; }
+    public double? ApprovedProbability { get; init; }
+    public double? DeclinedProbability { get; init; }
+}
+
+// The wire spellings of who decided a spoken approval, the ones a dashboard groups by.
+public static class ApprovalDeciders
+{
+    public const string Judgment = "judgment";
+    public const string Agreement = "agreement";
+    public const string WordList = "wordlist";
 }

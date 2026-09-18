@@ -2,8 +2,11 @@ using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
+using Domain.Judgments;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
@@ -13,6 +16,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
+using Tests.Unit.Judgments;
 
 namespace Tests.Unit.McpChannelVoice;
 
@@ -23,6 +27,11 @@ public class RequestApprovalToolTests : IDisposable
     private readonly ReplyTextAccumulator _accumulator = new();
     private readonly Mock<ITextToSpeech> _tts = new();
     private readonly Mock<ISpeechToText> _stt = new();
+    private readonly RecordingMetricsPublisher _metrics = new();
+    // The word list alone, as a deployment with no TypeSafe key reads: the tests of the capture
+    // and the turn are about the answer's audio, not its meaning.
+    private IApprovalReader _reader = new JudgedApprovalReader(
+        StubJudge.Absent(AbsenceReason.Unconfigured), new ApprovalJudgmentSettings(), TimeProvider.System);
     private readonly CancellationTokenSource _pump = new();
     private readonly Task _pumpTask;
     private readonly VoiceConversationManager _manager;
@@ -96,7 +105,8 @@ public class RequestApprovalToolTests : IDisposable
             .AddSingleton<ISpeechToText>(_stt.Object)
             .AddSingleton(wyoming)
             .AddSingleton(gates)
-            .AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>())
+            .AddSingleton<IMetricsPublisher>(_metrics)
+            .AddSingleton(sp => _reader)
             .AddSingleton<ILogger<RequestApprovalTool>>(NullLogger<RequestApprovalTool>.Instance)
             .AddSingleton<ILogger<ReplySpeaker>>(NullLogger<ReplySpeaker>.Instance)
             .AddSingleton<ReplySpeaker>()
@@ -706,5 +716,82 @@ public class RequestApprovalToolTests : IDisposable
             { await pumpTask; }
             catch { /* OCE on teardown */ }
         }
+    }
+
+    // The answer is read for what it means, not by the word list at the call site: a reader that
+    // hears "adelante" as a sure yes approves, and "sí, pero la de la cocina no" — a yes to the
+    // word list — re-asks and then, on a second narrowed answer, rejects.
+    [Fact]
+    public async Task RequestMode_TheReaderDecides_NotTheWordList()
+    {
+        _stt.SetupSequence(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí, pero la de la cocina no", Confidence = 0.9 })
+            .ReturnsAsync(new TranscriptionResult { Text = "adelante", Confidence = 0.9 });
+        var judge = new StubJudge(request => request.State["answer"]!.GetValue<string>() == "adelante"
+            ? StubJudge.Answered((JudgedApprovalReader.ApprovedQuestionId, 0.95), (JudgedApprovalReader.DeclinedQuestionId, 0.03))
+            : StubJudge.Answered((JudgedApprovalReader.ApprovedQuestionId, 0.03), (JudgedApprovalReader.DeclinedQuestionId, 0.69)));
+        _reader = new JudgedApprovalReader(judge, new ApprovalJudgmentSettings(), TimeProvider.System);
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
+
+        var result = await RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest("mcp__lights__turn_off")], _services);
+
+        await feed.CancelAsync();
+        result.ShouldBe("approved");
+        judge.Requests.Select(r => r.State["prompt"]!.GetValue<string>()).ShouldBe([
+            "¿Apruebas turn_off? Di sí o no.",
+            "No entendí. ¿Apruebas turn_off? Di sí o no."
+        ]);
+    }
+
+    [Fact]
+    public async Task RequestMode_TheMetric_SaysWhoDecided_AndWhatJevAnswered()
+    {
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí sí", Confidence = 0.9 });
+        _reader = new JudgedApprovalReader(
+            StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.88), (JudgedApprovalReader.DeclinedQuestionId, 0.02)),
+            new ApprovalJudgmentSettings(), TimeProvider.System);
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
+
+        var result = await RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+
+        await feed.CancelAsync();
+        result.ShouldBe("approved");
+        var resolved = _metrics.Published.OfType<VoiceEvent>()
+            .Single(e => e.Metric == VoiceMetric.ApprovalResolved);
+        resolved.Outcome.ShouldBe("Approved");
+        resolved.DecidedBy.ShouldBe(ApprovalDeciders.Agreement);
+        resolved.ApprovedProbability.ShouldBe(0.88);
+        resolved.DeclinedProbability.ShouldBe(0.02);
+        resolved.DurationMs.ShouldNotBeNull();
+        resolved.SatelliteId.ShouldBe("kitchen-01");
+    }
+
+    [Fact]
+    public async Task RequestMode_JevAbsent_TheMetric_SaysTheWordListDecided_WithNoProbability()
+    {
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "no thanks", Confidence = 0.9 });
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
+
+        var result = await RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+
+        await feed.CancelAsync();
+        result.ShouldBe("rejected");
+        var resolved = _metrics.Published.OfType<VoiceEvent>()
+            .Single(e => e.Metric == VoiceMetric.ApprovalResolved);
+        resolved.Outcome.ShouldBe("Declined");
+        resolved.DecidedBy.ShouldBe(ApprovalDeciders.WordList);
+        resolved.ApprovedProbability.ShouldBeNull();
+        resolved.DeclinedProbability.ShouldBeNull();
     }
 }

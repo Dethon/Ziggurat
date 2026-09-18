@@ -4,13 +4,13 @@
 
 **Blocked by:** `.scratch/jev-skill-preload/issues/02`
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 0.95/0.03 → Approved; 0.03/0.94 → Declined; 0.03/0.69 (a narrowed "sí, pero…") → Ambiguous even though the word list says Approved.
-- [ ] 0.88/0.02 with the word list Approved → Approved; the same with the word list Ambiguous → Ambiguous; 0.88/0.02 with the word list Declined → Ambiguous.
-- [ ] 0.10/0.16 (filler) → Ambiguous whatever the word list says of it.
-- [ ] Contract absent or past the deadline → the word list's verdict; a fake that answers after the deadline is not waited for.
-- [ ] `enabled: false` never calls the contract.
-- [ ] The metric event carries `judgment` / `agreement` / `wordlist` and, when Jev answered, both probabilities.
-- [ ] The server contract tests pass with the new registration; an empty key makes no call.
-- [ ] Spec: `.scratch/jev-voice-approval/spec.md` § Decisions.
+- [x] 0.95/0.03 → Approved; 0.03/0.94 → Declined; 0.03/0.69 (a narrowed "sí, pero…") → Ambiguous even though the word list says Approved.
+- [x] 0.88/0.02 with the word list Approved → Approved; the same with the word list Ambiguous → Ambiguous; 0.88/0.02 with the word list Declined → Ambiguous.
+- [x] 0.10/0.16 (filler) → Ambiguous whatever the word list says of it.
+- [x] Contract absent or past the deadline → the word list's verdict; a fake that answers after the deadline is not waited for.
+- [x] `enabled: false` never calls the contract.
+- [x] The metric event carries `judgment` / `agreement` / `wordlist` and, when Jev answered, both probabilities.
+- [x] The server contract tests pass with the new registration; an empty key makes no call.
+- [x] Spec: `.scratch/jev-voice-approval/spec.md` § Decisions.
