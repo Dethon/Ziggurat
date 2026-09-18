@@ -162,5 +162,8 @@ the client's default timeout, no in-turn budget.
 - 2026-09-18 — Shipped on branch `jev`, tickets 01–07. Refused merges are published on
   `MemoryDreamingEvent.RefusedMerges` rather than on a judgment event, because a refusal is not
   a Jev call. Two pairs are recorded as allowed to fail toward "not linked" (Laura, light
-  novels); an alternative `same`/`distinct` wording moved neither. The week-after re-read of
-  the bars is pending deploy.
+  novels); an alternative `same`/`distinct` wording moved neither. Decision: the wording and the
+  two exemptions stay — both misses leave a redundant memory beside a fuller one, and the
+  destructive direction (a false link between distinct facts) answers at 0.86 or firmer. A
+  third borderline pair after a Jev bump means the criteria get reworked, not another
+  exemption. The week-after re-read of the bars is pending deploy.
