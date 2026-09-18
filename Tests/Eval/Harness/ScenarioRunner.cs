@@ -79,6 +79,7 @@ public static class ScenarioRunner
         {
             Conditionals = Tallied(taken),
             Kinds = [.. taken.Select(reading => reading.Kind).OfType<FailureKind>()],
+            Loaders = [.. taken.Select(reading => reading.Loader)],
             Spend = Spend.Sum(taken.Select(reading => reading.Spend))
         };
 
@@ -121,6 +122,9 @@ public sealed record RunReading(
 {
     // What the run paid for, agent turns and judge verdicts together.
     public Spend Spend { get; init; } = Spend.Nothing;
+
+    // Who loaded the required skill, if the scenario requires one.
+    public Loader Loader { get; init; } = Loader.None;
 }
 
 public sealed record ScenarioResult(
@@ -138,6 +142,15 @@ public sealed record ScenarioResult(
     public IReadOnlyList<FailureKind> Kinds { get; init; } = [];
 
     public int SkillNotLoaded => Kinds.Count(kind => kind == FailureKind.SkillNotLoaded);
+
+    // One loader per run taken, in run order, for the scorecard's split.
+    public IReadOnlyList<Loader> Loaders { get; init; } = [];
+
+    public int LoadedByHost => Loaders.Count(loader => loader == Loader.Host);
+
+    public int LoadedByModel => Loaders.Count(loader => loader == Loader.Model);
+
+    public int LoadedByNobody => Loaders.Count(loader => loader == Loader.Nobody);
 
     // Over every run taken, so a scenario's row prices the scenario and not one of its runs.
     public Spend Spend { get; init; } = Spend.Nothing;

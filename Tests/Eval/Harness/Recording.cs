@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Agents.Skills;
 using Tests.Eval.Fixtures;
 
 namespace Tests.Eval.Harness;
@@ -14,8 +16,13 @@ namespace Tests.Eval.Harness;
 public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
 {
     private readonly List<ToolInvocation> _calls = [];
+    private readonly List<ToolInvocation> _preloads = [];
     private readonly List<Spend> _spends = [];
     private readonly Lock _gate = new();
+
+    // What a preloaded skill's call says where a load's result would be: the body is in the
+    // conversation, not on this recording, and the dump has to say who put it there.
+    public const string PreloadedResult = "(preloaded by the host: the body was inserted before the model's first call)";
 
     // Sorted by the position the seam stamped, not by the order the observations arrived:
     // concurrent invocations complete in whichever order they finish, and the contract a
@@ -106,6 +113,26 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
         }
     }
 
+    // The skills the host put into the conversation before the model's first call, as the calls
+    // a load would have left, so a required load is met by either loader and an unpermitted
+    // preload is as visible as an unpermitted load. Sequenced below zero: they sat before
+    // anything the model asked for.
+    public IReadOnlyList<ToolInvocation> Preloads
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _preloads];
+            }
+        }
+    }
+
+    public bool IsPreload(ToolInvocation call) => call.Sequence < 0;
+
+    // The judge that answered this run, for the scorecard: null where nothing was judged.
+    public string? PreloadModel { get; private set; }
+
     // Every request the run paid for — the agent's turns and the judge's verdicts alike — summed.
     public Spend Spend
     {
@@ -118,18 +145,41 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
         }
     }
 
-    // Only the usage events are money; the rest of the stream is the deployment's telemetry and
-    // says nothing a scenario asserts on.
+    // The usage events are money, and a preload is the one other event a scenario asserts on:
+    // it cannot come through the tool seam, which only sees calls the model emitted. The rest
+    // of the stream is the deployment's telemetry.
     public void Publish(MetricEvent metricEvent)
     {
-        if (metricEvent is not TokenUsageEvent usage)
+        switch (metricEvent)
         {
-            return;
-        }
+            case TokenUsageEvent usage:
+                lock (_gate)
+                {
+                    _spends.Add(Spend.Of(usage));
+                }
 
-        lock (_gate)
-        {
-            _spends.Add(Spend.Of(usage));
+                break;
+            case SkillPreloadEvent preload:
+                lock (_gate)
+                {
+                    _spends.Add(Spend.OfPreload(preload));
+                    PreloadModel = preload.Model ?? PreloadModel;
+                    var loads = preload.Skills
+                        .Select((skill, index) => new ToolInvocation
+                        {
+                            Sequence = index - preload.Skills.Count,
+                            ToolName = EvalTools.LoadSkill,
+                            Arguments = JsonSerializer.Serialize(
+                                new Dictionary<string, string> { [SkillsProvider.SkillNameParameter] = skill }),
+                            Result = PreloadedResult,
+                            Outcome = ToolInvocationOutcome.Completed
+                        })
+                        .ToList();
+                    _preloads.AddRange(loads);
+                    _calls.AddRange(loads);
+                }
+
+                break;
         }
     }
 }

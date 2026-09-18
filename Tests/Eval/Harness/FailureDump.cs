@@ -86,9 +86,11 @@ public static class FailureDump
             dump.AppendLine("None.").AppendLine();
         }
 
+        // A preload sits where it sat: below zero, before the model's first call, and named as
+        // the host's so a wrong body in the conversation is read as the judge's and not the model's.
         recording.Calls
             .Select(call => $"""
-                             ### {call.Sequence}. {call.ToolName} ({call.Outcome})
+                             ### {call.Sequence}. {call.ToolName} ({call.Outcome}){(recording.IsPreload(call) ? " — preloaded by the host, before the model's first call" : "")}
 
                              Arguments:
 

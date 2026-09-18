@@ -77,7 +77,10 @@ these are the rules the next section lands on.
 - **Red for a skill claim is demonstrated with the body's prose deleted and the description
   intact.** That reddens the body claim. A red with the description deleted is a missing load — the
   trigger claim's red, cited by every scenario of the family — and says nothing about the body. The
-  commit that cites a skill claim notes which demonstration it made.
+  description deleted blinds both readers at once, Jev and the model, so the demonstration still
+  holds now that a trigger claim reads "a request of this kind gets the skill loaded" rather than
+  naming who loads it; the scorecard's `loader` column says who did. The commit that cites a skill
+  claim notes which demonstration it made.
 
 ## The tests are the point
 

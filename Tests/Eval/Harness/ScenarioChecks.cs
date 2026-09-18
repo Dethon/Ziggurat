@@ -44,6 +44,27 @@ public static class ScenarioChecks
                     ? FailureKind.SkillNotLoaded
                     : FailureKind.RuleIgnored;
 
+    // Who loaded the skill the scenario requires: the host before the model's first call, the
+    // model for itself, or nobody. None for a scenario that requires no load. The scorecard
+    // splits the trigger claim's rate by this, so a description that works on only one reader
+    // shows as a lopsided column rather than as a pass.
+    public static Loader LoaderOf(Scenario scenario, Recording recording)
+    {
+        var required = scenario.Required
+            .FirstOrDefault(expectation => new ToolPatternMatcher([expectation.Tool]).IsMatch(EvalTools.LoadSkill));
+        if (required is null)
+        {
+            return Loader.None;
+        }
+
+        var matched = Match(required, recording);
+        return matched is null
+            ? Loader.Nobody
+            : recording.IsPreload(matched)
+                ? Loader.Host
+                : Loader.Model;
+    }
+
     // The conditional half of Delegated: a run that handed nothing to the profile owes nothing
     // here, but every delegation it did receive must carry the condition's context — a split
     // into two workers is legitimate, and each starts with no history.
@@ -266,7 +287,8 @@ public static class ScenarioChecks
                                                   && p.Path.IsMatch(Path(call))
                                                   && p.Command.IsMatch(Command(call))))
             .Select(call =>
-                $"unnecessary call: {call.ToolName} {call.Arguments} is neither required nor permitted");
+                $"unnecessary call: {call.ToolName} {call.Arguments} is neither required nor permitted" +
+                (recording.IsPreload(call) ? " (preloaded by the host)" : ""));
     }
 
     // The virtual directory a path sits in: paths are mount-prefixed and '/'-separated, so the

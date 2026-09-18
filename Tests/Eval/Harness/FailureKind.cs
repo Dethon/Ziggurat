@@ -33,3 +33,14 @@ public static class FailureKinds
         _ => "ruleIgnored"
     };
 }
+
+// Who loaded the skill a scenario requires. Counted onto the scorecard beside the rate, because
+// a trigger claim is now met by either reader of the description and the split is what says
+// whether the description still works on the model when Jev abstains.
+public enum Loader
+{
+    None,
+    Host,
+    Model,
+    Nobody
+}

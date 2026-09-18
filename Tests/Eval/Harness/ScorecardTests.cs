@@ -35,6 +35,59 @@ public class ScorecardTests : IDisposable
     }
 
     [Fact]
+    public void ARow_SaysWhoLoaded_AndTheSummaryNamesTheJudgeAndItsSpend()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
+            [new ClaimOutcome("countdown-timers.loads-for-a-timer-request", 3, 3) { Loaders = [Loader.Host, Loader.Host, Loader.Model] }],
+            [
+                new ScenarioOutcome("a timer", 3, 3, Spend: new Spend(0.10m, 20_000, 15_000, 400, 4, 0.0003m, 6_600, 3))
+                {
+                    Loaders = [Loader.Host, Loader.Host, Loader.Model]
+                },
+                new ScenarioOutcome("an alarm", 1, 2, SkillNotLoaded: 1, Spend: new Spend(0.30m, 30_000, 15_000, 600, 6))
+                {
+                    Loaders = [Loader.Model, Loader.Nobody]
+                },
+                // Requires no load: contributes nothing to the split.
+                new ScenarioOutcome("a joke", 2, 2, Spend: new Spend(0.01m, 1_000, null, 50, 2)) { Loaders = [Loader.None, Loader.None] }
+            ],
+            preloadModel: "jev-1.13.0");
+
+        var summary = Read(Path.Combine(_output, "scorecard-full.json"));
+
+        summary.GetProperty("preload").GetString().ShouldBe("jev-1.13.0");
+
+        var claim = summary.GetProperty("claims").GetProperty("countdown-timers.loads-for-a-timer-request").GetProperty("loader");
+        claim.GetProperty("host").GetInt32().ShouldBe(2);
+        claim.GetProperty("model").GetInt32().ShouldBe(1);
+        claim.GetProperty("nobody").GetInt32().ShouldBe(0);
+
+        var scenarios = summary.GetProperty("scenarios");
+        scenarios.GetProperty("an alarm").GetProperty("loader").GetProperty("nobody").GetInt32().ShouldBe(1);
+        scenarios.GetProperty("a joke").TryGetProperty("loader", out _).ShouldBeFalse();
+
+        var timer = scenarios.GetProperty("a timer").GetProperty("spend").GetProperty("preload");
+        timer.GetProperty("cost").GetDecimal().ShouldBe(0.0003m);
+        timer.GetProperty("inputTokens").GetInt64().ShouldBe(6_600);
+        timer.GetProperty("requests").GetInt32().ShouldBe(3);
+        scenarios.GetProperty("an alarm").GetProperty("spend").TryGetProperty("preload", out _).ShouldBeFalse();
+
+        var pass = summary.GetProperty("summary");
+        pass.GetProperty("loader").GetProperty("host").GetInt32().ShouldBe(2);
+        pass.GetProperty("loader").GetProperty("model").GetInt32().ShouldBe(2);
+        pass.GetProperty("loader").GetProperty("nobody").GetInt32().ShouldBe(1);
+        pass.GetProperty("spend").GetProperty("preload").GetProperty("inputTokens").GetInt64().ShouldBe(6_600);
+    }
+
+    [Fact]
+    public void APassWithNoJudge_SaysThePreloadIsOff()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)]);
+
+        Read(Path.Combine(_output, "scorecard-full.json")).GetProperty("preload").GetString().ShouldBe("off");
+    }
+
+    [Fact]
     public void AScenarioRow_SaysWhatItSpent_AndTheSummaryTotalsThePass()
     {
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),

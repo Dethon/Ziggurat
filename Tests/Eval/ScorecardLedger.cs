@@ -34,15 +34,33 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
             state.Outcomes.AddRange(scenario.Claims
                 .Concat(scenario.Judged.Select(check => check.Claim))
                 .Select(claim => new ClaimOutcome(
-                    claim, result.Passes, result.Attempts, result.SkillNotLoaded, result.RuleIgnored))
+                    claim, result.Passes, result.Attempts, result.SkillNotLoaded, result.RuleIgnored)
+                {
+                    Loaders = result.Loaders
+                })
                 .Concat(result.Conditionals));
             // The scenario's own rate, cited or not: a guard's drift is only a diff if the guard
             // has a number.
             state.Scenarios.Add(new ScenarioOutcome(
                 scenario.Name, result.Passes, result.Attempts, result.SkillNotLoaded, result.RuleIgnored,
-                result.Spend));
+                result.Spend)
+            {
+                Loaders = result.Loaders
+            });
         }
     }
+
+    // The judge that preloaded, from a recording's own answers, as the route is: "off" on the
+    // file until one is seen, which is what a pass with no key writes.
+    public void ObservePreload(string? model)
+    {
+        lock (_gate)
+        {
+            _preloadModel = model ?? _preloadModel;
+        }
+    }
+
+    private string? _preloadModel;
 
     // The route that served the pass. It comes from a recording rather than from configuration:
     // an upgrade that changed nothing in appsettings still changes this, which is the whole point.
@@ -86,7 +104,7 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
                     .Concat(state.Scenarios)
                     .ToList();
 
-                Scorecard.Write(directory, tier, _route, seeded, scenarios, Coverage());
+                Scorecard.Write(directory, tier, _route, seeded, scenarios, Coverage(), preloadModel: _preloadModel);
             }
         }
     }
