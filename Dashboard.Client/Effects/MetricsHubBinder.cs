@@ -205,6 +205,14 @@ public sealed class MetricsHubBinder(
                 await RefreshAsync(families.Skills);
             })));
 
+        _subscriptions.Add(hub.On("OnModalDismissal", OnPush<ModalDismissalEvent>(
+            evt => families.Web.Store.State.Events.Contains(evt),
+            async evt =>
+            {
+                families.Web.Store.AppendEvent(evt);
+                await RefreshAsync(families.Web);
+            })));
+
         // Health is an upsert, so there is no copy of it in the roster catch-up reloads to
         // reconcile against: nothing is ever skipped, and holding is what puts the push after the
         // roster rather than under it. A service that came back while the roster was being read

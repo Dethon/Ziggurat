@@ -218,7 +218,8 @@ public static class McpServerRegistrations
         Row("websearch", "McpServerWebSearch", McpServerRole.Tool,
             new WebSearchSettings.McpSettings
             {
-                BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" }
+                BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" },
+                RedisConnectionString = UnreachableRedis
             },
             (services, settings) => services.ConfigureMcp(settings))
     ];

@@ -94,7 +94,18 @@ public class ModalDismisser
 
     private const int ModalPollIntervalMs = 75;
 
+    // What the browse envelope reports: the overlays that were closed. The measure is DismissAsync.
     public async Task<IReadOnlyList<ModalDismissed>> DismissModalsAsync(
+        IPage page,
+        CancellationToken ct) =>
+        (await DismissAsync(page, ct))
+            .Select(outcome => outcome.Dismissed)
+            .OfType<ModalDismissed>()
+            .ToList();
+
+    // One outcome per overlay the last pass detected: how it was closed, or that it was left
+    // standing. A page with no overlay answers an empty list — nothing to count.
+    public async Task<IReadOnlyList<ModalOverlayOutcome>> DismissAsync(
         IPage page,
         CancellationToken ct)
     {
@@ -116,36 +127,44 @@ public class ModalDismisser
 
             var results = await Task.WhenAll(candidates
                 .Select(pattern => TryDismissPatternSafeAsync(page, pattern, ct)));
-            var dismissed = results.Where(r => r != null).Cast<ModalDismissed>().ToList();
+            var outcomes = candidates
+                .Zip(results, (pattern, result) => result ?? ModalOverlayOutcome.LeftStanding(pattern.Type))
+                .ToList();
 
-            if (dismissed.Count > 0)
+            if (outcomes.Any(o => o.Dismissed is not null))
             {
-                // Brief wait for the close animation, then an Escape fallback for a sibling modal.
-                await Task.Delay(150, ct);
-                try
-                {
-                    await TryEscapeKeyAsync(page, ct);
-                }
-                catch
-                {
-                    // Ignore escape key failures
-                }
-
-                return dismissed;
+                await SettleAfterDismissalAsync(page, ct);
+                return outcomes;
             }
 
             if (sw.ElapsedMilliseconds >= ModalDetectionWindowMs)
             {
                 // Nothing dismissable appeared within the window. Skip the Escape fallback: there is
                 // no visible overlay, so it would only cost latency on the common no-modal page.
-                return [];
+                // An overlay the last pass detected and neither path could close is the miss this
+                // measure exists to count.
+                return outcomes;
             }
 
             await Task.Delay(ModalPollIntervalMs, ct);
         }
     }
 
-    private async Task<ModalDismissed?> TryDismissPatternSafeAsync(
+    // Brief wait for the close animation, then an Escape fallback for a sibling modal.
+    private async Task SettleAfterDismissalAsync(IPage page, CancellationToken ct)
+    {
+        await Task.Delay(150, ct);
+        try
+        {
+            await TryEscapeKeyAsync(page, ct);
+        }
+        catch
+        {
+            // Ignore escape key failures
+        }
+    }
+
+    private async Task<ModalOverlayOutcome?> TryDismissPatternSafeAsync(
         IPage page,
         ModalPattern pattern,
         CancellationToken ct)
@@ -161,7 +180,7 @@ public class ModalDismisser
         }
     }
 
-    private async Task<ModalDismissed?> TryDismissPatternAsync(
+    private async Task<ModalOverlayOutcome?> TryDismissPatternAsync(
         IPage page,
         ModalPattern pattern,
         CancellationToken ct)
@@ -214,7 +233,10 @@ public class ModalDismisser
                     continue;
                 }
 
-                return new ModalDismissed(pattern.Type, buttonSelector, buttonText?.Trim());
+                return new ModalOverlayOutcome(
+                    pattern.Type,
+                    ModalDismissalPath.Selector,
+                    new ModalDismissed(pattern.Type, buttonSelector, buttonText?.Trim()));
             }
             catch
             {
@@ -289,7 +311,10 @@ public class ModalDismisser
                             continue;
                         }
 
-                        return new ModalDismissed(pattern.Type, $"text({textPattern})", textPattern);
+                        return new ModalOverlayOutcome(
+                            pattern.Type,
+                            ModalDismissalPath.Text,
+                            new ModalDismissed(pattern.Type, $"text({textPattern})", textPattern));
                     }
                     catch
                     {

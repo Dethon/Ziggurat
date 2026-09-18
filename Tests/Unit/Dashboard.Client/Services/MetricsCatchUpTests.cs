@@ -10,6 +10,7 @@ using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Dashboard.Client.State.Web;
 using Domain.DTOs.Metrics.Enums;
 using Shouldly;
 using Tests.Unit.Dashboard.Client.Fixtures;
@@ -40,7 +41,7 @@ public sealed class MetricsCatchUpTests : IDisposable
         var api = new MetricsApiService(http);
         _families = new MetricFamilyTable(
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
-            _memoryStore, _latencyStore, _voiceStore, new SkillsStore());
+            _memoryStore, _latencyStore, _voiceStore, new SkillsStore(), new WebStore());
         var overview = new OverviewFigures(api, _metricsStore, _healthStore);
         overview.SetDateRange(_from, _to);
         _catchUp = new MetricsCatchUp(_families, overview);

@@ -12,6 +12,7 @@ using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Dashboard.Client.State.Web;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -43,7 +44,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
         _api = new MetricsApiService(http);
         _families = new MetricFamilyTable(
             _api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
-            _memoryStore, _latencyStore, _voiceStore, new SkillsStore());
+            _memoryStore, _latencyStore, _voiceStore, new SkillsStore(), new WebStore());
         _binder = new MetricsHubBinder(_families, _metricsStore, _healthStore, NullLogger<MetricsHubBinder>.Instance);
     }
 

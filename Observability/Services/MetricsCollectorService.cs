@@ -143,6 +143,9 @@ public sealed class MetricsCollectorService(
             case MemoryJudgmentEvent judgment:
                 await ProcessMemoryJudgmentAsync(judgment, db);
                 break;
+            case ModalDismissalEvent modal:
+                await ProcessModalDismissalAsync(modal, db);
+                break;
         }
     }
 
@@ -393,6 +396,35 @@ public sealed class MetricsCollectorService(
             db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
 
         await hubContext.Clients.All.SendAsync("OnContextTruncation", evt);
+    }
+
+    // Counted per outcome, so the totals hash answers "how many walls were left standing today"
+    // beside "how many a judgment closed"; the latency is the judge's and accumulates as the
+    // preload's does.
+    private async Task ProcessModalDismissalAsync(ModalDismissalEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:modals:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        var tasks = new List<Task>
+        {
+            db.SortedSetAddAsync(sortedSetKey, json, evt.Timestamp.ToUnixTimeMilliseconds()),
+            db.HashIncrementAsync(totalsKey, $"modals:{evt.Outcome}:count"),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry)
+        };
+
+        if (evt.DurationMs is { } durationMs)
+        {
+            tasks.Add(db.HashIncrementAsync(totalsKey, "modals:latency:count"));
+            tasks.Add(db.HashIncrementAsync(totalsKey, "modals:latency:totalMs", durationMs));
+        }
+
+        await Task.WhenAll(tasks);
+
+        await hubContext.Clients.All.SendAsync("OnModalDismissal", evt);
     }
 
     // Counted per outcome, so the totals hash answers "how many turns got a head start today"

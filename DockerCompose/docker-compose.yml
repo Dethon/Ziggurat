@@ -344,6 +344,8 @@ services:
         condition: service_healthy
       base-sdk:
         condition: service_started
+      redis:
+        condition: service_healthy
 
   mcp-idealista:
     image: mcp-idealista:latest

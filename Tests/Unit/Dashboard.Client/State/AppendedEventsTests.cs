@@ -6,6 +6,7 @@ using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Dashboard.Client.State.Web;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Shouldly;
@@ -24,6 +25,7 @@ public sealed class AppendedEventsTests : IDisposable
     private readonly MemoryStore _memory = new();
     private readonly LatencyStore _latency = new();
     private readonly VoiceStore _voice = new();
+    private readonly WebStore _web = new();
 
     public void Dispose()
     {
@@ -34,13 +36,14 @@ public sealed class AppendedEventsTests : IDisposable
         _memory.Dispose();
         _latency.Dispose();
         _voice.Dispose();
+        _web.Dispose();
     }
 
     public static TheoryData<string> Lists =>
     [
         "tokens", "tools", "errors", "schedules",
         "memory.recall", "memory.extraction", "memory.dreaming", "memory.judgments",
-        "latency", "voice",
+        "latency", "voice", "web",
     ];
 
     private sealed record EventList(Action<int> Load, Action Append, Func<int> Count);
@@ -87,6 +90,10 @@ public sealed class AppendedEventsTests : IDisposable
             count => _voice.SetEvents([.. Enumerable.Range(0, count).Select(_ => Voice())]),
             () => _voice.AppendEvent(Voice()),
             () => _voice.State.Events.Count),
+        "web" => new EventList(
+            count => _web.SetEvents([.. Enumerable.Range(0, count).Select(_ => Modal())]),
+            () => _web.AppendEvent(Modal()),
+            () => _web.State.Events.Count),
         _ => throw new ArgumentOutOfRangeException(nameof(name)),
     };
 
@@ -159,4 +166,6 @@ public sealed class AppendedEventsTests : IDisposable
     private static LatencyEvent Latency() => new() { Stage = LatencyStage.LlmTotal, DurationMs = 1 };
 
     private static VoiceEvent Voice() => new() { Metric = VoiceMetric.UtteranceTranscribed };
+
+    private static ModalDismissalEvent Modal() => new() { Kind = ModalKinds.Cookie, Outcome = ModalDismissalOutcomes.LeftStanding };
 }

@@ -122,5 +122,19 @@ public static class MetricsApiEndpoints
 
         api.MapGet("/skills/trend", async (MetricsQueryService query, MetricDateRange range) =>
             await query.GetSkillPreloadTrendAsync(range.From, range.To));
+
+        api.MapGet("/modals", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetEventsAsync<ModalDismissalEvent>("metrics:modals:", range.From, range.To));
+
+        api.MapGet("/modals/by/{dimension}", async (
+            MetricsQueryService query,
+            ModalDismissalDimension dimension,
+            ModalDismissalMetric metric,
+            Aggregation? agg,
+            MetricDateRange range) =>
+            await query.GetModalDismissalGroupedAsync(dimension, metric, range.From, range.To, agg ?? Aggregation.Avg));
+
+        api.MapGet("/modals/trend", async (MetricsQueryService query, MetricDateRange range, string? kind) =>
+            await query.GetModalDismissalTrendAsync(range.From, range.To, kind));
     }
 }

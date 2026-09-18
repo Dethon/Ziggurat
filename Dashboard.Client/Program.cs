@@ -14,6 +14,7 @@ using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Dashboard.Client.State.Web;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 
@@ -35,6 +36,7 @@ builder.Services.AddSingleton<MemoryStore>();
 builder.Services.AddSingleton<LatencyStore>();
 builder.Services.AddSingleton<VoiceStore>();
 builder.Services.AddSingleton<SkillsStore>();
+builder.Services.AddSingleton<WebStore>();
 
 builder.Services.AddScoped<MetricsApiService>();
 builder.Services.AddScoped<LocalStorageService>();

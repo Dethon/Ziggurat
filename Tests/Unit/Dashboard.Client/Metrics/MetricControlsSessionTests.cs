@@ -11,6 +11,7 @@ using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Dashboard.Client.State.Web;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -46,7 +47,7 @@ public class MetricControlsSessionTests : IDisposable
         _storage = new LocalStorageService(_js);
         _families = new MetricFamilyTable(
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
-            _memoryStore, _latencyStore, _voiceStore, new SkillsStore());
+            _memoryStore, _latencyStore, _voiceStore, new SkillsStore(), new WebStore());
         var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore, NullLogger<MetricsHubBinder>.Instance);
         _dataLoad = new DataLoadEffect(
             _families, new OverviewFigures(api, _metricsStore, _healthStore), binder);

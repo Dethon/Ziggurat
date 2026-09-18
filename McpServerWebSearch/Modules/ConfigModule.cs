@@ -3,12 +3,14 @@ using Domain.Prompts;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Browser;
 using Infrastructure.Extensions;
+using Infrastructure.Metrics;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;
 using McpServerWebSearch.Settings;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 
 namespace McpServerWebSearch.Modules;
 
@@ -19,6 +21,11 @@ public static class ConfigModule
         public IServiceCollection ConfigureMcp(McpSettings settings)
         {
             services
+                // A lazy factory, like the voice channel's: nothing dials Redis until the first
+                // publish resolves the publisher, so registration runs with no container.
+                .AddSingleton<IConnectionMultiplexer>(
+                    _ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
+                .AddMetricsPublishing("mcp-websearch")
                 .AddWebSearchClients(settings)
                 .AddToolServer(settings, ToolResponse.Create)
                 .WithTools<McpWebSearchTool>()
@@ -64,7 +71,8 @@ public static class ConfigModule
                     captchaSolver,
                     settings.Camoufox?.WsEndpoint,
                     tabCap: settings.Browsing.TabCap,
-                    idleTimeout: TimeSpan.FromMinutes(settings.Browsing.SessionIdleTimeoutMinutes));
+                    idleTimeout: TimeSpan.FromMinutes(settings.Browsing.SessionIdleTimeoutMinutes),
+                    metricsPublisher: sp.GetRequiredService<IMetricsPublisher>());
             });
 
             return services;

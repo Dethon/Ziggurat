@@ -7,6 +7,7 @@ using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Dashboard.Client.State.Web;
 using Domain.DTOs.Metrics.Enums;
 
 namespace Dashboard.Client.Metrics;
@@ -32,7 +33,8 @@ public sealed class MetricFamilyTable
         MemoryStore memory,
         LatencyStore latency,
         VoiceStore voice,
-        SkillsStore skills)
+        SkillsStore skills,
+        WebStore web)
     {
         Tokens = new MetricFamily<TokensStore>(
             tokens,
@@ -261,7 +263,38 @@ public sealed class MetricFamilyTable
                 skills.SetBreakdown(breakdown ?? []);
             });
 
-        All = [Tokens, Tools, Errors, Schedules, Memory, Latency, Voice, Skills];
+        Web = new MetricFamily<WebStore>(
+            web,
+            "web",
+            dimension: MetricChoice.For("groupBy", () => web.State.GroupBy, web.SetGroupBy),
+            metric: MetricChoice.For("metric", () => web.State.Metric, web.SetMetric),
+            setDateRange: web.SetDateRange,
+            // The outcome share over time is the page's headline, loaded beside the events as the
+            // skills family loads its trend.
+            loadEvents: async () =>
+            {
+                var state = web.State;
+                var events = api.GetModalDismissalEventsAsync(state.From, state.To);
+                var trend = api.GetModalDismissalTrendAsync(state.From, state.To);
+                await Task.WhenAll(events, trend);
+                var loaded = await events ?? [];
+                var series = await trend ?? [];
+                return () =>
+                {
+                    web.SetEvents(loaded);
+                    web.SetTrend(series);
+                };
+            },
+            refreshBreakdown: async () =>
+            {
+                var state = web.State;
+                var breakdown = await api.GetGroupedAsync<decimal>(
+                    $"modals/by/{state.GroupBy}", state.From, state.To,
+                    [("metric", state.Metric.ToString()), ("agg", state.Agg.ToString())]);
+                web.SetBreakdown(breakdown ?? []);
+            });
+
+        All = [Tokens, Tools, Errors, Schedules, Memory, Latency, Voice, Skills, Web];
         OverviewFamilies = [Tokens, Tools, Errors, Schedules, Voice];
     }
 
@@ -270,6 +303,7 @@ public sealed class MetricFamilyTable
     public MetricFamily<ErrorsStore> Errors { get; }
     public MetricFamily<SchedulesStore> Schedules { get; }
     public MetricFamily<SkillsStore> Skills { get; }
+    public MetricFamily<WebStore> Web { get; }
     public MetricFamily<MemoryStore> Memory { get; }
     public MetricFamily<LatencyStore> Latency { get; }
     public MetricFamily<VoiceStore> Voice { get; }

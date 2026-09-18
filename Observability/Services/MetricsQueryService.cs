@@ -477,6 +477,56 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                 });
     }
 
+    public async Task<Dictionary<string, decimal>> GetModalDismissalGroupedAsync(
+        ModalDismissalDimension dimension,
+        ModalDismissalMetric metric,
+        DateOnly from,
+        DateOnly to,
+        Aggregation aggregation = Aggregation.Avg)
+    {
+        var events = await GetEventsAsync<ModalDismissalEvent>("metrics:modals:", from, to);
+
+        return events
+            .GroupBy(e => dimension switch
+            {
+                ModalDismissalDimension.Kind => e.Kind,
+                ModalDismissalDimension.Outcome => e.Outcome,
+                _ => throw new ArgumentOutOfRangeException(nameof(dimension))
+            })
+            .ToDictionary(
+                g => g.Key,
+                g => metric switch
+                {
+                    ModalDismissalMetric.Count => (decimal)g.Count(),
+                    // Only a judgment carries a latency; a wall a selector closed has none to average.
+                    ModalDismissalMetric.LatencyMs => AggregateLatency(
+                        g.Where(e => e.DurationMs is not null).Select(e => (decimal)e.DurationMs!.Value), aggregation),
+                    _ => throw new ArgumentOutOfRangeException(nameof(metric))
+                });
+    }
+
+    // One series per outcome, a count per bucket: the miss rate over time, and beside it the share
+    // each path closed. Filtered to one kind when the page asks for it.
+    public async Task<IReadOnlyList<LatencyTrendSeries>> GetModalDismissalTrendAsync(
+        DateOnly from, DateOnly to, string? kind = null)
+    {
+        var events = await GetEventsAsync<ModalDismissalEvent>("metrics:modals:", from, to);
+        var hourly = to.DayNumber - from.DayNumber <= 2;
+
+        return events
+            .Where(e => kind is null || e.Kind == kind)
+            .GroupBy(e => e.Outcome)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(outcome => new LatencyTrendSeries(
+                outcome.Key,
+                outcome
+                    .GroupBy(e => BucketTimestamp(e.Timestamp, hourly))
+                    .OrderBy(b => b.Key)
+                    .Select(b => new LatencyTrendPoint(b.Key, b.Count()))
+                    .ToList()))
+            .ToList();
+    }
+
     // One series per outcome, a count per bucket: what "the preload rate over time" is read off.
     public async Task<IReadOnlyList<LatencyTrendSeries>> GetSkillPreloadTrendAsync(DateOnly from, DateOnly to)
     {

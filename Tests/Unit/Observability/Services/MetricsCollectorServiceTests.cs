@@ -168,6 +168,20 @@ public class MetricsCollectorServiceTests
                 ("skills:preloaded:count", 1),
                 ("skills:latency:count", 1),
                 ("skills:latency:totalMs", 380)
+            ]),
+        new HashIncrementCase(
+            "ModalDismissal",
+            new ModalDismissalEvent
+            {
+                Kind = ModalKinds.Cookie,
+                Outcome = ModalDismissalOutcomes.Judgment,
+                DurationMs = 325,
+                Timestamp = _fixedTimestamp
+            },
+            [
+                ("modals:judgment:count", 1),
+                ("modals:latency:count", 1),
+                ("modals:latency:totalMs", 325)
             ])
     };
 
@@ -296,7 +310,17 @@ public class MetricsCollectorServiceTests
                 Timestamp = _fixedTimestamp
             },
             $"metrics:skills:{FixedDate}",
-            "\"outcome\":\"deadline\"")
+            "\"outcome\":\"deadline\""),
+        new SortedSetCase(
+            "ModalDismissal",
+            new ModalDismissalEvent
+            {
+                Kind = ModalKinds.Newsletter,
+                Outcome = ModalDismissalOutcomes.LeftStanding,
+                Timestamp = _fixedTimestamp
+            },
+            $"metrics:modals:{FixedDate}",
+            "\"outcome\":\"left-standing\"")
     };
 
     [Theory]
@@ -372,7 +396,11 @@ public class MetricsCollectorServiceTests
         new SignalRForwardCase(
             "SkillPreload",
             new SkillPreloadEvent { Outcome = SkillPreloadOutcomes.Abstained },
-            "OnSkillPreload")
+            "OnSkillPreload"),
+        new SignalRForwardCase(
+            "ModalDismissal",
+            new ModalDismissalEvent { Kind = ModalKinds.Cookie, Outcome = ModalDismissalOutcomes.Selector },
+            "OnModalDismissal")
     };
 
     [Theory]
