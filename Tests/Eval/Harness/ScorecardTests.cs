@@ -80,6 +80,20 @@ public class ScorecardTests : IDisposable
     }
 
     [Fact]
+    public void TheSummary_CountsWhatTheJudgeAnswered()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)],
+            [
+                new ScenarioOutcome("a", 3, 3) { PreloadOutcomes = new Dictionary<string, int> { ["preloaded"] = 2, ["deadline"] = 1 } },
+                new ScenarioOutcome("b", 2, 2) { PreloadOutcomes = new Dictionary<string, int> { ["deadline"] = 2 } }
+            ]);
+
+        var outcomes = Read(Path.Combine(_output, "scorecard-full.json")).GetProperty("summary").GetProperty("preloadOutcomes");
+        outcomes.GetProperty("preloaded").GetInt32().ShouldBe(2);
+        outcomes.GetProperty("deadline").GetInt32().ShouldBe(3);
+    }
+
+    [Fact]
     public void APassWithNoJudge_SaysThePreloadIsOff()
     {
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)]);

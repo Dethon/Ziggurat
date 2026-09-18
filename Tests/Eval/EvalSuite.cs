@@ -126,7 +126,8 @@ public static class EvalSuite
                 ScenarioChecks.KindOf(scenario, recording, observed))
             {
                 Spend = recording.Spend,
-                Loader = ScenarioChecks.LoaderOf(scenario, recording)
+                Loader = ScenarioChecks.LoaderOf(scenario, recording),
+                PreloadOutcomes = recording.PreloadOutcomes
             };
         });
 

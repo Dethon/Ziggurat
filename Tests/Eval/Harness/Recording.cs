@@ -133,6 +133,21 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
     // The judge that answered this run, for the scorecard: null where nothing was judged.
     public string? PreloadModel { get; private set; }
 
+    // Every judgment's outcome, counted, so a pass where the judge timed out or errored every
+    // time is legible on the scorecard rather than indistinguishable from the preload being off.
+    private readonly Dictionary<string, int> _preloadOutcomes = [];
+
+    public IReadOnlyDictionary<string, int> PreloadOutcomes
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return new Dictionary<string, int>(_preloadOutcomes);
+            }
+        }
+    }
+
     // Every request the run paid for — the agent's turns and the judge's verdicts alike — summed.
     public Spend Spend
     {
@@ -164,6 +179,7 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
                 {
                     _spends.Add(Spend.OfPreload(preload));
                     PreloadModel = preload.Model ?? PreloadModel;
+                    _preloadOutcomes[preload.Outcome] = _preloadOutcomes.GetValueOrDefault(preload.Outcome) + 1;
                     var loads = preload.Skills
                         .Select((skill, index) => new ToolInvocation
                         {

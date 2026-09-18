@@ -52,7 +52,10 @@ public static class Scorecard
                 // The whole pass's loader split, so the reader sees how often Jev preloaded, how
                 // often the model still loaded for itself and how often nobody did, without
                 // summing rows.
-                ["loader"] = Loaders(scenarios ?? [])
+                ["loader"] = Loaders(scenarios ?? []),
+                // What the judge answered across the pass: a run of deadlines or errors reads
+                // as a TypeSafe problem here, where "preload: off" would have hidden it.
+                ["preloadOutcomes"] = Outcomes(scenarios ?? [])
             },
             // Each claim row says how it is covered — "cited", "judged", or its exemption kind —
             // so a null rate stops meaning three different things.
@@ -118,6 +121,15 @@ public static class Scorecard
 
         return spelled;
     }
+
+    private static JsonObject Outcomes(IEnumerable<ScenarioOutcome> outcomes) =>
+        ScenarioRunner.Summed(outcomes.Select(outcome => outcome.PreloadOutcomes))
+            .OrderBy(entry => entry.Key, StringComparer.Ordinal)
+            .Aggregate(new JsonObject(), (node, entry) =>
+            {
+                node[entry.Key] = entry.Value;
+                return node;
+            });
 
     private static JsonObject Loaders(IEnumerable<ScenarioOutcome> outcomes) =>
         Loaders(outcomes.SelectMany(outcome => outcome.Loaders));
@@ -217,4 +229,6 @@ public sealed record ScenarioOutcome(
     string Name, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0, Spend? Spend = null)
 {
     public IReadOnlyList<Loader> Loaders { get; init; } = [];
+
+    public IReadOnlyDictionary<string, int> PreloadOutcomes { get; init; } = new Dictionary<string, int>();
 }
