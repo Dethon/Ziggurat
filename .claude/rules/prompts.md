@@ -40,11 +40,23 @@ binding its text, never an argument about where a `Prepend` goes.
 
 ## A skill is a section the model reads on demand
 
-The glossary (`CONTEXT.md` § Prompt) pins three words. The **base prompt** is every section an
+The glossary (`CONTEXT.md` § Prompt) pins four words. The **base prompt** is every section an
 agent reads on every turn. A **skill** is a body the model loads with one `load_skill` call when a
 request calls for it; only its name and one-line description stand in the base prompt. A **trigger
-claim** is what that description asserts: a request of a named kind loads it. ADR 0039 is the
-decision; these are the rules the next section lands on.
+claim** is what that description asserts: a request of a named kind gets it loaded. A **preload**
+is the host loading first: before the model's first call, `SkillsProvider` asks Jev (`ISkillPreloader`,
+`Domain/Skills/`) which skills the request needs, judged on the same descriptions, and a confident
+answer puts the body into the conversation as the pair a `load_skill` call leaves — after the user
+message, persisted with the turn, never twice. ADR 0039 (refined 2026-09-18) is the decision;
+these are the rules the next section lands on.
+
+- **A skill may already be in the conversation when a turn starts, and one that is, is loaded.**
+  The `skills` section says so to the model; `SkillLoadTool.LoadedIn` says so to the preloader,
+  reading every load off the history whoever made it. There is no second record of what is loaded.
+- **The description has two readers and one text.** Jev judges by `PromptSkill.Description`
+  verbatim — never a second criteria text — so a red trigger claim has one fix, in the description,
+  and a description that works on only one reader shows as a lopsided loader column on the eval
+  scorecard. Overlaps between descriptions are fixed in the descriptions.
 
 - **Timing decides what moves, never subject.** A rule the model needs *before* it decides what to
   do — which mechanism, which tool, which mount — stays in the base prompt. A rule it needs only

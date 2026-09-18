@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.Extensions;
 using Domain.Prompts;
 using Domain.Skills;
 using Microsoft.Agents.AI;
@@ -34,11 +35,23 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     public const string SkillNameParameter = SkillLoadTool.SkillNameParameter;
 
     private readonly Func<AgentSession?, IReadOnlyList<PromptSkill>> _skillsOf;
+    private readonly Func<AgentSession?, IReadOnlyList<ChatMessage>> _historyOf;
+    private readonly ISkillPreloader? _preloader;
     private readonly AgentSkillsProvider _inner;
 
-    public SkillsProvider(Func<AgentSession?, IReadOnlyList<PromptSkill>> skillsOf)
+    // The preloader is optional the way the recall hook is: a host without one — every test host
+    // that does not ask for it — offers the list and the load tool and nothing arrives early. The
+    // history reader is how "already loaded" is answered: the framework hands a context provider
+    // the caller's messages alone, and the history provider has already read the thread this
+    // turn, so this reads what it read rather than asking Redis again.
+    public SkillsProvider(
+        Func<AgentSession?, IReadOnlyList<PromptSkill>> skillsOf,
+        ISkillPreloader? preloader = null,
+        Func<AgentSession?, IReadOnlyList<ChatMessage>>? historyOf = null)
     {
         _skillsOf = skillsOf;
+        _historyOf = historyOf ?? (_ => []);
+        _preloader = preloader;
         _inner = new AgentSkillsProvider(
             new SessionSkillsSource(skillsOf),
             new AgentSkillsProviderOptions
@@ -75,13 +88,51 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
             .OfType<AIFunction>()
             .FirstOrDefault(t => string.Equals(t.Name, LoadToolName, StringComparison.Ordinal));
 
+        var skills = _skillsOf(context.Session);
         return new AIContext
         {
             Instructions = provided.Instructions,
             Tools = load is null
                 ? null
-                : [new LoadSkillFunction(load, [.. _skillsOf(context.Session).Select(s => s.Name)])]
+                : [new LoadSkillFunction(load, [.. skills.Select(s => s.Name)])],
+            Messages = await PreloadAsync(context, skills, cancellationToken)
         };
+    }
+
+    // The one insertion point. The judge is asked on the turn's request — the last user message
+    // the caller handed in — over the session's skills minus those the history already holds,
+    // and what it is sure of is returned as the pair a load leaves, after the user message so
+    // the cached prefix is untouched. The history provider persists it with the turn, so the
+    // next turn's already-loaded check finds it. The preloader bounds its own deadline, so
+    // awaiting it here waits no longer than what is left of it; nothing it answers late is
+    // applied, because the turn has moved on. The judge's own failures never reach here as
+    // throws — every one is an absence — so this is a head start and never a way to lose a turn.
+    private async Task<IReadOnlyList<ChatMessage>?> PreloadAsync(
+        InvokingContext context, IReadOnlyList<PromptSkill> skills, CancellationToken ct)
+    {
+        if (_preloader is null || skills.Count == 0)
+        {
+            return null;
+        }
+
+        var requestMessages = context.AIContext.Messages?.ToList() ?? [];
+        var request = requestMessages.LastOrDefault(m => m.Role == ChatRole.User);
+        if (request is null || string.IsNullOrWhiteSpace(request.Text))
+        {
+            return null;
+        }
+
+        var history = _historyOf(context.Session).Concat(requestMessages);
+        var preload = await _preloader.PreloadAsync(
+            new SkillPreloadRequest(request.Text, skills, history)
+            {
+                ConfigPatchModel = request.GetConfigPatch()?.Model
+            },
+            ct);
+
+        return preload.Skills.Count > 0
+            ? SkillLoadTool.AsLoaded(preload.Skills, $"preload-{Guid.NewGuid():N}"[..16])
+            : null;
     }
 #pragma warning restore MAAI001
 

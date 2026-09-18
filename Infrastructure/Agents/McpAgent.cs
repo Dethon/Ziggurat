@@ -10,6 +10,7 @@ using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Metrics;
 using Domain.Prompts;
+using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
@@ -79,7 +80,8 @@ public sealed class McpAgent : DisposableAgent
         ILoggerFactory? loggerFactory = null,
         McpPromptCache? promptCache = null,
         OutpostAccess? outposts = null,
-        ReadImageSupport? readImages = null)
+        ReadImageSupport? readImages = null,
+        ISkillPreloader? skillPreloader = null)
     {
         _endpoints = spec.McpServerEndpoints;
         _usesOutposts = spec.UsesOutposts;
@@ -107,13 +109,13 @@ public sealed class McpAgent : DisposableAgent
         _conversationId = spec.ConversationId;
         _promptCache = promptCache;
         _readImages = readImages;
-        _skills = new SkillsProvider(SkillsOf);
+        var history = new RedisChatMessageStore(stateStore, metricsPublisher, spec.ConversationId);
+        _skills = new SkillsProvider(SkillsOf, skillPreloader, history.LastProvided);
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = spec.DisplayName,
             Description = spec.Description,
-            ChatHistoryProvider = new RedisChatMessageStore(
-                stateStore, metricsPublisher, spec.ConversationId),
+            ChatHistoryProvider = history,
             // The skills are the session's — they arrive with the servers it dialled — so the
             // provider asks for them by session, on each turn, and offers nothing to a session
             // whose servers ship none.

@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
@@ -146,7 +147,11 @@ public sealed class MultiAgentFactory(
             // never turned them on — simply has no outposts to offer, which is the same answer as
             // an agent that did not opt in.
             serviceProvider?.GetService<OutpostAccess>(),
-            BuildReadImageSupport(spec));
+            BuildReadImageSupport(spec),
+            // Optional for the same reason: a host with no judge preloads nothing and the model
+            // loads for itself. A worker gets it by this same line, judged on its delegation
+            // prompt, so a delegated task also starts on the task.
+            serviceProvider?.GetService<ISkillPreloader>());
     }
 
     // Everything file_read needs to show the model a picture, resolved where the spec and the

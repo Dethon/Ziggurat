@@ -8,6 +8,7 @@ using Domain.Judgments;
 using Domain.Monitor;
 using Domain.Outposts;
 using Domain.Prompts;
+using Domain.Skills;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
@@ -99,7 +100,7 @@ public static class InjectorModule
                     sp.GetRequiredService<OpenRouterModelCapabilities>())
                 .AddHostedService<ModelCapabilityRefresher>()
                 .AddLemonadeChatHost(lemonadeChatHost)
-                .AddTypeSafe(settings.TypeSafe)
+                .AddTypeSafe(settings.TypeSafe, settings.SkillPreload)
                 .AddOutposts(settings.Outposts);
         }
 
@@ -107,7 +108,7 @@ public static class InjectorModule
         // absence, so nothing downstream checks the key; a configured one rides the chat clients'
         // pool and gets its own keep-alive, because a cold handshake to this host measured 560 ms
         // against a judgment that is worth about a tenth of that.
-        private IServiceCollection AddTypeSafe(TypeSafeConfiguration typeSafe)
+        private IServiceCollection AddTypeSafe(TypeSafeConfiguration typeSafe, SkillPreloadSettings skillPreload)
         {
             var options = new TypeSafeOptions
             {
@@ -120,6 +121,11 @@ public static class InjectorModule
                 new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
                 options,
                 sp.GetRequiredService<ILogger<TypeSafeJudge>>()));
+
+            services.AddSingleton<ISkillPreloader>(sp => new SkillPreloader(
+                sp.GetRequiredService<IJudge>(),
+                skillPreload,
+                sp.GetRequiredService<TimeProvider>()));
 
             if (!options.IsConfigured)
             {
