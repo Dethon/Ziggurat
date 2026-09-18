@@ -16,6 +16,7 @@ using Infrastructure.Clients.Channels;
 using Infrastructure.Judgments;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -79,7 +80,10 @@ public static class InjectorModule
                         sp.GetService<ILoggerFactory>()))
                 // Shares the chat clients' connection pool, which is the whole point: a
                 // keep-alive against its own pool would warm a connection no turn ever uses.
-                .AddHostedService(sp => new HostedConnectionKeepAlive(
+                // Registered as a plain IHostedService singleton, not through AddHostedService:
+                // that one dedups by implementation type, and the TypeSafe keep-alive below is
+                // the same class, so the second of the two would be silently dropped.
+                .AddSingleton<IHostedService, HostedConnectionKeepAlive>(sp => new HostedConnectionKeepAlive(
                     new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
                     new HostedConnectionKeepAliveOptions
                     {
@@ -133,7 +137,9 @@ public static class InjectorModule
                 return services;
             }
 
-            return services.AddHostedService(sp => new HostedConnectionKeepAlive(
+            // A plain singleton for the reason the OpenRouter one is: AddHostedService would
+            // see the same class twice and keep only the first.
+            return services.AddSingleton<IHostedService, HostedConnectionKeepAlive>(sp => new HostedConnectionKeepAlive(
                 new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
                 new HostedConnectionKeepAliveOptions
                 {

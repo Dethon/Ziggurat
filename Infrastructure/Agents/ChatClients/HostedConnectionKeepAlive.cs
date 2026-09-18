@@ -53,6 +53,9 @@ public sealed class HostedConnectionKeepAlive : BackgroundService
     // their first await, so a test driving a fake clock needs to know when the clock matters.
     internal Task Armed => _armed.Task;
 
+    // Which host this one holds open, for a test over the registrations.
+    internal HostedConnectionKeepAliveOptions Options => _options;
+
     public HostedConnectionKeepAlive(
         HttpClient httpClient,
         HostedConnectionKeepAliveOptions options,
