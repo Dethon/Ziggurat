@@ -1,3 +1,5 @@
+using Domain.Tools.Web;
+
 namespace McpServerWebSearch.Settings;
 
 public record McpSettings
@@ -10,6 +12,21 @@ public record McpSettings
     // Metrics alone ride this connection: one event per overlay the browser met. Nothing else on
     // this server may use it — page images cross to Redis at the agent's bridge, never here.
     public string RedisConnectionString { get; init; } = "redis:6379";
+
+    public TypeSafeConfiguration TypeSafe { get; init; } = new();
+
+    // The modal judgment's tunables (Domain's ModalJudgmentSettings), beside the judge they tune.
+    public ModalJudgmentSettings Judgment { get; init; } = new();
+}
+
+// TypeSafe, the hosted judge this server asks which of a wall's buttons closes it. The address and
+// the pinned model are configuration; the key is a secret — TYPESAFE__APIKEY, the same line the
+// agent reads — and empty means the judgment is off, never a startup failure.
+public record TypeSafeConfiguration
+{
+    public string ApiUrl { get; init; } = "https://api.typesafe.ai/v1/";
+    public string ApiKey { get; init; } = "";
+    public string Model { get; init; } = "jev-1.13.0";
 }
 
 // Generic tunables of the browse session pool — settings in this server's own appsettings.json,

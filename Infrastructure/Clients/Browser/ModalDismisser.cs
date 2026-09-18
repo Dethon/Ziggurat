@@ -2,11 +2,17 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
+using Domain.Tools.Web;
 using Microsoft.Playwright;
 
 namespace Infrastructure.Clients.Browser;
 
-public class ModalDismisser
+// Closes the overlays a page puts between the browser and its content, in three steps that each
+// cost more than the last and run only when the one before came up empty: a selector, a word in a
+// control's name, and — for an overlay both of those left standing — a judgment over what its
+// controls say (ModalJudge). Without a judge the third step does not exist and the page is left
+// exactly as before.
+public class ModalDismisser(ModalJudge? judge = null)
 {
     private static readonly IReadOnlyList<ModalPattern> _defaultPatterns =
     [
@@ -142,11 +148,158 @@ public class ModalDismisser
                 // Nothing dismissable appeared within the window. Skip the Escape fallback: there is
                 // no visible overlay, so it would only cost latency on the common no-modal page.
                 // An overlay the last pass detected and neither path could close is the miss this
-                // measure exists to count.
-                return outcomes;
+                // measure exists to count — and the one thing the judge is asked about.
+                return await JudgeStandingOverlaysAsync(page, outcomes, ct);
             }
 
             await Task.Delay(ModalPollIntervalMs, ct);
+        }
+    }
+
+    // Once per navigation, after the cheap paths have had the whole window: the overlays they left
+    // standing go to the judge together, and a pick is clicked by index into the very list its
+    // name was read from. Anything but a confident pick of a listed control leaves the page as it
+    // was, with the judge's answer on the outcome so the miss is still counted.
+    private async Task<IReadOnlyList<ModalOverlayOutcome>> JudgeStandingOverlaysAsync(
+        IPage page,
+        IReadOnlyList<ModalOverlayOutcome> outcomes,
+        CancellationToken ct)
+    {
+        if (judge is null || outcomes.Count == 0)
+        {
+            return outcomes;
+        }
+
+        var judged = await Task.WhenAll(outcomes.Select(outcome => outcome.Path == ModalDismissalPath.LeftStanding
+            ? TryJudgeSafeAsync(page, _defaultPatterns.First(p => p.Type == outcome.Kind), ct)
+            : Task.FromResult(outcome)));
+
+        if (judged.Any(o => o.Dismissed is not null))
+        {
+            await SettleAfterDismissalAsync(page, ct);
+        }
+
+        return judged;
+    }
+
+    private async Task<ModalOverlayOutcome> TryJudgeSafeAsync(IPage page, ModalPattern pattern, CancellationToken ct)
+    {
+        try
+        {
+            return await TryJudgeAsync(page, pattern, ct);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return ModalOverlayOutcome.LeftStanding(pattern.Type);
+        }
+    }
+
+    private async Task<ModalOverlayOutcome> TryJudgeAsync(IPage page, ModalPattern pattern, CancellationToken ct)
+    {
+        var urlBefore = page.Url;
+        var locator = page.Locator(pattern.ContainerSelector ?? "*").Locator(ControlSelector);
+        var controls = await ListOverlayControlsAsync(locator, pattern.ContainerSelector ?? "*", urlBefore, judge!.MaxControls);
+        if (controls.Count == 0)
+        {
+            return ModalOverlayOutcome.LeftStanding(pattern.Type);
+        }
+
+        var pick = await judge!.PickAsync(pattern.Type, controls, ct);
+        if (pick.Status != ModalPickStatus.Picked)
+        {
+            return new ModalOverlayOutcome(
+                pattern.Type, ModalDismissalPath.LeftStanding, Confidence: pick.Confidence, JudgmentLatency: pick.Latency);
+        }
+
+        var control = controls.First(c => c.Index == pick.Index);
+        try
+        {
+            await locator.Nth(control.Index).ClickAsync(new LocatorClickOptions { Timeout = 1000 });
+        }
+        catch (PlaywrightException)
+        {
+            // The control went stale or refused the click: the next-best nothing, as the text
+            // path already treats it.
+            return new ModalOverlayOutcome(
+                pattern.Type, ModalDismissalPath.LeftStanding, Confidence: pick.Confidence, JudgmentLatency: pick.Latency);
+        }
+
+        await Task.Delay(100, ct);
+        if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))
+        {
+            await page.GoBackAsync(new PageGoBackOptions { Timeout = 5000 });
+            return new ModalOverlayOutcome(
+                pattern.Type, ModalDismissalPath.LeftStanding, Confidence: pick.Confidence, JudgmentLatency: pick.Latency);
+        }
+
+        return new ModalOverlayOutcome(
+            pattern.Type,
+            ModalDismissalPath.Judgment,
+            new ModalDismissed(pattern.Type, $"judgment({control.Index})", control.Name),
+            pick.Confidence,
+            pick.Latency);
+    }
+
+    // What counts as a control the judge may be offered: the elements a person would click to
+    // answer a wall. Chained under the container selector, so the list the names come from and
+    // the list the pick clicks into are one locator.
+    internal const string ControlSelector =
+        "button, a, input[type='submit'], input[type='button'], [role='button']";
+
+    // The overlay's controls in document order, capped, each with the same accessible-name
+    // approximation the text path narrows on. A control is listed only when it is visible, sits
+    // inside a container that is itself an overlay (the container selectors also match ordinary
+    // content, and its buttons are the page's own), and would not navigate off the page — the
+    // guard the two cheap paths already apply, so a judgment can never click what they could not.
+    private static async Task<IReadOnlyList<ModalControl>> ListOverlayControlsAsync(
+        ILocator controls,
+        string containerSelector,
+        string urlBefore,
+        int maxControls)
+    {
+        try
+        {
+            var raw = await controls.EvaluateAllAsync<JsonElement>(
+                $$"""
+                (els, [containerSelector, currentUrl, maxControls]) => {
+                    const nameOf = {{AccessibleNameJs}};
+                    const isOverlay = {{OverlayPredicateJs}};
+                    const navigatesAway = {{NavigatesAwayJs}};
+                    const inOverlay = el => {
+                        let c = el;
+                        while (c) {
+                            c = c.parentElement ?? c.getRootNode()?.host ?? null;
+                            if (c && c.matches && c.matches(containerSelector) && isOverlay(c)) return true;
+                        }
+                        return false;
+                    };
+                    const listed = [];
+                    for (let i = 0; i < els.length && listed.length < maxControls; i++) {
+                        const el = els[i];
+                        const r = el.getBoundingClientRect();
+                        if (r.width <= 0 || r.height <= 0) continue;
+                        if (getComputedStyle(el).visibility === 'hidden') continue;
+                        if (!inOverlay(el)) continue;
+                        if (navigatesAway(el, currentUrl)) continue;
+                        const name = nameOf(el);
+                        if (!name) continue;
+                        listed.push({ index: i, role: el.tagName.toLowerCase() === 'a' ? 'link' : 'button', name });
+                    }
+                    return listed;
+                }
+                """,
+                new object[] { containerSelector, urlBefore, maxControls });
+
+            return raw.EnumerateArray()
+                .Select(entry => new ModalControl(
+                    entry.GetProperty("index").GetInt32(),
+                    entry.GetProperty("role").GetString() ?? "button",
+                    entry.GetProperty("name").GetString() ?? ""))
+                .ToList();
+        }
+        catch (PlaywrightException)
+        {
+            return [];
         }
     }
 
@@ -340,35 +493,78 @@ public class ModalDismisser
     {
         try
         {
-            return await locator.EvaluateAllAsync<string[]>(
-                """
-                els => els.map(el => {
-                    const clean = v => String(v).replace(/\s+/g, ' ').trim();
-                    const byIds = el.getAttribute('aria-labelledby');
-                    if (byIds) {
-                        const name = clean(byIds.split(/\s+/)
-                            .map(id => el.getRootNode().getElementById(id))
-                            .filter(Boolean)
-                            .map(ref => ref.textContent || '')
-                            .join(' '));
-                        if (name) return name;
-                    }
-                    const label = el.getAttribute('aria-label');
-                    if (label && label.trim()) return clean(label);
-                    const text = clean(el.textContent || '');
-                    if (text) return text;
-                    for (const c of [el.value, el.getAttribute('title'), el.getAttribute('alt')]) {
-                        if (c && String(c).trim()) return clean(c);
-                    }
-                    return '';
-                })
-                """);
+            return await locator.EvaluateAllAsync<string[]>($$"""els => els.map({{AccessibleNameJs}})""");
         }
         catch
         {
             return [];
         }
     }
+
+    // One function, so the name the judge is shown is the name the text path narrows on.
+    private const string AccessibleNameJs =
+        """
+        el => {
+            const clean = v => String(v).replace(/\s+/g, ' ').trim();
+            const byIds = el.getAttribute('aria-labelledby');
+            if (byIds) {
+                const name = clean(byIds.split(/\s+/)
+                    .map(id => el.getRootNode().getElementById(id))
+                    .filter(Boolean)
+                    .map(ref => ref.textContent || '')
+                    .join(' '));
+                if (name) return name;
+            }
+            const label = el.getAttribute('aria-label');
+            if (label && label.trim()) return clean(label);
+            const text = clean(el.textContent || '');
+            if (text) return text;
+            for (const c of [el.value, el.getAttribute('title'), el.getAttribute('alt')]) {
+                if (c && String(c).trim()) return clean(c);
+            }
+            return '';
+        }
+        """;
+
+    // The anchor guard the probe applies, as one function: an <a> whose raw href points off the
+    // page is not a dismissal control, whatever its name says.
+    private const string NavigatesAwayJs =
+        """
+        (el, currentUrl) => {
+            if (el.tagName.toLowerCase() !== 'a') return false;
+            const href = el.getAttribute('href');
+            if (!href) return false;
+            const lower = href.toLowerCase();
+            if (lower.startsWith('javascript:') || href.startsWith('#')) return false;
+            let absolute = null;
+            try { absolute = new URL(href); } catch { absolute = null; }
+            if (!absolute) return true;
+            const current = new URL(currentUrl);
+            return absolute.host !== current.host || absolute.pathname !== current.pathname;
+        }
+        """;
+
+    // What makes a matched container an overlay rather than content: fixed or sticky, or absolute
+    // and either stacked above the page or covering a serious part of the viewport. Shared by the
+    // detection scan and the judge's control listing, so the two cannot disagree about which
+    // container's buttons are the wall's.
+    private const string OverlayPredicateJs =
+        """
+        el => {
+            const r = el.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0) return false;
+            const s = getComputedStyle(el);
+            if (s.visibility === 'hidden' || s.display === 'none' || parseFloat(s.opacity) === 0) return false;
+            if (s.position === 'fixed' || s.position === 'sticky') return true;
+            if (s.position === 'absolute') {
+                const z = parseInt(s.zIndex, 10);
+                if (Number.isFinite(z) && z >= 1) return true;
+                const viewport = window.innerWidth * window.innerHeight;
+                if (viewport > 0 && (r.width * r.height) / viewport >= 0.15) return true;
+            }
+            return false;
+        }
+        """;
 
     private static readonly AriaRole[] _textPatternRoles = [AriaRole.Button, AriaRole.Link];
 
@@ -527,8 +723,9 @@ public class ModalDismisser
         try
         {
             return await page.EvaluateAsync<bool[]>(
-                """
+                $$"""
                 ([selectors, maxScanned]) => {
+                    const isOverlay = {{OverlayPredicateJs}};
                     // querySelectorAll does not cross a shadow boundary, but the page.Locator calls
                     // this replaced did. A CMP rendered as a web component was invisible to the scan,
                     // and because a pattern that fails the gate is dropped entirely, the text
@@ -548,27 +745,16 @@ public class ModalDismisser
                     try { elements = queryAllDeep(selector); }
                     catch { return false; }
                     const limit = Math.min(elements.length, maxScanned);
+                    // 'absolute' alone is not an overlay (see OverlayPredicateJs). Dropping the old
+                    // 10-container cap was right — a real banner can sit behind more than ten
+                    // same-class elements — but it also exposed every incidental absolutely
+                    // positioned box on the page, and one of those opening a pattern hands the
+                    // loose text fallbacks a licence to click. AgeGate's list contains "si", which
+                    // substring-matches a site's own "Sign in". A real absolute overlay declares
+                    // itself: it stacks above the content, or it covers a serious part of the
+                    // viewport.
                     for (let i = 0; i < limit; i++) {
-                        const el = elements[i];
-                        const r = el.getBoundingClientRect();
-                        if (r.width <= 0 || r.height <= 0) continue;
-                        const s = getComputedStyle(el);
-                        if (s.visibility === 'hidden' || s.display === 'none' || parseFloat(s.opacity) === 0)
-                            continue;
-                        if (s.position === 'fixed' || s.position === 'sticky') return true;
-                        // 'absolute' alone is not an overlay. Dropping the old 10-container cap was
-                        // right — a real banner can sit behind more than ten same-class elements —
-                        // but it also exposed every incidental absolutely positioned box on the
-                        // page, and one of those opening a pattern hands the loose text fallbacks a
-                        // licence to click. AgeGate's list contains "si", which substring-matches a
-                        // site's own "Sign in". A real absolute overlay declares itself: it stacks
-                        // above the content, or it covers a serious part of the viewport.
-                        if (s.position === 'absolute') {
-                            const z = parseInt(s.zIndex, 10);
-                            if (Number.isFinite(z) && z >= 1) return true;
-                            const viewport = window.innerWidth * window.innerHeight;
-                            if (viewport > 0 && (r.width * r.height) / viewport >= 0.15) return true;
-                        }
+                        if (isOverlay(elements[i])) return true;
                     }
                     return false;
                     });
