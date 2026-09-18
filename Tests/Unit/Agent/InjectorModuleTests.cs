@@ -3,6 +3,7 @@ using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Judgments;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -55,6 +56,6 @@ public class InjectorModuleTests
         OpenRouter = new OpenRouterConfiguration { ApiUrl = OpenRouterUrl, ApiKey = "key" },
         Redis = new RedisConfiguration { ConnectionString = "localhost:1" },
         Agents = [],
-        TypeSafe = new TypeSafeConfiguration { ApiUrl = TypeSafeUrl, ApiKey = typeSafeKey }
+        TypeSafe = new TypeSafeOptions { ApiUrl = TypeSafeUrl, ApiKey = typeSafeKey }
     };
 }

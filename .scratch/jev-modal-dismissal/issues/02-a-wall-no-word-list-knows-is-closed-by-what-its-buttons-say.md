@@ -45,3 +45,20 @@ Shipped 2026-09-18.
   controls and nothing of the page, an unconfigured judge leaving the page as today;
   `ModalJudgmentRegistrationTests` — empty key answers `Unconfigured` with no keep-alive, shipped
   settings bind.
+
+**Review follow-up (same day).** Two corrections after `/code-review`:
+
+- Kinds are judged **one at a time**, not together. The container selectors overlap (a
+  `modal cookie-banner` is a cookie wall *and* a newsletter to the scan), so two kinds can be one
+  wall: judged together they spent two judgments on it and the first click shifted the list the
+  second was about to click into. After a dismissal the scan runs again and a kind whose overlay is
+  gone is dropped — one wall, one event, under the kind that closed it
+  (`Navigate_AWallTwoPatternsDetect_IsJudgedOnceAndCountedOnce`). Before the click the control at
+  the index is re-read and must still carry the name the judge was shown; otherwise `left-standing`.
+- The "total added time is bounded by the deadline" box is **overstated** as written: the deadline
+  bounds the judge call. Around it sit one listing round trip, the name re-read, the click's 1 s
+  timeout and the 100 ms settle — the same costs the text path already pays — and a go-back only
+  where a click navigated, which the listing's anchor guard makes rare. Nothing here is unbounded,
+  but the bound is "deadline plus the cheap paths' own click costs", not the deadline alone.
+- `AddTypeSafeJudge` (`Infrastructure/Judgments/TypeSafeRegistration.cs`) is now the one way a host
+  registers the judge and its keep-alive; both hosts bind `TypeSafeOptions` directly.

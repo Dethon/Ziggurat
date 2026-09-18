@@ -7,6 +7,11 @@ public record WebState
 {
     public IReadOnlyList<ModalDismissalEvent> Events { get; init; } = [];
     public IReadOnlyList<LatencyTrendSeries> Trend { get; init; } = [];
+
+    // The kind the trend is drawn for; AllKinds draws every overlay.
+    public string Kind { get; init; } = AllKinds;
+
+    public const string AllKinds = "all";
     public ModalDismissalDimension GroupBy { get; init; } = ModalDismissalDimension.Kind;
     public ModalDismissalMetric Metric { get; init; } = ModalDismissalMetric.Count;
     public Dictionary<string, decimal> Breakdown { get; init; } = [];

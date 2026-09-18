@@ -108,50 +108,15 @@ public static class InjectorModule
                 .AddOutposts(settings.Outposts);
         }
 
-        // The one judge every Jev use asks through. An empty key registers one that answers
-        // absence, so nothing downstream checks the key; a configured one rides the chat clients'
-        // pool and gets its own keep-alive, because a cold handshake to this host measured 560 ms
-        // against a judgment that is worth about a tenth of that.
-        private IServiceCollection AddTypeSafe(TypeSafeConfiguration typeSafe, SkillPreloadSettings skillPreload)
-        {
-            var options = new TypeSafeOptions
-            {
-                ApiUrl = typeSafe.ApiUrl,
-                ApiKey = typeSafe.ApiKey,
-                Model = typeSafe.Model
-            };
-
-            services.AddSingleton<IJudge>(sp => TypeSafeJudge.Create(
-                new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
-                options,
-                sp.GetRequiredService<ILogger<TypeSafeJudge>>()));
-
-            services.AddSingleton<ISkillPreloader>(sp => new SkillPreloader(
-                sp.GetRequiredService<IJudge>(),
-                skillPreload,
-                sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<IMetricsPublisher>()));
-
-            if (!options.IsConfigured)
-            {
-                return services;
-            }
-
-            // A plain singleton for the reason the OpenRouter one is: AddHostedService would
-            // see the same class twice and keep only the first.
-            return services.AddSingleton<IHostedService, HostedConnectionKeepAlive>(sp => new HostedConnectionKeepAlive(
-                new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
-                new HostedConnectionKeepAliveOptions
-                {
-                    BaseAddress = options.ApiUrl,
-                    ApiKey = options.ApiKey,
-                    NonBillableEndpoint = TypeSafeJudge.NonBillableEndpoint,
-                    MetricService = "typesafe-connection-keepalive"
-                },
-                sp.GetRequiredService<IMetricsPublisher>(),
-                TimeProvider.System,
-                sp.GetRequiredService<ILogger<HostedConnectionKeepAlive>>()));
-        }
+        // The judge is registered as every Jev host registers it; the preloader is this host's use.
+        private IServiceCollection AddTypeSafe(TypeSafeOptions typeSafe, SkillPreloadSettings skillPreload) =>
+            services
+                .AddTypeSafeJudge(typeSafe)
+                .AddSingleton<ISkillPreloader>(sp => new SkillPreloader(
+                    sp.GetRequiredService<IJudge>(),
+                    skillPreload,
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<IMetricsPublisher>()));
 
         // An empty address is the feature switched off: no discovery, no refresher, and an empty
         // source for the catalogue to read. A configured one is asked for its models on a timer.

@@ -3,7 +3,6 @@ using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using Domain.Tools.Web;
 using Infrastructure.Clients.Browser;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -143,20 +142,39 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
     public async Task Navigate_TheWallAgainstLiveJev_IsLeftStandingWithoutAKeyAndDismissedWithOne()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
-        var apiKey = new ConfigurationBuilder().AddUserSecrets<ModalJudgmentDismissalTests>().AddEnvironmentVariables().Build()
-            is { } configuration ? configuration["typeSafe:apiKey"] ?? configuration["TYPESAFE_API_KEY"] : null;
-        Skip.If(string.IsNullOrWhiteSpace(apiKey), "typeSafe:apiKey is not set in user secrets (nor TYPESAFE_API_KEY)");
+        var apiKey = ModalJudgeJevTests.RequireKey();
 
         var off = await BrowserAsync(StubJudge.Absent(AbsenceReason.Unconfigured));
         var standing = await off.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), await ServeAsync(off, CookieWall)));
         standing.DismissedModals.ShouldBeEmpty();
 
-        var on = await BrowserAsync(ModalJudgeJevTests.ShippedJudge(apiKey!));
+        var on = await BrowserAsync(ModalJudgeJevTests.ShippedJudge(apiKey));
         var dismissed = await on.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), await ServeAsync(on, CookieWall)));
 
         var closed = dismissed.DismissedModals.ShouldNotBeNull().ShouldHaveSingleItem();
         closed.Selector.ShouldBe("judgment(1)");
         closed.ButtonText.ShouldBe("Rechazar todo");
+    }
+
+    // The container selectors overlap: a `modal cookie-banner` is a cookie wall and a newsletter to
+    // the scan. One wall is one judgment and one event — the kind that closed it — never a second
+    // judgment clicking by index into a list the first click has already shifted.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task Navigate_AWallTwoPatternsDetect_IsJudgedOnceAndCountedOnce()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
+        var judge = Choices((ModalJudge.RejectQuestionId, "1", 0.9), (ModalJudge.AcceptQuestionId, ModalJudge.NoneChoice, 0.8));
+        var browser = await BrowserAsync(judge);
+        var url = await ServeAsync(browser, CookieWall.Replace("class='cookie-consent'", "class='modal cookie-consent'"));
+
+        var result = await browser.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), url));
+
+        result.DismissedModals.ShouldNotBeNull().ShouldHaveSingleItem().Selector.ShouldBe("judgment(1)");
+        judge.Requests.ShouldHaveSingleItem();
+        var evt = _published.Published.OfType<ModalDismissalEvent>().ShouldHaveSingleItem();
+        evt.Kind.ShouldBe(ModalKinds.Cookie);
+        evt.Outcome.ShouldBe(ModalDismissalOutcomes.Judgment);
     }
 
     private async Task<PlaywrightWebBrowser> BrowserAsync(IJudge judge) =>

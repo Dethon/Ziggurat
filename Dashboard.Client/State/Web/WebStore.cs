@@ -11,6 +11,7 @@ public record SetWebGroupBy(ModalDismissalDimension GroupBy) : IAction;
 public record SetWebMetric(ModalDismissalMetric Metric) : IAction;
 public record SetWebDateRange(DateOnly From, DateOnly To) : IAction;
 public record SetWebAgg(Aggregation Agg) : IAction;
+public record SetWebKind(string Kind) : IAction;
 
 public sealed class WebStore : Store<WebState>
 {
@@ -39,4 +40,7 @@ public sealed class WebStore : Store<WebState>
 
     public void SetAgg(Aggregation agg) =>
         Dispatch(new SetWebAgg(agg), static (s, a) => s with { Agg = a.Agg });
+
+    public void SetKind(string kind) =>
+        Dispatch(new SetWebKind(kind), static (s, a) => s with { Kind = a.Kind });
 }

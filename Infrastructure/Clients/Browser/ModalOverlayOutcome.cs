@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
+using Domain.Tools.Web;
 
 namespace Infrastructure.Clients.Browser;
 
@@ -22,6 +23,11 @@ public sealed record ModalOverlayOutcome(
     TimeSpan? JudgmentLatency = null)
 {
     public static ModalOverlayOutcome LeftStanding(ModalType kind) => new(kind, ModalDismissalPath.LeftStanding);
+
+    // Left standing after a judgment: the judge's answer rides on the miss, so the count says what
+    // it thought and how long it took even where nothing was clicked.
+    public static ModalOverlayOutcome LeftStanding(ModalType kind, ModalPick pick) =>
+        new(kind, ModalDismissalPath.LeftStanding, Confidence: pick.Confidence, JudgmentLatency: pick.Latency);
 
     public ModalDismissalEvent ToEvent() => new()
     {

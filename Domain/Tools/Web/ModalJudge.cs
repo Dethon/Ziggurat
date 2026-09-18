@@ -176,13 +176,13 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
         var listed = request.Questions.Values.OfType<ChoiceQuestion>().First().Criteria.Keys;
         var confident = answers
             .OfType<ChoiceAnswer>()
-            .FirstOrDefault(a => a.Confidence >= bar
-                                 && !string.Equals(a.Choice, NoneChoice, StringComparison.Ordinal)
-                                 && listed.Contains(a.Choice)
-                                 && int.TryParse(a.Choice, out _));
+            .Where(a => a.Confidence >= bar && listed.Contains(a.Choice))
+            .Select(a => (Answer: a, Index: int.TryParse(a.Choice, out var index) ? index : (int?)null))
+            .FirstOrDefault(a => a.Index is not null);
 
-        return confident is not null
-            ? new ModalPick(ModalPickStatus.Picked, int.Parse(confident.Choice), confident.Confidence, latency)
+        // On a `none` the confidence reported is the judge's confidence in that nothing.
+        return confident.Answer is not null
+            ? new ModalPick(ModalPickStatus.Picked, confident.Index, confident.Answer.Confidence, latency)
             : new ModalPick(ModalPickStatus.None, null, answers.OfType<ChoiceAnswer>().Max(a => a.Confidence), latency);
     }
 

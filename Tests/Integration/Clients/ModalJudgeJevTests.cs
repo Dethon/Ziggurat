@@ -61,12 +61,17 @@ public class ModalJudgeJevTests
         verdicts.Single(v => v.Case.Controls.Contains("Aceptar y continuar")).Picked.ShouldBe("Aceptar y continuar");
     }
 
-    private static async Task<IReadOnlyList<Verdict>> RunAsync()
+    // The key the Jev tests share, or a skip: user secrets first, the environment second.
+    internal static string RequireKey()
     {
         var apiKey = Configuration["typeSafe:apiKey"] ?? Configuration["TYPESAFE_API_KEY"];
         Skip.If(string.IsNullOrWhiteSpace(apiKey), "typeSafe:apiKey is not set in user secrets (nor TYPESAFE_API_KEY)");
+        return apiKey!;
+    }
 
-        var judge = ShippedJudge(apiKey!);
+    private static async Task<IReadOnlyList<Verdict>> RunAsync()
+    {
+        var judge = ShippedJudge(RequireKey());
 
         var cases = JsonSerializer.Deserialize<List<Case>>(
             await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Integration", "Clients", "jev-modal-cases.json")),

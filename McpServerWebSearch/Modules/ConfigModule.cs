@@ -2,20 +2,18 @@ using Domain.Contracts;
 using Domain.Judgments;
 using Domain.Prompts;
 using Domain.Tools.Web;
-using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Browser;
 using Infrastructure.Extensions;
 using Infrastructure.Judgments;
 using Infrastructure.Metrics;
+using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;
 using McpServerWebSearch.Settings;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace McpServerWebSearch.Modules;
@@ -30,9 +28,9 @@ public static class ConfigModule
                 // A lazy factory, like the voice channel's: nothing dials Redis until the first
                 // publish resolves the publisher, so registration runs with no container.
                 .AddSingleton<IConnectionMultiplexer>(
-                    _ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
+                    _ => RedisConnection.ConnectResiliently(settings.RedisConnectionString))
                 .AddMetricsPublishing("mcp-websearch")
-                .AddTypeSafe(settings.TypeSafe)
+                .AddTypeSafeJudge(settings.TypeSafe)
                 .AddWebSearchClients(settings)
                 .AddToolServer(settings, ToolResponse.Create)
                 .WithTools<McpWebSearchTool>()
@@ -85,43 +83,6 @@ public static class ConfigModule
             });
 
             return services;
-        }
-
-        // The one judge, as the agent registers it: an empty key registers one that answers
-        // absence, so the dismisser never checks the key; a configured one rides the shared pool
-        // and gets a keep-alive, because a cold handshake to this host measured 560 ms against a
-        // 1000 ms deadline that a warm judgment meets with two thirds to spare.
-        private IServiceCollection AddTypeSafe(TypeSafeConfiguration typeSafe)
-        {
-            var options = new TypeSafeOptions
-            {
-                ApiUrl = typeSafe.ApiUrl,
-                ApiKey = typeSafe.ApiKey,
-                Model = typeSafe.Model
-            };
-
-            services.AddSingleton<IJudge>(sp => TypeSafeJudge.Create(
-                new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
-                options,
-                sp.GetRequiredService<ILogger<TypeSafeJudge>>()));
-
-            if (!options.IsConfigured)
-            {
-                return services;
-            }
-
-            return services.AddSingleton<IHostedService, HostedConnectionKeepAlive>(sp => new HostedConnectionKeepAlive(
-                new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
-                new HostedConnectionKeepAliveOptions
-                {
-                    BaseAddress = options.ApiUrl,
-                    ApiKey = options.ApiKey,
-                    NonBillableEndpoint = TypeSafeJudge.NonBillableEndpoint,
-                    MetricService = "typesafe-connection-keepalive"
-                },
-                sp.GetRequiredService<IMetricsPublisher>(),
-                TimeProvider.System,
-                sp.GetRequiredService<ILogger<HostedConnectionKeepAlive>>()));
         }
     }
 }

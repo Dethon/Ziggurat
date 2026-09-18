@@ -157,24 +157,52 @@ public class ModalDismisser(ModalJudge? judge = null)
     }
 
     // Once per navigation, after the cheap paths have had the whole window: the overlays they left
-    // standing go to the judge together, and a pick is clicked by index into the very list its
-    // name was read from. Anything but a confident pick of a listed control leaves the page as it
-    // was, with the judge's answer on the outcome so the miss is still counted.
+    // standing go to the judge, and a pick is clicked by index into the very list its name was read
+    // from. Anything but a confident pick of a listed control leaves the page as it was, with the
+    // judge's answer on the outcome so the miss is still counted.
+    //
+    // One kind at a time, never together. The container selectors overlap — a `modal cookie-banner`
+    // is a cookie wall and a newsletter to the scan — so two kinds can be one wall: judged together
+    // they spent two judgments on it, and the first click shifted the list the second was about to
+    // click into. After a dismissal the scan runs again and a kind whose overlay is gone is dropped
+    // from the outcomes: it was one wall, counted under the kind that closed it.
     private async Task<IReadOnlyList<ModalOverlayOutcome>> JudgeStandingOverlaysAsync(
         IPage page,
         IReadOnlyList<ModalOverlayOutcome> outcomes,
         CancellationToken ct)
     {
-        if (judge is null || outcomes.Count == 0)
+        if (judge is null || outcomes.All(o => o.Path != ModalDismissalPath.LeftStanding))
         {
             return outcomes;
         }
 
-        var judged = await Task.WhenAll(outcomes.Select(outcome => outcome.Path == ModalDismissalPath.LeftStanding
-            ? TryJudgeSafeAsync(page, _defaultPatterns.First(p => p.Type == outcome.Kind), ct)
-            : Task.FromResult(outcome)));
+        var judged = new List<ModalOverlayOutcome>();
+        var remaining = outcomes.ToList();
+        var settled = false;
+        while (remaining.Count > 0)
+        {
+            var outcome = remaining[0];
+            remaining.RemoveAt(0);
+            if (outcome.Path != ModalDismissalPath.LeftStanding)
+            {
+                judged.Add(outcome);
+                continue;
+            }
 
-        if (judged.Any(o => o.Dismissed is not null))
+            var result = await TryJudgeSafeAsync(page, PatternFor(outcome.Kind), judge, ct);
+            judged.Add(result);
+            if (result.Dismissed is null || remaining.Count == 0)
+            {
+                continue;
+            }
+
+            await SettleAfterDismissalAsync(page, ct);
+            settled = true;
+            var stillThere = await DetectOverlayContainersAsync(page, remaining.Select(o => PatternFor(o.Kind)).ToList());
+            remaining = remaining.Where((_, index) => stillThere[index]).ToList();
+        }
+
+        if (!settled && judged.Any(o => o.Path == ModalDismissalPath.Judgment))
         {
             await SettleAfterDismissalAsync(page, ct);
         }
@@ -182,11 +210,14 @@ public class ModalDismisser(ModalJudge? judge = null)
         return judged;
     }
 
-    private async Task<ModalOverlayOutcome> TryJudgeSafeAsync(IPage page, ModalPattern pattern, CancellationToken ct)
+    private static ModalPattern PatternFor(ModalType kind) => _defaultPatterns.First(p => p.Type == kind);
+
+    private static async Task<ModalOverlayOutcome> TryJudgeSafeAsync(
+        IPage page, ModalPattern pattern, ModalJudge modalJudge, CancellationToken ct)
     {
         try
         {
-            return await TryJudgeAsync(page, pattern, ct);
+            return await TryJudgeAsync(page, pattern, modalJudge, ct);
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {
@@ -194,42 +225,46 @@ public class ModalDismisser(ModalJudge? judge = null)
         }
     }
 
-    private async Task<ModalOverlayOutcome> TryJudgeAsync(IPage page, ModalPattern pattern, CancellationToken ct)
+    private static async Task<ModalOverlayOutcome> TryJudgeAsync(
+        IPage page, ModalPattern pattern, ModalJudge modalJudge, CancellationToken ct)
     {
         var urlBefore = page.Url;
-        var locator = page.Locator(pattern.ContainerSelector ?? "*").Locator(ControlSelector);
-        var controls = await ListOverlayControlsAsync(locator, pattern.ContainerSelector ?? "*", urlBefore, judge!.MaxControls);
+        var containerSelector = pattern.ContainerSelector ?? "*";
+        var locator = page.Locator(containerSelector).Locator(ControlSelector);
+        var controls = await ListOverlayControlsAsync(locator, containerSelector, urlBefore, modalJudge.MaxControls);
         if (controls.Count == 0)
         {
             return ModalOverlayOutcome.LeftStanding(pattern.Type);
         }
 
-        var pick = await judge!.PickAsync(pattern.Type, controls, ct);
+        var pick = await modalJudge.PickAsync(pattern.Type, controls, ct);
         if (pick.Status != ModalPickStatus.Picked)
         {
-            return new ModalOverlayOutcome(
-                pattern.Type, ModalDismissalPath.LeftStanding, Confidence: pick.Confidence, JudgmentLatency: pick.Latency);
+            return ModalOverlayOutcome.LeftStanding(pattern.Type, pick);
         }
 
+        // The judge took hundreds of milliseconds, and the list is resolved afresh by the click:
+        // the control at that index must still be the one the judge was shown, or the page has
+        // moved under it and the click would land on whatever took its place.
         var control = controls.First(c => c.Index == pick.Index);
+        var target = locator.Nth(control.Index);
+        if ((await AccessibleNamesAsync(target)).FirstOrDefault() != control.Name)
+        {
+            return ModalOverlayOutcome.LeftStanding(pattern.Type, pick);
+        }
+
         try
         {
-            await locator.Nth(control.Index).ClickAsync(new LocatorClickOptions { Timeout = 1000 });
+            if (!await ClickWithoutLeavingAsync(page, target, urlBefore, ct))
+            {
+                return ModalOverlayOutcome.LeftStanding(pattern.Type, pick);
+            }
         }
         catch (PlaywrightException)
         {
             // The control went stale or refused the click: the next-best nothing, as the text
             // path already treats it.
-            return new ModalOverlayOutcome(
-                pattern.Type, ModalDismissalPath.LeftStanding, Confidence: pick.Confidence, JudgmentLatency: pick.Latency);
-        }
-
-        await Task.Delay(100, ct);
-        if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))
-        {
-            await page.GoBackAsync(new PageGoBackOptions { Timeout = 5000 });
-            return new ModalOverlayOutcome(
-                pattern.Type, ModalDismissalPath.LeftStanding, Confidence: pick.Confidence, JudgmentLatency: pick.Latency);
+            return ModalOverlayOutcome.LeftStanding(pattern.Type, pick);
         }
 
         return new ModalOverlayOutcome(
@@ -238,6 +273,23 @@ public class ModalDismisser(ModalJudge? judge = null)
             new ModalDismissed(pattern.Type, $"judgment({control.Index})", control.Name),
             pick.Confidence,
             pick.Latency);
+    }
+
+    // Clicks, then verifies the page is still the page: a control that navigated away was not a
+    // dismissal, so the browser goes back and the answer is false. Every path clicks through here.
+    private static async Task<bool> ClickWithoutLeavingAsync(
+        IPage page, ILocator control, string urlBefore, CancellationToken ct)
+    {
+        await control.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
+
+        await Task.Delay(100, ct);
+        if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))
+        {
+            await page.GoBackAsync(new PageGoBackOptions { Timeout = 5000 });
+            return false;
+        }
+
+        return true;
     }
 
     // What counts as a control the judge may be offered: the elements a person would click to
@@ -376,13 +428,8 @@ public class ModalDismisser(ModalJudge? judge = null)
                 var buttonText = probe.Outcome == ButtonProbeOutcome.Actionable
                     ? probe.Text
                     : await button.TextContentAsync(new LocatorTextContentOptions { Timeout = 500 });
-                await button.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
-
-                // Verify we didn't navigate away - if we did, this wasn't a modal dismiss
-                await Task.Delay(100, ct);
-                if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))
+                if (!await ClickWithoutLeavingAsync(page, button, urlBefore, ct))
                 {
-                    await page.GoBackAsync(new PageGoBackOptions { Timeout = 5000 });
                     continue;
                 }
 
@@ -455,12 +502,8 @@ public class ModalDismisser(ModalJudge? judge = null)
                             continue;
                         }
 
-                        await candidate.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
-
-                        await Task.Delay(100, ct);
-                        if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))
+                        if (!await ClickWithoutLeavingAsync(page, candidate, urlBefore, ct))
                         {
-                            await page.GoBackAsync(new PageGoBackOptions { Timeout = 5000 });
                             continue;
                         }
 

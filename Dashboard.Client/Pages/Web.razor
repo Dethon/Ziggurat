@@ -14,6 +14,8 @@
                     MetricOptions="MetricOptions"
                     ExtraChoices="_extraChoices">
         <ExtraControls Context="controls">
+            <PillSelector Label="Kind" Options="KindOptions" Value="@_kind.Current"
+                          OnChanged="value => controls.ChangeAsync(_kind, value)" />
             <PillSelector Label="Aggregate" Options="AggOptions" Value="@_aggregation.Current"
                           OnChanged="value => controls.ChangeAsync(_aggregation, value)" />
         </ExtraControls>
@@ -27,7 +29,7 @@
             </section>
 
             <section class="section">
-                <h3>Outcomes over time</h3>
+                <h3>Outcomes over time@(state.Kind == WebState.AllKinds ? "" : $" — {state.Kind}")</h3>
                 <LatencyTrendChart Series="state.Trend" />
             </section>
 
@@ -73,13 +75,25 @@
 
 @code {
     private MetricChoice _aggregation = default!;
+    private MetricChoice _kind = default!;
     private IReadOnlyList<MetricChoice> _extraChoices = [];
 
     protected override void OnInitialized()
     {
         _aggregation = MetricChoice.For("agg", () => Store.State.Agg, Store.SetAgg);
-        _extraChoices = [_aggregation];
+        // A string choice, not an enum: the kinds are the wire spellings the events carry.
+        _kind = new MetricChoice("kind", () => Store.State.Kind, Store.SetKind);
+        _extraChoices = [_kind, _aggregation];
     }
+
+    private static readonly IReadOnlyList<PillOption> KindOptions =
+    [
+        new("All", WebState.AllKinds),
+        new("Cookie", ModalKinds.Cookie),
+        new("Age", ModalKinds.Age),
+        new("Newsletter", ModalKinds.Newsletter),
+        new("Notification", ModalKinds.Notification),
+    ];
 
     private static readonly IReadOnlyList<PillOption> DimensionOptions =
     [

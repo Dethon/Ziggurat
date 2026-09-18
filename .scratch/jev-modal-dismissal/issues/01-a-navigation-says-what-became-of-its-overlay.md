@@ -35,3 +35,7 @@ Shipped 2026-09-18.
   (count, judgment latency), and the recent overlays. Collector keys `metrics:modals:<day>`, totals
   `modals:<outcome>:count`, push `OnModalDismissal`; endpoints `/api/metrics/modals`, `/modals/by/{dimension}`,
   `/modals/trend?kind=`.
+
+**Review follow-up (same day).** The trend is drawn per kind: a Kind pill (all / cookie / age /
+newsletter / notification) on the Web page passes `kind=` to `/modals/trend`, riding the breakdown
+refresh so the pill moves it and a push brings it back into line.

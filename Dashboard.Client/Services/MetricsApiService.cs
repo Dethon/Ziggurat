@@ -83,6 +83,7 @@ public sealed class MetricsApiService(HttpClient http)
     public Task<List<ModalDismissalEvent>?> GetModalDismissalEventsAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<ModalDismissalEvent>>($"api/metrics/modals?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
-    public Task<List<LatencyTrendSeries>?> GetModalDismissalTrendAsync(DateOnly from, DateOnly to) =>
-        http.GetFromJsonAsync<List<LatencyTrendSeries>>($"api/metrics/modals/trend?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+    public Task<List<LatencyTrendSeries>?> GetModalDismissalTrendAsync(DateOnly from, DateOnly to, string? kind) =>
+        http.GetFromJsonAsync<List<LatencyTrendSeries>>(
+            $"api/metrics/modals/trend?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}" + (kind is null ? "" : $"&kind={Uri.EscapeDataString(kind)}"));
 }

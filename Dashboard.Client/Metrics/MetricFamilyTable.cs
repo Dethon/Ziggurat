@@ -269,29 +269,25 @@ public sealed class MetricFamilyTable
             dimension: MetricChoice.For("groupBy", () => web.State.GroupBy, web.SetGroupBy),
             metric: MetricChoice.For("metric", () => web.State.Metric, web.SetMetric),
             setDateRange: web.SetDateRange,
-            // The outcome share over time is the page's headline, loaded beside the events as the
-            // skills family loads its trend.
             loadEvents: async () =>
             {
                 var state = web.State;
-                var events = api.GetModalDismissalEventsAsync(state.From, state.To);
-                var trend = api.GetModalDismissalTrendAsync(state.From, state.To);
-                await Task.WhenAll(events, trend);
-                var loaded = await events ?? [];
-                var series = await trend ?? [];
-                return () =>
-                {
-                    web.SetEvents(loaded);
-                    web.SetTrend(series);
-                };
+                var loaded = await api.GetModalDismissalEventsAsync(state.From, state.To) ?? [];
+                return () => web.SetEvents(loaded);
             },
+            // The trend is drawn for the kind the page chose, so it rides the breakdown refresh —
+            // the read a pill moves and a push brings back into line — rather than the event load.
             refreshBreakdown: async () =>
             {
                 var state = web.State;
-                var breakdown = await api.GetGroupedAsync<decimal>(
+                var kind = state.Kind == WebState.AllKinds ? null : state.Kind;
+                var breakdown = api.GetGroupedAsync<decimal>(
                     $"modals/by/{state.GroupBy}", state.From, state.To,
                     [("metric", state.Metric.ToString()), ("agg", state.Agg.ToString())]);
-                web.SetBreakdown(breakdown ?? []);
+                var trend = api.GetModalDismissalTrendAsync(state.From, state.To, kind);
+                await Task.WhenAll(breakdown, trend);
+                web.SetBreakdown(await breakdown ?? []);
+                web.SetTrend(await trend ?? []);
             });
 
         All = [Tokens, Tools, Errors, Schedules, Memory, Latency, Voice, Skills, Web];

@@ -3,6 +3,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
+using Infrastructure.Judgments;
 using JetBrains.Annotations;
 
 namespace Agent.Settings;
@@ -24,17 +25,8 @@ public record AgentSettings
     public RetentionSettings Retention { get; init; } = new();
     public OutpostConfiguration Outposts { get; init; } = new();
     public LemonadeChatConfiguration LemonadeChat { get; init; } = new();
-    public TypeSafeConfiguration TypeSafe { get; init; } = new();
+    public TypeSafeOptions TypeSafe { get; init; } = new();
     public SkillPreloadSettings SkillPreload { get; init; } = new();
-}
-
-// TypeSafe, the hosted judge every Jev use asks through. The address and the pinned model are
-// configuration; the key is a secret and empty means the feature is off, never a startup failure.
-public record TypeSafeConfiguration
-{
-    public string ApiUrl { get; [UsedImplicitly] init; } = "https://api.typesafe.ai/v1/";
-    public string ApiKey { get; [UsedImplicitly] init; } = "";
-    public string Model { get; [UsedImplicitly] init; } = "jev-1.13.0";
 }
 
 // The Lemonade chat host: somebody's own box on the local network, outside the compose stack, and
