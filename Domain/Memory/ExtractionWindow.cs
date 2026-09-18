@@ -14,6 +14,12 @@ public static class ExtractionWindow
     // that turn and claims the last slot, and the rest come from the history up to the anchor.
     // Everything persisted after the anchor is drift from turns that arrived later and is left
     // out — that is the anchor's whole purpose.
+    //
+    // The slots count conversation. A tool call and its result are persisted as two messages
+    // that render as blank lines, and a turn that used two tools was the whole window with the
+    // conversation before it gone. They are filtered after the cut, so the anchor keeps meaning
+    // "messages persisted", and nothing is rendered in their place: the reply restates what was
+    // fetched, and fetched text has no business in front of the memory writer.
     public static IReadOnlyList<ChatMessage> Build(
         IReadOnlyList<ChatMessage>? persistedHistory,
         MemoryAnchor anchor,
@@ -25,6 +31,7 @@ public static class ExtractionWindow
 
         var window = persistedHistory?
             .Take(anchor.PersistedMessageCount)
+            .Where(IsConversation)
             .TakeLast(contextSlots)
             .ToList() ?? [];
 
@@ -65,6 +72,12 @@ public static class ExtractionWindow
 
         return string.Join("\n", lines);
     }
+
+    // Tool-role messages, and assistant messages that carry only a tool call. A user message is
+    // always conversation, whatever it carries.
+    private static bool IsConversation(ChatMessage message) =>
+        message.Role != ChatRole.Tool
+        && !(message.Role == ChatRole.Assistant && string.IsNullOrEmpty(message.Text));
 
     private static string RoleLabel(ChatRole role) =>
         role == ChatRole.Assistant ? "assistant" : "user";

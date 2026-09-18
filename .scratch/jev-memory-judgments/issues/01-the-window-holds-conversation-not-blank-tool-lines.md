@@ -4,11 +4,11 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A test with a user turn, a tool-call-only assistant message, a tool result and a text reply first fails showing the blank lines, then passes with neither rendered.
-- [ ] With a window of six, a history of two text turns then a two-tool turn keeps all of the earlier text turns the six slots allow.
-- [ ] An assistant message with both text and a tool call keeps its text.
-- [ ] The `[CURRENT]` / `[context -N]` numbering is unchanged for a window with no tool messages; the marker cross-check test still passes.
-- [ ] The anchor's meaning is unchanged: it still counts persisted messages, filtered after the cut.
-- [ ] Spec: `.scratch/jev-memory-judgments/spec.md` § The window.
+- [x] A test with a user turn, a tool-call-only assistant message, a tool result and a text reply first fails showing the blank lines, then passes with neither rendered.
+- [x] With a window of six, a history of two text turns then a two-tool turn keeps all of the earlier text turns the six slots allow.
+- [x] An assistant message with both text and a tool call keeps its text.
+- [x] The `[CURRENT]` / `[context -N]` numbering is unchanged for a window with no tool messages; the marker cross-check test still passes.
+- [x] The anchor's meaning is unchanged: it still counts persisted messages, filtered after the cut.
+- [x] Spec: `.scratch/jev-memory-judgments/spec.md` § The window.

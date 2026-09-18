@@ -71,6 +71,83 @@ public class ExtractionWindowTests
         window[0].Role.ShouldBe(ChatRole.User);
     }
 
+    // A tool call and its result used to render as two blank lines, the result labelled `user:`,
+    // each taking one of the window's slots. Neither is conversation: the assistant's reply
+    // restates what was fetched, and fetched text has no place in front of the memory writer.
+    [Fact]
+    public void Build_WithAToolCallAndItsResult_RendersNeither()
+    {
+        var history = new ChatMessage[]
+        {
+            new(ChatRole.User, "what's the weather in Valencia?"),
+            new(ChatRole.Assistant, [new FunctionCallContent("call_1", "get_weather", new Dictionary<string, object?> { ["city"] = "Valencia" })]),
+            new(ChatRole.Tool, [new FunctionResultContent("call_1", "sunny, 24C")]),
+            new(ChatRole.Assistant, "Sunny and 24 degrees.")
+        };
+
+        var window = ExtractionWindow.Build(history, Anchor(4), "gracias, me mudo allí", windowSize: 6);
+
+        window.Select(m => m.Text).ShouldBe(["what's the weather in Valencia?", "Sunny and 24 degrees.", "gracias, me mudo allí"]);
+        ExtractionWindow.Render(window).Split('\n').ShouldAllBe(line => !line.EndsWith(": "));
+    }
+
+    [Fact]
+    public void Build_TheSlotsCountConversation_NotToolTraffic()
+    {
+        var history = new ChatMessage[]
+        {
+            new(ChatRole.User, "turn1 user"),
+            new(ChatRole.Assistant, "turn1 assistant"),
+            new(ChatRole.User, "turn2 user"),
+            new(ChatRole.Assistant, "turn2 assistant"),
+            new(ChatRole.User, "turn3 user: two tools"),
+            new(ChatRole.Assistant, [new FunctionCallContent("c1", "tool_a")]),
+            new(ChatRole.Tool, [new FunctionResultContent("c1", "a")]),
+            new(ChatRole.Assistant, [new FunctionCallContent("c2", "tool_b")]),
+            new(ChatRole.Tool, [new FunctionResultContent("c2", "b")]),
+            new(ChatRole.Assistant, "turn3 assistant")
+        };
+
+        var window = ExtractionWindow.Build(history, Anchor(10), "turn4 user", windowSize: 6);
+
+        window.Select(m => m.Text).ShouldBe([
+            "turn1 assistant", "turn2 user", "turn2 assistant", "turn3 user: two tools", "turn3 assistant", "turn4 user"]);
+    }
+
+    [Fact]
+    public void Build_AnAssistantMessageWithTextAndAToolCall_KeepsItsText()
+    {
+        var history = new ChatMessage[]
+        {
+            new(ChatRole.User, "turn the light on"),
+            new(ChatRole.Assistant, [new TextContent("On it."), new FunctionCallContent("c1", "light_on")]),
+            new(ChatRole.Tool, [new FunctionResultContent("c1", "ok")])
+        };
+
+        var window = ExtractionWindow.Build(history, Anchor(3), "thanks", windowSize: 6);
+
+        window.Select(m => m.Text).ShouldBe(["turn the light on", "On it.", "thanks"]);
+    }
+
+    [Fact]
+    public void Build_TheAnchorStillCountsPersistedMessages_FilteredAfterTheCut()
+    {
+        // Three persisted messages when the anchor was taken, one of them tool traffic; a fourth
+        // arrived later. The cut is by persisted count, so the drift is out and the tool line
+        // is out, and the window is the two conversation messages plus the current one.
+        var history = new ChatMessage[]
+        {
+            new(ChatRole.User, "first"),
+            new(ChatRole.Tool, [new FunctionResultContent("c1", "noise")]),
+            new(ChatRole.Assistant, "reply"),
+            new(ChatRole.User, "drift")
+        };
+
+        var window = ExtractionWindow.Build(history, Anchor(3), "current", windowSize: 6);
+
+        window.Select(m => m.Text).ShouldBe(["first", "reply", "current"]);
+    }
+
     [Fact]
     public void Render_WithSingleUserMessage_MarksItAsCurrent()
     {
