@@ -14,3 +14,27 @@
 - [x] The metric event carries `judgment` / `agreement` / `wordlist` and, when Jev answered, both probabilities.
 - [x] The server contract tests pass with the new registration; an empty key makes no call.
 - [x] Spec: `.scratch/jev-voice-approval/spec.md` § Decisions.
+
+## Answer
+
+- `McpChannelVoice/Services/IApprovalReader.cs` (`ApprovalReading`: response, who decided, the two
+  probabilities, latency) and `JudgedApprovalReader` — two nouls over `{prompt, answer}`, the
+  spec's rule, the word list as agreement partner and as the whole answer when the judge is off,
+  absent or late. The judge is raced against the deadline (`Task.WaitAsync`), so a judge that
+  ignores its token is not waited for. An empty transcript never reaches the judge.
+- `RequestApprovalTool` takes the reader from DI and passes the prompt as spoken (the re-ask's
+  "No entendí." included). `VoiceEvent` gains `DecidedBy` (`ApprovalDeciders`: judgment /
+  agreement / wordlist), `ApprovedProbability`, `DeclinedProbability`; the judge's latency rides
+  `DurationMs`.
+- Settings: `VoiceSettings.TypeSafe` (`TypeSafeOptions`) and `VoiceSettings.Approval.Judgment`
+  (`ApprovalJudgmentSettings`: enabled, deadlineMs 1000, sure 0.9, counter 0.1, lean 0.5) in
+  `McpChannelVoice/appsettings.json`. The key reaches the container as `TYPESAFE__APIKEY` through
+  the service's `env_file: .env`, the same line the agent and the browse server read — no
+  `${TYPESAFE_API_KEY}` entry, for the reason the preload's ticket 02 recorded.
+- Registration: `ConfigModule` calls `AddTypeSafeJudge(settings.TypeSafe)`;
+  `ApprovalJudgmentRegistrationTests` pins that an empty key resolves a reader over an
+  unconfigured judge with no keep-alive.
+- Tests: `JudgedApprovalReaderTests` (the rule, the deadline race, disabled, the request's shape),
+  `ApprovalSettingsBindingTests` (binding and the shipped values), three new cases in
+  `RequestApprovalToolTests` (the reader decides, the metric says who and what). The parser's own
+  tests are untouched.

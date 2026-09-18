@@ -45,9 +45,17 @@ About 330 ms warm.
   as the fallback and the agreement partner.
 - **State.** `{ "prompt": <what was spoken>, "answer": <the transcript> }`. Nothing else.
 - **Questions.** `approved`: "`prompt` was spoken aloud asking for a yes or no about doing exactly
-  what it names. `answer` is the transcribed spoken reply. Did the person give permission to do
-  exactly that, all of it, without changing or narrowing it?" `declined`: same preamble, "Did the
-  person refuse it, or tell the assistant not to do it as asked?"
+  what it names. `answer` is the transcribed spoken reply. Did the person give permission to go
+  ahead with it as asked? A yes that changes or narrows what was asked is not permission."
+  `declined`: same preamble, "Did the person refuse it, or tell the assistant not to do it as
+  asked?"
+  *Changed at implementation (2026-09-18, `probe/2026-09-18-wordings-*.txt`):* the grilled
+  wording asked for permission "to do exactly that, all of it, without changing or narrowing it",
+  which the probe had measured only on the eight conditional answers; over the first block Jev
+  read a bare "adelante", "hazlo", "go ahead", "do it" as not quite that (0.83–0.89), so every
+  answer the word list is blind to went to the re-ask. The shipped wording keeps them at 0.91+
+  and both narrowed answers out of the approval. Under the rule "no, solo la del salón" declines
+  by agreement rather than re-asking — nothing runs either way.
 - **Rule.** With `a` = approved, `d` = declined, `w` = the word list's verdict:
   1. `a ≥ sure` and `d ≤ counter` → approved; `d ≥ sure` and `a ≤ counter` → rejected
      (`sure` 0.9, `counter` 0.1).

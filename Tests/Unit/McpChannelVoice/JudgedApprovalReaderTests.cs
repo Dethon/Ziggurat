@@ -161,7 +161,7 @@ public class JudgedApprovalReaderTests
     }
 
     // The state is the prompt and the answer, nothing else; the two questions are the ones the
-    // probe measured, worded for "exactly that, all of it".
+    // probe measured, the narrowed yes named as the exception.
     [Fact]
     public async Task TheRequest_CarriesThePromptAndTheAnswer_AndTheTwoMeasuredQuestions()
     {
@@ -175,7 +175,7 @@ public class JudgedApprovalReaderTests
         request.State["answer"]!.GetValue<string>().ShouldBe("sí a todo");
         request.Questions.Keys.ShouldBe([JudgedApprovalReader.ApprovedQuestionId, JudgedApprovalReader.DeclinedQuestionId], ignoreOrder: true);
         request.Questions[JudgedApprovalReader.ApprovedQuestionId].ShouldBeOfType<NoulQuestion>()
-            .Instructions.ShouldContain("exactly that, all of it, without changing or narrowing it");
+            .Instructions.ShouldContain("A yes that changes or narrows what was asked is not permission");
         request.Questions[JudgedApprovalReader.DeclinedQuestionId].ShouldBeOfType<NoulQuestion>()
             .Instructions.ShouldContain("refuse it, or tell the assistant not to do it as asked");
     }

@@ -18,14 +18,19 @@ public sealed class JudgedApprovalReader(IJudge judge, ApprovalJudgmentSettings 
     public const string ApprovedQuestionId = "approved";
     public const string DeclinedQuestionId = "declined";
 
-    // The wording the probe measured (probe/2026-09-18-answers.txt): "exactly that, all of it"
-    // is what sent both narrowed answers to the re-ask instead of the approval.
+    // The wording the probe measured (probe/2026-09-18-wordings-*.txt, "goahead-asasked"). The
+    // spec's first draft asked for "exactly that, all of it, without changing or narrowing it",
+    // and Jev read a bare "adelante" or "hazlo" as not quite that — 0.83 to 0.89, under the sure
+    // bar, so the answers the word list is blind to all went to the re-ask. Asking for permission
+    // "to go ahead with it as asked" and naming the narrowed yes as the exception keeps those at
+    // 0.91 and above while "sí, pero la de la cocina no" stays under 0.1.
     private const string Preamble =
         "`prompt` was spoken aloud asking for a yes or no about doing exactly what it names. " +
         "`answer` is the transcribed spoken reply. ";
 
     public static readonly string ApprovedInstructions =
-        Preamble + "Did the person give permission to do exactly that, all of it, without changing or narrowing it?";
+        Preamble + "Did the person give permission to go ahead with it as asked? " +
+        "A yes that changes or narrows what was asked is not permission.";
 
     public static readonly string DeclinedInstructions =
         Preamble + "Did the person refuse it, or tell the assistant not to do it as asked?";
