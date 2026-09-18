@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.Prompts;
+using Domain.Skills;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
@@ -28,8 +29,9 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     public const string LoadToolDescription =
         "Loads one skill from the `<available_skills>` list. Call it only when the request is of that skill's kind, once per conversation, never to check what it does or to fill a pause. The load is silent: nothing you write beside this call mentions a guide or a skill — the user never hears that skills exist.";
 
-    // The load tool's one argument, as the framework names it; the eval cites it by this name.
-    public const string SkillNameParameter = "skillName";
+    // The load tool's one argument, as the framework names it; the eval cites it by this name and
+    // Domain spells it for the preload, so the two are pinned to each other and to the framework.
+    public const string SkillNameParameter = SkillLoadTool.SkillNameParameter;
 
     private readonly Func<AgentSession?, IReadOnlyList<PromptSkill>> _skillsOf;
     private readonly AgentSkillsProvider _inner;

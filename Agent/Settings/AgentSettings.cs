@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Skills;
 using Domain.Tools.FileSystem;
 using JetBrains.Annotations;
 
@@ -24,6 +25,7 @@ public record AgentSettings
     public OutpostConfiguration Outposts { get; init; } = new();
     public LemonadeChatConfiguration LemonadeChat { get; init; } = new();
     public TypeSafeConfiguration TypeSafe { get; init; } = new();
+    public SkillPreloadSettings SkillPreload { get; init; } = new();
 }
 
 // TypeSafe, the hosted judge every Jev use asks through. The address and the pinned model are

@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Prompts;
+using Domain.Skills;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Skills;
@@ -136,6 +137,42 @@ public class McpAgentSkillsTests
         load.ToolName.ShouldBe(AgentSkillsProvider.LoadSkillToolName);
         load.Outcome.ShouldBe(ToolInvocationOutcome.Completed);
         load.Result.ShouldNotBeNull().ShouldContain("Do the thing.");
+    }
+
+    // Domain writes a preload as the framework's load would have left it, and reads "already
+    // loaded" off the same shape; neither can drift from the framework without this going red.
+    [Fact]
+    public void TheDomainsSpellingOfTheLoad_IsTheFrameworks()
+    {
+        SkillLoadTool.Name.ShouldBe(AgentSkillsProvider.LoadSkillToolName);
+        SkillsProvider.LoadToolName.ShouldBe(SkillLoadTool.Name);
+        SkillsProvider.SkillNameParameter.ShouldBe(SkillLoadTool.SkillNameParameter);
+    }
+
+    [Fact]
+    public async Task ALoad_ReturnsTheBodyWrappedExactlyAsTheDomainWritesAPreload()
+    {
+        var text = new SkillText(Skill, "Does test things.", "# Test\n\nDo the thing.");
+        await using var server = await StartAsync(text);
+        var fake = new StreamingFakeChatClient(
+            ToolApprovalResponseFactory.CreateToolCallResponse(
+                AgentSkillsProvider.LoadSkillToolName, "call-1", new Dictionary<string, object?> { [SkillsProvider.SkillNameParameter] = Skill }),
+            new ChatResponse([new ChatMessage(ChatRole.Assistant, "Done")]) { FinishReason = ChatFinishReason.Stop });
+        var observer = new RecordingObserver();
+        var approving = new ToolApprovalChatClient(fake, new TestApprovalHandler(ToolApprovalResult.Rejected), "conv-skills", observer: observer);
+        await using var agent = Agent(approving, server.Endpoint);
+
+        await agent.RunAsync([new ChatMessage(ChatRole.User, "hi")]);
+
+        var skill = new SkillDeclaration
+        {
+            Name = text.Name,
+            Description = text.Description,
+            DescriptionBudget = 100,
+            BodyBudget = 1000,
+            ServedBy = "test"
+        }.Bind(text.Description, text.Body);
+        observer.Invocations.ShouldHaveSingleItem().Result.ShouldBe(SkillLoadTool.Wrapped(skill));
     }
 
     private static (IChatClient Client, List<ChatOptions?> Captured) Capturing()

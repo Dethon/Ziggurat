@@ -1,0 +1,66 @@
+using Domain.Prompts;
+using Microsoft.Extensions.AI;
+
+namespace Domain.Skills;
+
+// The load tool as the conversation records it: its name, its one argument, how a loaded skill is
+// recognised in a history and how a preload is written into one. The framework owns the tool
+// (Microsoft.Agents.AI's `AgentSkillsProvider`), which Domain does not reference, so the names
+// are spelled here and a test pins them to the framework's.
+//
+// A preload is written exactly as the framework's own load would have left it — an assistant
+// message carrying the call, a tool message carrying the wrapped body — so a model sees one
+// shape for a skill whoever loaded it, and "already loaded" is one question asked of the history
+// with no second record to drift. Every deployed model was shown a pair it never emitted and took
+// it as its own (`.scratch/jev-skill-preload/issues/01`).
+public static class SkillLoadTool
+{
+    public const string Name = "load_skill";
+
+    public const string SkillNameParameter = "skillName";
+
+    public static IReadOnlySet<string> LoadedIn(IEnumerable<ChatMessage> history) =>
+        history
+            .SelectMany(m => m.Contents.OfType<FunctionCallContent>())
+            .Where(c => string.Equals(c.Name, Name, StringComparison.Ordinal))
+            .Select(SkillNameOf)
+            .OfType<string>()
+            .ToHashSet(StringComparer.Ordinal);
+
+    // The two messages a load leaves: one call per skill on one assistant message, and one
+    // result per call on one tool message. No reasoning content, because the model never reasoned.
+    public static IReadOnlyList<ChatMessage> AsLoaded(IReadOnlyList<PromptSkill> skills, string callIdPrefix)
+    {
+        var calls = skills
+            .Select((skill, i) => (Skill: skill, CallId: $"{callIdPrefix}-{i + 1}"))
+            .ToList();
+
+        return
+        [
+            new ChatMessage(ChatRole.Assistant, [.. calls.Select(c => new FunctionCallContent(
+                c.CallId, Name, new Dictionary<string, object?> { [SkillNameParameter] = c.Skill.Name }))]),
+            new ChatMessage(ChatRole.Tool, [.. calls.Select(c => new FunctionResultContent(
+                c.CallId, Wrapped(c.Skill)))])
+        ];
+    }
+
+    // The framework's wrapper, captured off a real load on Microsoft.Agents.AI 1.20.0 and pinned
+    // by a test against one. The empty resource and script elements are there because no skill
+    // here ships either (docs/adr/0039).
+    public static string Wrapped(PromptSkill skill) =>
+        $"<name>{skill.Name}</name>\n" +
+        $"<description>{skill.Description}</description>\n" +
+        "\n" +
+        "<instructions>\n" +
+        $"{skill.Body}\n" +
+        "</instructions>\n" +
+        "\n" +
+        "<available_resources />\n" +
+        "\n" +
+        "<available_scripts />";
+
+    private static string? SkillNameOf(FunctionCallContent call) =>
+        call.Arguments is not null && call.Arguments.TryGetValue(SkillNameParameter, out var value)
+            ? value?.ToString()
+            : null;
+}
