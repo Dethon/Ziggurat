@@ -22,6 +22,14 @@ public sealed record SkillPreloadRequest(
     // The turn's config patch model, if any: a turn addressed to the local box never reaches the
     // judge, the boundary ADR 0042 drew for extraction.
     public string? ConfigPatchModel { get; init; }
+
+    // Where the request came from, for the event each judgment publishes. Optional: a run with
+    // no channel — an eval, a worker — is judged all the same.
+    public string? AgentId { get; init; }
+
+    public string? ChannelId { get; init; }
+
+    public string? ConversationId { get; init; }
 }
 
 public sealed record SkillPreload(

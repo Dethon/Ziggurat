@@ -125,7 +125,8 @@ public static class InjectorModule
             services.AddSingleton<ISkillPreloader>(sp => new SkillPreloader(
                 sp.GetRequiredService<IJudge>(),
                 skillPreload,
-                sp.GetRequiredService<TimeProvider>()));
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<IMetricsPublisher>()));
 
             if (!options.IsConfigured)
             {

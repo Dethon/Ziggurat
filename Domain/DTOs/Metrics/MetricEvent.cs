@@ -15,6 +15,7 @@ namespace Domain.DTOs.Metrics;
 [JsonDerivedType(typeof(LatencyEvent), "latency")]
 [JsonDerivedType(typeof(VoiceEvent), "voice")]
 [JsonDerivedType(typeof(OutpostEvent), "outpost")]
+[JsonDerivedType(typeof(SkillPreloadEvent), "skill_preload")]
 public abstract record MetricEvent
 {
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;

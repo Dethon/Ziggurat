@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Domain.Judgments;
 using Domain.Prompts;
@@ -226,6 +227,27 @@ public class McpAgentSkillPreloadTests
 
         response.Text.ShouldBe("ok");
         calls.ShouldHaveSingleItem().Messages.Select(m => m.Role.Value).ShouldBe(["user"]);
+    }
+
+    // Tool-call counts keep meaning "the model called it": the pair is written into the
+    // conversation, never invoked, so nothing about it reaches the tool metrics.
+    [Fact]
+    public async Task APreload_PublishesNoToolCallEvent()
+    {
+        await using var server = await StartAsync(HomeText);
+        var published = new RecordingMetricsPublisher();
+        var judge = new ScriptedJudge(_ => Sure(Home));
+        var (client, calls) = Capturing();
+        await using var agent = new McpAgent(
+            TestAgentSpec.Default with { McpServerEndpoints = [McpServerEndpoint.Configured(server.Endpoint)] },
+            client, new Mock<IThreadStateStore>().Object, published, TimeProvider.System, [], [],
+            skillPreloader: new SkillPreloader(judge, Settings, TimeProvider.System, published));
+
+        await agent.RunAsync([new ChatMessage(ChatRole.User, "enciende la luz")]);
+
+        calls.ShouldHaveSingleItem().Messages.Select(m => m.Role.Value).ShouldBe(["user", "assistant", "tool"]);
+        published.Published.OfType<ToolCallEvent>().ShouldBeEmpty();
+        published.Published.OfType<SkillPreloadEvent>().ShouldHaveSingleItem().Outcome.ShouldBe(SkillPreloadOutcomes.Preloaded);
     }
 
     private static McpAgent Agent(

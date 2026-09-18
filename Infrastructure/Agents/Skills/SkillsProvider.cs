@@ -130,7 +130,8 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
             : await _preloader.PreloadAsync(
                 new SkillPreloadRequest(request.Text, skills, _historyOf(context.Session).Concat(requestMessages))
                 {
-                    ConfigPatchModel = request.GetConfigPatch()?.Model
+                    ConfigPatchModel = request.GetConfigPatch()?.Model,
+                    AgentId = context.Agent.Name
                 },
                 ct);
 

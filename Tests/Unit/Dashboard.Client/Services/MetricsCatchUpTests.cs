@@ -6,6 +6,7 @@ using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
+using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
@@ -39,7 +40,7 @@ public sealed class MetricsCatchUpTests : IDisposable
         var api = new MetricsApiService(http);
         _families = new MetricFamilyTable(
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
-            _memoryStore, _latencyStore, _voiceStore);
+            _memoryStore, _latencyStore, _voiceStore, new SkillsStore());
         var overview = new OverviewFigures(api, _metricsStore, _healthStore);
         overview.SetDateRange(_from, _to);
         _catchUp = new MetricsCatchUp(_families, overview);

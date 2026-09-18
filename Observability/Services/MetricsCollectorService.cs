@@ -137,6 +137,9 @@ public sealed class MetricsCollectorService(
             case OutpostEvent outpost:
                 await ProcessOutpostAsync(outpost, db);
                 break;
+            case SkillPreloadEvent preload:
+                await ProcessSkillPreloadAsync(preload, db);
+                break;
         }
     }
 
@@ -361,6 +364,34 @@ public sealed class MetricsCollectorService(
             db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
 
         await hubContext.Clients.All.SendAsync("OnContextTruncation", evt);
+    }
+
+    // Counted per outcome, so the totals hash answers "how many turns got a head start today"
+    // beside "how many timed out"; the latency accumulates as voice's does.
+    private async Task ProcessSkillPreloadAsync(SkillPreloadEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:skills:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        var tasks = new List<Task>
+        {
+            db.SortedSetAddAsync(sortedSetKey, json, evt.Timestamp.ToUnixTimeMilliseconds()),
+            db.HashIncrementAsync(totalsKey, $"skills:{evt.Outcome}:count"),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry)
+        };
+
+        if (evt.DurationMs is { } durationMs)
+        {
+            tasks.Add(db.HashIncrementAsync(totalsKey, "skills:latency:count"));
+            tasks.Add(db.HashIncrementAsync(totalsKey, "skills:latency:totalMs", durationMs));
+        }
+
+        await Task.WhenAll(tasks);
+
+        await hubContext.Clients.All.SendAsync("OnSkillPreload", evt);
     }
 
     private async Task ProcessVoiceAsync(VoiceEvent evt, IDatabase db)

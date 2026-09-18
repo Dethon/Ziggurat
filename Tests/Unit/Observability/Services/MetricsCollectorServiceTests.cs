@@ -137,6 +137,20 @@ public class MetricsCollectorServiceTests
             [
                 ("voice:SttLatencyMs:count", 1),
                 ("voice:SttLatencyMs:totalMs", 250)
+            ]),
+        new HashIncrementCase(
+            "SkillPreload",
+            new SkillPreloadEvent
+            {
+                Outcome = SkillPreloadOutcomes.Preloaded,
+                Skills = ["home-assistant"],
+                DurationMs = 380,
+                Timestamp = _fixedTimestamp
+            },
+            [
+                ("skills:preloaded:count", 1),
+                ("skills:latency:count", 1),
+                ("skills:latency:totalMs", 380)
             ])
     };
 
@@ -244,7 +258,16 @@ public class MetricsCollectorServiceTests
                 Timestamp = _fixedTimestamp
             },
             $"metrics:voice:{FixedDate}",
-            "\"satelliteId\":\"kitchen-01\"")
+            "\"satelliteId\":\"kitchen-01\""),
+        new SortedSetCase(
+            "SkillPreload",
+            new SkillPreloadEvent
+            {
+                Outcome = SkillPreloadOutcomes.Deadline,
+                Timestamp = _fixedTimestamp
+            },
+            $"metrics:skills:{FixedDate}",
+            "\"outcome\":\"deadline\"")
     };
 
     [Theory]
@@ -316,7 +339,11 @@ public class MetricsCollectorServiceTests
         new SignalRForwardCase(
             "Voice",
             new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" },
-            "OnVoice")
+            "OnVoice"),
+        new SignalRForwardCase(
+            "SkillPreload",
+            new SkillPreloadEvent { Outcome = SkillPreloadOutcomes.Abstained },
+            "OnSkillPreload")
     };
 
     [Theory]

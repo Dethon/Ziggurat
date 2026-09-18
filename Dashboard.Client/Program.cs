@@ -10,6 +10,7 @@ using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
+using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
@@ -33,6 +34,7 @@ builder.Services.AddSingleton<ConnectionStore>();
 builder.Services.AddSingleton<MemoryStore>();
 builder.Services.AddSingleton<LatencyStore>();
 builder.Services.AddSingleton<VoiceStore>();
+builder.Services.AddSingleton<SkillsStore>();
 
 builder.Services.AddScoped<MetricsApiService>();
 builder.Services.AddScoped<LocalStorageService>();

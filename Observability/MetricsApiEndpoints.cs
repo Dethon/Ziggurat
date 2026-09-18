@@ -105,5 +105,19 @@ public static class MetricsApiEndpoints
             Aggregation? agg,
             MetricDateRange range) =>
             await query.GetVoiceGroupedAsync(dimension, metric, range.From, range.To, agg ?? Aggregation.Avg));
+
+        api.MapGet("/skills", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetEventsAsync<SkillPreloadEvent>("metrics:skills:", range.From, range.To));
+
+        api.MapGet("/skills/by/{dimension}", async (
+            MetricsQueryService query,
+            SkillPreloadDimension dimension,
+            SkillPreloadMetric metric,
+            Aggregation? agg,
+            MetricDateRange range) =>
+            await query.GetSkillPreloadGroupedAsync(dimension, metric, range.From, range.To, agg ?? Aggregation.Avg));
+
+        api.MapGet("/skills/trend", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetSkillPreloadTrendAsync(range.From, range.To));
     }
 }

@@ -431,6 +431,60 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                     : (decimal)g.Count());
     }
 
+    public async Task<Dictionary<string, decimal>> GetSkillPreloadGroupedAsync(
+        SkillPreloadDimension dimension,
+        SkillPreloadMetric metric,
+        DateOnly from,
+        DateOnly to,
+        Aggregation aggregation = Aggregation.Avg)
+    {
+        var events = await GetEventsAsync<SkillPreloadEvent>("metrics:skills:", from, to);
+
+        // By skill, an event counts once per skill it preloaded and not at all when it preloaded
+        // none: the question that dimension answers is "which skills arrive early".
+        var keyed = dimension == SkillPreloadDimension.Skill
+            ? events.SelectMany(e => e.Skills.Select(skill => (Key: skill, Event: e)))
+            : events.Select(e => (Key: dimension switch
+            {
+                SkillPreloadDimension.Outcome => e.Outcome,
+                SkillPreloadDimension.Agent => e.AgentId ?? "(unknown)",
+                SkillPreloadDimension.Channel => e.Channel ?? "(unknown)",
+                _ => throw new ArgumentOutOfRangeException(nameof(dimension))
+            }, Event: e));
+
+        return keyed
+            .GroupBy(k => k.Key)
+            .ToDictionary(
+                g => g.Key,
+                g => metric switch
+                {
+                    SkillPreloadMetric.Count => (decimal)g.Count(),
+                    SkillPreloadMetric.LatencyMs => AggregateLatency(
+                        g.Where(k => k.Event.DurationMs is not null).Select(k => (decimal)k.Event.DurationMs!.Value), aggregation),
+                    SkillPreloadMetric.InputTokens => g.Sum(k => (decimal)(k.Event.InputTokens ?? 0)),
+                    _ => throw new ArgumentOutOfRangeException(nameof(metric))
+                });
+    }
+
+    // One series per outcome, a count per bucket: what "the preload rate over time" is read off.
+    public async Task<IReadOnlyList<LatencyTrendSeries>> GetSkillPreloadTrendAsync(DateOnly from, DateOnly to)
+    {
+        var events = await GetEventsAsync<SkillPreloadEvent>("metrics:skills:", from, to);
+        var hourly = to.DayNumber - from.DayNumber <= 2;
+
+        return events
+            .GroupBy(e => e.Outcome)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(outcome => new LatencyTrendSeries(
+                outcome.Key,
+                outcome
+                    .GroupBy(e => BucketTimestamp(e.Timestamp, hourly))
+                    .OrderBy(b => b.Key)
+                    .Select(b => new LatencyTrendPoint(b.Key, b.Count()))
+                    .ToList()))
+            .ToList();
+    }
+
     public async Task<Dictionary<string, int>> GetScheduleGroupedAsync(
         ScheduleDimension dimension, DateOnly from, DateOnly to)
     {

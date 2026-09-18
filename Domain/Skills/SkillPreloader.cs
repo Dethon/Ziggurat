@@ -1,12 +1,19 @@
 using System.Text.Json.Nodes;
 using Domain.Agents;
+using Domain.Contracts;
+using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using Domain.Prompts;
 
 namespace Domain.Skills;
 
-public sealed class SkillPreloader(IJudge judge, SkillPreloadSettings settings, TimeProvider timeProvider) : ISkillPreloader
+public sealed class SkillPreloader(
+    IJudge judge,
+    SkillPreloadSettings settings,
+    TimeProvider timeProvider,
+    IMetricsPublisher? metricsPublisher = null) : ISkillPreloader
 {
+
     public const string ChoiceQuestionId = "skill";
 
     public static string NeedsQuestionId(string skillName) => $"needs_{skillName}";
@@ -33,7 +40,7 @@ public sealed class SkillPreloader(IJudge judge, SkillPreloadSettings settings, 
 
         if (LemonadeModelId.IsLemonade(request.ConfigPatchModel))
         {
-            return SkillPreload.SkippedLemonade;
+            return Published(request, SkillPreload.SkippedLemonade);
         }
 
         var loaded = SkillLoadTool.LoadedIn(request.History);
@@ -53,7 +60,7 @@ public sealed class SkillPreloader(IJudge judge, SkillPreloadSettings settings, 
 
         // An answer that arrives after the deadline is discarded here, whatever the judge made of
         // the cancellation: late is late, and a body inserted late would land on the wrong turn.
-        return outcome switch
+        var preload = outcome switch
         {
             _ when deadline.IsCancellationRequested => new SkillPreload(SkillPreloadOutcome.Deadline, [], latency),
             JudgmentOutcome.Absent { Reason: AbsenceReason.Unconfigured } => SkillPreload.NotAsked,
@@ -62,7 +69,48 @@ public sealed class SkillPreloader(IJudge judge, SkillPreloadSettings settings, 
             JudgmentOutcome.Answered answered => Decide(answered.Judgment, candidates, latency),
             _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome.GetType().Name, "Unknown judgment outcome")
         };
+
+        return Published(request, preload);
     }
+
+    // One event per judgment, and none where no question was worth asking: an unconfigured judge
+    // is the feature off, not a thing to count.
+    private SkillPreload Published(SkillPreloadRequest request, SkillPreload preload)
+    {
+        if (preload.Outcome == SkillPreloadOutcome.NotAsked)
+        {
+            return preload;
+        }
+
+        metricsPublisher?.Publish(ToEvent(request, preload));
+        return preload;
+    }
+
+    public static SkillPreloadEvent ToEvent(SkillPreloadRequest request, SkillPreload preload) => new()
+    {
+        AgentId = request.AgentId,
+        ConversationId = request.ConversationId,
+        Channel = request.ChannelId,
+        Outcome = WireOutcome(preload.Outcome),
+        Skills = [.. preload.Skills.Select(s => s.Name)],
+        Choice = preload.Judgment?.Choice,
+        ChoiceConfidence = preload.Judgment?.ChoiceConfidence,
+        Needs = preload.Judgment?.Needs,
+        DurationMs = preload.Latency is { } latency ? (long)latency.TotalMilliseconds : null,
+        InputTokens = preload.Judgment?.InputTokens,
+        Model = preload.Judgment?.Model
+    };
+
+    public static string WireOutcome(SkillPreloadOutcome outcome) => outcome switch
+    {
+        SkillPreloadOutcome.Preloaded => SkillPreloadOutcomes.Preloaded,
+        SkillPreloadOutcome.Abstained => SkillPreloadOutcomes.Abstained,
+        SkillPreloadOutcome.None => SkillPreloadOutcomes.None,
+        SkillPreloadOutcome.Deadline => SkillPreloadOutcomes.Deadline,
+        SkillPreloadOutcome.Error => SkillPreloadOutcomes.Error,
+        SkillPreloadOutcome.SkippedLemonade => SkillPreloadOutcomes.SkippedLemonade,
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "An outcome with no wire spelling")
+    };
 
     private static JudgmentRequest Ask(string text, IReadOnlyList<PromptSkill> candidates)
     {

@@ -70,4 +70,10 @@ public sealed class MetricsApiService(HttpClient http)
 
     public Task<List<VoiceEvent>?> GetVoiceEventsAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<VoiceEvent>>($"api/metrics/voice?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<List<SkillPreloadEvent>?> GetSkillPreloadEventsAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<SkillPreloadEvent>>($"api/metrics/skills?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<List<LatencyTrendSeries>?> GetSkillPreloadTrendAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<LatencyTrendSeries>>($"api/metrics/skills/trend?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 }

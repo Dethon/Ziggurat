@@ -10,6 +10,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Metrics;
+using Domain.Prompts;
 using Domain.Skills;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -567,19 +568,26 @@ internal sealed class ConversationGroup(
             }
 
             var history = await state.Agent.GetHistoryAsync(state.Thread, _turnCt);
-            return await skillPreloader!.PreloadAsync(
-                new SkillPreloadRequest(message.Content, skills, history)
-                {
-                    ConfigPatchModel = message.ConfigPatch?.Model
-                },
-                _turnCt);
+            return await skillPreloader!.PreloadAsync(Request(message, skills, history, state), _turnCt);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Skill preload failed for conversation {ConversationId}", message.ConversationId);
-            return new SkillPreload(SkillPreloadOutcome.Error, []);
+            var failed = new SkillPreload(SkillPreloadOutcome.Error, []);
+            metricsPublisher.Publish(SkillPreloader.ToEvent(Request(message, [], [], state), failed));
+            return failed;
         }
     }
+
+    private static SkillPreloadRequest Request(
+        ChannelMessage message, IReadOnlyList<PromptSkill> skills, IReadOnlyList<ChatMessage> history, GroupState state) =>
+        new(message.Content, skills, history)
+        {
+            ConfigPatchModel = message.ConfigPatch?.Model,
+            AgentId = message.AgentId,
+            ChannelId = message.ChannelId,
+            ConversationId = state.DeliveryKey.ConversationId
+        };
 
     private IAsyncEnumerable<TurnUpdate> StreamAgentTurn(GroupState state, ChatMessage userMessage, Turn turn)
     {

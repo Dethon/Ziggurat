@@ -3,6 +3,7 @@ using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Schedules;
+using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
@@ -30,7 +31,8 @@ public sealed class MetricFamilyTable
         SchedulesStore schedules,
         MemoryStore memory,
         LatencyStore latency,
-        VoiceStore voice)
+        VoiceStore voice,
+        SkillsStore skills)
     {
         Tokens = new MetricFamily<TokensStore>(
             tokens,
@@ -225,7 +227,38 @@ public sealed class MetricFamilyTable
                 voice.SetBreakdown(breakdown ?? []);
             });
 
-        All = [Tokens, Tools, Errors, Schedules, Memory, Latency, Voice];
+        Skills = new MetricFamily<SkillsStore>(
+            skills,
+            "skills",
+            dimension: MetricChoice.For("groupBy", () => skills.State.GroupBy, skills.SetGroupBy),
+            metric: MetricChoice.For("metric", () => skills.State.Metric, skills.SetMetric),
+            setDateRange: skills.SetDateRange,
+            // The outcome share over time is a second read beside the events, the way tokens loads
+            // its truncations: it is the page's headline chart, so it loads with them.
+            loadEvents: async () =>
+            {
+                var state = skills.State;
+                var events = api.GetSkillPreloadEventsAsync(state.From, state.To);
+                var trend = api.GetSkillPreloadTrendAsync(state.From, state.To);
+                await Task.WhenAll(events, trend);
+                var loaded = await events ?? [];
+                var series = await trend ?? [];
+                return () =>
+                {
+                    skills.SetEvents(loaded);
+                    skills.SetTrend(series);
+                };
+            },
+            refreshBreakdown: async () =>
+            {
+                var state = skills.State;
+                var breakdown = await api.GetGroupedAsync<decimal>(
+                    $"skills/by/{state.GroupBy}", state.From, state.To,
+                    [("metric", state.Metric.ToString()), ("agg", state.Agg.ToString())]);
+                skills.SetBreakdown(breakdown ?? []);
+            });
+
+        All = [Tokens, Tools, Errors, Schedules, Memory, Latency, Voice, Skills];
         OverviewFamilies = [Tokens, Tools, Errors, Schedules, Voice];
     }
 
@@ -233,6 +266,7 @@ public sealed class MetricFamilyTable
     public MetricFamily<ToolsStore> Tools { get; }
     public MetricFamily<ErrorsStore> Errors { get; }
     public MetricFamily<SchedulesStore> Schedules { get; }
+    public MetricFamily<SkillsStore> Skills { get; }
     public MetricFamily<MemoryStore> Memory { get; }
     public MetricFamily<LatencyStore> Latency { get; }
     public MetricFamily<VoiceStore> Voice { get; }
