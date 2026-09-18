@@ -76,9 +76,10 @@ public class MemoryDreamingService(
         }
 
         var mergedCount = 0;
+        var refused = new List<IReadOnlyList<string>>();
         for (var pass = 0; pass < options.MaxMergePasses; pass++)
         {
-            var passMerges = await MergeAsync(userId, activeMemories, ct);
+            var passMerges = await MergeAsync(userId, activeMemories, refused, ct);
             if (passMerges == 0)
             {
                 break;
@@ -98,12 +99,13 @@ public class MemoryDreamingService(
             MergedCount = mergedCount,
             DecayedCount = decayedCount,
             ProfileRegenerated = true,
-            UserId = userId
+            UserId = userId,
+            RefusedMerges = refused
         });
 
         logger.LogInformation(
-            "Dreaming complete for {UserId}: {Merged} merged, {Decayed} decayed, profile regenerated",
-            userId, mergedCount, decayedCount);
+            "Dreaming complete for {UserId}: {Merged} merged, {Refused} refused, {Decayed} decayed, profile regenerated",
+            userId, mergedCount, refused.Count, decayedCount);
     }
 
     private async Task RemoveOrphanedProfileAsync(string userId, CancellationToken ct)
@@ -124,9 +126,10 @@ public class MemoryDreamingService(
             userId, removed ? "removed" : "absent");
     }
 
-    private async Task<int> MergeAsync(string userId, IReadOnlyList<MemoryEntry> activeMemories, CancellationToken ct)
+    private async Task<int> MergeAsync(
+        string userId, IReadOnlyList<MemoryEntry> activeMemories, List<IReadOnlyList<string>> refused, CancellationToken ct)
     {
-        var decisions = await consolidator.ConsolidateAsync(activeMemories, ct);
+        var consolidation = await consolidator.ConsolidateAsync(activeMemories, ct);
 
         // Keyed without case, and resolving to the id the store holds rather than the one that came
         // back. A decision's ids went out to a language model and came back retyped: mostly
@@ -143,7 +146,7 @@ public class MemoryDreamingService(
             .ToDictionary(m => m.Id, m => m.Id, StringComparer.OrdinalIgnoreCase);
         var mergedCount = 0;
 
-        foreach (var decision in decisions)
+        foreach (var decision in consolidation.Decisions)
         {
             var validSourceIds = decision.SourceIds
                 .Select(id => storedIds.GetValueOrDefault(id))
@@ -164,14 +167,40 @@ public class MemoryDreamingService(
                     validSourceIds.Count, decision.SourceIds.Count);
             }
 
+            if (decision.Action is not (MergeAction.Merge or MergeAction.SupersedeOlder) || validSourceIds.Count < 2)
+            {
+                continue;
+            }
+
+            // The refusals. Sources the pair judgment did not link never reach the merge model
+            // together, so a decision spanning two groups is one the model made up; and a merge
+            // that came back with no text would replace what it was given with nothing.
+            if (!consolidation.Permits(validSourceIds))
+            {
+                logger.LogWarning(
+                    "Dreaming for {UserId}: refused {Action} of {SourceIds}, which are not linked by the pair judgment",
+                    userId, decision.Action, string.Join(", ", validSourceIds));
+                refused.Add(validSourceIds);
+                continue;
+            }
+
+            if (decision.Action == MergeAction.Merge && string.IsNullOrWhiteSpace(decision.MergedContent))
+            {
+                logger.LogWarning(
+                    "Dreaming for {UserId}: refused a merge of {SourceIds} that came back with no text",
+                    userId, string.Join(", ", validSourceIds));
+                refused.Add(validSourceIds);
+                continue;
+            }
+
             switch (decision.Action)
             {
-                case MergeAction.Merge when validSourceIds.Count >= 2:
+                case MergeAction.Merge:
                     await ApplyMergeAsync(userId, decision with { SourceIds = validSourceIds }, ct);
                     mergedCount++;
                     break;
 
-                case MergeAction.SupersedeOlder when validSourceIds.Count >= 2:
+                case MergeAction.SupersedeOlder:
                     await store.DeleteAsync(userId, validSourceIds[0], ct);
                     mergedCount++;
                     break;
@@ -188,16 +217,14 @@ public class MemoryDreamingService(
 
     private async Task ApplyMergeAsync(string userId, MergeDecision decision, CancellationToken ct)
     {
-        var embedding = decision.MergedContent is not null
-            ? await embeddingService.GenerateEmbeddingAsync(decision.MergedContent, ct)
-            : null;
+        var embedding = await embeddingService.GenerateEmbeddingAsync(decision.MergedContent!, ct);
 
         var merged = new MemoryEntry
         {
             Id = $"mem_{Guid.NewGuid():N}",
             UserId = userId,
             Category = decision.Category ?? MemoryCategory.Fact,
-            Content = decision.MergedContent ?? string.Empty,
+            Content = decision.MergedContent!,
             Importance = decision.Importance ?? 0.5,
             Confidence = 0.9,
             Embedding = embedding,

@@ -22,6 +22,25 @@ public sealed record VerifyVerdict(bool Store, IReadOnlyDictionary<string, doubl
     public static readonly VerifyVerdict Stored = new(true, new Dictionary<string, double>());
 }
 
+// The four-way choice a pair judgment answers with. A link is the first two.
+public static class PairRelations
+{
+    public const string Same = "same";
+    public const string Updates = "updates";
+    public const string Distinct = "distinct";
+    public const string Unrelated = "unrelated";
+
+    public static bool IsLink(string relation) => relation is Same or Updates;
+}
+
+// Pairs: which memories of a cosine cluster are linked — the same fact, or one updating the
+// other — as the connected components of those links, singletons dropped. Unanswered, the
+// cluster goes to the merge model as cosine made it.
+public sealed record PairVerdict(bool Answered, IReadOnlyList<IReadOnlyList<MemoryEntry>> Linked)
+{
+    public static readonly PairVerdict Unanswered = new(false, []);
+}
+
 // The three memory judgments, each a small typed question to Jev over the extraction window as
 // fields, and each failing toward what happens today: an unsure, late or absent answer extracts,
 // stores and merges as if nothing had been asked. The questions are worded as in the probe
@@ -64,7 +83,113 @@ public sealed class MemoryJudge(
         [NotAQuestionQuestionId] = CandidateIsANote + " Is `candidate` something other than a restatement that the person asked, requested or ordered something? A note that only records that they asked or requested something is a restatement."
     };
 
+    public const string RelationInstructions =
+        "`memories` are notes saved about the same person. How are `memories[{0}]` and `memories[{1}]` related?";
+
+    public static readonly IReadOnlyDictionary<string, string> RelationCriteria = new Dictionary<string, string>
+    {
+        [PairRelations.Same] = "They state the same fact, or one is a more specific or less specific version of the other; keeping both would be redundant.",
+        [PairRelations.Updates] = "They are about the same attribute of the person but disagree: one replaces, corrects or contradicts the other.",
+        [PairRelations.Distinct] = "They are about a similar topic but state different facts that are both true at once; both should be kept.",
+        [PairRelations.Unrelated] = "They are about different things."
+    };
+
     public bool Enabled => settings.Enabled;
+
+    // How many of a cluster one pairs request is asked about; the rest wait for a later pass.
+    public int MaxClusterMemories => settings.Pairs.MaxClusterMemories;
+
+    public static string PairQuestionId(int i, int j) => $"{i}-{j}";
+
+    // One request per cluster: the memories by index, one four-way choice per pair. The state and
+    // the questions carry no memory id — there is nothing for a model to retype, and the answer is
+    // mapped back by index here.
+    public static JudgmentRequest PairRequest(IReadOnlyList<MemoryEntry> cluster)
+    {
+        var state = new JsonObject
+        {
+            ["memories"] = new JsonArray(cluster.Select(m => (JsonNode?)m.Content).ToArray())
+        };
+
+        var questions = Enumerable.Range(0, cluster.Count)
+            .SelectMany(i => Enumerable.Range(i + 1, cluster.Count - i - 1).Select(j => (i, j)))
+            .ToDictionary(
+                pair => PairQuestionId(pair.i, pair.j),
+                pair => (JudgmentQuestion)new ChoiceQuestion(
+                    string.Format(RelationInstructions, pair.i, pair.j), RelationCriteria),
+                StringComparer.Ordinal);
+
+        return new JudgmentRequest(state, questions);
+    }
+
+    public async Task<PairVerdict> RelateAsync(
+        IReadOnlyList<MemoryEntry> cluster, MemoryJudgmentContext context, CancellationToken ct)
+    {
+        if (!settings.Enabled || cluster.Count < 2)
+        {
+            return PairVerdict.Unanswered;
+        }
+
+        var started = timeProvider.GetTimestamp();
+        var outcome = await judge.JudgeAsync(PairRequest(cluster), ct);
+        var latency = timeProvider.GetElapsedTime(started);
+
+        if (outcome is not JudgmentOutcome.Answered answered)
+        {
+            PublishAbsence(MemoryJudgmentKinds.Pairs, context, outcome, latency);
+            return PairVerdict.Unanswered;
+        }
+
+        var pairs = Enumerable.Range(0, cluster.Count)
+            .SelectMany(i => Enumerable.Range(i + 1, cluster.Count - i - 1).Select(j => (i, j)))
+            .Select(pair => (pair.i, pair.j, Answer: answered.Judgment.Answers.GetValueOrDefault(PairQuestionId(pair.i, pair.j)) as ChoiceAnswer))
+            .Where(p => p.Answer is not null)
+            .ToList();
+
+        var linked = Components(cluster.Count, pairs
+            .Where(p => PairRelations.IsLink(p.Answer!.Choice))
+            .Select(p => (p.i, p.j)))
+            .Select(component => (IReadOnlyList<MemoryEntry>)component.Select(i => cluster[i]).ToList())
+            .ToList();
+
+        Publish(new MemoryJudgmentEvent
+        {
+            Kind = MemoryJudgmentKinds.Pairs,
+            UserId = context.UserId,
+            AgentId = context.AgentId,
+            ConversationId = context.ConversationId,
+            Answered = true,
+            MemoryIds = cluster.Select(m => m.Id).ToList(),
+            Relations = pairs.ToDictionary(p => PairQuestionId(p.i, p.j), p => p.Answer!.Choice, StringComparer.Ordinal),
+            Scores = pairs.ToDictionary(p => PairQuestionId(p.i, p.j), p => p.Answer!.Confidence, StringComparer.Ordinal),
+            Linked = linked.Select(component => (IReadOnlyList<string>)component.Select(m => m.Id).ToList()).ToList(),
+            DurationMs = (long)latency.TotalMilliseconds,
+            InputTokens = answered.Judgment.Usage.InputTokens,
+            Model = answered.Judgment.Model
+        });
+
+        return new PairVerdict(true, linked);
+    }
+
+    // The connected components of the link graph over indices, singletons dropped, each in index
+    // order and the components in the order of their first member.
+    private static IEnumerable<IReadOnlyList<int>> Components(int count, IEnumerable<(int I, int J)> links)
+    {
+        var parent = Enumerable.Range(0, count).ToArray();
+
+        int Find(int x) => parent[x] == x ? x : parent[x] = Find(parent[x]);
+
+        foreach (var (i, j) in links)
+        {
+            parent[Find(i)] = Find(j);
+        }
+
+        return Enumerable.Range(0, count)
+            .GroupBy(Find)
+            .Select(g => (IReadOnlyList<int>)g.OrderBy(i => i).ToList())
+            .Where(component => component.Count >= 2)
+            .OrderBy(component => component[0]);
+    }
 
     // The window as Jev reads it: every turn but the last as `context`, the last as `current`.
     public static JsonObject State(IReadOnlyList<ChatMessage> window)

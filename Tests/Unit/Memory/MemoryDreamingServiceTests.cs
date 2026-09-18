@@ -29,7 +29,7 @@ public class MemoryDreamingServiceTests
 
         _consolidator
             .Setup(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([]);
+            .ReturnsAsync(Consolidation.Empty);
 
         _consolidator
             .Setup(c => c.SynthesizeProfileAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
@@ -77,7 +77,7 @@ public class MemoryDreamingServiceTests
         _consolidator
             .Setup(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
             .Callback(() => callOrder.Add("consolidate"))
-            .ReturnsAsync([]);
+            .ReturnsAsync(Consolidation.Empty);
 
         _consolidator
             .Setup(c => c.SynthesizeProfileAsync("user1", It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
@@ -158,8 +158,8 @@ public class MemoryDreamingServiceTests
 
         _consolidator
             .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([mergeDecision])
-            .ReturnsAsync([]);
+            .ReturnsAsync(Unvetted(mergeDecision))
+            .ReturnsAsync(Consolidation.Empty);
 
         var embedding = new float[] { 0.1f, 0.2f };
         _embeddingService
@@ -205,8 +205,8 @@ public class MemoryDreamingServiceTests
 
         _consolidator
             .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([mergeDecision])
-            .ReturnsAsync([]);
+            .ReturnsAsync(Unvetted(mergeDecision))
+            .ReturnsAsync(Consolidation.Empty);
 
         await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
@@ -232,8 +232,8 @@ public class MemoryDreamingServiceTests
 
         _consolidator
             .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new MergeDecision(SourceIds: ["Mem_Old", "Mem_New"], Action: MergeAction.SupersedeOlder)])
-            .ReturnsAsync([]);
+            .ReturnsAsync(Unvetted(new MergeDecision(SourceIds: ["Mem_Old", "Mem_New"], Action: MergeAction.SupersedeOlder)))
+            .ReturnsAsync(Consolidation.Empty);
 
         await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
@@ -254,14 +254,14 @@ public class MemoryDreamingServiceTests
 
         _consolidator
             .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new MergeDecision(
+            .ReturnsAsync(Unvetted(new MergeDecision(
                 SourceIds: ["mem_1", "mem_invented"],
                 Action: MergeAction.Merge,
                 MergedContent: "Combined fact about user",
                 Category: MemoryCategory.Fact,
                 Importance: 0.85,
-                Tags: [])])
-            .ReturnsAsync([]);
+                Tags: [])))
+            .ReturnsAsync(Consolidation.Empty);
 
         await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
@@ -283,14 +283,14 @@ public class MemoryDreamingServiceTests
 
         _consolidator
             .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new MergeDecision(
+            .ReturnsAsync(Unvetted(new MergeDecision(
                 SourceIds: ["mem_1", "mem_invented"],
                 Action: MergeAction.Merge,
                 MergedContent: "Combined fact about user",
                 Category: MemoryCategory.Fact,
                 Importance: 0.85,
-                Tags: [])])
-            .ReturnsAsync([]);
+                Tags: [])))
+            .ReturnsAsync(Consolidation.Empty);
 
         await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
@@ -313,8 +313,8 @@ public class MemoryDreamingServiceTests
 
         _consolidator
             .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([supersedeDecision])
-            .ReturnsAsync([]);
+            .ReturnsAsync(Unvetted(supersedeDecision))
+            .ReturnsAsync(Consolidation.Empty);
 
         await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
@@ -351,13 +351,9 @@ public class MemoryDreamingServiceTests
 
         _consolidator
             .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([
-                new MergeDecision(["m1", "m2"], MergeAction.Merge, "merged", MemoryCategory.Fact, 0.85, [])
-            ])
-            .ReturnsAsync([
-                new MergeDecision(["merged1", "m3"], MergeAction.Merge, "merged again", MemoryCategory.Fact, 0.9, [])
-            ])
-            .ReturnsAsync([]);
+            .ReturnsAsync(Unvetted(new MergeDecision(["m1", "m2"], MergeAction.Merge, "merged", MemoryCategory.Fact, 0.85, [])))
+            .ReturnsAsync(Unvetted(new MergeDecision(["merged1", "m3"], MergeAction.Merge, "merged again", MemoryCategory.Fact, 0.9, [])))
+            .ReturnsAsync(Consolidation.Empty);
 
         await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
@@ -386,8 +382,8 @@ public class MemoryDreamingServiceTests
             .Setup(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<MemoryEntry> list, CancellationToken _) =>
                 list.Count >= 2
-                    ? [new MergeDecision([list[0].Id, list[1].Id], MergeAction.Merge, "x", MemoryCategory.Fact, 0.8, [])]
-                    : []);
+                    ? Unvetted(new MergeDecision([list[0].Id, list[1].Id], MergeAction.Merge, "x", MemoryCategory.Fact, 0.8, []))
+                    : Consolidation.Empty);
 
         await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
@@ -511,6 +507,106 @@ public class MemoryDreamingServiceTests
 
         _store.Verify(s => s.DeleteProfileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         _store.Verify(s => s.SaveProfileAsync(It.IsAny<PersonalityProfile>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // Today's behaviour: the pair judgment did not answer, so whatever the merge model decided
+    // over the cluster is permitted. The one group is every id the decisions name.
+    private static Consolidation Unvetted(params MergeDecision[] decisions) =>
+        new(decisions, [decisions.SelectMany(d => d.SourceIds).Select(id => id.ToLowerInvariant()).ToHashSet(StringComparer.Ordinal)]);
+
+    // The pair judgment answered: only these groups may be merged.
+    private static Consolidation Vetted(IReadOnlyList<MergeDecision> decisions, params string[][] groups) =>
+        new(decisions, groups.Select(g => (IReadOnlySet<string>)g.ToHashSet(StringComparer.Ordinal)).ToList());
+
+    [Fact]
+    public async Task RunDreamingForUserAsync_ADecisionSpanningTwoUnlinkedGroups_IsRefusedAndBothSurvive()
+    {
+        var madrid = MakeMemory("mem_madrid", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10));
+        var sister = MakeMemory("mem_sister", "user1", MemoryCategory.Relationship, 0.7, _now.AddDays(-10), _now.AddDays(-10));
+        var brother = MakeMemory("mem_brother", "user1", MemoryCategory.Relationship, 0.7, _now.AddDays(-10), _now.AddDays(-10));
+        var valencia = MakeMemory("mem_valencia", "user1", MemoryCategory.Fact, 0.9, _now.AddDays(-1), _now.AddDays(-1));
+
+        _store
+            .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry> { madrid, sister, brother, valencia });
+
+        _consolidator
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Vetted(
+                [new MergeDecision(["mem_sister", "mem_valencia"], MergeAction.Merge, "Her sister lives in Valencia", MemoryCategory.Relationship, 0.8, [])],
+                ["mem_madrid", "mem_valencia"], ["mem_sister", "mem_brother"]))
+            .ReturnsAsync(Consolidation.Empty);
+
+        MetricEvent? published = null;
+        _metricsPublisher
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt => published = evt);
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        _store.Verify(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.DeleteAsync("user1", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _warnings.ShouldContain(m => m.Contains("mem_sister") && m.Contains("mem_valencia"));
+        var evt = published.ShouldBeOfType<MemoryDreamingEvent>();
+        evt.MergedCount.ShouldBe(0);
+        evt.RefusedMerges.ShouldHaveSingleItem().ShouldBe(["mem_sister", "mem_valencia"]);
+    }
+
+    [Fact]
+    public async Task RunDreamingForUserAsync_ASupersedeOverALinkedPair_IsApplied()
+    {
+        var madrid = MakeMemory("mem_madrid", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10));
+        var valencia = MakeMemory("mem_valencia", "user1", MemoryCategory.Fact, 0.9, _now.AddDays(-1), _now.AddDays(-1));
+
+        _store
+            .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry> { madrid, valencia });
+
+        _consolidator
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Vetted(
+                [new MergeDecision(["mem_madrid", "mem_valencia"], MergeAction.SupersedeOlder)],
+                ["mem_madrid", "mem_valencia"]))
+            .ReturnsAsync(Consolidation.Empty);
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        _store.Verify(s => s.DeleteAsync("user1", "mem_madrid", It.IsAny<CancellationToken>()), Times.Once);
+        _store.Verify(s => s.DeleteAsync("user1", "mem_valencia", It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // A model's blank answer cannot erase what it was given, whether or not the pair judgment
+    // vouched for the pair.
+    [Theory]
+    [InlineData(true, "")]
+    [InlineData(true, "   ")]
+    [InlineData(true, null)]
+    [InlineData(false, "")]
+    public async Task RunDreamingForUserAsync_AMergeWithNoText_DeletesNothing(bool vetted, string? mergedContent)
+    {
+        var m1 = MakeMemory("mem_1", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10));
+        var m2 = MakeMemory("mem_2", "user1", MemoryCategory.Fact, 0.8, _now.AddDays(-5), _now.AddDays(-5));
+
+        _store
+            .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry> { m1, m2 });
+
+        var blank = new MergeDecision(["mem_1", "mem_2"], MergeAction.Merge, mergedContent, MemoryCategory.Fact, 0.8, []);
+        _consolidator
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(vetted ? Vetted([blank], ["mem_1", "mem_2"]) : Unvetted(blank))
+            .ReturnsAsync(Consolidation.Empty);
+
+        MetricEvent? published = null;
+        _metricsPublisher
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt => published = evt);
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        _store.Verify(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.DeleteAsync("user1", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        published.ShouldBeOfType<MemoryDreamingEvent>().RefusedMerges.ShouldHaveSingleItem().ShouldBe(["mem_1", "mem_2"]);
     }
 
     private static MemoryEntry MakeMemory(

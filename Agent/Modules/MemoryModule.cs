@@ -82,6 +82,7 @@ public static class MemoryModule
                     providerRouting: providerRouting);
                 return new OpenRouterMemoryConsolidator(
                     chatClient,
+                    sp.GetRequiredService<MemoryJudge>(),
                     sp.GetRequiredService<ILogger<OpenRouterMemoryConsolidator>>());
             });
 

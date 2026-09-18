@@ -22,6 +22,8 @@ internal sealed class StubJudge(Func<JudgmentRequest, JudgmentOutcome> answer) :
     public static StubJudge Nouls(params (string Id, double Probability)[] answers) =>
         new(Answered(answers));
 
+    public static StubJudge Answering(JudgmentOutcome outcome) => new(outcome);
+
     public static JudgmentOutcome Answered(params (string Id, double Probability)[] answers) =>
         new JudgmentOutcome.Answered(new Judgment(
             "jev-test",

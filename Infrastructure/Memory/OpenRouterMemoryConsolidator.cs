@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Memory;
 using Domain.Prompts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,7 @@ namespace Infrastructure.Memory;
 
 public class OpenRouterMemoryConsolidator(
     IChatClient chatClient,
+    MemoryJudge judge,
     ILogger<OpenRouterMemoryConsolidator> logger) : IMemoryConsolidator
 {
     private const double ClusterSimilarityThreshold = 0.60;
@@ -34,24 +36,62 @@ public class OpenRouterMemoryConsolidator(
             serializerOptions: _jsonOptions)
     };
 
-    public async Task<IReadOnlyList<MergeDecision>> ConsolidateAsync(
+    public async Task<Consolidation> ConsolidateAsync(
         IReadOnlyList<MemoryEntry> memories, CancellationToken ct)
     {
         if (memories.Count == 0)
         {
-            return [];
+            return Consolidation.Empty;
         }
 
-        var clusters = BuildClusters(memories);
         var decisions = new List<MergeDecision>();
+        var groups = new List<IReadOnlySet<string>>();
 
-        foreach (var cluster in clusters)
+        foreach (var cluster in BuildClusters(memories))
         {
-            var clusterDecisions = await ConsolidateClusterAsync(cluster, ct);
-            decisions.AddRange(clusterDecisions);
+            // Cosine proposes; the pair judgment disposes. Only memories it links — the same
+            // fact, or one updating the other — reach the merge model together, and only those
+            // groups may later be merged. Unanswered, the cluster goes as cosine made it and its
+            // decisions are applied unvetoed: today's behaviour, by decision.
+            var verdict = await judge.RelateAsync(NearestToCentroid(cluster, judge.MaxClusterMemories), Context(cluster), ct);
+            var groupsToMerge = verdict.Answered ? verdict.Linked : [cluster];
+
+            foreach (var group in groupsToMerge)
+            {
+                decisions.AddRange(await ConsolidateClusterAsync(group, ct));
+                groups.Add(group.Select(m => m.Id).ToHashSet(StringComparer.Ordinal));
+            }
         }
 
-        return decisions;
+        return new Consolidation(decisions, groups);
+    }
+
+    private static MemoryJudgmentContext Context(IReadOnlyList<MemoryEntry> cluster) => new(cluster[0].UserId);
+
+    // A cluster over the cap is judged on its members nearest the centroid; the rest wait for a
+    // later pass. A cluster with no embeddings has no centroid and is cut in its own order.
+    private static IReadOnlyList<MemoryEntry> NearestToCentroid(IReadOnlyList<MemoryEntry> cluster, int cap)
+    {
+        if (cluster.Count <= cap)
+        {
+            return cluster;
+        }
+
+        var embedded = cluster.Where(m => m.Embedding is { Length: > 0 }).ToList();
+        if (embedded.Count == 0)
+        {
+            return cluster.Take(cap).ToList();
+        }
+
+        var width = embedded[0].Embedding!.Length;
+        var centroid = Enumerable.Range(0, width)
+            .Select(i => embedded.Average(m => m.Embedding!.Length > i ? m.Embedding[i] : 0f))
+            .ToArray();
+
+        return embedded
+            .OrderByDescending(m => CosineSimilarity(m.Embedding!, centroid))
+            .Take(cap)
+            .ToList();
     }
 
     private async Task<IReadOnlyList<MergeDecision>> ConsolidateClusterAsync(

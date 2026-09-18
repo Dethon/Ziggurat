@@ -319,6 +319,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                     MemoryMetric.DecayedCount => g.OfType<MemoryDreamingEvent>().Sum(e => (decimal)e.DecayedCount),
                     MemoryMetric.CandidateCount => g.OfType<MemoryExtractionEvent>().Sum(e => (decimal)e.CandidateCount),
                     MemoryMetric.DroppedCount => g.OfType<MemoryExtractionEvent>().Sum(e => (decimal)e.DroppedCount),
+                    MemoryMetric.RefusedMergeCount => g.OfType<MemoryDreamingEvent>().Sum(e => (decimal)e.RefusedCount),
                     _ => throw new ArgumentOutOfRangeException(nameof(metric))
                 });
     }

@@ -148,6 +148,7 @@ public class MetricsQueryServiceGroupingTests
     [InlineData(MemoryDimension.Outcome, MemoryMetric.Count)]
     [InlineData(MemoryDimension.User, MemoryMetric.CandidateCount)]
     [InlineData(MemoryDimension.User, MemoryMetric.DroppedCount)]
+    [InlineData(MemoryDimension.User, MemoryMetric.RefusedMergeCount)]
     public async Task GetMemoryGroupedAsync_GroupsByDimensionAndMetric(
         MemoryDimension dimension, MemoryMetric metric)
     {
@@ -164,7 +165,7 @@ public class MetricsQueryServiceGroupingTests
         ]);
         SetupSortedSet("metrics:memory-dreaming:2026-03-15",
         [
-            new MemoryDreamingEvent { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "alice", AgentId = "agent-1" },
+            new MemoryDreamingEvent { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "alice", AgentId = "agent-1", RefusedMerges = [["mem_1", "mem_2"], ["mem_3", "mem_4"]] },
             new MemoryDreamingEvent { MergedCount = 3, DecayedCount = 1, ProfileRegenerated = false, UserId = "bob", AgentId = "agent-1" },
             new MemoryDreamingEvent { MergedCount = 7, DecayedCount = 4, ProfileRegenerated = true, UserId = "alice", AgentId = null },
         ]);
@@ -208,6 +209,10 @@ public class MetricsQueryServiceGroupingTests
                 break;
             case (MemoryDimension.User, MemoryMetric.DroppedCount):
                 result["alice"].ShouldBe(4m);
+                result["bob"].ShouldBe(0m);
+                break;
+            case (MemoryDimension.User, MemoryMetric.RefusedMergeCount):
+                result["alice"].ShouldBe(2m);
                 result["bob"].ShouldBe(0m);
                 break;
         }

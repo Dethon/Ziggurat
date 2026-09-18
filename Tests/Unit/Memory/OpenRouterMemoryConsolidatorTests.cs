@@ -1,10 +1,14 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Judgments;
+using Domain.Memory;
 using Infrastructure.Memory;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
+using Tests.Unit.Judgments;
 
 namespace Tests.Unit.Memory;
 
@@ -15,9 +19,116 @@ public class OpenRouterMemoryConsolidatorTests
 
     public OpenRouterMemoryConsolidatorTests()
     {
-        _consolidator = new OpenRouterMemoryConsolidator(
+        // The pair judgment answers absence throughout the older tests: the consolidator's calls
+        // and decisions are then exactly what they were before it existed.
+        _consolidator = Consolidator(StubJudge.Absent(AbsenceReason.Unconfigured));
+    }
+
+    private OpenRouterMemoryConsolidator Consolidator(IJudge judge, MemoryJudgmentSettings? settings = null) =>
+        new(
             _chatClient.Object,
+            new MemoryJudge(judge, settings ?? new MemoryJudgmentSettings(), new FakeTimeProvider()),
             Mock.Of<ILogger<OpenRouterMemoryConsolidator>>());
+
+    private static JudgmentOutcome Relations(params (string Pair, string Relation)[] answers) =>
+        new JudgmentOutcome.Answered(new Judgment(
+            "jev-test",
+            answers.ToDictionary(
+                a => a.Pair,
+                a => (JudgmentAnswer)new ChoiceAnswer(a.Relation, 0.9, new Dictionary<string, double>()),
+                StringComparer.Ordinal),
+            new JudgmentUsage(500, 0)));
+
+    private List<string> CapturingPrompts()
+    {
+        var prompts = new List<string>();
+        _chatClient.Setup(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions>(), It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions, CancellationToken>((msgs, _, _) =>
+                prompts.Add(string.Join("\n", msgs.Select(m => m.Text))))
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"decisions": []}""")));
+        return prompts;
+    }
+
+    // Cosine puts the four together; the pair judgment links only Madrid and Valencia.
+    private static MemoryEntry[] TheMoveAndTheSiblings() =>
+    [
+        CreateMemory("mem_madrid", "Vive en Madrid", embedding: [1.0f, 0.0f, 0.0f]),
+        CreateMemory("mem_valencia", "Se ha mudado a Valencia", embedding: [0.99f, 0.01f, 0.0f]),
+        CreateMemory("mem_sister", "Su hermana Laura vive en Sevilla", embedding: [0.98f, 0.02f, 0.0f]),
+        CreateMemory("mem_brother", "Su hermano Pablo vive en Bilbao", embedding: [0.97f, 0.03f, 0.0f])
+    ];
+
+    [Fact]
+    public async Task ConsolidateAsync_OnlyMemoriesThePairJudgmentLinks_ReachTheMergeModelTogether()
+    {
+        var prompts = CapturingPrompts();
+        var consolidator = Consolidator(StubJudge.Answering(Relations(
+            ("0-1", "updates"), ("0-2", "unrelated"), ("0-3", "unrelated"),
+            ("1-2", "unrelated"), ("1-3", "unrelated"), ("2-3", "distinct"))));
+
+        var consolidation = await consolidator.ConsolidateAsync(TheMoveAndTheSiblings(), CancellationToken.None);
+
+        var prompt = prompts.ShouldHaveSingleItem();
+        prompt.ShouldContain("mem_madrid");
+        prompt.ShouldContain("mem_valencia");
+        prompt.ShouldNotContain("mem_sister");
+        prompt.ShouldNotContain("mem_brother");
+        consolidation.MergeableGroups.ShouldHaveSingleItem().ShouldBe(["mem_madrid", "mem_valencia"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task ConsolidateAsync_WhenThePairJudgmentIsAbsent_TheClusterGoesAsCosineMadeIt()
+    {
+        var prompts = CapturingPrompts();
+        var consolidator = Consolidator(StubJudge.Absent(AbsenceReason.Deadline));
+
+        var consolidation = await consolidator.ConsolidateAsync(TheMoveAndTheSiblings(), CancellationToken.None);
+
+        var prompt = prompts.ShouldHaveSingleItem();
+        prompt.ShouldContain("mem_madrid");
+        prompt.ShouldContain("mem_brother");
+        consolidation.MergeableGroups.ShouldHaveSingleItem().Count.ShouldBe(4);
+    }
+
+    [Fact]
+    public async Task ConsolidateAsync_AClusterOverTheCap_IsJudgedOnTheTwelveNearestTheCentroid()
+    {
+        var prompts = CapturingPrompts();
+        var judge = new StubJudge(request => Relations(request.Questions.Keys.Select(k => (k, "same")).ToArray()));
+        var consolidator = Consolidator(judge);
+
+        // Twelve sit on the axis, eighteen a little off it on either side: one cosine cluster
+        // whose centroid is the axis, so the twelve are the nearest.
+        var near = Enumerable.Range(0, 12).Select(i => CreateMemory($"near_{i}", $"near {i}", embedding: [1.0f, 0.0f]));
+        var far = Enumerable.Range(0, 18).Select(i => CreateMemory($"far_{i}", $"far {i}", embedding: [0.9f, i % 2 == 0 ? 0.2f : -0.2f]));
+
+        await consolidator.ConsolidateAsync([.. near, .. far], CancellationToken.None);
+
+        var request = judge.Requests.ShouldHaveSingleItem();
+        request.State["memories"]!.AsArray().Count.ShouldBe(12);
+        request.Questions.Count.ShouldBe(66);
+        var prompt = prompts.ShouldHaveSingleItem();
+        Enumerable.Range(0, 12).ShouldAllBe(i => prompt.Contains($"near_{i}"));
+        Enumerable.Range(0, 18).ShouldAllBe(i => !prompt.Contains($"far_{i}"));
+    }
+
+    [Fact]
+    public async Task ConsolidateAsync_ThePairQuestionsReferenceTheStateByIndex_AndCarryNoMemoryId()
+    {
+        CapturingPrompts();
+        var judge = StubJudge.Absent(AbsenceReason.Error);
+        var consolidator = Consolidator(judge);
+
+        await consolidator.ConsolidateAsync(TheMoveAndTheSiblings(), CancellationToken.None);
+
+        var request = judge.Requests.ShouldHaveSingleItem();
+        request.State.ToJsonString().ShouldNotContain("mem_");
+        request.Questions.Keys.ShouldBe(["0-1", "0-2", "0-3", "1-2", "1-3", "2-3"], ignoreOrder: true);
+        var question = request.Questions["1-2"].ShouldBeOfType<ChoiceQuestion>();
+        question.Instructions.ShouldContain("`memories[1]` and `memories[2]`");
+        question.Instructions.ShouldNotContain("mem_");
+        question.Criteria.Keys.ShouldBe(["same", "updates", "distinct", "unrelated"]);
     }
 
     [Fact]
@@ -39,7 +150,7 @@ public class OpenRouterMemoryConsolidatorTests
             CreateMemory("mem_2", "Works on .NET projects")
         };
 
-        var result = await _consolidator.ConsolidateAsync(memories, CancellationToken.None);
+        var result = (await _consolidator.ConsolidateAsync(memories, CancellationToken.None)).Decisions;
 
         result.Count.ShouldBe(1);
         result[0].Action.ShouldBe(MergeAction.Merge);
@@ -63,7 +174,7 @@ public class OpenRouterMemoryConsolidatorTests
 
         var result = await _consolidator.ConsolidateAsync(memories, CancellationToken.None);
 
-        result.ShouldBeEmpty();
+        result.Decisions.ShouldBeEmpty();
     }
 
     [Fact]
@@ -218,7 +329,7 @@ public class OpenRouterMemoryConsolidatorTests
             .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant,
                 """{"decisions":[{"sourceIds":["b1","b2"],"action":"merge","mergedContent":"B merged","category":"fact","importance":0.8,"tags":[]}]}""")));
 
-        var result = await _consolidator.ConsolidateAsync([a1, a2, b1, b2], CancellationToken.None);
+        var result = (await _consolidator.ConsolidateAsync([a1, a2, b1, b2], CancellationToken.None)).Decisions;
 
         result.Count.ShouldBe(2);
         result.Select(r => r.MergedContent).ShouldBe(new[] { "A merged", "B merged" }, ignoreOrder: true);

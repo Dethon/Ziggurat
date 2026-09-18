@@ -4,13 +4,13 @@
 
 **Blocked by:** 02, and `.scratch/jev-skill-preload/issues/02`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A cosine cluster of {Madrid, Valencia-moved, sister-in-Sevilla, brother-in-Bilbao} reaches the merge model as one group of the first two; the siblings reach it not at all.
-- [ ] A merge decision naming one memory from each of two unlinked components is refused, both survive, and the refusal is published with the ids.
-- [ ] A `SupersedeOlder` over an `updates` pair is applied.
-- [ ] With the contract answering absence, the consolidator's calls and the applied decisions are identical to today's — pinned against the existing consolidator tests.
-- [ ] A `Merge` with empty or whitespace merged content deletes nothing, with Jev on and with it off.
-- [ ] A cluster of 30 asks about 12 memories and leaves 18 untouched this pass.
-- [ ] The pair questions reference the state by index and carry no memory ids the model could retype.
-- [ ] Spec: `.scratch/jev-memory-judgments/spec.md` § C — the pair relation.
+- [x] A cosine cluster of {Madrid, Valencia-moved, sister-in-Sevilla, brother-in-Bilbao} reaches the merge model as one group of the first two; the siblings reach it not at all.
+- [x] A merge decision naming one memory from each of two unlinked components is refused, both survive, and the refusal is published with the ids.
+- [x] A `SupersedeOlder` over an `updates` pair is applied.
+- [x] With the contract answering absence, the consolidator's calls and the applied decisions are identical to today's — pinned against the existing consolidator tests.
+- [x] A `Merge` with empty or whitespace merged content deletes nothing, with Jev on and with it off.
+- [x] A cluster of 30 asks about 12 memories and leaves 18 untouched this pass.
+- [x] The pair questions reference the state by index and carry no memory ids the model could retype.
+- [x] Spec: `.scratch/jev-memory-judgments/spec.md` § C — the pair relation.
