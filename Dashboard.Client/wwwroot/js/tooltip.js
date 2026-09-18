@@ -34,8 +34,10 @@
         popup.style.display = 'none';
     }
 
+    // Captured on the document, mouseenter and mouseleave also fire for the document itself
+    // and for text nodes, neither of which has closest(); those are never inside an anchor.
     function closest(el) {
-        return el.closest('.tooltip-anchor');
+        return el instanceof Element ? el.closest('.tooltip-anchor') : null;
     }
 
     document.addEventListener('mouseenter', function (e) {
