@@ -15,10 +15,10 @@ public class JudgedApprovalReaderTests
 {
     private const string Prompt = "¿Apruebas apagar las luces del salón y de la cocina? Di sí o no.";
 
-    private static readonly ApprovalJudgmentSettings Shipped = new();
+    private static readonly ApprovalJudgmentSettings _shipped = new();
 
     private static JudgedApprovalReader Reader(IJudge judge, TimeProvider? time = null, ApprovalJudgmentSettings? settings = null) =>
-        new(judge, settings ?? Shipped, time ?? TimeProvider.System);
+        new(judge, settings ?? _shipped, time ?? TimeProvider.System);
 
     private static Task<ApprovalReading> ReadAsync(double approved, double declined, string answer) =>
         Reader(StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, approved), (JudgedApprovalReader.DeclinedQuestionId, declined)))
@@ -140,12 +140,12 @@ public class JudgedApprovalReaderTests
         await Eventually.Until(() => judge.Asked, "the reader asked the judge");
         reading.IsCompleted.ShouldBeFalse();
 
-        time.Advance(TimeSpan.FromMilliseconds(Shipped.DeadlineMs));
+        time.Advance(TimeSpan.FromMilliseconds(_shipped.DeadlineMs));
 
         var read = await reading.WaitAsync(TimeSpan.FromSeconds(5));
         read.Response.ShouldBe(ApprovalResponse.Approved);
         read.DecidedBy.ShouldBe(ApprovalDecider.WordList);
-        read.Latency.ShouldBe(TimeSpan.FromMilliseconds(Shipped.DeadlineMs));
+        read.Latency.ShouldBe(TimeSpan.FromMilliseconds(_shipped.DeadlineMs));
     }
 
     // The tool's own cancellation is the turn being torn down, not a late judge: no verdict at all,
@@ -168,7 +168,7 @@ public class JudgedApprovalReaderTests
     {
         var judge = StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.02), (JudgedApprovalReader.DeclinedQuestionId, 0.98));
 
-        var reading = await Reader(judge, settings: Shipped with { Enabled = false })
+        var reading = await Reader(judge, settings: _shipped with { Enabled = false })
             .ReadAsync(Prompt, "sí", CancellationToken.None);
 
         judge.Requests.ShouldBeEmpty();

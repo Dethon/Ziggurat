@@ -9,13 +9,13 @@ namespace Tests.Unit.McpChannelTelegram;
 // what Telegram sends.
 public class OpusVoiceNoteDecodingTests
 {
-    private static readonly byte[] Fixture =
+    private static readonly byte[] _fixture =
         File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Unit/McpChannelTelegram/Fixtures/voice-note.ogg"));
 
     [Fact]
     public void ARealVoiceNote_DecodesToSixteenKilohertzMonoPcm()
     {
-        var pcm = OpusVoiceNote.DecodeToPcm(Fixture);
+        var pcm = OpusVoiceNote.DecodeToPcm(_fixture);
 
         // The fixture is two seconds; Opus pads its last frame, so the tail is a few ms long.
         var seconds = pcm.Length / 2.0 / 16_000;
@@ -28,7 +28,7 @@ public class OpusVoiceNoteDecodingTests
     [Fact]
     public void TheDecodedToneKeepsItsPitch_SoNothingHasDrifted()
     {
-        var pcm = OpusVoiceNote.DecodeToPcm(Fixture);
+        var pcm = OpusVoiceNote.DecodeToPcm(_fixture);
 
         var samples = Enumerable.Range(0, pcm.Length / 2)
             .Select(i => BitConverter.ToInt16(pcm, i * 2))

@@ -8,14 +8,14 @@ internal static class MediaTypes
     private const string BinaryExtension = ".bin";
 
     // What a client says when it means "some bytes" — the only types the extension may overrule.
-    private static readonly HashSet<string> Generic = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> _generic = new(StringComparer.OrdinalIgnoreCase)
     {
         "application/octet-stream",
         "application/binary",
         "binary/octet-stream"
     };
 
-    private static readonly Dictionary<string, string> ByExtension = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string> _byExtension = new(StringComparer.OrdinalIgnoreCase)
     {
         [".pdf"] = "application/pdf",
         [".jpg"] = "image/jpeg",
@@ -30,7 +30,7 @@ internal static class MediaTypes
         [".heif"] = "image/heif"
     };
 
-    private static readonly Dictionary<string, string> ExtensionByMediaType =
+    private static readonly Dictionary<string, string> _extensionByMediaType =
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["application/pdf"] = ".pdf",
@@ -51,7 +51,7 @@ internal static class MediaTypes
         IsUninformative(media.MimeType) ? FromExtension(media.FileName) ?? media.MimeType : media.MimeType;
 
     private static bool IsUninformative(string? mediaType) =>
-        string.IsNullOrWhiteSpace(mediaType) || Generic.Contains(mediaType);
+        string.IsNullOrWhiteSpace(mediaType) || _generic.Contains(mediaType);
 
     // A document keeps the name Telegram carried. Media that has none — a photo, a sticker — is
     // named after the message it arrived in: the extension is load-bearing once the file lands in
@@ -65,8 +65,8 @@ internal static class MediaTypes
     private static string? FromExtension(string? fileName) =>
         string.IsNullOrWhiteSpace(fileName)
             ? null
-            : ByExtension.GetValueOrDefault(Path.GetExtension(fileName));
+            : _byExtension.GetValueOrDefault(Path.GetExtension(fileName));
 
     private static string ExtensionFor(string? mediaType) =>
-        mediaType is null ? BinaryExtension : ExtensionByMediaType.GetValueOrDefault(mediaType, BinaryExtension);
+        mediaType is null ? BinaryExtension : _extensionByMediaType.GetValueOrDefault(mediaType, BinaryExtension);
 }

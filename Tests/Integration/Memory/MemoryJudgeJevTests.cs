@@ -27,12 +27,12 @@ public class MemoryJudgeJevTests
     // that, so a single flip does not redden a run, and above what a question edit could lose.
     private const double GateSkipFloor = 0.65;
 
-    private static readonly IConfiguration Configuration = new ConfigurationBuilder()
+    private static readonly IConfiguration _configuration = new ConfigurationBuilder()
         .AddUserSecrets<MemoryJudgeJevTests>()
         .AddEnvironmentVariables()
         .Build();
 
-    private static readonly Lazy<Task<(MemoryJudge Judge, Cases Cases)>> Setup = new(SetupAsync);
+    private static readonly Lazy<Task<(MemoryJudge Judge, Cases Cases)>> _setup = new(SetupAsync);
 
     private sealed record Turn(string Role, string Text);
 
@@ -44,14 +44,14 @@ public class MemoryJudgeJevTests
 
     private sealed record Cases(IReadOnlyList<GateCase> Gate, IReadOnlyList<VerifyCase> Verify, IReadOnlyList<PairCase> Pairs);
 
-    private static readonly MemoryJudgmentContext Context = new("jev-test");
+    private static readonly MemoryJudgmentContext _context = new("jev-test");
 
     [SkippableFact]
     public async Task Gate_NeverSkipsATurnThatHoldsAMemory_AndSkipsMostThatDoNot()
     {
-        var (judge, cases) = await Setup.Value;
+        var (judge, cases) = await _setup.Value;
 
-        var verdicts = await RunAsync(cases.Gate, async c => (Case: c, Verdict: await judge.GateAsync(Window(c.Context, c.Current), Context, CancellationToken.None)));
+        var verdicts = await RunAsync(cases.Gate, async c => (Case: c, Verdict: await judge.GateAsync(Window(c.Context, c.Current), _context, CancellationToken.None)));
 
         var falseSkips = verdicts
             .Where(v => v.Case.HoldsSomething && v.Verdict.Skip)
@@ -69,13 +69,13 @@ public class MemoryJudgeJevTests
     [SkippableFact]
     public async Task Check_KeepsEveryKeeper_AndDropsEveryJunkCandidate()
     {
-        var (judge, cases) = await Setup.Value;
+        var (judge, cases) = await _setup.Value;
 
         var verdicts = await RunAsync(cases.Verify, async c =>
         {
             var category = c.Category is { } name ? Enum.Parse<MemoryCategory>(name) : MemoryCategory.Fact;
             var candidate = new ExtractionCandidate(c.Candidate, category, 0.5, 0.9, [], null);
-            return (Case: c, Verdict: await judge.VerifyAsync(Window(c.Context, c.Current), candidate, Context, CancellationToken.None));
+            return (Case: c, Verdict: await judge.VerifyAsync(Window(c.Context, c.Current), candidate, _context, CancellationToken.None));
         });
 
         var wrong = verdicts
@@ -89,12 +89,12 @@ public class MemoryJudgeJevTests
     [SkippableFact]
     public async Task Pairs_LinkRight_ExceptTheRecordedMissWhichOnlyFailsTowardNotLinked()
     {
-        var (judge, cases) = await Setup.Value;
+        var (judge, cases) = await _setup.Value;
 
         var verdicts = await RunAsync(cases.Pairs, async c =>
         {
             var pair = new[] { Memory("a", c.A), Memory("b", c.B) };
-            var verdict = await judge.RelateAsync(pair, Context, CancellationToken.None);
+            var verdict = await judge.RelateAsync(pair, _context, CancellationToken.None);
             verdict.Answered.ShouldBeTrue($"Jev did not answer for '{c.A}' | '{c.B}'");
             return (Case: c, Linked: verdict.Linked.Count == 1);
         });
@@ -112,7 +112,7 @@ public class MemoryJudgeJevTests
     [SkippableFact]
     public async Task Pairs_OverAWholeCluster_LinkOnlyTheMoveAndLeaveTheSiblingsApart()
     {
-        var (judge, _) = await Setup.Value;
+        var (judge, _) = await _setup.Value;
         var cluster = new[]
         {
             Memory("madrid", "Vive en Madrid"),
@@ -121,7 +121,7 @@ public class MemoryJudgeJevTests
             Memory("brother", "Su hermano Pablo vive en Bilbao")
         };
 
-        var verdict = await judge.RelateAsync(cluster, Context, CancellationToken.None);
+        var verdict = await judge.RelateAsync(cluster, _context, CancellationToken.None);
 
         verdict.Answered.ShouldBeTrue();
         verdict.Linked.ShouldHaveSingleItem().Select(m => m.Id).ShouldBe(["madrid", "valencia"]);
@@ -129,7 +129,7 @@ public class MemoryJudgeJevTests
 
     private static async Task<(MemoryJudge, Cases)> SetupAsync()
     {
-        var apiKey = Configuration["typeSafe:apiKey"] ?? Configuration["TYPESAFE_API_KEY"];
+        var apiKey = _configuration["typeSafe:apiKey"] ?? _configuration["TYPESAFE_API_KEY"];
         Skip.If(string.IsNullOrWhiteSpace(apiKey), "typeSafe:apiKey is not set in user secrets (nor TYPESAFE_API_KEY)");
 
         var shipped = new ConfigurationBuilder()

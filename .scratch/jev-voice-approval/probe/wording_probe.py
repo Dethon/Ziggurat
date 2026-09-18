@@ -1,12 +1,18 @@
 """Probe approval question wordings over the 32 labelled answers, applying the shipped rule
 (sure 0.9 / counter 0.1 / lean 0.5, word list as agreement partner).
 Key: $TYPESAFE_API_KEY, else ~/.config/typesafe/key.  Usage: python3 wording_probe.py [wording ids...]"""
-import json, os, pathlib, statistics, sys, time, urllib.request
+import json
+import os
+import pathlib
+import statistics
+import sys
+import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 URL, MODEL = "https://api.typesafe.ai/v1/systemone", "jev-1.13.0"
 REPO = pathlib.Path(__file__).resolve().parents[3]
-CASES = json.load(open(REPO / "Tests/Integration/McpChannelVoice/jev-approval-cases.json"))
+CASES = json.loads((REPO / "Tests/Integration/McpChannelVoice/jev-approval-cases.json").read_text())
 YES = {"yes","yeah","yep","sure","okay","ok","confirm","confirmed","sí","si","vale","claro","afirmativo"}
 NO = {"no","nope","nah","cancel","cancelar","negativo","abort","stop"}
 

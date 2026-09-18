@@ -25,12 +25,12 @@ public class SkillPreloaderJevTests
     // a description edit could quietly lose.
     private const double CoverageFloor = 0.85;
 
-    private static readonly IConfiguration Configuration = new ConfigurationBuilder()
+    private static readonly IConfiguration _configuration = new ConfigurationBuilder()
         .AddUserSecrets<SkillPreloaderJevTests>()
         .AddEnvironmentVariables()
         .Build();
 
-    private static readonly Lazy<Task<IReadOnlyList<Verdict>>> Run = new(RunAsync);
+    private static readonly Lazy<Task<IReadOnlyList<Verdict>>> _run = new(RunAsync);
 
     private sealed record Case(string Request, IReadOnlyList<string> Skills);
 
@@ -46,7 +46,7 @@ public class SkillPreloaderJevTests
     [SkippableFact]
     public async Task OverTheLabelledSet_NothingIsPreloadedThatTheRequestDoesNotNeed()
     {
-        var verdicts = await Run.Value;
+        var verdicts = await _run.Value;
 
         var wrong = verdicts
             .Where(v => v.Wrong.Any())
@@ -60,7 +60,7 @@ public class SkillPreloaderJevTests
     [SkippableFact]
     public async Task OverTheLabelledSet_CoverageHoldsTheFloor()
     {
-        var verdicts = await Run.Value;
+        var verdicts = await _run.Value;
 
         var covered = verdicts.Count(v => v.Covered);
         var missed = verdicts
@@ -77,7 +77,7 @@ public class SkillPreloaderJevTests
     [SkippableFact]
     public async Task TheTwoOverlapsTheProbeFound_NowPreloadTheRightSkill()
     {
-        var verdicts = await Run.Value;
+        var verdicts = await _run.Value;
 
         verdicts.Single(v => v.Case.Request == "para la alarma").Preloaded.ShouldBe(["countdown-timers"]);
         verdicts.Single(v => v.Case.Request == "dime cuando termine la lavadora").Preloaded.ShouldBe(["home-watches"]);
@@ -85,7 +85,7 @@ public class SkillPreloaderJevTests
 
     private static async Task<IReadOnlyList<Verdict>> RunAsync()
     {
-        var apiKey = Configuration["typeSafe:apiKey"] ?? Configuration["TYPESAFE_API_KEY"];
+        var apiKey = _configuration["typeSafe:apiKey"] ?? _configuration["TYPESAFE_API_KEY"];
         Skip.If(string.IsNullOrWhiteSpace(apiKey), "typeSafe:apiKey is not set in user secrets (nor TYPESAFE_API_KEY)");
 
         var shipped = new ConfigurationBuilder()

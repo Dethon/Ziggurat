@@ -68,7 +68,7 @@ public sealed class ReplySpeaker(
         // stopped sending. Whether that settles the turn silent or leaves it waiting on audio still
         // playing is the turn's decision: streaming may already have spoken everything, leaving
         // this flush empty.
-        Task SpeakAndEndStream()
+        Task speakAndEndStream()
         {
             SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Reply);
             EndStream(session, p);
@@ -82,7 +82,7 @@ public sealed class ReplySpeaker(
         // StreamComplete; the shared isComplete rule covers a transport that completes early —
         // left open, the turn never learns the agent stopped sending and the mic stays shut for
         // the whole ~120 s reply timeout.)
-        Task AppendError()
+        Task appendError()
         {
             accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
             return Task.CompletedTask;
@@ -91,8 +91,8 @@ public sealed class ReplySpeaker(
         // Every delegate here is synchronous, so the shared walk completes synchronously and this
         // wait never blocks.
         AccumulateUntilTerminalAsync(p.ConversationId, p,
-            deliver: SpeakAndEndStream,
-            onError: AppendError,
+            deliver: speakAndEndStream,
+            onError: appendError,
             onStreamedChunk: () => SpeakReadySegments(session, p.ConversationId))
             .GetAwaiter().GetResult();
     }

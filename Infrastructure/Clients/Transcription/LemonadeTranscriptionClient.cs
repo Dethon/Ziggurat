@@ -25,7 +25,7 @@ public sealed class LemonadeTranscriptionClient(
     // the singleton services) so IHttpClientFactory handler rotation keeps working.
     public const string ClientName = "lemonade";
 
-    private static readonly Dictionary<string, string> ExtensionsByMediaType = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string> _extensionsByMediaType = new(StringComparer.OrdinalIgnoreCase)
     {
         ["audio/wav"] = ".wav",
         ["audio/x-wav"] = ".wav",
@@ -85,7 +85,7 @@ public sealed class LemonadeTranscriptionClient(
     // whisper-server picks its decoder from the bytes, but it still refuses a part it cannot name,
     // so the extension has to match what the part carries.
     private static string FileNameFor(string mediaType) =>
-        "dictation" + (ExtensionsByMediaType.GetValueOrDefault(mediaType) ?? ".bin");
+        "dictation" + (_extensionsByMediaType.GetValueOrDefault(mediaType) ?? ".bin");
 
     // PostAsync buffers the full response, so this covers body receipt too. The timeout surfaces as
     // TimeoutException, not OperationCanceledException: the satellite host swallows OCE as

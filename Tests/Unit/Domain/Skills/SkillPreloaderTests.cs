@@ -12,11 +12,11 @@ namespace Tests.Unit.Domain.Skills;
 // about, and how each kind of answer becomes a preload with an outcome telemetry can name.
 public class SkillPreloaderTests
 {
-    private static readonly SkillPreloadSettings Settings = new() { DeadlineMs = 600 };
+    private static readonly SkillPreloadSettings _settings = new() { DeadlineMs = 600 };
 
-    private static readonly PromptSkill Home = TestSkills.Skill("home-assistant", "Turning lights, climate and media on or off.");
-    private static readonly PromptSkill Timers = TestSkills.Skill("countdown-timers", "Setting, reading or cancelling a countdown.");
-    private static readonly PromptSkill Vault = TestSkills.Skill("obsidian-vault", "Creating or editing a note in the vault.");
+    private static readonly PromptSkill _home = TestSkills.Skill("home-assistant", "Turning lights, climate and media on or off.");
+    private static readonly PromptSkill _timers = TestSkills.Skill("countdown-timers", "Setting, reading or cancelling a countdown.");
+    private static readonly PromptSkill _vault = TestSkills.Skill("obsidian-vault", "Creating or editing a note in the vault.");
 
     private static JudgmentOutcome Answered(string choice, double confidence, params (string Skill, double P)[] needs) =>
         JudgeAnswers.Answered(choice, confidence, needs);
@@ -31,7 +31,7 @@ public class SkillPreloaderTests
         var judge = new ScriptedJudge(_ => Answered("home-assistant", 0.98, ("home-assistant", 0.96), ("countdown-timers", 0.03)));
         var preloader = Preloader(judge);
 
-        var preload = await preloader.PreloadAsync(Request("enciende la luz del salón", [Home, Timers]), CancellationToken.None);
+        var preload = await preloader.PreloadAsync(Request("enciende la luz del salón", [_home, _timers]), CancellationToken.None);
 
         preload.Outcome.ShouldBe(SkillPreloadOutcome.Preloaded);
         preload.Skills.Select(s => s.Name).ShouldBe(["home-assistant"]);
@@ -49,7 +49,7 @@ public class SkillPreloaderTests
     {
         var judge = new ScriptedJudge(_ => Answered("none", 0.97, ("home-assistant", 0.02)));
 
-        var preload = await Preloader(judge).PreloadAsync(Request("hola, ¿qué tal?", [Home]), CancellationToken.None);
+        var preload = await Preloader(judge).PreloadAsync(Request("hola, ¿qué tal?", [_home]), CancellationToken.None);
 
         preload.Outcome.ShouldBe(SkillPreloadOutcome.None);
         preload.Skills.ShouldBeEmpty();
@@ -60,7 +60,7 @@ public class SkillPreloaderTests
     {
         var judge = new ScriptedJudge(_ => Answered("home-assistant", 0.74, ("home-assistant", 0.83)));
 
-        var preload = await Preloader(judge).PreloadAsync(Request("dime cuando termine la lavadora", [Home]), CancellationToken.None);
+        var preload = await Preloader(judge).PreloadAsync(Request("dime cuando termine la lavadora", [_home]), CancellationToken.None);
 
         preload.Outcome.ShouldBe(SkillPreloadOutcome.Abstained);
         preload.Skills.ShouldBeEmpty();
@@ -73,7 +73,7 @@ public class SkillPreloaderTests
         var judge = new ScriptedJudge(_ => Answered("home-assistant", 0.99, ("home-assistant", 0.99), ("countdown-timers", 0.01)));
         var history = new[] { new ChatMessage(ChatRole.User, "hola"), ALoadOf("home-assistant") };
 
-        var preload = await Preloader(judge).PreloadAsync(Request("apaga la luz", [Home, Timers], history), CancellationToken.None);
+        var preload = await Preloader(judge).PreloadAsync(Request("apaga la luz", [_home, _timers], history), CancellationToken.None);
 
         var asked = judge.Asked.ShouldHaveSingleItem();
         var choice = asked.Questions["skill"].ShouldBeOfType<ChoiceQuestion>();
@@ -86,9 +86,9 @@ public class SkillPreloaderTests
     public async Task Preload_ALoadMadeByTheHost_CountsAsLoadedToo()
     {
         var judge = new ScriptedJudge(_ => Answered("none", 0.99));
-        var history = new[] { SkillLoadTool.AsLoaded([Home], "preload-1").First() };
+        var history = new[] { SkillLoadTool.AsLoaded([_home], "preload-1").First() };
 
-        await Preloader(judge).PreloadAsync(Request("apaga la luz", [Home, Timers], history), CancellationToken.None);
+        await Preloader(judge).PreloadAsync(Request("apaga la luz", [_home, _timers], history), CancellationToken.None);
 
         judge.Asked.ShouldHaveSingleItem().Questions["skill"].ShouldBeOfType<ChoiceQuestion>()
             .Criteria.Keys.ShouldBe(["countdown-timers", "none"]);
@@ -100,7 +100,7 @@ public class SkillPreloaderTests
         var judge = new ScriptedJudge(_ => throw new InvalidOperationException("must not be asked"));
         var history = new[] { ALoadOf("home-assistant"), ALoadOf("countdown-timers") };
 
-        var preload = await Preloader(judge).PreloadAsync(Request("apaga la luz", [Home, Timers], history), CancellationToken.None);
+        var preload = await Preloader(judge).PreloadAsync(Request("apaga la luz", [_home, _timers], history), CancellationToken.None);
 
         preload.Outcome.ShouldBe(SkillPreloadOutcome.NotAsked);
         judge.Asked.ShouldBeEmpty();
@@ -121,9 +121,9 @@ public class SkillPreloaderTests
     public async Task Preload_Disabled_AsksNothing()
     {
         var judge = new ScriptedJudge(_ => throw new InvalidOperationException("must not be asked"));
-        var preloader = Preloader(judge, Settings with { Enabled = false });
+        var preloader = Preloader(judge, _settings with { Enabled = false });
 
-        var preload = await preloader.PreloadAsync(Request("apaga la luz", [Home]), CancellationToken.None);
+        var preload = await preloader.PreloadAsync(Request("apaga la luz", [_home]), CancellationToken.None);
 
         preload.Outcome.ShouldBe(SkillPreloadOutcome.NotAsked);
         judge.Asked.ShouldBeEmpty();
@@ -135,7 +135,7 @@ public class SkillPreloaderTests
         var judge = new ScriptedJudge(_ => throw new InvalidOperationException("must not be asked"));
 
         var preload = await Preloader(judge).PreloadAsync(
-            Request("apaga la luz", [Home]) with { ConfigPatchModel = "lemonade/qwen3" }, CancellationToken.None);
+            Request("apaga la luz", [_home]) with { ConfigPatchModel = "lemonade/qwen3" }, CancellationToken.None);
 
         preload.Outcome.ShouldBe(SkillPreloadOutcome.SkippedLemonade);
         preload.Latency.ShouldBeNull();
@@ -147,7 +147,7 @@ public class SkillPreloaderTests
     {
         var judge = new ScriptedJudge(_ => new JudgmentOutcome.Absent(AbsenceReason.Unconfigured));
 
-        var preload = await Preloader(judge).PreloadAsync(Request("apaga la luz", [Home]), CancellationToken.None);
+        var preload = await Preloader(judge).PreloadAsync(Request("apaga la luz", [_home]), CancellationToken.None);
 
         preload.Outcome.ShouldBe(SkillPreloadOutcome.NotAsked);
     }
@@ -159,7 +159,7 @@ public class SkillPreloaderTests
     {
         var judge = new ScriptedJudge(_ => new JudgmentOutcome.Absent(reason));
 
-        var preload = await Preloader(judge).PreloadAsync(Request("apaga la luz", [Home]), CancellationToken.None);
+        var preload = await Preloader(judge).PreloadAsync(Request("apaga la luz", [_home]), CancellationToken.None);
 
         preload.Outcome.ShouldBe(outcome);
         preload.Skills.ShouldBeEmpty();
@@ -172,7 +172,7 @@ public class SkillPreloaderTests
     {
         var judge = new ScriptedJudge(_ => Answered("none", 0.99));
 
-        await Preloader(judge).PreloadAsync(Request("busca una receta", [Home, Vault]), CancellationToken.None);
+        await Preloader(judge).PreloadAsync(Request("busca una receta", [_home, _vault]), CancellationToken.None);
 
         var questions = judge.Asked.ShouldHaveSingleItem().Questions.Values.Select(q => q.Instructions).ToList();
         questions.Count.ShouldBe(3);
@@ -186,11 +186,11 @@ public class SkillPreloaderTests
         var outpost = TestSkills.Skill("laptop-files", "Files on Francisco's laptop, reached through the outpost.", declared: false);
         var judge = new ScriptedJudge(_ => Answered("none", 0.99));
 
-        await Preloader(judge).PreloadAsync(Request("busca en mi portátil", [Home, outpost]), CancellationToken.None);
+        await Preloader(judge).PreloadAsync(Request("busca en mi portátil", [_home, outpost]), CancellationToken.None);
 
         var asked = judge.Asked.ShouldHaveSingleItem();
         var criteria = asked.Questions["skill"].ShouldBeOfType<ChoiceQuestion>().Criteria;
-        criteria["home-assistant"].ShouldBe(Home.Description);
+        criteria["home-assistant"].ShouldBe(_home.Description);
         criteria["laptop-files"].ShouldBe(outpost.Description);
         criteria.Keys.Last().ShouldBe("none");
         asked.Questions["needs_laptop-files"].Instructions.ShouldEndWith(outpost.Description);
@@ -208,9 +208,9 @@ public class SkillPreloaderTests
             await cancelled.Task;
             return new JudgmentOutcome.Absent(AbsenceReason.Deadline);
         });
-        var preloader = new SkillPreloader(judge, Settings, clock);
+        var preloader = new SkillPreloader(judge, _settings, clock);
 
-        var pending = preloader.PreloadAsync(Request("apaga la luz", [Home]), CancellationToken.None);
+        var pending = preloader.PreloadAsync(Request("apaga la luz", [_home]), CancellationToken.None);
         clock.Advance(TimeSpan.FromMilliseconds(599));
         pending.IsCompleted.ShouldBeFalse();
         clock.Advance(TimeSpan.FromMilliseconds(1));
@@ -225,7 +225,7 @@ public class SkillPreloaderTests
     {
         var judge = new ScriptedJudge(_ => Answered("web-browsing", 0.99, ("web-browsing", 0.99)));
 
-        var preload = await Preloader(judge).PreloadAsync(Request("busca algo", [Home]), CancellationToken.None);
+        var preload = await Preloader(judge).PreloadAsync(Request("busca algo", [_home]), CancellationToken.None);
 
         preload.Skills.ShouldBeEmpty();
         preload.Outcome.ShouldBe(SkillPreloadOutcome.Abstained);
@@ -239,7 +239,7 @@ public class SkillPreloaderTests
         var judge = new ScriptedJudge(_ => JudgeAnswers.Sure("home-assistant"));
         var index = new JsonObject { ["filePath"] = "/ha/setup-index.md", ["content"] = "1: ## Current Home Assistant setup" };
         var asked = new List<string>();
-        var request = Request("enciende la luz del salón", [TestSkills.HomeWithIndex, Timers]) with
+        var request = Request("enciende la luz del salón", [TestSkills.HomeWithIndex, _timers]) with
         {
             Reader = (path, _) =>
             {
@@ -263,7 +263,7 @@ public class SkillPreloaderTests
     {
         var judge = new ScriptedJudge(_ => JudgeAnswers.Sure("countdown-timers"));
         var asked = 0;
-        var request = Request("pon un temporizador", [TestSkills.HomeWithIndex, Timers]) with
+        var request = Request("pon un temporizador", [TestSkills.HomeWithIndex, _timers]) with
         {
             Reader = (_, _) =>
             {
@@ -326,7 +326,7 @@ public class SkillPreloaderTests
     }
 
     private static SkillPreloader Preloader(IJudge judge, SkillPreloadSettings? settings = null) =>
-        new(judge, settings ?? Settings, new FakeTimeProvider());
+        new(judge, settings ?? _settings, new FakeTimeProvider());
 
     private static SkillPreloadRequest Request(string text, IReadOnlyList<PromptSkill> skills, IEnumerable<ChatMessage>? history = null) =>
         new(text, skills, history ?? []);

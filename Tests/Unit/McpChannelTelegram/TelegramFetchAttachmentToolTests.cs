@@ -13,7 +13,7 @@ namespace Tests.Unit.McpChannelTelegram;
 // download at the moment the agent asks, against the bot the reference names.
 public class TelegramFetchAttachmentToolTests
 {
-    private static readonly byte[] Bytes = [1, 2, 3, 4, 5];
+    private static readonly byte[] _bytes = [1, 2, 3, 4, 5];
 
     private readonly Mock<ITelegramBotClient> _botClient = new();
     private readonly IServiceProvider _services;
@@ -36,17 +36,17 @@ public class TelegramFetchAttachmentToolTests
     [Fact]
     public async Task McpRun_KnownReference_ReturnsTheBytesBase64()
     {
-        GivenTelegramHolds("AgACphoto", Bytes);
+        GivenTelegramHolds("AgACphoto", _bytes);
 
         var result = await FetchAttachmentTool.McpRun("jack/AgACphoto", _services, CancellationToken.None);
 
-        Convert.FromBase64String(result).ShouldBe(Bytes);
+        Convert.FromBase64String(result).ShouldBe(_bytes);
     }
 
     [Fact]
     public async Task McpRun_UnknownAgent_AnswersEmptyRatherThanFailing()
     {
-        GivenTelegramHolds("AgACphoto", Bytes);
+        GivenTelegramHolds("AgACphoto", _bytes);
 
         var result = await FetchAttachmentTool.McpRun("stranger/AgACphoto", _services, CancellationToken.None);
 
@@ -68,7 +68,7 @@ public class TelegramFetchAttachmentToolTests
     [Fact]
     public async Task McpRun_ReferenceWithNoAgentSegment_AnswersEmpty()
     {
-        GivenTelegramHolds("AgACphoto", Bytes);
+        GivenTelegramHolds("AgACphoto", _bytes);
 
         var result = await FetchAttachmentTool.McpRun("AgACphoto", _services, CancellationToken.None);
 

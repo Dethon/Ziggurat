@@ -168,15 +168,15 @@ public sealed class MemoryJudge(
     {
         var parent = Enumerable.Range(0, count).ToArray();
 
-        int Find(int x) => parent[x] == x ? x : parent[x] = Find(parent[x]);
+        int find(int x) => parent[x] == x ? x : parent[x] = find(parent[x]);
 
         foreach (var (i, j) in links)
         {
-            parent[Find(i)] = Find(j);
+            parent[find(i)] = find(j);
         }
 
         return Enumerable.Range(0, count)
-            .GroupBy(Find)
+            .GroupBy(find)
             .Select(g => (IReadOnlyList<int>)g.OrderBy(i => i).ToList())
             .Where(component => component.Count >= 2)
             .OrderBy(component => component[0]);

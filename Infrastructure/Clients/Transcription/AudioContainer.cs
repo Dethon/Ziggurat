@@ -11,16 +11,16 @@ public sealed record AudioContainer(string MediaType, bool NeedsDecoding)
     // decoding those locally would only add a way to get it wrong.
     public static AudioContainer OggOpus { get; } = new("audio/ogg; codecs=opus", NeedsDecoding: true);
 
-    private static readonly AudioContainer Wav = new("audio/wav", NeedsDecoding: false);
-    private static readonly AudioContainer Mpeg = new("audio/mpeg", NeedsDecoding: false);
-    private static readonly AudioContainer Flac = new("audio/flac", NeedsDecoding: false);
-    private static readonly AudioContainer OggVorbis = new("audio/ogg", NeedsDecoding: false);
+    private static readonly AudioContainer _wav = new("audio/wav", NeedsDecoding: false);
+    private static readonly AudioContainer _mpeg = new("audio/mpeg", NeedsDecoding: false);
+    private static readonly AudioContainer _flac = new("audio/flac", NeedsDecoding: false);
+    private static readonly AudioContainer _oggVorbis = new("audio/ogg", NeedsDecoding: false);
 
     public static AudioContainer? Sniff(ReadOnlySpan<byte> audio) => true switch
     {
-        _ when Starts(audio, "RIFF"u8) && Contains(audio[..Math.Min(audio.Length, 16)], "WAVE"u8) => Wav,
-        _ when Starts(audio, "fLaC"u8) => Flac,
-        _ when Starts(audio, "ID3"u8) || IsMpegFrame(audio) => Mpeg,
+        _ when Starts(audio, "RIFF"u8) && Contains(audio[..Math.Min(audio.Length, 16)], "WAVE"u8) => _wav,
+        _ when Starts(audio, "fLaC"u8) => _flac,
+        _ when Starts(audio, "ID3"u8) || IsMpegFrame(audio) => _mpeg,
         _ when Starts(audio, "OggS"u8) => SniffOggCodec(audio),
         _ => null
     };
@@ -33,7 +33,7 @@ public sealed record AudioContainer(string MediaType, bool NeedsDecoding)
         return true switch
         {
             _ when Contains(head, "OpusHead"u8) => OggOpus,
-            _ when Contains(head, "vorbis"u8) => OggVorbis,
+            _ when Contains(head, "vorbis"u8) => _oggVorbis,
             _ => null
         };
     }

@@ -17,7 +17,7 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 public class HaHistoryActionTests
 {
     private const string GlucoseDir = "entities/sensor/glucose_(glucose)";
-    private static readonly DateTimeOffset Now = new(2026, 9, 4, 16, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _now = new(2026, 9, 4, 16, 0, 0, TimeSpan.Zero);
 
     private static HaFileSystem Build(out FakeHaClient client)
     {
@@ -32,7 +32,7 @@ public class HaHistoryActionTests
             Services = { Service("light", "turn_on", DomainTarget("light")) }
         };
         var local = client;
-        var time = new FakeTimeProvider(Now);
+        var time = new FakeTimeProvider(_now);
         var provider = new HaCatalogProvider(() => local, time, extraServices: [HaHistoryActions.History]);
         return new HaFileSystem(provider, () => local, timeProvider: time);
     }

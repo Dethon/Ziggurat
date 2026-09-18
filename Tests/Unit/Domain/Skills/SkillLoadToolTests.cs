@@ -36,7 +36,7 @@ public class SkillLoadToolTests
 
         var results = messages[1].Contents.OfType<FunctionResultContent>().ToList();
         results.Select(r => r.CallId).ShouldBe(["preload-abc-1", "preload-abc-read-1"]);
-        results[0].Result!.ToString().ShouldContain("Read the index, then call the house.");
+        results[0].Result!.ToString().ShouldNotBeNull().ShouldContain("Read the index, then call the house.");
         results[1].Result.ShouldBeSameAs(index);
     }
 

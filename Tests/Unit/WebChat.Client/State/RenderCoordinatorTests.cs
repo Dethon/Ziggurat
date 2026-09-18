@@ -98,7 +98,7 @@ public class RenderCoordinatorTests : IDisposable
             }
         });
 
-        bool Saw(bool value)
+        bool saw(bool value)
         {
             lock (gate)
             {
@@ -109,11 +109,11 @@ public class RenderCoordinatorTests : IDisposable
         // The stream is sampled, so an emission is not there the instant the state changes. Two
         // sample intervals of sleep assumed the first tick had landed inside them, and on a machine
         // running the whole suite at once it had not.
-        await Eventually.Until(() => Saw(false), "the idle topic to report not-streaming");
+        await Eventually.Until(() => saw(false), "the idle topic to report not-streaming");
 
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
 
-        await Eventually.Until(() => Saw(true), "the started stream to report streaming");
+        await Eventually.Until(() => saw(true), "the started stream to report streaming");
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class RenderCoordinatorTests : IDisposable
             }
         });
 
-        bool Saw(bool value)
+        bool saw(bool value)
         {
             lock (gate)
             {
@@ -143,9 +143,9 @@ public class RenderCoordinatorTests : IDisposable
         // test of the transition: complete it too early and the sampler only ever sees the finished
         // state, so the true never arrives and the failure names the wrong half.
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        await Eventually.Until(() => Saw(true), "the started stream to be sampled as streaming");
+        await Eventually.Until(() => saw(true), "the started stream to be sampled as streaming");
 
         _dispatcher.Dispatch(new StreamCompleted("topic-1"));
-        await Eventually.Until(() => Saw(false), "the completed stream to be sampled as finished");
+        await Eventually.Until(() => saw(false), "the completed stream to be sampled as finished");
     }
 }

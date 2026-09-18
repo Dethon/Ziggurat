@@ -20,7 +20,7 @@ public class MetricsQueryServiceModalDismissalTests
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    private static readonly DateOnly Date = new(2026, 9, 18);
+    private static readonly DateOnly _date = new(2026, 9, 18);
 
     public MetricsQueryServiceModalDismissalTests()
     {
@@ -46,7 +46,7 @@ public class MetricsQueryServiceModalDismissalTests
     [Fact]
     public async Task Grouped_ByOutcome_CountsEveryOverlay()
     {
-        var result = await _sut.GetModalDismissalGroupedAsync(ModalDismissalDimension.Outcome, ModalDismissalMetric.Count, Date, Date);
+        var result = await _sut.GetModalDismissalGroupedAsync(ModalDismissalDimension.Outcome, ModalDismissalMetric.Count, _date, _date);
 
         result[ModalDismissalOutcomes.Selector].ShouldBe(1m);
         result[ModalDismissalOutcomes.Text].ShouldBe(1m);
@@ -57,7 +57,7 @@ public class MetricsQueryServiceModalDismissalTests
     [Fact]
     public async Task Grouped_ByKind_CountsEveryOverlay()
     {
-        var result = await _sut.GetModalDismissalGroupedAsync(ModalDismissalDimension.Kind, ModalDismissalMetric.Count, Date, Date);
+        var result = await _sut.GetModalDismissalGroupedAsync(ModalDismissalDimension.Kind, ModalDismissalMetric.Count, _date, _date);
 
         result.ShouldBe(new Dictionary<string, decimal> { [ModalKinds.Cookie] = 3m, [ModalKinds.Newsletter] = 2m });
     }
@@ -65,8 +65,8 @@ public class MetricsQueryServiceModalDismissalTests
     [Fact]
     public async Task Grouped_LatencyByKind_AggregatesOverTheOverlaysAJudgeWasAskedAbout()
     {
-        var avg = await _sut.GetModalDismissalGroupedAsync(ModalDismissalDimension.Kind, ModalDismissalMetric.LatencyMs, Date, Date);
-        var max = await _sut.GetModalDismissalGroupedAsync(ModalDismissalDimension.Kind, ModalDismissalMetric.LatencyMs, Date, Date, Aggregation.Max);
+        var avg = await _sut.GetModalDismissalGroupedAsync(ModalDismissalDimension.Kind, ModalDismissalMetric.LatencyMs, _date, _date);
+        var max = await _sut.GetModalDismissalGroupedAsync(ModalDismissalDimension.Kind, ModalDismissalMetric.LatencyMs, _date, _date, Aggregation.Max);
 
         avg[ModalKinds.Cookie].ShouldBe(400m);
         max[ModalKinds.Cookie].ShouldBe(500m);
@@ -76,7 +76,7 @@ public class MetricsQueryServiceModalDismissalTests
     [Fact]
     public async Task Trend_IsOneSeriesPerOutcome_CountedPerBucket()
     {
-        var trend = await _sut.GetModalDismissalTrendAsync(Date, Date);
+        var trend = await _sut.GetModalDismissalTrendAsync(_date, _date);
 
         trend.Select(s => s.Stage).ShouldBe(["judgment", "left-standing", "selector", "text"]);
         var leftStanding = trend.Single(s => s.Stage == ModalDismissalOutcomes.LeftStanding);
@@ -88,7 +88,7 @@ public class MetricsQueryServiceModalDismissalTests
     [Fact]
     public async Task Trend_ForOneKind_CountsThatKindAlone()
     {
-        var trend = await _sut.GetModalDismissalTrendAsync(Date, Date, ModalKinds.Newsletter);
+        var trend = await _sut.GetModalDismissalTrendAsync(_date, _date, ModalKinds.Newsletter);
 
         trend.Select(s => s.Stage).ShouldBe(["left-standing", "text"]);
         trend.Single(s => s.Stage == ModalDismissalOutcomes.LeftStanding).Points.ShouldHaveSingleItem().Value.ShouldBe(1m);

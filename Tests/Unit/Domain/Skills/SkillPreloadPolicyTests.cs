@@ -9,7 +9,7 @@ namespace Tests.Unit.Domain.Skills;
 // highest first, and the cap cuts the tail.
 public class SkillPreloadPolicyTests
 {
-    private static readonly SkillPreloadSettings Settings = new()
+    private static readonly SkillPreloadSettings _settings = new()
     {
         ChoiceConfidence = 0.9,
         NoulProbability = 0.9,
@@ -26,7 +26,7 @@ public class SkillPreloadPolicyTests
     [Fact]
     public void Decide_AConfidentNone_VetoesEvenANoulOverTheBar()
     {
-        var decision = SkillPreloadPolicy.Decide(Choice("none", 0.95), Needs(("home", 0.97)), Settings);
+        var decision = SkillPreloadPolicy.Decide(Choice("none", 0.95), Needs(("home", 0.97)), _settings);
 
         decision.Skills.ShouldBeEmpty();
         decision.NoneVetoed.ShouldBeTrue();
@@ -35,7 +35,7 @@ public class SkillPreloadPolicyTests
     [Fact]
     public void Decide_ANoneUnderTheVeto_StillLetsANoulThrough()
     {
-        var decision = SkillPreloadPolicy.Decide(Choice("none", 0.6), Needs(("home", 0.93)), Settings);
+        var decision = SkillPreloadPolicy.Decide(Choice("none", 0.6), Needs(("home", 0.93)), _settings);
 
         decision.Skills.ShouldBe(["home"]);
         decision.NoneVetoed.ShouldBeFalse();
@@ -45,7 +45,7 @@ public class SkillPreloadPolicyTests
     public void Decide_AWinnerAtTheBar_IsPreloadedFirst()
     {
         var decision = SkillPreloadPolicy.Decide(
-            Choice("timers", 0.92), Needs(("timers", 0.5), ("home", 0.95)), Settings);
+            Choice("timers", 0.92), Needs(("timers", 0.5), ("home", 0.95)), _settings);
 
         decision.Skills.ShouldBe(["timers", "home"]);
     }
@@ -54,7 +54,7 @@ public class SkillPreloadPolicyTests
     public void Decide_AWinnerUnderTheBarWithANoulOverIt_PreloadsOnlyTheNoulsSkill()
     {
         var decision = SkillPreloadPolicy.Decide(
-            Choice("timers", 0.83), Needs(("timers", 0.67), ("home", 0.91)), Settings);
+            Choice("timers", 0.83), Needs(("timers", 0.67), ("home", 0.91)), _settings);
 
         decision.Skills.ShouldBe(["home"]);
     }
@@ -63,7 +63,7 @@ public class SkillPreloadPolicyTests
     public void Decide_AWinnerUnderTheBarWhoseOwnNoulIsOverIt_IsPreloadedByTheNoul()
     {
         var decision = SkillPreloadPolicy.Decide(
-            Choice("timers", 0.89), Needs(("timers", 0.91), ("home", 0.6)), Settings);
+            Choice("timers", 0.89), Needs(("timers", 0.91), ("home", 0.6)), _settings);
 
         decision.Skills.ShouldBe(["timers"]);
     }
@@ -73,7 +73,7 @@ public class SkillPreloadPolicyTests
     {
         var decision = SkillPreloadPolicy.Decide(
             Choice("web", 0.99), Needs(("web", 0.99), ("vault", 0.91), ("home", 0.95)),
-            Settings with { MaxSkills = 3 });
+            _settings with { MaxSkills = 3 });
 
         decision.Skills.ShouldBe(["web", "home", "vault"]);
     }
@@ -82,7 +82,7 @@ public class SkillPreloadPolicyTests
     public void Decide_ThreeQualifying_AreCutToTwoByProbability()
     {
         var decision = SkillPreloadPolicy.Decide(
-            Choice("web", 0.99), Needs(("web", 0.99), ("vault", 0.91), ("home", 0.95)), Settings);
+            Choice("web", 0.99), Needs(("web", 0.99), ("vault", 0.91), ("home", 0.95)), _settings);
 
         decision.Skills.ShouldBe(["web", "home"]);
     }
@@ -91,7 +91,7 @@ public class SkillPreloadPolicyTests
     public void Decide_NothingOverAnyBar_IsEmptyAndNotAVeto()
     {
         var decision = SkillPreloadPolicy.Decide(
-            Choice("timers", 0.7), Needs(("timers", 0.8), ("home", 0.3)), Settings);
+            Choice("timers", 0.7), Needs(("timers", 0.8), ("home", 0.3)), _settings);
 
         decision.Skills.ShouldBeEmpty();
         decision.NoneVetoed.ShouldBeFalse();
@@ -100,7 +100,7 @@ public class SkillPreloadPolicyTests
     [Fact]
     public void Decide_TheBarsAreInclusive()
     {
-        var decision = SkillPreloadPolicy.Decide(Choice("timers", 0.9), Needs(("home", 0.9)), Settings);
+        var decision = SkillPreloadPolicy.Decide(Choice("timers", 0.9), Needs(("home", 0.9)), _settings);
 
         decision.Skills.ShouldBe(["timers", "home"]);
     }

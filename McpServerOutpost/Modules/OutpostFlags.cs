@@ -58,7 +58,7 @@ public static class OutpostFlags
 
     internal static string[] Sanitized(string[] args)
     {
-        if (args.FirstOrDefault(Names) is { } typed)
+        if (args.FirstOrDefault(names) is { } typed)
         {
             throw new InvalidOperationException(
                 $"'{typed}' cannot be passed on the command line: a command line is visible to every "
@@ -68,7 +68,7 @@ public static class OutpostFlags
 
         return [.. args.Select(arg => _booleanFlags.Contains(arg, StringComparer.Ordinal) ? arg + "=true" : arg)];
 
-        static bool Names(string arg) =>
+        static bool names(string arg) =>
             _neverFlags.Contains(arg.Split('=', 2)[0], StringComparer.OrdinalIgnoreCase);
     }
 

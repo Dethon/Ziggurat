@@ -28,7 +28,7 @@ public class ApprovalReaderJevTests
     // of the two runs. That number, so a wording that loses one more is heard.
     private const int ReAskCeiling = 3;
 
-    private static readonly Lazy<Task<IReadOnlyList<Verdict>>> Run = new(RunAsync);
+    private static readonly Lazy<Task<IReadOnlyList<Verdict>>> _run = new(RunAsync);
 
     private sealed record Case(string Prompt, string Answer, string Want);
 
@@ -52,7 +52,7 @@ public class ApprovalReaderJevTests
     [SkippableFact]
     public async Task OverTheLabelledAnswers_NoneIsDecidedTheWrongWay()
     {
-        var verdicts = await Run.Value;
+        var verdicts = await _run.Value;
 
         verdicts.Where(v => v.IsWrongAction).Select(v => v.ToString()).ShouldBeEmpty();
     }
@@ -60,7 +60,7 @@ public class ApprovalReaderJevTests
     [SkippableFact]
     public async Task OverTheLabelledAnswers_TheReAsksStayUnderTheMeasuredCeiling()
     {
-        var verdicts = await Run.Value;
+        var verdicts = await _run.Value;
 
         var reAsks = verdicts.Where(v => v.IsReAsk).Select(v => v.ToString()).ToList();
         reAsks.Count.ShouldBeLessThanOrEqualTo(ReAskCeiling, "re-asked:\n" + string.Join("\n", reAsks));
@@ -73,16 +73,16 @@ public class ApprovalReaderJevTests
     [SkippableFact]
     public async Task TheWordListsBlindSpots_AreDecided_AndTheNarrowedYesIsNot()
     {
-        var verdicts = await Run.Value;
-        ApprovalResponse Of(string answer) => verdicts.Single(v => v.Case.Answer == answer).Reading.Response;
+        var verdicts = await _run.Value;
+        ApprovalResponse of(string answer) => verdicts.Single(v => v.Case.Answer == answer).Reading.Response;
 
-        Of("adelante").ShouldBe(ApprovalResponse.Approved);
-        Of("hazlo").ShouldBe(ApprovalResponse.Approved);
-        Of("mejor no").ShouldBe(ApprovalResponse.Declined);
-        Of("espera, no lo hagas").ShouldBe(ApprovalResponse.Declined);
-        Of("sí sí").ShouldBe(ApprovalResponse.Approved);
-        Of("sí, pero la de la cocina no").ShouldBe(ApprovalResponse.Ambiguous);
-        Of("no, solo la del salón").ShouldNotBe(ApprovalResponse.Approved);
+        of("adelante").ShouldBe(ApprovalResponse.Approved);
+        of("hazlo").ShouldBe(ApprovalResponse.Approved);
+        of("mejor no").ShouldBe(ApprovalResponse.Declined);
+        of("espera, no lo hagas").ShouldBe(ApprovalResponse.Declined);
+        of("sí sí").ShouldBe(ApprovalResponse.Approved);
+        of("sí, pero la de la cocina no").ShouldBe(ApprovalResponse.Ambiguous);
+        of("no, solo la del salón").ShouldNotBe(ApprovalResponse.Approved);
     }
 
     private static async Task<IReadOnlyList<Verdict>> RunAsync()

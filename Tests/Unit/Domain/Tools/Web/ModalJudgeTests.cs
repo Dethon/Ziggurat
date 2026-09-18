@@ -12,28 +12,28 @@ namespace Tests.Unit.Domain.Tools.Web;
 // and what the rule makes of the answers. The click itself is the browser test's.
 public class ModalJudgeTests
 {
-    private static readonly IReadOnlyList<ModalControl> CookieWall =
+    private static readonly IReadOnlyList<ModalControl> _cookieWall =
     [
         new(0, "button", "Configurar"),
         new(1, "button", "Aceptar todo"),
         new(2, "button", "Rechazar todo")
     ];
 
-    private static readonly IReadOnlyList<ModalControl> SiteNavigation =
+    private static readonly IReadOnlyList<ModalControl> _siteNavigation =
     [
         new(0, "link", "Iniciar sesión"),
         new(1, "button", "Buscar"),
         new(2, "button", "Menú")
     ];
 
-    private static readonly ModalJudgmentSettings Settings = new();
+    private static readonly ModalJudgmentSettings _settings = new();
 
     [Fact]
     public async Task Cookie_AConfidentReject_IsPickedOverTheAccept()
     {
         var judge = Choices((ModalJudge.RejectQuestionId, "2", 0.9), (ModalJudge.AcceptQuestionId, "1", 0.95));
 
-        var pick = await Judge(judge).PickAsync(ModalType.CookieConsent, CookieWall, CancellationToken.None);
+        var pick = await Judge(judge).PickAsync(ModalType.CookieConsent, _cookieWall, CancellationToken.None);
 
         pick.Status.ShouldBe(ModalPickStatus.Picked);
         pick.Index.ShouldBe(2);
@@ -45,7 +45,7 @@ public class ModalJudgeTests
     {
         var judge = Choices((ModalJudge.RejectQuestionId, ModalJudge.NoneChoice, 0.9), (ModalJudge.AcceptQuestionId, "1", 0.8));
 
-        var pick = await Judge(judge).PickAsync(ModalType.CookieConsent, CookieWall, CancellationToken.None);
+        var pick = await Judge(judge).PickAsync(ModalType.CookieConsent, _cookieWall, CancellationToken.None);
 
         pick.Status.ShouldBe(ModalPickStatus.Picked);
         pick.Index.ShouldBe(1);
@@ -56,7 +56,7 @@ public class ModalJudgeTests
     {
         var judge = Choices((ModalJudge.RejectQuestionId, "2", 0.5), (ModalJudge.AcceptQuestionId, "1", 0.59));
 
-        var pick = await Judge(judge).PickAsync(ModalType.CookieConsent, CookieWall, CancellationToken.None);
+        var pick = await Judge(judge).PickAsync(ModalType.CookieConsent, _cookieWall, CancellationToken.None);
 
         pick.Status.ShouldBe(ModalPickStatus.None);
         pick.Index.ShouldBeNull();
@@ -68,7 +68,7 @@ public class ModalJudgeTests
     {
         var judge = Choices((ModalJudge.RejectQuestionId, ModalJudge.NoneChoice, 0.99), (ModalJudge.AcceptQuestionId, ModalJudge.NoneChoice, 0.99));
 
-        var pick = await Judge(judge).PickAsync(ModalType.CookieConsent, SiteNavigation, CancellationToken.None);
+        var pick = await Judge(judge).PickAsync(ModalType.CookieConsent, _siteNavigation, CancellationToken.None);
 
         pick.Status.ShouldBe(ModalPickStatus.None);
         pick.Index.ShouldBeNull();
@@ -79,7 +79,7 @@ public class ModalJudgeTests
     {
         var judge = Choices((ModalJudge.RejectQuestionId, "7", 0.9), (ModalJudge.AcceptQuestionId, "7", 0.9));
 
-        var pick = await Judge(judge).PickAsync(ModalType.CookieConsent, CookieWall, CancellationToken.None);
+        var pick = await Judge(judge).PickAsync(ModalType.CookieConsent, _cookieWall, CancellationToken.None);
 
         pick.Status.ShouldBe(ModalPickStatus.None);
     }
@@ -91,7 +91,7 @@ public class ModalJudgeTests
         var cookie = Choices((ModalJudge.RejectQuestionId, "2", 0.9), (ModalJudge.AcceptQuestionId, "1", 0.9));
 
         await Judge(newsletter).PickAsync(ModalType.Newsletter, [new ModalControl(0, "button", "Quizás más tarde")], CancellationToken.None);
-        await Judge(cookie).PickAsync(ModalType.CookieConsent, CookieWall, CancellationToken.None);
+        await Judge(cookie).PickAsync(ModalType.CookieConsent, _cookieWall, CancellationToken.None);
 
         newsletter.Requests.ShouldHaveSingleItem().Questions.Keys.ShouldBe([ModalJudge.DeclineQuestionId]);
         cookie.Requests.ShouldHaveSingleItem().Questions.Keys.ShouldBe([ModalJudge.RejectQuestionId, ModalJudge.AcceptQuestionId]);
@@ -117,7 +117,7 @@ public class ModalJudgeTests
         var judge = Choices((ModalJudge.RejectQuestionId, "3", 0.9), (ModalJudge.AcceptQuestionId, "3", 0.9));
         var controls = Enumerable.Range(0, 25).Select(i => new ModalControl(i, "button", $"Control {i}")).ToList();
 
-        await Judge(judge, Settings with { MaxControls = 20 }).PickAsync(ModalType.CookieConsent, controls, CancellationToken.None);
+        await Judge(judge, _settings with { MaxControls = 20 }).PickAsync(ModalType.CookieConsent, controls, CancellationToken.None);
 
         var request = judge.Requests.ShouldHaveSingleItem();
         var sent = request.State["controls"]!.AsArray();
@@ -132,7 +132,7 @@ public class ModalJudgeTests
     {
         var judge = Choices((ModalJudge.RejectQuestionId, "2", 0.9), (ModalJudge.AcceptQuestionId, "1", 0.9));
 
-        await Judge(judge).PickAsync(ModalType.CookieConsent, CookieWall, CancellationToken.None);
+        await Judge(judge).PickAsync(ModalType.CookieConsent, _cookieWall, CancellationToken.None);
 
         var state = judge.Requests.ShouldHaveSingleItem().State;
         state.Select(p => p.Key).ShouldBe(["overlay_kind", "controls"]);
@@ -148,7 +148,7 @@ public class ModalJudgeTests
     public async Task AnAnswerAfterTheDeadline_IsAbsent_AndNothingIsClicked()
     {
         var clock = new FakeTimeProvider();
-        var settings = Settings with { DeadlineMs = 1000 };
+        var settings = _settings with { DeadlineMs = 1000 };
         // The judge answers a confident pick, but only after the deadline has passed it by.
         var judge = new StubJudge(request =>
         {
@@ -156,7 +156,7 @@ public class ModalJudgeTests
             return Answered((ModalJudge.RejectQuestionId, "2", 0.95), (ModalJudge.AcceptQuestionId, "1", 0.95));
         });
 
-        var pick = await new ModalJudge(judge, settings, clock).PickAsync(ModalType.CookieConsent, CookieWall, CancellationToken.None);
+        var pick = await new ModalJudge(judge, settings, clock).PickAsync(ModalType.CookieConsent, _cookieWall, CancellationToken.None);
 
         pick.Status.ShouldBe(ModalPickStatus.Absent);
         pick.Index.ShouldBeNull();
@@ -170,7 +170,7 @@ public class ModalJudgeTests
         var judge = new StubJudge(_ => throw new InvalidOperationException("not reached"));
         var honouring = new CancellationObservingJudge(clock);
 
-        var pending = new ModalJudge(honouring, Settings with { DeadlineMs = 1000 }, clock)
+        var pending = new ModalJudge(honouring, _settings with { DeadlineMs = 1000 }, clock)
             .PickAsync(ModalType.Newsletter, [new ModalControl(0, "button", "×")], CancellationToken.None);
         await honouring.Asked.Task;
         clock.Advance(TimeSpan.FromMilliseconds(1001));
@@ -185,7 +185,7 @@ public class ModalJudgeTests
     [InlineData(AbsenceReason.Error)]
     public async Task AnAbsentJudge_ClicksNothing(AbsenceReason reason)
     {
-        var pick = await Judge(StubJudge.Absent(reason)).PickAsync(ModalType.AgeGate, CookieWall, CancellationToken.None);
+        var pick = await Judge(StubJudge.Absent(reason)).PickAsync(ModalType.AgeGate, _cookieWall, CancellationToken.None);
 
         pick.Status.ShouldBe(ModalPickStatus.Absent);
     }
@@ -195,14 +195,14 @@ public class ModalJudgeTests
     {
         var judge = StubJudge.Absent();
 
-        var pick = await Judge(judge).PickAsync(ModalType.Generic, CookieWall, CancellationToken.None);
+        var pick = await Judge(judge).PickAsync(ModalType.Generic, _cookieWall, CancellationToken.None);
 
         pick.Status.ShouldBe(ModalPickStatus.NotAsked);
         judge.Requests.ShouldBeEmpty();
     }
 
     private static ModalJudge Judge(IJudge judge, ModalJudgmentSettings? settings = null) =>
-        new(judge, settings ?? Settings, new FakeTimeProvider());
+        new(judge, settings ?? _settings, new FakeTimeProvider());
 
     private static StubJudge Choices(params (string Id, string Choice, double Confidence)[] answers) =>
         new(Answered(answers));

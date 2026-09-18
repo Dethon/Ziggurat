@@ -12,7 +12,7 @@ namespace Tests.Unit.McpChannelTelegram;
 public class TelegramBotServiceRefusalTests : IDisposable
 {
     private const long OverTheLimit = 21L * 1024 * 1024;
-    private static readonly TimeSpan Debounce = TimeSpan.FromSeconds(1.5);
+    private static readonly TimeSpan _debounce = TimeSpan.FromSeconds(1.5);
 
     private readonly TelegramPollingHarness _harness = new();
 
@@ -51,7 +51,7 @@ public class TelegramBotServiceRefusalTests : IDisposable
             DocumentUpdate(3, messageId: 12, fileId: "good-2", fileName: "two.pdf", groupId: "g1"));
 
         await _harness.RunAsync();
-        await _harness.QuietForAsync(Debounce);
+        await _harness.QuietForAsync(_debounce);
 
         var notification = (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message.ShouldNotBeNull();
         notification.Content.ShouldBe("/ask summarise these");
@@ -73,7 +73,7 @@ public class TelegramBotServiceRefusalTests : IDisposable
                 mimeType: "application/msword", groupId: "g1"));
 
         await _harness.RunAsync();
-        await _harness.QuietForAsync(Debounce);
+        await _harness.QuietForAsync(_debounce);
 
         var reply = _harness.Sent.ShouldHaveSingleItem();
         reply.Text.ShouldContain("huge.pdf");

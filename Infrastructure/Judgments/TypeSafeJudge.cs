@@ -55,13 +55,13 @@ public sealed class TypeSafeJudge : IJudge
 
         try
         {
-            using var response = await _httpClient.PostAsJsonAsync(Endpoint, Wire(request), WireJson, deadline);
+            using var response = await _httpClient.PostAsJsonAsync(Endpoint, Wire(request), _wireJson, deadline);
             return response.StatusCode switch
             {
                 HttpStatusCode.Unauthorized => Misconfigured("typeSafe:apiKey", response.StatusCode),
                 HttpStatusCode.UnprocessableEntity => Misconfigured("typeSafe:model", response.StatusCode),
                 _ when !response.IsSuccessStatusCode => Unavailable(response.StatusCode),
-                _ => Parse(await response.Content.ReadFromJsonAsync<WireResponse>(WireJson, deadline))
+                _ => Parse(await response.Content.ReadFromJsonAsync<WireResponse>(_wireJson, deadline))
             };
         }
         catch (OperationCanceledException)
@@ -152,7 +152,7 @@ public sealed class TypeSafeJudge : IJudge
         _ => throw new ArgumentOutOfRangeException(nameof(question), question.GetType().Name, "Unknown question kind")
     };
 
-    private static readonly JsonSerializerOptions WireJson = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions _wireJson = new(JsonSerializerDefaults.Web);
 
     private sealed record WireResponse(
         [property: JsonPropertyName("model")] string? Model,

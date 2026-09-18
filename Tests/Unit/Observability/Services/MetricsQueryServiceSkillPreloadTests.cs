@@ -20,7 +20,7 @@ public class MetricsQueryServiceSkillPreloadTests
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    private static readonly DateOnly Date = new(2026, 9, 18);
+    private static readonly DateOnly _date = new(2026, 9, 18);
 
     public MetricsQueryServiceSkillPreloadTests()
     {
@@ -46,7 +46,7 @@ public class MetricsQueryServiceSkillPreloadTests
     [Fact]
     public async Task Grouped_ByOutcome_CountsEveryJudgment()
     {
-        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Outcome, SkillPreloadMetric.Count, Date, Date);
+        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Outcome, SkillPreloadMetric.Count, _date, _date);
 
         result[SkillPreloadOutcomes.Preloaded].ShouldBe(2m);
         result[SkillPreloadOutcomes.Deadline].ShouldBe(1m);
@@ -57,7 +57,7 @@ public class MetricsQueryServiceSkillPreloadTests
     [Fact]
     public async Task Grouped_BySkill_CountsEachSkillPreloadedAndNothingElse()
     {
-        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Skill, SkillPreloadMetric.Count, Date, Date);
+        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Skill, SkillPreloadMetric.Count, _date, _date);
 
         result.ShouldBe(new Dictionary<string, decimal> { ["home-assistant"] = 2m, ["home-watches"] = 1m });
     }
@@ -65,8 +65,8 @@ public class MetricsQueryServiceSkillPreloadTests
     [Fact]
     public async Task Grouped_LatencyByAgent_AggregatesOverTheJudgmentsThatHaveOne()
     {
-        var avg = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Agent, SkillPreloadMetric.LatencyMs, Date, Date);
-        var max = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Agent, SkillPreloadMetric.LatencyMs, Date, Date, Aggregation.Max);
+        var avg = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Agent, SkillPreloadMetric.LatencyMs, _date, _date);
+        var max = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Agent, SkillPreloadMetric.LatencyMs, _date, _date, Aggregation.Max);
 
         avg["nabu"].ShouldBe(400m);
         avg["jonas"].ShouldBe(400m);
@@ -76,7 +76,7 @@ public class MetricsQueryServiceSkillPreloadTests
     [Fact]
     public async Task Grouped_InputTokensByChannel_SumsThem()
     {
-        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Channel, SkillPreloadMetric.InputTokens, Date, Date);
+        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Channel, SkillPreloadMetric.InputTokens, _date, _date);
 
         result["voice"].ShouldBe(4300m);
         result["signalr"].ShouldBe(2000m);
@@ -85,7 +85,7 @@ public class MetricsQueryServiceSkillPreloadTests
     [Fact]
     public async Task Trend_IsOneSeriesPerOutcome_CountedPerBucket()
     {
-        var trend = await _sut.GetSkillPreloadTrendAsync(Date, Date);
+        var trend = await _sut.GetSkillPreloadTrendAsync(_date, _date);
 
         trend.Select(s => s.Stage).ShouldBe(["deadline", "none", "preloaded", "skipped-lemonade"]);
         var preloaded = trend.Single(s => s.Stage == SkillPreloadOutcomes.Preloaded);

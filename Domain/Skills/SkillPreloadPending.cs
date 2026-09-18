@@ -9,19 +9,19 @@ namespace Domain.Skills;
 // its pending result with it, and taken once, so a late look finds nothing to apply.
 public static class SkillPreloadPending
 {
-    private static readonly ConditionalWeakTable<ChatMessage, Task<SkillPreload>> Pending = [];
+    private static readonly ConditionalWeakTable<ChatMessage, Task<SkillPreload>> _pending = [];
 
     public static void Attach(ChatMessage message, Task<SkillPreload> preload) =>
-        Pending.AddOrUpdate(message, preload);
+        _pending.AddOrUpdate(message, preload);
 
     public static Task<SkillPreload>? TryTake(ChatMessage message)
     {
-        if (!Pending.TryGetValue(message, out var preload))
+        if (!_pending.TryGetValue(message, out var preload))
         {
             return null;
         }
 
-        Pending.Remove(message);
+        _pending.Remove(message);
         return preload;
     }
 }

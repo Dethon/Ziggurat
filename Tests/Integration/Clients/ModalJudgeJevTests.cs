@@ -19,12 +19,12 @@ namespace Tests.Integration.Clients;
 [Trait("Category", "Jev")]
 public class ModalJudgeJevTests
 {
-    private static readonly IConfiguration Configuration = new ConfigurationBuilder()
+    private static readonly IConfiguration _configuration = new ConfigurationBuilder()
         .AddUserSecrets<ModalJudgeJevTests>()
         .AddEnvironmentVariables()
         .Build();
 
-    private static readonly Lazy<Task<IReadOnlyList<Verdict>>> Run = new(RunAsync);
+    private static readonly Lazy<Task<IReadOnlyList<Verdict>>> _run = new(RunAsync);
 
     private sealed record Case(
         [property: JsonConverter(typeof(JsonStringEnumConverter))] ModalType Kind,
@@ -39,7 +39,7 @@ public class ModalJudgeJevTests
     [SkippableFact]
     public async Task OverTheLabelledWalls_EveryPickIsTheOneTheProbeFound()
     {
-        var verdicts = await Run.Value;
+        var verdicts = await _run.Value;
 
         var wrong = verdicts
             .Where(v => v.Picked != v.Case.Pick)
@@ -55,7 +55,7 @@ public class ModalJudgeJevTests
     [SkippableFact]
     public async Task ManagePreferencesBesideGotIt_ClicksGotIt_AndAnAcceptOnlyWall_StillCloses()
     {
-        var verdicts = await Run.Value;
+        var verdicts = await _run.Value;
 
         verdicts.Single(v => v.Case.Controls.Contains("Manage preferences")).Picked.ShouldBe("Got it");
         verdicts.Single(v => v.Case.Controls.Contains("Aceptar y continuar")).Picked.ShouldBe("Aceptar y continuar");
@@ -64,7 +64,7 @@ public class ModalJudgeJevTests
     // The key the Jev tests share, or a skip: user secrets first, the environment second.
     internal static string RequireKey()
     {
-        var apiKey = Configuration["typeSafe:apiKey"] ?? Configuration["TYPESAFE_API_KEY"];
+        var apiKey = _configuration["typeSafe:apiKey"] ?? _configuration["TYPESAFE_API_KEY"];
         Skip.If(string.IsNullOrWhiteSpace(apiKey), "typeSafe:apiKey is not set in user secrets (nor TYPESAFE_API_KEY)");
         return apiKey!;
     }

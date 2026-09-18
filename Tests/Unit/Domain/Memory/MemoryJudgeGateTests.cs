@@ -13,9 +13,9 @@ namespace Tests.Unit.Domain.Memory;
 // when all three are at or below the bar. Everything else, including no answer, extracts.
 public class MemoryJudgeGateTests
 {
-    private static readonly MemoryJudgmentContext Context = new("user1", "nabu", "conv-1");
+    private static readonly MemoryJudgmentContext _context = new("user1", "nabu", "conv-1");
 
-    private static readonly IReadOnlyList<ChatMessage> Window =
+    private static readonly IReadOnlyList<ChatMessage> _window =
     [
         new(ChatRole.User, "pon música"),
         new(ChatRole.Assistant, "¿Qué te apetece?"),
@@ -30,7 +30,7 @@ public class MemoryJudgeGateTests
     {
         var judge = StubJudge.Nouls(("fact", 0.05), ("preference", 0.1), ("instruction", 0.02));
 
-        var verdict = await Judge(judge).GateAsync(Window, Context, CancellationToken.None);
+        var verdict = await Judge(judge).GateAsync(_window, _context, CancellationToken.None);
 
         verdict.Skip.ShouldBeTrue();
         verdict.Scores["preference"].ShouldBe(0.1);
@@ -41,7 +41,7 @@ public class MemoryJudgeGateTests
     {
         var judge = StubJudge.Nouls(("fact", 0.05), ("preference", 0.11), ("instruction", 0.02));
 
-        var verdict = await Judge(judge).GateAsync(Window, Context, CancellationToken.None);
+        var verdict = await Judge(judge).GateAsync(_window, _context, CancellationToken.None);
 
         verdict.Skip.ShouldBeFalse();
     }
@@ -52,7 +52,7 @@ public class MemoryJudgeGateTests
     [InlineData(AbsenceReason.Unconfigured)]
     public async Task NoAnswer_Extracts(AbsenceReason reason)
     {
-        var verdict = await Judge(StubJudge.Absent(reason)).GateAsync(Window, Context, CancellationToken.None);
+        var verdict = await Judge(StubJudge.Absent(reason)).GateAsync(_window, _context, CancellationToken.None);
 
         verdict.Skip.ShouldBeFalse();
     }
@@ -63,7 +63,7 @@ public class MemoryJudgeGateTests
     {
         var judge = StubJudge.Nouls(("fact", 0.05), ("preference", 0.05));
 
-        var verdict = await Judge(judge).GateAsync(Window, Context, CancellationToken.None);
+        var verdict = await Judge(judge).GateAsync(_window, _context, CancellationToken.None);
 
         verdict.Skip.ShouldBeFalse();
     }
@@ -75,7 +75,7 @@ public class MemoryJudgeGateTests
         var published = new RecordingMetricsPublisher();
 
         var verdict = await Judge(judge, published, new MemoryJudgmentSettings { Enabled = false })
-            .GateAsync(Window, Context, CancellationToken.None);
+            .GateAsync(_window, _context, CancellationToken.None);
 
         verdict.Skip.ShouldBeFalse();
         judge.Requests.ShouldBeEmpty();
@@ -87,7 +87,7 @@ public class MemoryJudgeGateTests
     {
         var judge = StubJudge.Nouls(("fact", 0.0), ("preference", 0.0), ("instruction", 0.0));
 
-        await Judge(judge).GateAsync(Window, Context, CancellationToken.None);
+        await Judge(judge).GateAsync(_window, _context, CancellationToken.None);
 
         var request = judge.Requests.ShouldHaveSingleItem();
         request.State.ToJsonString().ShouldBe(JsonSerializer.Serialize(new
@@ -105,7 +105,7 @@ public class MemoryJudgeGateTests
         var published = new RecordingMetricsPublisher();
         var judge = StubJudge.Nouls(("fact", 0.05), ("preference", 0.1), ("instruction", 0.02));
 
-        await Judge(judge, published).GateAsync(Window, Context, CancellationToken.None);
+        await Judge(judge, published).GateAsync(_window, _context, CancellationToken.None);
 
         var evt = published.Published.OfType<MemoryJudgmentEvent>().ShouldHaveSingleItem();
         evt.Kind.ShouldBe(MemoryJudgmentKinds.Gate);
@@ -125,7 +125,7 @@ public class MemoryJudgeGateTests
     {
         var published = new RecordingMetricsPublisher();
 
-        await Judge(StubJudge.Absent(AbsenceReason.Deadline), published).GateAsync(Window, Context, CancellationToken.None);
+        await Judge(StubJudge.Absent(AbsenceReason.Deadline), published).GateAsync(_window, _context, CancellationToken.None);
 
         var evt = published.Published.OfType<MemoryJudgmentEvent>().ShouldHaveSingleItem();
         evt.Kind.ShouldBe(MemoryJudgmentKinds.Gate);
@@ -140,7 +140,7 @@ public class MemoryJudgeGateTests
     {
         var published = new RecordingMetricsPublisher();
 
-        await Judge(StubJudge.Absent(AbsenceReason.Unconfigured), published).GateAsync(Window, Context, CancellationToken.None);
+        await Judge(StubJudge.Absent(AbsenceReason.Unconfigured), published).GateAsync(_window, _context, CancellationToken.None);
 
         published.Published.ShouldBeEmpty();
     }
@@ -150,7 +150,7 @@ public class MemoryJudgeGateTests
     {
         var judge = StubJudge.Nouls(("fact", 0.0), ("preference", 0.0), ("instruction", 0.0));
 
-        var verdict = await Judge(judge).GateAsync([], Context, CancellationToken.None);
+        var verdict = await Judge(judge).GateAsync([], _context, CancellationToken.None);
 
         verdict.Skip.ShouldBeFalse();
         judge.Requests.ShouldBeEmpty();

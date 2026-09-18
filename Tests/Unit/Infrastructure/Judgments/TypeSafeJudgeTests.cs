@@ -13,7 +13,7 @@ namespace Tests.Unit.Infrastructure.Judgments;
 // becomes a failure of the caller — every one of them is an absence with a reason.
 public class TypeSafeJudgeTests
 {
-    private static readonly TypeSafeOptions Options = new()
+    private static readonly TypeSafeOptions _options = new()
     {
         ApiUrl = "https://typesafe.test/v1/",
         ApiKey = "ts-key",
@@ -237,7 +237,7 @@ public class TypeSafeJudgeTests
     {
         var handler = new ScriptedHandler(_ => Ok(Answered));
         var judge = TypeSafeJudge.Create(
-            new HttpClient(handler), Options with { ApiKey = "" }, new RecordingLogger());
+            new HttpClient(handler), _options with { ApiKey = "" }, new RecordingLogger());
 
         var outcome = await judge.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
 
@@ -253,7 +253,7 @@ public class TypeSafeJudgeTests
             httpClient.Timeout = t;
         }
 
-        return TypeSafeJudge.Create(httpClient, Options, logger ?? new RecordingLogger());
+        return TypeSafeJudge.Create(httpClient, _options, logger ?? new RecordingLogger());
     }
 
     private static HttpResponseMessage Ok(string json) =>

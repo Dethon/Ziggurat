@@ -12,10 +12,10 @@ namespace Tests.Unit.Domain.Skills;
 // question was worth asking.
 public class SkillPreloadTelemetryTests
 {
-    private static readonly PromptSkill Home = TestSkills.Home;
+    private static readonly PromptSkill _home = TestSkills.Home;
 
     private static SkillPreloadRequest Request(string text = "enciende la luz") =>
-        new(text, [Home], [])
+        new(text, [_home], [])
         {
             AgentId = "nabu",
             ChannelId = "voice",
@@ -67,8 +67,8 @@ public class SkillPreloadTelemetryTests
         var published = new RecordingMetricsPublisher();
         var judgment = new Judgment("jev-1.13.0", new Dictionary<string, JudgmentAnswer>
         {
-            [SkillPreloader.ChoiceQuestionId] = new ChoiceAnswer(Home.Name, 0.97, new Dictionary<string, double> { [Home.Name] = 0.97 }),
-            [SkillPreloader.NeedsQuestionId(Home.Name)] = new NoulAnswer(0.95)
+            [SkillPreloader.ChoiceQuestionId] = new ChoiceAnswer(_home.Name, 0.97, new Dictionary<string, double> { [_home.Name] = 0.97 }),
+            [SkillPreloader.NeedsQuestionId(_home.Name)] = new NoulAnswer(0.95)
         }, new JudgmentUsage(2180, 60));
         var preloader = new SkillPreloader(
             new FixedJudge(new JudgmentOutcome.Answered(judgment)), new SkillPreloadSettings(), new FakeTimeProvider(), published);
@@ -77,10 +77,10 @@ public class SkillPreloadTelemetryTests
 
         var evt = published.Published.OfType<SkillPreloadEvent>().ShouldHaveSingleItem();
         evt.Outcome.ShouldBe(SkillPreloadOutcomes.Preloaded);
-        evt.Skills.ShouldBe([Home.Name]);
-        evt.Choice.ShouldBe(Home.Name);
+        evt.Skills.ShouldBe([_home.Name]);
+        evt.Choice.ShouldBe(_home.Name);
         evt.ChoiceConfidence.ShouldBe(0.97);
-        evt.Needs.ShouldNotBeNull()[Home.Name].ShouldBe(0.95);
+        evt.Needs.ShouldNotBeNull()[_home.Name].ShouldBe(0.95);
         evt.InputTokens.ShouldBe(2180);
         evt.Model.ShouldBe("jev-1.13.0");
     }

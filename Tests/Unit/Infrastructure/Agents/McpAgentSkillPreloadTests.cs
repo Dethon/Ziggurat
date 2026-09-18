@@ -30,10 +30,10 @@ public class McpAgentSkillPreloadTests
     private const string Home = "home-assistant";
     private const string Timers = "countdown-timers";
 
-    private static readonly SkillText HomeText = new(Home, TestSkills.Home.Description, TestSkills.Home.Body);
-    private static readonly SkillText TimersText = new(Timers, TestSkills.Timers.Description, TestSkills.Timers.Body);
+    private static readonly SkillText _homeText = new(Home, TestSkills.Home.Description, TestSkills.Home.Body);
+    private static readonly SkillText _timersText = new(Timers, TestSkills.Timers.Description, TestSkills.Timers.Body);
 
-    private static readonly SkillPreloadSettings Settings = new() { DeadlineMs = 600 };
+    private static readonly SkillPreloadSettings _settings = new() { DeadlineMs = 600 };
 
     private static Task<RunningServer> StartAsync(params SkillText[] skills) =>
         InMemoryMcpServer.StartAsync(services => services
@@ -45,7 +45,7 @@ public class McpAgentSkillPreloadTests
     [Fact]
     public async Task AConfidentJudgment_PutsThePairAfterTheUserMessage_AndChangesNothingElse()
     {
-        await using var server = await StartAsync(HomeText, TimersText);
+        await using var server = await StartAsync(_homeText, _timersText);
         var judge = new ScriptedJudge(_ => Sure(Home));
         var (onClient, onCalls) = Capturing();
         var (offClient, offCalls) = Capturing();
@@ -65,19 +65,19 @@ public class McpAgentSkillPreloadTests
         call.Arguments!.Values.Single()!.ToString().ShouldBe(Home);
         var result = withPreload.Messages[2].Contents.OfType<FunctionResultContent>().ShouldHaveSingleItem();
         result.CallId.ShouldBe(call.CallId);
-        result.Result!.ToString().ShouldContain("Call the house.");
+        result.Result!.ToString().ShouldNotBeNull().ShouldContain("Call the house.");
         withPreload.Messages[1].Contents.OfType<TextReasoningContent>().ShouldHaveSingleItem().Text.ShouldContain(Home);
 
         without.Messages.Select(m => m.Role.Value).ShouldBe(["user"]);
         withPreload.Options!.Instructions.ShouldBe(without.Options!.Instructions);
         withPreload.Options.Tools!.Select(t => t.Name).ShouldBe(without.Options.Tools!.Select(t => t.Name));
-        withPreload.Options.Tools.Select(t => t.Name).ShouldContain(SkillLoadTool.Name);
+        withPreload.Options.Tools!.Select(t => t.Name).ShouldContain(SkillLoadTool.Name);
     }
 
     [Fact]
     public async Task ThePair_IsPersisted_AndTheNextTurnAsksAboutOneSkillFewerAndInsertsNothingTwice()
     {
-        await using var server = await StartAsync(HomeText, TimersText);
+        await using var server = await StartAsync(_homeText, _timersText);
         var judge = new ScriptedJudge(_ => Sure(Home));
         var (client, calls) = Capturing();
         var (store, persisted) = InMemoryStore();
@@ -105,7 +105,7 @@ public class McpAgentSkillPreloadTests
     [Fact]
     public async Task TwoSkills_ArriveAsOneAssistantMessageWithTwoCallsAndTheirTwoResults()
     {
-        await using var server = await StartAsync(HomeText, TimersText);
+        await using var server = await StartAsync(_homeText, _timersText);
         var judge = new ScriptedJudge(_ => Answered(Home, 0.97, (Home, 0.96), (Timers, 0.93)));
         var (client, calls) = Capturing();
         await using var agent = Agent(client, server.Endpoint, Preloader(judge));
@@ -118,14 +118,14 @@ public class McpAgentSkillPreloadTests
         loads.Select(c => c.Arguments!.Values.Single()!.ToString()).ShouldBe([Home, Timers]);
         var results = request[2].Contents.OfType<FunctionResultContent>().ToList();
         results.Select(r => r.CallId).ShouldBe(loads.Select(c => c.CallId));
-        results[0].Result!.ToString().ShouldContain("Call the house.");
-        results[1].Result!.ToString().ShouldContain("Write timer.json.");
+        results[0].Result!.ToString().ShouldNotBeNull().ShouldContain("Call the house.");
+        results[1].Result!.ToString().ShouldNotBeNull().ShouldContain("Write timer.json.");
     }
 
     [Fact]
     public async Task AJudgmentSlowerThanTheDeadline_InsertsNothing_AndItsLateAnswerNeverReachesALaterTurn()
     {
-        await using var server = await StartAsync(HomeText, TimersText);
+        await using var server = await StartAsync(_homeText, _timersText);
         var clock = new ArmedClock();
         var late = new TaskCompletionSource<JudgmentOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
         var judge = new ScriptedJudge(async (_, ct) =>
@@ -138,10 +138,10 @@ public class McpAgentSkillPreloadTests
             return await late.Task;
         });
         var (client, calls) = Capturing();
-        await using var agent = Agent(client, server.Endpoint, new SkillPreloader(judge, Settings, clock));
+        await using var agent = Agent(client, server.Endpoint, new SkillPreloader(judge, _settings, clock));
 
         var turn = agent.RunAsync([new ChatMessage(ChatRole.User, "enciende la luz")]);
-        await clock.AdvancePastAsync(TimeSpan.FromMilliseconds(Settings.DeadlineMs));
+        await clock.AdvancePastAsync(TimeSpan.FromMilliseconds(_settings.DeadlineMs));
         late.SetResult(Sure(Home));
         var response = await turn;
 
@@ -156,7 +156,7 @@ public class McpAgentSkillPreloadTests
     [Fact]
     public async Task ATurnPatchedToALemonadeModel_MakesNoJudgmentCall()
     {
-        await using var server = await StartAsync(HomeText);
+        await using var server = await StartAsync(_homeText);
         var judge = new ScriptedJudge(_ => throw new InvalidOperationException("must not be asked"));
         var (client, calls) = Capturing();
         var spec = TestAgentSpec.Default with
@@ -180,7 +180,7 @@ public class McpAgentSkillPreloadTests
     [Fact]
     public async Task AWorkerRun_IsJudgedOnItsDelegationPrompt()
     {
-        await using var server = await StartAsync(HomeText, TimersText);
+        await using var server = await StartAsync(_homeText, _timersText);
         var judge = new ScriptedJudge(_ => Sure(Timers));
         var (client, calls) = Capturing();
         await using var worker = Agent(client, server.Endpoint, Preloader(judge));
@@ -196,7 +196,7 @@ public class McpAgentSkillPreloadTests
     [Fact]
     public async Task AfterAnAbstention_TheLoadToolIsStillOfferedAndAModelMadeLoadWorksAsToday()
     {
-        await using var server = await StartAsync(HomeText, TimersText);
+        await using var server = await StartAsync(_homeText, _timersText);
         var judge = new ScriptedJudge(_ => Answered(Home, 0.6, (Home, 0.7)));
         var (client, calls) = Capturing(
             ToolApprovalResponseFactory.CreateToolCallResponse(
@@ -211,7 +211,7 @@ public class McpAgentSkillPreloadTests
         calls[0].Messages.Select(m => m.Role.Value).ShouldBe(["user"]);
         calls[0].Options!.Tools!.Select(t => t.Name).ShouldContain(SkillLoadTool.Name);
         calls[1].Messages.SelectMany(m => m.Contents.OfType<FunctionResultContent>())
-            .ShouldHaveSingleItem().Result!.ToString().ShouldContain("Call the house.");
+            .ShouldHaveSingleItem().Result!.ToString().ShouldNotBeNull().ShouldContain("Call the house.");
     }
 
     [Theory]
@@ -219,7 +219,7 @@ public class McpAgentSkillPreloadTests
     [InlineData(AbsenceReason.Unconfigured)]
     public async Task AJudgeThatAnswersAbsence_LeavesTheTurnAsToday(AbsenceReason reason)
     {
-        await using var server = await StartAsync(HomeText);
+        await using var server = await StartAsync(_homeText);
         var judge = new ScriptedJudge(_ => new JudgmentOutcome.Absent(reason));
         var (client, calls) = Capturing();
         await using var agent = Agent(client, server.Endpoint, Preloader(judge));
@@ -235,14 +235,14 @@ public class McpAgentSkillPreloadTests
     [Fact]
     public async Task APreload_PublishesNoToolCallEvent()
     {
-        await using var server = await StartAsync(HomeText);
+        await using var server = await StartAsync(_homeText);
         var published = new RecordingMetricsPublisher();
         var judge = new ScriptedJudge(_ => Sure(Home));
         var (client, calls) = Capturing();
         await using var agent = new McpAgent(
             TestAgentSpec.Default with { McpServerEndpoints = [McpServerEndpoint.Configured(server.Endpoint)] },
             client, new Mock<IThreadStateStore>().Object, published, TimeProvider.System, [], [],
-            skillPreloader: new SkillPreloader(judge, Settings, TimeProvider.System, published));
+            skillPreloader: new SkillPreloader(judge, _settings, TimeProvider.System, published));
 
         await agent.RunAsync([new ChatMessage(ChatRole.User, "enciende la luz")]);
 
@@ -263,7 +263,7 @@ public class McpAgentSkillPreloadTests
             [],
             skillPreloader: preloader);
 
-    private static SkillPreloader Preloader(IJudge judge) => new(judge, Settings, TimeProvider.System);
+    private static SkillPreloader Preloader(IJudge judge) => new(judge, _settings, TimeProvider.System);
 
     private static JudgmentOutcome Sure(string skill) => JudgeAnswers.Sure(skill);
 

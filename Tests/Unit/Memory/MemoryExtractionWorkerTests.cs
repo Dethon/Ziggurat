@@ -47,7 +47,7 @@ public class MemoryExtractionWorkerTests
             NullLogger<MemoryExtractionWorker>.Instance,
             _options);
 
-    private static readonly (string, double)[] NothingLasting = [("fact", 0.05), ("preference", 0.05), ("instruction", 0.05)];
+    private static readonly (string, double)[] _nothingLasting = [("fact", 0.05), ("preference", 0.05), ("instruction", 0.05)];
 
     private List<MetricEvent> Recording()
     {
@@ -63,7 +63,7 @@ public class MemoryExtractionWorkerTests
     public async Task ProcessRequestAsync_WhenTheGateFindsNothingLasting_DoesNotExtractAndSaysGated()
     {
         var published = Recording();
-        var worker = Worker(StubJudge.Nouls(NothingLasting));
+        var worker = Worker(StubJudge.Nouls(_nothingLasting));
 
         await worker.ProcessRequestAsync(Current("hola, ¿qué tal?"), CancellationToken.None);
 
@@ -110,7 +110,7 @@ public class MemoryExtractionWorkerTests
         _extractor
             .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
-        var judge = StubJudge.Nouls(NothingLasting);
+        var judge = StubJudge.Nouls(_nothingLasting);
         var worker = Worker(judge, new MemoryJudgmentSettings { Enabled = false });
 
         await worker.ProcessRequestAsync(Current("hola"), CancellationToken.None);
@@ -131,7 +131,7 @@ public class MemoryExtractionWorkerTests
                 new ChatMessage(ChatRole.Tool, [new FunctionResultContent("c1", "SECRET-FETCHED-TEXT")]),
                 new ChatMessage(ChatRole.Assistant, "Sol y 24 grados.")
             ]);
-        var judge = StubJudge.Nouls(NothingLasting);
+        var judge = StubJudge.Nouls(_nothingLasting);
         var worker = Worker(judge);
 
         var request = new MemoryExtractionRequest("user1", "thread-key-7", Anchor(4), "conv_1", null) { FallbackContent = "gracias" };
@@ -143,7 +143,7 @@ public class MemoryExtractionWorkerTests
         state.ToJsonString().ShouldNotContain("SECRET-FETCHED-TEXT");
     }
 
-    private static readonly (string, double)[] SomethingLasting = [("fact", 0.9), ("preference", 0.05), ("instruction", 0.05)];
+    private static readonly (string, double)[] _somethingLasting = [("fact", 0.9), ("preference", 0.05), ("instruction", 0.05)];
 
     private static JudgmentOutcome Verified(double supported, double aboutUser = 0.9, double durable = 0.9, double notAQuestion = 0.9) =>
         StubJudge.Answered(("supported", supported), ("about_user", aboutUser), ("durable", durable), ("not_a_question", notAQuestion));
@@ -152,7 +152,7 @@ public class MemoryExtractionWorkerTests
     private static StubJudge Verifying(Func<string, JudgmentOutcome> byCandidate) =>
         new(request => request.State["candidate"] is { } candidate
             ? byCandidate(candidate.GetValue<string>())
-            : StubJudge.Answered(SomethingLasting));
+            : StubJudge.Answered(_somethingLasting));
 
     private void ExtractorReturns(params ExtractionCandidate[] candidates)
     {
@@ -238,7 +238,7 @@ public class MemoryExtractionWorkerTests
     {
         ExtractorReturns(Fact("a"), Fact("b"), Fact("c"), Fact("d"), Fact("e"));
         // The gate is one call; then five verifications, each held until all five are in flight.
-        var gate = new StubJudge(_ => StubJudge.Answered(SomethingLasting));
+        var gate = new StubJudge(_ => StubJudge.Answered(_somethingLasting));
         var verifier = new StubJudge(_ => Verified(0.9)).HoldingUntil(5);
         var worker = Worker(new SplitJudge(gate, verifier));
 
@@ -264,7 +264,7 @@ public class MemoryExtractionWorkerTests
             .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         var published = Recording();
-        var worker = Worker(answered ? StubJudge.Nouls(NothingLasting) : StubJudge.Absent(AbsenceReason.Error));
+        var worker = Worker(answered ? StubJudge.Nouls(_nothingLasting) : StubJudge.Absent(AbsenceReason.Error));
 
         await worker.ProcessRequestAsync(Current("hola"), CancellationToken.None);
 

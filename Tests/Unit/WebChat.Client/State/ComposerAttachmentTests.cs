@@ -19,7 +19,7 @@ public sealed class ComposerAttachmentTests
 {
     // ChatLiveConnection's own retry span. Named here because an advance has to match the wait
     // the code armed exactly — a loose match settles a different one.
-    private static readonly TimeSpan RebuildRetryDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan _rebuildRetryDelay = TimeSpan.FromMilliseconds(500);
 
     [Fact]
     public async Task AFilePicked_UploadsAtOnceAndBecomesReadyToSend()
@@ -177,9 +177,9 @@ public sealed class ComposerAttachmentTests
         // The rebuild gives up only after its retries, and each one parks on the fixture's clock.
         // Advancing onto a wait that exists — rather than sleeping the 1.5s those retries really
         // take — is what makes the toast arrive here at a moment this test chooses.
-        await client.Clock.AdvancePastAsync(RebuildRetryDelay);
-        await client.Clock.AdvancePastAsync(RebuildRetryDelay, previously: 1);
-        await client.Clock.AdvancePastAsync(RebuildRetryDelay, previously: 2);
+        await client.Clock.AdvancePastAsync(_rebuildRetryDelay);
+        await client.Clock.AdvancePastAsync(_rebuildRetryDelay, previously: 1);
+        await client.Clock.AdvancePastAsync(_rebuildRetryDelay, previously: 2);
 
         await TestChat.Eventually(() => client.Toasts.State.Toasts.Count == 1);
         client.Uploader.Uploaded.ShouldBeEmpty();

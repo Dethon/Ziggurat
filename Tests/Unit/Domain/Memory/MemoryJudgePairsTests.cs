@@ -12,7 +12,7 @@ namespace Tests.Unit.Domain.Memory;
 // same/updates links are what the merge model is called with.
 public class MemoryJudgePairsTests
 {
-    private static readonly MemoryJudgmentContext Context = new("user1");
+    private static readonly MemoryJudgmentContext _context = new("user1");
 
     private static MemoryEntry Memory(string id, string content) => new()
     {
@@ -20,7 +20,7 @@ public class MemoryJudgePairsTests
         Importance = 0.5, Confidence = 0.9, CreatedAt = DateTimeOffset.UtcNow, LastAccessedAt = DateTimeOffset.UtcNow
     };
 
-    private static readonly IReadOnlyList<MemoryEntry> Cluster =
+    private static readonly IReadOnlyList<MemoryEntry> _cluster =
     [
         Memory("mem_madrid", "Vive en Madrid"),
         Memory("mem_valencia", "Se ha mudado a Valencia"),
@@ -48,14 +48,14 @@ public class MemoryJudgePairsTests
             ("2-3", "distinct"), ("2-4", "unrelated"),
             ("3-4", "unrelated")));
 
-        var verdict = await Judge(judge, published).RelateAsync(Cluster, Context, CancellationToken.None);
+        var verdict = await Judge(judge, published).RelateAsync(_cluster, _context, CancellationToken.None);
 
         verdict.Answered.ShouldBeTrue();
         verdict.Linked.ShouldHaveSingleItem().Select(m => m.Id).ShouldBe(["mem_madrid", "mem_valencia", "mem_valencia2"]);
 
         var evt = published.Published.OfType<MemoryJudgmentEvent>().ShouldHaveSingleItem();
         evt.Kind.ShouldBe(MemoryJudgmentKinds.Pairs);
-        evt.MemoryIds.ShouldBe(Cluster.Select(m => m.Id));
+        evt.MemoryIds.ShouldBe(_cluster.Select(m => m.Id));
         evt.Relations!["0-1"].ShouldBe("updates");
         evt.Relations["2-3"].ShouldBe("distinct");
         evt.Scores!["0-1"].ShouldBe(0.8);
@@ -72,7 +72,7 @@ public class MemoryJudgePairsTests
             ("1-2", "unrelated"), ("1-3", "unrelated"), ("1-4", "unrelated"),
             ("2-4", "unrelated"), ("3-4", "unrelated")));
 
-        var verdict = await Judge(judge).RelateAsync(Cluster, Context, CancellationToken.None);
+        var verdict = await Judge(judge).RelateAsync(_cluster, _context, CancellationToken.None);
 
         verdict.Linked.Select(c => c.Select(m => m.Id).ToList()).ShouldBe([["mem_madrid", "mem_valencia"], ["mem_sister", "mem_brother"]]);
     }
@@ -82,7 +82,7 @@ public class MemoryJudgePairsTests
     {
         var judge = StubJudge.Answering(Relations(("0-1", "distinct")));
 
-        var verdict = await Judge(judge).RelateAsync(Cluster.Take(2).ToList(), Context, CancellationToken.None);
+        var verdict = await Judge(judge).RelateAsync(_cluster.Take(2).ToList(), _context, CancellationToken.None);
 
         verdict.Answered.ShouldBeTrue();
         verdict.Linked.ShouldBeEmpty();
@@ -94,7 +94,7 @@ public class MemoryJudgePairsTests
     [InlineData(AbsenceReason.Unconfigured)]
     public async Task NoAnswer_IsUnanswered(AbsenceReason reason)
     {
-        var verdict = await Judge(StubJudge.Absent(reason)).RelateAsync(Cluster, Context, CancellationToken.None);
+        var verdict = await Judge(StubJudge.Absent(reason)).RelateAsync(_cluster, _context, CancellationToken.None);
 
         verdict.Answered.ShouldBeFalse();
         verdict.Linked.ShouldBeEmpty();
@@ -106,7 +106,7 @@ public class MemoryJudgePairsTests
         var judge = StubJudge.Answering(Relations(("0-1", "same")));
         var sut = new MemoryJudge(judge, new MemoryJudgmentSettings { Enabled = false }, new FakeTimeProvider());
 
-        var verdict = await sut.RelateAsync(Cluster, Context, CancellationToken.None);
+        var verdict = await sut.RelateAsync(_cluster, _context, CancellationToken.None);
 
         verdict.Answered.ShouldBeFalse();
         judge.Requests.ShouldBeEmpty();
@@ -117,7 +117,7 @@ public class MemoryJudgePairsTests
     {
         var judge = StubJudge.Answering(Relations());
 
-        var verdict = await Judge(judge).RelateAsync(Cluster.Take(1).ToList(), Context, CancellationToken.None);
+        var verdict = await Judge(judge).RelateAsync(_cluster.Take(1).ToList(), _context, CancellationToken.None);
 
         verdict.Answered.ShouldBeFalse();
         judge.Requests.ShouldBeEmpty();
