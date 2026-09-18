@@ -13,6 +13,27 @@ paths:
 
 McpServerWebSearch exposes the `web_*` browse tools. The `websearch_prompt` (`Domain/Prompts/WebBrowsingPrompt.cs`) is the standing stub — the browser exists, a url comes from a search, no call is a probe — and the workflow, principles, error recovery and answer style are the `web-browsing` skill (`Domain/Prompts/WebBrowsingSkill.cs`, shipped through `AddSkills`; `docs/adr/0039`). The tools run over `PlaywrightWebBrowser`, a WebSocket to Camoufox. The accessibility snapshot assigns interactive element refs (`e-1`, `e-2`, …) that `web_action` then addresses, pages are kept alive per session with cookie persistence, and cookie banners, newsletters and age gates are auto-dismissed.
 
+## Overlays
+
+`ModalDismisser` runs on every navigation and closes an overlay in three steps, each costing more
+than the last and each run only when the one before came up empty: a button selector, a word in a
+control's accessible name, and — for an overlay both left standing — a judgment (`ModalJudge`,
+`Domain/Tools/Web`) over what its controls say, asked of Jev with `{ overlay_kind, controls }` and
+nothing of the page. A cookie wall is asked *reject* then *accept* and a confident reject is taken
+first, so it closes with the fewest cookies where the page offers it; `none`, a pick under the bar,
+a stale click or a late answer leave the page exactly as before. The pick is clicked by index into
+the same locator its name was read from, and the overlay predicate, the name script and the anchor
+guard are one JS constant each so the three steps cannot disagree about which buttons are the
+wall's. The judge and its bar, deadline and cap are the server's own `TypeSafe` / `Judgment`
+settings; an empty key is the feature off.
+
+**Every detected overlay is counted.** `DismissAsync` answers one `ModalOverlayOutcome` per overlay
+the last pass detected — `selector`, `text`, `judgment` or `left-standing` — and the browser
+publishes each as a `ModalDismissalEvent` (dashboard: Web). That is why this server now holds a
+Redis connection: it carries metrics alone, and page images still cross at the agent's bridge.
+`.scratch/jev-modal-dismissal/probe/README.md` is the probe the questions were measured on, kept as
+`ModalJudgeJevTests`; change a question's wording only with that test green.
+
 ## Tabs
 
 A browse session holds up to three live tabs, and a ref finds its own (`docs/adr/0034`). The tab protocol — everything that happens to a tab when a call touches it — lives in `BrowserSessionManager`, whose interface is four per-intent methods plus pool lifecycle: `BrowseAsync` (browse a URL; always supersedes the tab's refs), `OnRefAsync` (routed by ref; answers the routing walls), `OnCurrentTabAsync` (the ref-less default), `OnUrlAsync` (the composed-snapshot exception). A caller hands over the work to do on the page and receives the work's result or a named wall (`TabOutcome<T>`); the ordering, the locks, the stamp leases and the closed-vs-disconnected disambiguation never cross the seam, and the whole protocol is unit-tested in milliseconds against faked pages (`TabProtocolTests`). `PlaywrightWebBrowser` only carries pages around. Read the module top to bottom for the ordering — this file deliberately does not restate it.

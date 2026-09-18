@@ -3,6 +3,7 @@ using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using Domain.Tools.Web;
 using Infrastructure.Clients.Browser;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -134,9 +135,36 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
         _published.Published.OfType<ModalDismissalEvent>().ShouldHaveSingleItem().Outcome.ShouldBe(ModalDismissalOutcomes.LeftStanding);
     }
 
-    private async Task<PlaywrightWebBrowser> BrowserAsync(IJudge judge)
+    // The same wall against live Jev: with judgments off (no key) it is left standing, with them
+    // on it is dismissed and the envelope names the click. Skipped without a key like the probe.
+    [Trait("Category", "Jev")]
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task Navigate_TheWallAgainstLiveJev_IsLeftStandingWithoutAKeyAndDismissedWithOne()
     {
-        var dismisser = new ModalDismisser(new ModalJudge(judge, new ModalJudgmentSettings(), TimeProvider.System));
+        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
+        var apiKey = new ConfigurationBuilder().AddUserSecrets<ModalJudgmentDismissalTests>().AddEnvironmentVariables().Build()
+            is { } configuration ? configuration["typeSafe:apiKey"] ?? configuration["TYPESAFE_API_KEY"] : null;
+        Skip.If(string.IsNullOrWhiteSpace(apiKey), "typeSafe:apiKey is not set in user secrets (nor TYPESAFE_API_KEY)");
+
+        var off = await BrowserAsync(StubJudge.Absent(AbsenceReason.Unconfigured));
+        var standing = await off.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), await ServeAsync(off, CookieWall)));
+        standing.DismissedModals.ShouldBeEmpty();
+
+        var on = await BrowserAsync(ModalJudgeJevTests.ShippedJudge(apiKey!));
+        var dismissed = await on.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), await ServeAsync(on, CookieWall)));
+
+        var closed = dismissed.DismissedModals.ShouldNotBeNull().ShouldHaveSingleItem();
+        closed.Selector.ShouldBe("judgment(1)");
+        closed.ButtonText.ShouldBe("Rechazar todo");
+    }
+
+    private async Task<PlaywrightWebBrowser> BrowserAsync(IJudge judge) =>
+        await BrowserAsync(new ModalJudge(judge, new ModalJudgmentSettings(), TimeProvider.System));
+
+    private async Task<PlaywrightWebBrowser> BrowserAsync(ModalJudge modalJudge)
+    {
+        var dismisser = new ModalDismisser(modalJudge);
         var browser = new PlaywrightWebBrowser(
             wsEndpoint: fixture.WsEndpoint, modalDismisser: dismisser, metricsPublisher: _published);
         _browsers.Add(browser);
