@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Prompts;
+using Domain.Skills;
 using global::Agent.Settings;
 using Infrastructure.Agents;
 using Microsoft.Extensions.Configuration;
@@ -237,6 +238,18 @@ public class AgentAppSettingsTests
 
     private static JsonNode Agent(string agentId) =>
         Root()["agents"]!.AsArray().Single(a => a!["id"]!.GetValue<string>() == agentId)!;
+
+    // The deadline is spent from the moment Jev is asked. A warm judgment from prod has measured
+    // 270–590 ms, so the shipped budget sits above that tail; a cold handshake alone is ~660 ms
+    // there, which is what the connection keep-alive exists to spare the turn, not the deadline.
+    [Fact]
+    public void SkillPreloadDeadline_CoversAWarmJudgmentFromProd()
+    {
+        var shipped = BoundConfig().GetSection("skillPreload").Get<SkillPreloadSettings>()!;
+
+        shipped.DeadlineMs.ShouldBe(700);
+        shipped.DeadlineMs.ShouldBe(new SkillPreloadSettings().DeadlineMs);
+    }
 
     // The local override is where a developer runs the agent against the compose stack, and a
     // channel server it does not list is one whose fires answer 503 there: every channel the

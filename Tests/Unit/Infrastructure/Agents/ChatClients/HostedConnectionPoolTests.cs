@@ -24,6 +24,19 @@ public class HostedConnectionPoolTests
         handler.PooledConnectionLifetime.ShouldBeGreaterThan(handler.PooledConnectionIdleTimeout);
     }
 
+    // A connection past its lifetime is recycled by whichever request arrives first, a keep-alive
+    // ping or a user's turn, so the pool sits cold for up to one ping interval per lifetime. From
+    // prod a cold handshake alone outlasts the skill preload's deadline, so that window has to be
+    // rare: a fraction of turns small enough that a cold first turn is a matter of days, not hours.
+    [Fact]
+    public void ConnectionLifetime_KeepsTheColdWindowUnderOnePercentOfTurns()
+    {
+        var interval = HostedConnectionKeepAliveOptions.DefaultInterval;
+        var coldFraction = interval / (HostedConnectionPool.ConnectionLifetime + interval);
+
+        coldFraction.ShouldBeLessThan(0.01);
+    }
+
     [Fact]
     public void EmbeddingClient_GetsTheSameConnectionPoolTreatmentAsTheChatClients()
     {

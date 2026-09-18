@@ -16,7 +16,8 @@ public record HostedConnectionKeepAliveOptions
     // connection, because the next ping is what re-establishes it: a fraction of
     // interval / (lifetime + interval) of the time, and whatever calls first inside that
     // window pays the handshake. Shortening the interval buys that fraction down at a cost
-    // in pings, and 30s (2/min) is where the two stop being worth trading.
+    // in pings, and 30s (2/min) is where the two stop being worth trading; the lifetime is
+    // the other lever, and the one that moved when the window was seen to cost a preload.
     public static readonly TimeSpan DefaultInterval = TimeSpan.FromSeconds(30);
 
     public required string BaseAddress { get; init; }

@@ -11,7 +11,8 @@ public sealed record SkillPreloadSettings
     public bool Enabled { get; [UsedImplicitly] init; } = true;
 
     // From the moment the judge is asked; a miss is no preload and costs the turn nothing more.
-    public int DeadlineMs { get; [UsedImplicitly] init; } = 600;
+    // A warm judgment from prod has measured 270–590 ms, and this sits just above that tail.
+    public int DeadlineMs { get; [UsedImplicitly] init; } = 700;
 
     // The choice winner is preloaded at this confidence.
     public double ChoiceConfidence { get; [UsedImplicitly] init; } = 0.9;
