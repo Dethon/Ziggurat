@@ -1,0 +1,86 @@
+using Domain.Prompts;
+using Domain.Skills;
+using Infrastructure.Agents.Skills;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
+using Moq;
+using Shouldly;
+using Tests.Unit.Domain;
+
+namespace Tests.Unit.Infrastructure.Agents.Skills;
+
+// The provider's half of the head start: a message carrying a pending result is not judged
+// again, and whatever that result says is what is inserted.
+public class SkillsProviderPendingTests
+{
+    private static readonly PromptSkill Home = new SkillDeclaration
+    {
+        Name = "home-assistant",
+        Description = "Lights, climate and media.",
+        DescriptionBudget = 100,
+        BodyBudget = 1000,
+        ServedBy = "test"
+    }.Bind("Lights, climate and media.", "# Home\n\nCall the house.");
+
+    [Fact]
+    public async Task AMessageCarryingAPendingResult_CausesNoSecondJudgment_AndInsertsWhatItSays()
+    {
+        var preloader = new Mock<ISkillPreloader>(MockBehavior.Strict);
+        var request = new ChatMessage(ChatRole.User, "enciende la luz");
+        SkillPreloadPending.Attach(request, Task.FromResult(new SkillPreload(SkillPreloadOutcome.Preloaded, [Home])));
+
+        var context = await Provide(preloader.Object, request);
+
+        var inserted = Inserted(context, request);
+        inserted.Select(m => m.Role.Value).ShouldBe(["assistant", "tool"]);
+        inserted[0].Contents.OfType<FunctionCallContent>().ShouldHaveSingleItem().Name.ShouldBe(SkillLoadTool.Name);
+        inserted[1].Contents.OfType<FunctionResultContent>().ShouldHaveSingleItem().Result!.ToString().ShouldContain("Call the house.");
+        preloader.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(SkillPreloadOutcome.Deadline)]
+    [InlineData(SkillPreloadOutcome.Error)]
+    [InlineData(SkillPreloadOutcome.None)]
+    public async Task APendingResultWithNoSkill_InsertsNothing(SkillPreloadOutcome outcome)
+    {
+        var preloader = new Mock<ISkillPreloader>(MockBehavior.Strict);
+        var request = new ChatMessage(ChatRole.User, "enciende la luz");
+        SkillPreloadPending.Attach(request, Task.FromResult(new SkillPreload(outcome, [])));
+
+        var context = await Provide(preloader.Object, request);
+
+        Inserted(context, request).ShouldBeEmpty();
+        preloader.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task APendingResult_IsTakenOnce()
+    {
+        var preloader = new Mock<ISkillPreloader>();
+        preloader.Setup(p => p.PreloadAsync(It.IsAny<SkillPreloadRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(SkillPreload.NotAsked);
+        var request = new ChatMessage(ChatRole.User, "enciende la luz");
+        SkillPreloadPending.Attach(request, Task.FromResult(new SkillPreload(SkillPreloadOutcome.Preloaded, [Home])));
+
+        Inserted(await Provide(preloader.Object, request), request).ShouldNotBeEmpty();
+        Inserted(await Provide(preloader.Object, request), request).ShouldBeEmpty();
+
+        preloader.Verify(p => p.PreloadAsync(It.IsAny<SkillPreloadRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // The framework merges the request into what a provider returns; what the provider added is
+    // everything else.
+    private static List<ChatMessage> Inserted(AIContext context, ChatMessage request) =>
+        (context.Messages ?? []).Where(m => !ReferenceEquals(m, request)).ToList();
+
+#pragma warning disable MAAI001 // Driving a provider by hand is the only way to test it alone.
+    private static async Task<AIContext> Provide(ISkillPreloader preloader, ChatMessage request)
+    {
+        using var provider = new SkillsProvider(_ => [Home], preloader);
+        return await provider.InvokingAsync(
+            new AIContextProvider.InvokingContext(new FakeAiAgent(), null, new AIContext { Messages = [request] }),
+            CancellationToken.None);
+    }
+#pragma warning restore MAAI001
+}

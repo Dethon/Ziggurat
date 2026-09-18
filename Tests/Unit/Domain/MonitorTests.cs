@@ -10,6 +10,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Monitor;
+using Domain.Prompts;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -40,6 +41,14 @@ internal sealed class FakeAiAgent : DisposableAgent
 
     public override IVirtualFileSystemRegistry? GetFileSystemRegistry(AgentSession thread)
         => FileSystemRegistry;
+
+    public IReadOnlyList<PromptSkill> Skills { get; set; } = [];
+
+    public override IReadOnlyList<PromptSkill> GetSkills(AgentSession thread) => Skills;
+
+    public override Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<ChatMessage>>(
+            thread is FakeAgentThread fake ? [.. fake.PersistedMessages] : []);
 
     public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
     {

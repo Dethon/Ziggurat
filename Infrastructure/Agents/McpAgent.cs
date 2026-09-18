@@ -53,6 +53,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly ReadImageSupport? _readImages;
 
     private readonly SkillsProvider _skills;
+    private readonly RedisChatMessageStore _history;
     private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
     private int _isDisposed;
     private string? _reportedPromptWarnings;
@@ -109,13 +110,13 @@ public sealed class McpAgent : DisposableAgent
         _conversationId = spec.ConversationId;
         _promptCache = promptCache;
         _readImages = readImages;
-        var history = new RedisChatMessageStore(stateStore, metricsPublisher, spec.ConversationId);
-        _skills = new SkillsProvider(SkillsOf, skillPreloader, history.LastProvided);
+        _history = new RedisChatMessageStore(stateStore, metricsPublisher, spec.ConversationId);
+        _skills = new SkillsProvider(SkillsOf, skillPreloader, _history.LastProvided);
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = spec.DisplayName,
             Description = spec.Description,
-            ChatHistoryProvider = history,
+            ChatHistoryProvider = _history,
             // The skills are the session's — they arrive with the servers it dialled — so the
             // provider asks for them by session, on each turn, and offers nothing to a session
             // whose servers ship none.
@@ -125,6 +126,11 @@ public sealed class McpAgent : DisposableAgent
 
     private IReadOnlyList<PromptSkill> SkillsOf(AgentSession? thread) =>
         thread is not null && _threadSessions.TryGetValue(thread, out var session) ? session.Skills : [];
+
+    public override IReadOnlyList<PromptSkill> GetSkills(AgentSession thread) => SkillsOf(thread);
+
+    public override Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
+        _history.ReadAsync(thread);
 
     public override async ValueTask DisposeAsync()
     {

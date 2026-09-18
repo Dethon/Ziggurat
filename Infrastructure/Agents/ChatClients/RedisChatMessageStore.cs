@@ -40,6 +40,11 @@ public sealed class RedisChatMessageStore(
     public IReadOnlyList<ChatMessage> LastProvided(AgentSession? session) =>
         session is not null && _lastProvided.TryGetValue(session, out var messages) ? messages : [];
 
+    // The conversation as persisted, for a caller that needs it before the turn runs. A session
+    // with no key yet has no history, and asking must not mint one.
+    public async Task<IReadOnlyList<ChatMessage>> ReadAsync(AgentSession session) =>
+        TryGetStateKey(session, out var key) ? await store.GetMessagesAsync(key!) ?? [] : [];
+
     public override IReadOnlyList<string> StateKeys => [StateKey];
 
     private static string ResolveRedisKey(AgentSession session)

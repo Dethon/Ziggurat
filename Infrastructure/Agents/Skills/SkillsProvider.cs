@@ -122,13 +122,17 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
             return null;
         }
 
-        var history = _historyOf(context.Session).Concat(requestMessages);
-        var preload = await _preloader.PreloadAsync(
-            new SkillPreloadRequest(request.Text, skills, history)
-            {
-                ConfigPatchModel = request.GetConfigPatch()?.Model
-            },
-            ct);
+        // A live turn started the judgment where it built the message, beside recall; only a
+        // turn nobody started one for — an eval run, a worker — asks here.
+        var pending = SkillPreloadPending.TryTake(request);
+        var preload = pending is not null
+            ? await pending
+            : await _preloader.PreloadAsync(
+                new SkillPreloadRequest(request.Text, skills, _historyOf(context.Session).Concat(requestMessages))
+                {
+                    ConfigPatchModel = request.GetConfigPatch()?.Model
+                },
+                ct);
 
         return preload.Skills.Count > 0
             ? SkillLoadTool.AsLoaded(preload.Skills, $"preload-{Guid.NewGuid():N}"[..16])
