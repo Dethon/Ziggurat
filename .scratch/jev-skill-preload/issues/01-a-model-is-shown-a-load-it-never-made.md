@@ -53,3 +53,17 @@ Lemonade model is ever shown the pair.
 
 **Not merged:** the spike script (throwaway, run from the scratchpad; a Python sibling of
 `probe/jev_probe.py` against OpenRouter's Responses endpoint).
+
+## Correction (2026-09-18, after ticket 09)
+
+The verdict above was measured under OpenRouter's default routing, and a refusal never reached
+the spike: OpenRouter re-serves a 400 on another provider. In the first live nabu conversation
+served by DeepSeek's own host, the turn after a preload went to Together with the prompt cache
+lost. Pinned (`provider.only`, `allow_fallbacks: false`) the pair is refused there — "The
+`reasoning_content` in the thinking mode must be passed back to the API" — whatever the call-id
+shape. A model's own tool turns survive because OpenRouter recovers the reasoning under the call
+ids it issued (a real call id with no reasoning item passes; the same id altered by one character
+is the 400). A `reasoning` item with non-empty `reasoning_text` content passes on DeepSeek,
+Together, OpenAI and Z.AI; a summary alone, or empty text, does not. The pair now carries a
+host-marked reasoning part that `OpenRouterHttpHelpers` writes out that way. Every future spike
+against a provider's tolerance pins the provider and forbids fallbacks.

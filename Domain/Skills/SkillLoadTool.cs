@@ -29,7 +29,7 @@ public static class SkillLoadTool
             .ToHashSet(StringComparer.Ordinal);
 
     // The two messages a load leaves: one call per skill on one assistant message, and one
-    // result per call on one tool message. No reasoning content, because the model never reasoned.
+    // result per call on one tool message.
     public static IReadOnlyList<ChatMessage> AsLoaded(IReadOnlyList<PromptSkill> skills, string callIdPrefix) =>
         AsPreloaded(new SkillPreload(SkillPreloadOutcome.Preloaded, skills), callIdPrefix);
 
@@ -57,9 +57,41 @@ public static class SkillLoadTool
 
         return
         [
-            new ChatMessage(ChatRole.Assistant, [.. pairs.Select(p => p.Call)]),
+            new ChatMessage(ChatRole.Assistant, [Reasoning(preload, callIdPrefix), .. pairs.Select(p => p.Call)]),
             new ChatMessage(ChatRole.Tool, [.. pairs.Select(p => new FunctionResultContent(p.Call.CallId, p.Result))])
         ];
+    }
+
+    // A thinking model leaves its reasoning before its calls, and a host in thinking mode can
+    // demand it back: DeepSeek's own answers an assistant call message without one with HTTP 400
+    // ("The `reasoning_content` in the thinking mode must be passed back to the API"), and
+    // OpenRouter then re-serves the turn elsewhere — a lost attempt, and the prompt cache the
+    // conversation had warmed on that provider. A model's own reasoning survives because
+    // OpenRouter keeps it under the call ids it issued; a call id it never issued has nothing to
+    // recover, so the pair carries what the model would have thought, in plain words and never
+    // empty (empty is the same 400). The id marks the part as the host's, for the wire to write
+    // out in full (`OpenRouterHttpHelpers`) — the adapter alone sends a summary, which no host
+    // takes as the reasoning itself.
+    public const string HostReasoningIdPrefix = "host-reasoning-";
+
+    public static bool IsHostReasoning(string? reasoningItemId) =>
+        reasoningItemId?.StartsWith(HostReasoningIdPrefix, StringComparison.Ordinal) == true;
+
+    public const string ReasoningItemIdKey = "reasoningItemId";
+
+    private static TextReasoningContent Reasoning(SkillPreload preload, string callIdPrefix)
+    {
+        var skills = string.Join(", ", preload.Skills.Select(s => s.Name));
+        var reads = preload.Reads.Count == 0
+            ? ""
+            : $" and reading {string.Join(", ", preload.Reads.Select(r => r.Path))} as it says to";
+        return new TextReasoningContent($"The request needs the {skills} skill: loading it{reads}.")
+        {
+            AdditionalProperties = new AdditionalPropertiesDictionary
+            {
+                [ReasoningItemIdKey] = $"{HostReasoningIdPrefix}{callIdPrefix}"
+            }
+        };
     }
 
     public static readonly string ReadToolName = FileSystemToolFeature.Callable(VfsFileReadTool.Name);

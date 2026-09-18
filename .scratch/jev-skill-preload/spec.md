@@ -110,8 +110,12 @@ All four in `appsettings.json` under `skillPreload`, beside `enabled` and `deadl
 
 - An assistant message carrying one `FunctionCallContent` per preloaded skill — the load tool's
   name, `skillName` — and a tool message carrying each `FunctionResultContent` with the body
-  wrapped exactly as the framework's load returns it. No reasoning content. After the user
-  message, so the cached prefix is untouched.
+  wrapped exactly as the framework's load returns it. A reasoning part before the calls, marked
+  as the host's, because DeepSeek's own host refuses a call message without one in thinking mode
+  (HTTP 400, 2026-09-18) and OpenRouter then re-serves the turn on another provider, losing the
+  attempt and the prompt cache; the wire writes it out in full, since OpenRouter recovers a
+  model's own reasoning only under call ids it issued. After the user message, so the cached
+  prefix is untouched.
 - Whether every deployed model accepts a function call it never emitted is not known and is the
   first ticket. **The fallback** where one does not: a single persisted message carrying the same
   wrapped body; the already-loaded check recognises that form too, and the `skills` section gains

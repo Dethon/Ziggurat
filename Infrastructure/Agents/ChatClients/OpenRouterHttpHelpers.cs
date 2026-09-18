@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs;
+using Domain.Skills;
 
 namespace Infrastructure.Agents.ChatClients;
 
@@ -52,7 +53,43 @@ internal static class OpenRouterHttpHelpers
             obj["provider"] = provider;
         }
 
+        WriteHostReasoningInFull(obj);
+
         request.Content = new StringContent(obj.ToJsonString(), Encoding.UTF8, "application/json");
+    }
+
+    // The adapter writes every reasoning part back as a `reasoning` item with a summary, which
+    // is enough for a model's own: OpenRouter recovers the reasoning itself under the call ids
+    // it issued. A part the host made sits beside calls OpenRouter never issued, so a host that
+    // insists on the reasoning (DeepSeek's own, HTTP 400 without it) would refuse the turn and
+    // OpenRouter would re-serve it elsewhere. Such a part goes out as the item a model's own
+    // reasoning arrives in — `reasoning_text` content, the summary empty — the one shape every
+    // deployed provider took (2026-09-18). See SkillLoadTool.
+    internal static void WriteHostReasoningInFull(JsonObject body)
+    {
+        if (body["input"] is not JsonArray input)
+        {
+            return;
+        }
+
+        var hostReasoning = input
+            .OfType<JsonObject>()
+            .Where(item => item["type"]?.GetValue<string>() == "reasoning"
+                && SkillLoadTool.IsHostReasoning(item["id"]?.GetValue<string>()));
+
+        foreach (var item in hostReasoning)
+        {
+            var text = string.Concat(
+                (item["summary"] as JsonArray ?? [])
+                    .OfType<JsonObject>()
+                    .Select(part => part["text"]?.GetValue<string>()));
+            item["summary"] = new JsonArray();
+            item["content"] = new JsonArray(new JsonObject
+            {
+                ["type"] = "reasoning_text",
+                ["text"] = text
+            });
+        }
     }
 
     internal static JsonObject? BuildProviderNode(ProviderRouting? routing)

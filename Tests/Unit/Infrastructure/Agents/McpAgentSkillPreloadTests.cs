@@ -66,7 +66,7 @@ public class McpAgentSkillPreloadTests
         var result = withPreload.Messages[2].Contents.OfType<FunctionResultContent>().ShouldHaveSingleItem();
         result.CallId.ShouldBe(call.CallId);
         result.Result!.ToString().ShouldContain("Call the house.");
-        withPreload.Messages[1].Contents.OfType<TextReasoningContent>().ShouldBeEmpty();
+        withPreload.Messages[1].Contents.OfType<TextReasoningContent>().ShouldHaveSingleItem().Text.ShouldContain(Home);
 
         without.Messages.Select(m => m.Role.Value).ShouldBe(["user"]);
         withPreload.Options!.Instructions.ShouldBe(without.Options!.Instructions);
