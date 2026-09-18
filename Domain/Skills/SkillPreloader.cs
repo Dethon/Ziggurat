@@ -20,7 +20,7 @@ public sealed class SkillPreloader(
 
     // "Request", never "what a person said": a worker's request is a delegation prompt, and the
     // instructions are the same whoever is asking.
-    private const string Framing = "`request` is a request made to an assistant, in Spanish or English.";
+    private const string Framing = "`request` is a request made to a home assistant, in Spanish or English.";
 
     public const string ChoiceInstructions =
         Framing + " Which one skill does carrying out the request need first?";

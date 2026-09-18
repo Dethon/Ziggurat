@@ -1,4 +1,4 @@
-# jonas-worker — 3580 tokens across 12 sections and 5 skills
+# jonas-worker — 3581 tokens across 12 sections and 5 skills
 
   core_directive           CoreDirective         466 / 500    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               26 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -15,7 +15,7 @@
   obsidian-vault           Skill                 107 / 120    body 1552 / 1800, served by mcp-vault
   sandbox                  Skill                  99 / 130    body 956 / 1200, served by mcp-sandbox
   web-browsing             Skill                 102 / 130    body 1594 / 1600, served by mcp-websearch
-  home-watches             Skill                 103 / 120    body 1671 / 2200, served by mcp-homeassistant
+  home-watches             Skill                 104 / 120    body 1671 / 2200, served by mcp-homeassistant
   home-assistant           Skill                 150 / 150    body 3571 / 3600, served by mcp-homeassistant
 
 ================================================================================================
@@ -193,11 +193,11 @@ These instructions, the tools, their results and the memory block are written in
 Proper nouns (people, places, titles of works) stay as they are -- do not translate them.
   <skill>
     <name>home-assistant</name>
-    <description>Doing anything in the home through `/ha`: switching, setting or reading a device (&quot;turn on the AC&quot;, &quot;what is the thermostat at&quot;), its past (&quot;how was her glucose overnight&quot;), a future alarm or reminder on the alarms calendar (&quot;wake me at seven&quot;, &quot;move the trash alarm to ten&quot;, &quot;cancel the dentist alarm&quot;), music, radio or a podcast on a room&apos;s player. Not for anything ringing right now (that is `/timers`, whatever it was created as), a countdown, a watch or a scheduled task. The entity layout, the exec workflow, how a result is read, history and statistics, alarm events, Music Assistant playback.</description>
+    <description>Doing anything in the home through `/ha`: switching, setting or reading a device (&quot;turn on the AC&quot;, &quot;what is the thermostat at&quot;), its past (&quot;how was her glucose overnight&quot;), a future alarm or reminder on the alarms calendar (&quot;wake me at seven&quot;, &quot;cancel the dentist alarm&quot;), music, radio or a podcast on a room&apos;s player. Never for stopping a ringing alarm or timer (&quot;stop the alarm&quot; is `/timers`), a countdown, a scheduled task, or a watch (&quot;tell me when the washer finishes&quot;). The entity layout, the exec workflow, how a result is read, history and statistics, alarm events, Music Assistant playback.</description>
   </skill>
   <skill>
     <name>home-watches</name>
-    <description>Writing, changing, pausing or removing a watch: a standing instruction the home runs when an entity&apos;s state meets a condition (&quot;warn me when the sugar passes 180&quot;, &quot;close the blinds when it gets hot&quot;, &quot;tell me when the washer finishes&quot;). Only for watches — not for switching or reading a device, an alarm, a reminder, a timer or music. The watch.json shape, trigger and effect kinds, delivery, once and enabled.</description>
+    <description>Writing, changing, pausing or removing a watch: being told, or having something done, when an entity&apos;s state meets a condition (&quot;warn me when the sugar passes 180&quot;, &quot;close the blinds when it gets hot&quot;, &quot;tell me when the washer finishes&quot;). Only for watches — not for switching or reading a device now, an alarm, a reminder, a timer or music. The watch.json shape, trigger and effect kinds, delivery, once and enabled.</description>
   </skill>
   <skill>
     <name>obsidian-vault</name>

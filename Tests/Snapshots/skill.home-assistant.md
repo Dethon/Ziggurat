@@ -4,7 +4,7 @@
 
 ---
 name: home-assistant
-description: Doing anything in the home through `/ha`: switching, setting or reading a device ("turn on the AC", "what is the thermostat at"), its past ("how was her glucose overnight"), a future alarm or reminder on the alarms calendar ("wake me at seven", "move the trash alarm to ten", "cancel the dentist alarm"), music, radio or a podcast on a room's player. Not for anything ringing right now (that is `/timers`, whatever it was created as), a countdown, a watch or a scheduled task. The entity layout, the exec workflow, how a result is read, history and statistics, alarm events, Music Assistant playback.
+description: Doing anything in the home through `/ha`: switching, setting or reading a device ("turn on the AC", "what is the thermostat at"), its past ("how was her glucose overnight"), a future alarm or reminder on the alarms calendar ("wake me at seven", "cancel the dentist alarm"), music, radio or a podcast on a room's player. Never for stopping a ringing alarm or timer ("stop the alarm" is `/timers`), a countdown, a scheduled task, or a watch ("tell me when the washer finishes"). The entity layout, the exec workflow, how a result is read, history and statistics, alarm events, Music Assistant playback.
 ---
 
 The setup index (`/ha/setup-index.md`) is read in the same turn as this skill: it names every
