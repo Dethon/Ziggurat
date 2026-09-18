@@ -270,6 +270,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         var recalls = await GetEventsAsync<MemoryRecallEvent>("metrics:memory-recall:", from, to);
         var extractions = await GetEventsAsync<MemoryExtractionEvent>("metrics:memory-extraction:", from, to);
         var dreamings = await GetEventsAsync<MemoryDreamingEvent>("metrics:memory-dreaming:", from, to);
+        var judgments = await GetEventsAsync<MemoryJudgmentEvent>("metrics:memory-judgment:", from, to);
 
         // The outcome is an extraction's, so under it the share is over extractions alone.
         var allEvents = dimension == MemoryDimension.Outcome
@@ -277,6 +278,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
             : recalls.Cast<MetricEvent>()
                 .Concat(extractions)
                 .Concat(dreamings)
+                .Concat(judgments)
                 .ToList();
 
         return allEvents
@@ -287,6 +289,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                     MemoryRecallEvent r => r.UserId,
                     MemoryExtractionEvent x => x.UserId,
                     MemoryDreamingEvent d => d.UserId,
+                    MemoryJudgmentEvent j => j.UserId,
                     _ => "unknown"
                 },
                 MemoryDimension.EventType => e switch
@@ -294,6 +297,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                     MemoryRecallEvent => "Recall",
                     MemoryExtractionEvent => "Extraction",
                     MemoryDreamingEvent => "Dreaming",
+                    MemoryJudgmentEvent => "Judgment",
                     _ => "unknown"
                 },
                 MemoryDimension.Agent => e.AgentId ?? "unknown",

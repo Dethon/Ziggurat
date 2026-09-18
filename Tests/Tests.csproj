@@ -73,6 +73,7 @@
     <None Include="Integration/McpChannelVoice/Fixtures/speaker-wavs/**" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Unit/McpChannelTelegram/Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Integration/Skills/**/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Integration/Memory/**/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

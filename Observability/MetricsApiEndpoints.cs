@@ -72,6 +72,9 @@ public static class MetricsApiEndpoints
         api.MapGet("/memory/dreaming", async (MetricsQueryService query, MetricDateRange range) =>
             await query.GetEventsAsync<MemoryDreamingEvent>("metrics:memory-dreaming:", range.From, range.To));
 
+        api.MapGet("/memory/judgments", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetEventsAsync<MemoryJudgmentEvent>("metrics:memory-judgment:", range.From, range.To));
+
         api.MapGet("/memory/by/{dimension}", async (
             MetricsQueryService query,
             MemoryDimension dimension,

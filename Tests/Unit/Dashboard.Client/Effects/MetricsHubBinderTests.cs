@@ -259,6 +259,12 @@ public class MetricsHubBinderTests : IAsyncDisposable
             hub => hub.RaiseAsync("OnMemoryDreaming", new MemoryDreamingEvent
             { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "test" }),
             self => self._memoryStore.State.Breakdown),
+        ["MemoryJudgment"] = (
+            new Dictionary<string, decimal> { ["stale-judgment"] = 10m },
+            new Dictionary<string, decimal> { ["fresh-judgment"] = 20m },
+            hub => hub.RaiseAsync("OnMemoryJudgment", new MemoryJudgmentEvent
+            { Kind = MemoryJudgmentKinds.Verify, UserId = "test", Answered = true, Dropped = true, Candidate = "junk" }),
+            self => self._memoryStore.State.Breakdown),
     };
 
     public static TheoryData<string> RapidEventCaseNames => new(_rapidEventCases.Keys);

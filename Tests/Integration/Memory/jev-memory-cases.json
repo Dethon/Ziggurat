@@ -1,0 +1,405 @@
+{
+  "gate": [
+    {
+      "context": [],
+      "current": "hola, ¿qué tal?",
+      "holdsSomething": false
+    },
+    {
+      "context": [],
+      "current": "gracias",
+      "holdsSomething": false
+    },
+    {
+      "context": [],
+      "current": "enciende la luz del salón",
+      "holdsSomething": false
+    },
+    {
+      "context": [],
+      "current": "¿qué tiempo hace mañana en Valencia?",
+      "holdsSomething": false
+    },
+    {
+      "context": [],
+      "current": "pon un temporizador de ocho minutos",
+      "holdsSomething": false
+    },
+    {
+      "context": [],
+      "current": "busca cuánto tiene que reposar el gazpacho",
+      "holdsSomething": false
+    },
+    {
+      "context": [],
+      "current": "how do I switch the CoT role?",
+      "holdsSomething": false
+    },
+    {
+      "context": [],
+      "current": "is the complete series purchasable in English on Amazon.es?",
+      "holdsSomething": false
+    },
+    {
+      "context": [],
+      "current": "ayer llegué tarde a casa, estoy reventado",
+      "holdsSomething": false
+    },
+    {
+      "context": [],
+      "current": "estoy intentando arreglar el script este, no me sale",
+      "holdsSomething": false
+    },
+    {
+      "context": [
+        {
+          "role": "user",
+          "text": "pon música"
+        },
+        {
+          "role": "assistant",
+          "text": "¿Qué te apetece?"
+        }
+      ],
+      "current": "algo tranquilo",
+      "holdsSomething": false
+    },
+    {
+      "context": [
+        {
+          "role": "assistant",
+          "text": "¿Apago también la del pasillo?"
+        }
+      ],
+      "current": "sí",
+      "holdsSomething": false
+    },
+    {
+      "context": [],
+      "current": "trabajo en Globex como ingeniero de datos",
+      "holdsSomething": true
+    },
+    {
+      "context": [],
+      "current": "a partir de ahora háblame siempre de tú",
+      "holdsSomething": true
+    },
+    {
+      "context": [],
+      "current": "nunca me pongas música antes de las nueve",
+      "holdsSomething": true
+    },
+    {
+      "context": [],
+      "current": "soy alérgico a los frutos secos, tenlo en cuenta para las recetas",
+      "holdsSomething": true
+    },
+    {
+      "context": [],
+      "current": "mi hermana Laura vive en Sevilla y viene en Navidad",
+      "holdsSomething": true
+    },
+    {
+      "context": [],
+      "current": "I read light novels and I always buy physical copies in English when I can",
+      "holdsSomething": true
+    },
+    {
+      "context": [],
+      "current": "la pasta la cuezo siempre nueve minutos",
+      "holdsSomething": true
+    },
+    {
+      "context": [],
+      "current": "apaga la luz. por cierto, me he mudado a Valencia este mes",
+      "holdsSomething": true
+    },
+    {
+      "context": [],
+      "current": "prefiero que las respuestas por voz sean cortas",
+      "holdsSomething": true
+    },
+    {
+      "context": [
+        {
+          "role": "assistant",
+          "text": "¿A qué hora sueles levantarte entre semana?"
+        }
+      ],
+      "current": "a las siete siempre",
+      "holdsSomething": true
+    },
+    {
+      "context": [
+        {
+          "role": "assistant",
+          "text": "¿Quieres que lo recuerde para otras veces?"
+        }
+      ],
+      "current": "sí, siempre que cocine arroz",
+      "holdsSomething": true
+    },
+    {
+      "context": [],
+      "current": "my daughter Emma has type 1 diabetes, that's why I ask about glucose",
+      "holdsSomething": true
+    },
+    {
+      "context": [],
+      "current": "estoy escribiendo una novela desde hace dos años, de ciencia ficción",
+      "holdsSomething": true
+    },
+    {
+      "context": [],
+      "current": "no, me llamo Fran, no Francisco",
+      "holdsSomething": true
+    }
+  ],
+  "verify": [
+    {
+      "context": [],
+      "current": "is the complete X series purchasable in English on Amazon.es?",
+      "candidate": "User asks whether the complete X series is purchasable in English on Amazon.es",
+      "keep": false
+    },
+    {
+      "context": [],
+      "current": "how do I switch the CoT role?",
+      "candidate": "User asks: 'how do I switch the CoT role'",
+      "keep": false
+    },
+    {
+      "context": [],
+      "current": "my story feels incoherent, can subagents help with this setup?",
+      "candidate": "User feels their story lacks coherence and wants to use subagents to improve it",
+      "keep": false
+    },
+    {
+      "context": [],
+      "current": "my story feels incoherent, can subagents help with this setup?",
+      "candidate": "Wants their creative story to feel more coherent while using this setup",
+      "keep": false
+    },
+    {
+      "context": [],
+      "current": "¿qué tiempo hace el martes?",
+      "candidate": "Preguntó por el tiempo el martes",
+      "keep": false
+    },
+    {
+      "context": [],
+      "current": "pídeme una pizza cuatro estaciones",
+      "candidate": "Pidió una pizza cuatro estaciones un viernes",
+      "keep": false
+    },
+    {
+      "context": [],
+      "current": "ayer llegué tarde a casa, estoy reventado",
+      "candidate": "Ayer llegó tarde a casa",
+      "keep": false
+    },
+    {
+      "context": [],
+      "current": "pon la serie esa en el salón",
+      "candidate": "Estaba viendo una serie el domingo por la tarde",
+      "keep": false
+    },
+    {
+      "context": [],
+      "current": "enciende la luz del salón",
+      "candidate": "Le gusta tener la luz del salón encendida",
+      "keep": false
+    },
+    {
+      "context": [],
+      "current": "trabajo en Globex como ingeniero de datos",
+      "candidate": "Trabaja en Initech como director de ventas",
+      "keep": false
+    },
+    {
+      "context": [],
+      "current": "trabajo en Globex como ingeniero de datos",
+      "candidate": "Tiene dos hijos",
+      "keep": false
+    },
+    {
+      "context": [
+        {
+          "role": "assistant",
+          "text": "Soy Nabu, tu asistente, y funciono con un modelo de lenguaje."
+        }
+      ],
+      "current": "vale, gracias",
+      "candidate": "El asistente se llama Nabu y funciona con un modelo de lenguaje",
+      "keep": false
+    },
+    {
+      "context": [
+        {
+          "role": "assistant",
+          "text": "A mucha gente le gusta el jazz para concentrarse."
+        }
+      ],
+      "current": "pon algo para concentrarme",
+      "candidate": "Le gusta el jazz para concentrarse",
+      "keep": false
+    },
+    {
+      "context": [],
+      "current": "trabajo en Globex como ingeniero de datos",
+      "candidate": "Trabaja en Globex como ingeniero de datos",
+      "keep": true
+    },
+    {
+      "context": [],
+      "current": "a partir de ahora háblame siempre de tú",
+      "candidate": "Instrucción: tratarle siempre de tú",
+      "keep": true,
+      "category": "Instruction"
+    },
+    {
+      "context": [],
+      "current": "soy alérgico a los frutos secos, tenlo en cuenta para las recetas",
+      "candidate": "Es alérgico a los frutos secos",
+      "keep": true
+    },
+    {
+      "context": [],
+      "current": "mi hermana Laura vive en Sevilla y viene en Navidad",
+      "candidate": "Su hermana Laura vive en Sevilla",
+      "keep": true
+    },
+    {
+      "context": [],
+      "current": "I read light novels and I always buy physical copies in English when I can",
+      "candidate": "Reads light novels and prefers buying physical copies in English when available",
+      "keep": true
+    },
+    {
+      "context": [],
+      "current": "la pasta la cuezo siempre nueve minutos",
+      "candidate": "Cuece la pasta siempre nueve minutos",
+      "keep": true
+    },
+    {
+      "context": [],
+      "current": "apaga la luz. por cierto, me he mudado a Valencia este mes",
+      "candidate": "Se ha mudado a Valencia",
+      "keep": true
+    },
+    {
+      "context": [
+        {
+          "role": "assistant",
+          "text": "¿A qué hora sueles levantarte entre semana?"
+        }
+      ],
+      "current": "a las siete siempre",
+      "candidate": "Se levanta a las siete entre semana",
+      "keep": true
+    },
+    {
+      "context": [],
+      "current": "my daughter Emma has type 1 diabetes, that's why I ask about glucose",
+      "candidate": "Has a daughter, Emma, who has type 1 diabetes",
+      "keep": true
+    },
+    {
+      "context": [],
+      "current": "estoy escribiendo una novela desde hace dos años, de ciencia ficción",
+      "candidate": "Está escribiendo una novela de ciencia ficción desde hace dos años",
+      "keep": true
+    },
+    {
+      "context": [],
+      "current": "nunca me pongas música antes de las nueve",
+      "candidate": "Instrucción: no poner música antes de las nueve",
+      "keep": true,
+      "category": "Instruction"
+    }
+  ],
+  "pairs": [
+    {
+      "a": "Trabaja en Globex como ingeniero de datos",
+      "b": "Es ingeniero de datos en Globex",
+      "relation": "same"
+    },
+    {
+      "a": "Viaja a Tokio",
+      "b": "Viaja a Tokio el 9 de abril",
+      "relation": "same"
+    },
+    {
+      "a": "Es alérgico a los frutos secos",
+      "b": "No puede comer nueces ni almendras por alergia",
+      "relation": "same"
+    },
+    {
+      "a": "Reads light novels",
+      "b": "Prefers buying light novels as physical copies in English",
+      "relation": "same",
+      "mayFailTowardNotLinked": true
+    },
+    {
+      "a": "Su hermana Laura vive en Sevilla",
+      "b": "Tiene una hermana llamada Laura",
+      "relation": "same",
+      "mayFailTowardNotLinked": true
+    },
+    {
+      "a": "Vive en Madrid",
+      "b": "Se ha mudado a Valencia",
+      "relation": "updates"
+    },
+    {
+      "a": "Trabaja en Globex",
+      "b": "Dejó Globex y ahora trabaja en Initech",
+      "relation": "updates"
+    },
+    {
+      "a": "Prefiere que le traten de usted",
+      "b": "Instrucción: tratarle siempre de tú",
+      "relation": "updates"
+    },
+    {
+      "a": "Se levanta a las siete entre semana",
+      "b": "Ahora se levanta a las seis entre semana",
+      "relation": "updates"
+    },
+    {
+      "a": "Su hermana Laura vive en Sevilla",
+      "b": "Su hermano Pablo vive en Bilbao",
+      "relation": "distinct"
+    },
+    {
+      "a": "Es alérgico a los frutos secos",
+      "b": "Es intolerante a la lactosa",
+      "relation": "distinct"
+    },
+    {
+      "a": "Cuece la pasta siempre nueve minutos",
+      "b": "Cuece el arroz dieciocho minutos",
+      "relation": "distinct"
+    },
+    {
+      "a": "Trabaja en Globex como ingeniero de datos",
+      "b": "Está escribiendo una novela de ciencia ficción",
+      "relation": "unrelated"
+    },
+    {
+      "a": "Prefiere respuestas por voz cortas",
+      "b": "Su hija Emma tiene diabetes tipo 1",
+      "relation": "unrelated"
+    },
+    {
+      "a": "Likes jazz while working",
+      "b": "Vive en Valencia",
+      "relation": "unrelated"
+    },
+    {
+      "a": "Le gusta el jazz para concentrarse",
+      "b": "Le gusta el jazz; escucha a Coltrane cuando trabaja",
+      "relation": "same"
+    }
+  ]
+}

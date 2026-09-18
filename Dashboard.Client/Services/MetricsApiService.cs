@@ -60,6 +60,9 @@ public sealed class MetricsApiService(HttpClient http)
     public Task<List<MemoryDreamingEvent>?> GetMemoryDreamingAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<MemoryDreamingEvent>>($"api/metrics/memory/dreaming?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
+    public Task<List<MemoryJudgmentEvent>?> GetMemoryJudgmentsAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<MemoryJudgmentEvent>>($"api/metrics/memory/judgments?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
     public Task<List<LatencyEvent>?> GetLatencyAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<LatencyEvent>>($"api/metrics/latency?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 

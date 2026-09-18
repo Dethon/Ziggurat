@@ -163,6 +163,10 @@ public class MetricsQueryServiceGroupingTests
             new MemoryExtractionEvent { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, DroppedCount = 4, UserId = "alice", Outcome = MemoryExtractionOutcomes.Extracted },
             new MemoryExtractionEvent { DurationMs = 2000, CandidateCount = 12, StoredCount = 5, UserId = "bob" },
         ]);
+        SetupSortedSet("metrics:memory-judgment:2026-03-15",
+        [
+            new MemoryJudgmentEvent { Kind = MemoryJudgmentKinds.Gate, UserId = "bob", Answered = true, Skipped = true },
+        ]);
         SetupSortedSet("metrics:memory-dreaming:2026-03-15",
         [
             new MemoryDreamingEvent { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "alice", AgentId = "agent-1", RefusedMerges = [["mem_1", "mem_2"], ["mem_3", "mem_4"]] },
@@ -176,14 +180,15 @@ public class MetricsQueryServiceGroupingTests
         {
             case (MemoryDimension.User, MemoryMetric.Count):
                 // alice: 2 recalls + 1 extraction + 2 dreamings = 5
-                // bob:   1 extraction + 1 dreaming = 2
+                // bob:   1 extraction + 1 dreaming + 1 judgment = 3
                 result["alice"].ShouldBe(5m);
-                result["bob"].ShouldBe(2m);
+                result["bob"].ShouldBe(3m);
                 break;
             case (MemoryDimension.EventType, MemoryMetric.Count):
                 result["Recall"].ShouldBe(2m);
                 result["Extraction"].ShouldBe(2m);
                 result["Dreaming"].ShouldBe(3m);
+                result["Judgment"].ShouldBe(1m);
                 break;
             case (MemoryDimension.User, MemoryMetric.AvgDuration):
                 // alice durations: 100, 300 (recall), 1000 (extraction) — dreaming has no duration

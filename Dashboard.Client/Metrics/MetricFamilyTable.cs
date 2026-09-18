@@ -160,15 +160,18 @@ public sealed class MetricFamilyTable
                 var recall = api.GetMemoryRecallAsync(state.From, state.To);
                 var extraction = api.GetMemoryExtractionAsync(state.From, state.To);
                 var dreaming = api.GetMemoryDreamingAsync(state.From, state.To);
-                await Task.WhenAll(recall, extraction, dreaming);
+                var judgments = api.GetMemoryJudgmentsAsync(state.From, state.To);
+                await Task.WhenAll(recall, extraction, dreaming, judgments);
                 var loadedRecall = await recall ?? [];
                 var loadedExtraction = await extraction ?? [];
                 var loadedDreaming = await dreaming ?? [];
+                var loadedJudgments = await judgments ?? [];
                 return () =>
                 {
                     memory.SetRecallEvents(loadedRecall);
                     memory.SetExtractionEvents(loadedExtraction);
                     memory.SetDreamingEvents(loadedDreaming);
+                    memory.SetJudgmentEvents(loadedJudgments);
                 };
             },
             refreshBreakdown: async () =>

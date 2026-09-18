@@ -128,6 +128,14 @@ public sealed class MetricsHubBinder(
                 await RefreshAsync(families.Memory);
             })));
 
+        _subscriptions.Add(hub.On("OnMemoryJudgment", OnPush<MemoryJudgmentEvent>(
+            evt => families.Memory.Store.State.JudgmentEvents.Contains(evt),
+            async evt =>
+            {
+                families.Memory.Store.AppendJudgmentEvent(evt);
+                await RefreshAsync(families.Memory);
+            })));
+
         _subscriptions.Add(hub.On("OnTokenUsage", OnPush<TokenUsageEvent>(
             evt => families.Tokens.Store.State.Events.Contains(evt),
             async evt =>

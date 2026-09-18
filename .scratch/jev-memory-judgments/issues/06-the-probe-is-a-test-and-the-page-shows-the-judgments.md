@@ -4,12 +4,12 @@
 
 **Blocked by:** 03, 04, 05
 
-**Status:** ready-for-agent
+**Status:** resolved (the week-after re-read is pending deploy)
 
-- [ ] Gate: zero false skips over the windows labelled as holding a memory; the skip share over the empty ones is reported, with a floor set from the day it lands.
-- [ ] Check: every labelled keeper kept, every labelled junk dropped, the two instruction cases included.
-- [ ] Pairs: every link decision right except the recorded "Laura" case, which is allowed only to fail toward not linked.
-- [ ] The existing `Category=Llm` memory tests pass with `judgments.enabled: true`.
-- [ ] The page shows drops (with the dropped text) and refused merges, verified in a browser.
+- [x] Gate: zero false skips over the windows labelled as holding a memory; the skip share over the empty ones is reported, with a floor set from the day it lands.
+- [x] Check: every labelled keeper kept, every labelled junk dropped, the two instruction cases included.
+- [x] Pairs: every link decision right except the recorded "Laura" case, which is allowed only to fail toward not linked. (A second borderline pair, "Reads light novels", answered `same` at 0.32 on the probe day and `distinct` at ~0.6 on 2026-09-18 under either wording; it is recorded the same way, allowed only to fail toward not linked.)
+- [x] The existing `Category=Llm` memory tests pass with `judgments.enabled: true`.
+- [x] The page shows drops (with the dropped text) and refused merges, verified in a browser.
 - [ ] A dated note under the spec's `## Comments` a week after deploy re-reads the bars from the events.
 - [ ] Spec: `.scratch/jev-memory-judgments/spec.md` § Acceptance.

@@ -151,7 +151,7 @@ public sealed class DataLoadEffectTests : IDisposable
         {
             "api/metrics/tokens?", "api/metrics/tools?", "api/metrics/errors/range?",
             "api/metrics/schedules?", "api/metrics/memory/recall?", "api/metrics/memory/extraction?",
-            "api/metrics/memory/dreaming?", "api/metrics/latency?", "api/metrics/latency/trend?",
+            "api/metrics/memory/dreaming?", "api/metrics/memory/judgments?", "api/metrics/latency?", "api/metrics/latency/trend?",
             "api/metrics/voice?", "api/metrics/skills?", "api/metrics/skills/trend?",
         }.ToList().ForEach(fragment => _handler.AnswerFor(fragment, Array.Empty<object>()));
 

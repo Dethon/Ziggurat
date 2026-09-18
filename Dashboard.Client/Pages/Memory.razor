@@ -44,6 +44,9 @@
                         <div class="tab @(_activeTab == "Dreaming" ? "tab-active" : "")" @onclick='() => SetTab("Dreaming")'>
                             Dreaming
                         </div>
+                        <div class="tab @(_activeTab == "Judgments" ? "tab-active" : "")" @onclick='() => SetTab("Judgments")'>
+                            Judgments
+                        </div>
                     </div>
 
                     @if (_activeTab == "Recall")
@@ -92,15 +95,17 @@
                             }
                         </div>
                     }
-                    else
+                    else if (_activeTab == "Dreaming")
                     {
                         <div class="events-table">
                             <div class="table-header dreaming-grid">
                                 <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                                 <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                                 <span class='sortable @SortClass("Merged")' @onclick='() => SortBy("Merged")'>Merged <SortArrow Column="Merged" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("Refused")' @onclick='() => SortBy("Refused")'>Refused <SortArrow Column="Refused" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                                 <span class='sortable @SortClass("Decayed")' @onclick='() => SortBy("Decayed")'>Decayed <SortArrow Column="Decayed" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                                 <span>Profile Regen</span>
+                                <span>Refused merges</span>
                             </div>
                             @foreach (var evt in GetSortedDreamings(state))
                             {
@@ -108,6 +113,7 @@
                                     <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
                                     <span>@evt.UserId</span>
                                     <span class="merged-count">@evt.MergedCount</span>
+                                    <span class="refused-count">@evt.RefusedCount</span>
                                     <span class="decayed-count">@evt.DecayedCount</span>
                                     @* The dash stays typed: it is a placeholder for nothing rather
                                        than an icon, and an em dash is exactly what it looks like. *@
@@ -121,7 +127,38 @@
                                             @("—")
                                         }
                                     </span>
+                                    <span class="refused-ids">@string.Join(" | ", evt.RefusedMerges.Select(ids => string.Join(", ", ids)))</span>
                                 </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="events-table">
+                            <div class="table-header judgment-grid">
+                                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("Kind")' @onclick='() => SortBy("Kind")'>Kind <SortArrow Column="Kind" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span>Verdict</span>
+                                <span>Candidate</span>
+                                <span>Scores</span>
+                                <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Latency <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                            </div>
+                            @foreach (var evt in GetSortedJudgments(state))
+                            {
+                                <div class="table-row judgment-grid">
+                                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                                    <span>@evt.UserId</span>
+                                    <span>@evt.Kind</span>
+                                    <span class="@VerdictClass(evt)">@Verdict(evt)</span>
+                                    <span class="judgment-candidate" title="@evt.Candidate">@(evt.Candidate ?? "")</span>
+                                    <span class="judgment-scores">@Scores(evt)</span>
+                                    <span>@(evt.DurationMs is { } d ? $"{d} ms" : "")</span>
+                                </div>
+                            }
+                            @if (!state.JudgmentEvents.Any())
+                            {
+                                <p class="no-data">No judgments recorded</p>
                             }
                         </div>
                     }
@@ -251,11 +288,54 @@
         {
             "User" => e => e.UserId,
             "Merged" => e => e.MergedCount,
+            "Refused" => e => e.RefusedCount,
             "Decayed" => e => e.DecayedCount,
             _ => e => e.Timestamp
         };
         return _sortAsc ? events.OrderBy(keySelector) : events.OrderByDescending(keySelector);
     }
+
+    private IEnumerable<MemoryJudgmentEvent> GetSortedJudgments(MemoryState state)
+    {
+        var events = state.JudgmentEvents.TakeLast(100).AsEnumerable();
+        Func<MemoryJudgmentEvent, object> keySelector = _sortColumn switch
+        {
+            "User" => e => e.UserId,
+            "Kind" => e => e.Kind,
+            "Duration" => e => e.DurationMs ?? 0,
+            _ => e => e.Timestamp
+        };
+        return _sortAsc ? events.OrderBy(keySelector) : events.OrderByDescending(keySelector);
+    }
+
+    // What the judgment decided, in a word: the gate skipped or extracted, the check dropped or
+    // kept, the pairs linked this many groups; an absent answer fell back to today's behaviour.
+    private static string Verdict(MemoryJudgmentEvent evt) => evt switch
+    {
+        { Answered: false } => "absent",
+        { Kind: MemoryJudgmentKinds.Gate, Skipped: true } => "gated",
+        { Kind: MemoryJudgmentKinds.Gate } => "extract",
+        { Kind: MemoryJudgmentKinds.Verify, Dropped: true } => "dropped",
+        { Kind: MemoryJudgmentKinds.Verify } => "kept",
+        { Kind: MemoryJudgmentKinds.Pairs } => $"{evt.Linked?.Count ?? 0} linked of {evt.MemoryIds?.Count ?? 0}",
+        _ => ""
+    };
+
+    private static string VerdictClass(MemoryJudgmentEvent evt) => evt switch
+    {
+        { Answered: false } => "verdict-absent",
+        { Kind: MemoryJudgmentKinds.Gate, Skipped: true } => "verdict-gated",
+        { Kind: MemoryJudgmentKinds.Verify, Dropped: true } => "verdict-dropped",
+        _ => "verdict-kept"
+    };
+
+    private static string Scores(MemoryJudgmentEvent evt) => evt switch
+    {
+        { Kind: MemoryJudgmentKinds.Pairs, Relations: { } relations } =>
+            string.Join(" ", relations.Select(r => $"{r.Key}:{r.Value}")),
+        { Scores: { } scores } => string.Join(" ", scores.Select(s => $"{s.Key}:{s.Value:F2}")),
+        _ => ""
+    };
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
 
@@ -284,7 +364,15 @@
 
     .recall-grid { grid-template-columns: 135px 120px 100px 120px; }
     .extraction-grid { grid-template-columns: 135px 120px 100px 100px 80px 80px 90px; }
-    .dreaming-grid { grid-template-columns: 135px 120px 80px 80px 100px; }
+    .dreaming-grid { grid-template-columns: 135px 120px 80px 80px 80px 100px minmax(120px, 1fr); }
+    .judgment-grid { grid-template-columns: 135px 120px 70px 110px minmax(160px, 1fr) minmax(200px, 1fr) 80px; }
+    .judgment-candidate, .judgment-scores, .refused-ids { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .verdict-gated { color: var(--accent-blue); }
+    .verdict-dropped { color: var(--accent-yellow); }
+    .verdict-kept { color: var(--accent-green); }
+    .verdict-absent { color: var(--text-secondary); }
+    .refused-count { color: var(--accent-yellow); }
+    .no-data { color: var(--text-secondary); padding: 0.8rem; font-size: 0.85rem; }
 
     .stored-count { color: var(--accent-green); }
     .dropped-count { color: var(--accent-yellow); }
@@ -299,6 +387,7 @@
         .table-header, .table-row { font-size: 0.72rem; padding: 0.4rem 0.5rem; }
         .recall-grid { grid-template-columns: 110px minmax(80px, 1fr) 75px 95px; }
         .extraction-grid { grid-template-columns: 110px minmax(80px, 1fr) 75px 80px 65px 65px 80px; }
-        .dreaming-grid { grid-template-columns: 110px minmax(80px, 1fr) 60px 60px 80px; }
+        .dreaming-grid { grid-template-columns: 110px minmax(80px, 1fr) 60px 60px 60px 80px 120px; }
+        .judgment-grid { grid-template-columns: 110px minmax(80px, 1fr) 60px 80px 140px 160px 70px; }
     }
 </style>

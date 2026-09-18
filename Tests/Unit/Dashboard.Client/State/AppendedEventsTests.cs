@@ -39,7 +39,7 @@ public sealed class AppendedEventsTests : IDisposable
     public static TheoryData<string> Lists =>
     [
         "tokens", "tools", "errors", "schedules",
-        "memory.recall", "memory.extraction", "memory.dreaming",
+        "memory.recall", "memory.extraction", "memory.dreaming", "memory.judgments",
         "latency", "voice",
     ];
 
@@ -75,6 +75,10 @@ public sealed class AppendedEventsTests : IDisposable
             count => _memory.SetDreamingEvents([.. Enumerable.Range(0, count).Select(_ => Dreaming())]),
             () => _memory.AppendDreamingEvent(Dreaming()),
             () => _memory.State.DreamingEvents.Count),
+        "memory.judgments" => new EventList(
+            count => _memory.SetJudgmentEvents([.. Enumerable.Range(0, count).Select(_ => Judgment())]),
+            () => _memory.AppendJudgmentEvent(Judgment()),
+            () => _memory.State.JudgmentEvents.Count),
         "latency" => new EventList(
             count => _latency.SetEvents([.. Enumerable.Range(0, count).Select(_ => Latency())]),
             () => _latency.AppendEvent(Latency()),
@@ -149,6 +153,8 @@ public sealed class AppendedEventsTests : IDisposable
         ProfileRegenerated = false,
         UserId = "u",
     };
+
+    private static MemoryJudgmentEvent Judgment() => new() { Kind = MemoryJudgmentKinds.Gate, UserId = "u", Answered = true };
 
     private static LatencyEvent Latency() => new() { Stage = LatencyStage.LlmTotal, DurationMs = 1 };
 
