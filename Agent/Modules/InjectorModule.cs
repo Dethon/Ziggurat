@@ -4,6 +4,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Judgments;
 using Domain.Monitor;
 using Domain.Outposts;
 using Domain.Prompts;
@@ -11,6 +12,7 @@ using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Channels;
+using Infrastructure.Judgments;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.Logging;
@@ -97,7 +99,45 @@ public static class InjectorModule
                     sp.GetRequiredService<OpenRouterModelCapabilities>())
                 .AddHostedService<ModelCapabilityRefresher>()
                 .AddLemonadeChatHost(lemonadeChatHost)
+                .AddTypeSafe(settings.TypeSafe)
                 .AddOutposts(settings.Outposts);
+        }
+
+        // The one judge every Jev use asks through. An empty key registers one that answers
+        // absence, so nothing downstream checks the key; a configured one rides the chat clients'
+        // pool and gets its own keep-alive, because a cold handshake to this host measured 560 ms
+        // against a judgment that is worth about a tenth of that.
+        private IServiceCollection AddTypeSafe(TypeSafeConfiguration typeSafe)
+        {
+            var options = new TypeSafeOptions
+            {
+                ApiUrl = typeSafe.ApiUrl,
+                ApiKey = typeSafe.ApiKey,
+                Model = typeSafe.Model
+            };
+
+            services.AddSingleton<IJudge>(sp => TypeSafeJudge.Create(
+                new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
+                options,
+                sp.GetRequiredService<ILogger<TypeSafeJudge>>()));
+
+            if (!options.IsConfigured)
+            {
+                return services;
+            }
+
+            return services.AddHostedService(sp => new HostedConnectionKeepAlive(
+                new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
+                new HostedConnectionKeepAliveOptions
+                {
+                    BaseAddress = options.ApiUrl,
+                    ApiKey = options.ApiKey,
+                    NonBillableEndpoint = TypeSafeJudge.NonBillableEndpoint,
+                    MetricService = "typesafe-connection-keepalive"
+                },
+                sp.GetRequiredService<IMetricsPublisher>(),
+                TimeProvider.System,
+                sp.GetRequiredService<ILogger<HostedConnectionKeepAlive>>()));
         }
 
         // An empty address is the feature switched off: no discovery, no refresher, and an empty

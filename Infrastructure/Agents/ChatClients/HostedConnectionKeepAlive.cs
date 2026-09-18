@@ -22,17 +22,23 @@ public record HostedConnectionKeepAliveOptions
     public required string BaseAddress { get; init; }
     public string? ApiKey { get; init; }
     public TimeSpan Interval { get; init; } = DefaultInterval;
+
+    // What a ping fetches. It must answer the key's own metadata and consume no tokens, never a
+    // completion: that would cost money on every fire for no user-visible work.
+    public string NonBillableEndpoint { get; init; } = HostedConnectionKeepAlive.DefaultNonBillableEndpoint;
+
+    // Which host went cold, on the error event. Two keep-alives share the class, not the name.
+    public string MetricService { get; init; } = HostedConnectionKeepAlive.DefaultMetricService;
 }
 
 // Holds one connection to the hosted provider open through the long gaps between turns, so
 // the LLM call on the next turn does not pay a fresh TCP+TLS handshake.
 public sealed class HostedConnectionKeepAlive : BackgroundService
 {
-    public const string MetricService = "hosted-connection-keepalive";
+    public const string DefaultMetricService = "hosted-connection-keepalive";
 
-    // Returns the key's own metadata and consumes no tokens. It must never become a
-    // completion: that would cost money on every fire for no user-visible work.
-    private const string NonBillableEndpoint = "key";
+    // OpenRouter's: returns the key's own metadata and consumes no tokens.
+    public const string DefaultNonBillableEndpoint = "key";
 
     private readonly HttpClient _httpClient;
     private readonly HostedConnectionKeepAliveOptions _options;
@@ -93,7 +99,7 @@ public sealed class HostedConnectionKeepAlive : BackgroundService
     {
         try
         {
-            using var response = await _httpClient.GetAsync(NonBillableEndpoint, ct);
+            using var response = await _httpClient.GetAsync(_options.NonBillableEndpoint, ct);
             response.EnsureSuccessStatusCode();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -106,7 +112,7 @@ public sealed class HostedConnectionKeepAlive : BackgroundService
             _logger.LogWarning(ex, "Hosted connection keep-alive failed");
             _metricsPublisher.Publish(new ErrorEvent
             {
-                Service = MetricService,
+                Service = _options.MetricService,
                 ErrorType = ex.GetType().Name,
                 Message = $"Keep-alive failed: {ex.Message}"
             });
