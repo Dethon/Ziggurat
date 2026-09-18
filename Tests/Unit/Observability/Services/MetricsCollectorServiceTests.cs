@@ -141,6 +141,21 @@ public class MetricsCollectorServiceTests
                 ("voice:SttLatencyMs:totalMs", 250)
             ]),
         new HashIncrementCase(
+            "MemoryJudgment",
+            new MemoryJudgmentEvent
+            {
+                Kind = MemoryJudgmentKinds.Verify,
+                UserId = "alice",
+                Answered = true,
+                Candidate = "Preguntó por el tiempo",
+                Dropped = true,
+                Timestamp = _fixedTimestamp
+            },
+            [
+                ("memory:judgments:verify", 1),
+                ("memory:drops", 1)
+            ]),
+        new HashIncrementCase(
             "SkillPreload",
             new SkillPreloadEvent
             {
@@ -228,6 +243,18 @@ public class MetricsCollectorServiceTests
             },
             $"metrics:memory-extraction:{FixedDate}",
             "\"userId\":\"bob\""),
+        new SortedSetCase(
+            "MemoryJudgment",
+            new MemoryJudgmentEvent
+            {
+                Kind = MemoryJudgmentKinds.Gate,
+                UserId = "alice",
+                Answered = true,
+                Skipped = true,
+                Timestamp = _fixedTimestamp
+            },
+            $"metrics:memory-judgment:{FixedDate}",
+            "\"kind\":\"gate\""),
         new SortedSetCase(
             "MemoryDreaming",
             new MemoryDreamingEvent

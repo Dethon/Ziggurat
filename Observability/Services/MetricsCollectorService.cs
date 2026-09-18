@@ -140,6 +140,9 @@ public sealed class MetricsCollectorService(
             case SkillPreloadEvent preload:
                 await ProcessSkillPreloadAsync(preload, db);
                 break;
+            case MemoryJudgmentEvent judgment:
+                await ProcessMemoryJudgmentAsync(judgment, db);
+                break;
         }
     }
 
@@ -323,6 +326,31 @@ public sealed class MetricsCollectorService(
             db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
 
         await hubContext.Clients.All.SendAsync("OnMemoryExtraction", evt);
+    }
+
+    private async Task ProcessMemoryJudgmentAsync(MemoryJudgmentEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:memory-judgment:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        var tasks = new List<Task>
+        {
+            db.SortedSetAddAsync(sortedSetKey, json, evt.Timestamp.ToUnixTimeMilliseconds()),
+            db.HashIncrementAsync(totalsKey, $"memory:judgments:{evt.Kind}"),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry)
+        };
+
+        if (evt.Dropped == true)
+        {
+            tasks.Add(db.HashIncrementAsync(totalsKey, "memory:drops"));
+        }
+
+        await Task.WhenAll(tasks);
+
+        await hubContext.Clients.All.SendAsync("OnMemoryJudgment", evt);
     }
 
     private async Task ProcessMemoryDreamingAsync(MemoryDreamingEvent evt, IDatabase db)

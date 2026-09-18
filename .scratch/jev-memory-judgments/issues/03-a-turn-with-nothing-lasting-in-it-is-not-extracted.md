@@ -4,11 +4,11 @@
 
 **Blocked by:** 01, 02, and `.scratch/jev-skill-preload/issues/02`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] With a fake contract answering 0.05 to all three, the extractor is not called and the event says `gated`.
-- [ ] With any one answer above the bar, or the contract answering absence, the extractor is called exactly as before.
-- [ ] `judgments.enabled: false` asks nothing.
-- [ ] The state sent holds the window's text turns as `context` and the current message as `current`, with no tool content — asserted on the request the fake received.
-- [ ] A judgment event is published for an answered and for an absent call, saying which.
-- [ ] Spec: `.scratch/jev-memory-judgments/spec.md` § A — the gate.
+- [x] With a fake contract answering 0.05 to all three, the extractor is not called and the event says `gated`.
+- [x] With any one answer above the bar, or the contract answering absence, the extractor is called exactly as before.
+- [x] `judgments.enabled: false` asks nothing.
+- [x] The state sent holds the window's text turns as `context` and the current message as `current`, with no tool content — asserted on the request the fake received.
+- [x] A judgment event is published for an answered and for an absent call, saying which.
+- [x] Spec: `.scratch/jev-memory-judgments/spec.md` § A — the gate.

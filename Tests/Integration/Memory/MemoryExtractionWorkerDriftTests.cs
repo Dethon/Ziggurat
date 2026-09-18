@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
+using Domain.Judgments;
 using Domain.Memory;
 using Infrastructure.Memory;
 using Infrastructure.StateManagers;
@@ -9,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Unit.Judgments;
 
 namespace Tests.Integration.Memory;
 
@@ -54,6 +56,7 @@ public class MemoryExtractionWorkerDriftTests(MemorySearchFixture redisFixture)
             threadStore,
             metrics.Object,
             agentDefs.Object,
+            new MemoryJudge(StubJudge.Absent(AbsenceReason.Unconfigured), new MemoryJudgmentSettings(), TimeProvider.System),
             NullLogger<MemoryExtractionWorker>.Instance,
             new MemoryExtractionOptions());
 

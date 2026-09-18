@@ -26,6 +26,7 @@ public class MemoryExtractionWorker(
     IThreadStateStore threadStateStore,
     IMetricsPublisher metricsPublisher,
     IAgentDefinitionProvider agentDefinitionProvider,
+    MemoryJudge judge,
     ILogger<MemoryExtractionWorker> logger,
     MemoryExtractionOptions options) : BackgroundService
 {
@@ -103,6 +104,7 @@ public class MemoryExtractionWorker(
     private sealed record Extraction(IReadOnlyList<ExtractionCandidate> Candidates, string Outcome)
     {
         public static readonly Extraction Empty = new([], MemoryExtractionOutcomes.Empty);
+        public static readonly Extraction Gated = new([], MemoryExtractionOutcomes.Gated);
 
         public static Extraction Of(IReadOnlyList<ExtractionCandidate> candidates) =>
             candidates.Count == 0 ? Empty : new Extraction(candidates, MemoryExtractionOutcomes.Extracted);
@@ -120,8 +122,22 @@ public class MemoryExtractionWorker(
             return Extraction.Empty;
         }
 
+        // The gate: a turn judged to hold nothing lasting is not extracted from. It fails toward
+        // the extractor, so an unsure, late or absent answer costs a fraction of a cent and never
+        // a memory. A Lemonade turn never reaches here — the recall hook did not enqueue it — so
+        // the ADR 0042 boundary covers Jev without a second gate.
+        var gate = await judge.GateAsync(window, Context(request), ct);
+        if (gate.Skip)
+        {
+            logger.LogDebug("Extraction gated for user {UserId}: nothing lasting in the turn", request.UserId);
+            return Extraction.Gated;
+        }
+
         return await ExtractWithRetryAsync(window, request.UserId, ct);
     }
+
+    private MemoryJudgmentContext Context(MemoryExtractionRequest request) =>
+        new(request.UserId, AgentName(request), request.ConversationId);
 
     private async Task<IReadOnlyList<ChatMessage>> BuildExtractionWindowAsync(MemoryExtractionRequest request)
     {

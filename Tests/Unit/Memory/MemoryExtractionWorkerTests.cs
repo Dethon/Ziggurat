@@ -1,12 +1,15 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
+using Domain.Judgments;
 using Domain.Memory;
 using Infrastructure.Memory;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
+using Tests.Unit.Judgments;
 
 namespace Tests.Unit.Memory;
 
@@ -27,7 +30,12 @@ public class MemoryExtractionWorkerTests
 
     public MemoryExtractionWorkerTests()
     {
-        _worker = new MemoryExtractionWorker(
+        // No judge configured: every judgment is absent and the worker behaves as it always has.
+        _worker = Worker(StubJudge.Absent(AbsenceReason.Unconfigured));
+    }
+
+    private MemoryExtractionWorker Worker(IJudge judge, MemoryJudgmentSettings? settings = null) =>
+        new(
             _queue,
             _extractor.Object,
             _embeddingService.Object,
@@ -35,8 +43,124 @@ public class MemoryExtractionWorkerTests
             _threadStateStore.Object,
             _metricsPublisher.Object,
             _agentDefinitionProvider.Object,
+            new MemoryJudge(judge, settings ?? new MemoryJudgmentSettings(), new FakeTimeProvider(), _metricsPublisher.Object),
             NullLogger<MemoryExtractionWorker>.Instance,
             _options);
+
+    private static readonly (string, double)[] NothingLasting = [("fact", 0.05), ("preference", 0.05), ("instruction", 0.05)];
+
+    private List<MetricEvent> Recording()
+    {
+        var published = new List<MetricEvent>();
+        _metricsPublisher.Setup(p => p.Publish(It.IsAny<MetricEvent>())).Callback<MetricEvent>(published.Add);
+        return published;
+    }
+
+    private static MemoryExtractionRequest Current(string text) =>
+        new("user1", null, Anchor(0), "conv_1", null) { FallbackContent = text };
+
+    [Fact]
+    public async Task ProcessRequestAsync_WhenTheGateFindsNothingLasting_DoesNotExtractAndSaysGated()
+    {
+        var published = Recording();
+        var worker = Worker(StubJudge.Nouls(NothingLasting));
+
+        await worker.ProcessRequestAsync(Current("hola, ¿qué tal?"), CancellationToken.None);
+
+        _extractor.Verify(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        var evt = published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem();
+        evt.Outcome.ShouldBe(MemoryExtractionOutcomes.Gated);
+        evt.CandidateCount.ShouldBe(0);
+        evt.StoredCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_WhenAnyAnswerIsAboveTheBar_ExtractsAsBefore()
+    {
+        _extractor
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), "user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        var published = Recording();
+        var worker = Worker(StubJudge.Nouls(("fact", 0.05), ("preference", 0.05), ("instruction", 0.9)));
+
+        await worker.ProcessRequestAsync(Current("a partir de ahora háblame de tú"), CancellationToken.None);
+
+        _extractor.Verify(e => e.ExtractAsync(
+            It.Is<IReadOnlyList<ChatMessage>>(w => w.Count == 1 && w[0].Text == "a partir de ahora háblame de tú"),
+            "user1", It.IsAny<CancellationToken>()), Times.Once);
+        published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem().Outcome.ShouldBe(MemoryExtractionOutcomes.Empty);
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_WhenTheJudgeIsAbsent_ExtractsAsBefore()
+    {
+        _extractor
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        var worker = Worker(StubJudge.Absent(AbsenceReason.Deadline));
+
+        await worker.ProcessRequestAsync(Current("hola"), CancellationToken.None);
+
+        _extractor.Verify(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_WithJudgmentsDisabled_AsksNothing()
+    {
+        _extractor
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        var judge = StubJudge.Nouls(NothingLasting);
+        var worker = Worker(judge, new MemoryJudgmentSettings { Enabled = false });
+
+        await worker.ProcessRequestAsync(Current("hola"), CancellationToken.None);
+
+        judge.Requests.ShouldBeEmpty();
+        _extractor.Verify(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // The state Jev reads is the window as fields: the text turns as context, the current message
+    // as current, and no tool content anywhere — the window left it out before the judge saw it.
+    [Fact]
+    public async Task ProcessRequestAsync_SendsTheWindowAsFields_WithNoToolContent()
+    {
+        _threadStateStore.Setup(s => s.GetMessagesAsync("thread-key-7"))
+            .ReturnsAsync([
+                new ChatMessage(ChatRole.User, "¿qué tiempo hace?"),
+                new ChatMessage(ChatRole.Assistant, [new FunctionCallContent("c1", "get_weather")]),
+                new ChatMessage(ChatRole.Tool, [new FunctionResultContent("c1", "SECRET-FETCHED-TEXT")]),
+                new ChatMessage(ChatRole.Assistant, "Sol y 24 grados.")
+            ]);
+        var judge = StubJudge.Nouls(NothingLasting);
+        var worker = Worker(judge);
+
+        var request = new MemoryExtractionRequest("user1", "thread-key-7", Anchor(4), "conv_1", null) { FallbackContent = "gracias" };
+        await worker.ProcessRequestAsync(request, CancellationToken.None);
+
+        var state = judge.Requests.ShouldHaveSingleItem().State;
+        state["current"]!.GetValue<string>().ShouldBe("gracias");
+        state["context"]!.AsArray().Select(n => n!["text"]!.GetValue<string>()).ShouldBe(["¿qué tiempo hace?", "Sol y 24 grados."]);
+        state.ToJsonString().ShouldNotContain("SECRET-FETCHED-TEXT");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ProcessRequestAsync_PublishesAJudgmentEvent_ForAnAnsweredAndForAnAbsentCall(bool answered)
+    {
+        _extractor
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        var published = Recording();
+        var worker = Worker(answered ? StubJudge.Nouls(NothingLasting) : StubJudge.Absent(AbsenceReason.Error));
+
+        await worker.ProcessRequestAsync(Current("hola"), CancellationToken.None);
+
+        var evt = published.OfType<MemoryJudgmentEvent>().ShouldHaveSingleItem();
+        evt.Kind.ShouldBe(MemoryJudgmentKinds.Gate);
+        evt.Answered.ShouldBe(answered);
+        evt.UserId.ShouldBe("user1");
+        evt.ConversationId.ShouldBe("conv_1");
     }
 
     [Fact]

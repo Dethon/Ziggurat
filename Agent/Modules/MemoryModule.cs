@@ -110,6 +110,11 @@ public static class MemoryModule
             };
             services.AddSingleton(dreamingOptions);
 
+            // The three Jev judgments' bars, beside the rest of memory's tunables. The judge itself
+            // is the one every Jev use shares, registered with TypeSafe's settings.
+            services.AddSingleton(memoryConfig.GetSection("Judgments").Get<MemoryJudgmentSettings>() ?? new MemoryJudgmentSettings());
+            services.AddSingleton<MemoryJudge>();
+
             services.AddSingleton<IMemoryRecallHook, MemoryRecallHook>();
 
             services.AddTransient<IDomainToolFeature, MemoryToolFeature>();
