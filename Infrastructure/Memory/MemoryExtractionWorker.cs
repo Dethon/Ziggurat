@@ -56,16 +56,19 @@ public class MemoryExtractionWorker(
         {
             var extraction = await ExtractWithRetryAsync(request, ct);
 
-            var storeResults = await Task.WhenAll(
+            // Each candidate is checked and then stored, in parallel across candidates as the
+            // store fan-out always was. The embedding dedup runs after the check, unchanged.
+            var results = await Task.WhenAll(
                 extraction.Candidates.Take(options.MaxCandidatesPerMessage)
-                    .Select(c => StoreIfNovelAsync(request.UserId, c, request.ConversationId, ct)));
+                    .Select(c => VerifyThenStoreAsync(request, extraction.Window, c, ct)));
 
             sw.Stop();
             metricsPublisher.Publish(new MemoryExtractionEvent
             {
                 DurationMs = sw.ElapsedMilliseconds,
                 CandidateCount = extraction.Candidates.Count,
-                StoredCount = storeResults.Count(stored => stored),
+                DroppedCount = results.Count(r => r == Candidate.Dropped),
+                StoredCount = results.Count(r => r == Candidate.Stored),
                 Outcome = extraction.Outcome,
                 UserId = request.UserId,
                 AgentId = AgentName(request),
@@ -101,13 +104,20 @@ public class MemoryExtractionWorker(
 
     // What the extractor produced and how it ended: an empty window and an empty answer are both
     // "empty", and a turn the gate judges to hold nothing lasting will be "gated".
-    private sealed record Extraction(IReadOnlyList<ExtractionCandidate> Candidates, string Outcome)
+    private sealed record Extraction(IReadOnlyList<ExtractionCandidate> Candidates, string Outcome, IReadOnlyList<ChatMessage> Window)
     {
-        public static readonly Extraction Empty = new([], MemoryExtractionOutcomes.Empty);
-        public static readonly Extraction Gated = new([], MemoryExtractionOutcomes.Gated);
+        public static readonly Extraction Empty = new([], MemoryExtractionOutcomes.Empty, []);
+        public static readonly Extraction Gated = new([], MemoryExtractionOutcomes.Gated, []);
 
-        public static Extraction Of(IReadOnlyList<ExtractionCandidate> candidates) =>
-            candidates.Count == 0 ? Empty : new Extraction(candidates, MemoryExtractionOutcomes.Extracted);
+        public static Extraction Of(IReadOnlyList<ExtractionCandidate> candidates, IReadOnlyList<ChatMessage> window) =>
+            candidates.Count == 0 ? Empty : new Extraction(candidates, MemoryExtractionOutcomes.Extracted, window);
+    }
+
+    private enum Candidate
+    {
+        Dropped,
+        Duplicate,
+        Stored
     }
 
     private async Task<Extraction> ExtractWithRetryAsync(
@@ -156,7 +166,7 @@ public class MemoryExtractionWorker(
         {
             try
             {
-                return Extraction.Of(await extractor.ExtractAsync(window, userId, ct));
+                return Extraction.Of(await extractor.ExtractAsync(window, userId, ct), window);
             }
             catch (Exception ex) when (attempt < options.MaxRetries)
             {
@@ -166,6 +176,21 @@ public class MemoryExtractionWorker(
         }
 
         throw new UnreachableException("The last attempt either returned or threw");
+    }
+
+    private async Task<Candidate> VerifyThenStoreAsync(
+        MemoryExtractionRequest request, IReadOnlyList<ChatMessage> window, ExtractionCandidate candidate, CancellationToken ct)
+    {
+        var verdict = await judge.VerifyAsync(window, candidate, Context(request), ct);
+        if (!verdict.Store)
+        {
+            logger.LogDebug("Dropping candidate for user {UserId}: {Content}", request.UserId, candidate.Content);
+            return Candidate.Dropped;
+        }
+
+        return await StoreIfNovelAsync(request.UserId, candidate, request.ConversationId, ct)
+            ? Candidate.Stored
+            : Candidate.Duplicate;
     }
 
     private async Task<bool> StoreIfNovelAsync(

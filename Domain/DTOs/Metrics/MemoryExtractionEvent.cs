@@ -10,6 +10,10 @@ public record MemoryExtractionEvent : MetricEvent
     // One of MemoryExtractionOutcomes. Not required: events stored before it existed still read,
     // and the page shows them as unrecorded rather than guessing.
     public string? Outcome { get; init; }
+
+    // Candidates the check refused to store. Candidates minus dropped minus stored is what the
+    // embedding dedup declined, which is how it always was.
+    public int DroppedCount { get; init; }
 }
 
 // How an extraction ended, so "found nothing" and "broke" stop sharing a zero. A gated turn was

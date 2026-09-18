@@ -123,6 +123,64 @@ public sealed class MemoryJudge(
         return new GateVerdict(skip, scores);
     }
 
+    public async Task<VerifyVerdict> VerifyAsync(
+        IReadOnlyList<ChatMessage> window, ExtractionCandidate candidate, MemoryJudgmentContext context, CancellationToken ct)
+    {
+        if (!settings.Enabled)
+        {
+            return VerifyVerdict.Stored;
+        }
+
+        var state = State(window);
+        state["candidate"] = candidate.Content;
+
+        var (outcome, latency) = await AskAsync(state, Nouls(VerifyQuestions), ct);
+        if (outcome is not JudgmentOutcome.Answered answered)
+        {
+            PublishAbsence(MemoryJudgmentKinds.Verify, context, outcome, latency);
+            return VerifyVerdict.Stored;
+        }
+
+        var scores = Scores(answered.Judgment, VerifyQuestions.Keys);
+
+        // Dropped only on a question that was answered below its bar: one left unanswered stores
+        // as today. An instruction is a request, so it is judged on `supported` alone — the probe
+        // showed `not_a_question` rejecting every one.
+        var dropped = Bars(candidate.Category).Any(bar =>
+            scores.TryGetValue(bar.Id, out var p) && p < bar.AtLeast);
+
+        Publish(new MemoryJudgmentEvent
+        {
+            Kind = MemoryJudgmentKinds.Verify,
+            UserId = context.UserId,
+            AgentId = context.AgentId,
+            ConversationId = context.ConversationId,
+            Answered = true,
+            Scores = scores,
+            Candidate = candidate.Content,
+            Category = candidate.Category.ToString(),
+            Dropped = dropped,
+            DurationMs = (long)latency.TotalMilliseconds,
+            InputTokens = answered.Judgment.Usage.InputTokens,
+            Model = answered.Judgment.Model
+        });
+
+        return new VerifyVerdict(!dropped, scores);
+    }
+
+    private IEnumerable<(string Id, double AtLeast)> Bars(MemoryCategory category)
+    {
+        yield return (SupportedQuestionId, settings.Verify.Supported);
+        if (category == MemoryCategory.Instruction)
+        {
+            yield break;
+        }
+
+        yield return (AboutUserQuestionId, settings.Verify.AboutUser);
+        yield return (DurableQuestionId, settings.Verify.Durable);
+        yield return (NotAQuestionQuestionId, settings.Verify.NotAQuestion);
+    }
+
     private async Task<(JudgmentOutcome Outcome, TimeSpan Latency)> AskAsync(
         JsonObject state, IReadOnlyDictionary<string, JudgmentQuestion> questions, CancellationToken ct)
     {

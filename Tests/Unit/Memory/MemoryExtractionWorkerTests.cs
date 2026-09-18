@@ -143,6 +143,118 @@ public class MemoryExtractionWorkerTests
         state.ToJsonString().ShouldNotContain("SECRET-FETCHED-TEXT");
     }
 
+    private static readonly (string, double)[] SomethingLasting = [("fact", 0.9), ("preference", 0.05), ("instruction", 0.05)];
+
+    private static JudgmentOutcome Verified(double supported, double aboutUser = 0.9, double durable = 0.9, double notAQuestion = 0.9) =>
+        StubJudge.Answered(("supported", supported), ("about_user", aboutUser), ("durable", durable), ("not_a_question", notAQuestion));
+
+    // Gate: something lasting; verify: by the candidate's text.
+    private static StubJudge Verifying(Func<string, JudgmentOutcome> byCandidate) =>
+        new(request => request.State["candidate"] is { } candidate
+            ? byCandidate(candidate.GetValue<string>())
+            : StubJudge.Answered(SomethingLasting));
+
+    private void ExtractorReturns(params ExtractionCandidate[] candidates)
+    {
+        _extractor
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(candidates);
+        _embeddingService
+            .Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([0.1f]);
+        _store
+            .Setup(s => s.SearchAsync("user1", null, It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), null, null, 3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        _store
+            .Setup(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MemoryEntry m, CancellationToken _) => m);
+    }
+
+    private static ExtractionCandidate Fact(string content) => new(content, MemoryCategory.Fact, 0.5, 0.9, [], null);
+
+    [Fact]
+    public async Task ProcessRequestAsync_ACandidateTheCheckDrops_IsNotStored_AndTheEventCountsIt()
+    {
+        ExtractorReturns(Fact("Preguntó por el tiempo"), Fact("Trabaja en Globex"));
+        var published = Recording();
+        var worker = Worker(Verifying(c => c == "Trabaja en Globex" ? Verified(0.9) : Verified(0.9, durable: 0.1)));
+
+        await worker.ProcessRequestAsync(Current("trabajo en Globex, ¿qué tiempo hace?"), CancellationToken.None);
+
+        _store.Verify(s => s.StoreAsync(It.Is<MemoryEntry>(m => m.Content == "Trabaja en Globex"), It.IsAny<CancellationToken>()), Times.Once);
+        _store.Verify(s => s.StoreAsync(It.Is<MemoryEntry>(m => m.Content == "Preguntó por el tiempo"), It.IsAny<CancellationToken>()), Times.Never);
+        var evt = published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem();
+        evt.CandidateCount.ShouldBe(2);
+        evt.DroppedCount.ShouldBe(1);
+        evt.StoredCount.ShouldBe(1);
+        evt.Outcome.ShouldBe(MemoryExtractionOutcomes.Extracted);
+        published.OfType<MemoryJudgmentEvent>().Single(j => j.Dropped == true).Candidate.ShouldBe("Preguntó por el tiempo");
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_AnAbsentAnswerForOneCandidate_StoresItAndLeavesTheOthersToTheirOwn()
+    {
+        ExtractorReturns(Fact("absent"), Fact("dropped"), Fact("kept"));
+        var worker = Worker(Verifying(c => c switch
+        {
+            "absent" => new JudgmentOutcome.Absent(AbsenceReason.Error),
+            "dropped" => Verified(0.1),
+            _ => Verified(0.9)
+        }));
+
+        await worker.ProcessRequestAsync(Current("hola"), CancellationToken.None);
+
+        _store.Verify(s => s.StoreAsync(It.Is<MemoryEntry>(m => m.Content == "absent"), It.IsAny<CancellationToken>()), Times.Once);
+        _store.Verify(s => s.StoreAsync(It.Is<MemoryEntry>(m => m.Content == "kept"), It.IsAny<CancellationToken>()), Times.Once);
+        _store.Verify(s => s.StoreAsync(It.Is<MemoryEntry>(m => m.Content == "dropped"), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // The dedup is unchanged and runs after: a kept candidate that duplicates a stored memory is
+    // still not written, and StoredCount keeps meaning what was written.
+    [Fact]
+    public async Task ProcessRequestAsync_TheDedupStillRunsAfterTheCheck()
+    {
+        ExtractorReturns(Fact("Trabaja en Globex"));
+        _store
+            .Setup(s => s.SearchAsync("user1", null, It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), null, null, 3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new MemorySearchResult(new MemoryEntry
+            {
+                Id = "mem_existing", UserId = "user1", Category = MemoryCategory.Fact, Content = "Works at Globex",
+                Importance = 0.8, Confidence = 0.9, CreatedAt = DateTimeOffset.UtcNow, LastAccessedAt = DateTimeOffset.UtcNow
+            }, 0.95)]);
+        var published = Recording();
+        var worker = Worker(Verifying(_ => Verified(0.9)));
+
+        await worker.ProcessRequestAsync(Current("trabajo en Globex"), CancellationToken.None);
+
+        _store.Verify(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()), Times.Never);
+        var evt = published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem();
+        evt.DroppedCount.ShouldBe(0);
+        evt.StoredCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_JudgesTheCandidatesConcurrently()
+    {
+        ExtractorReturns(Fact("a"), Fact("b"), Fact("c"), Fact("d"), Fact("e"));
+        // The gate is one call; then five verifications, each held until all five are in flight.
+        var gate = new StubJudge(_ => StubJudge.Answered(SomethingLasting));
+        var verifier = new StubJudge(_ => Verified(0.9)).HoldingUntil(5);
+        var worker = Worker(new SplitJudge(gate, verifier));
+
+        await worker.ProcessRequestAsync(Current("hola"), CancellationToken.None);
+
+        verifier.MaxInFlight.ShouldBe(5);
+        _store.Verify(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()), Times.Exactly(5));
+    }
+
+    // Routes a request with a candidate to one judge and the rest to another.
+    private sealed class SplitJudge(IJudge gate, IJudge verifier) : IJudge
+    {
+        public Task<JudgmentOutcome> JudgeAsync(JudgmentRequest request, CancellationToken deadline) =>
+            (request.State["candidate"] is null ? gate : verifier).JudgeAsync(request, deadline);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

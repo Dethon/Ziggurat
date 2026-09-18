@@ -74,6 +74,7 @@
                                 <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                                 <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                                 <span class='sortable @SortClass("Candidates")' @onclick='() => SortBy("Candidates")'>Candidates <SortArrow Column="Candidates" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("Dropped")' @onclick='() => SortBy("Dropped")'>Dropped <SortArrow Column="Dropped" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                                 <span class='sortable @SortClass("Stored")' @onclick='() => SortBy("Stored")'>Stored <SortArrow Column="Stored" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                                 <span class='sortable @SortClass("Outcome")' @onclick='() => SortBy("Outcome")'>Outcome <SortArrow Column="Outcome" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                             </div>
@@ -84,6 +85,7 @@
                                     <span>@evt.UserId</span>
                                     <span>@evt.DurationMs ms</span>
                                     <span>@evt.CandidateCount</span>
+                                    <span class="dropped-count">@evt.DroppedCount</span>
                                     <span class="stored-count">@evt.StoredCount</span>
                                     <span class="@OutcomeClass(evt.Outcome)">@(evt.Outcome ?? "")</span>
                                 </div>
@@ -153,6 +155,7 @@
         new("Merged", nameof(MemoryMetric.MergedCount)),
         new("Decayed", nameof(MemoryMetric.DecayedCount)),
         new("Candidates", nameof(MemoryMetric.CandidateCount)),
+        new("Dropped", nameof(MemoryMetric.DroppedCount)),
     ];
 
     private static readonly IReadOnlySet<string> UserOnlyMetrics =
@@ -224,6 +227,7 @@
             "User" => e => e.UserId,
             "Duration" => e => e.DurationMs,
             "Candidates" => e => e.CandidateCount,
+            "Dropped" => e => e.DroppedCount,
             "Stored" => e => e.StoredCount,
             "Outcome" => e => e.Outcome ?? "",
             _ => e => e.Timestamp
@@ -278,10 +282,11 @@
     .sortable.sorted { color: var(--text-primary); }
 
     .recall-grid { grid-template-columns: 135px 120px 100px 120px; }
-    .extraction-grid { grid-template-columns: 135px 120px 100px 100px 80px 90px; }
+    .extraction-grid { grid-template-columns: 135px 120px 100px 100px 80px 80px 90px; }
     .dreaming-grid { grid-template-columns: 135px 120px 80px 80px 100px; }
 
     .stored-count { color: var(--accent-green); }
+    .dropped-count { color: var(--accent-yellow); }
     .merged-count { color: var(--accent-pink); }
     .decayed-count { color: var(--accent-red); }
     .outcome-extracted { color: var(--accent-green); }
@@ -292,7 +297,7 @@
         .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .table-header, .table-row { font-size: 0.72rem; padding: 0.4rem 0.5rem; }
         .recall-grid { grid-template-columns: 110px minmax(80px, 1fr) 75px 95px; }
-        .extraction-grid { grid-template-columns: 110px minmax(80px, 1fr) 75px 80px 65px 80px; }
+        .extraction-grid { grid-template-columns: 110px minmax(80px, 1fr) 75px 80px 65px 65px 80px; }
         .dreaming-grid { grid-template-columns: 110px minmax(80px, 1fr) 60px 60px 80px; }
     }
 </style>

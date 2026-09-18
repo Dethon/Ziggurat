@@ -4,11 +4,11 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A candidate scoring 0.4 on any one noul is not stored and its drop event carries content and scores; one at 0.5 on all four is.
-- [ ] An Instruction candidate with `supported` 0.8 and `not_a_question` 0.1 is stored.
-- [ ] An Instruction candidate with `supported` 0.2 is dropped — the category is not a bypass.
-- [ ] An absent answer for one candidate stores that candidate and does not affect the others.
-- [ ] Five candidates are judged concurrently, not in series.
-- [ ] Spec: `.scratch/jev-memory-judgments/spec.md` § B — the check.
+- [x] A candidate scoring 0.4 on any one noul is not stored and its drop event carries content and scores; one at 0.5 on all four is.
+- [x] An Instruction candidate with `supported` 0.8 and `not_a_question` 0.1 is stored.
+- [x] An Instruction candidate with `supported` 0.2 is dropped — the category is not a bypass.
+- [x] An absent answer for one candidate stores that candidate and does not affect the others.
+- [x] Five candidates are judged concurrently, not in series.
+- [x] Spec: `.scratch/jev-memory-judgments/spec.md` § B — the check.
