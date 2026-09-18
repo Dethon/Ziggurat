@@ -145,6 +145,8 @@ public class MetricsQueryServiceGroupingTests
     [InlineData(MemoryDimension.User, MemoryMetric.AvgDuration)]
     [InlineData(MemoryDimension.EventType, MemoryMetric.StoredCount)]
     [InlineData(MemoryDimension.Agent, MemoryMetric.MergedCount)]
+    [InlineData(MemoryDimension.Outcome, MemoryMetric.Count)]
+    [InlineData(MemoryDimension.User, MemoryMetric.CandidateCount)]
     public async Task GetMemoryGroupedAsync_GroupsByDimensionAndMetric(
         MemoryDimension dimension, MemoryMetric metric)
     {
@@ -156,7 +158,7 @@ public class MetricsQueryServiceGroupingTests
         ]);
         SetupSortedSet("metrics:memory-extraction:2026-03-15",
         [
-            new MemoryExtractionEvent { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, UserId = "alice" },
+            new MemoryExtractionEvent { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, UserId = "alice", Outcome = MemoryExtractionOutcomes.Extracted },
             new MemoryExtractionEvent { DurationMs = 2000, CandidateCount = 12, StoredCount = 5, UserId = "bob" },
         ]);
         SetupSortedSet("metrics:memory-dreaming:2026-03-15",
@@ -193,6 +195,15 @@ public class MetricsQueryServiceGroupingTests
             case (MemoryDimension.Agent, MemoryMetric.MergedCount):
                 result["agent-1"].ShouldBe(8m); // 5 + 3
                 result["unknown"].ShouldBe(7m);
+                break;
+            case (MemoryDimension.Outcome, MemoryMetric.Count):
+                // The outcome is an extraction's: recalls and dreamings are not in the share, and
+                // an extraction stored before the outcome existed is counted as unrecorded.
+                result.ShouldBe(new Dictionary<string, decimal> { ["extracted"] = 1m, ["(unrecorded)"] = 1m });
+                break;
+            case (MemoryDimension.User, MemoryMetric.CandidateCount):
+                result["alice"].ShouldBe(8m);
+                result["bob"].ShouldBe(12m);
                 break;
         }
     }

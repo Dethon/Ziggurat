@@ -317,6 +317,7 @@ public sealed class MetricsCollectorService(
             db.HashIncrementAsync(totalsKey, "memory:extractionDuration", evt.DurationMs),
             db.HashIncrementAsync(totalsKey, "memory:candidates", evt.CandidateCount),
             db.HashIncrementAsync(totalsKey, "memory:stored", evt.StoredCount),
+            db.HashIncrementAsync(totalsKey, $"memory:outcome:{evt.Outcome ?? "unrecorded"}"),
             db.HashIncrementAsync(totalsKey, $"memory:byUser:{evt.UserId}"),
             db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
             db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));

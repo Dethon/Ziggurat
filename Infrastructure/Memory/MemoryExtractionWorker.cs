@@ -50,33 +50,31 @@ public class MemoryExtractionWorker(
         }
 
         var sw = Stopwatch.StartNew();
-        var storedCount = 0;
-        var candidateCount = 0;
 
         try
         {
-            var candidates = await ExtractWithRetryAsync(request, ct);
-            candidateCount = candidates.Count;
+            var extraction = await ExtractWithRetryAsync(request, ct);
 
             var storeResults = await Task.WhenAll(
-                candidates.Take(options.MaxCandidatesPerMessage)
+                extraction.Candidates.Take(options.MaxCandidatesPerMessage)
                     .Select(c => StoreIfNovelAsync(request.UserId, c, request.ConversationId, ct)));
-
-            storedCount = storeResults.Count(stored => stored);
 
             sw.Stop();
             metricsPublisher.Publish(new MemoryExtractionEvent
             {
                 DurationMs = sw.ElapsedMilliseconds,
-                CandidateCount = candidateCount,
-                StoredCount = storedCount,
+                CandidateCount = extraction.Candidates.Count,
+                StoredCount = storeResults.Count(stored => stored),
+                Outcome = extraction.Outcome,
                 UserId = request.UserId,
-                AgentId = request.AgentId is not null ? agentDefinitionProvider.GetById(request.AgentId)?.Name ?? request.AgentId : null,
+                AgentId = AgentName(request),
                 ConversationId = request.ConversationId
             });
         }
         catch (Exception ex)
         {
+            // Both: the error page sees what broke, and the memory page sees a turn that failed
+            // rather than the same zero as a turn with nothing in it.
             logger.LogError(ex, "Memory extraction failed for user {UserId}", request.UserId);
             metricsPublisher.Publish(new ErrorEvent
             {
@@ -84,10 +82,33 @@ public class MemoryExtractionWorker(
                 ErrorType = ex.GetType().Name,
                 Message = $"Extraction failed: {ex.Message}"
             });
+            metricsPublisher.Publish(new MemoryExtractionEvent
+            {
+                DurationMs = sw.ElapsedMilliseconds,
+                CandidateCount = 0,
+                StoredCount = 0,
+                Outcome = MemoryExtractionOutcomes.Failed,
+                UserId = request.UserId,
+                AgentId = AgentName(request),
+                ConversationId = request.ConversationId
+            });
         }
     }
 
-    private async Task<IReadOnlyList<ExtractionCandidate>> ExtractWithRetryAsync(
+    private string? AgentName(MemoryExtractionRequest request) =>
+        request.AgentId is not null ? agentDefinitionProvider.GetById(request.AgentId)?.Name ?? request.AgentId : null;
+
+    // What the extractor produced and how it ended: an empty window and an empty answer are both
+    // "empty", and a turn the gate judges to hold nothing lasting will be "gated".
+    private sealed record Extraction(IReadOnlyList<ExtractionCandidate> Candidates, string Outcome)
+    {
+        public static readonly Extraction Empty = new([], MemoryExtractionOutcomes.Empty);
+
+        public static Extraction Of(IReadOnlyList<ExtractionCandidate> candidates) =>
+            candidates.Count == 0 ? Empty : new Extraction(candidates, MemoryExtractionOutcomes.Extracted);
+    }
+
+    private async Task<Extraction> ExtractWithRetryAsync(
         MemoryExtractionRequest request, CancellationToken ct)
     {
         var window = await BuildExtractionWindowAsync(request);
@@ -96,7 +117,7 @@ public class MemoryExtractionWorker(
             logger.LogDebug(
                 "Extraction dropped: no window could be built (user {UserId}, key {Key}, anchor {Anchor})",
                 request.UserId, request.ThreadStateKey, request.Anchor.PersistedMessageCount);
-            return [];
+            return Extraction.Empty;
         }
 
         return await ExtractWithRetryAsync(window, request.UserId, ct);
@@ -112,14 +133,14 @@ public class MemoryExtractionWorker(
             thread, request.Anchor, request.FallbackContent, options.WindowMixedTurns);
     }
 
-    private async Task<IReadOnlyList<ExtractionCandidate>> ExtractWithRetryAsync(
+    private async Task<Extraction> ExtractWithRetryAsync(
         IReadOnlyList<ChatMessage> window, string userId, CancellationToken ct)
     {
         for (var attempt = 0; attempt <= options.MaxRetries; attempt++)
         {
             try
             {
-                return await extractor.ExtractAsync(window, userId, ct);
+                return Extraction.Of(await extractor.ExtractAsync(window, userId, ct));
             }
             catch (Exception ex) when (attempt < options.MaxRetries)
             {
@@ -127,7 +148,8 @@ public class MemoryExtractionWorker(
                     attempt + 1, userId);
             }
         }
-        return [];
+
+        throw new UnreachableException("The last attempt either returned or threw");
     }
 
     private async Task<bool> StoreIfNovelAsync(

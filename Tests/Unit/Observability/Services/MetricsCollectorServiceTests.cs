@@ -87,6 +87,7 @@ public class MetricsCollectorServiceTests
                 CandidateCount = 8,
                 StoredCount = 3,
                 UserId = "bob",
+                Outcome = MemoryExtractionOutcomes.Extracted,
                 Timestamp = _fixedTimestamp
             },
             [
@@ -94,6 +95,7 @@ public class MetricsCollectorServiceTests
                 ("memory:extractionDuration", 1500),
                 ("memory:candidates", 8),
                 ("memory:stored", 3),
+                ("memory:outcome:extracted", 1),
                 ("memory:byUser:bob", 1)
             ]),
         new HashIncrementCase(

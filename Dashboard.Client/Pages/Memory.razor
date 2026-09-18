@@ -75,6 +75,7 @@
                                 <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                                 <span class='sortable @SortClass("Candidates")' @onclick='() => SortBy("Candidates")'>Candidates <SortArrow Column="Candidates" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                                 <span class='sortable @SortClass("Stored")' @onclick='() => SortBy("Stored")'>Stored <SortArrow Column="Stored" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                                <span class='sortable @SortClass("Outcome")' @onclick='() => SortBy("Outcome")'>Outcome <SortArrow Column="Outcome" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                             </div>
                             @foreach (var evt in GetSortedExtractions(state))
                             {
@@ -84,6 +85,7 @@
                                     <span>@evt.DurationMs ms</span>
                                     <span>@evt.CandidateCount</span>
                                     <span class="stored-count">@evt.StoredCount</span>
+                                    <span class="@OutcomeClass(evt.Outcome)">@(evt.Outcome ?? "")</span>
                                 </div>
                             }
                         </div>
@@ -140,6 +142,7 @@
         new("User", nameof(MemoryDimension.User)),
         new("Event Type", nameof(MemoryDimension.EventType)),
         new("Agent", nameof(MemoryDimension.Agent)),
+        new("Outcome", nameof(MemoryDimension.Outcome)),
     ];
 
     private static readonly IReadOnlyList<PillOption> MetricOptions =
@@ -149,6 +152,7 @@
         new("Stored", nameof(MemoryMetric.StoredCount)),
         new("Merged", nameof(MemoryMetric.MergedCount)),
         new("Decayed", nameof(MemoryMetric.DecayedCount)),
+        new("Candidates", nameof(MemoryMetric.CandidateCount)),
     ];
 
     private static readonly IReadOnlySet<string> UserOnlyMetrics =
@@ -221,10 +225,19 @@
             "Duration" => e => e.DurationMs,
             "Candidates" => e => e.CandidateCount,
             "Stored" => e => e.StoredCount,
+            "Outcome" => e => e.Outcome ?? "",
             _ => e => e.Timestamp
         };
         return _sortAsc ? events.OrderBy(keySelector) : events.OrderByDescending(keySelector);
     }
+
+    private static string OutcomeClass(string? outcome) => outcome switch
+    {
+        MemoryExtractionOutcomes.Extracted => "outcome-extracted",
+        MemoryExtractionOutcomes.Gated => "outcome-gated",
+        MemoryExtractionOutcomes.Failed => "outcome-failed",
+        _ => ""
+    };
 
     private IEnumerable<MemoryDreamingEvent> GetSortedDreamings(MemoryState state)
     {
@@ -265,18 +278,21 @@
     .sortable.sorted { color: var(--text-primary); }
 
     .recall-grid { grid-template-columns: 135px 120px 100px 120px; }
-    .extraction-grid { grid-template-columns: 135px 120px 100px 100px 80px; }
+    .extraction-grid { grid-template-columns: 135px 120px 100px 100px 80px 90px; }
     .dreaming-grid { grid-template-columns: 135px 120px 80px 80px 100px; }
 
     .stored-count { color: var(--accent-green); }
     .merged-count { color: var(--accent-pink); }
     .decayed-count { color: var(--accent-red); }
+    .outcome-extracted { color: var(--accent-green); }
+    .outcome-gated { color: var(--accent-blue); }
+    .outcome-failed { color: var(--accent-red); }
 
     @@media (max-width: 768px) {
         .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .table-header, .table-row { font-size: 0.72rem; padding: 0.4rem 0.5rem; }
         .recall-grid { grid-template-columns: 110px minmax(80px, 1fr) 75px 95px; }
-        .extraction-grid { grid-template-columns: 110px minmax(80px, 1fr) 75px 80px 65px; }
+        .extraction-grid { grid-template-columns: 110px minmax(80px, 1fr) 75px 80px 65px 80px; }
         .dreaming-grid { grid-template-columns: 110px minmax(80px, 1fr) 60px 60px 80px; }
     }
 </style>

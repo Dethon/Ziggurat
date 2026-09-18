@@ -271,10 +271,13 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         var extractions = await GetEventsAsync<MemoryExtractionEvent>("metrics:memory-extraction:", from, to);
         var dreamings = await GetEventsAsync<MemoryDreamingEvent>("metrics:memory-dreaming:", from, to);
 
-        var allEvents = recalls.Cast<MetricEvent>()
-            .Concat(extractions)
-            .Concat(dreamings)
-            .ToList();
+        // The outcome is an extraction's, so under it the share is over extractions alone.
+        var allEvents = dimension == MemoryDimension.Outcome
+            ? extractions.Cast<MetricEvent>().ToList()
+            : recalls.Cast<MetricEvent>()
+                .Concat(extractions)
+                .Concat(dreamings)
+                .ToList();
 
         return allEvents
             .GroupBy(e => dimension switch
@@ -294,6 +297,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                     _ => "unknown"
                 },
                 MemoryDimension.Agent => e.AgentId ?? "unknown",
+                MemoryDimension.Outcome => (e as MemoryExtractionEvent)?.Outcome ?? "(unrecorded)",
                 _ => throw new ArgumentOutOfRangeException(nameof(dimension))
             })
             .ToDictionary(
@@ -313,6 +317,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                     MemoryMetric.StoredCount => g.OfType<MemoryExtractionEvent>().Sum(e => (decimal)e.StoredCount),
                     MemoryMetric.MergedCount => g.OfType<MemoryDreamingEvent>().Sum(e => (decimal)e.MergedCount),
                     MemoryMetric.DecayedCount => g.OfType<MemoryDreamingEvent>().Sum(e => (decimal)e.DecayedCount),
+                    MemoryMetric.CandidateCount => g.OfType<MemoryExtractionEvent>().Sum(e => (decimal)e.CandidateCount),
                     _ => throw new ArgumentOutOfRangeException(nameof(metric))
                 });
     }

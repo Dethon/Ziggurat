@@ -176,7 +176,63 @@ public class MemoryExtractionWorkerTests
         extractionEvent.UserId.ShouldBe("user2");
         extractionEvent.CandidateCount.ShouldBe(0);
         extractionEvent.StoredCount.ShouldBe(0);
+        extractionEvent.Outcome.ShouldBe(MemoryExtractionOutcomes.Empty);
         extractionEvent.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_WithCandidates_PublishesExtracted()
+    {
+        _threadStateStore.Setup(s => s.GetMessagesAsync("thread-key-6"))
+            .ReturnsAsync([new ChatMessage(ChatRole.User, "I work at Contoso")]);
+        _extractor
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new ExtractionCandidate("Works at Contoso", MemoryCategory.Fact, 0.8, 0.9, [], null)]);
+        _embeddingService
+            .Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([0.1f]);
+        _store
+            .Setup(s => s.SearchAsync("user1", null, It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), null, null, 3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        _store
+            .Setup(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MemoryEntry m, CancellationToken _) => m);
+
+        var published = new List<MetricEvent>();
+        _metricsPublisher.Setup(p => p.Publish(It.IsAny<MetricEvent>())).Callback<MetricEvent>(published.Add);
+
+        await _worker.ProcessRequestAsync(new MemoryExtractionRequest("user1", "thread-key-6", Anchor(1), null, null), CancellationToken.None);
+
+        var evt = published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem();
+        evt.Outcome.ShouldBe(MemoryExtractionOutcomes.Extracted);
+        evt.CandidateCount.ShouldBe(1);
+        evt.StoredCount.ShouldBe(1);
+    }
+
+    // A retry exhaustion used to publish the same zero as a turn with nothing in it, so "found
+    // nothing" and "broke" were one number on the page.
+    [Fact]
+    public async Task ProcessRequestAsync_WhenEveryAttemptFails_PublishesFailed()
+    {
+        _extractor
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("transient"));
+
+        var published = new List<MetricEvent>();
+        _metricsPublisher.Setup(p => p.Publish(It.IsAny<MetricEvent>())).Callback<MetricEvent>(published.Add);
+
+        var request = new MemoryExtractionRequest("user1", null, Anchor(0), "conv_1", null)
+        {
+            FallbackContent = "I work at Contoso"
+        };
+
+        await _worker.ProcessRequestAsync(request, CancellationToken.None);
+
+        var evt = published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem();
+        evt.Outcome.ShouldBe(MemoryExtractionOutcomes.Failed);
+        evt.CandidateCount.ShouldBe(0);
+        evt.StoredCount.ShouldBe(0);
+        _store.Verify(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -217,10 +273,10 @@ public class MemoryExtractionWorkerTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("Connection refused"));
 
-        MetricEvent? published = null;
+        var published = new List<MetricEvent>();
         _metricsPublisher
             .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
-            .Callback<MetricEvent>(evt => published = evt);
+            .Callback<MetricEvent>(published.Add);
 
         var request = new MemoryExtractionRequest("user3", "thread-key-5", Anchor(0), null, null)
         {
@@ -229,12 +285,12 @@ public class MemoryExtractionWorkerTests
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
-        published.ShouldNotBeNull();
-        published.ShouldBeOfType<ErrorEvent>();
-        var errorEvent = (ErrorEvent)published;
+        var errorEvent = published.OfType<ErrorEvent>().ShouldHaveSingleItem();
         errorEvent.Service.ShouldBe("memory");
         errorEvent.ErrorType.ShouldBe(nameof(HttpRequestException));
         errorEvent.Message.ShouldContain("Connection refused");
+        // And the memory page sees a failed turn beside it, not nothing.
+        published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem().Outcome.ShouldBe(MemoryExtractionOutcomes.Failed);
     }
 
     [Fact]
@@ -265,6 +321,7 @@ public class MemoryExtractionWorkerTests
         var evt = (MemoryExtractionEvent)published;
         evt.CandidateCount.ShouldBe(0);
         evt.StoredCount.ShouldBe(0);
+        evt.Outcome.ShouldBe(MemoryExtractionOutcomes.Empty);
     }
 
     [Fact]

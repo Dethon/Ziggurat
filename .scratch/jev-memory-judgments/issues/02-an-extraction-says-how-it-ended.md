@@ -4,9 +4,9 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
-- [ ] An extraction that exhausts its retries publishes `failed`; one that returns no candidates publishes `empty`; the existing zero-candidate test is updated, not deleted.
-- [ ] Events stored before this change still read, with no outcome.
+- [x] An extraction that exhausts its retries publishes `failed`; one that returns no candidates publishes `empty`; the existing zero-candidate test is updated, not deleted.
+- [x] Events stored before this change still read, with no outcome.
 - [ ] The Memory page charts outcome share and candidates per extraction, verified in a browser against the local stack.
 - [ ] Spec: `.scratch/jev-memory-judgments/spec.md` § Telemetry.
