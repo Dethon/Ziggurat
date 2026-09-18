@@ -150,7 +150,7 @@
                                     <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
                                     <span>@evt.UserId</span>
                                     <span>@evt.Kind</span>
-                                    <span class="@VerdictClass(evt)">@Verdict(evt)</span>
+                                    <span class="@Verdict(evt).Css">@Verdict(evt).Text</span>
                                     <span class="judgment-candidate" title="@evt.Candidate">@(evt.Candidate ?? "")</span>
                                     <span class="judgment-scores">@Scores(evt)</span>
                                     <span>@(evt.DurationMs is { } d ? $"{d} ms" : "")</span>
@@ -310,23 +310,15 @@
 
     // What the judgment decided, in a word: the gate skipped or extracted, the check dropped or
     // kept, the pairs linked this many groups; an absent answer fell back to today's behaviour.
-    private static string Verdict(MemoryJudgmentEvent evt) => evt switch
+    private static (string Text, string Css) Verdict(MemoryJudgmentEvent evt) => evt switch
     {
-        { Answered: false } => "absent",
-        { Kind: MemoryJudgmentKinds.Gate, Skipped: true } => "gated",
-        { Kind: MemoryJudgmentKinds.Gate } => "extract",
-        { Kind: MemoryJudgmentKinds.Verify, Dropped: true } => "dropped",
-        { Kind: MemoryJudgmentKinds.Verify } => "kept",
-        { Kind: MemoryJudgmentKinds.Pairs } => $"{evt.Linked?.Count ?? 0} linked of {evt.MemoryIds?.Count ?? 0}",
-        _ => ""
-    };
-
-    private static string VerdictClass(MemoryJudgmentEvent evt) => evt switch
-    {
-        { Answered: false } => "verdict-absent",
-        { Kind: MemoryJudgmentKinds.Gate, Skipped: true } => "verdict-gated",
-        { Kind: MemoryJudgmentKinds.Verify, Dropped: true } => "verdict-dropped",
-        _ => "verdict-kept"
+        { Answered: false } => ("absent", "verdict-absent"),
+        { Kind: MemoryJudgmentKinds.Gate, Skipped: true } => ("gated", "verdict-gated"),
+        { Kind: MemoryJudgmentKinds.Gate } => ("extract", "verdict-kept"),
+        { Kind: MemoryJudgmentKinds.Verify, Dropped: true } => ("dropped", "verdict-dropped"),
+        { Kind: MemoryJudgmentKinds.Verify } => ("kept", "verdict-kept"),
+        { Kind: MemoryJudgmentKinds.Pairs } => ($"{evt.Linked?.Count ?? 0} linked of {evt.MemoryIds?.Count ?? 0}", "verdict-kept"),
+        _ => ("", "")
     };
 
     private static string Scores(MemoryJudgmentEvent evt) => evt switch

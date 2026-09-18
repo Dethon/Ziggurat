@@ -83,9 +83,9 @@ public class OpenRouterMemoryConsolidator(
             return cluster.Take(cap).ToList();
         }
 
-        var width = embedded[0].Embedding!.Length;
-        var centroid = Enumerable.Range(0, width)
-            .Select(i => embedded.Average(m => m.Embedding!.Length > i ? m.Embedding[i] : 0f))
+        // One width for every vector: the index verification refused to start otherwise.
+        var centroid = Enumerable.Range(0, embedded[0].Embedding!.Length)
+            .Select(i => embedded.Average(m => m.Embedding![i]))
             .ToArray();
 
         return embedded

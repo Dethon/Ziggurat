@@ -79,7 +79,8 @@ public class MemoryDreamingService(
         var refused = new List<IReadOnlyList<string>>();
         for (var pass = 0; pass < options.MaxMergePasses; pass++)
         {
-            var passMerges = await MergeAsync(userId, activeMemories, refused, ct);
+            var (passMerges, passRefusals) = await MergeAsync(userId, activeMemories, ct);
+            refused.AddRange(passRefusals);
             if (passMerges == 0)
             {
                 break;
@@ -126,10 +127,12 @@ public class MemoryDreamingService(
             userId, removed ? "removed" : "absent");
     }
 
-    private async Task<int> MergeAsync(
-        string userId, IReadOnlyList<MemoryEntry> activeMemories, List<IReadOnlyList<string>> refused, CancellationToken ct)
+    // What a pass applied, and the merges it refused by the source ids the model named.
+    private async Task<(int Merged, IReadOnlyList<IReadOnlyList<string>> Refused)> MergeAsync(
+        string userId, IReadOnlyList<MemoryEntry> activeMemories, CancellationToken ct)
     {
         var consolidation = await consolidator.ConsolidateAsync(activeMemories, ct);
+        var refused = new List<IReadOnlyList<string>>();
 
         // Keyed without case, and resolving to the id the store holds rather than the one that came
         // back. A decision's ids went out to a language model and came back retyped: mostly
@@ -207,7 +210,7 @@ public class MemoryDreamingService(
             }
         }
 
-        return mergedCount;
+        return (mergedCount, refused);
     }
 
     private async Task<IReadOnlyList<MemoryEntry>> GetActiveMemoriesAsync(string userId, CancellationToken ct)

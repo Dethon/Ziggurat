@@ -111,8 +111,7 @@ public sealed class MemoryJudge(
             ["memories"] = new JsonArray(cluster.Select(m => (JsonNode?)m.Content).ToArray())
         };
 
-        var questions = Enumerable.Range(0, cluster.Count)
-            .SelectMany(i => Enumerable.Range(i + 1, cluster.Count - i - 1).Select(j => (i, j)))
+        var questions = Pairs(cluster.Count)
             .ToDictionary(
                 pair => PairQuestionId(pair.i, pair.j),
                 pair => (JudgmentQuestion)new ChoiceQuestion(
@@ -130,18 +129,14 @@ public sealed class MemoryJudge(
             return PairVerdict.Unanswered;
         }
 
-        var started = timeProvider.GetTimestamp();
-        var outcome = await judge.JudgeAsync(PairRequest(cluster), ct);
-        var latency = timeProvider.GetElapsedTime(started);
-
+        var (outcome, latency) = await AskAsync(PairRequest(cluster), ct);
         if (outcome is not JudgmentOutcome.Answered answered)
         {
             PublishAbsence(MemoryJudgmentKinds.Pairs, context, outcome, latency);
             return PairVerdict.Unanswered;
         }
 
-        var pairs = Enumerable.Range(0, cluster.Count)
-            .SelectMany(i => Enumerable.Range(i + 1, cluster.Count - i - 1).Select(j => (i, j)))
+        var pairs = Pairs(cluster.Count)
             .Select(pair => (pair.i, pair.j, Answer: answered.Judgment.Answers.GetValueOrDefault(PairQuestionId(pair.i, pair.j)) as ChoiceAnswer))
             .Where(p => p.Answer is not null)
             .ToList();
@@ -152,24 +147,20 @@ public sealed class MemoryJudge(
             .Select(component => (IReadOnlyList<MemoryEntry>)component.Select(i => cluster[i]).ToList())
             .ToList();
 
-        Publish(new MemoryJudgmentEvent
+        Publish(Answered(MemoryJudgmentKinds.Pairs, context, answered.Judgment, latency) with
         {
-            Kind = MemoryJudgmentKinds.Pairs,
-            UserId = context.UserId,
-            AgentId = context.AgentId,
-            ConversationId = context.ConversationId,
-            Answered = true,
             MemoryIds = cluster.Select(m => m.Id).ToList(),
             Relations = pairs.ToDictionary(p => PairQuestionId(p.i, p.j), p => p.Answer!.Choice, StringComparer.Ordinal),
             Scores = pairs.ToDictionary(p => PairQuestionId(p.i, p.j), p => p.Answer!.Confidence, StringComparer.Ordinal),
-            Linked = linked.Select(component => (IReadOnlyList<string>)component.Select(m => m.Id).ToList()).ToList(),
-            DurationMs = (long)latency.TotalMilliseconds,
-            InputTokens = answered.Judgment.Usage.InputTokens,
-            Model = answered.Judgment.Model
+            Linked = linked.Select(component => (IReadOnlyList<string>)component.Select(m => m.Id).ToList()).ToList()
         });
 
         return new PairVerdict(true, linked);
     }
+
+    // Every unordered pair of indices, i < j, in the order the questions are keyed.
+    private static IEnumerable<(int i, int j)> Pairs(int count) =>
+        Enumerable.Range(0, count).SelectMany(i => Enumerable.Range(i + 1, count - i - 1).Select(j => (i, j)));
 
     // The connected components of the link graph over indices, singletons dropped, each in index
     // order and the components in the order of their first member.
@@ -231,18 +222,10 @@ public sealed class MemoryJudge(
         var skip = GateQuestions.Keys.All(id =>
             scores.TryGetValue(id, out var p) && p <= settings.Gate.SkipAtOrBelow);
 
-        Publish(new MemoryJudgmentEvent
+        Publish(Answered(MemoryJudgmentKinds.Gate, context, answered.Judgment, latency) with
         {
-            Kind = MemoryJudgmentKinds.Gate,
-            UserId = context.UserId,
-            AgentId = context.AgentId,
-            ConversationId = context.ConversationId,
-            Answered = true,
             Scores = scores,
-            Skipped = skip,
-            DurationMs = (long)latency.TotalMilliseconds,
-            InputTokens = answered.Judgment.Usage.InputTokens,
-            Model = answered.Judgment.Model
+            Skipped = skip
         });
 
         return new GateVerdict(skip, scores);
@@ -274,20 +257,12 @@ public sealed class MemoryJudge(
         var dropped = Bars(candidate.Category).Any(bar =>
             scores.TryGetValue(bar.Id, out var p) && p < bar.AtLeast);
 
-        Publish(new MemoryJudgmentEvent
+        Publish(Answered(MemoryJudgmentKinds.Verify, context, answered.Judgment, latency) with
         {
-            Kind = MemoryJudgmentKinds.Verify,
-            UserId = context.UserId,
-            AgentId = context.AgentId,
-            ConversationId = context.ConversationId,
-            Answered = true,
             Scores = scores,
             Candidate = candidate.Content,
             Category = candidate.Category.ToString(),
-            Dropped = dropped,
-            DurationMs = (long)latency.TotalMilliseconds,
-            InputTokens = answered.Judgment.Usage.InputTokens,
-            Model = answered.Judgment.Model
+            Dropped = dropped
         });
 
         return new VerifyVerdict(!dropped, scores);
@@ -306,13 +281,16 @@ public sealed class MemoryJudge(
         yield return (NotAQuestionQuestionId, settings.Verify.NotAQuestion);
     }
 
-    private async Task<(JudgmentOutcome Outcome, TimeSpan Latency)> AskAsync(
-        JsonObject state, IReadOnlyDictionary<string, JudgmentQuestion> questions, CancellationToken ct)
+    private Task<(JudgmentOutcome Outcome, TimeSpan Latency)> AskAsync(
+        JsonObject state, IReadOnlyDictionary<string, JudgmentQuestion> questions, CancellationToken ct) =>
+        AskAsync(new JudgmentRequest(state, questions), ct);
+
+    private async Task<(JudgmentOutcome Outcome, TimeSpan Latency)> AskAsync(JudgmentRequest request, CancellationToken ct)
     {
         // No deadline of its own: nothing here is on a reply path, and the client's own timeout
         // bounds a call that hangs.
         var started = timeProvider.GetTimestamp();
-        var outcome = await judge.JudgeAsync(new JudgmentRequest(state, questions), ct);
+        var outcome = await judge.JudgeAsync(request, ct);
         return (outcome, timeProvider.GetElapsedTime(started));
     }
 
@@ -323,6 +301,18 @@ public sealed class MemoryJudge(
         ids.Select(id => (Id: id, Answer: judgment.Answers.GetValueOrDefault(id) as NoulAnswer))
             .Where(a => a.Answer is not null)
             .ToDictionary(a => a.Id, a => a.Answer!.Probability, StringComparer.Ordinal);
+
+    private static MemoryJudgmentEvent Answered(string kind, MemoryJudgmentContext context, Judgment judgment, TimeSpan latency) => new()
+    {
+        Kind = kind,
+        UserId = context.UserId,
+        AgentId = context.AgentId,
+        ConversationId = context.ConversationId,
+        Answered = true,
+        DurationMs = (long)latency.TotalMilliseconds,
+        InputTokens = judgment.Usage.InputTokens,
+        Model = judgment.Model
+    };
 
     // An unconfigured judge is the feature off, not a thing to count; any other absence is.
     private void PublishAbsence(string kind, MemoryJudgmentContext context, JudgmentOutcome outcome, TimeSpan latency)

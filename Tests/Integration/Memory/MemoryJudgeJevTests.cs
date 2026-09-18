@@ -107,6 +107,26 @@ public class MemoryJudgeJevTests
         wrong.ShouldBeEmpty();
     }
 
+    // The shape production sends: one request for a whole cosine cluster, a choice per pair by
+    // index. The move is linked, the siblings are not, and nothing crosses between them.
+    [SkippableFact]
+    public async Task Pairs_OverAWholeCluster_LinkOnlyTheMoveAndLeaveTheSiblingsApart()
+    {
+        var (judge, _) = await Setup.Value;
+        var cluster = new[]
+        {
+            Memory("madrid", "Vive en Madrid"),
+            Memory("valencia", "Se ha mudado a Valencia"),
+            Memory("sister", "Su hermana Laura vive en Sevilla"),
+            Memory("brother", "Su hermano Pablo vive en Bilbao")
+        };
+
+        var verdict = await judge.RelateAsync(cluster, Context, CancellationToken.None);
+
+        verdict.Answered.ShouldBeTrue();
+        verdict.Linked.ShouldHaveSingleItem().Select(m => m.Id).ShouldBe(["madrid", "valencia"]);
+    }
+
     private static async Task<(MemoryJudge, Cases)> SetupAsync()
     {
         var apiKey = Configuration["typeSafe:apiKey"] ?? Configuration["TYPESAFE_API_KEY"];

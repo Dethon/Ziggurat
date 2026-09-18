@@ -67,8 +67,8 @@ public class MemoryExtractionWorker(
             {
                 DurationMs = sw.ElapsedMilliseconds,
                 CandidateCount = extraction.Candidates.Count,
-                DroppedCount = results.Count(r => r == Candidate.Dropped),
-                StoredCount = results.Count(r => r == Candidate.Stored),
+                DroppedCount = results.Count(r => r == CandidateOutcome.Dropped),
+                StoredCount = results.Count(r => r == CandidateOutcome.Stored),
                 Outcome = extraction.Outcome,
                 UserId = request.UserId,
                 AgentId = AgentName(request),
@@ -113,7 +113,7 @@ public class MemoryExtractionWorker(
             candidates.Count == 0 ? Empty : new Extraction(candidates, MemoryExtractionOutcomes.Extracted, window);
     }
 
-    private enum Candidate
+    private enum CandidateOutcome
     {
         Dropped,
         Duplicate,
@@ -178,19 +178,19 @@ public class MemoryExtractionWorker(
         throw new UnreachableException("The last attempt either returned or threw");
     }
 
-    private async Task<Candidate> VerifyThenStoreAsync(
+    private async Task<CandidateOutcome> VerifyThenStoreAsync(
         MemoryExtractionRequest request, IReadOnlyList<ChatMessage> window, ExtractionCandidate candidate, CancellationToken ct)
     {
         var verdict = await judge.VerifyAsync(window, candidate, Context(request), ct);
         if (!verdict.Store)
         {
             logger.LogDebug("Dropping candidate for user {UserId}: {Content}", request.UserId, candidate.Content);
-            return Candidate.Dropped;
+            return CandidateOutcome.Dropped;
         }
 
         return await StoreIfNovelAsync(request.UserId, candidate, request.ConversationId, ct)
-            ? Candidate.Stored
-            : Candidate.Duplicate;
+            ? CandidateOutcome.Stored
+            : CandidateOutcome.Duplicate;
     }
 
     private async Task<bool> StoreIfNovelAsync(
