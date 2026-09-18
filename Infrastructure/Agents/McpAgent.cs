@@ -111,7 +111,7 @@ public sealed class McpAgent : DisposableAgent
         _promptCache = promptCache;
         _readImages = readImages;
         _history = new RedisChatMessageStore(stateStore, metricsPublisher, spec.ConversationId);
-        _skills = new SkillsProvider(SkillsOf, skillPreloader, _history.LastProvided);
+        _skills = new SkillsProvider(SkillsOf, skillPreloader, _history.LastProvided, RegistryOf);
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = spec.DisplayName,
@@ -126,6 +126,9 @@ public sealed class McpAgent : DisposableAgent
 
     private IReadOnlyList<PromptSkill> SkillsOf(AgentSession? thread) =>
         thread is not null && _threadSessions.TryGetValue(thread, out var session) ? session.Skills : [];
+
+    private IVirtualFileSystemRegistry? RegistryOf(AgentSession? thread) =>
+        thread is not null ? GetFileSystemRegistry(thread) : null;
 
     public override IReadOnlyList<PromptSkill> GetSkills(AgentSession thread) => SkillsOf(thread);
 

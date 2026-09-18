@@ -739,8 +739,9 @@ _Avoid_: activation, routing rule, skill match
 A skill put into the conversation by the host before the model's first call,
 because a typed judgment of the request against the skills' descriptions was
 confident. It leaves the conversation exactly as a load by the model would have,
-is never made twice for one skill, and its absence — an unsure, late or missing
-judgment — is simply the model loading for itself.
+together with the reads the body orders in the same turn, is never made twice for
+one skill, and its absence — an unsure, late or missing judgment — is simply the
+model loading for itself.
 _Avoid_: pre-load by channel, skill suggestion, hint, auto-load
 
 ## Behavioural evaluation

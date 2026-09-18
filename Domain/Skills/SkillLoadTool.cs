@@ -1,4 +1,5 @@
 using Domain.Prompts;
+using Domain.Tools.FileSystem;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Skills;
@@ -29,20 +30,39 @@ public static class SkillLoadTool
 
     // The two messages a load leaves: one call per skill on one assistant message, and one
     // result per call on one tool message. No reasoning content, because the model never reasoned.
-    public static IReadOnlyList<ChatMessage> AsLoaded(IReadOnlyList<PromptSkill> skills, string callIdPrefix)
+    public static IReadOnlyList<ChatMessage> AsLoaded(IReadOnlyList<PromptSkill> skills, string callIdPrefix) =>
+        AsPreloaded(new SkillPreload(SkillPreloadOutcome.Preloaded, skills), callIdPrefix);
+
+    // The same two messages for a whole preload: the loads first, then the reads the skills
+    // declared, on the same pair — the shape a model that loads and reads in one call leaves.
+    // The read is the filesystem tool's own call, by its callable name and argument, with what
+    // the tool answered, so nothing downstream can tell it from one the model made.
+    public static IReadOnlyList<ChatMessage> AsPreloaded(SkillPreload preload, string callIdPrefix)
     {
-        var calls = skills
-            .Select((skill, i) => (Skill: skill, CallId: $"{callIdPrefix}-{i + 1}"))
+        var loads = preload.Skills
+            .Select((skill, i) => (
+                Call: new FunctionCallContent(
+                    $"{callIdPrefix}-{i + 1}", Name, new Dictionary<string, object?> { [SkillNameParameter] = skill.Name }),
+                Result: (object)Wrapped(skill)))
             .ToList();
+        var reads = preload.Reads
+            .Select((read, i) => (
+                Call: new FunctionCallContent(
+                    $"{callIdPrefix}-read-{i + 1}",
+                    ReadToolName,
+                    new Dictionary<string, object?> { [VfsFileReadTool.FilePathParameter] = read.Path }),
+                Result: (object)read.Result))
+            .ToList();
+        var pairs = loads.Concat(reads).ToList();
 
         return
         [
-            new ChatMessage(ChatRole.Assistant, [.. calls.Select(c => new FunctionCallContent(
-                c.CallId, Name, new Dictionary<string, object?> { [SkillNameParameter] = c.Skill.Name }))]),
-            new ChatMessage(ChatRole.Tool, [.. calls.Select(c => new FunctionResultContent(
-                c.CallId, Wrapped(c.Skill)))])
+            new ChatMessage(ChatRole.Assistant, [.. pairs.Select(p => p.Call)]),
+            new ChatMessage(ChatRole.Tool, [.. pairs.Select(p => new FunctionResultContent(p.Call.CallId, p.Result))])
         ];
     }
+
+    public static readonly string ReadToolName = FileSystemToolFeature.Callable(VfsFileReadTool.Name);
 
     // The framework's wrapper, captured off a real load on Microsoft.Agents.AI 1.20.0 and pinned
     // by a test against one. The empty resource and script elements are there because no skill

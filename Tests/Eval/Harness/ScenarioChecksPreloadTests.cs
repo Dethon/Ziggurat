@@ -3,6 +3,7 @@ using Domain.DTOs.Metrics;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Skills;
 using Shouldly;
+using Tests.Eval.Scenarios;
 using static Tests.Eval.Harness.EvalTools;
 
 namespace Tests.Eval.Harness;
@@ -134,6 +135,39 @@ public class ScenarioChecksPreloadTests
         calls[0].Result.ShouldBe(Recording.PreloadedResult);
         recording.IsPreload(calls[0]).ShouldBeTrue();
         recording.IsPreload(calls[1]).ShouldBeFalse();
+    }
+
+    // The index read the host made beside the skill is a call the model did not make, so it
+    // arrives as the preload did: sequenced below zero, and matching the read every home
+    // scenario requires.
+    [Fact]
+    public void AReadTheHostMade_IsAPreloadedReadCall()
+    {
+        var recording = new Recording();
+        recording.Publish(new SkillPreloadEvent
+        {
+            Outcome = SkillPreloadOutcomes.Preloaded,
+            Skills = ["home-assistant"],
+            Reads = ["/ha/setup-index.md"],
+            DurationMs = 380,
+            InputTokens = 2200,
+            Model = "jev-1.13.0"
+        });
+
+        var calls = recording.Calls;
+        calls.Select(c => c.ToolName).ShouldBe([LoadSkill, Read]);
+        calls[1].Sequence.ShouldBeLessThan(0);
+        calls[1].Sequence.ShouldBeGreaterThan(calls[0].Sequence);
+        calls[1].Arguments.ShouldBe("""{"filePath":"/ha/setup-index.md"}""");
+        calls[1].Result.ShouldBe(Recording.PreloadedResult);
+        recording.IsPreload(calls[1]).ShouldBeTrue();
+
+        // The read every home scenario requires is met by the host's, as the load is.
+        var scenario = RequiringTheLoad() with
+        {
+            Required = [CallExpectation.LoadsSkill("home-assistant"), HomeAssistantScenarios.ReadsTheSetupIndex]
+        };
+        ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
     }
 
     [Fact]

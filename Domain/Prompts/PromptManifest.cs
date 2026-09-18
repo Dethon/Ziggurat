@@ -269,7 +269,9 @@ public static class PromptManifest
             DescriptionBudget = 150,
             BodyBudget = 3_600,
             ServedBy = "mcp-homeassistant",
-            Claims = HomeAssistantSkill.Claims
+            Claims = HomeAssistantSkill.Claims,
+            // The body's first instruction, made by the host when the host loads the skill.
+            PreloadReads = [HomeAssistantSkill.SetupIndexPath]
         },
         new()
         {

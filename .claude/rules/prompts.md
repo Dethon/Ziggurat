@@ -53,6 +53,13 @@ these are the rules the next section lands on.
 - **A skill may already be in the conversation when a turn starts, and one that is, is loaded.**
   The `skills` section says so to the model; `SkillLoadTool.LoadedIn` says so to the preloader,
   reading every load off the history whoever made it. There is no second record of what is loaded.
+- **A preload makes the reads the body's first line orders.** `SkillDeclaration.PreloadReads`
+  names the files a body says to read in the same turn as the skill (the home skill: the setup
+  index), and a preload reads them through the session's own `file_read` and writes the pair
+  beside the load, so the model's first call after a head start is the action. A read that fails
+  is left out and the body tells the model to read. The event names the reads; the eval counts
+  each as a preloaded `file_read`, so the read every home scenario requires is met by either
+  reader.
 - **The description has two readers and one text.** Jev judges by `PromptSkill.Description`
   verbatim — never a second criteria text — so a red trigger claim has one fix, in the description,
   and a description that works on only one reader shows as a lopsided loader column on the eval

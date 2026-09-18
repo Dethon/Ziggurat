@@ -9,7 +9,8 @@ namespace Tests.Unit.Domain.Skills;
 // spelled once across the Domain, agent and monitor suites.
 internal static class TestSkills
 {
-    public static PromptSkill Skill(string name, string description, string? body = null, bool declared = true) =>
+    public static PromptSkill Skill(
+        string name, string description, string? body = null, bool declared = true, IReadOnlyList<string>? preloadReads = null) =>
         new SkillDeclaration
         {
             Name = name,
@@ -17,8 +18,15 @@ internal static class TestSkills
             DescriptionBudget = 100,
             BodyBudget = 1000,
             ServedBy = "test",
-            Declared = declared
+            Declared = declared,
+            PreloadReads = preloadReads ?? []
         }.Bind(description, body ?? $"# {name}\n\nDo the thing.");
+
+    // The home skill as it is shipped: its body says to read the index in the same turn, so a
+    // preload reads it too.
+    public static PromptSkill HomeWithIndex { get; } = Skill(
+        "home-assistant", "Lights, climate and media in the house.", "# Home\n\nRead the index, then call the house.",
+        preloadReads: ["/ha/setup-index.md"]);
 
     public static PromptSkill Home { get; } = Skill("home-assistant", "Lights, climate and media in the house.", "# Home\n\nCall the house.");
 

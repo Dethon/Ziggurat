@@ -1,5 +1,7 @@
+using System.Text.Json.Nodes;
 using Domain.Prompts;
 using Domain.Skills;
+using Domain.Tools.FileSystem;
 using Infrastructure.Agents.Skills;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -30,6 +32,25 @@ public class SkillsProviderPendingTests
         inserted[0].Contents.OfType<FunctionCallContent>().ShouldHaveSingleItem().Name.ShouldBe(SkillLoadTool.Name);
         inserted[1].Contents.OfType<FunctionResultContent>().ShouldHaveSingleItem().Result!.ToString().ShouldContain("Call the house.");
         preloader.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task APendingResultWithARead_InsertsTheReadBesideTheLoad()
+    {
+        var preloader = new Mock<ISkillPreloader>(MockBehavior.Strict);
+        var request = new ChatMessage(ChatRole.User, "enciende la luz");
+        var index = new JsonObject { ["content"] = "1: ## Current Home Assistant setup" };
+        SkillPreloadPending.Attach(request, Task.FromResult(new SkillPreload(SkillPreloadOutcome.Preloaded, [Home])
+        {
+            Reads = [new SkillPreloadRead(Home.Name, "/ha/setup-index.md", index)]
+        }));
+
+        var inserted = Inserted(await Provide(preloader.Object, request), request);
+
+        inserted.Select(m => m.Role.Value).ShouldBe(["assistant", "tool"]);
+        inserted[0].Contents.OfType<FunctionCallContent>().Select(c => c.Name)
+            .ShouldBe([SkillLoadTool.Name, FileSystemToolFeature.Callable(VfsFileReadTool.Name)]);
+        inserted[1].Contents.OfType<FunctionResultContent>().Last().Result.ShouldBeSameAs(index);
     }
 
     [Theory]

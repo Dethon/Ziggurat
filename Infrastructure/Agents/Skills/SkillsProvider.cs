@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.Contracts;
 using Domain.Extensions;
 using Domain.Prompts;
 using Domain.Skills;
@@ -36,6 +37,7 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
 
     private readonly Func<AgentSession?, IReadOnlyList<PromptSkill>> _skillsOf;
     private readonly Func<AgentSession?, IReadOnlyList<ChatMessage>> _historyOf;
+    private readonly Func<AgentSession?, IVirtualFileSystemRegistry?> _registryOf;
     private readonly ISkillPreloader? _preloader;
     private readonly AgentSkillsProvider _inner;
 
@@ -43,14 +45,18 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     // that does not ask for it — offers the list and the load tool and nothing arrives early. The
     // history reader is how "already loaded" is answered: the framework hands a context provider
     // the caller's messages alone, and the history provider has already read the thread this
-    // turn, so this reads what it read rather than asking Redis again.
+    // turn, so this reads what it read rather than asking Redis again. The registry is how a
+    // preload makes the reads a skill declares, over the session's own mounts; absent, it makes
+    // none.
     public SkillsProvider(
         Func<AgentSession?, IReadOnlyList<PromptSkill>> skillsOf,
         ISkillPreloader? preloader = null,
-        Func<AgentSession?, IReadOnlyList<ChatMessage>>? historyOf = null)
+        Func<AgentSession?, IReadOnlyList<ChatMessage>>? historyOf = null,
+        Func<AgentSession?, IVirtualFileSystemRegistry?>? registryOf = null)
     {
         _skillsOf = skillsOf;
         _historyOf = historyOf ?? (_ => []);
+        _registryOf = registryOf ?? (_ => null);
         _preloader = preloader;
         _inner = new AgentSkillsProvider(
             new SessionSkillsSource(skillsOf),
@@ -136,7 +142,8 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
                     new SkillPreloadRequest(request.Text, skills, _historyOf(context.Session).Concat(requestMessages))
                     {
                         ConfigPatchModel = request.GetConfigPatch()?.Model,
-                        AgentId = context.Agent.Name
+                        AgentId = context.Agent.Name,
+                        Reader = SkillPreloadReads.ReaderOver(_registryOf(context.Session))
                     },
                     ct);
         }
@@ -147,7 +154,7 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
 
         // One prefix per turn, so two skills' call ids differ from a later turn's.
         return preload.Skills.Count > 0
-            ? SkillLoadTool.AsLoaded(preload.Skills, $"preload-{Guid.NewGuid().ToString("N")[..8]}")
+            ? SkillLoadTool.AsPreloaded(preload, $"preload-{Guid.NewGuid().ToString("N")[..8]}")
             : null;
     }
 #pragma warning restore MAAI001

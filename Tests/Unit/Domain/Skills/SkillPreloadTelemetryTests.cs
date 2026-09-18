@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using Domain.Prompts;
@@ -20,6 +21,24 @@ public class SkillPreloadTelemetryTests
             ChannelId = "voice",
             ConversationId = "conv-1"
         };
+
+    [Fact]
+    public async Task APreloadWithARead_NamesThePathOnTheEvent()
+    {
+        var published = new RecordingMetricsPublisher();
+        var preloader = new SkillPreloader(
+            new FixedJudge(JudgeAnswers.Sure("home-assistant")), new SkillPreloadSettings(), new FakeTimeProvider(), published);
+        var request = new SkillPreloadRequest("enciende la luz", [TestSkills.HomeWithIndex], [])
+        {
+            Reader = (_, _) => Task.FromResult<JsonNode?>(new JsonObject { ["content"] = "1: index" })
+        };
+
+        await preloader.PreloadAsync(request, CancellationToken.None);
+
+        var evt = published.Published.OfType<SkillPreloadEvent>().ShouldHaveSingleItem();
+        evt.Outcome.ShouldBe(SkillPreloadOutcomes.Preloaded);
+        evt.Reads.ShouldBe(["/ha/setup-index.md"]);
+    }
 
     [Theory]
     [InlineData(AbsenceReason.Deadline, SkillPreloadOutcomes.Deadline)]

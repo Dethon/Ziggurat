@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using Domain.Prompts;
+using Domain.Tools;
 
 namespace Domain.Skills;
 
@@ -70,7 +71,47 @@ public sealed class SkillPreloader(
             _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome.GetType().Name, "Unknown judgment outcome")
         };
 
+        if (preload.Outcome == SkillPreloadOutcome.Preloaded && request.Reader is not null)
+        {
+            preload = preload with { Reads = await ReadAsync(preload.Skills, request.Reader, ct) };
+        }
+
         return Published(request, preload);
+    }
+
+    // The reads the preloaded skills declare, made now that the judge has answered — on the
+    // turn's token rather than the judge's deadline, because a read is the mount rendering what
+    // it holds, not a round trip to be raced. A read that throws or answers an error envelope is
+    // left out: the body still tells the model to read, and an error the model never asked for
+    // would sit in the conversation as if it had. Never a lost preload.
+    private static async Task<IReadOnlyList<SkillPreloadRead>> ReadAsync(
+        IReadOnlyList<PromptSkill> skills, PreloadFileReader reader, CancellationToken ct)
+    {
+        var reads = new List<SkillPreloadRead>();
+        foreach (var skill in skills)
+        {
+            foreach (var path in skill.Declaration.PreloadReads)
+            {
+                JsonNode? result;
+                try
+                {
+                    result = await reader(path, ct);
+                }
+                catch (Exception) when (!ct.IsCancellationRequested)
+                {
+                    continue;
+                }
+
+                if (result is null || ToolErrorResult.IsErrorEnvelope(result))
+                {
+                    continue;
+                }
+
+                reads.Add(new SkillPreloadRead(skill.Name, path, result));
+            }
+        }
+
+        return reads;
     }
 
     // One event per judgment, and none where no question was worth asking: an unconfigured judge
@@ -93,6 +134,7 @@ public sealed class SkillPreloader(
         Channel = request.ChannelId,
         Outcome = WireOutcome(preload.Outcome),
         Skills = [.. preload.Skills.Select(s => s.Name)],
+        Reads = [.. preload.Reads.Select(r => r.Path)],
         Choice = preload.Judgment?.Choice,
         ChoiceConfidence = preload.Judgment?.ChoiceConfidence,
         Needs = preload.Judgment?.Needs,

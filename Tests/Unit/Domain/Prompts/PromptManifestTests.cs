@@ -126,4 +126,21 @@ public class PromptManifestTests
             PromptManifest.Find(skill.Name).ShouldBeNull($"'{skill.Name}' is both a section and a skill");
         }
     }
+
+    // The home skill's body says the index is read in the same turn, so a preload of it reads
+    // the index too; the declaration is where that is said to the preloader.
+    [Fact]
+    public void TheHomeSkill_DeclaresTheSetupIndexAsItsPreloadRead()
+    {
+        PromptManifest.FindSkill(HomeAssistantSkill.Name)!.PreloadReads.ShouldBe([HomeAssistantSkill.SetupIndexPath]);
+        HomeAssistantSkill.SetupIndexPath.ShouldBe("/ha/setup-index.md");
+    }
+
+    [Fact]
+    public void EveryOtherSkill_DeclaresNoPreloadRead()
+    {
+        PromptManifest.Skills
+            .Where(s => s.Name != HomeAssistantSkill.Name)
+            .ShouldAllBe(s => s.PreloadReads.Count == 0);
+    }
 }

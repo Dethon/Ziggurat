@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
+using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Skills;
 using Tests.Eval.Fixtures;
@@ -180,16 +181,28 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
                     _spends.Add(Spend.OfPreload(preload));
                     PreloadModel = preload.Model ?? PreloadModel;
                     _preloadOutcomes[preload.Outcome] = _preloadOutcomes.GetValueOrDefault(preload.Outcome) + 1;
+                    // The loads first, then the reads the host made beside them, all below zero
+                    // and in the order the host wrote them.
+                    var count = preload.Skills.Count + preload.Reads.Count;
                     var loads = preload.Skills
                         .Select((skill, index) => new ToolInvocation
                         {
-                            Sequence = index - preload.Skills.Count,
+                            Sequence = index - count,
                             ToolName = EvalTools.LoadSkill,
                             Arguments = JsonSerializer.Serialize(
                                 new Dictionary<string, string> { [SkillsProvider.SkillNameParameter] = skill }),
                             Result = PreloadedResult,
                             Outcome = ToolInvocationOutcome.Completed
                         })
+                        .Concat(preload.Reads.Select((path, index) => new ToolInvocation
+                        {
+                            Sequence = index + preload.Skills.Count - count,
+                            ToolName = EvalTools.Read,
+                            Arguments = JsonSerializer.Serialize(
+                                new Dictionary<string, string> { [VfsFileReadTool.FilePathParameter] = path }),
+                            Result = PreloadedResult,
+                            Outcome = ToolInvocationOutcome.Completed
+                        }))
                         .ToList();
                     _preloads.AddRange(loads);
                     _calls.AddRange(loads);

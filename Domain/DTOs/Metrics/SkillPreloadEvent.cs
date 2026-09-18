@@ -13,6 +13,9 @@ public record SkillPreloadEvent : MetricEvent
 
     public IReadOnlyList<string> Skills { get; init; } = [];
 
+    // The files read beside the skills, by path: what the model was spared asking for.
+    public IReadOnlyList<string> Reads { get; init; } = [];
+
     public string? Choice { get; init; }
 
     public double? ChoiceConfidence { get; init; }

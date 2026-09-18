@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Judgments;
 using Domain.Prompts;
 using Domain.Skills;
@@ -228,6 +229,100 @@ public class SkillPreloaderTests
 
         preload.Skills.ShouldBeEmpty();
         preload.Outcome.ShouldBe(SkillPreloadOutcome.Abstained);
+    }
+
+    // A skill's body can say "read this file in the same turn as me"; a preload does that read
+    // too, through the reader the request carries, so the model's first call is the action.
+    [Fact]
+    public async Task Preload_ASkillDeclaringAReadInTheSameTurn_ReadsItThroughTheRequestsReader()
+    {
+        var judge = new ScriptedJudge(_ => JudgeAnswers.Sure("home-assistant"));
+        var index = new JsonObject { ["filePath"] = "/ha/setup-index.md", ["content"] = "1: ## Current Home Assistant setup" };
+        var asked = new List<string>();
+        var request = Request("enciende la luz del salón", [TestSkills.HomeWithIndex, Timers]) with
+        {
+            Reader = (path, _) =>
+            {
+                asked.Add(path);
+                return Task.FromResult<JsonNode?>(index);
+            }
+        };
+
+        var preload = await Preloader(judge).PreloadAsync(request, CancellationToken.None);
+
+        preload.Outcome.ShouldBe(SkillPreloadOutcome.Preloaded);
+        asked.ShouldBe(["/ha/setup-index.md"]);
+        var read = preload.Reads.ShouldHaveSingleItem();
+        read.Skill.ShouldBe("home-assistant");
+        read.Path.ShouldBe("/ha/setup-index.md");
+        read.Result.ShouldBeSameAs(index);
+    }
+
+    [Fact]
+    public async Task Preload_ASkillDeclaringNoRead_AsksTheReaderNothing()
+    {
+        var judge = new ScriptedJudge(_ => JudgeAnswers.Sure("countdown-timers"));
+        var asked = 0;
+        var request = Request("pon un temporizador", [TestSkills.HomeWithIndex, Timers]) with
+        {
+            Reader = (_, _) =>
+            {
+                asked++;
+                return Task.FromResult<JsonNode?>(new JsonObject());
+            }
+        };
+
+        var preload = await Preloader(judge).PreloadAsync(request, CancellationToken.None);
+
+        preload.Skills.Select(s => s.Name).ShouldBe(["countdown-timers"]);
+        preload.Reads.ShouldBeEmpty();
+        asked.ShouldBe(0);
+    }
+
+    // A read that fails, refuses or has nowhere to run is the skill alone: the body still tells
+    // the model to read, and it will. Never a lost preload, never an error envelope in the
+    // conversation as if the model had asked for it.
+    [Fact]
+    public async Task Preload_AReaderThatThrows_PreloadsTheSkillWithoutTheRead()
+    {
+        var judge = new ScriptedJudge(_ => JudgeAnswers.Sure("home-assistant"));
+        var request = Request("enciende la luz", [TestSkills.HomeWithIndex]) with
+        {
+            Reader = (_, _) => throw new InvalidOperationException("mount is down")
+        };
+
+        var preload = await Preloader(judge).PreloadAsync(request, CancellationToken.None);
+
+        preload.Outcome.ShouldBe(SkillPreloadOutcome.Preloaded);
+        preload.Skills.Select(s => s.Name).ShouldBe(["home-assistant"]);
+        preload.Reads.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Preload_AReaderAnsweringAnErrorEnvelope_PreloadsTheSkillWithoutTheRead()
+    {
+        var judge = new ScriptedJudge(_ => JudgeAnswers.Sure("home-assistant"));
+        var refused = new JsonObject { ["ok"] = false, ["errorCode"] = "not_found", ["message"] = "no such file" };
+        var request = Request("enciende la luz", [TestSkills.HomeWithIndex]) with
+        {
+            Reader = (_, _) => Task.FromResult<JsonNode?>(refused)
+        };
+
+        var preload = await Preloader(judge).PreloadAsync(request, CancellationToken.None);
+
+        preload.Outcome.ShouldBe(SkillPreloadOutcome.Preloaded);
+        preload.Reads.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Preload_WithoutAReader_PreloadsTheSkillWithoutTheRead()
+    {
+        var judge = new ScriptedJudge(_ => JudgeAnswers.Sure("home-assistant"));
+
+        var preload = await Preloader(judge).PreloadAsync(Request("enciende la luz", [TestSkills.HomeWithIndex]), CancellationToken.None);
+
+        preload.Outcome.ShouldBe(SkillPreloadOutcome.Preloaded);
+        preload.Reads.ShouldBeEmpty();
     }
 
     private static SkillPreloader Preloader(IJudge judge, SkillPreloadSettings? settings = null) =>

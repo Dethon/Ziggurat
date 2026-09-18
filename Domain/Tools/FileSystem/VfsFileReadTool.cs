@@ -10,6 +10,10 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
     public const string Key = "read";
     public const string Name = "file_read";
 
+    // The argument's wire name, as the framework derives it from RunAsync's parameter: a call the
+    // host fabricates for a preload spells it from here so the two cannot drift apart.
+    public const string FilePathParameter = "filePath";
+
     public const string ToolDescription = """
         Reads a file — text or an image.
         A text file returns its content with line numbers, formatted as "1: first line\n2: second line\n..." with trailing metadata. Large files are truncated — use offset and limit for pagination.

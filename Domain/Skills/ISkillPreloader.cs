@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Prompts;
 using Microsoft.Extensions.AI;
 
@@ -30,7 +31,15 @@ public sealed record SkillPreloadRequest(
     public string? ChannelId { get; init; }
 
     public string? ConversationId { get; init; }
+
+    // How a preload makes the reads a skill declares (SkillDeclaration.PreloadReads): the turn's
+    // own file_read, over the session's mounts, answering what the tool would have answered the
+    // model. Null where there is no filesystem to read — a host without mounts, a session not
+    // yet built — and the preload is then the skills alone.
+    public PreloadFileReader? Reader { get; init; }
 }
+
+public delegate Task<JsonNode?> PreloadFileReader(string path, CancellationToken ct);
 
 public sealed record SkillPreload(
     SkillPreloadOutcome Outcome,
@@ -41,7 +50,14 @@ public sealed record SkillPreload(
     public static readonly SkillPreload NotAsked = new(SkillPreloadOutcome.NotAsked, []);
 
     public static readonly SkillPreload SkippedLemonade = new(SkillPreloadOutcome.SkippedLemonade, []);
+
+    // The reads made beside the skills, in the order the skills declared them. Only reads that
+    // answered: a read that failed is not here, and the body tells the model to make it.
+    public IReadOnlyList<SkillPreloadRead> Reads { get; init; } = [];
 }
+
+// One file the host read for a preloaded skill, with what the read tool answered.
+public sealed record SkillPreloadRead(string Skill, string Path, JsonNode Result);
 
 // What the judge said, kept whole for the telemetry and the eval's scorecard.
 public sealed record SkillJudgment(
