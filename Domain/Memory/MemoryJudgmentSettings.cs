@@ -34,8 +34,8 @@ public sealed record MemoryJudgmentSettings
         public double NotAQuestion { get; [UsedImplicitly] init; } = 0.5;
     }
 
-    // A cosine cluster larger than this is judged on the members nearest its centroid; the rest
-    // wait for a later pass. Twelve is 66 pairs, one request.
+    // A cosine cluster larger than this is judged in chunks of this size, nearest the centroid
+    // first, all in the same pass. Twelve is 66 pairs, one request.
     public sealed record PairSettings
     {
         public int MaxClusterMemories { get; [UsedImplicitly] init; } = 12;

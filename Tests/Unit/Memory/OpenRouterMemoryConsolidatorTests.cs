@@ -91,26 +91,46 @@ public class OpenRouterMemoryConsolidatorTests
         consolidation.MergeableGroups.ShouldHaveSingleItem().Count.ShouldBe(4);
     }
 
+    // A cluster over the cap is judged in chunks of the cap, nearest the centroid first, all in
+    // the same pass: every member is judged, no request carries more than 66 pairs, and links
+    // are only ever within a chunk.
     [Fact]
-    public async Task ConsolidateAsync_AClusterOverTheCap_IsJudgedOnTheTwelveNearestTheCentroid()
+    public async Task ConsolidateAsync_AClusterOverTheCap_IsJudgedInCentroidOrderedChunks_AllInOnePass()
     {
         var prompts = CapturingPrompts();
         var judge = new StubJudge(request => Relations(request.Questions.Keys.Select(k => (k, "same")).ToArray()));
         var consolidator = Consolidator(judge);
 
         // Twelve sit on the axis, eighteen a little off it on either side: one cosine cluster
-        // whose centroid is the axis, so the twelve are the nearest.
+        // whose centroid is the axis, so the twelve are the nearest and go first.
         var near = Enumerable.Range(0, 12).Select(i => CreateMemory($"near_{i}", $"near {i}", embedding: [1.0f, 0.0f]));
         var far = Enumerable.Range(0, 18).Select(i => CreateMemory($"far_{i}", $"far {i}", embedding: [0.9f, i % 2 == 0 ? 0.2f : -0.2f]));
 
-        await consolidator.ConsolidateAsync([.. near, .. far], CancellationToken.None);
+        var consolidation = await consolidator.ConsolidateAsync([.. near, .. far], CancellationToken.None);
 
-        var request = judge.Requests.ShouldHaveSingleItem();
-        request.State["memories"]!.AsArray().Count.ShouldBe(12);
-        request.Questions.Count.ShouldBe(66);
-        var prompt = prompts.ShouldHaveSingleItem();
-        Enumerable.Range(0, 12).ShouldAllBe(i => prompt.Contains($"near_{i}"));
-        Enumerable.Range(0, 18).ShouldAllBe(i => !prompt.Contains($"far_{i}"));
+        judge.Requests.Select(r => r.State["memories"]!.AsArray().Count).ShouldBe([12, 12, 6]);
+        judge.Requests[0].Questions.Count.ShouldBe(66);
+        judge.Requests[0].State["memories"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldAllBe(text => text.StartsWith("near"));
+
+        // Three chunks, each linked whole by the stub, so three merge-model calls and three groups.
+        prompts.Count.ShouldBe(3);
+        Enumerable.Range(0, 12).ShouldAllBe(i => prompts[0].Contains($"[near_{i}]"));
+        prompts.SelectMany(p => Enumerable.Range(0, 18).Where(i => p.Contains($"[far_{i}]"))).Count().ShouldBe(18);
+        consolidation.MergeableGroups.Select(g => g.Count).ShouldBe([12, 12, 6]);
+    }
+
+    [Fact]
+    public async Task ConsolidateAsync_AClusterOverTheCap_WithTheJudgeAbsent_GoesChunkByChunkAsCosineMadeIt()
+    {
+        var prompts = CapturingPrompts();
+        var consolidator = Consolidator(StubJudge.Absent(AbsenceReason.Deadline));
+
+        var memories = Enumerable.Range(0, 15).Select(i => CreateMemory($"m_{i}", $"m {i}", embedding: [1.0f, i * 0.01f])).ToArray();
+
+        var consolidation = await consolidator.ConsolidateAsync(memories, CancellationToken.None);
+
+        prompts.Count.ShouldBe(2);
+        consolidation.MergeableGroups.Select(g => g.Count).ShouldBe([12, 3]);
     }
 
     [Fact]

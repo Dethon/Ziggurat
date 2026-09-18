@@ -108,8 +108,10 @@ with the instruction rule, kept all 11 keepers; the pair relation made the right
 
 - In `OpenRouterMemoryConsolidator`, after cosine clustering. One request per cluster: state is
   the cluster's memories by index, one choice per pair (`same`, `updates`, `distinct`,
-  `unrelated`). A cluster over `dreaming.maxClusterMemories` (12 → 66 pairs) is judged on its 12
-  most similar to the centroid; the rest wait for a later pass.
+  `unrelated`). A cluster over `pairs.maxClusterMemories` (12 → 66 pairs) is judged in chunks of
+  12, nearest the centroid first, all in the same pass (ticket 07, 2026-09-18; it was "the rest
+  wait for a later pass", and a night with no merges ends the loop, so the rest could wait
+  indefinitely).
 - Links are `same` and `updates`. The connected components of the link graph, singletons dropped,
   are what the merge model is called with.
 - `MemoryDreamingService` applies a `Merge` or `SupersedeOlder` only if every source is in one
@@ -154,3 +156,11 @@ the client's default timeout, no in-turn budget.
 - Shadow mode. A and B act from the first deploy.
 - Replacing cosine clustering, or the merge model writing merged text.
 - Recall. ADR 0019 stands: nothing hosted on that path.
+
+## Comments
+
+- 2026-09-18 — Shipped on branch `jev`, tickets 01–07. Refused merges are published on
+  `MemoryDreamingEvent.RefusedMerges` rather than on a judgment event, because a refusal is not
+  a Jev call. Two pairs are recorded as allowed to fail toward "not linked" (Laura, light
+  novels); an alternative `same`/`distinct` wording moved neither. The week-after re-read of
+  the bars is pending deploy.

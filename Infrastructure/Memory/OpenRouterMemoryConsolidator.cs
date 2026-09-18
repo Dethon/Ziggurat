@@ -47,14 +47,14 @@ public class OpenRouterMemoryConsolidator(
         var decisions = new List<MergeDecision>();
         var groups = new List<IReadOnlySet<string>>();
 
-        foreach (var cluster in BuildClusters(memories))
+        // Cosine proposes; the pair judgment disposes. Only memories it links — the same fact,
+        // or one updating the other — reach the merge model together, and only those groups may
+        // later be merged. Unanswered, a chunk goes as cosine made it and its decisions are
+        // applied unvetoed: today's behaviour, by decision.
+        foreach (var chunk in BuildClusters(memories).SelectMany(cluster => Chunks(cluster, judge.MaxClusterMemories)))
         {
-            // Cosine proposes; the pair judgment disposes. Only memories it links — the same
-            // fact, or one updating the other — reach the merge model together, and only those
-            // groups may later be merged. Unanswered, the cluster goes as cosine made it and its
-            // decisions are applied unvetoed: today's behaviour, by decision.
-            var verdict = await judge.RelateAsync(NearestToCentroid(cluster, judge.MaxClusterMemories), Context(cluster), ct);
-            var groupsToMerge = verdict.Answered ? verdict.Linked : [cluster];
+            var verdict = await judge.RelateAsync(chunk, Context(chunk), ct);
+            var groupsToMerge = verdict.Answered ? verdict.Linked : [chunk];
 
             foreach (var group in groupsToMerge)
             {
@@ -68,19 +68,22 @@ public class OpenRouterMemoryConsolidator(
 
     private static MemoryJudgmentContext Context(IReadOnlyList<MemoryEntry> cluster) => new(cluster[0].UserId);
 
-    // A cluster over the cap is judged on its members nearest the centroid; the rest wait for a
-    // later pass. A cluster with no embeddings has no centroid and is cut in its own order.
-    private static IReadOnlyList<MemoryEntry> NearestToCentroid(IReadOnlyList<MemoryEntry> cluster, int cap)
+    // A cluster over the cap is judged in chunks of the cap, all in this pass, so no request
+    // carries more than the cap's pairs and no member waits for another night. The chunks are
+    // cut in order of distance to the centroid, so the tightest go together; a link across two
+    // chunks is missed tonight and found once the merges have shrunk the cluster. A cluster with
+    // no embeddings has no centroid and is cut in its own order.
+    private static IEnumerable<IReadOnlyList<MemoryEntry>> Chunks(IReadOnlyList<MemoryEntry> cluster, int cap)
     {
         if (cluster.Count <= cap)
         {
-            return cluster;
+            return [cluster];
         }
 
         var embedded = cluster.Where(m => m.Embedding is { Length: > 0 }).ToList();
         if (embedded.Count == 0)
         {
-            return cluster.Take(cap).ToList();
+            return cluster.Chunk(cap).Select(chunk => (IReadOnlyList<MemoryEntry>)chunk);
         }
 
         // One width for every vector: the index verification refused to start otherwise.
@@ -90,8 +93,8 @@ public class OpenRouterMemoryConsolidator(
 
         return embedded
             .OrderByDescending(m => CosineSimilarity(m.Embedding!, centroid))
-            .Take(cap)
-            .ToList();
+            .Chunk(cap)
+            .Select(chunk => (IReadOnlyList<MemoryEntry>)chunk);
     }
 
     private async Task<IReadOnlyList<MergeDecision>> ConsolidateClusterAsync(
