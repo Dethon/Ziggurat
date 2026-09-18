@@ -10,6 +10,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
+using Tests.Unit.Domain.Skills;
 
 namespace Tests.Unit.Domain.Monitor;
 
@@ -18,14 +19,7 @@ namespace Tests.Unit.Domain.Monitor;
 // the overlap, that nothing about the preload can fail the build, and that a command asks nothing.
 public class ChatMonitorSkillPreloadTests
 {
-    private static readonly PromptSkill Home = new SkillDeclaration
-    {
-        Name = "home-assistant",
-        Description = "Lights, climate and media.",
-        DescriptionBudget = 100,
-        BodyBudget = 1000,
-        ServedBy = "test"
-    }.Bind("Lights, climate and media.", "# Home");
+    private static readonly PromptSkill Home = TestSkills.Home;
 
     private static readonly SkillPreloadSettings Settings = new() { DeadlineMs = 600 };
 
@@ -59,6 +53,29 @@ public class ChatMonitorSkillPreloadTests
         // Read off the clock after one advance, so it is the recall's span, not the judge's: what
         // it proves is that the judgment ended inside the recall's window.
         preload.Latency.ShouldNotBeNull().ShouldBeLessThanOrEqualTo(recallSpan);
+    }
+
+    // A group's first turn builds its message while the warmup is still dialling the servers,
+    // and the skills arrive with the servers: a judgment taken before then would be over nothing.
+    [Fact]
+    public async Task OnAGroupsFirstTurn_TheJudgmentWaitsForTheWarmup_SoItIsOverTheSessionsSkills()
+    {
+        var warmed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var agent = new FakeAiAgent { WarmupGate = () => warmed.Task };
+        agent.Skills = [Home];
+        var judge = new DelayingJudge(new ArmedClock(), TimeSpan.Zero, Sure(Home.Name));
+        // Recall runs inside the message build, so releasing the warmup from it puts the build
+        // strictly before the warmup's end — the order the first turn of a live group has.
+        var recall = new ReleasingRecallHook(warmed);
+        var channel = MonitorTestMocks.CreateChannel(messages: MonitorTestMocks.CreateChannelMessage(content: "enciende la luz"));
+        var monitor = Monitor(agent, channel, recall, new SkillPreloader(judge, Settings, TimeProvider.System));
+
+        await monitor.Monitor(CancellationToken.None);
+
+        var received = agent.ReceivedMessages.ShouldHaveSingleItem().ShouldHaveSingleItem();
+        var preload = await SkillPreloadPending.TryTake(received).ShouldNotBeNull();
+        preload.Outcome.ShouldBe(SkillPreloadOutcome.Preloaded);
+        preload.Skills.Select(s => s.Name).ShouldBe([Home.Name]);
     }
 
     [Fact]
@@ -152,15 +169,7 @@ public class ChatMonitorSkillPreloadTests
             Mock.Of<ILogger<ChatMonitor>>(),
             skillPreloader: preloader);
 
-    private static JudgmentOutcome Sure(string skill) =>
-        new JudgmentOutcome.Answered(new Judgment(
-            "jev-test",
-            new Dictionary<string, JudgmentAnswer>
-            {
-                [SkillPreloader.ChoiceQuestionId] = new ChoiceAnswer(skill, 0.99, new Dictionary<string, double> { [skill] = 0.99 }),
-                [SkillPreloader.NeedsQuestionId(skill)] = new NoulAnswer(0.98)
-            },
-            new JudgmentUsage(2100, 40)));
+    private static JudgmentOutcome Sure(string skill) => JudgeAnswers.Sure(skill);
 
     private sealed class DelayingJudge(TimeProvider clock, TimeSpan delay, JudgmentOutcome answer) : IJudge
     {
@@ -182,6 +191,16 @@ public class ChatMonitorSkillPreloadTests
             }
 
             return answer;
+        }
+    }
+
+    private sealed class ReleasingRecallHook(TaskCompletionSource release) : IMemoryRecallHook
+    {
+        public Task EnrichAsync(
+            ChatMessage message, string userId, string? conversationId, string? agentId, AgentSession thread, CancellationToken ct)
+        {
+            release.TrySetResult();
+            return Task.CompletedTask;
         }
     }
 

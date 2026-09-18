@@ -6,6 +6,7 @@ using Microsoft.Extensions.AI;
 using Moq;
 using Shouldly;
 using Tests.Unit.Domain;
+using Tests.Unit.Domain.Skills;
 
 namespace Tests.Unit.Infrastructure.Agents.Skills;
 
@@ -13,14 +14,7 @@ namespace Tests.Unit.Infrastructure.Agents.Skills;
 // again, and whatever that result says is what is inserted.
 public class SkillsProviderPendingTests
 {
-    private static readonly PromptSkill Home = new SkillDeclaration
-    {
-        Name = "home-assistant",
-        Description = "Lights, climate and media.",
-        DescriptionBudget = 100,
-        BodyBudget = 1000,
-        ServedBy = "test"
-    }.Bind("Lights, climate and media.", "# Home\n\nCall the house.");
+    private static readonly PromptSkill Home = TestSkills.Home;
 
     [Fact]
     public async Task AMessageCarryingAPendingResult_CausesNoSecondJudgment_AndInsertsWhatItSays()

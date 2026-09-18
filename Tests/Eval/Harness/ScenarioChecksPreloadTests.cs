@@ -11,7 +11,7 @@ namespace Tests.Eval.Harness;
 // description loaded the skill, the scorecard says which, and a preload the scenario did not
 // permit is as red as a load it did not permit. Deterministic — the recording is built by hand
 // from the same observations the deployment publishes.
-public class PreloadChecksTests
+public class ScenarioChecksPreloadTests
 {
     private const string Timers = "countdown-timers";
 

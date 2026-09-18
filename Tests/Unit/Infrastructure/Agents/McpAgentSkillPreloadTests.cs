@@ -15,6 +15,7 @@ using ModelContextProtocol.Server;
 using Moq;
 using Shouldly;
 using Tests.Integration.McpServers;
+using Tests.Unit.Domain.Skills;
 using Tests.Unit.Infrastructure.Helpers;
 
 namespace Tests.Unit.Infrastructure.Agents;
@@ -29,8 +30,8 @@ public class McpAgentSkillPreloadTests
     private const string Home = "home-assistant";
     private const string Timers = "countdown-timers";
 
-    private static readonly SkillText HomeText = new(Home, "Lights, climate and media in the house.", "# Home\n\nCall the house.");
-    private static readonly SkillText TimersText = new(Timers, "Countdowns under /timers.", "# Timers\n\nWrite timer.json.");
+    private static readonly SkillText HomeText = new(Home, TestSkills.Home.Description, TestSkills.Home.Body);
+    private static readonly SkillText TimersText = new(Timers, TestSkills.Timers.Description, TestSkills.Timers.Body);
 
     private static readonly SkillPreloadSettings Settings = new() { DeadlineMs = 600 };
 
@@ -264,21 +265,10 @@ public class McpAgentSkillPreloadTests
 
     private static SkillPreloader Preloader(IJudge judge) => new(judge, Settings, TimeProvider.System);
 
-    private static JudgmentOutcome Sure(string skill) => Answered(skill, 0.99, (skill, 0.98));
+    private static JudgmentOutcome Sure(string skill) => JudgeAnswers.Sure(skill);
 
-    private static JudgmentOutcome Answered(string choice, double confidence, params (string Skill, double P)[] needs)
-    {
-        var answers = new Dictionary<string, JudgmentAnswer>
-        {
-            [SkillPreloader.ChoiceQuestionId] = new ChoiceAnswer(choice, confidence, new Dictionary<string, double> { [choice] = confidence })
-        };
-        foreach (var (skill, p) in needs)
-        {
-            answers[SkillPreloader.NeedsQuestionId(skill)] = new NoulAnswer(p);
-        }
-
-        return new JudgmentOutcome.Answered(new Judgment("jev-test", answers, new JudgmentUsage(2100, 40)));
-    }
+    private static JudgmentOutcome Answered(string choice, double confidence, params (string Skill, double P)[] needs) =>
+        JudgeAnswers.Answered(choice, confidence, needs);
 
     // A thread store that keeps what the history provider appends, keyed as it keys it.
     private static (IThreadStateStore Store, Dictionary<string, List<ChatMessage>> Persisted) InMemoryStore()
@@ -341,23 +331,5 @@ public class McpAgentSkillPreloadTests
         }
 
         public object? GetService(Type serviceType, object? serviceKey = null) => null;
-    }
-
-    private sealed class ScriptedJudge(Func<JudgmentRequest, CancellationToken, Task<JudgmentOutcome>> answer) : IJudge
-    {
-        public ScriptedJudge(Func<JudgmentRequest, JudgmentOutcome> answer)
-            : this((request, _) => Task.FromResult(answer(request)))
-        {
-        }
-
-        public Func<JudgmentRequest, JudgmentOutcome>? Answer { get; set; }
-
-        public List<JudgmentRequest> Asked { get; } = [];
-
-        public Task<JudgmentOutcome> JudgeAsync(JudgmentRequest request, CancellationToken deadline)
-        {
-            Asked.Add(request);
-            return Answer is { } scripted ? Task.FromResult(scripted(request)) : answer(request, deadline);
-        }
     }
 }

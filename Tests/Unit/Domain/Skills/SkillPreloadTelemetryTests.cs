@@ -11,14 +11,7 @@ namespace Tests.Unit.Domain.Skills;
 // question was worth asking.
 public class SkillPreloadTelemetryTests
 {
-    private static readonly PromptSkill Home = new SkillDeclaration
-    {
-        Name = "home-assistant",
-        Description = "Lights, climate and media.",
-        DescriptionBudget = 100,
-        BodyBudget = 1000,
-        ServedBy = "test"
-    }.Bind("Lights, climate and media.", "# Home");
+    private static readonly PromptSkill Home = TestSkills.Home;
 
     private static SkillPreloadRequest Request(string text = "enciende la luz") =>
         new(text, [Home], [])
@@ -122,13 +115,11 @@ public class SkillPreloadTelemetryTests
     }
 
     [Fact]
-    public void EveryOutcomeButNotAsked_HasAWireSpelling()
-    {
-        foreach (var outcome in Enum.GetValues<SkillPreloadOutcome>().Where(o => o != SkillPreloadOutcome.NotAsked))
-        {
-            SkillPreloader.WireOutcome(outcome).ShouldNotBeNullOrWhiteSpace();
-        }
-    }
+    public void EveryOutcomeButNotAsked_HasAWireSpelling() =>
+        Enum.GetValues<SkillPreloadOutcome>()
+            .Where(o => o != SkillPreloadOutcome.NotAsked)
+            .Select(SkillPreloader.WireOutcome)
+            .ShouldAllBe(spelling => !string.IsNullOrWhiteSpace(spelling));
 
     private sealed class FixedJudge(JudgmentOutcome outcome) : IJudge
     {

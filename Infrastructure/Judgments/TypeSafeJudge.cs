@@ -28,7 +28,8 @@ public sealed class TypeSafeJudge : IJudge
     private readonly HttpClient _httpClient;
     private readonly TypeSafeOptions _options;
     private readonly ILogger _logger;
-    private int _configurationErrorLogged;
+    // Each setting's rejection is logged once, so a key fixed and a model still wrong is heard.
+    private readonly HashSet<string> _configurationErrorsLogged = [];
 
     private TypeSafeJudge(HttpClient httpClient, TypeSafeOptions options, ILogger logger)
     {
@@ -68,8 +69,10 @@ public sealed class TypeSafeJudge : IJudge
             // The caller's deadline or the client's own timeout — either way, time ran out.
             return new JudgmentOutcome.Absent(AbsenceReason.Deadline);
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or IOException)
+        catch (Exception ex)
         {
+            // Whatever the transport or the body did — a cut connection, a body that is not
+            // JSON, a content type the reader refuses — is the service's failure, not the turn's.
             _logger.LogWarning(ex, "TypeSafe could not be reached or did not answer a judgment");
             return new JudgmentOutcome.Absent(AbsenceReason.Error);
         }
@@ -77,7 +80,13 @@ public sealed class TypeSafeJudge : IJudge
 
     private JudgmentOutcome Misconfigured(string setting, HttpStatusCode status)
     {
-        if (Interlocked.Exchange(ref _configurationErrorLogged, 1) == 0)
+        bool first;
+        lock (_configurationErrorsLogged)
+        {
+            first = _configurationErrorsLogged.Add(setting);
+        }
+
+        if (first)
         {
             _logger.LogError(
                 "TypeSafe rejected the deployment's configuration ({Status}): check {Setting} (model {Model})",

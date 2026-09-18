@@ -123,20 +123,31 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
         }
 
         // A live turn started the judgment where it built the message, beside recall; only a
-        // turn nobody started one for — an eval run, a worker — asks here.
-        var pending = SkillPreloadPending.TryTake(request);
-        var preload = pending is not null
-            ? await pending
-            : await _preloader.PreloadAsync(
-                new SkillPreloadRequest(request.Text, skills, _historyOf(context.Session).Concat(requestMessages))
-                {
-                    ConfigPatchModel = request.GetConfigPatch()?.Model,
-                    AgentId = context.Agent.Name
-                },
-                ct);
+        // turn nobody started one for — an eval run, a worker — asks here. A preloader that
+        // throws is a turn with no head start: the contract says it never does, and this is
+        // where that promise is held for the paths the conversation group does not cover.
+        SkillPreload preload;
+        try
+        {
+            var pending = SkillPreloadPending.TryTake(request);
+            preload = pending is not null
+                ? await pending
+                : await _preloader.PreloadAsync(
+                    new SkillPreloadRequest(request.Text, skills, _historyOf(context.Session).Concat(requestMessages))
+                    {
+                        ConfigPatchModel = request.GetConfigPatch()?.Model,
+                        AgentId = context.Agent.Name
+                    },
+                    ct);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return null;
+        }
 
+        // One prefix per turn, so two skills' call ids differ from a later turn's.
         return preload.Skills.Count > 0
-            ? SkillLoadTool.AsLoaded(preload.Skills, $"preload-{Guid.NewGuid():N}"[..16])
+            ? SkillLoadTool.AsLoaded(preload.Skills, $"preload-{Guid.NewGuid().ToString("N")[..8]}")
             : null;
     }
 #pragma warning restore MAAI001

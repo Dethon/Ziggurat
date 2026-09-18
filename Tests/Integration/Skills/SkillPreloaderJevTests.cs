@@ -18,7 +18,7 @@ namespace Tests.Integration.Skills;
 // landed, so a Jev version bump or a description edit is checked in a minute for cents. Like
 // Category=Llm it runs whenever a key is present, because a pass costs well under a cent.
 [Trait("Category", "Jev")]
-public class JevSkillPreloadTests
+public class SkillPreloaderJevTests
 {
     // Measured on 2026-09-18 against jev-1.13.0 with the shipped descriptions: 32 of 34 cases
     // fully covered. A floor below that, so a single flip does not redden a run, and above what
@@ -26,7 +26,7 @@ public class JevSkillPreloadTests
     private const double CoverageFloor = 0.85;
 
     private static readonly IConfiguration Configuration = new ConfigurationBuilder()
-        .AddUserSecrets<JevSkillPreloadTests>()
+        .AddUserSecrets<SkillPreloaderJevTests>()
         .AddEnvironmentVariables()
         .Build();
 

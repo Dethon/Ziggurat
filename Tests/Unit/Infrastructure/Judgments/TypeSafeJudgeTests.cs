@@ -133,6 +133,38 @@ public class TypeSafeJudgeTests
         outcome.ShouldBeOfType<JudgmentOutcome.Absent>().Reason.ShouldBe(AbsenceReason.Error);
     }
 
+    // A 200 whose content type the JSON reader refuses throws a different exception than a body
+    // that is not JSON, and it must not be the one that escapes.
+    [Fact]
+    public async Task Judge_ASuccessWithAContentTypeThatIsNotJson_AnswersErrorAndThrowsNothing()
+    {
+        var judge = Judge(new ScriptedHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("<html>gateway</html>", System.Text.Encoding.UTF8, "text/html")
+        }));
+
+        var outcome = await judge.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
+
+        outcome.ShouldBeOfType<JudgmentOutcome.Absent>().Reason.ShouldBe(AbsenceReason.Error);
+    }
+
+    [Fact]
+    public async Task Judge_AKeyRejectionThenAModelRejection_LogsEachSettingOnce()
+    {
+        var logger = new RecordingLogger();
+        var statuses = new Queue<HttpStatusCode>([HttpStatusCode.Unauthorized, HttpStatusCode.Unauthorized, HttpStatusCode.UnprocessableEntity]);
+        var judge = Judge(new ScriptedHandler(_ => new HttpResponseMessage(statuses.Dequeue())), logger);
+
+        await judge.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
+        await judge.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
+        await judge.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
+
+        var errors = logger.Entries.Where(e => e.Level == LogLevel.Error).Select(e => e.Message).ToList();
+        errors.Count.ShouldBe(2);
+        errors[0].ShouldContain("typeSafe:apiKey");
+        errors[1].ShouldContain("typeSafe:model");
+    }
+
     [Fact]
     public async Task Judge_ADeadlineAlreadyPassed_AnswersDeadlineAndThrowsNothing()
     {

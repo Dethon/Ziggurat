@@ -13,34 +13,12 @@ public class SkillPreloaderTests
 {
     private static readonly SkillPreloadSettings Settings = new() { DeadlineMs = 600 };
 
-    private static readonly PromptSkill Home = Skill("home-assistant", "Turning lights, climate and media on or off.");
-    private static readonly PromptSkill Timers = Skill("countdown-timers", "Setting, reading or cancelling a countdown.");
-    private static readonly PromptSkill Vault = Skill("obsidian-vault", "Creating or editing a note in the vault.");
+    private static readonly PromptSkill Home = TestSkills.Skill("home-assistant", "Turning lights, climate and media on or off.");
+    private static readonly PromptSkill Timers = TestSkills.Skill("countdown-timers", "Setting, reading or cancelling a countdown.");
+    private static readonly PromptSkill Vault = TestSkills.Skill("obsidian-vault", "Creating or editing a note in the vault.");
 
-    private static PromptSkill Skill(string name, string description, bool declared = true) =>
-        new SkillDeclaration
-        {
-            Name = name,
-            Description = description,
-            DescriptionBudget = 100,
-            BodyBudget = 1000,
-            ServedBy = "test",
-            Declared = declared
-        }.Bind(description, $"# {name}\n\nDo the thing.");
-
-    private static JudgmentOutcome Answered(string choice, double confidence, params (string Skill, double P)[] needs)
-    {
-        var answers = new Dictionary<string, JudgmentAnswer>
-        {
-            ["skill"] = new ChoiceAnswer(choice, confidence, new Dictionary<string, double> { [choice] = confidence })
-        };
-        foreach (var (skill, p) in needs)
-        {
-            answers[$"needs_{skill}"] = new NoulAnswer(p);
-        }
-
-        return new JudgmentOutcome.Answered(new Judgment("jev-test", answers, new JudgmentUsage(2100, 40)));
-    }
+    private static JudgmentOutcome Answered(string choice, double confidence, params (string Skill, double P)[] needs) =>
+        JudgeAnswers.Answered(choice, confidence, needs);
 
     private static ChatMessage ALoadOf(string skill) =>
         new(ChatRole.Assistant, [new FunctionCallContent("call-1", SkillLoadTool.Name,
@@ -204,7 +182,7 @@ public class SkillPreloaderTests
     [Fact]
     public async Task Preload_TheCriteria_AreTheShippedDescriptionsVerbatimDeclaredOrNot()
     {
-        var outpost = Skill("laptop-files", "Files on Francisco's laptop, reached through the outpost.", declared: false);
+        var outpost = TestSkills.Skill("laptop-files", "Files on Francisco's laptop, reached through the outpost.", declared: false);
         var judge = new ScriptedJudge(_ => Answered("none", 0.99));
 
         await Preloader(judge).PreloadAsync(Request("busca en mi portátil", [Home, outpost]), CancellationToken.None);
@@ -257,20 +235,4 @@ public class SkillPreloaderTests
 
     private static SkillPreloadRequest Request(string text, IReadOnlyList<PromptSkill> skills, IEnumerable<ChatMessage>? history = null) =>
         new(text, skills, history ?? []);
-
-    private sealed class ScriptedJudge(Func<JudgmentRequest, CancellationToken, Task<JudgmentOutcome>> answer) : IJudge
-    {
-        public ScriptedJudge(Func<JudgmentRequest, JudgmentOutcome> answer)
-            : this((request, _) => Task.FromResult(answer(request)))
-        {
-        }
-
-        public List<JudgmentRequest> Asked { get; } = [];
-
-        public Task<JudgmentOutcome> JudgeAsync(JudgmentRequest request, CancellationToken deadline)
-        {
-            Asked.Add(request);
-            return answer(request, deadline);
-        }
-    }
 }

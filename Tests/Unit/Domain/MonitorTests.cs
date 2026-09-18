@@ -31,6 +31,7 @@ internal sealed class FakeAiAgent : DisposableAgent
     public TimeSpan WarmupDelay { get; init; }
     public TimeSpan TurnDelay { get; init; }
     public Func<CancellationToken, Task>? TurnGate { get; init; }
+    public Func<Task>? WarmupGate { get; init; }
     public ConcurrentQueue<string> Events { get; } = new();
     public ConcurrentQueue<string> RestoredSessionKeys { get; } = new();
     public ConcurrentQueue<IReadOnlyList<ChatMessage>> ReceivedMessages { get; } = new();
@@ -44,7 +45,10 @@ internal sealed class FakeAiAgent : DisposableAgent
 
     public IReadOnlyList<PromptSkill> Skills { get; set; } = [];
 
-    public override IReadOnlyList<PromptSkill> GetSkills(AgentSession thread) => Skills;
+    // Only once warmed up, as the real agent's are: the session that carries the skills is built
+    // by the warmup, and a caller asking before it has run gets nothing.
+    public override IReadOnlyList<PromptSkill> GetSkills(AgentSession thread) =>
+        WarmupSignaled.Task.IsCompletedSuccessfully ? Skills : [];
 
     public override Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<ChatMessage>>(
@@ -61,6 +65,11 @@ internal sealed class FakeAiAgent : DisposableAgent
         if (WarmupDelay > TimeSpan.Zero)
         {
             await Task.Delay(WarmupDelay, ct);
+        }
+
+        if (WarmupGate is not null)
+        {
+            await WarmupGate();
         }
 
         Events.Enqueue("warmup");

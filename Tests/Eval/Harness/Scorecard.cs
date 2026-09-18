@@ -31,9 +31,12 @@ public static class Scorecard
             // nothing in configuration still changes this, and that is the point of the file.
             ["model"] = route?.Model,
             ["provider"] = route?.Provider,
-            // The judge that preloaded, read off its own answers, or "off": a pass with no
-            // TypeSafe key is labelled rather than mistaken for one where Jev abstained every time.
-            ["preload"] = preloadModel ?? "off",
+            // The judge that preloaded, read off its own answers; "off" only where nothing was
+            // ever judged (no key), and "unanswered" where judgments went out and none came back
+            // in time — two different findings, and a pass of deadlines must not read as the key
+            // being absent.
+            ["preload"] = preloadModel
+                          ?? ((scenarios ?? []).Any(s => s.PreloadOutcomes.Count > 0) ? "unanswered" : "off"),
             ["tier"] = tier.ToString().ToLowerInvariant(),
             // When the pass ran, which is the axis two scorecards are compared along. It is the
             // one time in this suite that is not the scenario's pinned instant: a scorecard is

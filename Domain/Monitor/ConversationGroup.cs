@@ -559,6 +559,20 @@ internal sealed class ConversationGroup(
     // conversation as persisted, both answered by the agent that owns the session.
     private async Task<SkillPreload> PreloadAsync(ChannelMessage message, GroupState state)
     {
+        // The skills arrive with the servers the warmup dials, and a group's first turn builds
+        // its message while that is still under way: asked before, the judgment would be over
+        // nothing. The wait costs the first turn only what the turn waits for anyway, and it
+        // still overlaps the recall. A warmup that fails is that turn's failure, reported once
+        // by the turn — not a preload error on top.
+        try
+        {
+            await state.Warmup;
+        }
+        catch (Exception)
+        {
+            return SkillPreload.NotAsked;
+        }
+
         try
         {
             var skills = state.Agent.GetSkills(state.Thread);

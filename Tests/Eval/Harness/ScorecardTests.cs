@@ -94,6 +94,15 @@ public class ScorecardTests : IDisposable
     }
 
     [Fact]
+    public void APassWhoseJudgeNeverAnswered_SaysSo_NotOff()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)],
+            [new ScenarioOutcome("a", 1, 1) { PreloadOutcomes = new Dictionary<string, int> { ["deadline"] = 3 } }]);
+
+        Read(Path.Combine(_output, "scorecard-full.json")).GetProperty("preload").GetString().ShouldBe("unanswered");
+    }
+
+    [Fact]
     public void APassWithNoJudge_SaysThePreloadIsOff()
     {
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)]);
