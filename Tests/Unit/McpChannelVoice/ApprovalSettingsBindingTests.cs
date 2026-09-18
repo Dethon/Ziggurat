@@ -46,7 +46,7 @@ public class ApprovalSettingsBindingTests
     // Every bar the spec names ships in the voice server's own appsettings, readable from
     // production, beside the judge that answers them.
     [Fact]
-    public void TheShippedAppSettings_CarryTheJudgeAndEveryBar()
+    public void Bind_ShippedAppSettings_CarriesTheJudgeAndEveryBar()
     {
         var settings = new ConfigurationBuilder()
             .AddJsonFile(Path.Combine(McpServerRegistrations.RepoRoot, "McpChannelVoice/appsettings.json"))

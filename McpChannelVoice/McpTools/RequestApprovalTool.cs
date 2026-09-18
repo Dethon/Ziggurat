@@ -90,7 +90,7 @@ public sealed class RequestApprovalTool
             {
                 Metric = VoiceMetric.ApprovalResolved,
                 Outcome = reading.Response.ToString(),
-                DecidedBy = reading.DecidedByName,
+                DecidedBy = ApprovalDeciders.Of(reading.DecidedBy),
                 ApprovedProbability = reading.Approved,
                 DeclinedProbability = reading.Declined,
                 DurationMs = (long)reading.Latency.TotalMilliseconds,

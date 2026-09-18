@@ -43,7 +43,9 @@ About 330 ms warm.
 - **Where.** `RequestApprovalTool`, in place of the bare `ApprovalGrammarParser.Parse` call, behind
   an `IApprovalReader` the tool takes from DI so the test drives it with a fake. The parser stays
   as the fallback and the agreement partner.
-- **State.** `{ "prompt": <what was spoken>, "answer": <the transcript> }`. Nothing else.
+- **State.** `{ "prompt": <what was spoken>, "answer": <the transcript> }`. Nothing else. An empty
+  transcript (no speech heard) never reaches Jev: it is ambiguous to both readers and the call
+  would buy nothing.
 - **Questions.** `approved`: "`prompt` was spoken aloud asking for a yes or no about doing exactly
   what it names. `answer` is the transcribed spoken reply. Did the person give permission to go
   ahead with it as asked? A yes that changes or narrows what was asked is not permission."

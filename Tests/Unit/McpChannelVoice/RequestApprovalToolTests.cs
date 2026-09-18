@@ -744,6 +744,10 @@ public class RequestApprovalToolTests : IDisposable
             "¿Apruebas turn_off? Di sí o no.",
             "No entendí. ¿Apruebas turn_off? Di sí o no."
         ]);
+        _metrics.Published.OfType<VoiceEvent>()
+            .Where(e => e.Metric == VoiceMetric.ApprovalResolved)
+            .Select(e => (e.Outcome, e.DecidedBy))
+            .ShouldBe([("Ambiguous", ApprovalDeciders.Judgment), ("Approved", ApprovalDeciders.Judgment)]);
     }
 
     [Fact]

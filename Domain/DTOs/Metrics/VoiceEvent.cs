@@ -38,10 +38,30 @@ public record VoiceEvent : MetricEvent
     public double? DeclinedProbability { get; init; }
 }
 
+public enum ApprovalDecider
+{
+    // The judge was sure, or the judge answered and nothing was sure enough to act.
+    Judgment,
+
+    // The judge leaned and the word list leaned the same way.
+    Agreement,
+
+    // The judge was absent, late, off, or the answer was empty: the word list alone.
+    WordList
+}
+
 // The wire spellings of who decided a spoken approval, the ones a dashboard groups by.
 public static class ApprovalDeciders
 {
     public const string Judgment = "judgment";
     public const string Agreement = "agreement";
     public const string WordList = "wordlist";
+
+    public static string Of(ApprovalDecider decider) => decider switch
+    {
+        ApprovalDecider.Judgment => Judgment,
+        ApprovalDecider.Agreement => Agreement,
+        ApprovalDecider.WordList => WordList,
+        _ => throw new ArgumentOutOfRangeException(nameof(decider), decider, null)
+    };
 }

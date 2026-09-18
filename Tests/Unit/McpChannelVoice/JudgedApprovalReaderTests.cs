@@ -1,3 +1,4 @@
+using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
@@ -145,6 +146,21 @@ public class JudgedApprovalReaderTests
         read.Response.ShouldBe(ApprovalResponse.Approved);
         read.DecidedBy.ShouldBe(ApprovalDecider.WordList);
         read.Latency.ShouldBe(TimeSpan.FromMilliseconds(Shipped.DeadlineMs));
+    }
+
+    // The tool's own cancellation is the turn being torn down, not a late judge: no verdict at all,
+    // rather than the word list approving on a turn nobody is waiting for.
+    [Fact]
+    public async Task TheCallersOwnCancellation_Propagates_InsteadOfFallingBackToTheWordList()
+    {
+        using var caller = new CancellationTokenSource();
+        var judge = new NeverAnsweringJudge(new TaskCompletionSource<JudgmentOutcome>().Task);
+
+        var reading = Reader(judge, new FakeTimeProvider()).ReadAsync(Prompt, "sí", caller.Token);
+        await Eventually.Until(() => judge.Asked, "the reader asked the judge");
+        await caller.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => reading.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]

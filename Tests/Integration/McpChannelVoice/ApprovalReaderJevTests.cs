@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.DTOs.Metrics;
 using Infrastructure.Judgments;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
@@ -23,10 +24,9 @@ public class ApprovalReaderJevTests
 {
     // Measured on 2026-09-18 against jev-1.13.0 with the shipped wording and bars
     // (.scratch/jev-voice-approval/probe/2026-09-18-wordings-*.txt): "déjalo" and "never mind"
-    // re-ask on every run, and "venga, dale" sits at the sure bar and flips. A ceiling one above
-    // that, so a single flip does not redden a run, and no further, so a wording that loses more
-    // is heard.
-    private const int ReAskCeiling = 4;
+    // re-ask on every run, and "venga, dale" sits at the sure bar and flips — three on the worse
+    // of the two runs. That number, so a wording that loses one more is heard.
+    private const int ReAskCeiling = 3;
 
     private static readonly Lazy<Task<IReadOnlyList<Verdict>>> Run = new(RunAsync);
 
@@ -45,7 +45,7 @@ public class ApprovalReaderJevTests
         public bool IsReAsk => (WantsApproval || WantsRefusal) && Reading.Response == ApprovalResponse.Ambiguous;
 
         public override string ToString() =>
-            $"'{Case.Answer}' wanted {Case.Want}, got {Reading.Response} by {Reading.DecidedByName} " +
+            $"'{Case.Answer}' wanted {Case.Want}, got {Reading.Response} by {ApprovalDeciders.Of(Reading.DecidedBy)} " +
             $"(approved={Reading.Approved:F2} declined={Reading.Declined:F2})";
     }
 

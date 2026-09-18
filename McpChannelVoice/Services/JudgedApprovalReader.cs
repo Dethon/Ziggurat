@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using McpChannelVoice.Settings;
 
@@ -48,13 +49,15 @@ public sealed class JudgedApprovalReader(IJudge judge, ApprovalJudgmentSettings 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
 
         // Raced against the deadline rather than awaited and then checked: the person is standing
-        // at the satellite, and a judge that ignores its token must not keep them there.
+        // at the satellite, and a judge that ignores its token must not keep them there. The
+        // caller's own cancellation is not a late judge — the turn is being torn down, and a word
+        // list verdict now would approve something on a turn nobody is waiting for.
         JudgmentOutcome outcome;
         try
         {
-            outcome = await judge.JudgeAsync(Ask(prompt, answer), linked.Token).WaitAsync(deadline.Token);
+            outcome = await judge.JudgeAsync(Ask(prompt, answer), linked.Token).WaitAsync(linked.Token);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             outcome = new JudgmentOutcome.Absent(AbsenceReason.Deadline);
         }
