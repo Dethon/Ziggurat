@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Infrastructure.Judgments;
 
 namespace McpChannelVoice.Settings;
 
@@ -19,6 +20,13 @@ public record VoiceSettings
     public TseSettings Tse { get; init; } = new();
     public ArbitrationSettings Arbitration { get; init; } = new();
     public CommandSettings Commands { get; init; } = new();
+
+    // Jev, the hosted judge this channel asks what a spoken approval answer meant. It is asked
+    // through OpenRouter, so the key is OPENROUTER__APIKEY, the same line the agent reads; empty
+    // means the answer is read by the word list alone, never a startup failure.
+    public OpenRouterKey OpenRouter { get; init; } = new();
+    public TypeSafeOptions TypeSafe { get; init; } = new();
+    public ApprovalSettings Approval { get; init; } = new();
 
     // The same block the Agent and chat hosts bind. This channel writes conversations and never
     // reads the list, so only the purge horizon reaches anything here — but it has to be the same

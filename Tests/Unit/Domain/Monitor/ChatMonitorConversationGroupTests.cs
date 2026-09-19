@@ -244,6 +244,7 @@ public class ChatMonitorConversationGroupTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             new FailingRecallHook(2, new HttpRequestException("memory store down")),
+            skillPreloader: null,
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -300,6 +301,7 @@ public class ChatMonitorConversationGroupTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
+            skillPreloader: null,
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -340,6 +342,7 @@ public class ChatMonitorConversationGroupTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
+            skillPreloader: null,
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage(content: "/cancel")));
@@ -375,6 +378,7 @@ public class ChatMonitorConversationGroupTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
+            skillPreloader: null,
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -438,6 +442,7 @@ public class ChatMonitorConversationGroupTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
+            skillPreloader: null,
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage() with { Content = null! }));
@@ -505,6 +510,7 @@ public class ChatMonitorConversationGroupTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
+            skillPreloader: null,
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));

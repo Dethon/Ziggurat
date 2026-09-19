@@ -7,7 +7,7 @@ namespace Tests.Unit.McpChannelTelegram;
 // the question. The window is driven through a fake clock rather than by waiting.
 public class TelegramBotServiceAlbumTests : IDisposable
 {
-    private static readonly TimeSpan Debounce = TimeSpan.FromSeconds(1.5);
+    private static readonly TimeSpan _debounce = TimeSpan.FromSeconds(1.5);
 
     private readonly TelegramPollingHarness _harness = new();
 
@@ -21,7 +21,7 @@ public class TelegramBotServiceAlbumTests : IDisposable
             PhotoUpdate(3, messageId: 12, fileId: "three", groupId: "g1"));
 
         await _harness.RunAsync();
-        await _harness.QuietForAsync(Debounce);
+        await _harness.QuietForAsync(_debounce);
 
         var notification = (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message.ShouldNotBeNull();
         notification.Content.ShouldBe("/ask compare these");
@@ -40,7 +40,7 @@ public class TelegramBotServiceAlbumTests : IDisposable
             PhotoUpdate(2, messageId: 11, fileId: "two", caption: "/ask which is sharper", groupId: "g1"));
 
         await _harness.RunAsync();
-        await _harness.QuietForAsync(Debounce);
+        await _harness.QuietForAsync(_debounce);
 
         (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Content
             .ShouldBe("/ask which is sharper");
@@ -58,7 +58,7 @@ public class TelegramBotServiceAlbumTests : IDisposable
             (TimeSpan.FromSeconds(1), [PhotoUpdate(3, messageId: 12, fileId: "three", groupId: "g1")]));
 
         await _harness.RunAsync();
-        await _harness.QuietForAsync(Debounce);
+        await _harness.QuietForAsync(_debounce);
 
         var notification = (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message.ShouldNotBeNull();
         notification.Attachments.ShouldNotBeNull().Count.ShouldBe(3);
@@ -73,7 +73,7 @@ public class TelegramBotServiceAlbumTests : IDisposable
         _harness.Enqueue(PhotoUpdate(1, messageId: 10, fileId: "one", caption: "/ask look", groupId: "g1"));
 
         await _harness.RunAsync();
-        await _harness.QuietForAsync(Debounce - TimeSpan.FromMilliseconds(100));
+        await _harness.QuietForAsync(_debounce - TimeSpan.FromMilliseconds(100));
         (await _harness.ReceiveAsync()).ShouldBeEmpty();
 
         await _harness.QuietForAsync(TimeSpan.FromMilliseconds(100));
@@ -91,7 +91,7 @@ public class TelegramBotServiceAlbumTests : IDisposable
             PhotoUpdate(4, messageId: 21, fileId: "b2", groupId: "g2"));
 
         await _harness.RunAsync();
-        await _harness.QuietForAsync(Debounce);
+        await _harness.QuietForAsync(_debounce);
 
         var notifications = (await _harness.ReceiveAsync()).Select(item => item.Message!).ToList();
         notifications.Count.ShouldBe(2);

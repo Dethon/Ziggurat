@@ -13,15 +13,16 @@ public static class Scorecard
         string directory, EvalTier tier, ServedRoute? route, IReadOnlyList<ClaimOutcome> claims,
         IReadOnlyList<ScenarioOutcome>? scenarios = null,
         IReadOnlyDictionary<string, string>? coverage = null,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        string? preloadModel = null)
     {
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, $"scorecard-{tier.ToString().ToLowerInvariant()}.json");
 
         var claimRows = Covered(
-            Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs, c.SkillNotLoaded, c.RuleIgnored))), coverage);
+            Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs, c.Kinds, c.Loaders))), coverage);
         var scenarioRows = Priced(
-            Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs, s.SkillNotLoaded, s.RuleIgnored))),
+            Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs, s.Kinds, s.Loaders))),
             scenarios ?? []);
 
         var summary = new JsonObject
@@ -30,6 +31,12 @@ public static class Scorecard
             // nothing in configuration still changes this, and that is the point of the file.
             ["model"] = route?.Model,
             ["provider"] = route?.Provider,
+            // The judge that preloaded, read off its own answers; "off" only where nothing was
+            // ever judged (no key), and "unanswered" where judgments went out and none came back
+            // in time — two different findings, and a pass of deadlines must not read as the key
+            // being absent.
+            ["preload"] = preloadModel
+                          ?? ((scenarios ?? []).Any(s => s.PreloadOutcomes.Count > 0) ? "unanswered" : "off"),
             ["tier"] = tier.ToString().ToLowerInvariant(),
             // When the pass ran, which is the axis two scorecards are compared along. It is the
             // one time in this suite that is not the scenario's pinned instant: a scorecard is
@@ -44,7 +51,14 @@ public static class Scorecard
                 // What the pass cost, in the two numbers a maintainer acts on: the price of an
                 // average run, and how much of the prompt the provider served from cache. The
                 // per-row spend says which scenario is expensive; this says whether the pass is.
-                ["spend"] = Spent(scenarios ?? [])
+                ["spend"] = Spent(scenarios ?? []),
+                // The whole pass's loader split, so the reader sees how often Jev preloaded, how
+                // often the model still loaded for itself and how often nobody did, without
+                // summing rows.
+                ["loader"] = Loaders(scenarios ?? []),
+                // What the judge answered across the pass: a run of deadlines or errors reads
+                // as a TypeSafe problem here, where "preload: off" would have hidden it.
+                ["preloadOutcomes"] = Outcomes(scenarios ?? [])
             },
             // Each claim row says how it is covered — "cited", "judged", or its exemption kind —
             // so a null rate stops meaning three different things.
@@ -65,7 +79,7 @@ public static class Scorecard
         foreach (var group in outcomes.GroupBy(outcome => outcome.Name))
         {
             var spend = Spend.Sum(group.Select(outcome => outcome.Spend ?? Spend.Nothing));
-            if (spend.Requests > 0 && rows[group.Key] is JsonObject row)
+            if (spend.Paid && rows[group.Key] is JsonObject row)
             {
                 row["spend"] = Spelled(spend);
             }
@@ -76,7 +90,7 @@ public static class Scorecard
 
     private static JsonObject Spent(IEnumerable<ScenarioOutcome> outcomes)
     {
-        var priced = outcomes.Where(outcome => outcome.Spend is { Requests: > 0 }).ToList();
+        var priced = outcomes.Where(outcome => outcome.Spend is { Paid: true }).ToList();
         var spend = Spend.Sum(priced.Select(outcome => outcome.Spend!));
         var runs = priced.Sum(outcome => outcome.Runs);
         var summary = Spelled(spend);
@@ -84,15 +98,55 @@ public static class Scorecard
         return summary;
     }
 
-    private static JsonObject Spelled(Spend spend) => new()
+    private static JsonObject Spelled(Spend spend)
     {
-        ["cost"] = spend.Cost,
-        ["inputTokens"] = spend.InputTokens,
-        ["cachedInputTokens"] = spend.CachedInputTokens,
-        ["outputTokens"] = spend.OutputTokens,
-        ["requests"] = spend.Requests,
-        ["cacheShare"] = spend.CacheShare
-    };
+        var spelled = new JsonObject
+        {
+            ["cost"] = spend.Cost,
+            ["inputTokens"] = spend.InputTokens,
+            ["cachedInputTokens"] = spend.CachedInputTokens,
+            ["outputTokens"] = spend.OutputTokens,
+            ["requests"] = spend.Requests,
+            ["cacheShare"] = spend.CacheShare
+        };
+
+        // Only where a judgment was paid for: a pass with the preload off has no preload key,
+        // so "cost nothing" never stands in for "never asked".
+        if (spend.PreloadRequests > 0)
+        {
+            spelled["preload"] = new JsonObject
+            {
+                ["cost"] = spend.PreloadCost,
+                ["inputTokens"] = spend.PreloadInputTokens,
+                ["requests"] = spend.PreloadRequests
+            };
+        }
+
+        return spelled;
+    }
+
+    private static JsonObject Outcomes(IEnumerable<ScenarioOutcome> outcomes) =>
+        ScenarioRunner.Summed(outcomes.Select(outcome => outcome.PreloadOutcomes))
+            .OrderBy(entry => entry.Key, StringComparer.Ordinal)
+            .Aggregate(new JsonObject(), (node, entry) =>
+            {
+                node[entry.Key] = entry.Value;
+                return node;
+            });
+
+    private static JsonObject Loaders(IEnumerable<ScenarioOutcome> outcomes) =>
+        Loaders(outcomes.SelectMany(outcome => outcome.Loaders));
+
+    private static JsonObject Loaders(IEnumerable<Loader> loaders)
+    {
+        var counted = loaders.Where(loader => loader != Loader.None).ToList();
+        return new JsonObject
+        {
+            ["host"] = counted.Count(loader => loader == Loader.Host),
+            ["model"] = counted.Count(loader => loader == Loader.Model),
+            ["nobody"] = counted.Count(loader => loader == Loader.Nobody)
+        };
+    }
 
     private static JsonObject Covered(JsonObject claims, IReadOnlyDictionary<string, string>? coverage)
     {
@@ -126,7 +180,7 @@ public static class Scorecard
     }
 
     private static JsonObject Tallied(
-        IEnumerable<(string Key, int Passes, int Runs, int SkillNotLoaded, int RuleIgnored)> outcomes) =>
+        IEnumerable<(string Key, int Passes, int Runs, IReadOnlyList<FailureKind> Kinds, IReadOnlyList<Loader> Loaders)> outcomes) =>
         outcomes
             .GroupBy(o => o.Key)
             .Aggregate(new JsonObject(), (node, group) =>
@@ -143,17 +197,28 @@ public static class Scorecard
                     ["rate"] = runs == 0 ? null : JsonValue.Create((double)passes / runs)
                 };
 
-                // Only where something failed: the kind says which half of a skill to edit —
-                // a missing load is the description's, an ignored rule the body's.
-                var notLoaded = group.Sum(o => o.SkillNotLoaded);
-                var ignored = group.Sum(o => o.RuleIgnored);
-                if (notLoaded + ignored > 0)
+                // Only where a load was required: who loaded it, run by run, so a claim met by
+                // Jev every time and a claim the model still meets for itself read differently.
+                var loaders = group.SelectMany(o => o.Loaders).Where(loader => loader != Loader.None).ToList();
+                if (loaders.Count > 0)
                 {
-                    row["failures"] = new JsonObject
-                    {
-                        [FailureKind.SkillNotLoaded.Key()] = notLoaded,
-                        [FailureKind.RuleIgnored.Key()] = ignored
-                    };
+                    row["loader"] = Loaders(loaders);
+                }
+
+                // Only where something failed: the kind says which half of a skill to edit — a
+                // missing load is the description's, an ignored rule the body's, a preload the
+                // scenario did not permit neither. Every kind that occurred, so a kind added to
+                // the enum appears here without a third property to remember to add.
+                var kinds = group
+                    .SelectMany(o => o.Kinds)
+                    .Where(kind => kind != FailureKind.RunFailed)
+                    .GroupBy(kind => kind)
+                    .OrderBy(g => g.Key)
+                    .ToList();
+                if (kinds.Count > 0)
+                {
+                    row["failures"] = new JsonObject(
+                        kinds.Select(g => KeyValuePair.Create<string, JsonNode?>(g.Key.Key(), g.Count())));
                 }
 
                 node[group.Key] = row;
@@ -161,7 +226,30 @@ public static class Scorecard
             });
 }
 
-public sealed record ClaimOutcome(string Claim, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0);
+public sealed record ClaimOutcome(string Claim, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0)
+{
+    public IReadOnlyList<Loader> Loaders { get; init; } = [];
+
+    // One per failed run. The two counts above are the same thing for the two kinds that predate
+    // the rest; this is what the scorecard reports, so a kind added to the enum needs no third
+    // count here. Falls back to them where a caller set only those.
+    public IReadOnlyList<FailureKind> Kinds
+    {
+        get => field.Count > 0 ? field : FailureKinds.From(SkillNotLoaded, RuleIgnored);
+        init;
+    } = [];
+}
 
 public sealed record ScenarioOutcome(
-    string Name, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0, Spend? Spend = null);
+    string Name, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0, Spend? Spend = null)
+{
+    public IReadOnlyList<Loader> Loaders { get; init; } = [];
+
+    public IReadOnlyList<FailureKind> Kinds
+    {
+        get => field.Count > 0 ? field : FailureKinds.From(SkillNotLoaded, RuleIgnored);
+        init;
+    } = [];
+
+    public IReadOnlyDictionary<string, int> PreloadOutcomes { get; init; } = new Dictionary<string, int>();
+}

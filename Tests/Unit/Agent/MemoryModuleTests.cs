@@ -1,5 +1,6 @@
 using Agent.Modules;
 using Domain.Contracts;
+using Domain.Memory;
 using Infrastructure.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +29,30 @@ public class MemoryModuleTests
         services.ShouldContain(d => d.ServiceType == typeof(IMemoryRecallHook));
         services.ShouldContain(d => d.ImplementationType == typeof(MemoryDreamingService));
         services.ShouldContain(d => d.ImplementationType == typeof(MemoryExtractionWorker));
+        services.ShouldContain(d => d.ServiceType == typeof(MemoryJudge));
+    }
+
+    [Fact]
+    public void AddMemory_BindsTheJudgmentBarsFromTheMemoryConfiguration()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Memory:Judgments:Enabled"] = "false",
+                ["Memory:Judgments:Gate:SkipAtOrBelow"] = "0.2",
+                ["Memory:Judgments:Verify:Durable"] = "0.6",
+                ["Memory:Judgments:Pairs:MaxClusterMemories"] = "8"
+            })
+            .Build();
+
+        using var provider = new ServiceCollection().AddMemory(config).BuildServiceProvider();
+        var settings = provider.GetRequiredService<MemoryJudgmentSettings>();
+
+        settings.Enabled.ShouldBeFalse();
+        settings.Gate.SkipAtOrBelow.ShouldBe(0.2);
+        settings.Verify.Durable.ShouldBe(0.6);
+        settings.Verify.Supported.ShouldBe(0.5);
+        settings.Pairs.MaxClusterMemories.ShouldBe(8);
     }
 
     [Fact]

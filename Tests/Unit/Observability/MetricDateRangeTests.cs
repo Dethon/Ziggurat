@@ -78,7 +78,7 @@ public class MetricDateRangeTests
         var endpoints = ((IEndpointRouteBuilder)app).DataSources
             .SelectMany(source => source.Endpoints)
             .ToList();
-        endpoints.Count.ShouldBe(22);
+        endpoints.Count.ShouldBe(29);
         endpoints.ShouldAllBe(e => e is RouteEndpoint);
     }
 }

@@ -43,7 +43,7 @@ public class HaWatchesTests
         var time = new FakeTimeProvider(_now);
         var provider = new HaCatalogProvider(() => local, time);
         return new HaFileSystem(provider, () => local, timeProvider: time,
-            caller: () => agentId is null ? null : new ConversationContext(agentId, "conv-1", "fran", origin ?? new ReplyTarget("telegram", "conv-1")));
+            caller: agentId is null ? null : new ConversationContext(agentId, "conv-1", "fran", origin ?? new ReplyTarget("telegram", "conv-1")));
     }
 
     // The model is never told which channel a turn came from, so "warn me where I asked" is the
@@ -138,7 +138,7 @@ public class HaWatchesTests
     {
         var time = new FakeTimeProvider(_now);
         return new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
-            caller: () => new ConversationContext("jonas", origin.ConversationId!, userId, origin));
+            caller: new ConversationContext("jonas", origin.ConversationId!, userId, origin));
     }
 
     private static async Task<T> Ok<T>(Task<FsResult<T>> result) where T : class =>
@@ -506,7 +506,7 @@ public class HaWatchesTests
         var client = new FakeHaClient { EntityLagListings = 100 };
         var time = new ArmedClock(_now);
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
-            caller: () => new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1")));
+            caller: new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1")));
 
         // Each advance waits for the write to arm the retry delay it ends; advancing on a yield
         // guessed at that ordering and hung the run when the guess lost.

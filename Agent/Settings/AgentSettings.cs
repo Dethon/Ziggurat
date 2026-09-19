@@ -1,7 +1,9 @@
 using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Skills;
 using Domain.Tools.FileSystem;
+using Infrastructure.Judgments;
 using JetBrains.Annotations;
 
 namespace Agent.Settings;
@@ -23,6 +25,8 @@ public record AgentSettings
     public RetentionSettings Retention { get; init; } = new();
     public OutpostConfiguration Outposts { get; init; } = new();
     public LemonadeChatConfiguration LemonadeChat { get; init; } = new();
+    public TypeSafeOptions TypeSafe { get; init; } = new();
+    public SkillPreloadSettings SkillPreload { get; init; } = new();
 }
 
 // The Lemonade chat host: somebody's own box on the local network, outside the compose stack, and

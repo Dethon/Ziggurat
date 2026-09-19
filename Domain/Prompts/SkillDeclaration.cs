@@ -46,6 +46,12 @@ public sealed record SkillDeclaration
     // offered, under the default budgets, and the assembly says so.
     public bool Declared { get; init; } = true;
 
+    // The files the body says to read in the same turn as the skill, as virtual paths. A preload
+    // reads them too, so the model's first call after a head start is the action rather than the
+    // read the body told it to make; a load by the model reads them itself, as the body says.
+    // Empty for every skill whose body names no such file.
+    public IReadOnlyList<string> PreloadReads { get; init; } = [];
+
     public PromptSkill Bind(string description, string body) => new(this, description, body);
 }
 

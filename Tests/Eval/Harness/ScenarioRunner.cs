@@ -79,7 +79,9 @@ public static class ScenarioRunner
         {
             Conditionals = Tallied(taken),
             Kinds = [.. taken.Select(reading => reading.Kind).OfType<FailureKind>()],
-            Spend = Spend.Sum(taken.Select(reading => reading.Spend))
+            Loaders = [.. taken.Select(reading => reading.Loader)],
+            Spend = Spend.Sum(taken.Select(reading => reading.Spend)),
+            PreloadOutcomes = Summed(taken.Select(reading => reading.PreloadOutcomes))
         };
 
         // The run's number travels with it so its reading lands in its own slot; the exception it
@@ -99,6 +101,12 @@ public static class ScenarioRunner
         }
     }
 
+    public static IReadOnlyDictionary<string, int> Summed(IEnumerable<IReadOnlyDictionary<string, int>> counts) =>
+        counts
+            .SelectMany(c => c)
+            .GroupBy(entry => entry.Key)
+            .ToDictionary(group => group.Key, group => group.Sum(entry => entry.Value));
+
     // A conditional claim's denominator is the runs that produced its material, so the tally is
     // per claim rather than per scenario: the runs that did the work in place are not evidence
     // about a prompt nobody wrote.
@@ -107,10 +115,12 @@ public static class ScenarioRunner
             .SelectMany(reading => reading.Exercised
                 .Select(claim => (Claim: claim, Passed: reading.Failures.Count == 0, reading.Kind)))
             .GroupBy(o => o.Claim)
-            .Select(group => new ClaimOutcome(
-                group.Key, group.Count(o => o.Passed), group.Count(),
-                group.Count(o => o.Kind == FailureKind.SkillNotLoaded),
-                group.Count(o => o.Kind == FailureKind.RuleIgnored)))
+            .Select(group => new ClaimOutcome(group.Key, group.Count(o => o.Passed), group.Count())
+            {
+                // Every kind, not a count of two of them: a kind added to the enum reaches the
+                // scorecard by being carried here rather than by growing another count.
+                Kinds = [.. group.Select(o => o.Kind).OfType<FailureKind>()]
+            })
             .ToList();
 }
 
@@ -121,6 +131,11 @@ public sealed record RunReading(
 {
     // What the run paid for, agent turns and judge verdicts together.
     public Spend Spend { get; init; } = Spend.Nothing;
+
+    // Who loaded the required skill, if the scenario requires one.
+    public Loader Loader { get; init; } = Loader.None;
+
+    public IReadOnlyDictionary<string, int> PreloadOutcomes { get; init; } = new Dictionary<string, int>();
 }
 
 public sealed record ScenarioResult(
@@ -138,6 +153,19 @@ public sealed record ScenarioResult(
     public IReadOnlyList<FailureKind> Kinds { get; init; } = [];
 
     public int SkillNotLoaded => Kinds.Count(kind => kind == FailureKind.SkillNotLoaded);
+
+    // One loader per run taken, in run order, for the scorecard's split.
+    public IReadOnlyList<Loader> Loaders { get; init; } = [];
+
+    public int LoadedByHost => Loaders.Count(loader => loader == Loader.Host);
+
+    public int LoadedByModel => Loaders.Count(loader => loader == Loader.Model);
+
+    public int LoadedByNobody => Loaders.Count(loader => loader == Loader.Nobody);
+
+    // Every judgment's outcome over the runs taken, so the scorecard can say whether the judge
+    // abstained, timed out or errored rather than only whether it preloaded.
+    public IReadOnlyDictionary<string, int> PreloadOutcomes { get; init; } = new Dictionary<string, int>();
 
     // Over every run taken, so a scenario's row prices the scenario and not one of its runs.
     public Spend Spend { get; init; } = Spend.Nothing;

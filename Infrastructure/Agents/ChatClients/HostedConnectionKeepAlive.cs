@@ -16,23 +16,30 @@ public record HostedConnectionKeepAliveOptions
     // connection, because the next ping is what re-establishes it: a fraction of
     // interval / (lifetime + interval) of the time, and whatever calls first inside that
     // window pays the handshake. Shortening the interval buys that fraction down at a cost
-    // in pings, and 30s (2/min) is where the two stop being worth trading.
+    // in pings, and 30s (2/min) is where the two stop being worth trading; the lifetime is
+    // the other lever, and the one that moved when the window was seen to cost a preload.
     public static readonly TimeSpan DefaultInterval = TimeSpan.FromSeconds(30);
 
     public required string BaseAddress { get; init; }
     public string? ApiKey { get; init; }
     public TimeSpan Interval { get; init; } = DefaultInterval;
+
+    // What a ping fetches. It must answer the key's own metadata and consume no tokens, never a
+    // completion: that would cost money on every fire for no user-visible work.
+    public string NonBillableEndpoint { get; init; } = HostedConnectionKeepAlive.DefaultNonBillableEndpoint;
+
+    // Which host went cold, on the error event. Two keep-alives share the class, not the name.
+    public string MetricService { get; init; } = HostedConnectionKeepAlive.DefaultMetricService;
 }
 
 // Holds one connection to the hosted provider open through the long gaps between turns, so
 // the LLM call on the next turn does not pay a fresh TCP+TLS handshake.
 public sealed class HostedConnectionKeepAlive : BackgroundService
 {
-    public const string MetricService = "hosted-connection-keepalive";
+    public const string DefaultMetricService = "hosted-connection-keepalive";
 
-    // Returns the key's own metadata and consumes no tokens. It must never become a
-    // completion: that would cost money on every fire for no user-visible work.
-    private const string NonBillableEndpoint = "key";
+    // OpenRouter's: returns the key's own metadata and consumes no tokens.
+    public const string DefaultNonBillableEndpoint = "key";
 
     private readonly HttpClient _httpClient;
     private readonly HostedConnectionKeepAliveOptions _options;
@@ -46,6 +53,9 @@ public sealed class HostedConnectionKeepAlive : BackgroundService
     // nothing to do. The host starts background services without waiting for them to reach
     // their first await, so a test driving a fake clock needs to know when the clock matters.
     internal Task Armed => _armed.Task;
+
+    // Which host this one holds open, for a test over the registrations.
+    internal HostedConnectionKeepAliveOptions Options => _options;
 
     public HostedConnectionKeepAlive(
         HttpClient httpClient,
@@ -93,7 +103,7 @@ public sealed class HostedConnectionKeepAlive : BackgroundService
     {
         try
         {
-            using var response = await _httpClient.GetAsync(NonBillableEndpoint, ct);
+            using var response = await _httpClient.GetAsync(_options.NonBillableEndpoint, ct);
             response.EnsureSuccessStatusCode();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -106,7 +116,7 @@ public sealed class HostedConnectionKeepAlive : BackgroundService
             _logger.LogWarning(ex, "Hosted connection keep-alive failed");
             _metricsPublisher.Publish(new ErrorEvent
             {
-                Service = MetricService,
+                Service = _options.MetricService,
                 ErrorType = ex.GetType().Name,
                 Message = $"Keep-alive failed: {ex.Message}"
             });

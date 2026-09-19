@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -8,6 +9,7 @@ using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpChannelVoice.McpTools;
@@ -17,10 +19,25 @@ public sealed class RequestApprovalTool
 {
     [McpServerTool(Name = ChannelProtocol.RequestApprovalTool)]
     [Description("Request user approval via voice")]
-    public static async Task<string> McpRun(
+    public static Task<string> McpRun(
         [Description("Satellite ID owning the conversation")] string conversationId,
         [Description("Whether to ask the user or just notify them")] ApprovalMode mode,
         [Description("Tool requests to approve")] IReadOnlyList<ToolApprovalRequest> requests,
+        RequestContext<CallToolRequestParams> context,
+        IServiceProvider services,
+        CancellationToken cancellationToken = default) =>
+        // The model the asking turn was addressed to, from the context the agent stamps on this
+        // hop: the reader hands it to the judge's client, which sends nothing for the local box.
+        RunAsync(
+            conversationId, mode, requests,
+            ConversationScope.Parse(context.Params?.Meta)?.ConfigPatchModel,
+            services, cancellationToken);
+
+    public static async Task<string> RunAsync(
+        string conversationId,
+        ApprovalMode mode,
+        IReadOnlyList<ToolApprovalRequest> requests,
+        string? turnModel,
         IServiceProvider services,
         CancellationToken cancellationToken = default)
     {
@@ -56,6 +73,7 @@ public sealed class RequestApprovalTool
         var stt = services.GetRequiredService<ISpeechToText>();
         var gates = services.GetRequiredService<SilenceGateFactory>();
         var time = services.GetRequiredService<TimeProvider>();
+        var reader = services.GetRequiredService<IApprovalReader>();
 
         var toolList = string.Join(", ", p.Requests.Select(r => r.ToolName.Split("__").Last()));
         var prompt = $"¿Apruebas {toolList}? Di sí o no.";
@@ -81,16 +99,22 @@ public sealed class RequestApprovalTool
                 // satellite via pause-satellite, so there is no one left here to re-prompt.
                 return "rejected";
             }
-            var parsed = ApprovalGrammarParser.Parse(answer);
+            // Read for what it means, against the prompt as it was spoken: the re-ask's wording is
+            // the prompt the person is answering.
+            var reading = await reader.ReadAsync(prompt, answer, turnModel, cancellationToken);
 
             metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.ApprovalResolved,
-                Outcome = parsed.ToString(),
+                Outcome = reading.Response.ToString(),
+                DecidedBy = ApprovalDeciders.Of(reading.DecidedBy),
+                ApprovedProbability = reading.Approved,
+                DeclinedProbability = reading.Declined,
+                DurationMs = (long)reading.Latency.TotalMilliseconds,
                 ConversationId = p.ConversationId
             }.About(session));
 
-            switch (parsed)
+            switch (reading.Response)
             {
                 case ApprovalResponse.Approved:
                     return "approved";

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -16,7 +15,7 @@ public sealed partial class HaFileSystem(
     TimeSpan? regexMatchTimeout = null,
     Func<IMusicAssistantClient>? musicClientFactory = null,
     TimeProvider? timeProvider = null,
-    Func<ConversationContext?>? caller = null,
+    ConversationContext? caller = null,
     HaWatches? watches = null,
     ISatelliteCatalog? satellites = null) : FileSystemBackendBase
 {
@@ -32,9 +31,22 @@ public sealed partial class HaFileSystem(
     private HomeAssistantSetupSummary? _setupIndex;
 
     // Who is writing, for the one record on this mount that remembers its author: a watch runs its
-    // prompts as the agent that created it. The call-tool filter enters the context; a test hands
-    // one in directly.
-    private readonly Func<ConversationContext?> _caller = caller ?? (() => CallerContext.Current);
+    // prompts as the agent that created it. The server's one instance has no caller, and the
+    // registrar asks for a view per call.
+    private ConversationContext? _caller = caller;
+
+    // A shallow copy with the caller swapped, never a second construction: a copy carries every
+    // dependency this mount was built with — the ones that exist and the ones added later — so
+    // there is no argument list here to fall behind the constructor's. Rebuilding by hand did
+    // that silently: the server's instance kept working and the one answering calls did not.
+    // The watches and the catalog are shared by reference, which is the point; the class is sealed,
+    // so the copy is exactly this type. HaFileSystemCallerViewTests pins caller-and-nothing-else.
+    public override FileSystemBackendBase For(ConversationContext? caller)
+    {
+        var view = (HaFileSystem)MemberwiseClone();
+        view._caller = caller;
+        return view;
+    }
 
     public const string Name = "ha";
 

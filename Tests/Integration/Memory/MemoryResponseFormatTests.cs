@@ -1,10 +1,14 @@
 using System.ClientModel;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Judgments;
+using Domain.Memory;
+using Infrastructure.Judgments;
 using Infrastructure.Memory;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OpenAI;
 using Shouldly;
@@ -130,7 +134,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
         var logger = LoggerFactory.Create(builder => builder.AddProvider(logs))
             .CreateLogger<OpenRouterMemoryConsolidator>();
 
-        return (new OpenRouterMemoryConsolidator(chatClient, logger), logs.Messages);
+        return (new OpenRouterMemoryConsolidator(chatClient, LiveMemoryJudge.Create(), logger), logs.Messages);
     }
 
     private static MemoryEntry CreateMemory(string id, string content,
@@ -165,7 +169,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
         // "Count > 0", was accepted as usable, and then failed the source-id assertion outright
         // without ever retrying. A model that names no memory has not made a merge decision.
         var result = await LlmAttempt.UntilAsync(
-            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => consolidator.ConsolidateAsync(memories, ct)),
+            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct => (await consolidator.ConsolidateAsync(memories, ct)).Decisions),
             decisions => decisions.Count > 0
                          && decisions.All(d => d.SourceIds is { Count: > 0 }
                                                && d.SourceIds.All(id => memories.Any(m =>
@@ -210,7 +214,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
         };
 
         var result = await LlmAttempt.WithinAsync(
-            LlmAttempt.Budget, ct => consolidator.ConsolidateAsync(memories, ct));
+            LlmAttempt.Budget, async ct => (await consolidator.ConsolidateAsync(memories, ct)).Decisions);
 
         result.ShouldAllBe(d => d.Action != MergeAction.Merge,
             "Distinct, unrelated memories should not be merged");
@@ -251,7 +255,7 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         var logger = LoggerFactory.Create(builder => builder.AddProvider(logs))
             .CreateLogger<OpenRouterMemoryConsolidator>();
 
-        return (new OpenRouterMemoryConsolidator(chatClient, logger), logs.Messages);
+        return (new OpenRouterMemoryConsolidator(chatClient, LiveMemoryJudge.Create(), logger), logs.Messages);
     }
 
     private static MemoryEntry CreateMemory(string id, string content,
@@ -304,5 +308,30 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         result.TechnicalContext.ShouldNotBeNull(
             LlmAttempt.Explain("Profile should include technical context", warnings));
         result.TechnicalContext!.Expertise.ShouldNotBeEmpty("Should identify areas of expertise");
+    }
+}
+// The pair judgment these tests run under: live Jev when a TypeSafe key is in user secrets, so
+// the suite pins that consolidation still works with the judgments on; an unconfigured judge
+// otherwise, which is the judgments off and today's behaviour.
+internal static class LiveMemoryJudge
+{
+    private static readonly IConfiguration _configuration = new ConfigurationBuilder()
+        .AddUserSecrets<MemoryConsolidationResponseFormatTests>()
+        .AddEnvironmentVariables()
+        .Build();
+
+    public static MemoryJudge Create()
+    {
+        var judge = TypeSafeJudge.Create(
+            new HttpClient(),
+            new TypeSafeOptions
+            {
+                ApiUrl = _configuration["typeSafe:apiUrl"] ?? new TypeSafeOptions().ApiUrl,
+                ApiKey = _configuration["openRouter:apiKey"] ?? "",
+                Model = _configuration["typeSafe:model"] ?? new TypeSafeOptions().Model
+            },
+            NullLogger.Instance);
+
+        return new MemoryJudge(judge, new MemoryJudgmentSettings(), TimeProvider.System);
     }
 }

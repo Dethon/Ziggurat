@@ -20,6 +20,8 @@ public sealed class EvalScorecard : IDisposable
 
     public void Observe(ServedRoute? route) => _ledger.Observe(route);
 
+    public void ObservePreload(string? model) => _ledger.ObservePreload(model);
+
     // The one place the provider's name is worth a request, and the last place before the file is
     // written. Blocking in a fixture's teardown is the cost of it.
     public void Dispose() => _ledger.WriteAll(

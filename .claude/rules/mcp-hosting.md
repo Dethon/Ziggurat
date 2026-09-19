@@ -36,11 +36,21 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   nine servers that offer the agent things to call. Being a tool server and being a channel server
   are independent, so a dual-role server calls `AddToolServer` and then `AddChannelServer`.
 - **The error filter is one shared registration, installed at most once.** A cancelled call
-  propagates as the abort it is; anything else is logged and becomes the caller's error result. It
-  also enters the call's `ConversationContext` (`Domain/Channels/CallerContext.cs`, from the
-  request's `_meta`) for the duration of the call, so a filesystem backend — which never sees the
-  request — can still ask who is calling; absent means the call carried none, and a consumer
-  refuses rather than guesses. Two
+  propagates as the abort it is; anything else is logged and becomes the caller's error result.
+  **Who is calling travels as data, never as an ambient**: a tool reads the call's
+  `ConversationContext` off its `_meta` (`ConversationScope.Parse`) and hands on what it needs, and
+  a filesystem backend — whose operations never see the request — is asked by the registrar for
+  itself as that caller sees it (`FileSystemBackendBase.For`, per call; `HaFileSystem` is the one
+  mount that overrides it). Absent means the call carried none, and a consumer refuses rather than
+  guesses. There is no `AsyncLocal` on this path; don't add one to save a parameter. The context
+  also carries `ConfigPatchModel`, the model the turn asked for. **The Jev client holds the local-box rule and every use feeds it explicitly**:
+  `JudgmentRequest.TurnModel` is a required field, `TypeSafeJudge` sends nothing for a `lemonade/`
+  id and answers `AbsenceReason.LocalTurn`, so a use cannot be written without saying which turn it
+  asks for, and none checks for itself — it only decides what that absence means to it (not a miss
+  to count). The value is passed down as plain data, never read from an ambient: a server's tool
+  parses it from the call's `_meta` (`ConversationScope.Parse`) and hands it on as a parameter, the
+  agent host takes it from the message, and a question with no turn behind it (the nightly
+  dreaming) says `JudgmentRequest.NoTurn`. Two
   filters nested around each other would let the outer one convert the very cancellation the inner
   rethrows, so a second ask is a no-op and the first ask's error shape wins.
 - **`Tests/Integration/McpServers/McpServerRegistrations.cs` is the one server table.** Fourteen

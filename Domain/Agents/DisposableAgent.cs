@@ -1,5 +1,7 @@
 using Domain.Contracts;
+using Domain.Prompts;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Agents;
 
@@ -19,4 +21,13 @@ public abstract class DisposableAgent : AIAgent, IAsyncDisposable
     // blocking the first LLM turn. No-op for agents without expensive session setup.
     public virtual Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
         => Task.CompletedTask;
+
+    // The skills this agent's session advertises, once it has one, and the conversation as it
+    // is persisted: what a skill preload started before the turn is judged over. Empty for an
+    // agent with no session built yet and for one whose servers ship no skill, and nothing for
+    // an agent that keeps no history — a preload then has nothing to be judged over or against.
+    public virtual IReadOnlyList<PromptSkill> GetSkills(AgentSession thread) => [];
+
+    public virtual Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<ChatMessage>>([]);
 }

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Infrastructure.HtmlProcessing;
+using Infrastructure.Metrics;
 using Microsoft.Playwright;
 
 namespace Infrastructure.Clients.Browser;
@@ -11,7 +12,9 @@ public class PlaywrightWebBrowser(
     string? wsEndpoint = null,
     Func<Task<IBrowser>>? browserFactory = null,
     int tabCap = BrowserSessionManager.DefaultTabCap,
-    TimeSpan? idleTimeout = null)
+    TimeSpan? idleTimeout = null,
+    ModalDismisser? modalDismisser = null,
+    IMetricsPublisher? metricsPublisher = null)
     : IWebBrowser, IAsyncDisposable
 {
     private IPlaywright? _playwright;
@@ -22,7 +25,8 @@ public class PlaywrightWebBrowser(
         idleTimeout: idleTimeout ?? TimeSpan.FromMinutes(30),
         pruneInterval: TimeSpan.FromMinutes(5),
         tabCap: tabCap);
-    private readonly ModalDismisser _modalDismisser = new();
+    private readonly ModalDismisser _modalDismisser = modalDismisser ?? new ModalDismisser();
+    private readonly IMetricsPublisher _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
     private readonly AccessibilitySnapshotService _snapshotService = new();
     private bool _initialized;
     // Bumped under _initLock each time a fresh browser connection is established. Lets the reconnect
@@ -222,7 +226,15 @@ public class PlaywrightWebBrowser(
             captchaRetries++;
         }
 
-        var dismissedModals = await _modalDismisser.DismissModalsAsync(page, ct);
+        // One event per overlay the dismisser detected, whatever became of it; a page with no
+        // overlay publishes nothing, so the count is of walls and not of browses.
+        var overlays = await _modalDismisser.DismissAsync(page, request.TurnModel, ct);
+        foreach (var overlay in overlays)
+        {
+            _metricsPublisher.Publish(overlay.ToEvent());
+        }
+
+        var dismissedModals = overlays.Select(o => o.Dismissed).OfType<ModalDismissed>().ToList();
 
         // Extract structured data before stripping DOM noise,
         // because StripDomNoiseAsync removes <script> tags including ld+json

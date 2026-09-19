@@ -7,9 +7,11 @@ using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
+using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Dashboard.Client.State.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Unit.Dashboard.Client.Fixtures;
@@ -43,7 +45,7 @@ public sealed class DataLoadEffectTests : IDisposable
         var api = new MetricsApiService(http);
         _families = new MetricFamilyTable(
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
-            _memoryStore, _latencyStore, _voiceStore);
+            _memoryStore, _latencyStore, _voiceStore, new SkillsStore(), new WebStore());
         var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore, NullLogger<MetricsHubBinder>.Instance);
         _dataLoad = new DataLoadEffect(
             _families, new OverviewFigures(api, _metricsStore, _healthStore), binder);
@@ -150,14 +152,15 @@ public sealed class DataLoadEffectTests : IDisposable
         {
             "api/metrics/tokens?", "api/metrics/tools?", "api/metrics/errors/range?",
             "api/metrics/schedules?", "api/metrics/memory/recall?", "api/metrics/memory/extraction?",
-            "api/metrics/memory/dreaming?", "api/metrics/latency?", "api/metrics/latency/trend?",
-            "api/metrics/voice?",
+            "api/metrics/memory/dreaming?", "api/metrics/memory/judgments?", "api/metrics/latency?", "api/metrics/latency/trend?",
+            "api/metrics/voice?", "api/metrics/skills?", "api/metrics/skills/trend?",
+            "api/metrics/modals?", "api/metrics/modals/trend?",
         }.ToList().ForEach(fragment => _handler.AnswerFor(fragment, Array.Empty<object>()));
 
         new[]
         {
             "tokens/by/", "tools/by/", "errors/by/", "schedules/by/",
-            "memory/by/", "latency/by/", "voice/by/",
+            "memory/by/", "latency/by/", "voice/by/", "skills/by/", "modals/by/",
         }.ToList().ForEach(fragment => _handler.AnswerFor(fragment, new Dictionary<string, decimal>()));
     }
 }

@@ -8,9 +8,11 @@ using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
+using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Dashboard.Client.State.Web;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -46,7 +48,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         var api = new MetricsApiService(http);
         _families = new MetricFamilyTable(
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
-            _memoryStore, _latencyStore, _voiceStore);
+            _memoryStore, _latencyStore, _voiceStore, new SkillsStore(), new WebStore());
         var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore, NullLogger<MetricsHubBinder>.Instance);
         var overview = new OverviewFigures(api, _metricsStore, _healthStore);
         _dataLoad = new DataLoadEffect(_families, overview, binder);

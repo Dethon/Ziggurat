@@ -13,6 +13,46 @@ paths:
 
 McpServerWebSearch exposes the `web_*` browse tools. The `websearch_prompt` (`Domain/Prompts/WebBrowsingPrompt.cs`) is the standing stub — the browser exists, a url comes from a search, no call is a probe — and the workflow, principles, error recovery and answer style are the `web-browsing` skill (`Domain/Prompts/WebBrowsingSkill.cs`, shipped through `AddSkills`; `docs/adr/0039`). The tools run over `PlaywrightWebBrowser`, a WebSocket to Camoufox. The accessibility snapshot assigns interactive element refs (`e-1`, `e-2`, …) that `web_action` then addresses, pages are kept alive per session with cookie persistence, and cookie banners, newsletters and age gates are auto-dismissed.
 
+## Overlays
+
+`ModalDismisser` runs on every navigation and closes an overlay in three steps, each costing more
+than the last and each run only when the one before came up empty: a button selector, a word in a
+control's accessible name, and — for an overlay both left standing — a judgment (`ModalJudge`,
+`Domain/Tools/Web`) over what its controls say, asked of Jev with `{ overlay_kind, controls }` and
+nothing of the page. A cookie wall is asked *reject* then *accept* and a confident reject is taken
+first, so it closes with the fewest cookies where the page offers it; `none`, a pick under the bar,
+a stale click or a late answer leave the page exactly as before.
+
+**A name is a label, and some controls are never offered.** An accessible name is the control's
+whole `textContent`, so it is cut to `ModalJudge.MaxNameLength` before it leaves the page — past
+that it stops being a button label and starts being the page's words — and its quotes are escaped,
+because the criteria are prose the page contributes a substring of and a name that closes its own
+quote can write an instruction beside it. A control whose name reads as acting on the person's own
+data (delete, pay, buy, transfer, deactivate) is filtered out of the list the judge is shown, so it
+can never be picked: the container selectors are substring matches, a `confirm-modal` reads as a
+newsletter, and nothing on this path can undo a POST. A wall with no control left to offer is not
+asked. The dismisser keeps the uncut names, so the re-read before the click still compares the
+name the page actually carries. The pick is clicked by index into
+the same locator its name was read from, and the overlay predicate, the name script and the anchor
+guard are one JS constant each so the three steps cannot disagree about which buttons are the
+wall's. The judge and its bar, deadline and cap are the server's own `TypeSafe` / `Judgment`
+settings; an empty key is the feature off. **A turn addressed to the Lemonade chat host asks
+nothing** — the Jev client's rule, not this server's (`.claude/rules/mcp-hosting.md`). `web_browse`
+reads the turn's model off the call's `_meta` and it rides `BrowseRequest.TurnModel` through the
+dismisser to `ModalJudge.PickAsync`; the client answers `AbsenceReason.LocalTurn`, which the judge
+reads as `NotAsked` rather than a miss, so the wall is left to the model exactly as with no key.
+
+**Every detected overlay is counted, and a wall that closed is not a miss.** `DismissAsync` answers
+one `ModalOverlayOutcome` per overlay the last pass detected — `selector`, `text`, `judgment` or
+`left-standing` — and the browser publishes each as a `ModalDismissalEvent` (dashboard: Web). The
+container selectors overlap, so one wall matches several patterns; after any dismissal the page is
+rescanned and a kind whose container is gone is dropped rather than counted as left standing, while
+one still there is a separate wall and goes to the judge like any other. A judgment nobody asked
+reports no latency, so a page with no key cannot drag the judgment average to zero. That is why this server now holds a
+Redis connection: it carries metrics alone, and page images still cross at the agent's bridge.
+`.scratch/jev-modal-dismissal/probe/README.md` is the probe the questions were measured on, kept as
+`ModalJudgeJevTests`; change a question's wording only with that test green.
+
 ## Tabs
 
 A browse session holds up to three live tabs, and a ref finds its own (`docs/adr/0034`). The tab protocol — everything that happens to a tab when a call touches it — lives in `BrowserSessionManager`, whose interface is four per-intent methods plus pool lifecycle: `BrowseAsync` (browse a URL; always supersedes the tab's refs), `OnRefAsync` (routed by ref; answers the routing walls), `OnCurrentTabAsync` (the ref-less default), `OnUrlAsync` (the composed-snapshot exception). A caller hands over the work to do on the page and receives the work's result or a named wall (`TabOutcome<T>`); the ordering, the locks, the stamp leases and the closed-vs-disconnected disambiguation never cross the seam, and the whole protocol is unit-tested in milliseconds against faked pages (`TabProtocolTests`). `PlaywrightWebBrowser` only carries pages around. Read the module top to bottom for the ordering — this file deliberately does not restate it.
@@ -57,7 +97,7 @@ A browse session holds up to three live tabs, and a ref finds its own (`docs/adr
 
 **`view_image` takes a list, capped at 8.** Over the cap, the first eight are fetched and the rest named in the envelope — partial success, so a greedy call progresses. The cap counts images, not bytes; eight full-size images can still fail as an oversized request, and that is accepted (`docs/adr/0033`).
 
-**The bytes cross at the bridge, not here.** The MCP server returns a protocol image block and knows nothing of Redis, conversation ids or tool call ids. `QualifiedMcpTool` lifts the `DataContent` out into `IReadImageStore` and substitutes the envelope, so the history stays text-only and hydration treats a page image exactly like a `file_read` image — same 20-message distance, same forget-on-exit, same placeholder. Do not give this server a Redis connection to shortcut that.
+**The bytes cross at the bridge, not here.** The MCP server returns a protocol image block and knows nothing of Redis, conversation ids or tool call ids. `QualifiedMcpTool` lifts the `DataContent` out into `IReadImageStore` and substitutes the envelope, so the history stays text-only and hydration treats a page image exactly like a `file_read` image — same 20-message distance, same forget-on-exit, same placeholder. Do not give this server a Redis connection to shortcut that — the one it holds carries metrics alone.
 
 **One call can answer with several pictures, so a key carries an index.** `IReadImageStore` holds one image per key and `file_read` depends on that, so `view_image`'s pictures are keyed `<callId>#<n>` rather than widening the store. **`n` counts blank-line-separated paragraphs that start with `{`, not pictures and not content blocks** — the call's own envelope leads each result and takes index 0, and a refused image takes a slot with no bytes behind it. The unit is deliberately the paragraph: a `{`-paragraph embedded inside a foreign text block takes a slot on both sides, so "fixing" either side to count `AIContent` blocks instead would silently re-offset every key. `McpImageLift` and `ReadImageHydration` compute that number independently on either side of the wire, so they must ask the same question the same way; `PageImageRoundTripTests` drives both halves over a real `ToolResponse.Create` result and is what stops them drifting. They already had: counting pictures on one side and blocks on the other put every image one key off its bytes, and every one of them hydrated as "no longer in view".
 

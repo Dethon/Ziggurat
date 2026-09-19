@@ -70,7 +70,7 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
 
             var dismisser = new ModalDismisser();
             var sw = Stopwatch.StartNew();
-            var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+            var result = await dismisser.DismissModalsAsync(page, turnModel: null, CancellationToken.None);
             sw.Stop();
 
             result.ShouldBeEmpty();
@@ -114,7 +114,7 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
             120);
 
         var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+        var result = await dismisser.DismissModalsAsync(page, turnModel: null, CancellationToken.None);
 
         result.ShouldContain(r => r.Type == ModalType.CookieConsent);
         (await page.Locator("#late-banner").IsVisibleAsync()).ShouldBeFalse();
@@ -143,7 +143,7 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
 
             var dismisser = new ModalDismisser();
             var sw = Stopwatch.StartNew();
-            var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+            var result = await dismisser.DismissModalsAsync(page, turnModel: null, CancellationToken.None);
             sw.Stop();
 
             result.ShouldBeEmpty();
@@ -175,7 +175,7 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
             "</div><p>Main content</p></body></html>");
 
         var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+        var result = await dismisser.DismissModalsAsync(page, turnModel: null, CancellationToken.None);
 
         result.ShouldContain(r => r.Type == ModalType.Newsletter);
         (await page.Locator("#signup").IsVisibleAsync()).ShouldBeFalse();
@@ -203,7 +203,7 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
             "</div><p>Main content</p></body></html>");
 
         var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+        var result = await dismisser.DismissModalsAsync(page, turnModel: null, CancellationToken.None);
 
         result.ShouldContain(r => r.Type == ModalType.Newsletter);
         (await page.Locator("#signup").IsVisibleAsync()).ShouldBeFalse();
@@ -232,7 +232,7 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
             "</div></body></html>");
 
         var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+        var result = await dismisser.DismissModalsAsync(page, turnModel: null, CancellationToken.None);
 
         result.ShouldContain(r => r.Type == ModalType.CookieConsent);
         (await page.Locator("#cookie-banner").IsVisibleAsync()).ShouldBeFalse();
@@ -260,7 +260,7 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
             "</div><p>Main content</p></body></html>");
 
         var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+        var result = await dismisser.DismissModalsAsync(page, turnModel: null, CancellationToken.None);
 
         result.ShouldContain(r => r.Type == ModalType.CookieConsent);
         (await page.Locator("#cmp-wall").IsVisibleAsync()).ShouldBeFalse();
@@ -285,7 +285,7 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
             "</div><p>Main content</p></body></html>");
 
         var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+        var result = await dismisser.DismissModalsAsync(page, turnModel: null, CancellationToken.None);
 
         result.ShouldContain(r => r.Type == ModalType.Newsletter);
         (await page.Locator("#signup").IsVisibleAsync()).ShouldBeFalse();
@@ -324,7 +324,7 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
             """);
 
         var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+        var result = await dismisser.DismissModalsAsync(page, turnModel: null, CancellationToken.None);
 
         result.ShouldContain(r => r.Type == ModalType.CookieConsent);
         var stillThere = await page.EvaluateAsync<bool>(
@@ -359,7 +359,7 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
             "</body></html>");
 
         var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+        var result = await dismisser.DismissModalsAsync(page, turnModel: null, CancellationToken.None);
 
         result.ShouldBeEmpty();
         (await page.TitleAsync()).ShouldNotBe("CLICKED");

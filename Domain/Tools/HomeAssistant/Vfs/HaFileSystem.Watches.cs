@@ -146,7 +146,7 @@ public sealed partial class HaFileSystem
                 "Fix the field named and write the file again; the guide lists the shape.");
         }
 
-        var caller = _caller();
+        var caller = _caller;
         var agentId = existing?.Meta.AgentId ?? caller?.AgentId;
         if (agentId is null)
         {

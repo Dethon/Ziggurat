@@ -270,11 +270,16 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         var recalls = await GetEventsAsync<MemoryRecallEvent>("metrics:memory-recall:", from, to);
         var extractions = await GetEventsAsync<MemoryExtractionEvent>("metrics:memory-extraction:", from, to);
         var dreamings = await GetEventsAsync<MemoryDreamingEvent>("metrics:memory-dreaming:", from, to);
+        var judgments = await GetEventsAsync<MemoryJudgmentEvent>("metrics:memory-judgment:", from, to);
 
-        var allEvents = recalls.Cast<MetricEvent>()
-            .Concat(extractions)
-            .Concat(dreamings)
-            .ToList();
+        // The outcome is an extraction's, so under it the share is over extractions alone.
+        var allEvents = dimension == MemoryDimension.Outcome
+            ? extractions.Cast<MetricEvent>().ToList()
+            : recalls.Cast<MetricEvent>()
+                .Concat(extractions)
+                .Concat(dreamings)
+                .Concat(judgments)
+                .ToList();
 
         return allEvents
             .GroupBy(e => dimension switch
@@ -284,6 +289,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                     MemoryRecallEvent r => r.UserId,
                     MemoryExtractionEvent x => x.UserId,
                     MemoryDreamingEvent d => d.UserId,
+                    MemoryJudgmentEvent j => j.UserId,
                     _ => "unknown"
                 },
                 MemoryDimension.EventType => e switch
@@ -291,9 +297,11 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                     MemoryRecallEvent => "Recall",
                     MemoryExtractionEvent => "Extraction",
                     MemoryDreamingEvent => "Dreaming",
+                    MemoryJudgmentEvent => "Judgment",
                     _ => "unknown"
                 },
                 MemoryDimension.Agent => e.AgentId ?? "unknown",
+                MemoryDimension.Outcome => (e as MemoryExtractionEvent)?.Outcome ?? "(unrecorded)",
                 _ => throw new ArgumentOutOfRangeException(nameof(dimension))
             })
             .ToDictionary(
@@ -313,6 +321,9 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                     MemoryMetric.StoredCount => g.OfType<MemoryExtractionEvent>().Sum(e => (decimal)e.StoredCount),
                     MemoryMetric.MergedCount => g.OfType<MemoryDreamingEvent>().Sum(e => (decimal)e.MergedCount),
                     MemoryMetric.DecayedCount => g.OfType<MemoryDreamingEvent>().Sum(e => (decimal)e.DecayedCount),
+                    MemoryMetric.CandidateCount => g.OfType<MemoryExtractionEvent>().Sum(e => (decimal)e.CandidateCount),
+                    MemoryMetric.DroppedCount => g.OfType<MemoryExtractionEvent>().Sum(e => (decimal)e.DroppedCount),
+                    MemoryMetric.RefusedMergeCount => g.OfType<MemoryDreamingEvent>().Sum(e => (decimal)e.RefusedCount),
                     _ => throw new ArgumentOutOfRangeException(nameof(metric))
                 });
     }
@@ -429,6 +440,123 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                 g => isDuration
                     ? AggregateLatency(g.Select(e => (decimal)(e.DurationMs ?? 0)), aggregation)
                     : (decimal)g.Count());
+    }
+
+    public async Task<Dictionary<string, decimal>> GetSkillPreloadGroupedAsync(
+        SkillPreloadDimension dimension,
+        SkillPreloadMetric metric,
+        DateOnly from,
+        DateOnly to,
+        Aggregation aggregation = Aggregation.Avg)
+    {
+        var events = await GetEventsAsync<SkillPreloadEvent>("metrics:skills:", from, to);
+
+        // By skill, an event counts once per skill it preloaded and not at all when it preloaded
+        // none: the question that dimension answers is "which skills arrive early".
+        var keyed = dimension == SkillPreloadDimension.Skill
+            ? events.SelectMany(e => e.Skills.Select(skill => (Key: skill, Event: e)))
+            : events.Select(e => (Key: dimension switch
+            {
+                SkillPreloadDimension.Outcome => e.Outcome,
+                SkillPreloadDimension.Agent => e.AgentId ?? "(unknown)",
+                SkillPreloadDimension.Channel => e.Channel ?? "(unknown)",
+                _ => throw new ArgumentOutOfRangeException(nameof(dimension))
+            }, Event: e));
+
+        return keyed
+            .GroupBy(k => k.Key)
+            .ToDictionary(
+                g => g.Key,
+                g => metric switch
+                {
+                    SkillPreloadMetric.Count => (decimal)g.Count(),
+                    SkillPreloadMetric.LatencyMs => AggregateLatency(
+                        g.Where(k => k.Event.DurationMs is not null).Select(k => (decimal)k.Event.DurationMs!.Value), aggregation),
+                    // One judgment's tokens belong to the judgment, not to each skill it happened
+                    // to preload: summing the whole event under every skill made two bars of
+                    // 2,200 out of one 2,200-token call. Split across the skills it is keyed
+                    // under, so the bars still total what the pass actually spent.
+                    SkillPreloadMetric.InputTokens => g.Sum(k =>
+                        (decimal)(k.Event.InputTokens ?? 0) / (dimension == SkillPreloadDimension.Skill
+                            ? Math.Max(1, k.Event.Skills.Count)
+                            : 1)),
+                    _ => throw new ArgumentOutOfRangeException(nameof(metric))
+                });
+    }
+
+    public async Task<Dictionary<string, decimal>> GetModalDismissalGroupedAsync(
+        ModalDismissalDimension dimension,
+        ModalDismissalMetric metric,
+        DateOnly from,
+        DateOnly to,
+        Aggregation aggregation = Aggregation.Avg)
+    {
+        var events = await GetEventsAsync<ModalDismissalEvent>("metrics:modals:", from, to);
+
+        return events
+            .GroupBy(e => dimension switch
+            {
+                ModalDismissalDimension.Kind => e.Kind,
+                ModalDismissalDimension.Outcome => e.Outcome,
+                _ => throw new ArgumentOutOfRangeException(nameof(dimension))
+            })
+            .ToDictionary(
+                g => g.Key,
+                g => metric switch
+                {
+                    ModalDismissalMetric.Count => (decimal)g.Count(),
+                    // Only a judgment carries a latency; a wall a selector closed has none to average.
+                    ModalDismissalMetric.LatencyMs => AggregateLatency(
+                        g.Where(e => e.DurationMs is not null).Select(e => (decimal)e.DurationMs!.Value), aggregation),
+                    _ => throw new ArgumentOutOfRangeException(nameof(metric))
+                });
+    }
+
+    // One series per outcome, a count per bucket: the miss rate over time, and beside it the share
+    // each path closed. Filtered to one kind when the page asks for it.
+    public async Task<IReadOnlyList<LatencyTrendSeries>> GetModalDismissalTrendAsync(
+        DateOnly from, DateOnly to, string? kind = null)
+    {
+        var events = await GetEventsAsync<ModalDismissalEvent>("metrics:modals:", from, to);
+
+        return CountTrend(
+            events.Where(e => kind is null || e.Kind == kind),
+            e => e.Outcome,
+            to.DayNumber - from.DayNumber <= 2);
+    }
+
+    // One series per outcome, a count per bucket: what "the preload rate over time" is read off.
+    public async Task<IReadOnlyList<LatencyTrendSeries>> GetSkillPreloadTrendAsync(DateOnly from, DateOnly to)
+    {
+        var events = await GetEventsAsync<SkillPreloadEvent>("metrics:skills:", from, to);
+
+        return CountTrend(events, e => e.Outcome, to.DayNumber - from.DayNumber <= 2);
+    }
+
+    // A count per bucket, zero-filled across every bucket any series has an event in. These are
+    // drawn as lines, and for a count a missing bucket means none happened — left out, the line
+    // runs straight from one occurrence to the next and reads as a steady rate over all the hours
+    // between. A latency trend is the opposite and is deliberately not filled: there, no point
+    // means nothing was measured, and a zero would claim something answered instantly.
+    private static IReadOnlyList<LatencyTrendSeries> CountTrend<T>(
+        IEnumerable<T> events, Func<T, string?> outcomeOf, bool hourly) where T : MetricEvent
+    {
+        var bucketed = events
+            .Select(e => (Outcome: outcomeOf(e) ?? "(unrecorded)", Bucket: BucketTimestamp(e.Timestamp, hourly)))
+            .ToList();
+        var buckets = bucketed.Select(e => e.Bucket).Distinct().OrderBy(b => b).ToList();
+
+        return bucketed
+            .GroupBy(e => e.Outcome)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(outcome =>
+            {
+                var counts = outcome.GroupBy(e => e.Bucket).ToDictionary(b => b.Key, b => b.Count());
+                return new LatencyTrendSeries(
+                    outcome.Key,
+                    buckets.Select(b => new LatencyTrendPoint(b, counts.GetValueOrDefault(b))).ToList());
+            })
+            .ToList();
     }
 
     public async Task<Dictionary<string, int>> GetScheduleGroupedAsync(

@@ -21,6 +21,7 @@ using ModelContextProtocol.Protocol;
 using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Integration.McpServers;
 
 namespace Tests.Integration.McpServerTests;
 
@@ -45,7 +46,10 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
         {
             BraveSearch = new BraveSearchConfiguration { ApiKey = "test" },
             Camoufox = null,
-            CapSolver = null
+            CapSolver = null,
+            // The host starts the heartbeat, which dials the metrics connection: unreachable but
+            // well-formed, so it hands back a disconnected multiplexer instead of failing start-up.
+            RedisConnectionString = McpServerRegistrations.UnreachableRedis
         });
         builder.Services.RemoveAll<IWebBrowser>();
         builder.Services.AddSingleton<IWebBrowser>(_browser);

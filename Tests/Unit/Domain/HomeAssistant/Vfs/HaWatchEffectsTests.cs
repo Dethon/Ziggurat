@@ -29,7 +29,7 @@ public class HaWatchEffectsTests
         var local = client;
         var time = new FakeTimeProvider(_now);
         return new HaFileSystem(new HaCatalogProvider(() => local, time), () => local, timeProvider: time,
-            caller: () => new ConversationContext("jonas", "conv-1", "fran", origin ?? new ReplyTarget("telegram", "conv-1")));
+            caller: new ConversationContext("jonas", "conv-1", "fran", origin ?? new ReplyTarget("telegram", "conv-1")));
     }
 
     private static async Task<JsonObject> Written(HaFileSystem fs, FakeHaClient client, string id, string effects, string extra = "")
@@ -346,7 +346,7 @@ public class HaWatchAnnounceTargetTests
         var local = client;
         var time = new FakeTimeProvider();
         return new HaFileSystem(new HaCatalogProvider(() => local, time), () => local, timeProvider: time,
-            caller: () => new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("signalr", "conv-1")),
+            caller: new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("signalr", "conv-1")),
             satellites: satellites);
     }
 

@@ -2,8 +2,11 @@ using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
+using Domain.Judgments;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
@@ -13,6 +16,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
+using Tests.Unit.Judgments;
 
 namespace Tests.Unit.McpChannelVoice;
 
@@ -23,6 +27,11 @@ public class RequestApprovalToolTests : IDisposable
     private readonly ReplyTextAccumulator _accumulator = new();
     private readonly Mock<ITextToSpeech> _tts = new();
     private readonly Mock<ISpeechToText> _stt = new();
+    private readonly RecordingMetricsPublisher _metrics = new();
+    // The word list alone, as a deployment with no TypeSafe key reads: the tests of the capture
+    // and the turn are about the answer's audio, not its meaning.
+    private IApprovalReader _reader = new JudgedApprovalReader(
+        StubJudge.Absent(AbsenceReason.Unconfigured), new ApprovalJudgmentSettings(), TimeProvider.System);
     private readonly CancellationTokenSource _pump = new();
     private readonly Task _pumpTask;
     private readonly VoiceConversationManager _manager;
@@ -96,7 +105,8 @@ public class RequestApprovalToolTests : IDisposable
             .AddSingleton<ISpeechToText>(_stt.Object)
             .AddSingleton(wyoming)
             .AddSingleton(gates)
-            .AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>())
+            .AddSingleton<IMetricsPublisher>(_metrics)
+            .AddSingleton(sp => _reader)
             .AddSingleton<ILogger<RequestApprovalTool>>(NullLogger<RequestApprovalTool>.Instance)
             .AddSingleton<ILogger<ReplySpeaker>>(NullLogger<ReplySpeaker>.Instance)
             .AddSingleton<ReplySpeaker>()
@@ -285,8 +295,8 @@ public class RequestApprovalToolTests : IDisposable
         using var feed = new CancellationTokenSource();
         var feeder = FeedRoomToneAsync(feed.Token);
 
-        (await RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], services)).ShouldBe("rejected");
+        (await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, services)).ShouldBe("rejected");
         await feed.CancelAsync();
 
         FloorOfNextGateFor(gates, _session).ShouldBe(90, tolerance: 5);
@@ -325,8 +335,8 @@ public class RequestApprovalToolTests : IDisposable
         var gates = new SilenceGateFactory(voice, wyoming, TimeProvider.System);
         var services = BuildServices(voice, wyoming, gates);
 
-        var run = RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], services);
+        var run = RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, services);
 
         await PromptHeardThenMicOpenAsync();
         _session.Mic.Feed(Level(90));
@@ -353,8 +363,8 @@ public class RequestApprovalToolTests : IDisposable
         using var feed = new CancellationTokenSource();
         var feeder = FeedAnswerOverBackgroundAsync(feed.Token);
 
-        var result = await RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], services);
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, services);
 
         await feed.CancelAsync();
         result.ShouldBe("rejected");
@@ -375,8 +385,8 @@ public class RequestApprovalToolTests : IDisposable
         using var feed = new CancellationTokenSource();
         var feeder = FeedAnswerOverBackgroundAsync(feed.Token);
 
-        var result = await RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], services);
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, services);
 
         await feed.CancelAsync();
         result.ShouldBe("approved");
@@ -385,10 +395,10 @@ public class RequestApprovalToolTests : IDisposable
     [Fact]
     public async Task NotifyMode_DoesNotSpeakOrWaitForResponse()
     {
-        var result = await RequestApprovalTool.McpRun(
+        var result = await RequestApprovalTool.RunAsync(
             _conversationId, ApprovalMode.Notify,
             [MakeRequest()],
-            _services);
+            turnModel: null, _services);
 
         result.ShouldBe("notified");
         // Auto-approved tool calls must not be narrated over voice — with no pending
@@ -404,10 +414,10 @@ public class RequestApprovalToolTests : IDisposable
         // The agent wrote an acknowledgement before calling the (auto-approved) tool.
         _accumulator.Append(_conversationId, "Dame un momento");
 
-        var result = await RequestApprovalTool.McpRun(
+        var result = await RequestApprovalTool.RunAsync(
             _conversationId, ApprovalMode.Notify,
             [MakeRequest()],
-            _services);
+            turnModel: null, _services);
 
         result.ShouldBe("notified");
         // The pending acknowledgement is spoken now so the user hears it while the tool runs.
@@ -423,11 +433,11 @@ public class RequestApprovalToolTests : IDisposable
     public async Task NotifyMode_SecondCallOfTheTurn_KeepsNarrationBuffered()
     {
         _accumulator.Append(_conversationId, "Dame un momento");
-        await RequestApprovalTool.McpRun(_conversationId, ApprovalMode.Notify, [MakeRequest()], _services);
+        await RequestApprovalTool.RunAsync(_conversationId, ApprovalMode.Notify, [MakeRequest()], turnModel: null, _services);
 
         _accumulator.Append(_conversationId, "Ahora miro el termostato");
-        var result = await RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Notify, [MakeRequest()], _services);
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Notify, [MakeRequest()], turnModel: null, _services);
 
         result.ShouldBe("notified");
         _tts.Verify(
@@ -464,7 +474,7 @@ public class RequestApprovalToolTests : IDisposable
 
         try
         {
-            (await RequestApprovalTool.McpRun(conversationId, ApprovalMode.Notify, [MakeRequest()], _services))
+            (await RequestApprovalTool.RunAsync(conversationId, ApprovalMode.Notify, [MakeRequest()], turnModel: null, _services))
                 .ShouldBe("notified");
 
             var job = await seen.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -497,8 +507,8 @@ public class RequestApprovalToolTests : IDisposable
         using var feed = new CancellationTokenSource();
         var feeder = FeedAnswersAsync(feed.Token);
 
-        var result = await RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
 
         await feed.CancelAsync();
         result.ShouldBe("approved");
@@ -514,8 +524,8 @@ public class RequestApprovalToolTests : IDisposable
         using var feed = new CancellationTokenSource();
         var feeder = FeedAnswersAsync(feed.Token);
 
-        var result = await RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
 
         await feed.CancelAsync();
         result.ShouldBe("rejected");
@@ -531,8 +541,8 @@ public class RequestApprovalToolTests : IDisposable
         using var feed = new CancellationTokenSource();
         var feeder = FeedAnswersAsync(feed.Token);
 
-        var result = await RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
 
         await feed.CancelAsync();
         result.ShouldBe("rejected");
@@ -544,8 +554,8 @@ public class RequestApprovalToolTests : IDisposable
         _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
 
-        var run = RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+        var run = RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
 
         await PromptHeardThenMicOpenAsync();
 
@@ -567,8 +577,8 @@ public class RequestApprovalToolTests : IDisposable
         _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
 
-        var run = RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+        var run = RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
 
         await PromptHeardThenMicOpenAsync();
 
@@ -605,8 +615,8 @@ public class RequestApprovalToolTests : IDisposable
         var services = BuildServices(
             voice, wyoming, new SilenceGateFactory(voice, wyoming, TimeProvider.System), fake);
 
-        var run = RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], services);
+        var run = RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, services);
 
         // The prompt has been heard once a job queued behind it drains (same FIFO queue).
         var behindThePrompt = _session.Playback.Enqueue(new PlaybackJob(
@@ -637,8 +647,8 @@ public class RequestApprovalToolTests : IDisposable
     [Fact]
     public async Task McpRun_UnknownConversation_ReturnsRejected()
     {
-        var result = await RequestApprovalTool.McpRun(
-            "ghost-01:999", ApprovalMode.Request, [MakeRequest()], _services);
+        var result = await RequestApprovalTool.RunAsync(
+            "ghost-01:999", ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
 
         result.ShouldBe("rejected");
     }
@@ -689,8 +699,8 @@ public class RequestApprovalToolTests : IDisposable
                 }
             }, feed.Token);
 
-            var result = await RequestApprovalTool.McpRun(
-                conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+            var result = await RequestApprovalTool.RunAsync(
+                conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
 
             await feed.CancelAsync();
 
@@ -706,5 +716,86 @@ public class RequestApprovalToolTests : IDisposable
             { await pumpTask; }
             catch { /* OCE on teardown */ }
         }
+    }
+
+    // The answer is read for what it means, not by the word list at the call site: a reader that
+    // hears "adelante" as a sure yes approves, and "sí, pero la de la cocina no" — a yes to the
+    // word list — re-asks and then, on a second narrowed answer, rejects.
+    [Fact]
+    public async Task RequestMode_TheReaderDecides_NotTheWordList()
+    {
+        _stt.SetupSequence(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí, pero la de la cocina no", Confidence = 0.9 })
+            .ReturnsAsync(new TranscriptionResult { Text = "adelante", Confidence = 0.9 });
+        var judge = new StubJudge(request => request.State["answer"]!.GetValue<string>() == "adelante"
+            ? StubJudge.Answered((JudgedApprovalReader.ApprovedQuestionId, 0.95), (JudgedApprovalReader.DeclinedQuestionId, 0.03))
+            : StubJudge.Answered((JudgedApprovalReader.ApprovedQuestionId, 0.03), (JudgedApprovalReader.DeclinedQuestionId, 0.69)));
+        _reader = new JudgedApprovalReader(judge, new ApprovalJudgmentSettings(), TimeProvider.System);
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
+
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest("mcp__lights__turn_off")], turnModel: null, _services);
+
+        await feed.CancelAsync();
+        result.ShouldBe("approved");
+        judge.Requests.Select(r => r.State["prompt"]!.GetValue<string>()).ShouldBe([
+            "¿Apruebas turn_off? Di sí o no.",
+            "No entendí. ¿Apruebas turn_off? Di sí o no."
+        ]);
+        _metrics.Published.OfType<VoiceEvent>()
+            .Where(e => e.Metric == VoiceMetric.ApprovalResolved)
+            .Select(e => (e.Outcome, e.DecidedBy))
+            .ShouldBe([("Ambiguous", ApprovalDeciders.Judgment), ("Approved", ApprovalDeciders.Judgment)]);
+    }
+
+    [Fact]
+    public async Task RequestMode_TheMetric_SaysWhoDecided_AndWhatJevAnswered()
+    {
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí sí", Confidence = 0.9 });
+        _reader = new JudgedApprovalReader(
+            StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.88), (JudgedApprovalReader.DeclinedQuestionId, 0.02)),
+            new ApprovalJudgmentSettings(), TimeProvider.System);
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
+
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+
+        await feed.CancelAsync();
+        result.ShouldBe("approved");
+        var resolved = _metrics.Published.OfType<VoiceEvent>()
+            .Single(e => e.Metric == VoiceMetric.ApprovalResolved);
+        resolved.Outcome.ShouldBe("Approved");
+        resolved.DecidedBy.ShouldBe(ApprovalDeciders.Agreement);
+        resolved.ApprovedProbability.ShouldBe(0.88);
+        resolved.DeclinedProbability.ShouldBe(0.02);
+        resolved.DurationMs.ShouldNotBeNull();
+        resolved.SatelliteId.ShouldBe("kitchen-01");
+    }
+
+    [Fact]
+    public async Task RequestMode_JevAbsent_TheMetric_SaysTheWordListDecided_WithNoProbability()
+    {
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "no thanks", Confidence = 0.9 });
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
+
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+
+        await feed.CancelAsync();
+        result.ShouldBe("rejected");
+        var resolved = _metrics.Published.OfType<VoiceEvent>()
+            .Single(e => e.Metric == VoiceMetric.ApprovalResolved);
+        resolved.Outcome.ShouldBe("Declined");
+        resolved.DecidedBy.ShouldBe(ApprovalDeciders.WordList);
+        resolved.ApprovedProbability.ShouldBeNull();
+        resolved.DeclinedProbability.ShouldBeNull();
     }
 }

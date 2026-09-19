@@ -5,9 +5,11 @@ using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Schedules;
+using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Dashboard.Client.State.Web;
 using Shouldly;
 using Tests.Unit.Dashboard.Client.Fixtures;
 
@@ -30,7 +32,7 @@ public sealed class MetricFamilyTableTests : IDisposable
         var http = new HttpClient(_handler) { BaseAddress = new Uri("http://localhost") };
         _families = new MetricFamilyTable(
             new MetricsApiService(http), _tokensStore, _toolsStore, _errorsStore,
-            _schedulesStore, _memoryStore, _latencyStore, _voiceStore);
+            _schedulesStore, _memoryStore, _latencyStore, _voiceStore, new SkillsStore(), new WebStore());
     }
 
     public void Dispose()
@@ -59,7 +61,7 @@ public sealed class MetricFamilyTableTests : IDisposable
             .Select(property => (MetricFamily)property.GetValue(_families)!)
             .ToList();
 
-        declared.Count.ShouldBe(7);
+        declared.Count.ShouldBe(9);
         _families.All.ShouldBe(declared, ignoreOrder: true);
     }
 }

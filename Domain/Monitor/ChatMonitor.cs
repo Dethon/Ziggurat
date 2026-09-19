@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
+using Domain.Skills;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
@@ -18,7 +19,9 @@ public class ChatMonitor(
     // Optional because a host may configure none — a test harness, or a deployment where every
     // channel names its agent. With none configured a message that names no agent is refused
     // when the agent is built, which is the point: nothing guesses.
-    AgentDefaults? agentDefaults = null)
+    AgentDefaults? agentDefaults = null,
+    // Nullable exactly as the recall hook is: a host without a judge preloads nothing.
+    ISkillPreloader? skillPreloader = null)
 {
     private readonly DeliveryTargetResolver _targetResolver = new(channels, logger);
     private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
@@ -81,7 +84,8 @@ public class ChatMonitor(
         [EnumeratorCancellation] CancellationToken ct)
     {
         await using var conversation = new ConversationGroup(
-            agentKey, agentFactory, _targetResolver, threadResolver, metricsPublisher, memoryRecallHook, logger);
+            agentKey, agentFactory, _targetResolver, threadResolver, metricsPublisher, memoryRecallHook,
+            skillPreloader, logger);
 
         await foreach (var turnUpdate in conversation.RunAsync(group, group.Complete, ct).WithCancellation(ct))
         {

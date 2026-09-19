@@ -10,6 +10,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Monitor;
+using Domain.Prompts;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,7 @@ internal sealed class FakeAiAgent : DisposableAgent
     public TimeSpan WarmupDelay { get; init; }
     public TimeSpan TurnDelay { get; init; }
     public Func<CancellationToken, Task>? TurnGate { get; init; }
+    public Func<Task>? WarmupGate { get; init; }
     public ConcurrentQueue<string> Events { get; } = new();
     public ConcurrentQueue<string> RestoredSessionKeys { get; } = new();
     public ConcurrentQueue<IReadOnlyList<ChatMessage>> ReceivedMessages { get; } = new();
@@ -40,6 +42,22 @@ internal sealed class FakeAiAgent : DisposableAgent
 
     public override IVirtualFileSystemRegistry? GetFileSystemRegistry(AgentSession thread)
         => FileSystemRegistry;
+
+    public IReadOnlyList<PromptSkill> Skills { get; set; } = [];
+
+    // Only once warmed up, as the real agent's are: the session that carries the skills is built
+    // by the warmup, and a caller asking before it has run gets nothing.
+    public override IReadOnlyList<PromptSkill> GetSkills(AgentSession thread) =>
+        WarmupSignaled.Task.IsCompletedSuccessfully ? Skills : [];
+
+    public int HistoryReads;
+
+    public override Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct)
+    {
+        Interlocked.Increment(ref HistoryReads);
+        return Task.FromResult<IReadOnlyList<ChatMessage>>(
+            thread is FakeAgentThread fake ? [.. fake.PersistedMessages] : []);
+    }
 
     public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
     {
@@ -52,6 +70,11 @@ internal sealed class FakeAiAgent : DisposableAgent
         if (WarmupDelay > TimeSpan.Zero)
         {
             await Task.Delay(WarmupDelay, ct);
+        }
+
+        if (WarmupGate is not null)
+        {
+            await WarmupGate();
         }
 
         Events.Enqueue("warmup");

@@ -1,3 +1,4 @@
+using System.Collections;
 using Dashboard.Client.Contracts;
 using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
@@ -24,8 +25,9 @@ public sealed class MetricsHubBinder(
     // the response lands is erased by the older snapshot, and one the snapshot already contains
     // would be appended on top of its own copy. So the live connection holds pushes for the
     // duration of a catch-up and releases them against the reloaded lists, where each held event is
-    // skipped exactly when the snapshot already delivered it — record value equality is the
-    // identity. Skipping drops the whole push, its summary counters included, because catch-up
+    // skipped exactly when the snapshot already delivered it — these events carry no id, so having
+    // the same values is the identity (see Holds). Skipping drops the whole push, its summary
+    // counters included, because catch-up
     // reloads those totals from the server too and they already count the event. Holds nest,
     // because a reconnect can land while a catch-up is still holding: the overlapping hold shares
     // the queue instead of discarding it, and only the last release delivers.
@@ -85,6 +87,43 @@ public sealed class MetricsHubBinder(
             return apply(evt);
         };
 
+    // Record value equality compares a list or a dictionary member by reference, and the snapshot's
+    // copy of an event is deserialized separately from the hub's — so for the three event types
+    // that carry collections (skill preload, memory judgment, dreaming's refused merges) `Contains`
+    // answered false for an event the catch-up had already delivered, and the held push landed on
+    // top of its own copy. These events carry no id, so the identity is "the same values", and
+    // that is what this asks: the record's own equality first, then a structural walk of whatever
+    // members it compared by reference. Only runs while a catch-up is holding.
+    private static bool Holds<T>(IEnumerable<T> caughtUp, T evt) where T : MetricEvent =>
+        caughtUp.Any(held => held is not null && SameEvent(held, evt));
+
+    private static bool SameEvent<T>(T a, T b) where T : MetricEvent =>
+        ReferenceEquals(a, b)
+        || (a.GetType() == b.GetType() && a.GetType().GetProperties().All(p => SameValue(p.GetValue(a), p.GetValue(b))));
+
+    private static bool SameValue(object? a, object? b) => (a, b) switch
+    {
+        (null, null) => true,
+        (null, _) or (_, null) => false,
+        (string x, string y) => x == y,
+        (IDictionary x, IDictionary y) => SameDictionary(x, y),
+        (IEnumerable x, IEnumerable y) => SameSequence(x, y),
+        _ => a.Equals(b)
+    };
+
+    private static bool SameDictionary(IDictionary a, IDictionary b)
+    {
+        if (a.Count != b.Count)
+        {
+            return false;
+        }
+
+        return a.Keys.Cast<object>().All(key => b.Contains(key) && SameValue(a[key], b[key]));
+    }
+
+    private static bool SameSequence(IEnumerable a, IEnumerable b) =>
+        a.Cast<object?>().SequenceEqual(b.Cast<object?>(), EqualityComparer<object?>.Create(SameValue));
+
     // The live-update path's failure policy, written once: a refresh that fails leaves the family's
     // breakdown at its last known value. Nothing cancels a refresh any more, so a request abandoned
     // on an HTTP timeout settles the same way as any other failure and needs no arm of its own.
@@ -102,7 +141,7 @@ public sealed class MetricsHubBinder(
         ArgumentNullException.ThrowIfNull(hub);
 
         _subscriptions.Add(hub.On("OnMemoryRecall", OnPush<MemoryRecallEvent>(
-            evt => families.Memory.Store.State.RecallEvents.Contains(evt),
+            evt => Holds(families.Memory.Store.State.RecallEvents, evt),
             async evt =>
             {
                 metricsStore.IncrementMemoryRecall(evt.MemoryCount);
@@ -111,7 +150,7 @@ public sealed class MetricsHubBinder(
             })));
 
         _subscriptions.Add(hub.On("OnMemoryExtraction", OnPush<MemoryExtractionEvent>(
-            evt => families.Memory.Store.State.ExtractionEvents.Contains(evt),
+            evt => Holds(families.Memory.Store.State.ExtractionEvents, evt),
             async evt =>
             {
                 metricsStore.IncrementMemoryExtraction(evt.StoredCount);
@@ -120,7 +159,7 @@ public sealed class MetricsHubBinder(
             })));
 
         _subscriptions.Add(hub.On("OnMemoryDreaming", OnPush<MemoryDreamingEvent>(
-            evt => families.Memory.Store.State.DreamingEvents.Contains(evt),
+            evt => Holds(families.Memory.Store.State.DreamingEvents, evt),
             async evt =>
             {
                 metricsStore.IncrementMemoryDreaming(evt.MergedCount, evt.DecayedCount);
@@ -128,8 +167,16 @@ public sealed class MetricsHubBinder(
                 await RefreshAsync(families.Memory);
             })));
 
+        _subscriptions.Add(hub.On("OnMemoryJudgment", OnPush<MemoryJudgmentEvent>(
+            evt => Holds(families.Memory.Store.State.JudgmentEvents, evt),
+            async evt =>
+            {
+                families.Memory.Store.AppendJudgmentEvent(evt);
+                await RefreshAsync(families.Memory);
+            })));
+
         _subscriptions.Add(hub.On("OnTokenUsage", OnPush<TokenUsageEvent>(
-            evt => families.Tokens.Store.State.Events.Contains(evt),
+            evt => Holds(families.Tokens.Store.State.Events, evt),
             async evt =>
             {
                 metricsStore.IncrementFromTokenUsage(evt);
@@ -149,7 +196,7 @@ public sealed class MetricsHubBinder(
             })));
 
         _subscriptions.Add(hub.On("OnToolCall", OnPush<ToolCallEvent>(
-            evt => families.Tools.Store.State.Events.Contains(evt),
+            evt => Holds(families.Tools.Store.State.Events, evt),
             async evt =>
             {
                 metricsStore.IncrementToolCall(!evt.Success);
@@ -158,7 +205,7 @@ public sealed class MetricsHubBinder(
             })));
 
         _subscriptions.Add(hub.On("OnError", OnPush<ErrorEvent>(
-            evt => families.Errors.Store.State.Events.Contains(evt),
+            evt => Holds(families.Errors.Store.State.Events, evt),
             async evt =>
             {
                 families.Errors.Store.AppendEvent(evt);
@@ -166,7 +213,7 @@ public sealed class MetricsHubBinder(
             })));
 
         _subscriptions.Add(hub.On("OnScheduleExecution", OnPush<ScheduleExecutionEvent>(
-            evt => families.Schedules.Store.State.Events.Contains(evt),
+            evt => Holds(families.Schedules.Store.State.Events, evt),
             async evt =>
             {
                 families.Schedules.Store.AppendEvent(evt);
@@ -174,7 +221,7 @@ public sealed class MetricsHubBinder(
             })));
 
         _subscriptions.Add(hub.On("OnLatency", OnPush<LatencyEvent>(
-            evt => families.Latency.Store.State.Events.Contains(evt),
+            evt => Holds(families.Latency.Store.State.Events, evt),
             async evt =>
             {
                 families.Latency.Store.AppendEvent(evt);
@@ -182,11 +229,27 @@ public sealed class MetricsHubBinder(
             })));
 
         _subscriptions.Add(hub.On("OnVoice", OnPush<VoiceEvent>(
-            evt => families.Voice.Store.State.Events.Contains(evt),
+            evt => Holds(families.Voice.Store.State.Events, evt),
             async evt =>
             {
                 families.Voice.Store.AppendEvent(evt);
                 await RefreshAsync(families.Voice);
+            })));
+
+        _subscriptions.Add(hub.On("OnSkillPreload", OnPush<SkillPreloadEvent>(
+            evt => Holds(families.Skills.Store.State.Events, evt),
+            async evt =>
+            {
+                families.Skills.Store.AppendEvent(evt);
+                await RefreshAsync(families.Skills);
+            })));
+
+        _subscriptions.Add(hub.On("OnModalDismissal", OnPush<ModalDismissalEvent>(
+            evt => Holds(families.Web.Store.State.Events, evt),
+            async evt =>
+            {
+                families.Web.Store.AppendEvent(evt);
+                await RefreshAsync(families.Web);
             })));
 
         // Health is an upsert, so there is no copy of it in the roster catch-up reloads to

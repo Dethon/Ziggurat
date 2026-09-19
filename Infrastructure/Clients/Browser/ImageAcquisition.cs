@@ -51,7 +51,7 @@ internal static class ImageAcquisition
     // The rasters the chat wire accepts. Anything else leaves as pixels: as-served SVG bytes made
     // the vision provider refuse the whole request with HTTP 400. One constant, one comparison --
     // AcceptedAsServed is the only reader.
-    private static readonly string[] WireRasters =
+    private static readonly string[] _wireRasters =
         ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
     public static async Task<FetchedImage> FetchAsync(IImagePageProbe probe, string imageRef)
@@ -125,6 +125,6 @@ internal static class ImageAcquisition
     private static string? AcceptedAsServed(string? mediaType)
     {
         var trimmed = mediaType?.Split(';')[0].Trim();
-        return trimmed is not null && WireRasters.Contains(trimmed) ? trimmed : null;
+        return trimmed is not null && _wireRasters.Contains(trimmed) ? trimmed : null;
     }
 }

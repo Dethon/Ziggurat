@@ -106,7 +106,9 @@ as old as the read rather than as old as the conversation. The served `home_assi
 (`Domain/Prompts/HomeAssistantPrompt.cs`) is the standing stub: scope, which mechanism a request
 is (calendar alarm, timer, schedule, watch), that an area id is read rather than derived, and the
 instruction to load the `home-assistant` skill and read the index in the same turn before any
-home task. The doing rules — layout, workflow, reading results, history, alarms, music — are the
+home task. When the host preloads the skill it makes that read too (`PreloadReads` on the
+declaration, `SkillPreloadReads` over the session's mounts): the index lands beside the body, as
+fresh as that moment, and the model's first call is the action. The doing rules — layout, workflow, reading results, history, alarms, music — are the
 `home-assistant` skill (`Domain/Prompts/HomeAssistantSkill.cs`), which says to re-read the index
 when a name does not resolve; the doing rules of a watch are the `home-watches` skill
 (`Domain/Prompts/HomeWatchesSkill.cs`), the one home task that loads its own skill instead. Both
@@ -137,7 +139,10 @@ subtree and untouchable through it. `enabled` is the entity's on/off, synced wit
 `automation.turn_on/off` after every write; `status.json` is rendered, read-only. Text fields cross
 as Jinja and are rendered by the home inside a `variables` step, so the rest_command payloads are
 composed with `to_json` and a quote in a prompt cannot break them. The creating agent comes from
-`CallerContext` (entered by the call-tool filter from the request's `_meta`); a file naming no
+the call's `_meta`: the fs-tool registrar asks the mount for itself as that caller sees it
+(`HaFileSystem.For`), never an ambient. The view is a shallow copy with the caller swapped, not a
+second construction — a hand rebuild falls behind the constructor silently, and
+`HaFileSystemCallerViewTests` pins that a view differs from its mount in the caller alone; a file naming no
 `deliverTo` takes the caller's origin channel and address, because the model is never told which
 channel a turn came from, and a file naming no `userId` takes the caller's user for the same
 reason (a fire attributed to nobody would run as the sender label "watch"); a replace naming

@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Domain.Contracts;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
@@ -30,6 +31,20 @@ public sealed class RedisChatMessageStore(
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly IMetricsPublisher _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
 
+    // What this turn's history read returned, by session, for the context providers that run
+    // after it on the same turn: the framework hands them the caller's messages alone, and the
+    // skills provider needs the history to know what is already loaded. Reading the thread twice
+    // per turn is the cost this avoids; weakly keyed, so a session that ends takes its entry.
+    private readonly ConditionalWeakTable<AgentSession, IReadOnlyList<ChatMessage>> _lastProvided = [];
+
+    public IReadOnlyList<ChatMessage> LastProvided(AgentSession? session) =>
+        session is not null && _lastProvided.TryGetValue(session, out var messages) ? messages : [];
+
+    // The conversation as persisted, for a caller that needs it before the turn runs. A session
+    // with no key yet has no history, and asking must not mint one.
+    public async Task<IReadOnlyList<ChatMessage>> ReadAsync(AgentSession session) =>
+        TryGetStateKey(session, out var key) ? await store.GetMessagesAsync(key!) ?? [] : [];
+
     public override IReadOnlyList<string> StateKeys => [StateKey];
 
     private static string ResolveRedisKey(AgentSession session)
@@ -50,7 +65,9 @@ public sealed class RedisChatMessageStore(
     {
         ArgumentNullException.ThrowIfNull(context.Session);
         var redisKey = ResolveRedisKey(context.Session);
-        return await store.GetMessagesAsync(redisKey) ?? [];
+        var messages = await store.GetMessagesAsync(redisKey) ?? [];
+        _lastProvided.AddOrUpdate(context.Session, messages);
+        return messages;
     }
 
     protected override async ValueTask StoreChatHistoryAsync(

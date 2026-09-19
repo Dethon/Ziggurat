@@ -44,6 +44,32 @@ voice-only unit has no PipeWire and no per-source calibration: it plays everythi
 included, through a single ALSA softvol master that the spoken volume commands drive, landed on
 the same startup level each boot by a provisioning-installed oneshot.
 
+**A spoken approval is read for what it means, and never against the person.** `RequestApprovalTool`
+asks an `IApprovalReader`; `JudgedApprovalReader` puts the prompt and the transcript to Jev as two
+nouls (`approved`, `declined`) and acts by the bars in this server's own `Approval:Judgment`: the
+judge alone when it is sure, the judge and the word list together when both lean the same way, a
+re-ask otherwise. **One asymmetry, deliberate:** a sure yes over a word list that heard a refusal
+re-asks instead of approving — that is the only path where a single misjudgment runs a tool the old
+code refused — while a sure no over a word-list yes still declines, because refusing is the safe
+direction and a narrowed yes is what the list misreads. The word list is the whole answer when the
+judge is off, absent, late or configured with bars it cannot be read against (a deadline that is not
+a wait, a `Counter` at or above `Sure`); the caller's own cancellation propagates rather than
+falling back, because a verdict then belongs to a turn nobody is waiting for. **A turn addressed to
+the Lemonade chat host is read by the word list alone** — the Jev client's rule, not the reader's
+(`.claude/rules/mcp-hosting.md`): it sends nothing and the absence falls to the word list like any
+other. `RequestApprovalTool.McpRun` reads the turn's model off the call's `_meta` and hands it to
+`IApprovalReader.ReadAsync`; it is there only because `McpChannelConnection.RequestApprovalAsync`
+stamps the turn's context on the approval hop (`McpChannelConnectionApprovalMetaTests`).
+
+**The wording is measured, and the prompt is part of the wording.** `jev-approval-cases.json` carries
+the labelled answers against every prompt shape the tool actually speaks — a natural-language one, a
+bare tool-name suffix (`¿Apruebas turn_off?`), several tool names at once, and the `No entendí.`
+re-ask — because both questions ask about what the prompt *names* and whether a yes narrows it, and
+the original probe measured only the first shape. `ApprovalReaderJevTests` (`Category=Jev`) holds
+every case to no wrong action; the re-ask ceiling is scoped to the two prompts it was measured
+against. Change a question's wording or the spoken prompt only with that test green, and re-probe
+rather than assuming a number carries across shapes.
+
 **Local speaker commands.** `VoiceCommandMatcher` matches a normalized whole transcript (lowercase,
 accents and punctuation stripped, whitespace collapsed) against `VoiceSettings.Commands.Phrases`.
 `LocalCommandDispatcher` (`Services/LocalCommands/`) routes a match to the `ILocalCommandHandler`

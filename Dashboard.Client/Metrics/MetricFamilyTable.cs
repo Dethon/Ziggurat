@@ -3,9 +3,11 @@ using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Schedules;
+using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Dashboard.Client.State.Web;
 using Domain.DTOs.Metrics.Enums;
 
 namespace Dashboard.Client.Metrics;
@@ -30,7 +32,9 @@ public sealed class MetricFamilyTable
         SchedulesStore schedules,
         MemoryStore memory,
         LatencyStore latency,
-        VoiceStore voice)
+        VoiceStore voice,
+        SkillsStore skills,
+        WebStore web)
     {
         Tokens = new MetricFamily<TokensStore>(
             tokens,
@@ -158,15 +162,18 @@ public sealed class MetricFamilyTable
                 var recall = api.GetMemoryRecallAsync(state.From, state.To);
                 var extraction = api.GetMemoryExtractionAsync(state.From, state.To);
                 var dreaming = api.GetMemoryDreamingAsync(state.From, state.To);
-                await Task.WhenAll(recall, extraction, dreaming);
+                var judgments = api.GetMemoryJudgmentsAsync(state.From, state.To);
+                await Task.WhenAll(recall, extraction, dreaming, judgments);
                 var loadedRecall = await recall ?? [];
                 var loadedExtraction = await extraction ?? [];
                 var loadedDreaming = await dreaming ?? [];
+                var loadedJudgments = await judgments ?? [];
                 return () =>
                 {
                     memory.SetRecallEvents(loadedRecall);
                     memory.SetExtractionEvents(loadedExtraction);
                     memory.SetDreamingEvents(loadedDreaming);
+                    memory.SetJudgmentEvents(loadedJudgments);
                 };
             },
             refreshBreakdown: async () =>
@@ -225,7 +232,61 @@ public sealed class MetricFamilyTable
                 voice.SetBreakdown(breakdown ?? []);
             });
 
-        All = [Tokens, Tools, Errors, Schedules, Memory, Latency, Voice];
+        Skills = new MetricFamily<SkillsStore>(
+            skills,
+            "skills",
+            dimension: MetricChoice.For("groupBy", () => skills.State.GroupBy, skills.SetGroupBy),
+            metric: MetricChoice.For("metric", () => skills.State.Metric, skills.SetMetric),
+            setDateRange: skills.SetDateRange,
+            loadEvents: async () =>
+            {
+                var state = skills.State;
+                var loaded = await api.GetSkillPreloadEventsAsync(state.From, state.To) ?? [];
+                return () => skills.SetEvents(loaded);
+            },
+            // The outcome trend rides the breakdown refresh, as Web's does: that is the read a
+            // pill moves and a push brings back into line. Loading it with the events alone left
+            // the page's headline chart frozen while preloads arrived under it.
+            refreshBreakdown: async () =>
+            {
+                var state = skills.State;
+                var breakdown = api.GetGroupedAsync<decimal>(
+                    $"skills/by/{state.GroupBy}", state.From, state.To,
+                    [("metric", state.Metric.ToString()), ("agg", state.Agg.ToString())]);
+                var trend = api.GetSkillPreloadTrendAsync(state.From, state.To);
+                await Task.WhenAll(breakdown, trend);
+                skills.SetBreakdown(await breakdown ?? []);
+                skills.SetTrend(await trend ?? []);
+            });
+
+        Web = new MetricFamily<WebStore>(
+            web,
+            "web",
+            dimension: MetricChoice.For("groupBy", () => web.State.GroupBy, web.SetGroupBy),
+            metric: MetricChoice.For("metric", () => web.State.Metric, web.SetMetric),
+            setDateRange: web.SetDateRange,
+            loadEvents: async () =>
+            {
+                var state = web.State;
+                var loaded = await api.GetModalDismissalEventsAsync(state.From, state.To) ?? [];
+                return () => web.SetEvents(loaded);
+            },
+            // The trend is drawn for the kind the page chose, so it rides the breakdown refresh —
+            // the read a pill moves and a push brings back into line — rather than the event load.
+            refreshBreakdown: async () =>
+            {
+                var state = web.State;
+                var kind = state.Kind == WebState.AllKinds ? null : state.Kind;
+                var breakdown = api.GetGroupedAsync<decimal>(
+                    $"modals/by/{state.GroupBy}", state.From, state.To,
+                    [("metric", state.Metric.ToString()), ("agg", state.Agg.ToString())]);
+                var trend = api.GetModalDismissalTrendAsync(state.From, state.To, kind);
+                await Task.WhenAll(breakdown, trend);
+                web.SetBreakdown(await breakdown ?? []);
+                web.SetTrend(await trend ?? []);
+            });
+
+        All = [Tokens, Tools, Errors, Schedules, Memory, Latency, Voice, Skills, Web];
         OverviewFamilies = [Tokens, Tools, Errors, Schedules, Voice];
     }
 
@@ -233,6 +294,8 @@ public sealed class MetricFamilyTable
     public MetricFamily<ToolsStore> Tools { get; }
     public MetricFamily<ErrorsStore> Errors { get; }
     public MetricFamily<SchedulesStore> Schedules { get; }
+    public MetricFamily<SkillsStore> Skills { get; }
+    public MetricFamily<WebStore> Web { get; }
     public MetricFamily<MemoryStore> Memory { get; }
     public MetricFamily<LatencyStore> Latency { get; }
     public MetricFamily<VoiceStore> Voice { get; }

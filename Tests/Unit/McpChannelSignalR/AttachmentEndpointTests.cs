@@ -24,7 +24,7 @@ namespace Tests.Unit.McpChannelSignalR;
 public sealed class AttachmentEndpointTests : IAsyncLifetime
 {
     private const string TopicId = "topic-1";
-    private static readonly ConversationIdentity ConversationId = new(7, 42);
+    private static readonly ConversationIdentity _conversationId = new(7, 42);
 
     private readonly string _root = Path.Combine(
         Path.GetTempPath(), $"attachments-{Guid.NewGuid():N}");
@@ -75,7 +75,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Fact]
     public async Task AFileUploadedWithAValidTicket_IsAnsweredWithAReference()
     {
-        var ticket = _tickets.MintUpload(TopicId, ConversationId, "default");
+        var ticket = _tickets.MintUpload(TopicId, _conversationId, "default");
 
         var response = await UploadAsync(ticket.Token, TopicId, "hello"u8.ToArray(), "photo.png", "image/png");
 
@@ -92,7 +92,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task StoredBytes_ReadBackThroughTheDownloadEndpoint_Unchanged()
     {
         var payload = Encoding.UTF8.GetBytes("the original bytes, exactly");
-        var ticket = _tickets.MintUpload(TopicId, ConversationId, "default");
+        var ticket = _tickets.MintUpload(TopicId, _conversationId, "default");
         var reference = await UploadAndReadReferenceAsync(ticket.Token, payload, "scan.pdf", "application/pdf");
 
         var download = _tickets.MintDownload(reference.Id);
@@ -114,7 +114,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Fact]
     public async Task AnUploadWithAnExpiredTicket_IsRefused()
     {
-        var ticket = _tickets.MintUpload(TopicId, ConversationId, "default");
+        var ticket = _tickets.MintUpload(TopicId, _conversationId, "default");
         _time.Advance(TimeSpan.FromSeconds(_settings.TicketTtlSeconds + 1));
 
         var response = await UploadAsync(ticket.Token, TopicId, "x"u8.ToArray(), "photo.png", "image/png");
@@ -135,7 +135,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Fact]
     public async Task AFileAboveTheMaximumSize_IsRefusedWithAReadableReason()
     {
-        var ticket = _tickets.MintUpload(TopicId, ConversationId, "default");
+        var ticket = _tickets.MintUpload(TopicId, _conversationId, "default");
 
         var response = await UploadAsync(
             ticket.Token, TopicId, new byte[_settings.MaxBytesPerFile + 1], "photo.png", "image/png");
@@ -147,7 +147,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Fact]
     public async Task AMediaTypeOutsideImagesAndPdf_IsRefusedWithAReadableReason()
     {
-        var ticket = _tickets.MintUpload(TopicId, ConversationId, "default");
+        var ticket = _tickets.MintUpload(TopicId, _conversationId, "default");
 
         var response = await UploadAsync(
             ticket.Token, TopicId, "x"u8.ToArray(), "notes.txt", "text/plain");
@@ -161,7 +161,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Fact]
     public async Task MoreFilesThanThePerMessageMaximum_AreRefused()
     {
-        var ticket = _tickets.MintUpload(TopicId, ConversationId, "default");
+        var ticket = _tickets.MintUpload(TopicId, _conversationId, "default");
 
         foreach (var index in Enumerable.Range(0, _settings.MaxFilesPerMessage))
         {
@@ -179,7 +179,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Fact]
     public async Task ADownloadWithNoTicket_IsRefused()
     {
-        var ticket = _tickets.MintUpload(TopicId, ConversationId, "default");
+        var ticket = _tickets.MintUpload(TopicId, _conversationId, "default");
         var reference = await UploadAndReadReferenceAsync(
             ticket.Token, "x"u8.ToArray(), "photo.png", "image/png");
 

@@ -5,6 +5,8 @@ using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Infrastructure.Agents.Mcp;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -480,15 +482,21 @@ public sealed class McpChannelConnection(
         CancellationToken ct)
     {
         var client = RequireClient();
-        var result = await client.CallToolAsync(
-            ChannelProtocol.RequestApprovalTool,
-            ChannelProtocol.ToArguments(new RequestApprovalParams
+        // The turn's conversation context rides this hop as `_meta`, as it does on a tool the
+        // model calls: an approval is asked from inside the tool invocation it guards, and the
+        // channel that reads the answer has to see what the turn asked for — a turn addressed to
+        // the local box is never put to a hosted judge.
+        var result = await client.CallToolAsync(new CallToolRequestParams
+        {
+            Name = ChannelProtocol.RequestApprovalTool,
+            Arguments = ChannelProtocol.ToArguments(new RequestApprovalParams
             {
                 ConversationId = conversationId,
                 Mode = ApprovalMode.Request,
                 Requests = requests
-            }),
-            cancellationToken: ct);
+            }).ToDictionary(a => a.Key, a => (JsonElement)a.Value!),
+            Meta = ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options)
+        }, ct);
 
         var text = result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
         return Enum.TryParse<ToolApprovalResult>(text, ignoreCase: true, out var parsed)

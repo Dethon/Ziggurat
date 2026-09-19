@@ -1,0 +1,226 @@
+@page "/skills"
+@using Dashboard.Client.State.Skills
+@using Domain.DTOs.Metrics
+@using Domain.DTOs.Metrics.Enums
+@using static Dashboard.Client.Components.PillSelector
+@inject SkillsStore Store
+@inject MetricFamilyTable Families
+
+<div class="skills-page">
+    <MetricControls TStore="SkillsStore" TState="SkillsState"
+                    Title="Skills"
+                    Family="Families.Skills"
+                    DimensionOptions="DimensionOptions"
+                    MetricOptions="MetricOptions"
+                    ExtraChoices="_extraChoices">
+        <ExtraControls Context="controls">
+            <PillSelector Label="Aggregate" Options="AggOptions" Value="@_aggregation.Current"
+                          OnChanged="value => controls.ChangeAsync(_aggregation, value)" />
+        </ExtraControls>
+        <ChildContent Context="state">
+            <section class="kpi-row">
+                <KpiCard Label="Judged" Value="@Judged(state).ToString("N0")" Color="var(--accent-blue)" />
+                <KpiCard Label="Preloaded" Value="@Share(state, SkillPreloadOutcomes.Preloaded)" Color="var(--accent-green)" />
+                <KpiCard Label="Deadline misses" Value="@Share(state, SkillPreloadOutcomes.Deadline)" Color="var(--accent-yellow)" />
+                <KpiCard Label="Errors" Value="@Share(state, SkillPreloadOutcomes.Error)" Color="var(--accent-red)" />
+                <KpiCard Label="Median latency" Value="@($"{MedianLatency(state):F0}ms")" Color="var(--accent-yellow)" />
+            </section>
+
+            <section class="section">
+                <h3>Outcomes over time</h3>
+                <LatencyTrendChart Series="state.Trend" />
+            </section>
+
+            <section class="section">
+                <DynamicChart Data="state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
+                              MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == state.Metric.ToString())?.Label ?? "")"
+                              Unit="@GetMetricUnit(state)" />
+            </section>
+
+            <section class="section">
+                <h3>Recent judgments</h3>
+                <div class="events-table">
+                    <div class="table-header">
+                        <span>Time</span>
+                        <span>Agent</span>
+                        <span>Channel</span>
+                        <span>Outcome</span>
+                        <span>Skills</span>
+                        <span>Choice</span>
+                        <span>Latency</span>
+                        <span>Tokens</span>
+                    </div>
+                    @foreach (var evt in state.Events.TakeLast(50).Reverse())
+                    {
+                        <div class="table-row">
+                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                            <span>@evt.AgentId</span>
+                            <span>@evt.Channel</span>
+                            <span class="@OutcomeClass(evt.Outcome)">@evt.Outcome</span>
+                            <span>@string.Join(", ", evt.Skills)</span>
+                            <span>@(evt.Choice is { } c ? $"{c} ({evt.ChoiceConfidence:F2})" : "")</span>
+                            <span>@(evt.DurationMs is { } d ? $"{d} ms" : "")</span>
+                            <span>@(evt.InputTokens?.ToString("N0") ?? "")</span>
+                        </div>
+                    }
+                    @if (!state.Events.Any())
+                    {
+                        <p class="no-data">No judgments recorded</p>
+                    }
+                </div>
+            </section>
+        </ChildContent>
+    </MetricControls>
+</div>
+
+@code {
+    private MetricChoice _aggregation = default!;
+    private IReadOnlyList<MetricChoice> _extraChoices = [];
+
+    protected override void OnInitialized()
+    {
+        _aggregation = MetricChoice.For("agg", () => Store.State.Agg, Store.SetAgg);
+        _extraChoices = [_aggregation];
+    }
+
+    private static readonly IReadOnlyList<PillOption> DimensionOptions =
+    [
+        new("Outcome", nameof(SkillPreloadDimension.Outcome)),
+        new("Agent", nameof(SkillPreloadDimension.Agent)),
+        new("Channel", nameof(SkillPreloadDimension.Channel)),
+        new("Skill", nameof(SkillPreloadDimension.Skill)),
+    ];
+
+    private static readonly IReadOnlyList<PillOption> MetricOptions =
+    [
+        new("Judgments", nameof(SkillPreloadMetric.Count)),
+        new("Latency (ms)", nameof(SkillPreloadMetric.LatencyMs)),
+        new("Input tokens", nameof(SkillPreloadMetric.InputTokens)),
+    ];
+
+    private static readonly IReadOnlyList<PillOption> AggOptions =
+    [
+        new("Avg", nameof(Aggregation.Avg)),
+        new("P50", nameof(Aggregation.P50)),
+        new("P95", nameof(Aggregation.P95)),
+        new("Max", nameof(Aggregation.Max)),
+    ];
+
+    // A skipped Lemonade turn was never judged, so it is not in the denominator of a share.
+    private static int Judged(SkillsState state) =>
+        state.Events.Count(e => e.Outcome != SkillPreloadOutcomes.SkippedLemonade);
+
+    private static string Share(SkillsState state, string outcome)
+    {
+        var judged = Judged(state);
+        var count = state.Events.Count(e => e.Outcome == outcome);
+        return judged == 0 ? "0" : $"{count:N0} ({100.0 * count / judged:F0}%)";
+    }
+
+    private static double MedianLatency(SkillsState state)
+    {
+        var durations = state.Events
+            .Where(e => e.DurationMs is not null)
+            .Select(e => e.DurationMs!.Value)
+            .OrderBy(x => x)
+            .ToList();
+        return durations.Count > 0 ? durations[durations.Count / 2] : 0;
+    }
+
+    // Mirrors the query service: a metric whose name ends in Ms is a duration.
+    private static string GetMetricUnit(SkillsState state) =>
+        state.Metric.ToString().EndsWith("Ms", StringComparison.Ordinal) ? "ms" : "";
+
+    private static string OutcomeClass(string outcome) => outcome switch
+    {
+        SkillPreloadOutcomes.Preloaded => "status-ok",
+        SkillPreloadOutcomes.Deadline or SkillPreloadOutcomes.Error => "status-err",
+        _ => ""
+    };
+}
+
+<style>
+    .skills-page {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .kpi-row {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .section h3 {
+        font-size: 1rem;
+        margin-bottom: 0.8rem;
+        color: var(--text-secondary);
+    }
+
+    .events-table {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .table-header, .table-row {
+        display: grid;
+        grid-template-columns: 135px minmax(0, 1fr) minmax(0, 1fr) 120px minmax(0, 1.4fr) minmax(0, 1.4fr) 90px 80px;
+        gap: 0.5rem;
+        padding: 0.4rem 0.8rem;
+        font-size: 0.82rem;
+    }
+
+    .table-header {
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        font-weight: 600;
+        border-radius: 4px;
+        text-transform: uppercase;
+        font-size: 0.7rem;
+    }
+
+    .table-row {
+        background: var(--bg-card);
+        border-radius: 4px;
+    }
+
+    .table-row:hover {
+        background: rgba(255,255,255,0.03);
+    }
+
+    .table-row span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .status-ok {
+        color: var(--accent-green);
+    }
+
+    .status-err {
+        color: var(--accent-red);
+    }
+
+    .no-data {
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        padding: 0.5rem 0.8rem;
+    }
+
+    @@media (max-width: 768px) {
+        .events-table {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .table-header, .table-row {
+            grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr) 100px minmax(0, 1.4fr) minmax(0, 1.4fr) 70px 70px;
+            font-size: 0.72rem;
+            padding: 0.4rem 0.5rem;
+            min-width: 760px;
+        }
+    }
+</style>

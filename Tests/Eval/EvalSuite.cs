@@ -88,6 +88,7 @@ public static class EvalSuite
 
         scorecard.Record(tier, scenario, outcome.Result);
         scorecard.Observe(outcome.Route);
+        scorecard.ObservePreload(outcome.PreloadModel);
 
         outcome.Result.Passed.ShouldBeTrue(
             outcome.Failure ?? $"'{name}' failed with no dump written");
@@ -124,19 +125,24 @@ public static class EvalSuite
                 observed, ScenarioChecks.Exercised(scenario, recording),
                 ScenarioChecks.KindOf(scenario, recording, observed))
             {
-                Spend = recording.Spend
+                Spend = recording.Spend,
+                Loader = ScenarioChecks.LoaderOf(scenario, recording),
+                PreloadOutcomes = recording.PreloadOutcomes
             };
         });
 
         var route = recordings.OrderBy(run => run.Key)
             .Select(run => run.Value.Route)
             .LastOrDefault(served => served is not null);
+        var preloadModel = recordings.OrderBy(run => run.Key)
+            .Select(run => run.Value.PreloadModel)
+            .LastOrDefault(model => model is not null);
 
         if (observations.IsEmpty)
         {
             // The raw route travels on: a clean pass writes nothing, so nothing here needs the
             // provider's name yet and nothing pays a request for it.
-            return new EvalOutcome(result, null, route);
+            return new EvalOutcome(result, null, route, preloadModel);
         }
 
         var (first, failures) = observations.OrderBy(run => run.Key).First();
@@ -156,8 +162,8 @@ public static class EvalSuite
             ScenarioChecks.KindOf(scenario, failed, failures)),
             result.Passed);
 
-        return new EvalOutcome(result, message, route);
+        return new EvalOutcome(result, message, route, preloadModel);
     }
 }
 
-public sealed record EvalOutcome(ScenarioResult Result, string? Failure, ServedRoute? Route);
+public sealed record EvalOutcome(ScenarioResult Result, string? Failure, ServedRoute? Route, string? PreloadModel = null);

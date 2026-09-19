@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Reflection;
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
@@ -29,64 +30,72 @@ public static class FileSystemServerTools
 
     // How each operation reaches the wire. The operations themselves — their names, their backend
     // methods — come from the one list; this only adds the tool signature and the description hook.
+    // Every handler takes the request too, which the SDK binds and keeps out of the schema: it is
+    // where the caller comes from (As).
     private static readonly IReadOnlyDictionary<string, Wiring> _wiring = new Dictionary<string, Wiring>(StringComparer.Ordinal)
     {
         ["fs_read"] = new(b => b.DescribeRead, b =>
-            async (string path, int? offset = null, int? limit = null, CancellationToken ct = default) =>
-                ToolResponse.Create(await b.ReadAsync(path, offset, limit, ct))),
+            async (RequestContext<CallToolRequestParams> call, string path, int? offset = null, int? limit = null, CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).ReadAsync(path, offset, limit, ct))),
 
         ["fs_info"] = new(b => b.DescribeInfo, b =>
-            async (string path, CancellationToken ct = default) =>
-                ToolResponse.Create(await b.InfoAsync(path, ct))),
+            async (RequestContext<CallToolRequestParams> call, string path, CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).InfoAsync(path, ct))),
 
         ["fs_glob"] = new(b => b.DescribeGlob, b =>
-            async (string pattern, string basePath = "", CancellationToken ct = default) =>
-                ToolResponse.Create(await b.GlobAsync(basePath, pattern, ct))),
+            async (RequestContext<CallToolRequestParams> call, string pattern, string basePath = "", CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).GlobAsync(basePath, pattern, ct))),
 
         ["fs_search"] = new(b => b.DescribeSearch, b =>
-            async (string query, bool regex = false, string? path = null, string? directoryPath = null,
+            async (RequestContext<CallToolRequestParams> call, string query, bool regex = false, string? path = null, string? directoryPath = null,
                     string? filePattern = null, int maxResults = 50, int contextLines = 1,
                     string outputMode = "content", CancellationToken ct = default) =>
                 ToolResponse.Create(await SearchAsync(
-                    b, query, regex, path, directoryPath, filePattern, maxResults, contextLines,
+                    As(b, call), query, regex, path, directoryPath, filePattern, maxResults, contextLines,
                     outputMode, ct))),
 
         ["fs_create"] = new(b => b.DescribeCreate, b =>
-            async (string path, string content, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
-                ToolResponse.Create(await b.CreateAsync(path, content, overwrite, createDirectories, ct))),
+            async (RequestContext<CallToolRequestParams> call, string path, string content, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).CreateAsync(path, content, overwrite, createDirectories, ct))),
 
         ["fs_edit"] = new(b => b.DescribeEdit, b =>
-            async (string path, IReadOnlyList<TextEdit> edits, CancellationToken ct = default) =>
-                ToolResponse.Create(await b.EditAsync(path, edits, ct))),
+            async (RequestContext<CallToolRequestParams> call, string path, IReadOnlyList<TextEdit> edits, CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).EditAsync(path, edits, ct))),
 
         ["fs_move"] = new(b => b.DescribeMove, b =>
-            async (string sourcePath, string destinationPath, CancellationToken ct = default) =>
-                ToolResponse.Create(await b.MoveAsync(sourcePath, destinationPath, ct))),
+            async (RequestContext<CallToolRequestParams> call, string sourcePath, string destinationPath, CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).MoveAsync(sourcePath, destinationPath, ct))),
 
         ["fs_delete"] = new(b => b.DescribeDelete, b =>
-            async (string path, CancellationToken ct = default) =>
-                ToolResponse.Create(await b.DeleteAsync(path, ct))),
+            async (RequestContext<CallToolRequestParams> call, string path, CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).DeleteAsync(path, ct))),
 
         ["fs_exec"] = new(b => b.DescribeExec, b =>
-            async (string path, string command, int? timeoutSeconds = null, CancellationToken ct = default) =>
-                ToolResponse.Create(await b.ExecAsync(path, command, timeoutSeconds, ct))),
+            async (RequestContext<CallToolRequestParams> call, string path, string command, int? timeoutSeconds = null, CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).ExecAsync(path, command, timeoutSeconds, ct))),
 
         ["fs_copy"] = new(b => b.DescribeCopy, b =>
-            async (string sourcePath, string destinationPath, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
-                ToolResponse.Create(await b.CopyAsync(sourcePath, destinationPath, overwrite, createDirectories, ct))),
+            async (RequestContext<CallToolRequestParams> call, string sourcePath, string destinationPath, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).CopyAsync(sourcePath, destinationPath, overwrite, createDirectories, ct))),
 
         ["fs_blob_read"] = new(b => b.DescribeBlobRead, b =>
-            async (string path, long offset = 0, int length = 262144, CancellationToken ct = default) =>
-                ToolResponse.Create(await b.ReadBlobAsync(path, offset, length, ct))),
+            async (RequestContext<CallToolRequestParams> call, string path, long offset = 0, int length = 262144, CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).ReadBlobAsync(path, offset, length, ct))),
 
         ["fs_blob_write"] = new(b => b.DescribeBlobWrite, b =>
-            async (string path, string contentBase64, long offset = 0, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
-                ToolResponse.Create(await b.WriteBlobAsync(path, contentBase64, offset, overwrite, createDirectories, ct))),
+            async (RequestContext<CallToolRequestParams> call, string path, string contentBase64, long offset = 0, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).WriteBlobAsync(path, contentBase64, offset, overwrite, createDirectories, ct))),
 
         [FileSystemOperations.MoveOutCheck] = new(b => b.DescribeMoveOutCheck, b =>
-            async (string path, CancellationToken ct = default) =>
-                ToolResponse.Create(await b.MoveOutCheckAsync(path, ct)))
+            async (RequestContext<CallToolRequestParams> call, string path, CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).MoveOutCheckAsync(path, ct)))
     };
+
+    // The backend as the call's caller sees it, from the `_meta` the agent stamps on every hop.
+    // Parsed inside the handler, so a context that does not parse is the caller's error result
+    // like any other failure rather than something the envelope never sees.
+    private static FileSystemBackendBase As(FileSystemBackendBase backend, RequestContext<CallToolRequestParams> call) =>
+        backend.For(ConversationScope.Parse(call.Params?.Meta));
 
     public static IMcpServerBuilder AddFileSystemTools<TBackend>(this IMcpServerBuilder builder)
         where TBackend : FileSystemBackendBase

@@ -8,9 +8,11 @@ using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
+using Dashboard.Client.State.Skills;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Dashboard.Client.State.Web;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -42,7 +44,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
         _api = new MetricsApiService(http);
         _families = new MetricFamilyTable(
             _api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
-            _memoryStore, _latencyStore, _voiceStore);
+            _memoryStore, _latencyStore, _voiceStore, new SkillsStore(), new WebStore());
         _binder = new MetricsHubBinder(_families, _metricsStore, _healthStore, NullLogger<MetricsHubBinder>.Instance);
     }
 
@@ -258,6 +260,12 @@ public class MetricsHubBinderTests : IAsyncDisposable
             hub => hub.RaiseAsync("OnMemoryDreaming", new MemoryDreamingEvent
             { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "test" }),
             self => self._memoryStore.State.Breakdown),
+        ["MemoryJudgment"] = (
+            new Dictionary<string, decimal> { ["stale-judgment"] = 10m },
+            new Dictionary<string, decimal> { ["fresh-judgment"] = 20m },
+            hub => hub.RaiseAsync("OnMemoryJudgment", new MemoryJudgmentEvent
+            { Kind = MemoryJudgmentKinds.Verify, UserId = "test", Answered = true, Dropped = true, Candidate = "junk" }),
+            self => self._memoryStore.State.Breakdown),
     };
 
     public static TheoryData<string> RapidEventCaseNames => new(_rapidEventCases.Keys);
@@ -354,6 +362,60 @@ public class MetricsHubBinderTests : IAsyncDisposable
         await RaiseVoiceAsync("fresh");
 
         _voiceStore.State.Events.Select(e => e.SatelliteId).ShouldBe(["held-1", "held-2", "fresh"]);
+    }
+
+    // The dedupe is record value equality, and three event types now carry lists and dictionaries,
+    // which records compare by reference. The snapshot's copy and the hub's copy of one event are
+    // then never equal, so a held push the catch-up already delivered lands on top of its own copy
+    // — a duplicate row, and for dreaming a double-counted KPI. No event had a collection member
+    // before this, so nothing caught it.
+    [Fact]
+    public async Task ReleaseHeldPushesAsync_AnEventCarryingACollection_IsStillRecognisedAsAlreadyCaughtUp()
+    {
+        _binder.Bind(_hub);
+        var preload = new SkillPreloadEvent
+        {
+            AgentId = "nabu",
+            Outcome = SkillPreloadOutcomes.Preloaded,
+            Skills = ["home-assistant"],
+            Reads = ["/ha/setup-index.md"],
+            Needs = new Dictionary<string, double> { ["home-assistant"] = 0.97 }
+        };
+
+        _binder.HoldPushes();
+        await _hub.RaiseAsync("OnSkillPreload", preload);
+
+        // The catch-up's copy: the same event as the server sent it, deserialized separately, so
+        // every collection on it is a different instance.
+        _families.Skills.Store.AppendEvent(preload with
+        {
+            Skills = [.. preload.Skills],
+            Reads = [.. preload.Reads],
+            Needs = new Dictionary<string, double>(preload.Needs!)
+        });
+        await _binder.ReleaseHeldPushesAsync();
+
+        _families.Skills.Store.State.Events.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ReleaseHeldPushesAsync_ADreamingEventTheSnapshotDoesNotHold_IsStillDelivered()
+    {
+        _binder.Bind(_hub);
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
+
+        _binder.HoldPushes();
+        await _hub.RaiseAsync("OnMemoryDreaming", new MemoryDreamingEvent
+        {
+            UserId = "user1",
+            ProfileRegenerated = false,
+            MergedCount = 2,
+            DecayedCount = 1,
+            RefusedMerges = [["mem_a", "mem_b"]]
+        });
+        await _binder.ReleaseHeldPushesAsync();
+
+        _memoryStore.State.DreamingEvents.Count.ShouldBe(1);
     }
 
     // Unbinding is how a module lets go. Leaving the hold behind kept a queue of closures holding

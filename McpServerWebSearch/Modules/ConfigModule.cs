@@ -1,14 +1,20 @@
 using Domain.Contracts;
+using Domain.Judgments;
 using Domain.Prompts;
+using Domain.Tools.Web;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Browser;
 using Infrastructure.Extensions;
+using Infrastructure.Judgments;
+using Infrastructure.Metrics;
+using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;
 using McpServerWebSearch.Settings;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 
 namespace McpServerWebSearch.Modules;
 
@@ -19,6 +25,12 @@ public static class ConfigModule
         public IServiceCollection ConfigureMcp(McpSettings settings)
         {
             services
+                // A lazy factory, like the voice channel's: nothing dials Redis until the first
+                // publish resolves the publisher, so registration runs with no container.
+                .AddSingleton<IConnectionMultiplexer>(
+                    _ => RedisConnection.ConnectResiliently(settings.RedisConnectionString))
+                .AddMetricsPublishing("mcp-websearch")
+                .AddTypeSafeJudge(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey))
                 .AddWebSearchClients(settings)
                 .AddToolServer(settings, ToolResponse.Create)
                 .WithTools<McpWebSearchTool>()
@@ -64,7 +76,15 @@ public static class ConfigModule
                     captchaSolver,
                     settings.Camoufox?.WsEndpoint,
                     tabCap: settings.Browsing.TabCap,
-                    idleTimeout: TimeSpan.FromMinutes(settings.Browsing.SessionIdleTimeoutMinutes));
+                    idleTimeout: TimeSpan.FromMinutes(settings.Browsing.SessionIdleTimeoutMinutes),
+                    // No key is the feature off, all the way off: a dismisser with no judge skips
+                    // the control listing too, which is a chained-locator EvaluateAll over every
+                    // overlay the cheap paths left standing on every navigation.
+                    modalDismisser: new ModalDismisser(
+                        !string.IsNullOrWhiteSpace(settings.OpenRouter.ApiKey)
+                            ? new ModalJudge(sp.GetRequiredService<IJudge>(), settings.Judgment, TimeProvider.System)
+                            : null),
+                    metricsPublisher: sp.GetRequiredService<IMetricsPublisher>());
             });
 
             return services;

@@ -8,6 +8,7 @@ public record MemoryState
     public IReadOnlyList<MemoryRecallEvent> RecallEvents { get; init; } = [];
     public IReadOnlyList<MemoryExtractionEvent> ExtractionEvents { get; init; } = [];
     public IReadOnlyList<MemoryDreamingEvent> DreamingEvents { get; init; } = [];
+    public IReadOnlyList<MemoryJudgmentEvent> JudgmentEvents { get; init; } = [];
     public MemoryDimension GroupBy { get; init; } = MemoryDimension.User;
     public MemoryMetric Metric { get; init; } = MemoryMetric.Count;
     public Dictionary<string, decimal> Breakdown { get; init; } = [];

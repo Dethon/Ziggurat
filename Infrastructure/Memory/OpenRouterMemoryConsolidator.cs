@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Memory;
 using Domain.Prompts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,7 @@ namespace Infrastructure.Memory;
 
 public class OpenRouterMemoryConsolidator(
     IChatClient chatClient,
+    MemoryJudge judge,
     ILogger<OpenRouterMemoryConsolidator> logger) : IMemoryConsolidator
 {
     private const double ClusterSimilarityThreshold = 0.60;
@@ -34,24 +36,89 @@ public class OpenRouterMemoryConsolidator(
             serializerOptions: _jsonOptions)
     };
 
-    public async Task<IReadOnlyList<MergeDecision>> ConsolidateAsync(
+    public async Task<Consolidation> ConsolidateAsync(
         IReadOnlyList<MemoryEntry> memories, CancellationToken ct)
     {
         if (memories.Count == 0)
         {
-            return [];
+            return Consolidation.Empty;
         }
 
-        var clusters = BuildClusters(memories);
         var decisions = new List<MergeDecision>();
+        var groups = new List<IReadOnlySet<string>>();
 
-        foreach (var cluster in clusters)
+        // Cosine proposes; the pair judgment disposes. Only memories it links — the same fact,
+        // or one updating the other — reach the merge model together, and only those groups may
+        // later be merged. Unanswered, a chunk goes as cosine made it and its decisions are
+        // applied unvetoed: today's behaviour, by decision.
+        // The cap exists to bound a Jev request, so with no Jev there is nothing to bound: an
+        // oversized cluster goes whole, as it did before the judgment existed. Chunking it anyway
+        // would make a duplicate pair split across two chunks unmergeable forever — strictly worse
+        // than the behaviour this is supposed to fail toward.
+        var cap = judge.Enabled ? judge.MaxClusterMemories : int.MaxValue;
+
+        foreach (var chunk in BuildClusters(memories).SelectMany(cluster => Chunks(cluster, cap)))
         {
-            var clusterDecisions = await ConsolidateClusterAsync(cluster, ct);
-            decisions.AddRange(clusterDecisions);
+            var verdict = await judge.RelateAsync(chunk, Context(chunk), ct);
+            var groupsToMerge = verdict.Answered ? verdict.Linked : [chunk];
+
+            foreach (var group in groupsToMerge)
+            {
+                decisions.AddRange(await ConsolidateClusterAsync(group, ct));
+                groups.Add(group.Select(m => m.Id).ToHashSet(StringComparer.Ordinal));
+            }
         }
 
-        return decisions;
+        return new Consolidation(decisions, groups);
+    }
+
+    private static MemoryJudgmentContext Context(IReadOnlyList<MemoryEntry> cluster) => new(cluster[0].UserId);
+
+    // A cluster over the cap is judged in chunks of the cap, all in this pass, so no request
+    // carries more than the cap's pairs and no member waits for another night. The chunks are
+    // cut in order of distance to the centroid, so the tightest go together; a link across two
+    // chunks is missed tonight and found once the merges have shrunk the cluster. A cluster with
+    // no embeddings has no centroid and is cut in its own order.
+    private static IEnumerable<IReadOnlyList<MemoryEntry>> Chunks(IReadOnlyList<MemoryEntry> cluster, int cap)
+    {
+        // A cap below two cannot hold a pair, which is the whole unit of this judgment; a
+        // misconfigured one is the cluster whole rather than an ArgumentOutOfRangeException out of
+        // Chunk on every user's nightly pass.
+        if (cap < 2 || cluster.Count <= cap)
+        {
+            return [cluster];
+        }
+
+        var embedded = cluster.Where(m => m.Embedding is { Length: > 0 }).ToList();
+        if (embedded.Count == 0)
+        {
+            return WithNoStrandedMember(cluster, cap);
+        }
+
+        // One width for every vector: the index verification refused to start otherwise.
+        var centroid = Enumerable.Range(0, embedded[0].Embedding!.Length)
+            .Select(i => embedded.Average(m => m.Embedding![i]))
+            .ToArray();
+
+        return WithNoStrandedMember(
+            embedded.OrderByDescending(m => CosineSimilarity(m.Embedding!, centroid)).ToList(), cap);
+    }
+
+    // Chunks of the cap, except that a trailing chunk of one is folded back into the one before
+    // it. A lone memory has nothing to merge against — the reason BuildClusters drops singleton
+    // clusters — and the pair judgment answers nothing below two, so it would otherwise reach the
+    // merge model alone: a paid call that can decide nothing. One chunk of cap+1 pairs instead.
+    private static IEnumerable<IReadOnlyList<MemoryEntry>> WithNoStrandedMember(
+        IReadOnlyList<MemoryEntry> ordered, int cap)
+    {
+        var chunks = ordered.Chunk(cap).Select(chunk => (IReadOnlyList<MemoryEntry>)chunk).ToList();
+        if (chunks.Count >= 2 && chunks[^1].Count == 1)
+        {
+            chunks[^2] = [.. chunks[^2], .. chunks[^1]];
+            chunks.RemoveAt(chunks.Count - 1);
+        }
+
+        return chunks;
     }
 
     private async Task<IReadOnlyList<MergeDecision>> ConsolidateClusterAsync(

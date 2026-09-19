@@ -137,6 +137,15 @@ public sealed class MetricsCollectorService(
             case OutpostEvent outpost:
                 await ProcessOutpostAsync(outpost, db);
                 break;
+            case SkillPreloadEvent preload:
+                await ProcessSkillPreloadAsync(preload, db);
+                break;
+            case MemoryJudgmentEvent judgment:
+                await ProcessMemoryJudgmentAsync(judgment, db);
+                break;
+            case ModalDismissalEvent modal:
+                await ProcessModalDismissalAsync(modal, db);
+                break;
         }
     }
 
@@ -314,11 +323,37 @@ public sealed class MetricsCollectorService(
             db.HashIncrementAsync(totalsKey, "memory:extractionDuration", evt.DurationMs),
             db.HashIncrementAsync(totalsKey, "memory:candidates", evt.CandidateCount),
             db.HashIncrementAsync(totalsKey, "memory:stored", evt.StoredCount),
+            db.HashIncrementAsync(totalsKey, $"memory:outcome:{evt.Outcome ?? "unrecorded"}"),
             db.HashIncrementAsync(totalsKey, $"memory:byUser:{evt.UserId}"),
             db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
             db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
 
         await hubContext.Clients.All.SendAsync("OnMemoryExtraction", evt);
+    }
+
+    private async Task ProcessMemoryJudgmentAsync(MemoryJudgmentEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:memory-judgment:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        var tasks = new List<Task>
+        {
+            db.SortedSetAddAsync(sortedSetKey, json, evt.Timestamp.ToUnixTimeMilliseconds()),
+            db.HashIncrementAsync(totalsKey, $"memory:judgments:{evt.Kind}"),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry)
+        };
+
+        if (evt.Dropped == true)
+        {
+            tasks.Add(db.HashIncrementAsync(totalsKey, "memory:drops"));
+        }
+
+        await Task.WhenAll(tasks);
+
+        await hubContext.Clients.All.SendAsync("OnMemoryJudgment", evt);
     }
 
     private async Task ProcessMemoryDreamingAsync(MemoryDreamingEvent evt, IDatabase db)
@@ -361,6 +396,63 @@ public sealed class MetricsCollectorService(
             db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
 
         await hubContext.Clients.All.SendAsync("OnContextTruncation", evt);
+    }
+
+    // Counted per outcome, so the totals hash answers "how many walls were left standing today"
+    // beside "how many a judgment closed"; the latency is the judge's and accumulates as the
+    // preload's does.
+    private async Task ProcessModalDismissalAsync(ModalDismissalEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:modals:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        var tasks = new List<Task>
+        {
+            db.SortedSetAddAsync(sortedSetKey, json, evt.Timestamp.ToUnixTimeMilliseconds()),
+            db.HashIncrementAsync(totalsKey, $"modals:{evt.Outcome}:count"),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry)
+        };
+
+        if (evt.DurationMs is { } durationMs)
+        {
+            tasks.Add(db.HashIncrementAsync(totalsKey, "modals:latency:count"));
+            tasks.Add(db.HashIncrementAsync(totalsKey, "modals:latency:totalMs", durationMs));
+        }
+
+        await Task.WhenAll(tasks);
+
+        await hubContext.Clients.All.SendAsync("OnModalDismissal", evt);
+    }
+
+    // Counted per outcome, so the totals hash answers "how many turns got a head start today"
+    // beside "how many timed out"; the latency accumulates as voice's does.
+    private async Task ProcessSkillPreloadAsync(SkillPreloadEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:skills:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        var tasks = new List<Task>
+        {
+            db.SortedSetAddAsync(sortedSetKey, json, evt.Timestamp.ToUnixTimeMilliseconds()),
+            db.HashIncrementAsync(totalsKey, $"skills:{evt.Outcome}:count"),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry)
+        };
+
+        if (evt.DurationMs is { } durationMs)
+        {
+            tasks.Add(db.HashIncrementAsync(totalsKey, "skills:latency:count"));
+            tasks.Add(db.HashIncrementAsync(totalsKey, "skills:latency:totalMs", durationMs));
+        }
+
+        await Task.WhenAll(tasks);
+
+        await hubContext.Clients.All.SendAsync("OnSkillPreload", evt);
     }
 
     private async Task ProcessVoiceAsync(VoiceEvent evt, IDatabase db)

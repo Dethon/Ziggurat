@@ -4,15 +4,19 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Judgments;
 using Domain.Monitor;
 using Domain.Outposts;
 using Domain.Prompts;
+using Domain.Skills;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Channels;
+using Infrastructure.Judgments;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -76,7 +80,10 @@ public static class InjectorModule
                         sp.GetService<ILoggerFactory>()))
                 // Shares the chat clients' connection pool, which is the whole point: a
                 // keep-alive against its own pool would warm a connection no turn ever uses.
-                .AddHostedService(sp => new HostedConnectionKeepAlive(
+                // Registered as a plain IHostedService singleton, not through AddHostedService:
+                // that one dedups by implementation type, so a second keep-alive of this class
+                // would be silently dropped. Jev is asked on this connection too.
+                .AddSingleton<IHostedService, HostedConnectionKeepAlive>(sp => new HostedConnectionKeepAlive(
                     new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
                     new HostedConnectionKeepAliveOptions
                     {
@@ -97,8 +104,19 @@ public static class InjectorModule
                     sp.GetRequiredService<OpenRouterModelCapabilities>())
                 .AddHostedService<ModelCapabilityRefresher>()
                 .AddLemonadeChatHost(lemonadeChatHost)
+                .AddTypeSafe(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey), settings.SkillPreload)
                 .AddOutposts(settings.Outposts);
         }
+
+        // The judge is registered as every Jev host registers it; the preloader is this host's use.
+        private IServiceCollection AddTypeSafe(TypeSafeOptions typeSafe, SkillPreloadSettings skillPreload) =>
+            services
+                .AddTypeSafeJudge(typeSafe, keepConnectionAlive: false)
+                .AddSingleton<ISkillPreloader>(sp => new SkillPreloader(
+                    sp.GetRequiredService<IJudge>(),
+                    skillPreload,
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<IMetricsPublisher>()));
 
         // An empty address is the feature switched off: no discovery, no refresher, and an empty
         // source for the catalogue to read. A configured one is asked for its models on a timer.

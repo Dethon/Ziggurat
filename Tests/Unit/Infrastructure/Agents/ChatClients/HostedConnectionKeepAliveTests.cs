@@ -83,7 +83,7 @@ public class HostedConnectionKeepAliveTests
         await AdvanceOneIntervalAsync(handler, expectedRequests: 1);
 
         _metrics.Events.OfType<ErrorEvent>()
-            .ShouldContain(e => e.Service == HostedConnectionKeepAlive.MetricService);
+            .ShouldContain(e => e.Service == HostedConnectionKeepAlive.DefaultMetricService);
 
         // The host process is still standing, so the next interval still fires.
         await AdvanceOneIntervalAsync(handler, expectedRequests: 2);

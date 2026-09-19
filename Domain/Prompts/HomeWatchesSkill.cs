@@ -9,7 +9,7 @@ public static class HomeWatchesSkill
 
     // The whole trigger: the one line about this skill that is in every turn.
     public const string Description =
-        "Writing, changing, pausing or removing a watch: a standing instruction the home runs when an entity's state meets a condition (\"warn me when the sugar passes 180\", \"close the blinds when it gets hot\", \"tell me when the washer finishes\"). Only for watches — not for switching or reading a device, an alarm, a reminder, a timer or music. The watch.json shape, trigger and effect kinds, delivery, once and enabled.";
+        "Writing, changing, pausing or removing a watch: being told, or having something done, when an entity's state meets a condition (\"warn me when the sugar passes 180\", \"close the blinds when it gets hot\", \"tell me when the washer finishes\"). Only for watches — not for switching or reading a device now, an alarm, a reminder, a timer or music. The watch.json shape, trigger and effect kinds, delivery, once and enabled.";
 
     public const string Body =
         """

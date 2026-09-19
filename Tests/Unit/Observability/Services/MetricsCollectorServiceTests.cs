@@ -87,6 +87,7 @@ public class MetricsCollectorServiceTests
                 CandidateCount = 8,
                 StoredCount = 3,
                 UserId = "bob",
+                Outcome = MemoryExtractionOutcomes.Extracted,
                 Timestamp = _fixedTimestamp
             },
             [
@@ -94,6 +95,7 @@ public class MetricsCollectorServiceTests
                 ("memory:extractionDuration", 1500),
                 ("memory:candidates", 8),
                 ("memory:stored", 3),
+                ("memory:outcome:extracted", 1),
                 ("memory:byUser:bob", 1)
             ]),
         new HashIncrementCase(
@@ -137,6 +139,49 @@ public class MetricsCollectorServiceTests
             [
                 ("voice:SttLatencyMs:count", 1),
                 ("voice:SttLatencyMs:totalMs", 250)
+            ]),
+        new HashIncrementCase(
+            "MemoryJudgment",
+            new MemoryJudgmentEvent
+            {
+                Kind = MemoryJudgmentKinds.Verify,
+                UserId = "alice",
+                Answered = true,
+                Candidate = "Preguntó por el tiempo",
+                Dropped = true,
+                Timestamp = _fixedTimestamp
+            },
+            [
+                ("memory:judgments:verify", 1),
+                ("memory:drops", 1)
+            ]),
+        new HashIncrementCase(
+            "SkillPreload",
+            new SkillPreloadEvent
+            {
+                Outcome = SkillPreloadOutcomes.Preloaded,
+                Skills = ["home-assistant"],
+                DurationMs = 380,
+                Timestamp = _fixedTimestamp
+            },
+            [
+                ("skills:preloaded:count", 1),
+                ("skills:latency:count", 1),
+                ("skills:latency:totalMs", 380)
+            ]),
+        new HashIncrementCase(
+            "ModalDismissal",
+            new ModalDismissalEvent
+            {
+                Kind = ModalKinds.Cookie,
+                Outcome = ModalDismissalOutcomes.Judgment,
+                DurationMs = 325,
+                Timestamp = _fixedTimestamp
+            },
+            [
+                ("modals:judgment:count", 1),
+                ("modals:latency:count", 1),
+                ("modals:latency:totalMs", 325)
             ])
     };
 
@@ -213,6 +258,18 @@ public class MetricsCollectorServiceTests
             $"metrics:memory-extraction:{FixedDate}",
             "\"userId\":\"bob\""),
         new SortedSetCase(
+            "MemoryJudgment",
+            new MemoryJudgmentEvent
+            {
+                Kind = MemoryJudgmentKinds.Gate,
+                UserId = "alice",
+                Answered = true,
+                Skipped = true,
+                Timestamp = _fixedTimestamp
+            },
+            $"metrics:memory-judgment:{FixedDate}",
+            "\"kind\":\"gate\""),
+        new SortedSetCase(
             "MemoryDreaming",
             new MemoryDreamingEvent
             {
@@ -244,7 +301,26 @@ public class MetricsCollectorServiceTests
                 Timestamp = _fixedTimestamp
             },
             $"metrics:voice:{FixedDate}",
-            "\"satelliteId\":\"kitchen-01\"")
+            "\"satelliteId\":\"kitchen-01\""),
+        new SortedSetCase(
+            "SkillPreload",
+            new SkillPreloadEvent
+            {
+                Outcome = SkillPreloadOutcomes.Deadline,
+                Timestamp = _fixedTimestamp
+            },
+            $"metrics:skills:{FixedDate}",
+            "\"outcome\":\"deadline\""),
+        new SortedSetCase(
+            "ModalDismissal",
+            new ModalDismissalEvent
+            {
+                Kind = ModalKinds.Newsletter,
+                Outcome = ModalDismissalOutcomes.LeftStanding,
+                Timestamp = _fixedTimestamp
+            },
+            $"metrics:modals:{FixedDate}",
+            "\"outcome\":\"left-standing\"")
     };
 
     [Theory]
@@ -316,7 +392,15 @@ public class MetricsCollectorServiceTests
         new SignalRForwardCase(
             "Voice",
             new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" },
-            "OnVoice")
+            "OnVoice"),
+        new SignalRForwardCase(
+            "SkillPreload",
+            new SkillPreloadEvent { Outcome = SkillPreloadOutcomes.Abstained },
+            "OnSkillPreload"),
+        new SignalRForwardCase(
+            "ModalDismissal",
+            new ModalDismissalEvent { Kind = ModalKinds.Cookie, Outcome = ModalDismissalOutcomes.Selector },
+            "OnModalDismissal")
     };
 
     [Theory]

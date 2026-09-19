@@ -1,0 +1,17 @@
+[
+  { "kind": "CookieConsent", "controls": ["Configurar", "Aceptar todo", "Rechazar todo"], "pick": "Rechazar todo" },
+  { "kind": "CookieConsent", "controls": ["Entendido"], "pick": "Entendido" },
+  { "kind": "CookieConsent", "controls": ["Más información", "Aceptar y continuar"], "pick": "Aceptar y continuar" },
+  { "kind": "CookieConsent", "controls": ["Aceptar todas", "Solo necesarias", "Personalizar"], "pick": "Solo necesarias" },
+  { "kind": "CookieConsent", "controls": ["Manage preferences", "Got it"], "pick": "Got it" },
+  { "kind": "CookieConsent", "controls": ["Iniciar sesión", "Buscar", "Menú"], "pick": null },
+  { "kind": "CookieConsent", "controls": ["Reject", "Accept", "Settings"], "pick": "Reject" },
+  { "kind": "CookieConsent", "controls": ["OK"], "pick": "OK" },
+  { "kind": "CookieConsent", "controls": ["Continuar sin aceptar", "Aceptar", "Configurar"], "pick": "Continuar sin aceptar" },
+  { "kind": "AgeGate", "controls": ["Soy menor de 18 años", "Soy mayor de 18 años"], "pick": "Soy mayor de 18 años" },
+  { "kind": "AgeGate", "controls": ["I am 18 or older", "Leave"], "pick": "I am 18 or older" },
+  { "kind": "Newsletter", "controls": ["Suscribirme", "Quizás más tarde"], "pick": "Quizás más tarde" },
+  { "kind": "Newsletter", "controls": ["×", "Subscribe"], "pick": "×" },
+  { "kind": "Newsletter", "controls": ["Comprar ahora", "Ver carrito"], "pick": null },
+  { "kind": "Notification", "controls": ["Permitir", "Bloquear"], "pick": "Bloquear" }
+]

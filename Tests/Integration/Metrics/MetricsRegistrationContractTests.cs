@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Infrastructure.Metrics;
 using McpChannelSignalR.Modules;
 using McpChannelVoice.Modules;
+using McpServerWebSearch.Modules;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Moq;
@@ -11,6 +12,7 @@ using Shouldly;
 using SignalRSettings = McpChannelSignalR.Settings;
 using TelegramSettings = McpChannelTelegram.Settings;
 using VoiceSettings = McpChannelVoice.Settings;
+using WebSearchSettings = McpServerWebSearch.Settings;
 
 namespace Tests.Integration.Metrics;
 
@@ -56,6 +58,16 @@ public class MetricsRegistrationContractTests
             "mcp-channel-signalr",
             services => services.ConfigureChannel(new SignalRSettings.ChannelSettings
             {
+                RedisConnectionString = UnreachableRedis
+            })
+        },
+        // The browse server publishes one event per overlay it met on a navigation: the miss rate
+        // of the modal dismisser as a number.
+        {
+            "mcp-websearch",
+            services => services.ConfigureMcp(new WebSearchSettings.McpSettings
+            {
+                BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" },
                 RedisConnectionString = UnreachableRedis
             })
         },

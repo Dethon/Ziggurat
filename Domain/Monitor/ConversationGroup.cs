@@ -10,6 +10,8 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Metrics;
+using Domain.Prompts;
+using Domain.Skills;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -27,6 +29,7 @@ internal sealed class ConversationGroup(
     ChatThreadResolver threadResolver,
     IMetricsPublisher metricsPublisher,
     IMemoryRecallHook? memoryRecallHook,
+    ISkillPreloader? skillPreloader,
     ILogger logger) : IAsyncDisposable
 {
     // The outer token: it ends with the monitor, not with a turn. The two establishing stages
@@ -529,6 +532,16 @@ internal sealed class ConversationGroup(
         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
         userMessage.SetConversationContext(
             DeliveryTargetResolver.BuildConversationContext(message, turn.Targets));
+        if (skillPreloader is not null)
+        {
+            // Started here and awaited by nobody here: the judgment runs while recall makes its
+            // own round trips, so a live turn pays nothing for it, and its deadline runs from
+            // now rather than from when the skills provider looks. The pending result rides on
+            // the message for the provider to take at insertion; a message nobody runs takes it
+            // with it.
+            SkillPreloadPending.Attach(userMessage, PreloadAsync(message, state));
+        }
+
         if (memoryRecallHook is not null)
         {
             // The delivery identity again, not the message's own: recall stamps durable
@@ -540,6 +553,67 @@ internal sealed class ConversationGroup(
 
         return userMessage;
     }
+
+    // Never faults: a preloader that throws, or a history that cannot be read, is a turn with no
+    // head start and nothing more. The judgment is over the session's skills and against the
+    // conversation as persisted, both answered by the agent that owns the session.
+    private async Task<SkillPreload> PreloadAsync(ChannelMessage message, GroupState state)
+    {
+        // The skills arrive with the servers the warmup dials, and a group's first turn builds
+        // its message while that is still under way: asked before, the judgment would be over
+        // nothing. The wait costs the first turn only what the turn waits for anyway, and it
+        // still overlaps the recall. A warmup that fails is that turn's failure, reported once
+        // by the turn — not a preload error on top.
+        try
+        {
+            await state.Warmup;
+        }
+        catch (Exception)
+        {
+            return SkillPreload.NotAsked;
+        }
+
+        try
+        {
+            // Asked before the thread is read: the read is a whole conversation out of Redis that
+            // the turn's first model call waits on, and it exists only to say which skills are
+            // already loaded. With the feature off there is nothing to say it to.
+            if (skillPreloader!.IsOff)
+            {
+                return SkillPreload.NotAsked;
+            }
+
+            var skills = state.Agent.GetSkills(state.Thread);
+            if (skills.Count == 0)
+            {
+                return SkillPreload.NotAsked;
+            }
+
+            var history = await state.Agent.GetHistoryAsync(state.Thread, _turnCt);
+
+            return await skillPreloader.PreloadAsync(Request(message, skills, history, state), _turnCt);
+        }
+        catch (Exception ex) when (!_turnCt.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Skill preload failed for conversation {ConversationId}", message.ConversationId);
+            var failed = new SkillPreload(SkillPreloadOutcome.Error, []);
+            metricsPublisher.Publish(SkillPreloader.ToEvent(Request(message, [], [], state), failed));
+            return failed;
+        }
+    }
+
+    private static SkillPreloadRequest Request(
+        ChannelMessage message, IReadOnlyList<PromptSkill> skills, IReadOnlyList<ChatMessage> history, GroupState state) =>
+        new(message.Content, skills, history)
+        {
+            ConfigPatchModel = message.ConfigPatch?.Model,
+            AgentId = message.AgentId,
+            ChannelId = message.ChannelId,
+            ConversationId = state.DeliveryKey.ConversationId,
+            // The session's mounts, built by the warmup awaited above: the reads a preloaded
+            // skill declares are made over them, the way the model's own would be.
+            Reader = SkillPreloadReads.ReaderOver(state.Agent.GetFileSystemRegistry(state.Thread))
+        };
 
     private IAsyncEnumerable<TurnUpdate> StreamAgentTurn(GroupState state, ChatMessage userMessage, Turn turn)
     {

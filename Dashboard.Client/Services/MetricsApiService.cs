@@ -60,6 +60,9 @@ public sealed class MetricsApiService(HttpClient http)
     public Task<List<MemoryDreamingEvent>?> GetMemoryDreamingAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<MemoryDreamingEvent>>($"api/metrics/memory/dreaming?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
+    public Task<List<MemoryJudgmentEvent>?> GetMemoryJudgmentsAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<MemoryJudgmentEvent>>($"api/metrics/memory/judgments?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
     public Task<List<LatencyEvent>?> GetLatencyAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<LatencyEvent>>($"api/metrics/latency?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
@@ -70,4 +73,17 @@ public sealed class MetricsApiService(HttpClient http)
 
     public Task<List<VoiceEvent>?> GetVoiceEventsAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<VoiceEvent>>($"api/metrics/voice?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<List<SkillPreloadEvent>?> GetSkillPreloadEventsAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<SkillPreloadEvent>>($"api/metrics/skills?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<List<LatencyTrendSeries>?> GetSkillPreloadTrendAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<LatencyTrendSeries>>($"api/metrics/skills/trend?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<List<ModalDismissalEvent>?> GetModalDismissalEventsAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<ModalDismissalEvent>>($"api/metrics/modals?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<List<LatencyTrendSeries>?> GetModalDismissalTrendAsync(DateOnly from, DateOnly to, string? kind) =>
+        http.GetFromJsonAsync<List<LatencyTrendSeries>>(
+            $"api/metrics/modals/trend?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}" + (kind is null ? "" : $"&kind={Uri.EscapeDataString(kind)}"));
 }

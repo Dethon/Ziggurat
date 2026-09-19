@@ -1,5 +1,8 @@
 using System.Text.Json;
+using Domain.Contracts;
+using Domain.Extensions;
 using Domain.Prompts;
+using Domain.Skills;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
@@ -28,15 +31,33 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     public const string LoadToolDescription =
         "Loads one skill from the `<available_skills>` list. Call it only when the request is of that skill's kind, once per conversation, never to check what it does or to fill a pause. The load is silent: nothing you write beside this call mentions a guide or a skill — the user never hears that skills exist.";
 
-    // The load tool's one argument, as the framework names it; the eval cites it by this name.
-    public const string SkillNameParameter = "skillName";
+    // The load tool's one argument, as the framework names it; the eval cites it by this name and
+    // Domain spells it for the preload, so the two are pinned to each other and to the framework.
+    public const string SkillNameParameter = SkillLoadTool.SkillNameParameter;
 
     private readonly Func<AgentSession?, IReadOnlyList<PromptSkill>> _skillsOf;
+    private readonly Func<AgentSession?, IReadOnlyList<ChatMessage>> _historyOf;
+    private readonly Func<AgentSession?, IVirtualFileSystemRegistry?> _registryOf;
+    private readonly ISkillPreloader? _preloader;
     private readonly AgentSkillsProvider _inner;
 
-    public SkillsProvider(Func<AgentSession?, IReadOnlyList<PromptSkill>> skillsOf)
+    // The preloader is optional the way the recall hook is: a host without one — every test host
+    // that does not ask for it — offers the list and the load tool and nothing arrives early. The
+    // history reader is how "already loaded" is answered: the framework hands a context provider
+    // the caller's messages alone, and the history provider has already read the thread this
+    // turn, so this reads what it read rather than asking Redis again. The registry is how a
+    // preload makes the reads a skill declares, over the session's own mounts; absent, it makes
+    // none.
+    public SkillsProvider(
+        Func<AgentSession?, IReadOnlyList<PromptSkill>> skillsOf,
+        ISkillPreloader? preloader = null,
+        Func<AgentSession?, IReadOnlyList<ChatMessage>>? historyOf = null,
+        Func<AgentSession?, IVirtualFileSystemRegistry?>? registryOf = null)
     {
         _skillsOf = skillsOf;
+        _historyOf = historyOf ?? (_ => []);
+        _registryOf = registryOf ?? (_ => null);
+        _preloader = preloader;
         _inner = new AgentSkillsProvider(
             new SessionSkillsSource(skillsOf),
             new AgentSkillsProviderOptions
@@ -73,13 +94,71 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
             .OfType<AIFunction>()
             .FirstOrDefault(t => string.Equals(t.Name, LoadToolName, StringComparison.Ordinal));
 
+        var skills = _skillsOf(context.Session);
         return new AIContext
         {
             Instructions = provided.Instructions,
             Tools = load is null
                 ? null
-                : [new LoadSkillFunction(load, [.. _skillsOf(context.Session).Select(s => s.Name)])]
+                : [new LoadSkillFunction(load, [.. skills.Select(s => s.Name)])],
+            Messages = await PreloadAsync(context, skills, cancellationToken)
         };
+    }
+
+    // The one insertion point. The judge is asked on the turn's request — the last user message
+    // the caller handed in — over the session's skills minus those the history already holds,
+    // and what it is sure of is returned as the pair a load leaves, after the user message so
+    // the cached prefix is untouched. The history provider persists it with the turn, so the
+    // next turn's already-loaded check finds it. The preloader bounds its own deadline, so
+    // awaiting it here waits no longer than what is left of it; nothing it answers late is
+    // applied, because the turn has moved on. The judge's own failures never reach here as
+    // throws — every one is an absence — so this is a head start and never a way to lose a turn.
+    private async Task<IReadOnlyList<ChatMessage>?> PreloadAsync(
+        InvokingContext context, IReadOnlyList<PromptSkill> skills, CancellationToken ct)
+    {
+        if (_preloader is null || skills.Count == 0)
+        {
+            return null;
+        }
+
+        var requestMessages = context.AIContext.Messages?.ToList() ?? [];
+        var request = requestMessages.LastOrDefault(m => m.Role == ChatRole.User);
+        if (request is null || string.IsNullOrWhiteSpace(request.Text))
+        {
+            return null;
+        }
+
+        // A live turn started the judgment where it built the message, beside recall; only a
+        // turn nobody started one for — an eval run, a worker — asks here. A preloader that
+        // throws is a turn with no head start: the contract says it never does, and this is
+        // where that promise is held for the paths the conversation group does not cover.
+        SkillPreload preload;
+        try
+        {
+            var pending = SkillPreloadPending.TryTake(request);
+            preload = pending is not null
+                ? await pending
+                : await _preloader.PreloadAsync(
+                    new SkillPreloadRequest(request.Text, skills, _historyOf(context.Session).Concat(requestMessages))
+                    {
+                        // A worker's request carries no patch of its own, only its parent turn's
+                        // context — and that turn may have been addressed to the local box.
+                        ConfigPatchModel = request.GetConfigPatch()?.Model
+                                           ?? request.GetConversationContext()?.ConfigPatchModel,
+                        AgentId = context.Agent.Name,
+                        Reader = SkillPreloadReads.ReaderOver(_registryOf(context.Session))
+                    },
+                    ct);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return null;
+        }
+
+        // One prefix per turn, so two skills' call ids differ from a later turn's.
+        return preload.Skills.Count > 0
+            ? SkillLoadTool.AsPreloaded(preload, $"preload-{Guid.NewGuid().ToString("N")[..8]}")
+            : null;
     }
 #pragma warning restore MAAI001
 

@@ -1,0 +1,257 @@
+[
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "sí",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "vale",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "adelante",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "hazlo",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "venga, dale",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "por supuesto",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "sí, claro que sí",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "go ahead",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "do it",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "no",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "mejor no",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "ni se te ocurra",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "déjalo",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "espera, no lo hagas",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "no, gracias",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "don't",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "never mind",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "no sé",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "¿qué has dicho?",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "eh...",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "¿cuáles notas?",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "sí... bueno, no, espera",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "thank you.",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "subtítulos realizados por la comunidad de amara.org",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas apagar las luces del salón y de la cocina? Di sí o no.",
+    "answer": "sí, pero la de la cocina no",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas apagar las luces del salón y de la cocina? Di sí o no.",
+    "answer": "no, solo la del salón",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas apagar las luces del salón y de la cocina? Di sí o no.",
+    "answer": "sí a todo",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas apagar las luces del salón y de la cocina? Di sí o no.",
+    "answer": "no, ninguna",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas apagar las luces del salón y de la cocina? Di sí o no.",
+    "answer": "sí sí",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas apagar las luces del salón y de la cocina? Di sí o no.",
+    "answer": "que no, hombre",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas apagar las luces del salón y de la cocina? Di sí o no.",
+    "answer": "sí... bueno, vale",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas apagar las luces del salón y de la cocina? Di sí o no.",
+    "answer": "no lo sé, ¿qué luces?",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas turn_off? Di sí o no.",
+    "answer": "sí",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas turn_off? Di sí o no.",
+    "answer": "adelante",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas turn_off? Di sí o no.",
+    "answer": "hazlo",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas turn_off? Di sí o no.",
+    "answer": "vale",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas turn_off? Di sí o no.",
+    "answer": "no",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas turn_off? Di sí o no.",
+    "answer": "mejor no",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas turn_off? Di sí o no.",
+    "answer": "ni se te ocurra",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas turn_off? Di sí o no.",
+    "answer": "eh...",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas turn_off? Di sí o no.",
+    "answer": "¿qué?",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas file_delete, call_service? Di sí o no.",
+    "answer": "sí",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas file_delete, call_service? Di sí o no.",
+    "answer": "adelante",
+    "want": "approve"
+  },
+  {
+    "prompt": "¿Apruebas file_delete, call_service? Di sí o no.",
+    "answer": "no",
+    "want": "decline"
+  },
+  {
+    "prompt": "¿Apruebas file_delete, call_service? Di sí o no.",
+    "answer": "solo el primero",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "¿Apruebas file_delete, call_service? Di sí o no.",
+    "answer": "sí, pero call_service no",
+    "want": "ambiguous"
+  },
+  {
+    "prompt": "No entendí. ¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "sí",
+    "want": "approve"
+  },
+  {
+    "prompt": "No entendí. ¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "adelante",
+    "want": "approve"
+  },
+  {
+    "prompt": "No entendí. ¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "no",
+    "want": "decline"
+  },
+  {
+    "prompt": "No entendí. ¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "déjalo",
+    "want": "decline"
+  },
+  {
+    "prompt": "No entendí. ¿Apruebas borrar siete notas del vault? Di sí o no.",
+    "answer": "eh...",
+    "want": "ambiguous"
+  }
+]

@@ -40,11 +40,34 @@ binding its text, never an argument about where a `Prepend` goes.
 
 ## A skill is a section the model reads on demand
 
-The glossary (`CONTEXT.md` § Prompt) pins three words. The **base prompt** is every section an
+The glossary (`CONTEXT.md` § Prompt) pins four words. The **base prompt** is every section an
 agent reads on every turn. A **skill** is a body the model loads with one `load_skill` call when a
 request calls for it; only its name and one-line description stand in the base prompt. A **trigger
-claim** is what that description asserts: a request of a named kind loads it. ADR 0039 is the
-decision; these are the rules the next section lands on.
+claim** is what that description asserts: a request of a named kind gets it loaded. A **preload**
+is the host loading first: before the model's first call, `SkillsProvider` asks Jev (`ISkillPreloader`,
+`Domain/Skills/`) which skills the request needs, judged on the same descriptions, and a confident
+answer puts the body into the conversation as the pair a `load_skill` call leaves — after the user
+message, persisted with the turn, never twice. ADR 0039 (refined 2026-09-18) is the decision;
+these are the rules the next section lands on. A turn addressed to the Lemonade chat host asks
+nothing, and neither does a worker it spawns. The Jev client holds that rule
+(`.claude/rules/mcp-hosting.md`); the group and the provider only name the model on
+`SkillPreloadRequest.ConfigPatchModel` — from the request's own patch, or for a worker, which has
+none, from the parent turn's `ConversationContext` its request carries.
+
+- **A skill may already be in the conversation when a turn starts, and one that is, is loaded.**
+  The `skills` section says so to the model; `SkillLoadTool.LoadedIn` says so to the preloader,
+  reading every load off the history whoever made it. There is no second record of what is loaded.
+- **A preload makes the reads the body's first line orders.** `SkillDeclaration.PreloadReads`
+  names the files a body says to read in the same turn as the skill (the home skill: the setup
+  index), and a preload reads them through the session's own `file_read` and writes the pair
+  beside the load, so the model's first call after a head start is the action. A read that fails
+  is left out and the body tells the model to read. The event names the reads; the eval counts
+  each as a preloaded `file_read`, so the read every home scenario requires is met by either
+  reader.
+- **The description has two readers and one text.** Jev judges by `PromptSkill.Description`
+  verbatim — never a second criteria text — so a red trigger claim has one fix, in the description,
+  and a description that works on only one reader shows as a lopsided loader column on the eval
+  scorecard. Overlaps between descriptions are fixed in the descriptions.
 
 - **Timing decides what moves, never subject.** A rule the model needs *before* it decides what to
   do — which mechanism, which tool, which mount — stays in the base prompt. A rule it needs only
@@ -65,7 +88,10 @@ decision; these are the rules the next section lands on.
 - **Red for a skill claim is demonstrated with the body's prose deleted and the description
   intact.** That reddens the body claim. A red with the description deleted is a missing load — the
   trigger claim's red, cited by every scenario of the family — and says nothing about the body. The
-  commit that cites a skill claim notes which demonstration it made.
+  description deleted blinds both readers at once, Jev and the model, so the demonstration still
+  holds now that a trigger claim reads "a request of this kind gets the skill loaded" rather than
+  naming who loads it; the scorecard's `loader` column says who did. The commit that cites a skill
+  claim notes which demonstration it made.
 
 ## The tests are the point
 
