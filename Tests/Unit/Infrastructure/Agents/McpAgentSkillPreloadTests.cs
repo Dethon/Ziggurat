@@ -74,6 +74,39 @@ public class McpAgentSkillPreloadTests
         withPreload.Options.Tools!.Select(t => t.Name).ShouldContain(SkillLoadTool.Name);
     }
 
+    // The live path: a conversation group starts the judgment where it builds the user message and
+    // rides it on that message, and the skills provider takes it at insertion. The join is the
+    // same ChatMessage instance surviving from the group through the agent and the framework into
+    // the provider's context — input messages are filtered, not cloned — so nothing here may ask
+    // the preloader itself. A framework that began stamping external messages by cloning them, as
+    // it already does for history, would miss every take and judge a second time per turn with
+    // every other test in this file still green.
+    [Fact]
+    public async Task AJudgmentAttachedToTheUserMessage_IsTakenByTheProvider_AndNoSecondOneIsAsked()
+    {
+        await using var server = await StartAsync(_homeText, _timersText);
+        var judge = new ScriptedJudge(_ => Sure(Home));
+        var (client, calls) = Capturing();
+        var preloader = Preloader(judge);
+        await using var agent = Agent(client, server.Endpoint, preloader);
+
+        var message = new ChatMessage(ChatRole.User, "enciende la luz del salón");
+        var request = new SkillPreloadRequest(message.Text, [TestSkills.Home, TestSkills.Timers], []);
+        SkillPreloadPending.Attach(message, preloader.PreloadAsync(request, CancellationToken.None));
+
+        await agent.RunAsync([message]);
+
+        // The attached judgment is the one that landed, and the provider asked for no other.
+        judge.Asked.ShouldHaveSingleItem();
+        var sent = calls.ShouldHaveSingleItem();
+        sent.Messages.Select(m => m.Role.Value).ShouldBe(["user", "assistant", "tool"]);
+        sent.Messages[1].Contents.OfType<FunctionCallContent>().ShouldHaveSingleItem()
+            .Arguments!.Values.Single()!.ToString().ShouldBe(Home);
+
+        // Taken once: a second turn on the same message must not find the judgment again.
+        SkillPreloadPending.TryTake(message).ShouldBeNull();
+    }
+
     [Fact]
     public async Task ThePair_IsPersisted_AndTheNextTurnAsksAboutOneSkillFewerAndInsertsNothingTwice()
     {

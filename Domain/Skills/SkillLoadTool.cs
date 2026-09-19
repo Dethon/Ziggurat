@@ -20,6 +20,12 @@ public static class SkillLoadTool
 
     public const string SkillNameParameter = "skillName";
 
+    // Against the persisted thread, which is not always what the model is sent: the truncator
+    // drops the oldest message groups at send time while Redis keeps them, so in a conversation
+    // past the context window a load pair can still be here and no longer in front of the model.
+    // The preload then does not ask about that skill again. It fails toward the old behaviour —
+    // the model loads it for itself, as it did before any of this — and the alternative is
+    // teaching this side the truncator's cut, which is a send-time decision it cannot see.
     public static IReadOnlySet<string> LoadedIn(IEnumerable<ChatMessage> history) =>
         history
             .SelectMany(m => m.Contents.OfType<FunctionCallContent>())
