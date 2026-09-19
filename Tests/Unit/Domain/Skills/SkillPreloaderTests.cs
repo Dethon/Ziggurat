@@ -130,6 +130,17 @@ public class SkillPreloaderTests
     }
 
     [Fact]
+    public async Task Preload_TheTurnsModel_IsHandedToTheJudge_OnTheRequest()
+    {
+        var judge = new ScriptedJudge(_ => new JudgmentOutcome.Absent(AbsenceReason.LocalTurn));
+
+        await Preloader(judge).PreloadAsync(
+            Request("apaga la luz", [_home]) with { ConfigPatchModel = "lemonade/qwen3" }, CancellationToken.None);
+
+        judge.Asked.ShouldHaveSingleItem().TurnModel.ShouldBe("lemonade/qwen3");
+    }
+
+    [Fact]
     public async Task Preload_AJudgeThatSentNothingForALocalTurn_SaysSo()
     {
         // The client holds the rule; the preloader only names what it was told.

@@ -77,7 +77,13 @@ public record BrowseRequest(
     int Offset = 0,
     bool UseReadability = false,
     bool ScrollToLoad = false,
-    int ScrollSteps = 3);
+    int ScrollSteps = 3)
+{
+    // The model the browsing turn was addressed to, from the tool call's `_meta`. Handed to the
+    // modal judgment and nothing else: its client sends nothing for a turn addressed to the local
+    // box. Unset is a browse with no turn behind it (a fixture, a harness).
+    public string? TurnModel { get; init; }
+}
 
 public record BrowseResult(
     string SessionId,

@@ -54,7 +54,7 @@ public sealed class SkillPreloader(
         using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(settings.DeadlineMs), timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
 
-        var outcome = await judge.JudgeAsync(Ask(request.Text, candidates), linked.Token);
+        var outcome = await judge.JudgeAsync(Ask(request.Text, candidates, request.ConfigPatchModel), linked.Token);
         var latency = timeProvider.GetElapsedTime(started);
 
         // The turn being torn down is not a judgment that missed. The judge reads any cancellation
@@ -177,7 +177,7 @@ public sealed class SkillPreloader(
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "An outcome with no wire spelling")
     };
 
-    private static JudgmentRequest Ask(string text, IReadOnlyList<PromptSkill> candidates)
+    private static JudgmentRequest Ask(string text, IReadOnlyList<PromptSkill> candidates, string? turnModel)
     {
         var criteria = candidates
             .Select(s => KeyValuePair.Create(s.Name, s.Description))
@@ -191,7 +191,7 @@ public sealed class SkillPreloader(
                 ChoiceQuestionId, new ChoiceQuestion(ChoiceInstructions, criteria)))
             .ToDictionary(StringComparer.Ordinal);
 
-        return new JudgmentRequest(new JsonObject { ["request"] = text }, questions);
+        return new JudgmentRequest(new JsonObject { ["request"] = text }, questions, turnModel);
     }
 
     private SkillPreload Decide(Judgment judgment, IReadOnlyList<PromptSkill> candidates, TimeSpan latency)

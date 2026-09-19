@@ -86,7 +86,7 @@ public class ModalJudgeJevTests
             try
             {
                 var controls = c.Controls.Select((name, i) => new ModalControl(i, "button", name)).ToList();
-                var pick = await judge.PickAsync(c.Kind, controls, CancellationToken.None);
+                var pick = await judge.PickAsync(c.Kind, controls, turnModel: null, CancellationToken.None);
                 pick.Status.ShouldNotBeOneOf(ModalPickStatus.Absent, ModalPickStatus.NotAsked);
                 return new Verdict(c, pick);
             }

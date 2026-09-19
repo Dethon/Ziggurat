@@ -591,10 +591,6 @@ internal sealed class ConversationGroup(
 
             var history = await state.Agent.GetHistoryAsync(state.Thread, _turnCt);
 
-            // The judge's client reads what the turn asked for and sends nothing for one addressed
-            // to the local box. A server's call-tool filter says so for a tool call; here nobody
-            // else would.
-            using var turnModel = TurnModel.Enter(message.ConfigPatch?.Model);
             return await skillPreloader.PreloadAsync(Request(message, skills, history, state), _turnCt);
         }
         catch (Exception ex) when (!_turnCt.IsCancellationRequested)
@@ -610,6 +606,7 @@ internal sealed class ConversationGroup(
         ChannelMessage message, IReadOnlyList<PromptSkill> skills, IReadOnlyList<ChatMessage> history, GroupState state) =>
         new(message.Content, skills, history)
         {
+            ConfigPatchModel = message.ConfigPatch?.Model,
             AgentId = message.AgentId,
             ChannelId = message.ChannelId,
             ConversationId = state.DeliveryKey.ConversationId,

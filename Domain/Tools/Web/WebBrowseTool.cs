@@ -19,8 +19,10 @@ public class WebBrowseTool(IWebBrowser browser)
         dismissed on the way in.
         """;
 
+    // turnModel is the model the turn was addressed to, from the call's `_meta` (BrowseRequest).
     protected async Task<WebBrowseToolResult> RunAsync(
         string sessionId,
+        string? turnModel,
         string url,
         string? selector,
         int maxLength,
@@ -43,7 +45,10 @@ public class WebBrowseTool(IWebBrowser browser)
             Offset: offset,
             UseReadability: useReadability,
             ScrollToLoad: scrollToLoad,
-            ScrollSteps: scrollSteps);
+            ScrollSteps: scrollSteps)
+        {
+            TurnModel = turnModel
+        };
 
         var result = await browser.NavigateAsync(request, ct);
 

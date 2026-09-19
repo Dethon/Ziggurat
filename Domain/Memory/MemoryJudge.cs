@@ -121,7 +121,7 @@ public sealed class MemoryJudge(
                     string.Format(RelationInstructions, pair.i, pair.j), RelationCriteria),
                 StringComparer.Ordinal);
 
-        return new JudgmentRequest(state, questions);
+        return new JudgmentRequest(state, questions, JudgmentRequest.NoTurn);
     }
 
     public async Task<PairVerdict> RelateAsync(
@@ -296,7 +296,7 @@ public sealed class MemoryJudge(
 
     private Task<(JudgmentOutcome Outcome, TimeSpan Latency)> AskAsync(
         JsonObject state, IReadOnlyDictionary<string, JudgmentQuestion> questions, CancellationToken ct) =>
-        AskAsync(new JudgmentRequest(state, questions), ct);
+        AskAsync(new JudgmentRequest(state, questions, JudgmentRequest.NoTurn), ct);
 
     private async Task<(JudgmentOutcome Outcome, TimeSpan Latency)> AskAsync(JudgmentRequest request, CancellationToken ct)
     {

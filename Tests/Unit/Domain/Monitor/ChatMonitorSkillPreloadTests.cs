@@ -1,4 +1,3 @@
-using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -144,11 +143,10 @@ public class ChatMonitorSkillPreloadTests
         judge.Asked[1].Questions["skill"].ShouldBeOfType<ChoiceQuestion>().Criteria.Keys.ShouldBe([_home.Name, "none"]);
     }
 
-    // The Jev client reads the ambient turn model to see what the turn asked for, and outside a
-    // tool call nobody enters one but the group: without this a live turn addressed to the local box
-    // would reach the judge, the one place the client's rule could not see.
+    // The judge's client sends nothing for a turn addressed to the local box, and it knows the
+    // turn only by what the request says: the group hands on the model the message asked for.
     [Fact]
-    public async Task ThePreload_IsAskedAsTheTurn_SoTheJudgeSeesTheModelItAskedFor()
+    public async Task ThePreload_NamesTheModelTheTurnAskedFor()
     {
         var agent = MonitorTestMocks.CreateAgent();
         agent.Skills = [_home];
@@ -174,7 +172,7 @@ public class ChatMonitorSkillPreloadTests
 
         public Task<JudgmentOutcome> JudgeAsync(JudgmentRequest request, CancellationToken deadline)
         {
-            Models.Add(TurnModel.Current);
+            Models.Add(request.TurnModel);
             return Task.FromResult<JudgmentOutcome>(new JudgmentOutcome.Absent(AbsenceReason.LocalTurn));
         }
     }

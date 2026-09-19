@@ -36,7 +36,7 @@ public sealed class JudgedApprovalReader(IJudge judge, ApprovalJudgmentSettings 
     public static readonly string DeclinedInstructions =
         Preamble + "Did the person refuse it, or tell the assistant not to do it as asked?";
 
-    public async Task<ApprovalReading> ReadAsync(string prompt, string answer, CancellationToken ct)
+    public async Task<ApprovalReading> ReadAsync(string prompt, string answer, string? turnModel, CancellationToken ct)
     {
         // Before anything else, because an already-cancelled token never raises on the await path
         // below: the judge answers an immediate absence rather than throwing, and the word list
@@ -60,7 +60,7 @@ public sealed class JudgedApprovalReader(IJudge judge, ApprovalJudgmentSettings 
         JudgmentOutcome outcome;
         try
         {
-            outcome = await judge.JudgeAsync(Ask(prompt, answer), linked.Token).WaitAsync(linked.Token);
+            outcome = await judge.JudgeAsync(Ask(prompt, answer, turnModel), linked.Token).WaitAsync(linked.Token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -80,13 +80,14 @@ public sealed class JudgedApprovalReader(IJudge judge, ApprovalJudgmentSettings 
     private static bool Usable(ApprovalJudgmentSettings settings) =>
         settings.DeadlineMs > 0 && settings.Counter < settings.Sure;
 
-    public static JudgmentRequest Ask(string prompt, string answer) => new(
+    public static JudgmentRequest Ask(string prompt, string answer, string? turnModel) => new(
         new JsonObject { ["prompt"] = prompt, ["answer"] = answer },
         new Dictionary<string, JudgmentQuestion>(StringComparer.Ordinal)
         {
             [ApprovedQuestionId] = new NoulQuestion(ApprovedInstructions),
             [DeclinedQuestionId] = new NoulQuestion(DeclinedInstructions)
-        });
+        },
+        turnModel);
 
     // A judge that answered something other than both nouls is an absence, not a lean.
     private static (double Approved, double Declined)? Nouls(Judgment judgment) =>

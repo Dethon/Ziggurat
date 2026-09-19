@@ -1,9 +1,6 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Domain.Agents;
-using Domain.Channels;
-using Domain.DTOs.Channel;
 using Domain.Judgments;
 using Infrastructure.Judgments;
 using Microsoft.Extensions.Logging;
@@ -37,7 +34,7 @@ public class TypeSafeJudgeTests
         }
         """;
 
-    private static JudgmentRequest AChoiceAndTwoNouls() => new(
+    private static JudgmentRequest AChoiceAndTwoNouls(string? turnModel = JudgmentRequest.NoTurn) => new(
         new JsonObject { ["request"] = "pon un temporizador de ocho minutos" },
         new Dictionary<string, JudgmentQuestion>
         {
@@ -51,7 +48,8 @@ public class TypeSafeJudgeTests
                 }),
             ["needs_timers"] = new NoulQuestion("Does the request need this skill? Skill: Countdowns and alarms."),
             ["needs_home"] = new NoulQuestion("Does the request need this skill? Skill: Lights and climate.")
-        });
+        },
+        turnModel);
 
     [Fact]
     public async Task Judge_AChoiceAndTwoNouls_PostsOneRequestOfTheDocumentedShape()
@@ -250,45 +248,32 @@ public class TypeSafeJudgeTests
 
     // The one rule every use of Jev inherits by asking through this client: a turn addressed to
     // the local box sends nothing about itself to a hosted judge. Held here, where the request
-    // would leave, so a use written tomorrow is covered without knowing the rule exists.
-    [Fact]
-    public async Task Judge_InsideATurnAddressedToLemonade_MakesNoHttpCallAndSaysWhy()
+    // would leave, and fed by a field no request can be built without — so a use written tomorrow
+    // is covered without knowing the rule exists.
+    [Theory]
+    [InlineData("lemonade/qwen3")]
+    [InlineData("Lemonade/Qwen3")]
+    public async Task Judge_ARequestForATurnAddressedToLemonade_MakesNoHttpCallAndSaysWhy(string turnModel)
     {
         var handler = new ScriptedHandler(_ => Ok(Answered));
-        using var caller = CallerContext.Enter(new ConversationContext(
-            "jack", "conv-1", "fran", new ReplyTarget("signalr", "conv-1"), "lemonade/qwen3"));
 
-        var outcome = await Judge(handler).JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
-
-        outcome.ShouldBeOfType<JudgmentOutcome.Absent>().Reason.ShouldBe(AbsenceReason.LocalTurn);
-        handler.Requests.ShouldBeEmpty();
-    }
-
-    // The agent host asks outside any tool call, so it names the turn's model by hand.
-    [Fact]
-    public async Task Judge_WithALemonadeTurnModelEntered_MakesNoHttpCall()
-    {
-        var handler = new ScriptedHandler(_ => Ok(Answered));
-        using var turnModel = TurnModel.Enter("lemonade/qwen3");
-
-        var outcome = await Judge(handler).JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
+        var outcome = await Judge(handler).JudgeAsync(AChoiceAndTwoNouls(turnModel), CancellationToken.None);
 
         outcome.ShouldBeOfType<JudgmentOutcome.Absent>().Reason.ShouldBe(AbsenceReason.LocalTurn);
         handler.Requests.ShouldBeEmpty();
     }
 
     [Theory]
-    [InlineData(null)]
+    [InlineData(JudgmentRequest.NoTurn)]
     [InlineData("openai/gpt-5.6-luna")]
-    public async Task Judge_InsideAHostedTurn_Asks(string? model)
+    public async Task Judge_ARequestForAHostedTurnOrNoTurn_Asks(string? turnModel)
     {
         var handler = new ScriptedHandler(_ => Ok(Answered));
-        using var caller = CallerContext.Enter(new ConversationContext(
-            "jack", "conv-1", "fran", new ReplyTarget("signalr", "conv-1"), model));
 
-        var outcome = await Judge(handler).JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
+        var outcome = await Judge(handler).JudgeAsync(AChoiceAndTwoNouls(turnModel), CancellationToken.None);
 
         outcome.ShouldBeOfType<JudgmentOutcome.Answered>();
+        handler.Requests.ShouldHaveSingleItem().Body.ShouldNotContain("turnModel", Case.Insensitive);
     }
 
     private static IJudge Judge(ScriptedHandler handler, ILogger? logger = null, TimeSpan? timeout = null)

@@ -228,7 +228,7 @@ public class PlaywrightWebBrowser(
 
         // One event per overlay the dismisser detected, whatever became of it; a page with no
         // overlay publishes nothing, so the count is of walls and not of browses.
-        var overlays = await _modalDismisser.DismissAsync(page, ct);
+        var overlays = await _modalDismisser.DismissAsync(page, request.TurnModel, ct);
         foreach (var overlay in overlays)
         {
             _metricsPublisher.Publish(overlay.ToEvent());

@@ -120,7 +120,7 @@ public class ApprovalReaderJevTests
             await width.WaitAsync();
             try
             {
-                var reading = await reader.ReadAsync(c.Prompt, c.Answer, CancellationToken.None);
+                var reading = await reader.ReadAsync(c.Prompt, c.Answer, turnModel: null, CancellationToken.None);
                 reading.DecidedBy.ShouldNotBe(ApprovalDecider.WordList, $"Jev did not answer for '{c.Answer}'");
                 return new Verdict(c, reading);
             }

@@ -56,9 +56,9 @@ public sealed class TypeSafeJudge : IJudge
 
         // A turn addressed to the local box sends nothing about itself to a hosted judge. Held
         // here, where the request would leave, so every use — the ones written and the ones not
-        // yet — is covered by asking through this client, and none has to know the rule. TurnModel
-        // says where the answer comes from; no turn at all (the nightly dreaming) asks.
-        if (LemonadeModelId.IsLemonade(TurnModel.Current))
+        // yet — is covered by asking through this client: the request cannot be built without
+        // naming the turn's model, and none of them has to know the rule.
+        if (LemonadeModelId.IsLemonade(request.TurnModel))
         {
             return new JudgmentOutcome.Absent(AbsenceReason.LocalTurn);
         }

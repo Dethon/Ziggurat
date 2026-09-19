@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using Domain.Agents;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Domain.Prompts;
@@ -59,12 +58,12 @@ public class SkillsProviderPendingTests
     // A worker's request carries no patch of its own, only the parent turn's context — and a
     // worker spawned by a turn addressed to the local box must not ask a hosted judge either.
     [Fact]
-    public async Task AWorkersRequest_IsJudgedAsTheTurnItsParentWas()
+    public async Task AWorkersRequest_NamesTheModelItsParentTurnAskedFor()
     {
-        string? asked = null;
+        SkillPreloadRequest? asked = null;
         var preloader = new Mock<ISkillPreloader>();
         preloader.Setup(p => p.PreloadAsync(It.IsAny<SkillPreloadRequest>(), It.IsAny<CancellationToken>()))
-            .Callback<SkillPreloadRequest, CancellationToken>((_, _) => asked = TurnModel.Current)
+            .Callback<SkillPreloadRequest, CancellationToken>((r, _) => asked = r)
             .ReturnsAsync(SkillPreload.NotAsked);
         var request = new ChatMessage(ChatRole.User, "enciende la luz");
         request.SetConversationContext(new ConversationContext(
@@ -72,8 +71,7 @@ public class SkillsProviderPendingTests
 
         await Provide(preloader.Object, request);
 
-        asked.ShouldBe("lemonade/qwen3");
-        TurnModel.Current.ShouldBeNull();
+        asked.ShouldNotBeNull().ConfigPatchModel.ShouldBe("lemonade/qwen3");
     }
 
     [Theory]

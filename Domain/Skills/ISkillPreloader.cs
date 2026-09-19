@@ -28,6 +28,10 @@ public sealed record SkillPreloadRequest(
     IReadOnlyList<PromptSkill> Skills,
     IEnumerable<ChatMessage> History)
 {
+    // The model the turn asked for, handed to the judge's client, which sends nothing for a turn
+    // addressed to the local box. A worker's request has no patch; it names its parent turn's.
+    public string? ConfigPatchModel { get; init; }
+
     // Where the request came from, for the event each judgment publishes. Optional: a run with
     // no channel — an eval, a worker — is judged all the same.
     public string? AgentId { get; init; }

@@ -100,7 +100,10 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
         _ => []
     };
 
-    public async Task<ModalPick> PickAsync(ModalType kind, IReadOnlyList<ModalControl> controls, CancellationToken ct)
+    // turnModel is the model the browsing turn was addressed to, passed down from the tool call's
+    // `_meta`; the judge's client sends nothing for the local box, and that comes back NotAsked.
+    public async Task<ModalPick> PickAsync(
+        ModalType kind, IReadOnlyList<ModalControl> controls, string? turnModel, CancellationToken ct)
     {
         // Settings a judgment cannot be asked under, treated as nothing to ask rather than acted
         // on: a deadline that is not a wait threw out of the CancellationTokenSource constructor
@@ -110,7 +113,7 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
             return ModalPick.NotAsked;
         }
 
-        var request = Ask(kind, controls, settings.MaxControls);
+        var request = Ask(kind, controls, settings.MaxControls, turnModel);
         if (request is null)
         {
             return ModalPick.NotAsked;
@@ -171,7 +174,8 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
     // past the cap are left out in document order; the criteria name each one by index, plus
     // `none`. What the judge is shown is what the pick clicks, so the filtering and the cutting
     // both happen here, before either list exists.
-    public static JudgmentRequest? Ask(ModalType kind, IReadOnlyList<ModalControl> controls, int maxControls)
+    public static JudgmentRequest? Ask(
+        ModalType kind, IReadOnlyList<ModalControl> controls, int maxControls, string? turnModel)
     {
         var questions = QuestionsFor(kind);
         if (questions.Count == 0)
@@ -210,7 +214,8 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
             questions.ToDictionary(
                 q => q.Id,
                 q => (JudgmentQuestion)new ChoiceQuestion(q.Instructions, criteria),
-                StringComparer.Ordinal));
+                StringComparer.Ordinal),
+            turnModel);
     }
 
     // The rule: the questions in their order, the first confident pick of a listed control wins,

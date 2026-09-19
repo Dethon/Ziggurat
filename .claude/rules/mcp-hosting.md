@@ -41,13 +41,14 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   request's `_meta`) for the duration of the call, so a filesystem backend — which never sees the
   request — can still ask who is calling; absent means the call carried none, and a consumer
   refuses rather than guesses. The context also carries `ConfigPatchModel`, the model the turn
-  asked for, and **the Jev client reads it**: `TypeSafeJudge` sends nothing for a `lemonade/` id
-  and answers `AbsenceReason.LocalTurn`, so every use of `IJudge` — written or not yet — is covered
-  by asking through it, and no use checks for itself. A use only decides what that absence means
-  to it (not a miss to count). The ambient is the whole mechanism (`Domain/Agents/TurnModel`, a fact about the turn rather than about Jev):
-  a server gets it from this filter's caller, but **agent-host code that asks outside a tool call
-  must enter it itself** (`TurnModel.Enter`), as `ConversationGroup` and `SkillsProvider` do for
-  the preload; nothing entered and no caller is no turn (the nightly dreaming), and that asks. Two
+  asked for. **The Jev client holds the local-box rule and every use feeds it explicitly**:
+  `JudgmentRequest.TurnModel` is a required field, `TypeSafeJudge` sends nothing for a `lemonade/`
+  id and answers `AbsenceReason.LocalTurn`, so a use cannot be written without saying which turn it
+  asks for, and none checks for itself — it only decides what that absence means to it (not a miss
+  to count). The value is passed down as plain data, never read from an ambient: a server's tool
+  parses it from the call's `_meta` (`ConversationScope.Parse`) and hands it on as a parameter, the
+  agent host takes it from the message, and a question with no turn behind it (the nightly
+  dreaming) says `JudgmentRequest.NoTurn`. Two
   filters nested around each other would let the outer one convert the very cancellation the inner
   rethrows, so a second ask is a no-op and the first ask's error shape wins.
 - **`Tests/Integration/McpServers/McpServerRegistrations.cs` is the one server table.** Fourteen
