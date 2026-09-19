@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
 using Domain.Tools.FileSystem;
@@ -26,6 +27,14 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     // Abstract for the same reason FilesystemName is: a reusable disk root must not carry one
     // deployment's prose, so it takes this as a constructor argument instead.
     public abstract string DescribeMount { get; }
+
+    // This mount as one caller sees it. The operations take a path and a payload, never the request
+    // that carried them, so a mount that has to know who is calling — the Home Assistant watches
+    // record the agent that created them — answers a view of itself bound to that caller, and the
+    // registrar asks for it once per call from the request's `_meta`. Plain data handed down, not
+    // an ambient to enter; null is a call that carried no context (a harness, a benchmark), and a
+    // mount that does not care answers itself. Not an operation: it advertises nothing.
+    public virtual FileSystemBackendBase For(ConversationContext? caller) => this;
 
     // The writable, persistent directory under this mount, in the backend's own coordinates, or
     // null where the mount has none — which is most of them (ADR 0025).

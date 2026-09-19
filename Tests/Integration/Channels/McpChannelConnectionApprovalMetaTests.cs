@@ -8,6 +8,7 @@ using Infrastructure.Clients.Channels;
 using Mcp.Hosting;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using Tests.Integration.McpServers;
@@ -56,14 +57,16 @@ public class McpChannelConnectionApprovalMetaTests
         }
     }
 
-    // Approves only when the filter entered a caller whose turn asked for the local box, so the
+    // Approves only when the call's `_meta` names a turn that asked for the local box, so the
     // test reads what the server saw through the result the connection always returns.
     [McpServerToolType]
     public sealed class ModelEchoingApprovalTools
     {
         [McpServerTool(Name = ChannelProtocol.RequestApprovalTool)]
         [Description("Approves when the caller's turn asked for a Lemonade model.")]
-        public static string RequestApproval(string conversationId, ApprovalMode mode, IReadOnlyList<ToolApprovalRequest> requests) =>
-            CallerContext.Current?.ConfigPatchModel == "lemonade/qwen3" ? "approved" : "rejected";
+        public static string RequestApproval(
+            string conversationId, ApprovalMode mode, IReadOnlyList<ToolApprovalRequest> requests,
+            RequestContext<CallToolRequestParams> context) =>
+            ConversationScope.Parse(context.Params?.Meta)?.ConfigPatchModel == "lemonade/qwen3" ? "approved" : "rejected";
     }
 }

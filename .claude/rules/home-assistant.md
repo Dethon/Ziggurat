@@ -139,7 +139,8 @@ subtree and untouchable through it. `enabled` is the entity's on/off, synced wit
 `automation.turn_on/off` after every write; `status.json` is rendered, read-only. Text fields cross
 as Jinja and are rendered by the home inside a `variables` step, so the rest_command payloads are
 composed with `to_json` and a quote in a prompt cannot break them. The creating agent comes from
-`CallerContext` (entered by the call-tool filter from the request's `_meta`); a file naming no
+the call's `_meta`: the fs-tool registrar asks the mount for itself as that caller sees it
+(`HaFileSystem.For`, a per-call view sharing the one `HaWatches`), never an ambient; a file naming no
 `deliverTo` takes the caller's origin channel and address, because the model is never told which
 channel a turn came from, and a file naming no `userId` takes the caller's user for the same
 reason (a fire attributed to nobody would run as the sender label "watch"); a replace naming

@@ -69,18 +69,18 @@ public class McpFileSystemBackendMetaTests
     }
 }
 
-// An fs_info that answers with the caller the filter entered, in the path field, so the test reads
+// An fs_info that answers with the caller its `_meta` names, in the path field, so the test reads
 // what the server saw through the same typed result the backend always returns.
 [McpServerToolType]
 public sealed class MetaEchoingFileSystemTools
 {
     [McpServerTool(Name = "fs_info")]
     [Description("Answers the caller as the path.")]
-    public static string Info(string path, string? filesystem = null) =>
+    public static string Info(RequestContext<CallToolRequestParams> context, string path, string? filesystem = null) =>
         new JsonObject
         {
             ["exists"] = true,
             ["isDirectory"] = false,
-            ["path"] = global::Domain.Channels.CallerContext.Current is { } caller ? $"{caller.AgentId}:{caller.ConversationId}" : "nobody"
+            ["path"] = global::Domain.Channels.ConversationScope.Parse(context.Params?.Meta) is { } caller ? $"{caller.AgentId}:{caller.ConversationId}" : "nobody"
         }.ToJsonString();
 }

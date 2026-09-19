@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -16,7 +15,7 @@ public sealed partial class HaFileSystem(
     TimeSpan? regexMatchTimeout = null,
     Func<IMusicAssistantClient>? musicClientFactory = null,
     TimeProvider? timeProvider = null,
-    Func<ConversationContext?>? caller = null,
+    ConversationContext? caller = null,
     HaWatches? watches = null,
     ISatelliteCatalog? satellites = null) : FileSystemBackendBase
 {
@@ -32,9 +31,12 @@ public sealed partial class HaFileSystem(
     private HomeAssistantSetupSummary? _setupIndex;
 
     // Who is writing, for the one record on this mount that remembers its author: a watch runs its
-    // prompts as the agent that created it. The call-tool filter enters the context; a test hands
-    // one in directly.
-    private readonly Func<ConversationContext?> _caller = caller ?? (() => CallerContext.Current);
+    // prompts as the agent that created it. The server's one instance has no caller; the registrar
+    // asks for this view per call, sharing the watches and rebuilding nothing that holds state.
+    public override FileSystemBackendBase For(ConversationContext? caller) =>
+        new HaFileSystem(
+            catalogProvider, clientFactory, regexMatchTimeout, musicClientFactory, timeProvider,
+            caller, _watches, satellites);
 
     public const string Name = "ha";
 
