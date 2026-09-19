@@ -59,6 +59,11 @@ public sealed class SkillPreloader(
         var outcome = await judge.JudgeAsync(Ask(request.Text, candidates), linked.Token);
         var latency = timeProvider.GetElapsedTime(started);
 
+        // The turn being torn down is not a judgment that missed. The judge reads any cancellation
+        // as a deadline, so without this a /clear or a shutdown within the deadline publishes a
+        // deadline event — and the deadline is tuned from exactly that rate.
+        ct.ThrowIfCancellationRequested();
+
         // An answer that arrives after the deadline is discarded here, whatever the judge made of
         // the cancellation: late is late, and a body inserted late would land on the wrong turn.
         var preload = outcome switch

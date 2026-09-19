@@ -31,6 +31,9 @@ public static class PairRelations
     public const string Unrelated = "unrelated";
 
     public static bool IsLink(string relation) => relation is Same or Updates;
+
+    // A relation this side defined. Anything else is a body that did not answer the question.
+    public static bool IsKnown(string relation) => relation is Same or Updates or Distinct or Unrelated;
 }
 
 // Pairs: which memories of a cosine cluster are linked — the same fact, or one updating the
@@ -138,8 +141,18 @@ public sealed class MemoryJudge(
 
         var pairs = Pairs(cluster.Count)
             .Select(pair => (pair.i, pair.j, Answer: answered.Judgment.Answers.GetValueOrDefault(PairQuestionId(pair.i, pair.j)) as ChoiceAnswer))
-            .Where(p => p.Answer is not null)
             .ToList();
+
+        // Every pair, or none of them. A pair left unanswered — or answered with a relation nobody
+        // defined — says nothing about those two memories, exactly as an unanswered question does
+        // for the gate and the check. Reading that silence as "not linked" would keep a cluster
+        // from the merge model it reached before Jev existed: a failure away from the old
+        // behaviour rather than toward it. Absent, the whole chunk goes as cosine made it.
+        if (pairs.Any(p => p.Answer is null || !PairRelations.IsKnown(p.Answer.Choice)))
+        {
+            PublishAbsence(MemoryJudgmentKinds.Pairs, context, new JudgmentOutcome.Absent(AbsenceReason.Error), latency);
+            return PairVerdict.Unanswered;
+        }
 
         var linked = Components(cluster.Count, pairs
             .Where(p => PairRelations.IsLink(p.Answer!.Choice))
@@ -291,6 +304,11 @@ public sealed class MemoryJudge(
         // bounds a call that hangs.
         var started = timeProvider.GetTimestamp();
         var outcome = await judge.JudgeAsync(request, ct);
+
+        // Shutdown is not a judgment that missed. The judge reads any cancellation as a deadline,
+        // and with no deadline of our own every one of those would be the host stopping.
+        ct.ThrowIfCancellationRequested();
+
         return (outcome, timeProvider.GetElapsedTime(started));
     }
 

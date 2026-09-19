@@ -88,6 +88,32 @@ public class MemoryJudgePairsTests
         verdict.Linked.ShouldBeEmpty();
     }
 
+    // A body that answers some of the pairs and not others says nothing about the pairs it left
+    // out, and the gate and the check both treat an unanswered question as no evidence. Reading
+    // the silence as "not linked" would quietly keep a cluster from the merge model it used to
+    // reach — a failure away from the old behaviour rather than toward it.
+    [Fact]
+    public async Task APartiallyAnsweredJudgment_IsUnanswered_SoTheClusterGoesAsCosineMadeIt()
+    {
+        var judge = StubJudge.Answering(Relations(("0-1", "same")));
+
+        var verdict = await Judge(judge).RelateAsync(_cluster, _context, CancellationToken.None);
+
+        verdict.Answered.ShouldBeFalse();
+        verdict.Linked.ShouldBeEmpty();
+    }
+
+    // The same silence, spelled as a choice nobody defined.
+    [Fact]
+    public async Task AChoiceOutsideTheFourRelations_IsUnanswered()
+    {
+        var judge = StubJudge.Answering(Relations(("0-1", "Same"), ("0-2", "unrelated")));
+
+        var verdict = await Judge(judge).RelateAsync(_cluster.Take(3).ToList(), _context, CancellationToken.None);
+
+        verdict.Answered.ShouldBeFalse();
+    }
+
     [Theory]
     [InlineData(AbsenceReason.Deadline)]
     [InlineData(AbsenceReason.Error)]

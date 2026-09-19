@@ -51,7 +51,13 @@ public class OpenRouterMemoryConsolidator(
         // or one updating the other — reach the merge model together, and only those groups may
         // later be merged. Unanswered, a chunk goes as cosine made it and its decisions are
         // applied unvetoed: today's behaviour, by decision.
-        foreach (var chunk in BuildClusters(memories).SelectMany(cluster => Chunks(cluster, judge.MaxClusterMemories)))
+        // The cap exists to bound a Jev request, so with no Jev there is nothing to bound: an
+        // oversized cluster goes whole, as it did before the judgment existed. Chunking it anyway
+        // would make a duplicate pair split across two chunks unmergeable forever — strictly worse
+        // than the behaviour this is supposed to fail toward.
+        var cap = judge.Enabled ? judge.MaxClusterMemories : int.MaxValue;
+
+        foreach (var chunk in BuildClusters(memories).SelectMany(cluster => Chunks(cluster, cap)))
         {
             var verdict = await judge.RelateAsync(chunk, Context(chunk), ct);
             var groupsToMerge = verdict.Answered ? verdict.Linked : [chunk];
@@ -75,7 +81,10 @@ public class OpenRouterMemoryConsolidator(
     // no embeddings has no centroid and is cut in its own order.
     private static IEnumerable<IReadOnlyList<MemoryEntry>> Chunks(IReadOnlyList<MemoryEntry> cluster, int cap)
     {
-        if (cluster.Count <= cap)
+        // A cap below two cannot hold a pair, which is the whole unit of this judgment; a
+        // misconfigured one is the cluster whole rather than an ArgumentOutOfRangeException out of
+        // Chunk on every user's nightly pass.
+        if (cap < 2 || cluster.Count <= cap)
         {
             return [cluster];
         }
@@ -83,7 +92,7 @@ public class OpenRouterMemoryConsolidator(
         var embedded = cluster.Where(m => m.Embedding is { Length: > 0 }).ToList();
         if (embedded.Count == 0)
         {
-            return cluster.Chunk(cap).Select(chunk => (IReadOnlyList<MemoryEntry>)chunk);
+            return WithNoStrandedMember(cluster, cap);
         }
 
         // One width for every vector: the index verification refused to start otherwise.
@@ -91,10 +100,25 @@ public class OpenRouterMemoryConsolidator(
             .Select(i => embedded.Average(m => m.Embedding![i]))
             .ToArray();
 
-        return embedded
-            .OrderByDescending(m => CosineSimilarity(m.Embedding!, centroid))
-            .Chunk(cap)
-            .Select(chunk => (IReadOnlyList<MemoryEntry>)chunk);
+        return WithNoStrandedMember(
+            embedded.OrderByDescending(m => CosineSimilarity(m.Embedding!, centroid)).ToList(), cap);
+    }
+
+    // Chunks of the cap, except that a trailing chunk of one is folded back into the one before
+    // it. A lone memory has nothing to merge against — the reason BuildClusters drops singleton
+    // clusters — and the pair judgment answers nothing below two, so it would otherwise reach the
+    // merge model alone: a paid call that can decide nothing. One chunk of cap+1 pairs instead.
+    private static IEnumerable<IReadOnlyList<MemoryEntry>> WithNoStrandedMember(
+        IReadOnlyList<MemoryEntry> ordered, int cap)
+    {
+        var chunks = ordered.Chunk(cap).Select(chunk => (IReadOnlyList<MemoryEntry>)chunk).ToList();
+        if (chunks.Count >= 2 && chunks[^1].Count == 1)
+        {
+            chunks[^2] = [.. chunks[^2], .. chunks[^1]];
+            chunks.RemoveAt(chunks.Count - 1);
+        }
+
+        return chunks;
     }
 
     private async Task<IReadOnlyList<MergeDecision>> ConsolidateClusterAsync(

@@ -143,6 +143,46 @@ public class MemoryExtractionWorkerTests
         state.ToJsonString().ShouldNotContain("SECRET-FETCHED-TEXT");
     }
 
+    // Shutdown is not a failed extraction. The host's stop token unwinds the worker, and publishing
+    // an error and a `failed` turn for it puts noise on the error page and the memory page on
+    // every deploy — the same reason MemoryDreamingService excludes it from its own catch.
+    [Fact]
+    public async Task ProcessRequestAsync_WhenTheTurnIsCancelled_PublishesNothing_AndPropagates()
+    {
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+        _extractor
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+        var published = Recording();
+        var worker = Worker(StubJudge.Absent(AbsenceReason.Unconfigured));
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => worker.ProcessRequestAsync(Current("hola"), cancelled.Token));
+
+        published.ShouldBeEmpty();
+    }
+
+    // A failure after some candidates were stored reported zeros, so the Memory page showed
+    // "failed, 0 candidates, 0 stored" for a turn that wrote two memories.
+    [Fact]
+    public async Task ProcessRequestAsync_WhenOneCandidateFailsAfterOthersStored_ReportsWhatWasStored()
+    {
+        ExtractorReturns(Fact("Trabaja en Globex"), Fact("Vive en Madrid"));
+        _embeddingService
+            .Setup(e => e.GenerateEmbeddingAsync("Vive en Madrid", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("embedding unreachable"));
+        var published = Recording();
+        var worker = Worker(Verifying(_ => Verified(0.9)));
+
+        await worker.ProcessRequestAsync(Current("trabajo en Globex y vivo en Madrid"), CancellationToken.None);
+
+        var evt = published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem();
+        evt.Outcome.ShouldBe(MemoryExtractionOutcomes.Failed);
+        evt.CandidateCount.ShouldBe(2);
+        evt.StoredCount.ShouldBe(1);
+    }
+
     private static readonly (string, double)[] _somethingLasting = [("fact", 0.9), ("preference", 0.05), ("instruction", 0.05)];
 
     private static JudgmentOutcome Verified(double supported, double aboutUser = 0.9, double durable = 0.9, double notAQuestion = 0.9) =>

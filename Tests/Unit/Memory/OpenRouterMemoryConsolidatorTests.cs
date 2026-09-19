@@ -24,10 +24,11 @@ public class OpenRouterMemoryConsolidatorTests
         _consolidator = Consolidator(StubJudge.Absent(AbsenceReason.Unconfigured));
     }
 
-    private OpenRouterMemoryConsolidator Consolidator(IJudge judge, MemoryJudgmentSettings? settings = null) =>
+    private OpenRouterMemoryConsolidator Consolidator(
+        IJudge judge, MemoryJudgmentSettings? settings = null, bool enabled = true) =>
         new(
             _chatClient.Object,
-            new MemoryJudge(judge, settings ?? new MemoryJudgmentSettings(), new FakeTimeProvider()),
+            new MemoryJudge(judge, settings ?? new MemoryJudgmentSettings { Enabled = enabled }, new FakeTimeProvider()),
             Mock.Of<ILogger<OpenRouterMemoryConsolidator>>());
 
     private static JudgmentOutcome Relations(params (string Pair, string Relation)[] answers) =>
@@ -117,6 +118,46 @@ public class OpenRouterMemoryConsolidatorTests
         Enumerable.Range(0, 12).ShouldAllBe(i => prompts[0].Contains($"[near_{i}]"));
         prompts.SelectMany(p => Enumerable.Range(0, 18).Where(i => p.Contains($"[far_{i}]"))).Count().ShouldBe(18);
         consolidation.MergeableGroups.Select(g => g.Count).ShouldBe([12, 12, 6]);
+    }
+
+    // A trailing chunk of one has nothing to merge against — the same reason BuildClusters drops
+    // singleton clusters — and RelateAsync answers Unanswered below two, so it used to reach the
+    // merge model alone: a paid call that can decide nothing.
+    [Fact]
+    public async Task ConsolidateAsync_AClusterOneOverTheCap_NeverSendsTheOddMemoryToTheMergeModelAlone()
+    {
+        var prompts = CapturingPrompts();
+        var judge = new StubJudge(request => Relations(request.Questions.Keys.Select(k => (k, "same")).ToArray()));
+        var consolidator = Consolidator(judge);
+
+        var memories = Enumerable.Range(0, 13)
+            .Select(i => CreateMemory($"m_{i}", $"m {i}", embedding: [1.0f, i * 0.001f]))
+            .ToArray();
+
+        var consolidation = await consolidator.ConsolidateAsync(memories, CancellationToken.None);
+
+        judge.Requests.ShouldAllBe(r => r.State["memories"]!.AsArray().Count >= 2);
+        prompts.ShouldAllBe(p => p.Count(c => c == '\n') >= 1);
+        consolidation.MergeableGroups.ShouldAllBe(g => g.Count >= 2);
+    }
+
+    // The cap bounds a Jev request, so with no Jev there is nothing to bound: chunking a cluster
+    // the judge will never see only makes cross-chunk duplicates unmergeable, which is strictly
+    // worse than the behaviour it is supposed to fail toward.
+    [Fact]
+    public async Task ConsolidateAsync_WithTheJudgeDisabled_AnOversizedClusterGoesWholeToTheMergeModel()
+    {
+        var prompts = CapturingPrompts();
+        var consolidator = Consolidator(StubJudge.Absent(AbsenceReason.Unconfigured), enabled: false);
+
+        var memories = Enumerable.Range(0, 30)
+            .Select(i => CreateMemory($"m_{i}", $"m {i}", embedding: [1.0f, i * 0.001f]))
+            .ToArray();
+
+        var consolidation = await consolidator.ConsolidateAsync(memories, CancellationToken.None);
+
+        prompts.ShouldHaveSingleItem();
+        consolidation.MergeableGroups.ShouldHaveSingleItem().Count.ShouldBe(30);
     }
 
     [Fact]

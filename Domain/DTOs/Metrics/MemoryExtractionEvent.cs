@@ -11,14 +11,17 @@ public record MemoryExtractionEvent : MetricEvent
     // and the page shows them as unrecorded rather than guessing.
     public string? Outcome { get; init; }
 
-    // Candidates the check refused to store. Candidates minus dropped minus stored is what the
-    // embedding dedup declined, which is how it always was.
+    // Candidates the check refused to store. Dropped plus stored plus what the embedding dedup
+    // declined is the number of candidates actually considered, which is the extractor's answer
+    // capped at MaxCandidatesPerMessage — so on a turn over the cap it is less than CandidateCount,
+    // and the remainder is the tail nothing looked at rather than a dedup decision.
     public int DroppedCount { get; init; }
 }
 
 // How an extraction ended, so "found nothing" and "broke" stop sharing a zero. A gated turn was
 // judged to hold nothing lasting and the extractor was never asked; an empty one was asked and
-// answered nothing; a failed one exhausted its retries.
+// answered nothing; a failed one exhausted its retries or broke on the way to the store — its
+// counts are whatever the candidates settled before the throw, not zeros.
 public static class MemoryExtractionOutcomes
 {
     public const string Gated = "gated";

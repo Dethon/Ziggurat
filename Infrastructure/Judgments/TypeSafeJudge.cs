@@ -66,7 +66,10 @@ public sealed class TypeSafeJudge : IJudge
         }
         catch (OperationCanceledException)
         {
-            // The caller's deadline or the client's own timeout — either way, time ran out.
+            // The caller's deadline or the client's own timeout — either way, time ran out. Which
+            // of the two cancelled is the caller's own question, because only it knows whether the
+            // token it linked in was a deadline or a turn being torn down; each one that races a
+            // deadline checks its own source before reading this as a miss.
             return new JudgmentOutcome.Absent(AbsenceReason.Deadline);
         }
         catch (Exception ex)

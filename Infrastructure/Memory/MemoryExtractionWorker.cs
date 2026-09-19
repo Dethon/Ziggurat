@@ -52,33 +52,31 @@ public class MemoryExtractionWorker(
 
         var sw = Stopwatch.StartNew();
 
+        // What the candidates did, filled in as they settle: a failure partway through still
+        // reports what the ones before it stored, rather than the zeros that read as a turn which
+        // wrote nothing. Written by one thread per candidate, so it is locked on write.
+        var outcomes = new List<CandidateOutcome>();
+        var candidateCount = 0;
+
         try
         {
             var extraction = await ExtractWithRetryAsync(request, ct);
+            candidateCount = extraction.Candidates.Count;
 
             // Each candidate is checked and then stored, in parallel across candidates as the
             // store fan-out always was. The embedding dedup runs after the check, unchanged.
-            var results = await Task.WhenAll(
+            await Task.WhenAll(
                 extraction.Candidates.Take(options.MaxCandidatesPerMessage)
-                    .Select(c => VerifyThenStoreAsync(request, extraction.Window, c, ct)));
+                    .Select(c => VerifyThenStoreAsync(request, extraction.Window, c, outcomes, ct)));
 
             sw.Stop();
-            metricsPublisher.Publish(new MemoryExtractionEvent
-            {
-                DurationMs = sw.ElapsedMilliseconds,
-                CandidateCount = extraction.Candidates.Count,
-                DroppedCount = results.Count(r => r == CandidateOutcome.Dropped),
-                StoredCount = results.Count(r => r == CandidateOutcome.Stored),
-                Outcome = extraction.Outcome,
-                UserId = request.UserId,
-                AgentId = AgentName(request),
-                ConversationId = request.ConversationId
-            });
+            metricsPublisher.Publish(Event(request, sw, candidateCount, outcomes, extraction.Outcome));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!IsCancellation(ex, ct))
         {
             // Both: the error page sees what broke, and the memory page sees a turn that failed
-            // rather than the same zero as a turn with nothing in it.
+            // rather than the same zero as a turn with nothing in it. The counts are whatever the
+            // candidates managed before the throw — Task.WhenAll lets its siblings finish.
             logger.LogError(ex, "Memory extraction failed for user {UserId}", request.UserId);
             metricsPublisher.Publish(new ErrorEvent
             {
@@ -86,16 +84,33 @@ public class MemoryExtractionWorker(
                 ErrorType = ex.GetType().Name,
                 Message = $"Extraction failed: {ex.Message}"
             });
-            metricsPublisher.Publish(new MemoryExtractionEvent
+            metricsPublisher.Publish(Event(request, sw, candidateCount, outcomes, MemoryExtractionOutcomes.Failed));
+        }
+    }
+
+    // Shutdown is not a failed extraction: the host's stop token unwinds the worker, and an error
+    // plus a `failed` turn for it is noise on both pages on every deploy. MemoryDreamingService
+    // excludes it from its own catch for the same reason.
+    private static bool IsCancellation(Exception ex, CancellationToken ct) =>
+        ex is OperationCanceledException && ct.IsCancellationRequested;
+
+    private MemoryExtractionEvent Event(
+        MemoryExtractionRequest request, Stopwatch sw, int candidateCount,
+        List<CandidateOutcome> outcomes, string outcome)
+    {
+        lock (outcomes)
+        {
+            return new MemoryExtractionEvent
             {
                 DurationMs = sw.ElapsedMilliseconds,
-                CandidateCount = 0,
-                StoredCount = 0,
-                Outcome = MemoryExtractionOutcomes.Failed,
+                CandidateCount = candidateCount,
+                DroppedCount = outcomes.Count(o => o == CandidateOutcome.Dropped),
+                StoredCount = outcomes.Count(o => o == CandidateOutcome.Stored),
+                Outcome = outcome,
                 UserId = request.UserId,
                 AgentId = AgentName(request),
                 ConversationId = request.ConversationId
-            });
+            };
         }
     }
 
@@ -176,6 +191,17 @@ public class MemoryExtractionWorker(
         }
 
         throw new UnreachableException("The last attempt either returned or threw");
+    }
+
+    private async Task VerifyThenStoreAsync(
+        MemoryExtractionRequest request, IReadOnlyList<ChatMessage> window, ExtractionCandidate candidate,
+        List<CandidateOutcome> outcomes, CancellationToken ct)
+    {
+        var outcome = await VerifyThenStoreAsync(request, window, candidate, ct);
+        lock (outcomes)
+        {
+            outcomes.Add(outcome);
+        }
     }
 
     private async Task<CandidateOutcome> VerifyThenStoreAsync(
