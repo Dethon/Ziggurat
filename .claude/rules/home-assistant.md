@@ -140,7 +140,9 @@ subtree and untouchable through it. `enabled` is the entity's on/off, synced wit
 as Jinja and are rendered by the home inside a `variables` step, so the rest_command payloads are
 composed with `to_json` and a quote in a prompt cannot break them. The creating agent comes from
 the call's `_meta`: the fs-tool registrar asks the mount for itself as that caller sees it
-(`HaFileSystem.For`, a per-call view sharing the one `HaWatches`), never an ambient; a file naming no
+(`HaFileSystem.For`), never an ambient. The view is a shallow copy with the caller swapped, not a
+second construction — a hand rebuild falls behind the constructor silently, and
+`HaFileSystemCallerViewTests` pins that a view differs from its mount in the caller alone; a file naming no
 `deliverTo` takes the caller's origin channel and address, because the model is never told which
 channel a turn came from, and a file naming no `userId` takes the caller's user for the same
 reason (a fire attributed to nobody would run as the sender label "watch"); a replace naming

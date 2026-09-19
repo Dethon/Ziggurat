@@ -31,12 +31,22 @@ public sealed partial class HaFileSystem(
     private HomeAssistantSetupSummary? _setupIndex;
 
     // Who is writing, for the one record on this mount that remembers its author: a watch runs its
-    // prompts as the agent that created it. The server's one instance has no caller; the registrar
-    // asks for this view per call, sharing the watches and rebuilding nothing that holds state.
-    public override FileSystemBackendBase For(ConversationContext? caller) =>
-        new HaFileSystem(
-            catalogProvider, clientFactory, regexMatchTimeout, musicClientFactory, timeProvider,
-            caller, _watches, satellites);
+    // prompts as the agent that created it. The server's one instance has no caller, and the
+    // registrar asks for a view per call.
+    private ConversationContext? _caller = caller;
+
+    // A shallow copy with the caller swapped, never a second construction: a copy carries every
+    // dependency this mount was built with — the ones that exist and the ones added later — so
+    // there is no argument list here to fall behind the constructor's. Rebuilding by hand did
+    // that silently: the server's instance kept working and the one answering calls did not.
+    // The watches and the catalog are shared by reference, which is the point; the class is sealed,
+    // so the copy is exactly this type. HaFileSystemCallerViewTests pins caller-and-nothing-else.
+    public override FileSystemBackendBase For(ConversationContext? caller)
+    {
+        var view = (HaFileSystem)MemberwiseClone();
+        view._caller = caller;
+        return view;
+    }
 
     public const string Name = "ha";
 
