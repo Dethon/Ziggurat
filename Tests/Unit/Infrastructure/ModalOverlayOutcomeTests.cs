@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
+using Domain.Tools.Web;
 using Infrastructure.Clients.Browser;
 using Shouldly;
 
@@ -36,6 +37,29 @@ public class ModalOverlayOutcomeTests
         evt.Outcome.ShouldBe(expected);
         evt.Selector.ShouldBe("text(no thanks)");
         evt.ButtonText.ShouldBe("No thanks");
+    }
+
+    // A judgment nobody asked has no latency to report. Publishing its zero put a judgment that
+    // never happened into the average the dashboard reads as "how long a judgment takes" — and the
+    // event's own comment says the field is set only where one was asked.
+    [Theory]
+    [InlineData(ModalPickStatus.NotAsked)]
+    [InlineData(ModalPickStatus.Absent)]
+    public void ToEvent_APickThatWasNeverAsked_ReportsNoLatency(ModalPickStatus status)
+    {
+        var outcome = ModalOverlayOutcome.LeftStanding(
+            ModalType.Newsletter, new ModalPick(status, null, null, TimeSpan.Zero));
+
+        outcome.ToEvent().DurationMs.ShouldBeNull();
+    }
+
+    [Fact]
+    public void ToEvent_AnAbsentJudgeThatSpentTime_StillReportsIt()
+    {
+        var outcome = ModalOverlayOutcome.LeftStanding(
+            ModalType.Newsletter, new ModalPick(ModalPickStatus.Absent, null, null, TimeSpan.FromMilliseconds(1000)));
+
+        outcome.ToEvent().DurationMs.ShouldBe(1000);
     }
 
     [Fact]

@@ -25,9 +25,18 @@ public sealed record ModalOverlayOutcome(
     public static ModalOverlayOutcome LeftStanding(ModalType kind) => new(kind, ModalDismissalPath.LeftStanding);
 
     // Left standing after a judgment: the judge's answer rides on the miss, so the count says what
-    // it thought and how long it took even where nothing was clicked.
+    // it thought and how long it took even where nothing was clicked. A judgment nobody asked — a
+    // kind with no questions, a wall with no control left to offer, settings it cannot be asked
+    // under — has no latency to report, and its zero would otherwise be averaged in as a judgment
+    // that took no time.
     public static ModalOverlayOutcome LeftStanding(ModalType kind, ModalPick pick) =>
-        new(kind, ModalDismissalPath.LeftStanding, Confidence: pick.Confidence, JudgmentLatency: pick.Latency);
+        new(
+            kind,
+            ModalDismissalPath.LeftStanding,
+            Confidence: pick.Confidence,
+            JudgmentLatency: pick.Status == ModalPickStatus.NotAsked || pick.Latency == TimeSpan.Zero
+                ? null
+                : pick.Latency);
 
     public ModalDismissalEvent ToEvent() => new()
     {

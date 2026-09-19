@@ -21,15 +21,30 @@ control's accessible name, and — for an overlay both left standing — a judgm
 `Domain/Tools/Web`) over what its controls say, asked of Jev with `{ overlay_kind, controls }` and
 nothing of the page. A cookie wall is asked *reject* then *accept* and a confident reject is taken
 first, so it closes with the fewest cookies where the page offers it; `none`, a pick under the bar,
-a stale click or a late answer leave the page exactly as before. The pick is clicked by index into
+a stale click or a late answer leave the page exactly as before.
+
+**A name is a label, and some controls are never offered.** An accessible name is the control's
+whole `textContent`, so it is cut to `ModalJudge.MaxNameLength` before it leaves the page — past
+that it stops being a button label and starts being the page's words — and its quotes are escaped,
+because the criteria are prose the page contributes a substring of and a name that closes its own
+quote can write an instruction beside it. A control whose name reads as acting on the person's own
+data (delete, pay, buy, transfer, deactivate) is filtered out of the list the judge is shown, so it
+can never be picked: the container selectors are substring matches, a `confirm-modal` reads as a
+newsletter, and nothing on this path can undo a POST. A wall with no control left to offer is not
+asked. The dismisser keeps the uncut names, so the re-read before the click still compares the
+name the page actually carries. The pick is clicked by index into
 the same locator its name was read from, and the overlay predicate, the name script and the anchor
 guard are one JS constant each so the three steps cannot disagree about which buttons are the
 wall's. The judge and its bar, deadline and cap are the server's own `TypeSafe` / `Judgment`
 settings; an empty key is the feature off.
 
-**Every detected overlay is counted.** `DismissAsync` answers one `ModalOverlayOutcome` per overlay
-the last pass detected — `selector`, `text`, `judgment` or `left-standing` — and the browser
-publishes each as a `ModalDismissalEvent` (dashboard: Web). That is why this server now holds a
+**Every detected overlay is counted, and a wall that closed is not a miss.** `DismissAsync` answers
+one `ModalOverlayOutcome` per overlay the last pass detected — `selector`, `text`, `judgment` or
+`left-standing` — and the browser publishes each as a `ModalDismissalEvent` (dashboard: Web). The
+container selectors overlap, so one wall matches several patterns; after any dismissal the page is
+rescanned and a kind whose container is gone is dropped rather than counted as left standing, while
+one still there is a separate wall and goes to the judge like any other. A judgment nobody asked
+reports no latency, so a page with no key cannot drag the judgment average to zero. That is why this server now holds a
 Redis connection: it carries metrics alone, and page images still cross at the agent's bridge.
 `.scratch/jev-modal-dismissal/probe/README.md` is the probe the questions were measured on, kept as
 `ModalJudgeJevTests`; change a question's wording only with that test green.

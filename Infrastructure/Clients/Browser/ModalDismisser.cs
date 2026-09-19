@@ -140,7 +140,13 @@ public class ModalDismisser(ModalJudge? judge = null)
             if (outcomes.Any(o => o.Dismissed is not null))
             {
                 await SettleAfterDismissalAsync(page, ct);
-                return outcomes;
+
+                // The container selectors overlap, so one wall can match several patterns: a
+                // `modal cookie-banner` is a cookie wall and a newsletter to the scan. Publishing
+                // every other detection as left-standing counted the wall that just closed as a
+                // miss. Rescan and keep only the kinds whose overlay is still there — the same
+                // rule the judgment path applies after each of its own dismissals.
+                return await StillStandingAsync(page, outcomes, ct);
             }
 
             if (sw.ElapsedMilliseconds >= ModalDetectionWindowMs)
@@ -208,6 +214,31 @@ public class ModalDismisser(ModalJudge? judge = null)
         }
 
         return judged;
+    }
+
+    // After a dismissal: the outcomes that closed something, plus a judgment for each overlay still
+    // on the page. A kind whose container is gone was the same wall counted twice, so it is
+    // dropped; one that is still standing is a genuinely separate wall and gets the judge, exactly
+    // as it would have had nothing been dismissed this pass.
+    private async Task<IReadOnlyList<ModalOverlayOutcome>> StillStandingAsync(
+        IPage page,
+        IReadOnlyList<ModalOverlayOutcome> outcomes,
+        CancellationToken ct)
+    {
+        var standing = outcomes.Where(o => o.Path == ModalDismissalPath.LeftStanding).ToList();
+        if (standing.Count == 0)
+        {
+            return outcomes;
+        }
+
+        var stillThere = await DetectOverlayContainersAsync(page, standing.Select(o => PatternFor(o.Kind)).ToList());
+        var survivors = standing.Where((_, index) => stillThere[index]).ToList();
+
+        return
+        [
+            .. outcomes.Where(o => o.Path != ModalDismissalPath.LeftStanding),
+            .. await JudgeStandingOverlaysAsync(page, survivors, ct)
+        ];
     }
 
     private static ModalPattern PatternFor(ModalType kind) => _defaultPatterns.First(p => p.Type == kind);

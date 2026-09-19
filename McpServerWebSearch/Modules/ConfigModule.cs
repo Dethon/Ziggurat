@@ -77,8 +77,13 @@ public static class ConfigModule
                     settings.Camoufox?.WsEndpoint,
                     tabCap: settings.Browsing.TabCap,
                     idleTimeout: TimeSpan.FromMinutes(settings.Browsing.SessionIdleTimeoutMinutes),
+                    // No key is the feature off, all the way off: a dismisser with no judge skips
+                    // the control listing too, which is a chained-locator EvaluateAll over every
+                    // overlay the cheap paths left standing on every navigation.
                     modalDismisser: new ModalDismisser(
-                        new ModalJudge(sp.GetRequiredService<IJudge>(), settings.Judgment, TimeProvider.System)),
+                        settings.TypeSafe.IsConfigured
+                            ? new ModalJudge(sp.GetRequiredService<IJudge>(), settings.Judgment, TimeProvider.System)
+                            : null),
                     metricsPublisher: sp.GetRequiredService<IMetricsPublisher>());
             });
 

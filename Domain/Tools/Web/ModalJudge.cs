@@ -102,6 +102,14 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
 
     public async Task<ModalPick> PickAsync(ModalType kind, IReadOnlyList<ModalControl> controls, CancellationToken ct)
     {
+        // Settings a judgment cannot be asked under, treated as nothing to ask rather than acted
+        // on: a deadline that is not a wait threw out of the CancellationTokenSource constructor
+        // below, and the dismisser's catch turned that into a silent left-standing forever.
+        if (settings.DeadlineMs <= 0 || settings.MaxControls <= 0)
+        {
+            return ModalPick.NotAsked;
+        }
+
         var request = Ask(kind, controls, settings.MaxControls);
         if (request is null)
         {
@@ -125,8 +133,41 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
         };
     }
 
-    // The request, or null for a kind with nothing to ask. Controls past the cap are left out in
-    // document order; the criteria name each one by index, plus `none`.
+    // A button's label, not a paragraph. An accessible name is the control's whole textContent, so
+    // a consent manager's vendor blurb or a notification tray's message preview arrives here in
+    // full; past this it stops being a label and starts being the page's words, which the state
+    // promises not to carry. Long enough for any real button in either language.
+    public const int MaxNameLength = 120;
+
+    // Names that describe acting on the person's own data rather than closing a wall. The
+    // container selectors are substring matches, so a `confirm-modal` with Delete and Keep reads
+    // as a newsletter; nothing on this path can undo a POST, and the go-back only covers a
+    // navigation. A control named like this is never offered, so it can never be picked — which
+    // also means a page cannot name a button into being clicked.
+    private static readonly string[] _destructiveNames =
+    [
+        "delete", "eliminar", "borrar", "remove", "erase",
+        "buy", "comprar", "pay", "pagar", "purchase", "checkout", "order now",
+        "confirm payment", "confirmar pago", "subscribe and", "suscribirme y",
+        "transfer", "transferir", "send money", "enviar dinero",
+        "deactivate", "desactivar", "close account", "cerrar cuenta", "unsubscribe all"
+    ];
+
+    private static bool IsDestructive(string name) =>
+        _destructiveNames.Any(d => name.Contains(d, StringComparison.OrdinalIgnoreCase));
+
+    // Cut to a label, and quotes escaped: the criteria are prose that the page contributes a
+    // substring of, so a name closing its own quote could write an instruction beside it.
+    private static string Label(string name)
+    {
+        var cut = name.Length > MaxNameLength ? name[..MaxNameLength].TrimEnd() : name;
+        return cut.Replace("\"", "'", StringComparison.Ordinal);
+    }
+
+    // The request, or null for a kind with nothing to ask — or nothing left to ask about. Controls
+    // past the cap are left out in document order; the criteria name each one by index, plus
+    // `none`. What the judge is shown is what the pick clicks, so the filtering and the cutting
+    // both happen here, before either list exists.
     public static JudgmentRequest? Ask(ModalType kind, IReadOnlyList<ModalControl> controls, int maxControls)
     {
         var questions = QuestionsFor(kind);
@@ -135,7 +176,16 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
             return null;
         }
 
-        var sent = controls.Take(maxControls).ToList();
+        var sent = controls
+            .Where(c => !IsDestructive(c.Name))
+            .Take(maxControls)
+            .Select(c => c with { Name = Label(c.Name) })
+            .ToList();
+        if (sent.Count == 0)
+        {
+            return null;
+        }
+
         var criteria = sent
             .Select(c => KeyValuePair.Create(c.Index.ToString(), $"{c.Role} \"{c.Name}\""))
             .Append(KeyValuePair.Create(NoneChoice, NoneCriterion))
