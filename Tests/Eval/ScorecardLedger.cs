@@ -45,6 +45,7 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
                 scenario.Name, result.Passes, result.Attempts, result.SkillNotLoaded, result.RuleIgnored,
                 result.Spend)
             {
+                Kinds = result.Kinds,
                 Loaders = result.Loaders,
                 PreloadOutcomes = result.PreloadOutcomes
             });

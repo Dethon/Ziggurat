@@ -281,6 +281,29 @@ public class ScorecardTests : IDisposable
     private static JsonElement Read(string path) =>
         JsonDocument.Parse(File.ReadAllText(path)).RootElement.Clone();
 
+    // Jev is paid before the model answers, so a scenario whose provider failed before its first
+    // response still spent something. Gating the spend on model requests alone dropped those
+    // judgments off the row and out of the pass total, under-reporting what the pass paid.
+    [Fact]
+    public void AScenarioThatOnlyPaidTheJudge_StillCarriesItsSpend()
+    {
+        var judgedOnly = new Spend(0m, 0, null, 0, 0, PreloadCost: 0.0004m, PreloadInputTokens: 2200, PreloadRequests: 2);
+
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
+            [new ClaimOutcome("timers.sets-a-timer", 0, 2)],
+            [new ScenarioOutcome("a timer to set", 0, 2, Spend: judgedOnly)]);
+
+        var summary = Read(Path.Combine(_output, "scorecard-full.json"));
+
+        var row = summary.GetProperty("scenarios").GetProperty("a timer to set")
+            .GetProperty("spend").GetProperty("preload");
+        row.GetProperty("requests").GetInt32().ShouldBe(2);
+        row.GetProperty("inputTokens").GetInt64().ShouldBe(2200);
+
+        summary.GetProperty("summary").GetProperty("spend").GetProperty("preload")
+            .GetProperty("requests").GetInt32().ShouldBe(2);
+    }
+
     // A red row says which kind of red it was, per scenario and per claim, so the reader knows
     // whether to edit a skill's description or its body without opening the dump.
     [Fact]
@@ -304,5 +327,37 @@ public class ScorecardTests : IDisposable
         claims.GetProperty("timers.duration-under-4h").TryGetProperty("failures", out _).ShouldBeFalse();
         summary.GetProperty("scenarios").GetProperty("a range to leave").GetProperty("failures")
             .GetProperty("ruleIgnored").GetInt32().ShouldBe(1);
+    }
+
+    // A skill the host preloaded that the scenario does not permit is neither half of a skill's
+    // prose. It reaches the row as its own kind, so the reader is not sent to a body nobody has a
+    // complaint about — and every kind is reported off the run's own list, so one added to the
+    // enum appears here without another count to remember.
+    [Fact]
+    public void ARowWhoseHostPreloadedAWrongSkill_NamesThePreload_NotTheBody()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
+            [
+                new ClaimOutcome("timers.sets-a-timer", 1, 3)
+                {
+                    Kinds = [FailureKind.HostPreloaded, FailureKind.RuleIgnored]
+                }
+            ],
+            [
+                new ScenarioOutcome("a timer to set", 1, 3)
+                {
+                    Kinds = [FailureKind.HostPreloaded, FailureKind.HostPreloaded]
+                }
+            ]);
+
+        var summary = Read(Path.Combine(_output, "scorecard-full.json"));
+
+        var claim = summary.GetProperty("claims").GetProperty("timers.sets-a-timer").GetProperty("failures");
+        claim.GetProperty("hostPreloaded").GetInt32().ShouldBe(1);
+        claim.GetProperty("ruleIgnored").GetInt32().ShouldBe(1);
+
+        var scenario = summary.GetProperty("scenarios").GetProperty("a timer to set").GetProperty("failures");
+        scenario.GetProperty("hostPreloaded").GetInt32().ShouldBe(2);
+        scenario.TryGetProperty("ruleIgnored", out _).ShouldBeFalse();
     }
 }

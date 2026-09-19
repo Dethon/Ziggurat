@@ -238,29 +238,25 @@ public sealed class MetricFamilyTable
             dimension: MetricChoice.For("groupBy", () => skills.State.GroupBy, skills.SetGroupBy),
             metric: MetricChoice.For("metric", () => skills.State.Metric, skills.SetMetric),
             setDateRange: skills.SetDateRange,
-            // The outcome share over time is a second read beside the events, the way tokens loads
-            // its truncations: it is the page's headline chart, so it loads with them.
             loadEvents: async () =>
             {
                 var state = skills.State;
-                var events = api.GetSkillPreloadEventsAsync(state.From, state.To);
-                var trend = api.GetSkillPreloadTrendAsync(state.From, state.To);
-                await Task.WhenAll(events, trend);
-                var loaded = await events ?? [];
-                var series = await trend ?? [];
-                return () =>
-                {
-                    skills.SetEvents(loaded);
-                    skills.SetTrend(series);
-                };
+                var loaded = await api.GetSkillPreloadEventsAsync(state.From, state.To) ?? [];
+                return () => skills.SetEvents(loaded);
             },
+            // The outcome trend rides the breakdown refresh, as Web's does: that is the read a
+            // pill moves and a push brings back into line. Loading it with the events alone left
+            // the page's headline chart frozen while preloads arrived under it.
             refreshBreakdown: async () =>
             {
                 var state = skills.State;
-                var breakdown = await api.GetGroupedAsync<decimal>(
+                var breakdown = api.GetGroupedAsync<decimal>(
                     $"skills/by/{state.GroupBy}", state.From, state.To,
                     [("metric", state.Metric.ToString()), ("agg", state.Agg.ToString())]);
-                skills.SetBreakdown(breakdown ?? []);
+                var trend = api.GetSkillPreloadTrendAsync(state.From, state.To);
+                await Task.WhenAll(breakdown, trend);
+                skills.SetBreakdown(await breakdown ?? []);
+                skills.SetTrend(await trend ?? []);
             });
 
         Web = new MetricFamily<WebStore>(

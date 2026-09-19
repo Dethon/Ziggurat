@@ -113,7 +113,10 @@ public class ScenarioChecksPreloadTests
         var wrong = failures.ShouldHaveSingleItem();
         wrong.ShouldContain("home-assistant");
         wrong.ShouldContain("preloaded by the host");
-        ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.RuleIgnored);
+        // The host's failure, not the body's: the model read what it was given, so what it did
+        // next is no evidence about that skill's prose. Pointing this at ruleIgnored sent the
+        // next edit to a body nobody had a complaint about.
+        ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.HostPreloaded);
     }
 
     [Fact]

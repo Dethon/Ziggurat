@@ -115,10 +115,12 @@ public static class ScenarioRunner
             .SelectMany(reading => reading.Exercised
                 .Select(claim => (Claim: claim, Passed: reading.Failures.Count == 0, reading.Kind)))
             .GroupBy(o => o.Claim)
-            .Select(group => new ClaimOutcome(
-                group.Key, group.Count(o => o.Passed), group.Count(),
-                group.Count(o => o.Kind == FailureKind.SkillNotLoaded),
-                group.Count(o => o.Kind == FailureKind.RuleIgnored)))
+            .Select(group => new ClaimOutcome(group.Key, group.Count(o => o.Passed), group.Count())
+            {
+                // Every kind, not a count of two of them: a kind added to the enum reaches the
+                // scorecard by being carried here rather than by growing another count.
+                Kinds = [.. group.Select(o => o.Kind).OfType<FailureKind>()]
+            })
             .ToList();
 }
 

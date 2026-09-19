@@ -20,9 +20,9 @@ public static class Scorecard
         var path = Path.Combine(directory, $"scorecard-{tier.ToString().ToLowerInvariant()}.json");
 
         var claimRows = Covered(
-            Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs, c.SkillNotLoaded, c.RuleIgnored, c.Loaders))), coverage);
+            Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs, c.Kinds, c.Loaders))), coverage);
         var scenarioRows = Priced(
-            Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs, s.SkillNotLoaded, s.RuleIgnored, s.Loaders))),
+            Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs, s.Kinds, s.Loaders))),
             scenarios ?? []);
 
         var summary = new JsonObject
@@ -79,7 +79,7 @@ public static class Scorecard
         foreach (var group in outcomes.GroupBy(outcome => outcome.Name))
         {
             var spend = Spend.Sum(group.Select(outcome => outcome.Spend ?? Spend.Nothing));
-            if (spend.Requests > 0 && rows[group.Key] is JsonObject row)
+            if (spend.Paid && rows[group.Key] is JsonObject row)
             {
                 row["spend"] = Spelled(spend);
             }
@@ -90,7 +90,7 @@ public static class Scorecard
 
     private static JsonObject Spent(IEnumerable<ScenarioOutcome> outcomes)
     {
-        var priced = outcomes.Where(outcome => outcome.Spend is { Requests: > 0 }).ToList();
+        var priced = outcomes.Where(outcome => outcome.Spend is { Paid: true }).ToList();
         var spend = Spend.Sum(priced.Select(outcome => outcome.Spend!));
         var runs = priced.Sum(outcome => outcome.Runs);
         var summary = Spelled(spend);
@@ -180,7 +180,7 @@ public static class Scorecard
     }
 
     private static JsonObject Tallied(
-        IEnumerable<(string Key, int Passes, int Runs, int SkillNotLoaded, int RuleIgnored, IReadOnlyList<Loader> Loaders)> outcomes) =>
+        IEnumerable<(string Key, int Passes, int Runs, IReadOnlyList<FailureKind> Kinds, IReadOnlyList<Loader> Loaders)> outcomes) =>
         outcomes
             .GroupBy(o => o.Key)
             .Aggregate(new JsonObject(), (node, group) =>
@@ -205,17 +205,20 @@ public static class Scorecard
                     row["loader"] = Loaders(loaders);
                 }
 
-                // Only where something failed: the kind says which half of a skill to edit —
-                // a missing load is the description's, an ignored rule the body's.
-                var notLoaded = group.Sum(o => o.SkillNotLoaded);
-                var ignored = group.Sum(o => o.RuleIgnored);
-                if (notLoaded + ignored > 0)
+                // Only where something failed: the kind says which half of a skill to edit — a
+                // missing load is the description's, an ignored rule the body's, a preload the
+                // scenario did not permit neither. Every kind that occurred, so a kind added to
+                // the enum appears here without a third property to remember to add.
+                var kinds = group
+                    .SelectMany(o => o.Kinds)
+                    .Where(kind => kind != FailureKind.RunFailed)
+                    .GroupBy(kind => kind)
+                    .OrderBy(g => g.Key)
+                    .ToList();
+                if (kinds.Count > 0)
                 {
-                    row["failures"] = new JsonObject
-                    {
-                        [FailureKind.SkillNotLoaded.Key()] = notLoaded,
-                        [FailureKind.RuleIgnored.Key()] = ignored
-                    };
+                    row["failures"] = new JsonObject(
+                        kinds.Select(g => KeyValuePair.Create<string, JsonNode?>(g.Key.Key(), g.Count())));
                 }
 
                 node[group.Key] = row;
@@ -226,12 +229,27 @@ public static class Scorecard
 public sealed record ClaimOutcome(string Claim, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0)
 {
     public IReadOnlyList<Loader> Loaders { get; init; } = [];
+
+    // One per failed run. The two counts above are the same thing for the two kinds that predate
+    // the rest; this is what the scorecard reports, so a kind added to the enum needs no third
+    // count here. Falls back to them where a caller set only those.
+    public IReadOnlyList<FailureKind> Kinds
+    {
+        get => field.Count > 0 ? field : FailureKinds.From(SkillNotLoaded, RuleIgnored);
+        init;
+    } = [];
 }
 
 public sealed record ScenarioOutcome(
     string Name, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0, Spend? Spend = null)
 {
     public IReadOnlyList<Loader> Loaders { get; init; } = [];
+
+    public IReadOnlyList<FailureKind> Kinds
+    {
+        get => field.Count > 0 ? field : FailureKinds.From(SkillNotLoaded, RuleIgnored);
+        init;
+    } = [];
 
     public IReadOnlyDictionary<string, int> PreloadOutcomes { get; init; } = new Dictionary<string, int>();
 }

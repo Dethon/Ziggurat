@@ -472,7 +472,14 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                     SkillPreloadMetric.Count => (decimal)g.Count(),
                     SkillPreloadMetric.LatencyMs => AggregateLatency(
                         g.Where(k => k.Event.DurationMs is not null).Select(k => (decimal)k.Event.DurationMs!.Value), aggregation),
-                    SkillPreloadMetric.InputTokens => g.Sum(k => (decimal)(k.Event.InputTokens ?? 0)),
+                    // One judgment's tokens belong to the judgment, not to each skill it happened
+                    // to preload: summing the whole event under every skill made two bars of
+                    // 2,200 out of one 2,200-token call. Split across the skills it is keyed
+                    // under, so the bars still total what the pass actually spent.
+                    SkillPreloadMetric.InputTokens => g.Sum(k =>
+                        (decimal)(k.Event.InputTokens ?? 0) / (dimension == SkillPreloadDimension.Skill
+                            ? Math.Max(1, k.Event.Skills.Count)
+                            : 1)),
                     _ => throw new ArgumentOutOfRangeException(nameof(metric))
                 });
     }
@@ -511,38 +518,44 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         DateOnly from, DateOnly to, string? kind = null)
     {
         var events = await GetEventsAsync<ModalDismissalEvent>("metrics:modals:", from, to);
-        var hourly = to.DayNumber - from.DayNumber <= 2;
 
-        return events
-            .Where(e => kind is null || e.Kind == kind)
-            .GroupBy(e => e.Outcome)
-            .OrderBy(g => g.Key, StringComparer.Ordinal)
-            .Select(outcome => new LatencyTrendSeries(
-                outcome.Key,
-                outcome
-                    .GroupBy(e => BucketTimestamp(e.Timestamp, hourly))
-                    .OrderBy(b => b.Key)
-                    .Select(b => new LatencyTrendPoint(b.Key, b.Count()))
-                    .ToList()))
-            .ToList();
+        return CountTrend(
+            events.Where(e => kind is null || e.Kind == kind),
+            e => e.Outcome,
+            to.DayNumber - from.DayNumber <= 2);
     }
 
     // One series per outcome, a count per bucket: what "the preload rate over time" is read off.
     public async Task<IReadOnlyList<LatencyTrendSeries>> GetSkillPreloadTrendAsync(DateOnly from, DateOnly to)
     {
         var events = await GetEventsAsync<SkillPreloadEvent>("metrics:skills:", from, to);
-        var hourly = to.DayNumber - from.DayNumber <= 2;
 
-        return events
+        return CountTrend(events, e => e.Outcome, to.DayNumber - from.DayNumber <= 2);
+    }
+
+    // A count per bucket, zero-filled across every bucket any series has an event in. These are
+    // drawn as lines, and for a count a missing bucket means none happened — left out, the line
+    // runs straight from one occurrence to the next and reads as a steady rate over all the hours
+    // between. A latency trend is the opposite and is deliberately not filled: there, no point
+    // means nothing was measured, and a zero would claim something answered instantly.
+    private static IReadOnlyList<LatencyTrendSeries> CountTrend<T>(
+        IEnumerable<T> events, Func<T, string?> outcomeOf, bool hourly) where T : MetricEvent
+    {
+        var bucketed = events
+            .Select(e => (Outcome: outcomeOf(e) ?? "(unrecorded)", Bucket: BucketTimestamp(e.Timestamp, hourly)))
+            .ToList();
+        var buckets = bucketed.Select(e => e.Bucket).Distinct().OrderBy(b => b).ToList();
+
+        return bucketed
             .GroupBy(e => e.Outcome)
             .OrderBy(g => g.Key, StringComparer.Ordinal)
-            .Select(outcome => new LatencyTrendSeries(
-                outcome.Key,
-                outcome
-                    .GroupBy(e => BucketTimestamp(e.Timestamp, hourly))
-                    .OrderBy(b => b.Key)
-                    .Select(b => new LatencyTrendPoint(b.Key, b.Count()))
-                    .ToList()))
+            .Select(outcome =>
+            {
+                var counts = outcome.GroupBy(e => e.Bucket).ToDictionary(b => b.Key, b => b.Count());
+                return new LatencyTrendSeries(
+                    outcome.Key,
+                    buckets.Select(b => new LatencyTrendPoint(b, counts.GetValueOrDefault(b))).ToList());
+            })
             .ToList();
     }
 

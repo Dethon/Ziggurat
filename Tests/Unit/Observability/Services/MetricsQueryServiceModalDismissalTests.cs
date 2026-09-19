@@ -80,9 +80,21 @@ public class MetricsQueryServiceModalDismissalTests
 
         trend.Select(s => s.Stage).ShouldBe(["judgment", "left-standing", "selector", "text"]);
         var leftStanding = trend.Single(s => s.Stage == ModalDismissalOutcomes.LeftStanding);
-        leftStanding.Points.ShouldHaveSingleItem().Value.ShouldBe(2m);
-        leftStanding.Points[0].Bucket.Hour.ShouldBe(11);
-        trend.Single(s => s.Stage == ModalDismissalOutcomes.Selector).Points[0].Bucket.Hour.ShouldBe(10);
+        leftStanding.Points.Single(p => p.Bucket.Hour == 11).Value.ShouldBe(2m);
+        trend.Single(s => s.Stage == ModalDismissalOutcomes.Selector)
+            .Points.Single(p => p.Value > 0).Bucket.Hour.ShouldBe(10);
+    }
+
+    // A count line with a bucket left out runs straight from one occurrence to the next, reading
+    // as a steady rate over every hour between them.
+    [Fact]
+    public async Task Trend_ABucketAnOutcomeIsAbsentFrom_IsAZero_NotAGap()
+    {
+        var trend = await _sut.GetModalDismissalTrendAsync(_date, _date);
+
+        var leftStanding = trend.Single(s => s.Stage == ModalDismissalOutcomes.LeftStanding);
+        leftStanding.Points.Select(p => p.Bucket.Hour).ShouldBe([10, 11]);
+        leftStanding.Points.Single(p => p.Bucket.Hour == 10).Value.ShouldBe(0m);
     }
 
     [Fact]

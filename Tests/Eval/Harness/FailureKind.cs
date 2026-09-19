@@ -9,11 +9,17 @@ namespace Tests.Eval.Harness;
 // answered and nothing it did is evidence about any prose. Kept apart because an outage counted
 // as a missing load points the next edit at a description nobody read, on whichever scenario the
 // outage happened to land on.
+// HostPreloaded is the third thing that is neither: the host put a skill into the conversation
+// that the scenario does not permit. The model read whatever it was given and its behaviour is
+// not evidence about that skill's prose either way, so counting it as a rule ignored sent the
+// next edit to a body nobody had a complaint about. It names the preload instead — the judge's
+// question and its bars are what moves it.
 public enum FailureKind
 {
     RunFailed,
     SkillNotLoaded,
-    RuleIgnored
+    RuleIgnored,
+    HostPreloaded
 }
 
 public static class FailureKinds
@@ -22,14 +28,24 @@ public static class FailureKinds
     {
         FailureKind.RunFailed => "run failed",
         FailureKind.SkillNotLoaded => "skill not loaded",
+        FailureKind.HostPreloaded => "host preloaded",
         _ => "rule ignored"
     };
+
+    // The two counts that predate the per-run kind list, as that list. Only what a caller that
+    // still reports counts can say, which is why a kind added later has to be carried as a kind.
+    public static IReadOnlyList<FailureKind> From(int skillNotLoaded, int ruleIgnored) =>
+    [
+        .. Enumerable.Repeat(FailureKind.SkillNotLoaded, skillNotLoaded),
+        .. Enumerable.Repeat(FailureKind.RuleIgnored, ruleIgnored)
+    ];
 
     // The scorecard's key for each kind, so a diff between two passes reads the same word.
     public static string Key(this FailureKind kind) => kind switch
     {
         FailureKind.RunFailed => "runFailed",
         FailureKind.SkillNotLoaded => "skillNotLoaded",
+        FailureKind.HostPreloaded => "hostPreloaded",
         _ => "ruleIgnored"
     };
 }

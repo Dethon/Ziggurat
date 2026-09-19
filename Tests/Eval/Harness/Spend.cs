@@ -14,6 +14,11 @@ public sealed record Spend(
 {
     public static Spend Nothing { get; } = new(0m, 0, null, 0, 0);
 
+    // Whether anything was paid for at all. Model requests alone used to answer this, so a
+    // scenario whose provider failed before its first response dropped the judgments it had
+    // already paid Jev for: no spend key on the row, and the scenario left out of the pass total.
+    public bool Paid => Requests > 0 || PreloadRequests > 0;
+
     public static Spend Of(TokenUsageEvent usage) =>
         new(usage.Cost, usage.InputTokens, usage.CachedInputTokens, usage.OutputTokens, 1);
 
