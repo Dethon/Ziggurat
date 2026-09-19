@@ -21,9 +21,10 @@ public record VoiceSettings
     public ArbitrationSettings Arbitration { get; init; } = new();
     public CommandSettings Commands { get; init; } = new();
 
-    // TypeSafe, the hosted judge this channel asks what a spoken approval answer meant. The key is
-    // a secret — TYPESAFE__APIKEY, the same line the agent reads — and empty means the answer is
-    // read by the word list alone, never a startup failure.
+    // Jev, the hosted judge this channel asks what a spoken approval answer meant. It is asked
+    // through OpenRouter, so the key is OPENROUTER__APIKEY, the same line the agent reads; empty
+    // means the answer is read by the word list alone, never a startup failure.
+    public OpenRouterKey OpenRouter { get; init; } = new();
     public TypeSafeOptions TypeSafe { get; init; } = new();
     public ApprovalSettings Approval { get; init; } = new();
 

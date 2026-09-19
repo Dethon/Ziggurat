@@ -81,8 +81,8 @@ public static class InjectorModule
                 // Shares the chat clients' connection pool, which is the whole point: a
                 // keep-alive against its own pool would warm a connection no turn ever uses.
                 // Registered as a plain IHostedService singleton, not through AddHostedService:
-                // that one dedups by implementation type, and the TypeSafe keep-alive below is
-                // the same class, so the second of the two would be silently dropped.
+                // that one dedups by implementation type, so a second keep-alive of this class
+                // would be silently dropped. Jev is asked on this connection too.
                 .AddSingleton<IHostedService, HostedConnectionKeepAlive>(sp => new HostedConnectionKeepAlive(
                     new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
                     new HostedConnectionKeepAliveOptions
@@ -104,14 +104,14 @@ public static class InjectorModule
                     sp.GetRequiredService<OpenRouterModelCapabilities>())
                 .AddHostedService<ModelCapabilityRefresher>()
                 .AddLemonadeChatHost(lemonadeChatHost)
-                .AddTypeSafe(settings.TypeSafe, settings.SkillPreload)
+                .AddTypeSafe(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey), settings.SkillPreload)
                 .AddOutposts(settings.Outposts);
         }
 
         // The judge is registered as every Jev host registers it; the preloader is this host's use.
         private IServiceCollection AddTypeSafe(TypeSafeOptions typeSafe, SkillPreloadSettings skillPreload) =>
             services
-                .AddTypeSafeJudge(typeSafe)
+                .AddTypeSafeJudge(typeSafe, keepConnectionAlive: false)
                 .AddSingleton<ISkillPreloader>(sp => new SkillPreloader(
                     sp.GetRequiredService<IJudge>(),
                     skillPreload,

@@ -22,7 +22,8 @@ public class ApprovalSettingsBindingTests
               "Lean": 0.6
             }
           },
-          "TypeSafe": { "ApiKey": "k", "Model": "jev-9.9.9" }
+          "OpenRouter": { "ApiKey": "k" },
+          "TypeSafe": { "Model": "typesafe/jev-9.9" }
         }
         """;
 
@@ -39,8 +40,8 @@ public class ApprovalSettingsBindingTests
             Counter = 0.15,
             Lean = 0.6
         });
-        settings.TypeSafe.ApiKey.ShouldBe("k");
-        settings.TypeSafe.Model.ShouldBe("jev-9.9.9");
+        settings.OpenRouter.ApiKey.ShouldBe("k");
+        settings.TypeSafe.Model.ShouldBe("typesafe/jev-9.9");
     }
 
     // Every bar the spec names ships in the voice server's own appsettings, readable from
@@ -53,8 +54,9 @@ public class ApprovalSettingsBindingTests
             .Build()
             .Get<VoiceSettings>()!;
 
-        settings.TypeSafe.ApiKey.ShouldBeEmpty();
-        settings.TypeSafe.Model.ShouldBe("jev-1.13.0");
+        settings.OpenRouter.ApiKey.ShouldBeEmpty();
+        settings.TypeSafe.ApiUrl.ShouldBe("https://openrouter.ai/api/");
+        settings.TypeSafe.Model.ShouldBe("typesafe/jev-1.13-20260917");
         settings.Approval.Judgment.ShouldBe(new ApprovalJudgmentSettings
         {
             Enabled = true,

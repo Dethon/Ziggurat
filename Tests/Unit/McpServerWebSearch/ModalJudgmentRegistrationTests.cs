@@ -1,6 +1,8 @@
+using Domain.Contracts;
 using Domain.Judgments;
 using Domain.Tools.Web;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Judgments;
 using McpServerWebSearch.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +32,23 @@ public class ModalJudgmentRegistrationTests
         provider.GetServices<IHostedService>().OfType<HostedConnectionKeepAlive>().ShouldBeEmpty();
     }
 
+    // This server makes no other hosted call, so nothing else holds the connection Jev is asked
+    // on: the keep-alive is its own, pinging OpenRouter's key metadata beside the decisions path.
+    [Fact]
+    public void AnOpenRouterKey_KeepsTheConnectionJevIsAskedOnAlive()
+    {
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(Mock.Of<IMetricsPublisher>());
+        services.AddTypeSafeJudge(new TypeSafeOptions().KeyedBy("or-key"));
+        using var provider = services.BuildServiceProvider();
+
+        var keepAlive = provider.GetServices<IHostedService>().OfType<HostedConnectionKeepAlive>().ShouldHaveSingleItem();
+
+        keepAlive.Options.BaseAddress.ShouldBe("https://openrouter.ai/api/");
+        keepAlive.Options.NonBillableEndpoint.ShouldBe("v1/key");
+        keepAlive.Options.ApiKey.ShouldBe("or-key");
+    }
+
     [Fact]
     public void TheShippedAppSettings_CarryTheJudgeAndTheJudgment()
     {
@@ -39,8 +58,9 @@ public class ModalJudgmentRegistrationTests
 
         var settings = configuration.Get<McpSettings>()!;
 
-        settings.TypeSafe.ApiKey.ShouldBeEmpty();
-        settings.TypeSafe.Model.ShouldBe("jev-1.13.0");
+        settings.OpenRouter.ApiKey.ShouldBeEmpty();
+        settings.TypeSafe.ApiUrl.ShouldBe("https://openrouter.ai/api/");
+        settings.TypeSafe.Model.ShouldBe("typesafe/jev-1.13-20260917");
         settings.Judgment.ShouldBe(new ModalJudgmentSettings { DeadlineMs = 1000, Confidence = 0.6, MaxControls = 20 });
     }
 

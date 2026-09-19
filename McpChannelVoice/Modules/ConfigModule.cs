@@ -148,7 +148,7 @@ public static class ConfigModule
         // host already takes Infrastructure for the transcription client, and the judge is the
         // same kind of reason.
         services
-            .AddTypeSafeJudge(settings.TypeSafe)
+            .AddTypeSafeJudge(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey))
             .AddSingleton<IApprovalReader>(sp => new JudgedApprovalReader(
                 sp.GetRequiredService<Domain.Judgments.IJudge>(),
                 settings.Approval.Judgment,

@@ -64,8 +64,8 @@ public class ModalJudgeJevTests
     // The key the Jev tests share, or a skip: user secrets first, the environment second.
     internal static string RequireKey()
     {
-        var apiKey = _configuration["typeSafe:apiKey"] ?? _configuration["TYPESAFE_API_KEY"];
-        Skip.If(string.IsNullOrWhiteSpace(apiKey), "typeSafe:apiKey is not set in user secrets (nor TYPESAFE_API_KEY)");
+        var apiKey = _configuration["openRouter:apiKey"];
+        Skip.If(string.IsNullOrWhiteSpace(apiKey), "openRouter:apiKey is not set in user secrets");
         return apiKey!;
     }
 

@@ -10,21 +10,23 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Judgments;
 
-// The one client that talks to TypeSafe: `POST /v1/systemone` with the state, the pinned model
-// and the questions keyed by id. No SDK exists for .NET, so this is a typed HttpClient over the
-// documented JSON, and the only place the wire's names appear.
+// The one client that talks to Jev: `POST /api/alpha/decisions` at OpenRouter with the state, the
+// pinned model and the questions keyed by id — TypeSafe's own wire, carried by the provider every
+// other hosted call already goes through. No SDK exists for .NET, so this is a typed HttpClient
+// over the documented JSON, and the only place the wire's names appear. The path says alpha: if
+// it moves, this constant and the options' address are the whole change.
 //
 // Nothing here is retried and nothing is thrown at a caller for the service's sake: a 429, a
 // 529, a timeout, a cut connection or a body that is not a judgment is an absence with a reason.
-// A 401 or a 422 is different — the deployment is misconfigured, not the service unlucky — so
+// A 401 or a 400 is different — the deployment is misconfigured, not the service unlucky — so
 // it is logged as an error naming the setting to fix, once, and then answered as absence like
 // the rest.
 public sealed class TypeSafeJudge : IJudge
 {
-    public const string Endpoint = "systemone";
+    public const string Endpoint = "alpha/decisions";
 
-    // Answers the key's models and bills nothing: what a keep-alive against this host pings.
-    public const string NonBillableEndpoint = "models";
+    // Answers the key's own metadata and bills nothing: what a keep-alive against this host pings.
+    public const string NonBillableEndpoint = "v1/key";
 
     private readonly HttpClient _httpClient;
     private readonly TypeSafeOptions _options;
@@ -68,8 +70,10 @@ public sealed class TypeSafeJudge : IJudge
             using var response = await _httpClient.PostAsJsonAsync(Endpoint, Wire(request), _wireJson, deadline);
             return response.StatusCode switch
             {
-                HttpStatusCode.Unauthorized => Misconfigured("typeSafe:apiKey", response.StatusCode),
-                HttpStatusCode.UnprocessableEntity => Misconfigured("typeSafe:model", response.StatusCode),
+                HttpStatusCode.Unauthorized => await MisconfiguredAsync("openRouter:apiKey", response, deadline),
+                // A model that does not exist, or a question the endpoint refuses: the body says
+                // which, and either way no retry clears it.
+                HttpStatusCode.BadRequest => await MisconfiguredAsync("typeSafe:model", response, deadline),
                 _ when !response.IsSuccessStatusCode => Unavailable(response.StatusCode),
                 _ => Parse(await response.Content.ReadFromJsonAsync<WireResponse>(_wireJson, deadline))
             };
@@ -86,12 +90,13 @@ public sealed class TypeSafeJudge : IJudge
         {
             // Whatever the transport or the body did — a cut connection, a body that is not
             // JSON, a content type the reader refuses — is the service's failure, not the turn's.
-            _logger.LogWarning(ex, "TypeSafe could not be reached or did not answer a judgment");
+            _logger.LogWarning(ex, "Jev could not be reached or did not answer a judgment");
             return new JudgmentOutcome.Absent(AbsenceReason.Error);
         }
     }
 
-    private JudgmentOutcome Misconfigured(string setting, HttpStatusCode status)
+    private async Task<JudgmentOutcome> MisconfiguredAsync(
+        string setting, HttpResponseMessage response, CancellationToken deadline)
     {
         bool first;
         lock (_configurationErrorsLogged)
@@ -102,8 +107,8 @@ public sealed class TypeSafeJudge : IJudge
         if (first)
         {
             _logger.LogError(
-                "TypeSafe rejected the deployment's configuration ({Status}): check {Setting} (model {Model})",
-                (int)status, setting, _options.Model);
+                "OpenRouter rejected the judge's configuration ({Status}): check {Setting} (model {Model}): {Body}",
+                (int)response.StatusCode, setting, _options.Model, await response.Content.ReadAsStringAsync(deadline));
         }
 
         return new JudgmentOutcome.Absent(AbsenceReason.Error);
@@ -111,7 +116,7 @@ public sealed class TypeSafeJudge : IJudge
 
     private JudgmentOutcome Unavailable(HttpStatusCode status)
     {
-        _logger.LogWarning("TypeSafe answered {Status}; no judgment this call", (int)status);
+        _logger.LogWarning("OpenRouter answered {Status} for a judgment; none this call", (int)status);
         return new JudgmentOutcome.Absent(AbsenceReason.Error);
     }
 
@@ -119,7 +124,7 @@ public sealed class TypeSafeJudge : IJudge
     {
         if (wire?.Answers is null || wire.Usage is null || wire.Model is null)
         {
-            _logger.LogWarning("TypeSafe answered a body that is not a judgment");
+            _logger.LogWarning("OpenRouter answered a body that is not a judgment");
             return new JudgmentOutcome.Absent(AbsenceReason.Error);
         }
 

@@ -8,29 +8,32 @@ using Shouldly;
 
 namespace Tests.Unit.Infrastructure.Judgments;
 
-// The one client that speaks to TypeSafe, pinned at the wire: the request it sends for a choice
+// The one client that speaks to Jev — through OpenRouter's decisions endpoint, on the key every
+// other hosted call uses — pinned at the wire: the request it sends for a choice
 // and two nouls, the answers it hands back, and the rule that no failure of the service ever
 // becomes a failure of the caller — every one of them is an absence with a reason.
 public class TypeSafeJudgeTests
 {
     private static readonly TypeSafeOptions _options = new()
     {
-        ApiUrl = "https://typesafe.test/v1/",
-        ApiKey = "ts-key",
-        Model = "jev-1.13.0"
+        ApiUrl = "https://openrouter.test/api/",
+        ApiKey = "or-key",
+        Model = "typesafe/jev-1.13-20260917"
     };
 
     private const string Answered =
         """
         {
-          "model": "jev-1.13.0",
+          "id": "gen-dec-1789826426-0nnqQUgqMzcRqozyBPDe",
+          "provider": "TypeSafe",
+          "model": "typesafe/jev-1.13-20260917",
           "answers": {
             "skill": { "type": "choice", "choice": "timers", "confidence": 0.93,
                        "probabilities": { "none": 0.02, "home": 0.05, "timers": 0.93 } },
             "needs_timers": { "type": "noul", "noul": 0.97 },
             "needs_home": { "type": "noul", "noul": 0.04 }
           },
-          "usage": { "input_tokens": 372, "output_tokens": 59 }
+          "usage": { "input_tokens": 372, "output_tokens": 59, "cost": 0.000015624 }
         }
         """;
 
@@ -61,12 +64,12 @@ public class TypeSafeJudgeTests
 
         var sent = handler.Requests.ShouldHaveSingleItem();
         sent.Method.ShouldBe(HttpMethod.Post);
-        sent.Uri.ShouldBe("https://typesafe.test/v1/systemone");
-        sent.Authorization.ShouldBe("Bearer ts-key");
+        sent.Uri.ShouldBe("https://openrouter.test/api/alpha/decisions");
+        sent.Authorization.ShouldBe("Bearer or-key");
 
         var body = JsonNode.Parse(sent.Body)!.AsObject();
         body["state"]!["request"]!.GetValue<string>().ShouldBe("pon un temporizador de ocho minutos");
-        body["model"]!.GetValue<string>().ShouldBe("jev-1.13.0");
+        body["model"]!.GetValue<string>().ShouldBe("typesafe/jev-1.13-20260917");
         var questions = body["questions"]!.AsObject();
         questions.Count.ShouldBe(3);
         questions["skill"]!["type"]!.GetValue<string>().ShouldBe("choice");
@@ -86,7 +89,7 @@ public class TypeSafeJudgeTests
         var outcome = await judge.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
 
         var judgment = outcome.ShouldBeOfType<JudgmentOutcome.Answered>().Judgment;
-        judgment.Model.ShouldBe("jev-1.13.0");
+        judgment.Model.ShouldBe("typesafe/jev-1.13-20260917");
         judgment.Usage.InputTokens.ShouldBe(372);
         judgment.Usage.OutputTokens.ShouldBe(59);
 
@@ -153,7 +156,7 @@ public class TypeSafeJudgeTests
     public async Task Judge_AKeyRejectionThenAModelRejection_LogsEachSettingOnce()
     {
         var logger = new RecordingLogger();
-        var statuses = new Queue<HttpStatusCode>([HttpStatusCode.Unauthorized, HttpStatusCode.Unauthorized, HttpStatusCode.UnprocessableEntity]);
+        var statuses = new Queue<HttpStatusCode>([HttpStatusCode.Unauthorized, HttpStatusCode.Unauthorized, HttpStatusCode.BadRequest]);
         var judge = Judge(new ScriptedHandler(_ => new HttpResponseMessage(statuses.Dequeue())), logger);
 
         await judge.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
@@ -162,7 +165,7 @@ public class TypeSafeJudgeTests
 
         var errors = logger.Entries.Where(e => e.Level == LogLevel.Error).Select(e => e.Message).ToList();
         errors.Count.ShouldBe(2);
-        errors[0].ShouldContain("typeSafe:apiKey");
+        errors[0].ShouldContain("openRouter:apiKey");
         errors[1].ShouldContain("typeSafe:model");
     }
 
@@ -214,14 +217,14 @@ public class TypeSafeJudgeTests
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.Unauthorized, "typeSafe:apiKey")]
-    [InlineData(HttpStatusCode.UnprocessableEntity, "typeSafe:model")]
+    [InlineData(HttpStatusCode.Unauthorized, "openRouter:apiKey")]
+    [InlineData(HttpStatusCode.BadRequest, "typeSafe:model")]
     public async Task Judge_AConfigurationRejection_AnswersErrorAndLogsTheSettingOnce(HttpStatusCode status, string setting)
     {
         var logger = new RecordingLogger();
         var judge = Judge(new ScriptedHandler(_ => new HttpResponseMessage(status)
         {
-            Content = new StringContent("{\"error\":\"rejected\"}")
+            Content = new StringContent("{\"error\":{\"message\":\"Model typesafe/jev-9.9 does not exist\",\"code\":400}}")
         }), logger);
 
         var first = await judge.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
@@ -231,6 +234,9 @@ public class TypeSafeJudgeTests
         second.ShouldBeOfType<JudgmentOutcome.Absent>().Reason.ShouldBe(AbsenceReason.Error);
         var error = logger.Entries.Where(e => e.Level == LogLevel.Error).ShouldHaveSingleItem();
         error.Message.ShouldContain(setting);
+        // A 400 is a model that does not exist or a question the endpoint refuses; the body says
+        // which, so it is in the line an operator reads.
+        error.Message.ShouldContain("does not exist");
     }
 
     [Fact]

@@ -326,9 +326,9 @@ internal static class LiveMemoryJudge
             new HttpClient(),
             new TypeSafeOptions
             {
-                ApiUrl = _configuration["typeSafe:apiUrl"] ?? "https://api.typesafe.ai/v1/",
-                ApiKey = _configuration["typeSafe:apiKey"] ?? _configuration["TYPESAFE_API_KEY"] ?? "",
-                Model = _configuration["typeSafe:model"] ?? "jev-1.13.0"
+                ApiUrl = _configuration["typeSafe:apiUrl"] ?? new TypeSafeOptions().ApiUrl,
+                ApiKey = _configuration["openRouter:apiKey"] ?? "",
+                Model = _configuration["typeSafe:model"] ?? new TypeSafeOptions().Model
             },
             NullLogger.Instance);
 

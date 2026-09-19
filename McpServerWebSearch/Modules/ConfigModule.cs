@@ -30,7 +30,7 @@ public static class ConfigModule
                 .AddSingleton<IConnectionMultiplexer>(
                     _ => RedisConnection.ConnectResiliently(settings.RedisConnectionString))
                 .AddMetricsPublishing("mcp-websearch")
-                .AddTypeSafeJudge(settings.TypeSafe)
+                .AddTypeSafeJudge(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey))
                 .AddWebSearchClients(settings)
                 .AddToolServer(settings, ToolResponse.Create)
                 .WithTools<McpWebSearchTool>()
@@ -81,7 +81,7 @@ public static class ConfigModule
                     // the control listing too, which is a chained-locator EvaluateAll over every
                     // overlay the cheap paths left standing on every navigation.
                     modalDismisser: new ModalDismisser(
-                        settings.TypeSafe.IsConfigured
+                        !string.IsNullOrWhiteSpace(settings.OpenRouter.ApiKey)
                             ? new ModalJudge(sp.GetRequiredService<IJudge>(), settings.Judgment, TimeProvider.System)
                             : null),
                     metricsPublisher: sp.GetRequiredService<IMetricsPublisher>());
