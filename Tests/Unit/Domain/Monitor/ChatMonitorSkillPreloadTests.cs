@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Domain.Judgments;
 using Domain.Monitor;
@@ -140,6 +141,41 @@ public class ChatMonitorSkillPreloadTests
         judge.Asked.Count.ShouldBe(2);
         judge.Asked[1].State["request"]!.GetValue<string>().ShouldBe("y ahora apágala");
         judge.Asked[1].Questions["skill"].ShouldBeOfType<ChoiceQuestion>().Criteria.Keys.ShouldBe([_home.Name, "none"]);
+    }
+
+    // The Jev client reads the ambient turn model to see what the turn asked for, and outside a
+    // tool call nobody enters one but the group: without this a live turn addressed to the local box
+    // would reach the judge, the one place the client's rule could not see.
+    [Fact]
+    public async Task ThePreload_IsAskedAsTheTurn_SoTheJudgeSeesTheModelItAskedFor()
+    {
+        var agent = MonitorTestMocks.CreateAgent();
+        agent.Skills = [_home];
+        var judge = new CallerRecordingJudge();
+        var channel = MonitorTestMocks.CreateChannel(
+            messages:
+            [
+                MonitorTestMocks.CreateChannelMessage(content: "enciende la luz") with
+                {
+                    ConfigPatch = new AgentConfigPatch { Model = "lemonade/qwen3" }
+                }
+            ]);
+        var monitor = Monitor(agent, channel, recall: null, new SkillPreloader(judge, _settings, TimeProvider.System));
+
+        await monitor.Monitor(CancellationToken.None);
+
+        judge.Models.ShouldBe(["lemonade/qwen3"]);
+    }
+
+    private sealed class CallerRecordingJudge : IJudge
+    {
+        public List<string?> Models { get; } = [];
+
+        public Task<JudgmentOutcome> JudgeAsync(JudgmentRequest request, CancellationToken deadline)
+        {
+            Models.Add(TurnModel.Current);
+            return Task.FromResult<JudgmentOutcome>(new JudgmentOutcome.Absent(AbsenceReason.LocalTurn));
+        }
     }
 
     // With the feature off — no key, or the flag down — the turn must cost exactly what it did

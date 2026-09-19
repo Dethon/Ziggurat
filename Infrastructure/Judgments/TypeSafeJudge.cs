@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Domain.Agents;
 using Domain.Judgments;
 using Microsoft.Extensions.Logging;
 
@@ -51,6 +52,15 @@ public sealed class TypeSafeJudge : IJudge
         if (deadline.IsCancellationRequested)
         {
             return new JudgmentOutcome.Absent(AbsenceReason.Deadline);
+        }
+
+        // A turn addressed to the local box sends nothing about itself to a hosted judge. Held
+        // here, where the request would leave, so every use — the ones written and the ones not
+        // yet — is covered by asking through this client, and none has to know the rule. TurnModel
+        // says where the answer comes from; no turn at all (the nightly dreaming) asks.
+        if (LemonadeModelId.IsLemonade(TurnModel.Current))
+        {
+            return new JudgmentOutcome.Absent(AbsenceReason.LocalTurn);
         }
 
         try

@@ -1,6 +1,4 @@
 using System.Text.Json.Nodes;
-using Domain.Agents;
-using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.Judgments;
@@ -112,13 +110,6 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
             return ModalPick.NotAsked;
         }
 
-        // A turn addressed to the local box sends nothing to a hosted judge, and a wall's buttons
-        // are the page the person is reading. The wall is left to the model, as with no key.
-        if (LemonadeModelId.IsLemonade(CallerContext.Current?.ConfigPatchModel))
-        {
-            return ModalPick.NotAsked;
-        }
-
         var request = Ask(kind, controls, settings.MaxControls);
         if (request is null)
         {
@@ -136,6 +127,9 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
         // cancellation: the browse has moved on, and a click landing late lands on the wrong page.
         return outcome switch
         {
+            // The client sent nothing: the turn was addressed to the local box. Nothing asked, not
+            // a judge that missed — the left-standing rate the deadline is tuned from leaves it out.
+            JudgmentOutcome.Absent { Reason: AbsenceReason.LocalTurn } => ModalPick.NotAsked,
             _ when deadline.IsCancellationRequested => Absent(latency),
             JudgmentOutcome.Answered answered => Decide(kind, answered.Judgment, request, settings.Confidence, latency),
             _ => Absent(latency)

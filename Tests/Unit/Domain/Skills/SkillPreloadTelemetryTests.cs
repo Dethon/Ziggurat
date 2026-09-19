@@ -108,9 +108,9 @@ public class SkillPreloadTelemetryTests
     {
         var published = new RecordingMetricsPublisher();
         var preloader = new SkillPreloader(
-            new FixedJudge(new JudgmentOutcome.Absent(AbsenceReason.Error)), new SkillPreloadSettings(), new FakeTimeProvider(), published);
+            new FixedJudge(new JudgmentOutcome.Absent(AbsenceReason.LocalTurn)), new SkillPreloadSettings(), new FakeTimeProvider(), published);
 
-        await preloader.PreloadAsync(Request() with { ConfigPatchModel = "lemonade/qwen3" }, CancellationToken.None);
+        await preloader.PreloadAsync(Request(), CancellationToken.None);
 
         var evt = published.Published.OfType<SkillPreloadEvent>().ShouldHaveSingleItem();
         evt.Outcome.ShouldBe(SkillPreloadOutcomes.SkippedLemonade);

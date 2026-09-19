@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.Extensions;
+using Domain.Judgments;
 using Domain.Prompts;
 using Domain.Skills;
 using Microsoft.Agents.AI;
@@ -135,16 +136,17 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
         SkillPreload preload;
         try
         {
+            // The judge's client reads what the turn asked for and sends nothing for the local box.
+            // A request names it in its own patch; a worker's has none and carries its parent
+            // turn's context instead, which is where that turn's model rides.
+            using var turnModel = TurnModel.Enter(
+                request.GetConfigPatch()?.Model ?? request.GetConversationContext()?.ConfigPatchModel);
             var pending = SkillPreloadPending.TryTake(request);
             preload = pending is not null
                 ? await pending
                 : await _preloader.PreloadAsync(
                     new SkillPreloadRequest(request.Text, skills, _historyOf(context.Session).Concat(requestMessages))
                     {
-                        // A worker's request carries no patch of its own, only its parent turn's
-                        // context — and that turn may have been addressed to the local box.
-                        ConfigPatchModel = request.GetConfigPatch()?.Model
-                                           ?? request.GetConversationContext()?.ConfigPatchModel,
                         AgentId = context.Agent.Name,
                         Reader = SkillPreloadReads.ReaderOver(_registryOf(context.Session))
                     },

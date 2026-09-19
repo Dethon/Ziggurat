@@ -55,9 +55,10 @@ direction and a narrowed yes is what the list misreads. The word list is the who
 judge is off, absent, late or configured with bars it cannot be read against (a deadline that is not
 a wait, a `Counter` at or above `Sure`); the caller's own cancellation propagates rather than
 falling back, because a verdict then belongs to a turn nobody is waiting for. **A turn addressed to
-the Lemonade chat host is read by the word list alone** — the reader sees `ConfigPatchModel` on
-`CallerContext.Current`, which reaches it only because `McpChannelConnection.RequestApprovalAsync`
-stamps the turn's context as `_meta` on the approval hop (`McpChannelConnectionApprovalMetaTests`).
+the Lemonade chat host is read by the word list alone** — the Jev client's rule, not the reader's
+(`.claude/rules/mcp-hosting.md`): it sends nothing and the absence falls to the word list like any
+other. The client can see the turn only because `McpChannelConnection.RequestApprovalAsync` stamps
+the turn's context as `_meta` on the approval hop (`McpChannelConnectionApprovalMetaTests`).
 
 **The wording is measured, and the prompt is part of the wording.** `jev-approval-cases.json` carries
 the labelled answers against every prompt shape the tool actually speaks — a natural-language one, a

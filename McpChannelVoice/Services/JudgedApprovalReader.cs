@@ -1,6 +1,4 @@
 using System.Text.Json.Nodes;
-using Domain.Agents;
-using Domain.Channels;
 using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using McpChannelVoice.Settings;
@@ -46,10 +44,7 @@ public sealed class JudgedApprovalReader(IJudge judge, ApprovalJudgmentSettings 
         ct.ThrowIfCancellationRequested();
 
         var wordList = ApprovalGrammarParser.Parse(answer);
-        // A turn addressed to the local box sends nothing to a hosted judge — not the prompt, which
-        // names the tool, and not what the person said back. The word list decides, as with no key.
-        var addressedToLemonade = LemonadeModelId.IsLemonade(CallerContext.Current?.ConfigPatchModel);
-        if (!settings.Enabled || !Usable(settings) || addressedToLemonade || string.IsNullOrWhiteSpace(answer))
+        if (!settings.Enabled || !Usable(settings) || string.IsNullOrWhiteSpace(answer))
         {
             return ByWordList(wordList, TimeSpan.Zero);
         }

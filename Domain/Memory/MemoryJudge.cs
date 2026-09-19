@@ -332,10 +332,11 @@ public sealed class MemoryJudge(
         Model = judgment.Model
     };
 
-    // An unconfigured judge is the feature off, not a thing to count; any other absence is.
+    // An unconfigured judge is the feature off, and a local turn is nothing sent: neither is a
+    // thing to count. Any other absence is.
     private void PublishAbsence(string kind, MemoryJudgmentContext context, JudgmentOutcome outcome, TimeSpan latency)
     {
-        if (outcome is JudgmentOutcome.Absent { Reason: AbsenceReason.Unconfigured })
+        if (outcome is JudgmentOutcome.Absent { Reason: AbsenceReason.Unconfigured or AbsenceReason.LocalTurn })
         {
             return;
         }

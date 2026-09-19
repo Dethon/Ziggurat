@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.Judgments;
@@ -43,11 +42,6 @@ public sealed class SkillPreloader(
             return SkillPreload.NotAsked;
         }
 
-        if (LemonadeModelId.IsLemonade(request.ConfigPatchModel))
-        {
-            return Published(request, SkillPreload.SkippedLemonade);
-        }
-
         var loaded = SkillLoadTool.LoadedIn(request.History);
         var candidates = request.Skills.Where(s => !loaded.Contains(s.Name)).ToList();
         if (candidates.Count == 0 || string.IsNullOrWhiteSpace(request.Text))
@@ -72,6 +66,9 @@ public sealed class SkillPreloader(
         // the cancellation: late is late, and a body inserted late would land on the wrong turn.
         var preload = outcome switch
         {
+            // The client sent nothing because the turn was addressed to the local box. Before the
+            // deadline arm on purpose: nothing was asked, so there is nothing to have been late.
+            JudgmentOutcome.Absent { Reason: AbsenceReason.LocalTurn } => SkillPreload.SkippedLemonade,
             _ when deadline.IsCancellationRequested => new SkillPreload(SkillPreloadOutcome.Deadline, [], latency),
             JudgmentOutcome.Absent { Reason: AbsenceReason.Unconfigured } => SkillPreload.NotAsked,
             JudgmentOutcome.Absent { Reason: AbsenceReason.Deadline } => new SkillPreload(SkillPreloadOutcome.Deadline, [], latency),

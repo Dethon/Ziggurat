@@ -1,5 +1,3 @@
-using Domain.Channels;
-using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using McpChannelVoice.Services;
@@ -26,20 +24,15 @@ public class JudgedApprovalReaderTests
         Reader(StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, approved), (JudgedApprovalReader.DeclinedQuestionId, declined)))
             .ReadAsync(Prompt, answer, CancellationToken.None);
 
-    // A turn addressed to the local box sends nothing to a hosted judge: the word list decides,
-    // as it does with the judge off.
+    // The client holds the rule and sends nothing for a turn addressed to the local box; here
+    // that is one more absence, and the word list decides as it does with the judge off.
     [Fact]
-    public async Task ATurnAddressedToLemonade_IsReadByTheWordListAlone()
+    public async Task AJudgeThatSentNothingForALocalTurn_LeavesTheWordListToDecide()
     {
-        var judge = StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.03), (JudgedApprovalReader.DeclinedQuestionId, 0.95));
-        using var caller = CallerContext.Enter(new ConversationContext(
-            "jack", "conv-1", "fran", new ReplyTarget("signalr", "conv-1"), "lemonade/qwen3"));
-
-        var reading = await Reader(judge).ReadAsync(Prompt, "sí", CancellationToken.None);
+        var reading = await Reader(StubJudge.Absent(AbsenceReason.LocalTurn)).ReadAsync(Prompt, "sí", CancellationToken.None);
 
         reading.Response.ShouldBe(ApprovalResponse.Approved);
         reading.DecidedBy.ShouldBe(ApprovalDecider.WordList);
-        judge.Requests.ShouldBeEmpty();
     }
 
     [Fact]

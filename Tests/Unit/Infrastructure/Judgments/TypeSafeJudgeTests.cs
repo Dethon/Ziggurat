@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.Channels;
+using Domain.DTOs.Channel;
 using Domain.Judgments;
 using Infrastructure.Judgments;
 using Microsoft.Extensions.Logging;
@@ -243,6 +245,49 @@ public class TypeSafeJudgeTests
 
         outcome.ShouldBeOfType<JudgmentOutcome.Absent>().Reason.ShouldBe(AbsenceReason.Unconfigured);
         handler.Requests.ShouldBeEmpty();
+    }
+
+    // The one rule every use of Jev inherits by asking through this client: a turn addressed to
+    // the local box sends nothing about itself to a hosted judge. Held here, where the request
+    // would leave, so a use written tomorrow is covered without knowing the rule exists.
+    [Fact]
+    public async Task Judge_InsideATurnAddressedToLemonade_MakesNoHttpCallAndSaysWhy()
+    {
+        var handler = new ScriptedHandler(_ => Ok(Answered));
+        using var caller = CallerContext.Enter(new ConversationContext(
+            "jack", "conv-1", "fran", new ReplyTarget("signalr", "conv-1"), "lemonade/qwen3"));
+
+        var outcome = await Judge(handler).JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
+
+        outcome.ShouldBeOfType<JudgmentOutcome.Absent>().Reason.ShouldBe(AbsenceReason.LocalTurn);
+        handler.Requests.ShouldBeEmpty();
+    }
+
+    // The agent host asks outside any tool call, so it names the turn's model by hand.
+    [Fact]
+    public async Task Judge_WithALemonadeTurnModelEntered_MakesNoHttpCall()
+    {
+        var handler = new ScriptedHandler(_ => Ok(Answered));
+        using var turnModel = TurnModel.Enter("lemonade/qwen3");
+
+        var outcome = await Judge(handler).JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
+
+        outcome.ShouldBeOfType<JudgmentOutcome.Absent>().Reason.ShouldBe(AbsenceReason.LocalTurn);
+        handler.Requests.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("openai/gpt-5.6-luna")]
+    public async Task Judge_InsideAHostedTurn_Asks(string? model)
+    {
+        var handler = new ScriptedHandler(_ => Ok(Answered));
+        using var caller = CallerContext.Enter(new ConversationContext(
+            "jack", "conv-1", "fran", new ReplyTarget("signalr", "conv-1"), model));
+
+        var outcome = await Judge(handler).JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
+
+        outcome.ShouldBeOfType<JudgmentOutcome.Answered>();
     }
 
     private static IJudge Judge(ScriptedHandler handler, ILogger? logger = null, TimeSpan? timeout = null)

@@ -1,7 +1,5 @@
 using System.Text.Json.Nodes;
-using Domain.Channels;
 using Domain.Contracts;
-using Domain.DTOs.Channel;
 using Domain.Judgments;
 using Domain.Tools.Web;
 using Microsoft.Extensions.Time.Testing;
@@ -299,18 +297,15 @@ public class ModalJudgeTests
         judge.Requests.ShouldBeEmpty();
     }
 
-    // A turn addressed to the local box sends nothing to a hosted judge, a wall's buttons included.
+    // The client holds the rule and sends nothing for a turn addressed to the local box. Here that
+    // is nothing asked, not a judge that missed: the miss rate the deadline is tuned from leaves it out.
     [Fact]
-    public async Task ATurnAddressedToLemonade_AsksNothing()
+    public async Task AJudgeThatSentNothingForALocalTurn_IsNotAsked_NotAbsent()
     {
-        var judge = Choices((ModalJudge.RejectQuestionId, "2", 0.95), (ModalJudge.AcceptQuestionId, "1", 0.95));
-        using var caller = CallerContext.Enter(new ConversationContext(
-            "jack", "conv-1", "fran", new ReplyTarget("signalr", "conv-1"), "lemonade/qwen3"));
-
-        var pick = await Judge(judge).PickAsync(ModalType.CookieConsent, _cookieWall, CancellationToken.None);
+        var pick = await Judge(StubJudge.Absent(AbsenceReason.LocalTurn))
+            .PickAsync(ModalType.CookieConsent, _cookieWall, CancellationToken.None);
 
         pick.Status.ShouldBe(ModalPickStatus.NotAsked);
-        judge.Requests.ShouldBeEmpty();
     }
 
     private static ModalJudge Judge(IJudge judge, ModalJudgmentSettings? settings = null) =>

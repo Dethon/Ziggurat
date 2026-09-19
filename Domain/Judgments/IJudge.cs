@@ -32,5 +32,9 @@ public enum AbsenceReason
     Deadline,
 
     // The service answered something other than a judgment, or could not be reached.
-    Error
+    Error,
+
+    // The turn was addressed to the local box, so nothing about it was sent. Not a miss: a use
+    // that counts its absences to tune a deadline leaves this one out, as it does Unconfigured.
+    LocalTurn
 }

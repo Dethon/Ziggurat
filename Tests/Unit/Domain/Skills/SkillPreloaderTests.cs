@@ -130,16 +130,15 @@ public class SkillPreloaderTests
     }
 
     [Fact]
-    public async Task Preload_ALemonadeTurn_AsksNothingAndSaysSo()
+    public async Task Preload_AJudgeThatSentNothingForALocalTurn_SaysSo()
     {
-        var judge = new ScriptedJudge(_ => throw new InvalidOperationException("must not be asked"));
+        // The client holds the rule; the preloader only names what it was told.
+        var judge = new ScriptedJudge(_ => new JudgmentOutcome.Absent(AbsenceReason.LocalTurn));
 
-        var preload = await Preloader(judge).PreloadAsync(
-            Request("apaga la luz", [_home]) with { ConfigPatchModel = "lemonade/qwen3" }, CancellationToken.None);
+        var preload = await Preloader(judge).PreloadAsync(Request("apaga la luz", [_home]), CancellationToken.None);
 
         preload.Outcome.ShouldBe(SkillPreloadOutcome.SkippedLemonade);
         preload.Latency.ShouldBeNull();
-        judge.Asked.ShouldBeEmpty();
     }
 
     [Fact]

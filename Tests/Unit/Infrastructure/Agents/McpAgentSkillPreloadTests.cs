@@ -187,10 +187,18 @@ public class McpAgentSkillPreloadTests
     }
 
     [Fact]
-    public async Task ATurnPatchedToALemonadeModel_MakesNoJudgmentCall()
+    public async Task ATurnPatchedToALemonadeModel_IsAskedAsOne_SoTheClientSendsNothing()
     {
+        // The rule is the Jev client's (TypeSafeJudgeTests): it reads the ambient turn model and
+        // sends nothing. What this path owes it is that ambient, from a request whose only mark
+        // is its own patch — a run with no conversation context, as the eval's are.
         await using var server = await StartAsync(_homeText);
-        var judge = new ScriptedJudge(_ => throw new InvalidOperationException("must not be asked"));
+        string? seen = null;
+        var judge = new ScriptedJudge(_ =>
+        {
+            seen = TurnModel.Current;
+            return new JudgmentOutcome.Absent(AbsenceReason.LocalTurn);
+        });
         var (client, calls) = Capturing();
         var spec = TestAgentSpec.Default with
         {
@@ -205,7 +213,7 @@ public class McpAgentSkillPreloadTests
 
         await agent.RunAsync([message]);
 
-        judge.Asked.ShouldBeEmpty();
+        seen.ShouldBe("lemonade/qwen3");
         calls.ShouldHaveSingleItem().Messages.Select(m => m.Role.Value).ShouldBe(["user"]);
     }
 
