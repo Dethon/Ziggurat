@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
+using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.Judgments;
 using Domain.Tools.Web;
 using Microsoft.Extensions.Time.Testing;
@@ -292,6 +294,20 @@ public class ModalJudgeTests
         var judge = StubJudge.Absent();
 
         var pick = await Judge(judge).PickAsync(ModalType.Generic, _cookieWall, CancellationToken.None);
+
+        pick.Status.ShouldBe(ModalPickStatus.NotAsked);
+        judge.Requests.ShouldBeEmpty();
+    }
+
+    // A turn addressed to the local box sends nothing to a hosted judge, a wall's buttons included.
+    [Fact]
+    public async Task ATurnAddressedToLemonade_AsksNothing()
+    {
+        var judge = Choices((ModalJudge.RejectQuestionId, "2", 0.95), (ModalJudge.AcceptQuestionId, "1", 0.95));
+        using var caller = CallerContext.Enter(new ConversationContext(
+            "jack", "conv-1", "fran", new ReplyTarget("signalr", "conv-1"), "lemonade/qwen3"));
+
+        var pick = await Judge(judge).PickAsync(ModalType.CookieConsent, _cookieWall, CancellationToken.None);
 
         pick.Status.ShouldBe(ModalPickStatus.NotAsked);
         judge.Requests.ShouldBeEmpty();

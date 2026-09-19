@@ -48,7 +48,9 @@ is the host loading first: before the model's first call, `SkillsProvider` asks 
 `Domain/Skills/`) which skills the request needs, judged on the same descriptions, and a confident
 answer puts the body into the conversation as the pair a `load_skill` call leaves — after the user
 message, persisted with the turn, never twice. ADR 0039 (refined 2026-09-18) is the decision;
-these are the rules the next section lands on.
+these are the rules the next section lands on. A turn addressed to the Lemonade chat host asks
+nothing, and neither does a worker it spawns: a worker's request has no config patch, so the
+provider reads the parent turn's `ConversationContext.ConfigPatchModel`.
 
 - **A skill may already be in the conversation when a turn starts, and one that is, is loaded.**
   The `skills` section says so to the model; `SkillLoadTool.LoadedIn` says so to the preloader,

@@ -1,4 +1,6 @@
 using System.Text.Json.Nodes;
+using Domain.Agents;
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.Judgments;
@@ -106,6 +108,13 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
         // on: a deadline that is not a wait threw out of the CancellationTokenSource constructor
         // below, and the dismisser's catch turned that into a silent left-standing forever.
         if (settings.DeadlineMs <= 0 || settings.MaxControls <= 0)
+        {
+            return ModalPick.NotAsked;
+        }
+
+        // A turn addressed to the local box sends nothing to a hosted judge, and a wall's buttons
+        // are the page the person is reading. The wall is left to the model, as with no key.
+        if (LemonadeModelId.IsLemonade(CallerContext.Current?.ConfigPatchModel))
         {
             return ModalPick.NotAsked;
         }

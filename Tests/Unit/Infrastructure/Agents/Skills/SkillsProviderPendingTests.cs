@@ -1,4 +1,6 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs.Channel;
+using Domain.Extensions;
 using Domain.Prompts;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
@@ -51,6 +53,25 @@ public class SkillsProviderPendingTests
         inserted[0].Contents.OfType<FunctionCallContent>().Select(c => c.Name)
             .ShouldBe([SkillLoadTool.Name, FileSystemToolFeature.Callable(VfsFileReadTool.Name)]);
         inserted[1].Contents.OfType<FunctionResultContent>().Last().Result.ShouldBeSameAs(index);
+    }
+
+    // A worker's request carries no patch of its own, only the parent turn's context — and a
+    // worker spawned by a turn addressed to the local box must not ask a hosted judge either.
+    [Fact]
+    public async Task AWorkersRequest_NamesTheModelItsParentTurnAskedFor()
+    {
+        SkillPreloadRequest? asked = null;
+        var preloader = new Mock<ISkillPreloader>();
+        preloader.Setup(p => p.PreloadAsync(It.IsAny<SkillPreloadRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<SkillPreloadRequest, CancellationToken>((r, _) => asked = r)
+            .ReturnsAsync(SkillPreload.NotAsked);
+        var request = new ChatMessage(ChatRole.User, "enciende la luz");
+        request.SetConversationContext(new ConversationContext(
+            "jack", "conv-1", "fran", new ReplyTarget("signalr", "conv-1"), "lemonade/qwen3"));
+
+        await Provide(preloader.Object, request);
+
+        asked.ShouldNotBeNull().ConfigPatchModel.ShouldBe("lemonade/qwen3");
     }
 
     [Theory]

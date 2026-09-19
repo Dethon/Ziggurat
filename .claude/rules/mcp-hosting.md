@@ -40,7 +40,9 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   also enters the call's `ConversationContext` (`Domain/Channels/CallerContext.cs`, from the
   request's `_meta`) for the duration of the call, so a filesystem backend — which never sees the
   request — can still ask who is calling; absent means the call carried none, and a consumer
-  refuses rather than guesses. Two
+  refuses rather than guesses. The context also carries `ConfigPatchModel`, the model the turn
+  asked for: **a server that would ask a hosted judge (Jev) checks it and asks nothing for a
+  `lemonade/` id** — a new Jev use in any server starts with that check. Two
   filters nested around each other would let the outer one convert the very cancellation the inner
   rethrows, so a second ask is a no-op and the first ask's error shape wins.
 - **`Tests/Integration/McpServers/McpServerRegistrations.cs` is the one server table.** Fourteen

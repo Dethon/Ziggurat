@@ -53,6 +53,21 @@ public class ChatMonitorConversationContextTests
         context.Origin.ShouldBe(new ReplyTarget("telegram", "t-9"));
     }
 
+    // What the turn asked for rides to every server the turn calls, so a host that would ask a
+    // hosted judge can see the turn was addressed to the local box.
+    [Fact]
+    public void BuildConversationContext_CarriesTheModelTheTurnAskedFor()
+    {
+        var message = MonitorTestMocks.CreateChannelMessage() with
+        {
+            ConfigPatch = new AgentConfigPatch { Model = "lemonade/qwen3" }
+        };
+
+        DeliveryTargetResolver.BuildConversationContext(message, []).ConfigPatchModel.ShouldBe("lemonade/qwen3");
+        DeliveryTargetResolver.BuildConversationContext(MonitorTestMocks.CreateChannelMessage(), [])
+            .ConfigPatchModel.ShouldBeNull();
+    }
+
     [Fact]
     public void BuildConversationContext_NoTargets_FallsBackToMessageOrigin()
     {

@@ -36,7 +36,9 @@ name the page actually carries. The pick is clicked by index into
 the same locator its name was read from, and the overlay predicate, the name script and the anchor
 guard are one JS constant each so the three steps cannot disagree about which buttons are the
 wall's. The judge and its bar, deadline and cap are the server's own `TypeSafe` / `Judgment`
-settings; an empty key is the feature off.
+settings; an empty key is the feature off. **A turn addressed to the Lemonade chat host asks
+nothing**: `ModalJudge` reads `CallerContext.Current.ConfigPatchModel` and answers `NotAsked` for a
+`lemonade/` id, so the wall is left to the model exactly as with no key.
 
 **Every detected overlay is counted, and a wall that closed is not a miss.** `DismissAsync` answers
 one `ModalOverlayOutcome` per overlay the last pass detected — `selector`, `text`, `judgment` or

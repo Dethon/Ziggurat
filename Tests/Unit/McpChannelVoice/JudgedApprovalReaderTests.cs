@@ -1,3 +1,5 @@
+using Domain.Channels;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using McpChannelVoice.Services;
@@ -23,6 +25,22 @@ public class JudgedApprovalReaderTests
     private static Task<ApprovalReading> ReadAsync(double approved, double declined, string answer) =>
         Reader(StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, approved), (JudgedApprovalReader.DeclinedQuestionId, declined)))
             .ReadAsync(Prompt, answer, CancellationToken.None);
+
+    // A turn addressed to the local box sends nothing to a hosted judge: the word list decides,
+    // as it does with the judge off.
+    [Fact]
+    public async Task ATurnAddressedToLemonade_IsReadByTheWordListAlone()
+    {
+        var judge = StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.03), (JudgedApprovalReader.DeclinedQuestionId, 0.95));
+        using var caller = CallerContext.Enter(new ConversationContext(
+            "jack", "conv-1", "fran", new ReplyTarget("signalr", "conv-1"), "lemonade/qwen3"));
+
+        var reading = await Reader(judge).ReadAsync(Prompt, "sí", CancellationToken.None);
+
+        reading.Response.ShouldBe(ApprovalResponse.Approved);
+        reading.DecidedBy.ShouldBe(ApprovalDecider.WordList);
+        judge.Requests.ShouldBeEmpty();
+    }
 
     [Fact]
     public async Task ASureYes_Approves_OnTheJudgmentAlone()
