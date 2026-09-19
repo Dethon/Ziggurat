@@ -73,6 +73,7 @@ public sealed record SkillJudgment(
     double ChoiceConfidence,
     IReadOnlyDictionary<string, double> Needs,
     int InputTokens,
+    decimal? Cost,
     string Model);
 
 public enum SkillPreloadOutcome

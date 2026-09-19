@@ -15,4 +15,5 @@ public sealed record ChoiceAnswer(
 
 public sealed record NoulAnswer(double Probability) : JudgmentAnswer;
 
-public sealed record JudgmentUsage(int InputTokens, int OutputTokens);
+// The cost is the provider's own figure for this call, null where a judge reports none.
+public sealed record JudgmentUsage(int InputTokens, int OutputTokens, decimal? Cost = null);

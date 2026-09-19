@@ -163,6 +163,7 @@ public sealed class SkillPreloader(
         Needs = preload.Judgment?.Needs,
         DurationMs = preload.Latency is { } latency ? (long)latency.TotalMilliseconds : null,
         InputTokens = preload.Judgment?.InputTokens,
+        Cost = preload.Judgment?.Cost,
         Model = preload.Judgment?.Model
     };
 
@@ -226,6 +227,6 @@ public sealed class SkillPreloader(
             outcome,
             skills,
             latency,
-            new SkillJudgment(choice.Choice, choice.Confidence, needs, judgment.Usage.InputTokens, judgment.Model));
+            new SkillJudgment(choice.Choice, choice.Confidence, needs, judgment.Usage.InputTokens, judgment.Usage.Cost, judgment.Model));
     }
 }

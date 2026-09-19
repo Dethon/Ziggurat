@@ -41,6 +41,7 @@ public class ScenarioChecksPreloadTests
                 Skills = preloaded,
                 DurationMs = 380,
                 InputTokens = 2200,
+                Cost = 0.0000924m,
                 Model = "jev-1.13.0"
             });
         }
@@ -174,7 +175,7 @@ public class ScenarioChecksPreloadTests
     }
 
     [Fact]
-    public void APreload_IsSpentAtTheConfiguredPrice_AndNamesTheJudge()
+    public void APreload_IsSpentAtWhatTheProviderCharged_AndNamesTheJudge()
     {
         var recording = Recorded([Timers], (Create, Created));
         recording.Publish(new TokenUsageEvent { Sender = "u", Model = "m", InputTokens = 9000, OutputTokens = 100, Cost = 0.02m });
@@ -185,7 +186,7 @@ public class ScenarioChecksPreloadTests
         spend.Requests.ShouldBe(1);
         spend.PreloadRequests.ShouldBe(1);
         spend.PreloadInputTokens.ShouldBe(2200);
-        spend.PreloadCost.ShouldBe(JevPrice.Of(2200));
+        spend.PreloadCost.ShouldBe(0.0000924m);
         recording.PreloadModel.ShouldBe("jev-1.13.0");
     }
 

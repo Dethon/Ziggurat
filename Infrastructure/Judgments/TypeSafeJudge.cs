@@ -132,7 +132,7 @@ public sealed class TypeSafeJudge : IJudge
         return new JudgmentOutcome.Answered(new Judgment(
             wire.Model,
             answers,
-            new JudgmentUsage(wire.Usage.InputTokens, wire.Usage.OutputTokens)));
+            new JudgmentUsage(wire.Usage.InputTokens, wire.Usage.OutputTokens, wire.Usage.Cost)));
     }
 
     private static JudgmentAnswer Answer(WireAnswer answer) => answer.Type switch
@@ -186,7 +186,8 @@ public sealed class TypeSafeJudge : IJudge
 
     private sealed record WireUsage(
         [property: JsonPropertyName("input_tokens")] int InputTokens,
-        [property: JsonPropertyName("output_tokens")] int OutputTokens);
+        [property: JsonPropertyName("output_tokens")] int OutputTokens,
+        [property: JsonPropertyName("cost")] decimal? Cost);
 
     private sealed class UnconfiguredJudge : IJudge
     {

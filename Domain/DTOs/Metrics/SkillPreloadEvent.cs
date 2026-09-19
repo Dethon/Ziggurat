@@ -26,6 +26,9 @@ public record SkillPreloadEvent : MetricEvent
 
     public int? InputTokens { get; init; }
 
+    // What the provider charged for the judgment, off its own usage.
+    public decimal? Cost { get; init; }
+
     public string? Model { get; init; }
 }
 

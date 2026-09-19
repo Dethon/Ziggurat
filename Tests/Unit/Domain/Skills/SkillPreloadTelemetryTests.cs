@@ -62,14 +62,14 @@ public class SkillPreloadTelemetryTests
     }
 
     [Fact]
-    public async Task APreload_PublishesTheSkillsTheConfidencesTheTokensAndTheModel()
+    public async Task APreload_PublishesTheSkillsTheConfidencesTheTokensTheCostAndTheModel()
     {
         var published = new RecordingMetricsPublisher();
         var judgment = new Judgment("jev-1.13.0", new Dictionary<string, JudgmentAnswer>
         {
             [SkillPreloader.ChoiceQuestionId] = new ChoiceAnswer(_home.Name, 0.97, new Dictionary<string, double> { [_home.Name] = 0.97 }),
             [SkillPreloader.NeedsQuestionId(_home.Name)] = new NoulAnswer(0.95)
-        }, new JudgmentUsage(2180, 60));
+        }, new JudgmentUsage(2180, 60, 0.00009156m));
         var preloader = new SkillPreloader(
             new FixedJudge(new JudgmentOutcome.Answered(judgment)), new SkillPreloadSettings(), new FakeTimeProvider(), published);
 
@@ -82,6 +82,7 @@ public class SkillPreloadTelemetryTests
         evt.ChoiceConfidence.ShouldBe(0.97);
         evt.Needs.ShouldNotBeNull()[_home.Name].ShouldBe(0.95);
         evt.InputTokens.ShouldBe(2180);
+        evt.Cost.ShouldBe(0.00009156m);
         evt.Model.ShouldBe("jev-1.13.0");
     }
 

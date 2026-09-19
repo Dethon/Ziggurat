@@ -92,6 +92,7 @@ public class TypeSafeJudgeTests
         judgment.Model.ShouldBe("typesafe/jev-1.13-20260917");
         judgment.Usage.InputTokens.ShouldBe(372);
         judgment.Usage.OutputTokens.ShouldBe(59);
+        judgment.Usage.Cost.ShouldBe(0.000015624m);
 
         var choice = judgment.Answers["skill"].ShouldBeOfType<ChoiceAnswer>();
         choice.Choice.ShouldBe("timers");
