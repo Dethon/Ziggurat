@@ -10,6 +10,14 @@ namespace Domain.Skills;
 public interface ISkillPreloader
 {
     Task<SkillPreload> PreloadAsync(SkillPreloadRequest request, CancellationToken ct);
+
+    // Whether asking is off outright — the flag down, in this deployment's own settings. A caller
+    // that must read a whole thread from Redis just to say which skills are already loaded asks
+    // this first, so a deployment with the feature off pays exactly what it paid before the
+    // preload existed. Stated as the negative deliberately: false is "carry on and ask", which is
+    // what an implementation that has not thought about it — a mock, a decorator — should do.
+    // Not "will it preload": a judge with no key still answers that, and answers it as an absence.
+    bool IsOff => false;
 }
 
 // The current request's text alone — no prior turns, no assistant text, because the judge's

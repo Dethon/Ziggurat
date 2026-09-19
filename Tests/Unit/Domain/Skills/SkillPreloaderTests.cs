@@ -258,6 +258,30 @@ public class SkillPreloaderTests
         read.Result.ShouldBeSameAs(index);
     }
 
+    // The reads are made on the turn's token, not the judge's deadline — a read is the mount
+    // rendering what it holds. But the first model call waits on the whole preload, so a mount
+    // that hangs held the turn with no first token and nothing spoken, which is exactly what the
+    // deadline exists to prevent. The reads get a bound of their own.
+    [Fact]
+    public async Task Preload_AReadThatHangs_StillPreloadsTheSkill_WithoutTheRead()
+    {
+        var clock = new ArmedClock();
+        var judge = new ScriptedJudge(_ => JudgeAnswers.Sure("home-assistant"));
+        var hanging = new TaskCompletionSource<JsonNode?>();
+        var request = Request("enciende la luz del salón", [TestSkills.HomeWithIndex, _timers]) with
+        {
+            Reader = (_, ct) => hanging.Task.WaitAsync(ct)
+        };
+
+        var pending = Preloader(judge, clock: clock).PreloadAsync(request, CancellationToken.None);
+        await clock.AdvancePastAsync(TimeSpan.FromMilliseconds(_settings.ReadsBudgetMs));
+
+        var preload = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        preload.Outcome.ShouldBe(SkillPreloadOutcome.Preloaded);
+        preload.Skills.Select(s => s.Name).ShouldBe(["home-assistant"]);
+        preload.Reads.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task Preload_ASkillDeclaringNoRead_AsksTheReaderNothing()
     {
@@ -325,8 +349,9 @@ public class SkillPreloaderTests
         preload.Reads.ShouldBeEmpty();
     }
 
-    private static SkillPreloader Preloader(IJudge judge, SkillPreloadSettings? settings = null) =>
-        new(judge, settings ?? _settings, new FakeTimeProvider());
+    private static SkillPreloader Preloader(
+        IJudge judge, SkillPreloadSettings? settings = null, TimeProvider? clock = null) =>
+        new(judge, settings ?? _settings, clock ?? new FakeTimeProvider());
 
     private static SkillPreloadRequest Request(string text, IReadOnlyList<PromptSkill> skills, IEnumerable<ChatMessage>? history = null) =>
         new(text, skills, history ?? []);

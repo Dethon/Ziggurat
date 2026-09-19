@@ -32,6 +32,10 @@ public sealed class SkillPreloader(
     public static string NeedsInstructions(string description) =>
         Framing + " Does carrying out the request need this skill? Skill: " + description;
 
+    // The flag alone: whether a key is configured is the judge's own answer, and asking it that
+    // would mean a round trip to find out there is nothing to ask.
+    public bool IsOff => !settings.Enabled;
+
     public async Task<SkillPreload> PreloadAsync(SkillPreloadRequest request, CancellationToken ct)
     {
         if (!settings.Enabled)
@@ -78,17 +82,26 @@ public sealed class SkillPreloader(
 
         if (preload.Outcome == SkillPreloadOutcome.Preloaded && request.Reader is not null)
         {
-            preload = preload with { Reads = await ReadAsync(preload.Skills, request.Reader, ct) };
+            // A budget of their own, on top of the turn's token: the reads are not raced against
+            // the judge's deadline, but the turn's first model call waits on this whole task, so
+            // a mount that hangs must not hold it. Whatever answered inside the budget is kept.
+            using var budget = new CancellationTokenSource(
+                TimeSpan.FromMilliseconds(settings.ReadsBudgetMs), timeProvider);
+            using var readsToken = CancellationTokenSource.CreateLinkedTokenSource(ct, budget.Token);
+
+            preload = preload with { Reads = await ReadAsync(preload.Skills, request.Reader, readsToken.Token) };
+            ct.ThrowIfCancellationRequested();
         }
 
         return Published(request, preload);
     }
 
-    // The reads the preloaded skills declare, made now that the judge has answered — on the
-    // turn's token rather than the judge's deadline, because a read is the mount rendering what
-    // it holds, not a round trip to be raced. A read that throws or answers an error envelope is
-    // left out: the body still tells the model to read, and an error the model never asked for
-    // would sit in the conversation as if it had. Never a lost preload.
+    // The reads the preloaded skills declare, made now that the judge has answered — on the turn's
+    // token and the reads' own budget rather than the judge's deadline, because a read is the
+    // mount rendering what it holds, not a round trip to be raced. A read that throws, runs past
+    // the budget or answers an error envelope is left out: the body still tells the model to read,
+    // and an error the model never asked for would sit in the conversation as if it had. Never a
+    // lost preload.
     private static async Task<IReadOnlyList<SkillPreloadRead>> ReadAsync(
         IReadOnlyList<PromptSkill> skills, PreloadFileReader reader, CancellationToken ct)
     {
@@ -97,13 +110,21 @@ public sealed class SkillPreloader(
         {
             foreach (var path in skill.Declaration.PreloadReads)
             {
+                if (ct.IsCancellationRequested)
+                {
+                    return reads;
+                }
+
                 JsonNode? result;
                 try
                 {
                     result = await reader(path, ct);
                 }
-                catch (Exception) when (!ct.IsCancellationRequested)
+                catch (Exception)
                 {
+                    // The budget running out is the same as a mount that refused: this read is
+                    // not in the conversation and the body still asks for it. Which of the two
+                    // cancelled is the caller's question, answered once this returns.
                     continue;
                 }
 

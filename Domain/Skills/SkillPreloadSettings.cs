@@ -24,4 +24,12 @@ public sealed record SkillPreloadSettings
     public double NoneVeto { get; [UsedImplicitly] init; } = 0.9;
 
     public int MaxSkills { get; [UsedImplicitly] init; } = 2;
+
+    // The reads a preloaded skill declares, all of them together. Separate from DeadlineMs and
+    // more generous, because a read is a mount rendering what it holds rather than a round trip
+    // to a service — but bounded all the same: the turn's first model call waits on the preload,
+    // so a mount that hangs would hold the turn with no first token and nothing spoken, which is
+    // the very thing the deadline exists to prevent. A read that misses it is a preload without
+    // it, and the body still tells the model to read.
+    public int ReadsBudgetMs { get; [UsedImplicitly] init; } = 2000;
 }

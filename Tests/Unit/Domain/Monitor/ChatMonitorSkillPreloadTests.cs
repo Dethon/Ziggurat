@@ -142,6 +142,25 @@ public class ChatMonitorSkillPreloadTests
         judge.Asked[1].Questions["skill"].ShouldBeOfType<ChoiceQuestion>().Criteria.Keys.ShouldBe([_home.Name, "none"]);
     }
 
+    // With the feature off — no key, or the flag down — the turn must cost exactly what it did
+    // before the preload existed. The history read is a whole-thread Redis read the first model
+    // call waits on, and asking the preloader is what says whether it is worth paying for.
+    [Fact]
+    public async Task WithThePreloadOff_TheThreadIsNotReadForIt()
+    {
+        var agent = MonitorTestMocks.CreateAgent();
+        agent.Skills = [_home];
+        var judge = new DelayingJudge(new ArmedClock(), TimeSpan.Zero, Sure(_home.Name));
+        var channel = MonitorTestMocks.CreateChannel(messages: MonitorTestMocks.CreateChannelMessage(content: "enciende la luz"));
+        var preloader = new SkillPreloader(judge, _settings with { Enabled = false }, TimeProvider.System);
+        var monitor = Monitor(agent, channel, recall: null, preloader);
+
+        await monitor.Monitor(CancellationToken.None);
+
+        judge.Asked.ShouldBeEmpty();
+        agent.HistoryReads.ShouldBe(0);
+    }
+
     [Theory]
     [InlineData("/clear")]
     [InlineData("/cancel")]

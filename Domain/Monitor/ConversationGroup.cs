@@ -575,6 +575,14 @@ internal sealed class ConversationGroup(
 
         try
         {
+            // Asked before the thread is read: the read is a whole conversation out of Redis that
+            // the turn's first model call waits on, and it exists only to say which skills are
+            // already loaded. With the feature off there is nothing to say it to.
+            if (skillPreloader!.IsOff)
+            {
+                return SkillPreload.NotAsked;
+            }
+
             var skills = state.Agent.GetSkills(state.Thread);
             if (skills.Count == 0)
             {
@@ -582,9 +590,9 @@ internal sealed class ConversationGroup(
             }
 
             var history = await state.Agent.GetHistoryAsync(state.Thread, _turnCt);
-            return await skillPreloader!.PreloadAsync(Request(message, skills, history, state), _turnCt);
+            return await skillPreloader.PreloadAsync(Request(message, skills, history, state), _turnCt);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!_turnCt.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Skill preload failed for conversation {ConversationId}", message.ConversationId);
             var failed = new SkillPreload(SkillPreloadOutcome.Error, []);

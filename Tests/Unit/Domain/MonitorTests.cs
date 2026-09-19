@@ -50,9 +50,14 @@ internal sealed class FakeAiAgent : DisposableAgent
     public override IReadOnlyList<PromptSkill> GetSkills(AgentSession thread) =>
         WarmupSignaled.Task.IsCompletedSuccessfully ? Skills : [];
 
-    public override Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<ChatMessage>>(
+    public int HistoryReads;
+
+    public override Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct)
+    {
+        Interlocked.Increment(ref HistoryReads);
+        return Task.FromResult<IReadOnlyList<ChatMessage>>(
             thread is FakeAgentThread fake ? [.. fake.PersistedMessages] : []);
+    }
 
     public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
     {
