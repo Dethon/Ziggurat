@@ -28,6 +28,15 @@ public class ApprovalReaderJevTests
     // of the two runs. That number, so a wording that loses one more is heard.
     private const int ReAskCeiling = 3;
 
+    // The two prompts the original 32 were labelled and the ceiling measured against. The set now
+    // also carries the shapes the tool actually speaks — a bare tool-name suffix, several tool
+    // names at once, and the "No entendí." re-ask — because the probe measured none of them, and
+    // both questions ask about what the prompt "names" and whether a yes narrows it.
+    private const string VaultPrompt = "¿Apruebas borrar siete notas del vault? Di sí o no.";
+    private const string LightsPrompt = "¿Apruebas apagar las luces del salón y de la cocina? Di sí o no.";
+
+    private static bool IsMeasuredPrompt(string prompt) => prompt is VaultPrompt or LightsPrompt;
+
     private static readonly Lazy<Task<IReadOnlyList<Verdict>>> _run = new(RunAsync);
 
     private sealed record Case(string Prompt, string Answer, string Want);
@@ -57,12 +66,18 @@ public class ApprovalReaderJevTests
         verdicts.Where(v => v.IsWrongAction).Select(v => v.ToString()).ShouldBeEmpty();
     }
 
+    // Only over the prompt the ceiling was measured against. The tool-name and re-ask cases are
+    // held to no wrong action — the test above, which covers every case — but not to a re-ask count
+    // nobody has measured; pinning one from a first run would pin whatever that run happened to do.
     [SkippableFact]
     public async Task OverTheLabelledAnswers_TheReAsksStayUnderTheMeasuredCeiling()
     {
         var verdicts = await _run.Value;
 
-        var reAsks = verdicts.Where(v => v.IsReAsk).Select(v => v.ToString()).ToList();
+        var reAsks = verdicts
+            .Where(v => v.IsReAsk && IsMeasuredPrompt(v.Case.Prompt))
+            .Select(v => v.ToString())
+            .ToList();
         reAsks.Count.ShouldBeLessThanOrEqualTo(ReAskCeiling, "re-asked:\n" + string.Join("\n", reAsks));
     }
 
@@ -74,7 +89,11 @@ public class ApprovalReaderJevTests
     public async Task TheWordListsBlindSpots_AreDecided_AndTheNarrowedYesIsNot()
     {
         var verdicts = await _run.Value;
-        ApprovalResponse of(string answer) => verdicts.Single(v => v.Case.Answer == answer).Reading.Response;
+
+        // Scoped to the two prompts these answers were labelled against: the same words are now
+        // also measured against the tool-name and re-ask prompts, where they are their own cases.
+        ApprovalResponse of(string answer) => verdicts
+            .Single(v => v.Case.Answer == answer && IsMeasuredPrompt(v.Case.Prompt)).Reading.Response;
 
         of("adelante").ShouldBe(ApprovalResponse.Approved);
         of("hazlo").ShouldBe(ApprovalResponse.Approved);
@@ -92,7 +111,7 @@ public class ApprovalReaderJevTests
         var cases = JsonSerializer.Deserialize<List<Case>>(
             await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Integration", "McpChannelVoice", "jev-approval-cases.json")),
             new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
-        cases.Count.ShouldBe(32);
+        cases.Count.ShouldBe(51);
 
         // A few at a time: the set is small and the service is shared.
         using var width = new SemaphoreSlim(4);

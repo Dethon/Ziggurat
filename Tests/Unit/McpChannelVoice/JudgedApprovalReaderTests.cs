@@ -91,6 +91,34 @@ public class JudgedApprovalReaderTests
         reading.DecidedBy.ShouldBe(ApprovalDecider.Agreement);
     }
 
+    // The one place a misjudgment would run a tool the word list refused. A sure yes acts alone
+    // everywhere else; over a denial it re-asks instead, which costs one question on "no hay
+    // problema, hazlo" and buys back the only path where Jev alone could act against a spoken no.
+    [Theory]
+    [InlineData("no")]
+    [InlineData("no, cancel")]
+    [InlineData("stop")]
+    public async Task ASureYes_OverAWordListNo_IsAmbiguous(string answer)
+    {
+        ApprovalGrammarParser.Parse(answer).ShouldBe(ApprovalResponse.Declined);
+
+        var reading = await ReadAsync(0.95, 0.03, answer);
+
+        reading.Response.ShouldBe(ApprovalResponse.Ambiguous);
+        reading.DecidedBy.ShouldBe(ApprovalDecider.Judgment);
+    }
+
+    // The mirror of it: a sure no over a word-list yes still declines, because refusing is the
+    // safe direction and the word list is what a narrowed or sarcastic yes fools.
+    [Fact]
+    public async Task ASureNo_OverAWordListYes_Declines()
+    {
+        var reading = await ReadAsync(0.02, 0.96, "sí");
+
+        reading.Response.ShouldBe(ApprovalResponse.Declined);
+        reading.DecidedBy.ShouldBe(ApprovalDecider.Judgment);
+    }
+
     [Theory]
     [InlineData("thank you.")]
     [InlineData("sí")]
@@ -163,6 +191,21 @@ public class JudgedApprovalReaderTests
         await Should.ThrowAsync<OperationCanceledException>(() => reading.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
+    // A token already cancelled when the reader is entered is the same tear-down. The judge answers
+    // an immediate absence rather than throwing, so nothing on the await path raises for it and the
+    // word list would have decided a turn nobody is waiting for.
+    [Theory]
+    [InlineData(AbsenceReason.Deadline)]
+    [InlineData(AbsenceReason.Unconfigured)]
+    public async Task ACancellationBeforeTheJudgeIsAsked_Propagates_InsteadOfFallingBackToTheWordList(AbsenceReason reason)
+    {
+        using var caller = new CancellationTokenSource();
+        await caller.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => Reader(StubJudge.Absent(reason)).ReadAsync(Prompt, "sí", caller.Token));
+    }
+
     [Fact]
     public async Task Disabled_NeverAsksTheJudge()
     {
@@ -194,6 +237,40 @@ public class JudgedApprovalReaderTests
             .Instructions.ShouldContain("A yes that changes or narrows what was asked is not permission");
         request.Questions[JudgedApprovalReader.DeclinedQuestionId].ShouldBeOfType<NoulQuestion>()
             .Instructions.ShouldContain("refuse it, or tell the assistant not to do it as asked");
+    }
+
+    // A deadline nobody can wait for is a misconfiguration, and it used to throw out of the
+    // CancellationTokenSource constructor on every approval — after the person had already spoken.
+    // The word list answers instead, which is what every other absence does.
+    [Theory]
+    [InlineData(-5)]
+    [InlineData(0)]
+    public async Task ADeadlineThatIsNotAWait_FallsBackToTheWordList_WithoutThrowing(int deadlineMs)
+    {
+        var judge = StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.02), (JudgedApprovalReader.DeclinedQuestionId, 0.98));
+
+        var reading = await Reader(judge, settings: _shipped with { DeadlineMs = deadlineMs })
+            .ReadAsync(Prompt, "sí, claro", CancellationToken.None);
+
+        reading.Response.ShouldBe(ApprovalResponse.Approved);
+        reading.DecidedBy.ShouldBe(ApprovalDecider.WordList);
+    }
+
+    // Bars that cannot separate a yes from a no: every judged answer would clear the first arm and
+    // approve, a spoken "no" included. Refuse the judgment rather than act on a bar nobody meant.
+    [Theory]
+    [InlineData(0.0, 0.1)]
+    [InlineData(0.5, 0.5)]
+    [InlineData(0.4, 0.6)]
+    public async Task BarsThatCannotSeparateAYesFromANo_FallBackToTheWordList(double sure, double counter)
+    {
+        var judge = StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.02), (JudgedApprovalReader.DeclinedQuestionId, 0.98));
+
+        var reading = await Reader(judge, settings: _shipped with { Sure = sure, Counter = counter })
+            .ReadAsync(Prompt, "no", CancellationToken.None);
+
+        reading.Response.ShouldBe(ApprovalResponse.Declined);
+        reading.DecidedBy.ShouldBe(ApprovalDecider.WordList);
     }
 
     [Fact]

@@ -38,8 +38,13 @@ public sealed class JudgedApprovalReader(IJudge judge, ApprovalJudgmentSettings 
 
     public async Task<ApprovalReading> ReadAsync(string prompt, string answer, CancellationToken ct)
     {
+        // Before anything else, because an already-cancelled token never raises on the await path
+        // below: the judge answers an immediate absence rather than throwing, and the word list
+        // would then decide a turn that is being torn down. Same rule as the catch filter's.
+        ct.ThrowIfCancellationRequested();
+
         var wordList = ApprovalGrammarParser.Parse(answer);
-        if (!settings.Enabled || string.IsNullOrWhiteSpace(answer))
+        if (!settings.Enabled || !Usable(settings) || string.IsNullOrWhiteSpace(answer))
         {
             return ByWordList(wordList, TimeSpan.Zero);
         }
@@ -68,6 +73,13 @@ public sealed class JudgedApprovalReader(IJudge judge, ApprovalJudgmentSettings 
             : ByWordList(wordList, latency);
     }
 
+    // Bars a judgment cannot be read against, treated as the feature off rather than acted on. A
+    // deadline that is not a wait threw out of the CancellationTokenSource constructor on every
+    // approval; a Counter at or above Sure made the first arm true for every answer, so a spoken
+    // "no" approved. Both are config errors, and the word list is what this falls back to anyway.
+    private static bool Usable(ApprovalJudgmentSettings settings) =>
+        settings.DeadlineMs > 0 && settings.Counter < settings.Sure;
+
     public static JudgmentRequest Ask(string prompt, string answer) => new(
         new JsonObject { ["prompt"] = prompt, ["answer"] = answer },
         new Dictionary<string, JudgmentQuestion>(StringComparer.Ordinal)
@@ -87,8 +99,16 @@ public sealed class JudgedApprovalReader(IJudge judge, ApprovalJudgmentSettings 
     {
         var (response, decider) = (approved, declined) switch
         {
+            // A sure yes acts alone — except over a word list that heard a refusal. That is the one
+            // combination where a single misjudgment runs a tool the old code refused, and the
+            // person is standing there: a re-ask costs one question on "no hay problema, hazlo" and
+            // is the only thing between a hosted model's bad call and an action nobody permitted.
+            // The mirror is deliberately absent: a sure no over a word-list yes still declines,
+            // because refusing is the safe direction and a narrowed yes is what the list misreads.
             _ when approved >= settings.Sure && declined <= settings.Counter =>
-                (ApprovalResponse.Approved, ApprovalDecider.Judgment),
+                wordList == ApprovalResponse.Declined
+                    ? (ApprovalResponse.Ambiguous, ApprovalDecider.Judgment)
+                    : (ApprovalResponse.Approved, ApprovalDecider.Judgment),
             _ when declined >= settings.Sure && approved <= settings.Counter =>
                 (ApprovalResponse.Declined, ApprovalDecider.Judgment),
             _ when approved >= settings.Lean && declined <= settings.Counter && wordList == ApprovalResponse.Approved =>
