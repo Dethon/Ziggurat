@@ -76,6 +76,7 @@
     <None Include="Integration/Memory/**/*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Integration/Clients/**/*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Integration/McpChannelVoice/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Integration/ExecScreen/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -1,6 +1,6 @@
 # 03 — The screen judges a command
 
-Status: ready-for-agent
+Status: resolved
 
 Spec: `../spec.md` (Decisions: State, Questions, Rule, No verdict, Settings, Metric). Blocked by: 01.
 

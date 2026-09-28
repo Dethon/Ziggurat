@@ -146,6 +146,9 @@ public sealed class MetricsCollectorService(
             case ModalDismissalEvent modal:
                 await ProcessModalDismissalAsync(modal, db);
                 break;
+            case ExecScreenEvent screen:
+                await ProcessExecScreenAsync(screen, db);
+                break;
         }
     }
 
@@ -453,6 +456,33 @@ public sealed class MetricsCollectorService(
         await Task.WhenAll(tasks);
 
         await hubContext.Clients.All.SendAsync("OnSkillPreload", evt);
+    }
+
+    // Counted per reach and outcome, so the totals hash answers "how many sandbox execs were asked
+    // about today" — the screen's false-positive rate — beside how many outpost execs were. No
+    // dashboard page reads these yet; the events are kept for re-reading the bars.
+    private async Task ProcessExecScreenAsync(ExecScreenEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:execscreen:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        var tasks = new List<Task>
+        {
+            db.SortedSetAddAsync(sortedSetKey, json, evt.Timestamp.ToUnixTimeMilliseconds()),
+            db.HashIncrementAsync(totalsKey, $"execscreen:{evt.Reach}:{evt.Outcome}:count"),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry)
+        };
+
+        if (evt.DurationMs is { } durationMs)
+        {
+            tasks.Add(db.HashIncrementAsync(totalsKey, "execscreen:latency:count"));
+            tasks.Add(db.HashIncrementAsync(totalsKey, "execscreen:latency:totalMs", durationMs));
+        }
+
+        await Task.WhenAll(tasks);
     }
 
     private async Task ProcessVoiceAsync(VoiceEvent evt, IDatabase db)
