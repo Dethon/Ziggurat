@@ -127,6 +127,22 @@ public class ToolApprovalChatClientExecScreenTests
         request.AgentId.ShouldBe("jonas");
     }
 
+    // A call the person is asked about anyway is not screened: asking is already what a flag
+    // would produce, and a judgment nobody acts on is a cost with no use.
+    [Fact]
+    public async Task AnExecNothingWhitelists_IsAskedWithoutBeingScreened()
+    {
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+        var screen = new ScriptedExecScreen(_ => ExecScreenVerdict.Ask(ExecScreenCodes.NotRequested));
+        var inner = new FakeChatClient();
+        inner.SetNextResponse(CreateToolCallResponse(Exec, "c1", ExecArgs("/laptop", "ls")));
+
+        await AskAsync(Client(inner, handler, screen, whitelist: []), ExecFunction());
+
+        screen.Screened.ShouldBeEmpty();
+        handler.RequestedApprovals.ShouldHaveSingleItem().ShouldHaveSingleItem().Screen.ShouldBeNull();
+    }
+
     // "Approve and remember" stops routine prompts; it never switches the screen off.
     [Fact]
     public async Task ARememberedExec_IsStillScreened()

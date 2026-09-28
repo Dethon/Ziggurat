@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -130,7 +131,7 @@ public sealed class ExecScreen(
             ["request"] = new JsonArray([.. RecentRequests(request.Messages).Select(t => (JsonNode)JsonValue.Create(t))]),
             ["command"] = request.Command,
             ["working_directory"] = request.WorkingDirectory,
-            ["machine"] = request.Reach == ShellReach.Host ? HostMachine : ContainedMachine
+            ["machine"] = Machine(request.Reach)
         },
         _questions,
         request.TurnModel);
@@ -179,7 +180,7 @@ public sealed class ExecScreen(
     {
         AgentId = request.AgentId,
         ConversationId = request.ConversationId,
-        Reach = request.Reach == ShellReach.Host ? "host" : "contained",
+        Reach = JsonNamingPolicy.CamelCase.ConvertName(request.Reach.ToString()),
         Outcome = screened.Verdict.Asks ? ExecScreenOutcomes.Asked : ExecScreenOutcomes.Ran,
         Codes = screened.Verdict.Codes,
         ServesRequest = screened.Probabilities?.Serves,
@@ -190,6 +191,14 @@ public sealed class ExecScreen(
         InputTokens = screened.Judgment?.Usage.InputTokens,
         Cost = screened.Judgment?.Usage.Cost,
         Model = screened.Judgment?.Model
+    };
+
+    // How the judge is told where the command runs; the question names `machine`.
+    private static string Machine(ShellReach reach) => reach switch
+    {
+        ShellReach.Contained => ContainedMachine,
+        ShellReach.Host => HostMachine,
+        _ => throw new ArgumentOutOfRangeException(nameof(reach), reach, "A reach the screen cannot describe")
     };
 
     public static string WireAbsence(AbsenceReason reason) => reason switch

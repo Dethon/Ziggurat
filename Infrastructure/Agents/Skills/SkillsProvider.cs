@@ -141,10 +141,7 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
                 : await _preloader.PreloadAsync(
                     new SkillPreloadRequest(request.Text, skills, _historyOf(context.Session).Concat(requestMessages))
                     {
-                        // A worker's request carries no patch of its own, only its parent turn's
-                        // context — and that turn may have been addressed to the local box.
-                        ConfigPatchModel = request.GetConfigPatch()?.Model
-                                           ?? request.GetConversationContext()?.ConfigPatchModel,
+                        ConfigPatchModel = request.GetTurnModel(),
                         AgentId = context.Agent.Name,
                         Reader = SkillPreloadReads.ReaderOver(_registryOf(context.Session))
                     },

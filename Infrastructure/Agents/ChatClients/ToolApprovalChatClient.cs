@@ -131,10 +131,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             return null;
         }
 
-        // The model the turn asked for, read as the preload reads it: a worker's request carries
-        // no patch of its own, only its parent turn's context.
-        var lastUser = context.Messages.LastOrDefault(m => m.Role == ChatRole.User);
-        var turnModel = lastUser?.GetConfigPatch()?.Model ?? lastUser?.GetConversationContext()?.ConfigPatchModel;
+        var turnModel = context.Messages.LastOrDefault(m => m.Role == ChatRole.User)?.GetTurnModel();
 
         return await _execScreen.ScreenAsync(
             new ExecScreenRequest(
