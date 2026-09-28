@@ -1,6 +1,6 @@
 # 04 — An unasked exec is screened first
 
-Status: ready-for-agent
+Status: resolved
 
 Spec: `../spec.md` (Decisions: Only exec, Every unasked path, No ambient state, Escalating).
 Blocked by: 02, 03.

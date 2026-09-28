@@ -50,6 +50,27 @@ public class FileSystemToolFeatureTests
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__move");
     }
 
+    // The exec the session offers carries where each call would run, off this session's own mounts,
+    // so the approval client can screen a call without guessing which session it came from.
+    [Fact]
+    public void GetTools_Exec_CarriesTheReachOfTheMountEachPathLandsOn()
+    {
+        var registry = new VirtualFileSystemRegistry();
+        registry.Mount(new FileSystemMount("sandbox", "/sandbox", "s") { ShellReach = ShellReach.Contained }, Mock.Of<IFileSystemBackend>());
+        registry.Mount(new FileSystemMount("laptop", "/laptop", "l") { ShellReach = ShellReach.Host }, Mock.Of<IFileSystemBackend>());
+        registry.Mount(new FileSystemMount("ha", "/ha", "h"), Mock.Of<IFileSystemBackend>());
+        var config = new FeatureConfig(EnabledTools: new HashSet<string>(["exec", "read"], StringComparer.OrdinalIgnoreCase));
+
+        var tools = new FileSystemToolFeature(registry).GetTools(config).ToList();
+
+        var reach = tools.Single(t => t.Name == "domain__filesystem__exec").GetService<ExecReach>().ShouldNotBeNull();
+        reach.Of("/sandbox/home/sandbox_user").ShouldBe(ShellReach.Contained);
+        reach.Of("/Laptop").ShouldBe(ShellReach.Host);
+        reach.Of("/ha").ShouldBeNull();
+        reach.Of("/nowhere").ShouldBeNull();
+        tools.Single(t => t.Name == "domain__filesystem__file_read").GetService<ExecReach>().ShouldBeNull();
+    }
+
     [Fact]
     public void Prompt_SaysAnUnmountedPathIsAnsweredRatherThanHunted()
     {
