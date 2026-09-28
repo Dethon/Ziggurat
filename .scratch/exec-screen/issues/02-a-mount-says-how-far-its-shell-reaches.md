@@ -1,6 +1,6 @@
 # 02 — A mount says how far its shell reaches
 
-Status: ready-for-agent
+Status: resolved
 
 Spec: `../spec.md` (Decisions: Where a command runs is a mount claim).
 

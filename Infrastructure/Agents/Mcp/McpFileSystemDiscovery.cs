@@ -78,22 +78,14 @@ internal static class McpFileSystemDiscovery
                     .OfType<TextResourceContents>()
                     .Select(c => c.Text));
 
-                var metadata = JsonSerializer.Deserialize<FileSystemResourceMetadata>(text,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-                if (metadata is null || string.IsNullOrEmpty(metadata.Name) || string.IsNullOrEmpty(metadata.MountPoint))
+                var mount = ReadMount(text, capabilities);
+                if (mount is null)
                 {
                     logger.LogWarning("Invalid filesystem resource metadata at {Uri}", resource.Uri);
                     return ((FileSystemMount Mount, McpFileSystemBackend Backend)?)null;
                 }
 
-                var mount = new FileSystemMount(metadata.Name, metadata.MountPoint, metadata.Description ?? "")
-                {
-                    Capabilities = capabilities,
-                    Workspace = metadata.Workspace,
-                    IsLandingTarget = metadata.LandingTarget
-                };
-                var backend = new McpFileSystemBackend(client, metadata.Name, advertised, logger);
+                var backend = new McpFileSystemBackend(client, mount.Name, advertised, logger);
                 return (mount, backend);
             }
             catch (Exception ex)
@@ -130,8 +122,37 @@ internal static class McpFileSystemDiscovery
             .Select(o => o.Capability!)
             .ToList();
 
+    // The mount a filesystem resource body describes, or null for a body that names no mount.
+    internal static FileSystemMount? ReadMount(string json, IReadOnlyList<string> capabilities)
+    {
+        var metadata = JsonSerializer.Deserialize<FileSystemResourceMetadata>(json, _metadataJson);
+        if (metadata is null || string.IsNullOrEmpty(metadata.Name) || string.IsNullOrEmpty(metadata.MountPoint))
+        {
+            return null;
+        }
+
+        return new FileSystemMount(metadata.Name, metadata.MountPoint, metadata.Description ?? "")
+        {
+            Capabilities = capabilities,
+            Workspace = metadata.Workspace,
+            IsLandingTarget = metadata.LandingTarget,
+            ShellReach = ParseShellReach(metadata.ShellReach)
+        };
+    }
+
+    // A reach this agent does not know reads as none rather than refusing the mount: the mount
+    // still works, and a screen that cannot place a shell does not pretend to.
+    private static ShellReach? ParseShellReach(string? published) =>
+        Enum.TryParse<ShellReach>(published, ignoreCase: true, out var reach) && Enum.IsDefined(reach)
+            ? reach
+            : null;
+
+    private static readonly JsonSerializerOptions _metadataJson = new() { PropertyNameCaseInsensitive = true };
+
     // LandingTarget is not nullable: a server that predates the claim publishes no field, which
-    // binds to false, and false is what a mount that never said so must mean.
+    // binds to false, and false is what a mount that never said so must mean. ShellReach is read as
+    // a string for the same reason in the other direction: absent, null and unknown all mean none.
     private record FileSystemResourceMetadata(
-        string Name, string MountPoint, string? Description, string? Workspace, bool LandingTarget);
+        string Name, string MountPoint, string? Description, string? Workspace, bool LandingTarget,
+        string? ShellReach);
 }

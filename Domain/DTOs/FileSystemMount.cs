@@ -15,4 +15,10 @@ public record FileSystemMount(string Name, string MountPoint, string Description
     // commands: an outpost is a filesystem on somebody's real machine and may well execute, and a
     // person's files still belong in the sandbox (ADR 0025, refined).
     public bool IsLandingTarget { get; init; }
+
+    // How far a command run through this mount's exec reaches, or null where it has no shell. The
+    // exec screen asks this rather than the mount's name or its capabilities: a sandbox command
+    // runs in the deployment's own container, an outpost's on a person's own computer, and /ha's
+    // exec is a service call with no shell behind it.
+    public ShellReach? ShellReach { get; init; }
 }

@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Prompts;
 using Domain.Tools.Config;
@@ -130,6 +131,24 @@ public class FileSystemServerConformanceTests
             ["outpost"] = false
         };
 
+    // How far each mount's shell reaches, which is what the exec screen asks before a command runs
+    // unasked: a contained shell runs in a container that is part of the deployment, a host shell
+    // on somebody's own machine. A separate claim from being able to execute — /ha executes service
+    // calls and has no shell at all — and written out for the same reason the others are. The row
+    // here is a plain outpost, so null; the executing one is pinned in OutpostExecTests.
+    private static readonly IReadOnlyDictionary<string, ShellReach?> _shellReaches =
+        new Dictionary<string, ShellReach?>(StringComparer.Ordinal)
+        {
+            ["timers"] = null,
+            ["schedules"] = null,
+            ["print-queue"] = null,
+            ["ha"] = null,
+            ["media"] = null,
+            ["vault"] = null,
+            ["sandbox"] = ShellReach.Contained,
+            ["outpost"] = null
+        };
+
     // The shipped server, not a re-registration of it: each row drives the ConfigModule that runs in
     // production, so a module that never called AddFileSystemTools<T>() or AddFileSystemResource<T>()
     // fails here. Hand-registering the registrar instead — which this test used to do — can only
@@ -159,9 +178,12 @@ public class FileSystemServerConformanceTests
         var configured = (FileSystemBackendBase)provider.GetRequiredService(backendType);
         configured.Workspace.ShouldBe(_workspaces[name], serverId);
         configured.IsLandingTarget.ShouldBe(_landingTargets[name], serverId);
+        configured.ShellReach.ShouldBe(_shellReaches[name], serverId);
         var describedMount = Published(FileSystemServerResource.Describe(configured));
         describedMount.Workspace.ShouldBe(_workspaces[name], serverId);
         describedMount.LandingTarget.ShouldBe(_landingTargets[name], serverId);
+        McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), [])!
+            .ShellReach.ShouldBe(_shellReaches[name], serverId);
 
         // The backend's own declaration of the same set: what it overrides is what the server
         // registers is what the mount publishes.
