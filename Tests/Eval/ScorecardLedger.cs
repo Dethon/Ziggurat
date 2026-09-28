@@ -47,7 +47,8 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
             {
                 Kinds = result.Kinds,
                 Loaders = result.Loaders,
-                PreloadOutcomes = result.PreloadOutcomes
+                PreloadOutcomes = result.PreloadOutcomes,
+                Screens = result.Screens
             });
         }
     }

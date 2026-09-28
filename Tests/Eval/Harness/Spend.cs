@@ -10,14 +10,17 @@ public sealed record Spend(
     decimal Cost, long InputTokens, long? CachedInputTokens, long OutputTokens, int Requests,
     // Jev's, kept apart from the model's: the judge answers no cost, so its price is configured
     // and its tokens are the number a description edit moves.
-    decimal PreloadCost = 0m, long PreloadInputTokens = 0, int PreloadRequests = 0)
+    decimal PreloadCost = 0m, long PreloadInputTokens = 0, int PreloadRequests = 0,
+    // The exec screen's, kept apart from both: a different use of the same judge, whose bill a
+    // wording or a bar change moves on its own.
+    decimal ScreenCost = 0m, long ScreenInputTokens = 0, int ScreenRequests = 0)
 {
     public static Spend Nothing { get; } = new(0m, 0, null, 0, 0);
 
     // Whether anything was paid for at all. Model requests alone used to answer this, so a
     // scenario whose provider failed before its first response dropped the judgments it had
     // already paid Jev for: no spend key on the row, and the scenario left out of the pass total.
-    public bool Paid => Requests > 0 || PreloadRequests > 0;
+    public bool Paid => Requests > 0 || PreloadRequests > 0 || ScreenRequests > 0;
 
     public static Spend Of(TokenUsageEvent usage) =>
         new(usage.Cost, usage.InputTokens, usage.CachedInputTokens, usage.OutputTokens, 1);
@@ -27,6 +30,13 @@ public sealed record Spend(
     public static Spend OfPreload(SkillPreloadEvent preload) =>
         preload.InputTokens is { } tokens
             ? new Spend(0m, 0, null, 0, 0, preload.Cost ?? 0m, tokens, 1)
+            : Nothing;
+
+    // One screened exec at what the provider charged. A call that got no verdict because nothing
+    // was sent — no key, the local box — asked nothing and costs nothing.
+    public static Spend OfScreen(ExecScreenEvent screened) =>
+        screened.InputTokens is { } tokens
+            ? new Spend(0m, 0, null, 0, 0, ScreenCost: screened.Cost ?? 0m, ScreenInputTokens: tokens, ScreenRequests: 1)
             : Nothing;
 
     // How much of the prompt the provider served from cache, over the requests that said. Null
@@ -44,7 +54,10 @@ public sealed record Spend(
         left.Requests + right.Requests,
         left.PreloadCost + right.PreloadCost,
         left.PreloadInputTokens + right.PreloadInputTokens,
-        left.PreloadRequests + right.PreloadRequests);
+        left.PreloadRequests + right.PreloadRequests,
+        left.ScreenCost + right.ScreenCost,
+        left.ScreenInputTokens + right.ScreenInputTokens,
+        left.ScreenRequests + right.ScreenRequests);
 
     public static Spend Sum(IEnumerable<Spend> spends) => spends.Aggregate(Nothing, (a, b) => a + b);
 }

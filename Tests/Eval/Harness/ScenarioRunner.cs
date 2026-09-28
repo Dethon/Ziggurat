@@ -81,7 +81,8 @@ public static class ScenarioRunner
             Kinds = [.. taken.Select(reading => reading.Kind).OfType<FailureKind>()],
             Loaders = [.. taken.Select(reading => reading.Loader)],
             Spend = Spend.Sum(taken.Select(reading => reading.Spend)),
-            PreloadOutcomes = Summed(taken.Select(reading => reading.PreloadOutcomes))
+            PreloadOutcomes = Summed(taken.Select(reading => reading.PreloadOutcomes)),
+            Screens = ExecScreenTally.Sum(taken.Select(reading => reading.Screens))
         };
 
         // The run's number travels with it so its reading lands in its own slot; the exception it
@@ -136,6 +137,9 @@ public sealed record RunReading(
     public Loader Loader { get; init; } = Loader.None;
 
     public IReadOnlyDictionary<string, int> PreloadOutcomes { get; init; } = new Dictionary<string, int>();
+
+    // What the exec screen was asked over the run, and what it put to the (auto-approving) person.
+    public ExecScreenTally Screens { get; init; } = ExecScreenTally.None;
 }
 
 public sealed record ScenarioResult(
@@ -171,4 +175,7 @@ public sealed record ScenarioResult(
     public Spend Spend { get; init; } = Spend.Nothing;
 
     public int RuleIgnored => Kinds.Count(kind => kind == FailureKind.RuleIgnored);
+
+    // Over every run taken.
+    public ExecScreenTally Screens { get; init; } = ExecScreenTally.None;
 }

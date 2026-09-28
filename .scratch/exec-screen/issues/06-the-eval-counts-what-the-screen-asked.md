@@ -1,6 +1,6 @@
 # 06 — The eval counts what the screen asked
 
-Status: ready-for-agent
+Status: resolved
 
 Spec: `../spec.md` (Decisions: Eval). Blocked by: 04.
 
