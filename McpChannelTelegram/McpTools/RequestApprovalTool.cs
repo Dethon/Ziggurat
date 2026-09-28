@@ -65,7 +65,7 @@ public sealed class RequestApprovalTool
         return await resultTask;
     }
 
-    private static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
+    internal static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
     {
         var sb = new StringBuilder();
         var toolNames = string.Join(", ", requests.Select(r => r.ToolName.Split("__").Last()));
@@ -91,6 +91,13 @@ public sealed class RequestApprovalTool
             }
 
             sb.AppendLine($"<blockquote expandable>{details.ToString().TrimEnd()}</blockquote>");
+        }
+
+        // Why the exec screen put this to the person, last so it sits right above the keyboard.
+        var reason = ExecScreenReasons.English([.. requests.SelectMany(r => r.Screen ?? []).Distinct()]);
+        if (reason is not null)
+        {
+            sb.AppendLine($"<i>Why you're asked: {HtmlEncode(reason)}</i>");
         }
 
         return sb.ToString().TrimEnd();

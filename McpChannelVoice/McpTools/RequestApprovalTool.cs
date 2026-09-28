@@ -78,9 +78,15 @@ public sealed class RequestApprovalTool
         var toolList = string.Join(", ", p.Requests.Select(r => r.ToolName.Split("__").Last()));
         var prompt = $"¿Apruebas {toolList}? Di sí o no.";
 
+        // Why the exec screen asked, spoken once before the question and never folded into it: the
+        // reader is handed the question alone, because that is the prompt its probe measured, and
+        // the re-ask repeats the question rather than the reason.
+        var reason = ScreenReason(p.Requests);
+
         for (var attempt = 1; attempt <= 2; attempt++)
         {
-            if (!await SpeakAndAwaitAsync(session, prompt, tts, settings, cancellationToken))
+            var spoken = attempt == 1 && reason is not null ? $"{reason} {prompt}" : prompt;
+            if (!await SpeakAndAwaitAsync(session, spoken, tts, settings, cancellationToken))
             {
                 // Satellite disconnected mid-approval; abandon rather than opening a capture on a
                 // dead session that would block until the request is cancelled.
@@ -127,6 +133,19 @@ public sealed class RequestApprovalTool
 
         return "rejected";
     }
+
+    // One short sentence, for the first reason the screen gave: a spoken prompt is waited on in
+    // silence, and the first code is the one that matters most.
+    internal static string? ScreenReason(IReadOnlyList<ToolApprovalRequest> requests) =>
+        requests.SelectMany(r => r.Screen ?? []).Select(code => code switch
+            {
+                ExecScreenCodes.NotRequested => "Esto no parece parte de lo que pediste.",
+                ExecScreenCodes.Destructive => "Borraría o cambiaría algo que ya está en tu ordenador.",
+                ExecScreenCodes.SendsOut => "Enviaría datos de tu ordenador a un servidor.",
+                ExecScreenCodes.Unjudged => "Se ejecuta en tu ordenador y no he podido comprobarlo.",
+                _ => null
+            })
+            .FirstOrDefault(sentence => sentence is not null);
 
     private static async Task<bool> SpeakAndAwaitAsync(
         SatelliteSession session, string text, ITextToSpeech tts, VoiceSettings settings,

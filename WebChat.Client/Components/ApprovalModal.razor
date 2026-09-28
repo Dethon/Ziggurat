@@ -20,6 +20,11 @@
                 {
                     <div class="tool-request">
                         <div class="tool-name">@FormatToolName(request.ToolName)</div>
+                        @* Why the exec screen asked, as text: a request it had no part in shows no line. *@
+                        @if (ExecScreenReasons.English(request.Screen) is { } reason)
+                        {
+                            <div class="approval-screen">@reason</div>
+                        }
                         @if (request.Arguments.Count > 0)
                         {
                             <div class="tool-arguments">

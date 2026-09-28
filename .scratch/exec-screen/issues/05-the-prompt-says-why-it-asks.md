@@ -1,6 +1,6 @@
 # 05 — The prompt says why it asks
 
-Status: ready-for-agent
+Status: resolved
 
 Spec: `../spec.md` (Decisions: The reason travels as codes). Blocked by: 04.
 

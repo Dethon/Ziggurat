@@ -129,4 +129,28 @@ public class RequestApprovalToolTests
         ex.Message.ShouldContain("kitchen-satellite");
         ex.Message.ShouldContain("conversation identity");
     }
+
+    // The screen's reason is a line in the message above the keyboard; a request the screen had
+    // no part in reads exactly as before.
+    [Fact]
+    public void ApprovalMessage_WithScreenCodes_SaysWhy()
+    {
+        var request = new ToolApprovalRequest(null, "domain__filesystem__exec", new Dictionary<string, object?> { ["command"] = "rm -rf ~" })
+        {
+            Screen = [ExecScreenCodes.Destructive]
+        };
+
+        var message = RequestApprovalTool.FormatApprovalMessage([request]);
+
+        message.ShouldEndWith("<i>Why you're asked: It would delete or change something already on your computer.</i>");
+    }
+
+    [Fact]
+    public void ApprovalMessage_WithoutScreen_IsUnchanged()
+    {
+        var request = new ToolApprovalRequest(null, "mcp__server__tool", new Dictionary<string, object?> { ["q"] = "x" });
+
+        RequestApprovalTool.FormatApprovalMessage([request]).ShouldBe(
+            $"<b>🔧 Approval Required:</b> <code>tool</code>{Environment.NewLine}<blockquote expandable><i>q:</i> x</blockquote>");
+    }
 }
