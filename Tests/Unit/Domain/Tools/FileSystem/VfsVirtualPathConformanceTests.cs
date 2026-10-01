@@ -219,7 +219,9 @@ public class VfsVirtualPathConformanceTests
             {
                 Entries = [spell("docs/note.md"), spell("docs/sub/"), spell("elsewhere/secret.md")],
                 Truncated = false,
-                Total = 3
+                Total = 3,
+                // The executable marks name entries too, so they are translated like them.
+                Executables = [spell("docs/note.md")]
             }));
 
         public override Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path,

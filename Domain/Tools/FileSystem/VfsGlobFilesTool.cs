@@ -42,7 +42,11 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
         // than echoed. That yields one uniform full-virtual-path format across every filesystem,
         // directly reusable as input to read/edit/info.
         var node = result
-            .Map(glob => glob with { Entries = glob.Entries.Select(resolution.ToVirtualPath).ToList() })
+            .Map(glob => glob with
+            {
+                Entries = glob.Entries.Select(resolution.ToVirtualPath).ToList(),
+                Executables = glob.Executables?.Select(resolution.ToVirtualPath).ToList()
+            })
             .ToNode();
 
         // Said only when true, and said where the numbers are: a walk that stopped before the tree

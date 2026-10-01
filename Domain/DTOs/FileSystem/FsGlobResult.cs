@@ -18,4 +18,10 @@ public sealed record FsGlobResult
     public int EntriesScanned { get; init; }
 
     public bool BudgetReached { get; init; }
+
+    // The entries that are action files, spelled exactly as they are in Entries so the tool
+    // translates both the same way. A parallel list rather than a mark on each entry: an entry is
+    // a path ready for the next tool, and a decorated one would not be. Null (left off the wire)
+    // on every backend without actions, so their answers are unchanged.
+    public IReadOnlyList<string>? Executables { get; init; }
 }

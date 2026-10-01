@@ -15,6 +15,14 @@ public static class FsError
     public static FsResult<T> ReadOnly<T>(string path) where T : class =>
         Fail<T>(ToolError.Codes.UnsupportedOperation, $"{path} is read-only");
 
+    // An action file runs and is never opened: reading it, writing it or removing it is refused on
+    // every route, with the one call that does work named. The name is the file's own, because a
+    // real shell will need `./` in front of it once exec runs in the sandbox.
+    public static FsResult<T> ExecutableOnly<T>(string path, string actionName) where T : class =>
+        Fail<T>(ToolError.Codes.UnsupportedOperation,
+            $"{path} is executable-only: an action file runs, it cannot be read or written.",
+            $"Run it with exec ./{actionName} from its directory (--help, where the action takes arguments, lists them).");
+
     public static FsResult<T> AlreadyExists<T>(string message) where T : class =>
         Fail<T>(ToolError.Codes.AlreadyExists, message);
 
