@@ -1,18 +1,18 @@
-using Domain.Outposts;
+using Domain.Security;
 using Shouldly;
 
-namespace Tests.Unit.Domain.Outposts;
+namespace Tests.Unit.Domain.Security;
 
-// The one gate, presented in both directions and compared in one place. Anyone who can reach the
-// agent's port could otherwise attach a machine to somebody else's assistant; anyone who can reach
-// the machine's port could otherwise use it through an assistant that never invited it. An unset
-// secret has to mean "nobody", not "everybody".
-public class OutpostSecretTests
+// The one comparison every shared-secret gate uses, pinned here on the outpost's: anyone who can
+// reach the agent's port could otherwise attach a machine to somebody else's assistant; anyone who
+// can reach the machine's port could otherwise use it through an assistant that never invited it.
+// An unset secret has to mean "nobody", not "everybody".
+public class SharedSecretTests
 {
     [Fact]
     public void TheConfiguredSecretPresentedAsABearerToken_IsAccepted()
     {
-        OutpostSecret.Matches("Bearer s3cret", "s3cret").ShouldBeTrue();
+        SharedSecret.Matches("Bearer s3cret", "s3cret").ShouldBeTrue();
     }
 
     [Theory]
@@ -25,7 +25,7 @@ public class OutpostSecretTests
     [InlineData("Basic s3cret")]
     public void AnythingElse_IsRefused(string? presented)
     {
-        OutpostSecret.Matches(presented, "s3cret").ShouldBeFalse();
+        SharedSecret.Matches(presented, "s3cret").ShouldBeFalse();
     }
 
     // A deployment that never set the secret refuses every machine. The alternative — no secret
@@ -37,6 +37,6 @@ public class OutpostSecretTests
     [InlineData(null)]
     public void WithNoSecretConfigured_NothingIsAccepted(string? presented)
     {
-        OutpostSecret.Matches(presented, "").ShouldBeFalse();
+        SharedSecret.Matches(presented, "").ShouldBeFalse();
     }
 }

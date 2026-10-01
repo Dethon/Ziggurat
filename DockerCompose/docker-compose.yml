@@ -715,6 +715,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      AGENTAPI__SHAREDSECRET: ${AGENTAPI__SHAREDSECRET}
     networks:
       - jackbot
     depends_on:

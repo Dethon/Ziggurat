@@ -24,6 +24,7 @@ public record AgentSettings
     public ReadImageConfiguration ReadImages { get; init; } = new();
     public RetentionSettings Retention { get; init; } = new();
     public OutpostConfiguration Outposts { get; init; } = new();
+    public AgentApiConfiguration AgentApi { get; init; } = new();
     public LemonadeChatConfiguration LemonadeChat { get; init; } = new();
     public TypeSafeOptions TypeSafe { get; init; } = new();
     public SkillPreloadSettings SkillPreload { get; init; } = new();
@@ -45,6 +46,14 @@ public record OutpostConfiguration
     // arrives as an environment variable rather than as configuration or a flag. Empty means no
     // machine may attach: an unset secret refuses every registration rather than accepting any,
     // because a deployment that forgot to set it must not be one anyone on the network can join.
+    public string SharedSecret { get; [UsedImplicitly] init; } = "";
+}
+
+// The custom-agent registration API's gate. A secret, so it arrives as an environment variable
+// and nowhere else; empty refuses every call, because a deployment that forgot to set it must not
+// be one anyone reaching the public proxy can register agents on.
+public record AgentApiConfiguration
+{
     public string SharedSecret { get; [UsedImplicitly] init; } = "";
 }
 

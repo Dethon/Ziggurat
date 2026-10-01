@@ -1,5 +1,5 @@
 using System.Net;
-using Domain.Outposts;
+using Domain.Security;
 using McpServerOutpost.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -24,7 +24,7 @@ var app = builder.Build();
 // secret the machine presents when it registers, compared by the same rule the hub compares it by.
 app.Use(async (context, next) =>
 {
-    if (!OutpostSecret.Matches(context.Request.Headers.Authorization.ToString(), settings.SharedSecret))
+    if (!SharedSecret.Matches(context.Request.Headers.Authorization.ToString(), settings.SharedSecret))
     {
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         return;
