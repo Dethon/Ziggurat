@@ -32,3 +32,10 @@ Then the full path: start the stack, and from WebChat ask jonas to run `ls /vaul
 - Under the profile, a tmpfs on `/mnt` and a bind mount of `/etc` are still refused.
 
 The profile is `DockerCompose/apparmor/ziggurat-sandbox`: `docker-default`'s rules with `deny mount` replaced by exactly the launcher's three — `options=(rprivate) -> /`, `fstype=tmpfs options=(rw, nosuid, nodev, noexec) tmpfs -> /run/vfs/`, `fstype=fuse options=(rw, nosuid, nodev) ziggurat-vfs -> /vfs/`. Compose names it in `security_opt`, and so does `SandboxContainer.AsCompose()`; a host without AppArmor (the dev box) ignores the option. It is **installed on prod** at `/etc/apparmor.d/ziggurat-sandbox` and loaded, so it survives a reboot; on a new host, run the install lines in its header before `up`, or the sandbox container refuses to start.
+
+**2026-10-01, later — user namespaces closed, on two layers.** Asked how secure the result was, I found that under the profile above a command (PUID, no capabilities) could still run `unshare -Ur` and be root in a user namespace of its own: Docker relaxes its seccomp filter for a container holding SYS_ADMIN, for every process in it, and Ubuntu's `apparmor_restrict_unprivileged_userns=1` covers only unconfined processes. On master's container (no SYS_ADMIN) the same command is refused. Fixed twice, so neither layer is the only one:
+
+- The profile declares `abi <abi/4.0>,` and `deny userns,`. On prod, a plain user under it alone gets `Permission denied`.
+- The launcher installs a seccomp filter on every command after no-new-privs (`sandbox-runtime/src/seccomp.rs`): `unshare`/`clone` with `CLONE_NEWUSER` are EPERM, `clone3` is ENOSYS (glibc falls back to `clone`, as on a default Docker container), another ABI is ENOSYS. On prod unconfined it alone gets `Operation not permitted`, and it is what holds on the dev box, which has no AppArmor. Pinned by `SandboxLauncherE2ETests.ACommand_CannotUnshareOrMount` and `ACommand_StillMakesThreadsAndProcesses`, and a forked-child test in the crate.
+
+The updated profile is reinstalled on prod. The full launcher path passes again under it, with threads working and no denials.

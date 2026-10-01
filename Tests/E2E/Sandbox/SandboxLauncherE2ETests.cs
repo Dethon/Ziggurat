@@ -74,7 +74,10 @@ public class SandboxLauncherE2ETests(SandboxE2EFixture fixture)
     }
 
     // The container holds SYS_ADMIN for FUSE; a command must not get it back, neither by asking
-    // for a namespace of its own nor through the one setuid binary that could mount.
+    // for a namespace of its own nor through the one setuid binary that could mount. A user
+    // namespace needs no capability to make — Docker's filter allows it once the container holds
+    // SYS_ADMIN — and is root inside, which is where most kernel escalations start; on master's
+    // container it was refused, and the launcher's own filter keeps it so on every host.
     [SkippableFact]
     public async Task ACommand_CannotUnshareOrMount()
     {
@@ -84,6 +87,8 @@ public class SandboxLauncherE2ETests(SandboxE2EFixture fixture)
 
         var result = await ExecAsync(client, """
             unshare -m true 2>/dev/null && echo "unshared"
+            unshare -Ur true 2>/dev/null && echo "user namespace"
+            unshare -Urm sh -c 'mount -t tmpfs none /tmp' 2>/dev/null && echo "mounted in a user namespace"
             [ -u /usr/bin/fusermount3 ] && echo "setuid fusermount3"
             mkdir -p /tmp/m && fusermount3 -o ro /tmp/m 2>/dev/null && echo "mounted"
             echo done
@@ -91,9 +96,33 @@ public class SandboxLauncherE2ETests(SandboxE2EFixture fixture)
 
         var stdout = Stdout(result);
         stdout.ShouldNotContain("unshared");
+        stdout.ShouldNotContain("user namespace");
         stdout.ShouldNotContain("setuid fusermount3");
         stdout.ShouldNotContain("mounted");
         stdout.ShouldContain("done");
+    }
+
+    // The filter answers clone3 ENOSYS, because its flags sit behind a pointer a filter cannot
+    // read; glibc then falls back to clone, whose flags it can. Threads and process spawning are
+    // what that fallback carries, so both must still work.
+    [SkippableFact]
+    public async Task ACommand_StillMakesThreadsAndProcesses()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+
+        var result = await ExecAsync(client, """
+            python3 -c "
+            import subprocess, threading
+            out = []
+            t = threading.Thread(target=lambda: out.append(subprocess.run(['echo', 'spawned'], capture_output=True, text=True).stdout.strip()))
+            t.start(); t.join()
+            print('thread', out[0])
+            "
+            """, cts.Token);
+
+        Stdout(result).ShouldContain("thread spawned");
     }
 
     [SkippableFact]

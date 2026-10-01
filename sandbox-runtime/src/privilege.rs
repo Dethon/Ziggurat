@@ -27,7 +27,8 @@ fn check(result: libc::c_int) -> io::Result<()> {
 /// no-new-privs. The bounding set is load-bearing, not tidiness: the container holds SYS_ADMIN for
 /// FUSE, and a child keeps the container's bounding set, so a setuid-root binary run later would
 /// get it back (spike finding 1). No-new-privs closes the same door for every setuid binary at
-/// once, whatever the image happens to ship.
+/// once, whatever the image happens to ship. Last, the syscall filter (`seccomp`): no user
+/// namespace, which needs no capability to make and is root inside.
 ///
 /// # Safety
 /// Call only between fork and exec, as `CommandExt::pre_exec` does.
@@ -43,6 +44,7 @@ pub unsafe fn become_identity(identity: &Identity) -> io::Result<()> {
         // From root to anyone else, setuid clears the permitted and effective sets.
         check(libc::setuid(identity.uid))?;
         check(libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))?;
+        crate::seccomp::refuse_user_namespaces()?;
         libc::umask(identity.umask);
         if let Some(cwd) = &identity.cwd {
             check(libc::chdir(cwd.as_ptr()))?;

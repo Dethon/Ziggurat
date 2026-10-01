@@ -12,6 +12,8 @@ pub mod launcher;
 #[cfg(target_os = "linux")]
 pub mod privilege;
 #[cfg(target_os = "linux")]
+pub mod seccomp;
+#[cfg(target_os = "linux")]
 pub mod served;
 #[cfg(target_os = "linux")]
 pub mod unit;

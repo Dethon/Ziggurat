@@ -8,6 +8,11 @@
 #   sudo install -m 644 DockerCompose/apparmor/ziggurat-sandbox /etc/apparmor.d/
 #   sudo apparmor_parser -r -W /etc/apparmor.d/ziggurat-sandbox
 # A host without AppArmor ignores the option.
+#
+# abi 4.0 is what makes `userns` a rule; the launcher's own syscall filter (sandbox-runtime's
+# seccomp.rs) refuses the same thing to commands on hosts with no AppArmor at all.
+abi <abi/4.0>,
+
 #include <tunables/global>
 
 profile ziggurat-sandbox flags=(attach_disconnected,mediate_deleted) {
@@ -17,6 +22,9 @@ profile ziggurat-sandbox flags=(attach_disconnected,mediate_deleted) {
   capability,
   file,
   umount,
+  # Nothing in the container needs a user namespace, and one is root inside: the usual first step
+  # of a kernel escalation. Docker allows making one once the container holds SYS_ADMIN.
+  deny userns,
   signal (receive) peer=unconfined,
   signal (receive) peer=runc,
   signal (receive) peer=crun,
