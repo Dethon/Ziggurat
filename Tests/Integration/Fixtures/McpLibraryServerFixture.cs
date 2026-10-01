@@ -75,7 +75,8 @@ public class McpLibraryServerFixture : IAsyncLifetime
                     },
                     DownloadLocation = DownloadPath,
                     BaseLibraryPath = LibraryPath,
-                    RedisConnectionString = "unused"
+                    RedisConnectionString = "unused",
+                    Mcp = McpTestSecret.Gate
                 },
                 ToolResponse.Create)
             .WithTools<McpFileSearchTool>()

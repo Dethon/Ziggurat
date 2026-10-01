@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text.Json.Nodes;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.Security;
 using Infrastructure.Agents.Mcp;
 using Mcp.Hosting;
 using Microsoft.Extensions.AI;
@@ -20,7 +21,10 @@ namespace Tests.Integration.Agents;
 // backend stamps the turn's conversation context the way a directly-called tool does.
 public class McpFileSystemBackendMetaTests
 {
-    private sealed record ProbeSettings(string Name);
+    private sealed record ProbeSettings(string Name) : IMcpHostSettings
+    {
+        public McpGateSettings Mcp => McpTestSecret.Gate;
+    }
 
     private static readonly PropertyInfo _currentContext =
         typeof(FunctionInvokingChatClient).GetProperty("CurrentContext", BindingFlags.Public | BindingFlags.Static)!;

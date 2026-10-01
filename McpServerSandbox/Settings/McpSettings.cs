@@ -1,7 +1,13 @@
+using Domain.Security;
+using Mcp.Hosting;
+
 namespace McpServerSandbox.Settings;
 
-public record McpSettings
+public record McpSettings : IMcpHostSettings
 {
+    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    public McpGateSettings Mcp { get; init; } = new();
+
     public required string ContainerRoot { get; init; }
 
     // The persistent workspace. Nothing reads it today: the command runner stopped when exec

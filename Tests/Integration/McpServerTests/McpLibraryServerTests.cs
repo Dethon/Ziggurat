@@ -34,10 +34,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     private async Task<McpClientTool> GetToolAsync(string name)
     {
         var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
+            McpTestSecret.Transport(fixture.McpEndpoint),
             cancellationToken: CancellationToken.None);
 
         return (await client.ListToolsAsync()).Single(t => t.Name == name);
@@ -47,10 +44,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     public async Task McpServer_ExposesSingleMediaFilesystemResource()
     {
         var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
+            McpTestSecret.Transport(fixture.McpEndpoint),
             cancellationToken: CancellationToken.None);
 
         var resources = await client.ListResourcesAsync(cancellationToken: CancellationToken.None);
@@ -68,10 +62,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     {
         // Arrange
         var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
+            McpTestSecret.Transport(fixture.McpEndpoint),
             cancellationToken: CancellationToken.None);
 
         var downloadTool = (await client.ListToolsAsync()).Single(t => t.Name == "download_file");
@@ -186,10 +177,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         fixture.CreateLibraryFile(Path.Combine("GlobTest", "readme.txt"));
 
         var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
+            McpTestSecret.Transport(fixture.McpEndpoint),
             cancellationToken: CancellationToken.None);
 
         // Act
@@ -226,10 +214,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         fixture.CreateLibraryFile(Path.Combine(srcDir, srcFileName), "content");
 
         var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
+            McpTestSecret.Transport(fixture.McpEndpoint),
             cancellationToken: CancellationToken.None);
 
         var sourcePath = Path.Combine(fixture.LibraryPath, srcDir, srcFileName);

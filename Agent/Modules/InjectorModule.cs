@@ -65,6 +65,8 @@ public static class InjectorModule
             return services
                 .AddSingleton(settings.AgentDefaults)
                 .AddSingleton(settings.Retention)
+                // Read by the agent factory and applied to every configured endpoint it composes.
+                .AddSingleton(settings.Mcp)
                 .AddRedis(settings.Redis, settings.Retention)
                 .AddMetricsPublishing("agent")
                 .AddSingleton<ChatThreadResolver>()
@@ -154,8 +156,12 @@ public static class InjectorModule
             {
                 var channelId = endpoint.ChannelId;
                 var attachOnly = endpoint.AttachOnly;
+                // A channel server's /mcp is gated like every other deployment server's, so each
+                // connection — and every reconnect it makes — presents the deployment secret.
                 services = services.AddSingleton<IChannelConnection>(sp =>
-                    new McpChannelConnection(channelId, attachOnly, sp.GetService<ILogger<McpChannelConnection>>()));
+                    new McpChannelConnection(
+                        channelId, attachOnly, sp.GetService<ILogger<McpChannelConnection>>(),
+                        mcpSecret: settings.Mcp.SharedSecret));
             }
 
             return services

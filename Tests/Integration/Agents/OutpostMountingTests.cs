@@ -115,7 +115,7 @@ public class OutpostMountingTests(OutpostMachinesFixture machines, McpVaultServe
         ]);
         var access = Access(registry);
         var composed = await OutpostEndpoints.ComposeAsync(
-            [McpServerEndpoint.Configured(vault.McpEndpoint)], access, usesOutposts: true,
+            [McpServerEndpoint.Configured(vault.McpEndpoint, McpTestSecret.Value)], access, usesOutposts: true,
             logger: null, CancellationToken.None);
 
         await using var session = await BuildAsync(composed);
@@ -143,7 +143,7 @@ public class OutpostMountingTests(OutpostMachinesFixture machines, McpVaultServe
         ]);
         var access = Access(registry);
         var composed = await OutpostEndpoints.ComposeAsync(
-            [McpServerEndpoint.Configured(vault.McpEndpoint)], access, usesOutposts: true,
+            [McpServerEndpoint.Configured(vault.McpEndpoint, McpTestSecret.Value)], access, usesOutposts: true,
             logger: null, CancellationToken.None);
 
         await using var session = await BuildAsync(composed);
@@ -171,7 +171,7 @@ public class OutpostMountingTests(OutpostMachinesFixture machines, McpVaultServe
         var access = Access(registry);
 
         var parent = await OutpostEndpoints.ComposeAsync(
-            [McpServerEndpoint.Configured(machines.Laptop)], access, usesOutposts: true,
+            [McpServerEndpoint.Configured(machines.Laptop, McpTestSecret.Value)], access, usesOutposts: true,
             logger: null, CancellationToken.None);
         await using (var parentSession = await BuildAsync(parent))
         {
@@ -202,7 +202,9 @@ public class OutpostMountingTests(OutpostMachinesFixture machines, McpVaultServe
     private static OutpostRegistration Registered(string name, string endpoint) =>
         new() { Name = name, Endpoint = endpoint };
 
-    private static OutpostAccess Access(StubRegistry registry) => new(registry, "s3cret");
+    // The machines standing in for outposts here are served through the hosting library, so their
+    // /mcp is gated by the suite's secret, which plays each machine's own secret for these tests.
+    private static OutpostAccess Access(StubRegistry registry) => new(registry, McpTestSecret.Value);
 
     private AgentSpec SubAgentSpec(bool parentUsesOutposts, bool ownDefinitionUsesOutposts) =>
         AgentSpecProjection.ForSubAgent(
@@ -216,12 +218,13 @@ public class OutpostMountingTests(OutpostMachinesFixture machines, McpVaultServe
             },
             new SpawnContext("conv-1", "test-user", [], parentUsesOutposts),
             new OpenRouterConfig { ApiUrl = "http://test", ApiKey = "test-key" },
+            mcpSecret: McpTestSecret.Value,
             logger: null);
 
     private Task<ComposedEndpoints> ComposeAsync(
         bool usesOutposts, params OutpostRegistration[] live) =>
         OutpostEndpoints.ComposeAsync(
-            [McpServerEndpoint.Configured(vault.McpEndpoint)],
+            [McpServerEndpoint.Configured(vault.McpEndpoint, McpTestSecret.Value)],
             Access(new StubRegistry(live)),
             usesOutposts,
             logger: null,

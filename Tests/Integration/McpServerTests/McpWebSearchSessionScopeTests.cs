@@ -49,7 +49,8 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
             CapSolver = null,
             // The host starts the heartbeat, which dials the metrics connection: unreachable but
             // well-formed, so it hands back a disconnected multiplexer instead of failing start-up.
-            RedisConnectionString = McpServerRegistrations.UnreachableRedis
+            RedisConnectionString = McpServerRegistrations.UnreachableRedis,
+            Mcp = McpTestSecret.Gate
         });
         builder.Services.RemoveAll<IWebBrowser>();
         builder.Services.AddSingleton<IWebBrowser>(_browser);
@@ -163,7 +164,7 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
     }
 
     private Task<McpClient> CreateClientAsync() => McpClient.CreateAsync(
-        new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(_endpoint) }));
+        McpTestSecret.Transport(_endpoint));
 
     private static async Task<CallToolResult> Browse(
         McpClientTool browse, string agentId, string conversationId)

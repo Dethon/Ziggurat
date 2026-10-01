@@ -18,10 +18,7 @@ public class EvalSandboxTests
         await using var sandbox = await EvalSandbox.StartAsync();
 
         await using var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(sandbox.Endpoint)
-            }));
+            McpTestSecret.Transport(sandbox.Endpoint));
         var tools = await client.ListToolsAsync();
 
         tools.Select(t => t.Name).ShouldContain("fs_exec");

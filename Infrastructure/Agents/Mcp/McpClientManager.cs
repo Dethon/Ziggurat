@@ -1,6 +1,6 @@
 using Domain.Contracts;
-using Domain.Outposts;
 using Domain.Prompts;
+using Domain.Security;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
@@ -122,7 +122,7 @@ internal sealed class McpClientManager : IAsyncDisposable
                     // present the same shared secret: the machine when it registers, and this when
                     // it dials the machine back.
                     AdditionalHeaders = endpoint.Secret is { } secret
-                        ? new Dictionary<string, string> { ["Authorization"] = OutpostSecret.Header(secret) }
+                        ? new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(secret) }
                         : null
                 }),
                 new McpClientOptions

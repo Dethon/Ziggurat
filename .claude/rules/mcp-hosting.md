@@ -30,8 +30,24 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   the plain call. A `required` member that bound to null fails startup naming it; **null only, never
   empty** — six shipped servers carry required members that ship as `""` and are filled from secrets
   (ServiceBus, Telegram, WebSearch, HomeAssistant, Idealista, Library).
-- **`IServiceCollection.AddMcpHost(settings)`** is the three things every server has: the settings
-  singleton, the server and the HTTP transport. All fourteen use it.
+- **`IServiceCollection.AddMcpHost(settings)`** is the four things every server has: the settings
+  singleton, the server, the HTTP transport and the gate on `/mcp`. All fourteen use it.
+- **Every `/mcp` asks for a secret, and the host installs the gate, not the server.** A tool
+  believes whatever `ConversationContext` a call's `_meta` claims, so a call must present
+  `Authorization: Bearer <secret>` first. `AddMcpHost` constrains its settings to
+  `IMcpHostSettings` — a server cannot be hosted without saying which secret guards it — and
+  registers `McpSecretGate`, an `IStartupFilter` that answers 401 ahead of routing, comparing with
+  `Domain/Security/SharedSecret.cs` (the one comparison every shared-secret gate uses). A deployment
+  server's settings carry `McpGateSettings Mcp`, bound from `MCP__SHAREDSECRET` — one deployment-wide
+  value, which the agent binds under the same name and presents on every configured endpoint
+  (`AgentSpecProjection`, agents and workers alike) and every channel connection. The **outpost**
+  answers the member with its own `SharedSecret` and never sees the deployment's. **The gate guards
+  the `/mcp` path and nothing else**: a server's other endpoints are called by browsers, Home
+  Assistant and satellites, and the ones that need a gate carry their own token, so every server
+  must map its endpoint at exactly `"/mcp"` (`McpServerTableTests` reads it off the source). An
+  unset secret refuses every call. The SDK's legacy SSE endpoints are off, so streamable HTTP is the
+  one transport; `McpSecretGateTests` pins all three verbs, and a test that boots a server through
+  the hosting library presents `Tests/McpTestSecret`.
 - **`AddToolServer(settings, errorResult?)`** is the host plus the call-tool error filter, for the
   nine servers that offer the agent things to call. Being a tool server and being a channel server
   are independent, so a dual-role server calls `AddToolServer` and then `AddChannelServer`.
@@ -55,5 +71,5 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   rethrows, so a second ask is a no-op and the first ask's error shape wins.
 - **`Tests/Integration/McpServers/McpServerRegistrations.cs` is the one server table.** Fourteen
   rows, each driving the real `ConfigModule`; `McpServerContractTests` asserts every server resolves
-  its settings as a singleton, registered the host and has exactly one call-tool filter. A new server
-  is one new row.
+  its settings as a singleton, registered the host, has exactly one call-tool filter and exactly one
+  `/mcp` gate holding the secret its settings carry. A new server is one new row.

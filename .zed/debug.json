@@ -8,6 +8,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/Agent",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_ENVIRONMENT": "Local",
       "ASPNETCORE_URLS": "http://localhost:5000"
     },
@@ -56,6 +57,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpServerLibrary",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_URLS": "http://localhost:6001"
     },
     "build": {
@@ -71,6 +73,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpServerVault",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_URLS": "http://localhost:6002"
     },
     "build": {
@@ -86,6 +89,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpServerWebSearch",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_URLS": "http://localhost:6003"
     },
     "build": {
@@ -101,6 +105,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpServerIdealista",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_URLS": "http://localhost:6005"
     },
     "build": {
@@ -116,6 +121,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpServerHomeAssistant",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_URLS": "http://localhost:6006"
     },
     "build": {
@@ -131,6 +137,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpServerSandbox",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_URLS": "http://localhost:6004"
     },
     "build": {
@@ -146,6 +153,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpChannelSignalR",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_ENVIRONMENT": "Local",
       "ASPNETCORE_URLS": "http://localhost:6010"
     },
@@ -162,6 +170,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpChannelTelegram",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_URLS": "http://localhost:6011"
     },
     "build": {
@@ -177,6 +186,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpChannelServiceBus",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_URLS": "http://localhost:6012"
     },
     "build": {
@@ -192,6 +202,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpChannelVoice",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_ENVIRONMENT": "Local",
       "ASPNETCORE_URLS": "http://localhost:6015",
       "RedisConnectionString": "localhost:6379",
@@ -213,6 +224,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpServerScheduling",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_URLS": "http://localhost:6013",
       "RedisConnectionString": "localhost:6379"
     },
@@ -229,6 +241,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpServerPrinter",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_URLS": "http://localhost:6014",
       "SPOOLPATH": "$ZED_WORKTREE_ROOT/McpServerPrinter/.spool"
     },
@@ -245,6 +258,7 @@
     "cwd": "$ZED_WORKTREE_ROOT/McpServerTimers",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
+      "MCP__SHAREDSECRET": "local-mcp-secret",
       "ASPNETCORE_URLS": "http://localhost:6016",
       "VoiceHub__BaseUrl": "http://localhost:6015"
     },

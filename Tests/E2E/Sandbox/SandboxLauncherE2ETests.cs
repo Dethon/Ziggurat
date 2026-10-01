@@ -45,6 +45,7 @@ public class SandboxLauncherE2ETests(SandboxE2EFixture fixture)
         var stdout = Stdout(result);
         stdout.ShouldNotContain(SandboxE2EFixture.PlantedSecret);
         stdout.ShouldNotContain(SandboxE2EFixture.PlantedSecretName);
+        stdout.ShouldNotContain(McpTestSecret.Value);
         stdout.ShouldContain($"HOME={SandboxE2EFixture.ContainerWorkspace}");
     }
 

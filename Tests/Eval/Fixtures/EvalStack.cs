@@ -153,7 +153,7 @@ public sealed class EvalStack : IAsyncDisposable
         var port = TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
-        builder.Services.ConfigureTimers(new TimerSettings());
+        builder.Services.ConfigureTimers(new TimerSettings { Mcp = McpTestSecret.Gate });
 
         // After the server's own registration, so the last word is the pinned one. The hub is
         // replaced at the transport rather than at the adapter: the adapters, their token header
@@ -213,7 +213,8 @@ public sealed class EvalStack : IAsyncDisposable
         builder.Services.ConfigureMcp(new VaultSettings
         {
             VaultPath = VaultPath,
-            AllowedExtensions = [".md", ".txt", ".json", ".yaml", ".yml"]
+            AllowedExtensions = [".md", ".txt", ".json", ".yaml", ".yml"],
+            Mcp = McpTestSecret.Gate
         });
 
         return await StartAsync(builder, port);
@@ -245,7 +246,8 @@ public sealed class EvalStack : IAsyncDisposable
             {
                 BaseUrl = Music.BaseUrl,
                 Token = FakeMusicAssistantServer.ValidToken
-            }
+            },
+            Mcp = McpTestSecret.Gate
         });
 
         // The typed client keeps its name from the interface it is registered against, so this
@@ -278,7 +280,8 @@ public sealed class EvalStack : IAsyncDisposable
             {
                 ApiKey = "eval",
                 ApiUrl = EvalWeb.SearchApiUrl
-            }
+            },
+            Mcp = McpTestSecret.Gate
         });
 
         // The typed client keeps its name from the interface it is registered against.
@@ -317,7 +320,8 @@ public sealed class EvalStack : IAsyncDisposable
             // Long enough that nothing dispatches during a turn. The clock is pinned anyway, so a
             // due schedule is one the scenario armed rather than one the turn created.
             DispatchIntervalSeconds = 3600,
-            Delivery = new DeliverySettings { DefaultDeliverTo = ["signalr"] }
+            Delivery = new DeliverySettings { DefaultDeliverTo = ["signalr"] },
+            Mcp = McpTestSecret.Gate
         });
         builder.Services.Replace(ServiceDescriptor.Singleton(_ => (TimeProvider)Clock));
 
@@ -353,17 +357,19 @@ public sealed class EvalStack : IAsyncDisposable
         return $"http://localhost:{port}/mcp";
     }
 
-    // The shipped configuration, with three edits and no fourth: the secrets come from user
+    // The shipped configuration, with four edits and no fifth: the secrets come from user
     // secrets rather than from the environment the container would have had, nothing dials a
     // channel — the boundary of an eval is the agent, and what a channel does with a reply
-    // afterwards is covered by the channel and end-to-end suites — and the model is whatever
-    // ZIGGURAT_EVAL_MODEL asks for, so a pass against another model needs no edit to the file.
+    // afterwards is covered by the channel and end-to-end suites — the model is whatever
+    // ZIGGURAT_EVAL_MODEL asks for, so a pass against another model needs no edit to the file, and
+    // the deployment secret is the one every server this stack hosts is gated behind.
     // Bound once per process, so an edit to the file mid-pass reaches no stack of it.
     private static AgentSettings ShippedSettings(string redisConnectionString) =>
         EvalModel.FromEnvironment(ShippedDefinition.Repository.Settings) with
         {
             Redis = new RedisConfiguration { ConnectionString = redisConnectionString },
-            ChannelEndpoints = []
+            ChannelEndpoints = [],
+            Mcp = McpTestSecret.Gate
         };
 
     // The agent itself, built by the real factory. Only the configured endpoint urls are rewritten,

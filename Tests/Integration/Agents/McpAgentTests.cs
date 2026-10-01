@@ -34,7 +34,7 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
     {
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(10) }, TimeProvider.System);
         return new McpAgent(
-            TestAgentSpec.Default with { McpServerEndpoints = [McpServerEndpoint.Configured(mcpFixture.McpEndpoint)] },
+            TestAgentSpec.Default with { McpServerEndpoints = [McpServerEndpoint.Configured(mcpFixture.McpEndpoint, McpTestSecret.Value)] },
             llmClient,
             stateStore,
             NoOpMetricsPublisher.Instance,

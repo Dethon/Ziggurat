@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Mcp.Hosting;
 using Shouldly;
 
 namespace Tests.Integration.McpServers;
@@ -70,6 +71,24 @@ public class McpServerTableTests
             .ShouldBeEmpty(
                 $"{id} must leave binding and configuration sources to BindSettings<T>; these files "
                 + "read configuration or add a source of their own");
+
+    // The host gates /mcp by path, ahead of routing, so a server that mapped its MCP endpoint
+    // anywhere else would be serving it ungated. The registration tests cannot see where Program.cs
+    // maps it; its source text can.
+    private static readonly Regex _mapsMcpAtTheGatedPath = new(@"\bMapMcp\s*\(\s*""/mcp""\s*\)");
+
+    private static readonly Regex _mapMcpCall = new(@"\bMapMcp\s*\(");
+
+    [Theory]
+    [MemberData(nameof(Servers))]
+    public void EveryServer_MapsMcpAtThePathTheGateGuards(string id)
+    {
+        var mappings = Sources(id).Values.Sum(source => _mapMcpCall.Matches(source).Count);
+        var gated = Sources(id).Values.Sum(source => _mapsMcpAtTheGatedPath.Matches(source).Count);
+
+        mappings.ShouldBe(1, $"{id} must map its MCP endpoint exactly once");
+        gated.ShouldBe(1, $"{id} must map its MCP endpoint at \"{McpSecretGate.Path}\", the path the gate guards");
+    }
 
     private static IReadOnlyList<string> SolutionServerProjects() =>
         _solutionProject

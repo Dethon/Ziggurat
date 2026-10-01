@@ -22,7 +22,7 @@ public class QualifiedMcpToolMetaTests(MetaEchoServerFixture fixture) : IClassFi
     public async Task InvokeCore_WithCurrentContext_DeliversConversationContextAsMeta()
     {
         await using var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(fixture.McpEndpoint) }));
+            McpTestSecret.Transport(fixture.McpEndpoint));
         var tool = (await client.ListToolsAsync()).Single(t => t.Name == "echo_meta");
         var qualified = new QualifiedMcpTool("echo", tool);
 

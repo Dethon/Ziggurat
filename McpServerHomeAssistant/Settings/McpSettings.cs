@@ -1,9 +1,14 @@
 using Domain.DTOs;
+using Domain.Security;
+using Mcp.Hosting;
 
 namespace McpServerHomeAssistant.Settings;
 
-public record McpSettings
+public record McpSettings : IMcpHostSettings
 {
+    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    public McpGateSettings Mcp { get; init; } = new();
+
     public required HomeAssistantConfiguration HomeAssistant { get; init; }
 
     // Optional: Music Assistant's own API, used only for the podcast-episode listing Home Assistant

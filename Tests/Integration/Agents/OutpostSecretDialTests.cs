@@ -1,5 +1,5 @@
 using System.Net;
-using Domain.Outposts;
+using Domain.Security;
 using Infrastructure.Agents;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -23,8 +23,8 @@ public sealed class OutpostSecretDialTests : IAsyncLifetime
     private IHost _machine = null!;
     private string _endpoint = null!;
 
-    // The gate the outpost's own Program.cs installs, in front of the MCP endpoint, comparing with
-    // the rule both ends share.
+    // A gate in front of the MCP endpoint, as the outpost's /mcp has, comparing with the rule both
+    // ends share. Hand-written here so the dial is tested apart from the hosting library.
     public async Task InitializeAsync()
     {
         var port = TestPort.GetAvailable();
@@ -44,7 +44,7 @@ public sealed class OutpostSecretDialTests : IAsyncLifetime
         var app = builder.Build();
         app.Use(async (context, next) =>
         {
-            if (!OutpostSecret.Matches(context.Request.Headers.Authorization.ToString(), Secret))
+            if (!SharedSecret.Matches(context.Request.Headers.Authorization.ToString(), Secret))
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 return;

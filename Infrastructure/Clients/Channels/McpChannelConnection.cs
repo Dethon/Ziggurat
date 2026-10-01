@@ -5,6 +5,7 @@ using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Security;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -20,7 +21,11 @@ public sealed class McpChannelConnection(
     ILogger<McpChannelConnection>? logger = null,
     // How often the run below asks whether the link is still there. The supervision cadence belongs
     // to the thing being supervised, which is why it moved here with the run.
-    TimeSpan? healthCheckInterval = null)
+    TimeSpan? healthCheckInterval = null,
+    // The deployment secret a channel server's /mcp asks for, presented on the first dial and on
+    // every reconnect, since both go through ConnectAsync. Null presents nothing, which a gated
+    // server refuses — the dial then fails and is retried like any other.
+    string? mcpSecret = null)
     : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
 {
     private static readonly TimeSpan _defaultHealthCheckInterval = TimeSpan.FromSeconds(30);
@@ -229,7 +234,13 @@ public sealed class McpChannelConnection(
         await StopPumpAsync();
 
         var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }),
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri(endpoint),
+                AdditionalHeaders = string.IsNullOrEmpty(mcpSecret)
+                    ? null
+                    : new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(mcpSecret) }
+            }),
             new McpClientOptions
             {
                 ClientInfo = new Implementation

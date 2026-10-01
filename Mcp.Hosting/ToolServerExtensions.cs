@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -7,9 +8,10 @@ namespace Mcp.Hosting;
 // The two calls that sit beside AddChannelServer, so a reader comparing them sees exactly what a
 // channel adds.
 //
-// AddMcpHost is the three things every MCP server in the repo has, whatever else it does: its own
-// settings available to everything it registers, a server, and an HTTP transport. AddToolServer is
-// that plus the error rule, for a server that offers the agent things to call.
+// AddMcpHost is the four things every MCP server in the repo has, whatever else it does: its own
+// settings available to everything it registers, a server, an HTTP transport, and the secret gate
+// on /mcp. AddToolServer is that plus the error rule, for a server that offers the agent things to
+// call.
 //
 // Being a tool server and being a channel server are independent facts about a server, which is why
 // these are separate calls rather than one call with a flag: a dual-role server asks for both, and
@@ -17,13 +19,14 @@ namespace Mcp.Hosting;
 public static class ToolServerExtensions
 {
     public static IMcpServerBuilder AddMcpHost<TSettings>(this IServiceCollection services, TSettings settings)
-        where TSettings : class
+        where TSettings : class, IMcpHostSettings
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(settings);
 
         return services
             .AddSingleton(settings)
+            .AddSingleton<IStartupFilter>(new McpSecretGate(settings.Mcp.SharedSecret))
             .AddMcpServer()
             .WithHttpTransport();
     }
@@ -35,6 +38,6 @@ public static class ToolServerExtensions
         this IServiceCollection services,
         TSettings settings,
         Func<Exception, CallToolResult>? errorResult = null)
-        where TSettings : class =>
+        where TSettings : class, IMcpHostSettings =>
         services.AddMcpHost(settings).AddCallToolErrorFilter(errorResult);
 }

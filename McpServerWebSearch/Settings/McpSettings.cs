@@ -1,10 +1,15 @@
+using Domain.Security;
 using Domain.Tools.Web;
 using Infrastructure.Judgments;
+using Mcp.Hosting;
 
 namespace McpServerWebSearch.Settings;
 
-public record McpSettings
+public record McpSettings : IMcpHostSettings
 {
+    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    public McpGateSettings Mcp { get; init; } = new();
+
     public required BraveSearchConfiguration BraveSearch { get; init; }
     public CapSolverConfiguration? CapSolver { get; init; }
     public CamoufoxConfiguration? Camoufox { get; init; }

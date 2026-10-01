@@ -38,8 +38,8 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
                 DisplayName = "test-multi-fs-agent",
                 McpServerEndpoints =
                 [
-                    McpServerEndpoint.Configured(fsFixture.LibraryEndpoint),
-                    McpServerEndpoint.Configured(fsFixture.NotesEndpoint)
+                    McpServerEndpoint.Configured(fsFixture.LibraryEndpoint, McpTestSecret.Value),
+                    McpServerEndpoint.Configured(fsFixture.NotesEndpoint, McpTestSecret.Value)
                 ],
                 FilesystemEnabledTools = _allFileSystemTools
             },

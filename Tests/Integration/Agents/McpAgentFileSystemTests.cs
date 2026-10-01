@@ -36,7 +36,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
             TestAgentSpec.Default with
             {
                 DisplayName = "test-fs-agent",
-                McpServerEndpoints = [McpServerEndpoint.Configured(vaultFixture.McpEndpoint)],
+                McpServerEndpoints = [McpServerEndpoint.Configured(vaultFixture.McpEndpoint, McpTestSecret.Value)],
                 FilesystemEnabledTools = _allFileSystemTools
             },
             llmClient,

@@ -38,7 +38,8 @@ public class McpSandboxServerFixture : IAsyncLifetime
             HomeDir = HomeDir,
             DefaultTimeoutSeconds = 30,
             MaxTimeoutSeconds = 120,
-            OutputCapBytes = 65536
+            OutputCapBytes = 65536,
+            Mcp = McpTestSecret.Gate
         };
 
         var builder = WebApplication.CreateBuilder();

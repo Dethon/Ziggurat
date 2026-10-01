@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Outposts;
+using Domain.Security;
 
 namespace Agent.App;
 
@@ -8,7 +9,7 @@ namespace Agent.App;
 // registry owns every decision — how long an entry lives, what is published when — so these stay
 // one-liners, exactly as the custom-agent registration endpoint beside them is.
 //
-// The gate is OutpostSecret's, shared with the machine's own: anyone who can reach this port could
+// The gate is SharedSecret's, shared with the machine's own: anyone who can reach this port could
 // otherwise attach a machine to somebody else's assistant.
 public static class OutpostApi
 {
@@ -16,7 +17,7 @@ public static class OutpostApi
     {
         var outposts = app.MapGroup("/api/outposts");
         outposts.AddEndpointFilter(async (context, next) =>
-            OutpostSecret.Matches(
+            SharedSecret.Matches(
                 context.HttpContext.Request.Headers.Authorization.ToString(), sharedSecret)
                 ? await next(context)
                 : Results.Unauthorized());

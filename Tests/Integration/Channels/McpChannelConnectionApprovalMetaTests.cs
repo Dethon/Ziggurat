@@ -3,6 +3,7 @@ using System.Reflection;
 using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Security;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Clients.Channels;
 using Mcp.Hosting;
@@ -21,7 +22,10 @@ namespace Tests.Integration.Channels;
 // place that rides is the turn's conversation context.
 public class McpChannelConnectionApprovalMetaTests
 {
-    private sealed record ProbeSettings(string Name);
+    private sealed record ProbeSettings(string Name) : IMcpHostSettings
+    {
+        public McpGateSettings Mcp => McpTestSecret.Gate;
+    }
 
     private static readonly PropertyInfo _currentContext =
         typeof(FunctionInvokingChatClient).GetProperty("CurrentContext", BindingFlags.Public | BindingFlags.Static)!;
@@ -32,7 +36,7 @@ public class McpChannelConnectionApprovalMetaTests
         await using var server = await InMemoryMcpServer.StartAsync(services => services
             .AddToolServer(new ProbeSettings("probe"))
             .WithTools<ModelEchoingApprovalTools>());
-        await using var connection = new McpChannelConnection("test");
+        await using var connection = new McpChannelConnection("test", mcpSecret: McpTestSecret.Value);
         await connection.ConnectAsync(server.Endpoint, CancellationToken.None);
         var context = new ConversationContext(
             "jack", "conv-1", "fran", new ReplyTarget("signalr", "conv-1"), "lemonade/qwen3");

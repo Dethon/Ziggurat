@@ -10,10 +10,7 @@ public class McpAgentSandboxTests(McpSandboxServerFixture fixture) : IClassFixtu
 {
     private async Task<McpClient> ConnectAsync(CancellationToken ct)
     {
-        var transport = new HttpClientTransport(new HttpClientTransportOptions
-        {
-            Endpoint = new Uri(fixture.McpEndpoint)
-        });
+        var transport = McpTestSecret.Transport(fixture.McpEndpoint);
         return await McpClient.CreateAsync(transport, cancellationToken: ct);
     }
 

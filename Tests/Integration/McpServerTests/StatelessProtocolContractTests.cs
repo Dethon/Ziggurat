@@ -41,7 +41,7 @@ public class StatelessProtocolContractTests
             "vault",
             services => services.ConfigureMcp(new VaultSettings.McpSettings
             {
-                VaultPath = "/tmp", AllowedExtensions = []
+                VaultPath = "/tmp", AllowedExtensions = [], Mcp = McpTestSecret.Gate
             })
         },
         {
@@ -52,21 +52,24 @@ public class StatelessProtocolContractTests
                 HomeDir = "/tmp/home",
                 DefaultTimeoutSeconds = 5,
                 MaxTimeoutSeconds = 10,
-                OutputCapBytes = 1024
+                OutputCapBytes = 1024,
+                Mcp = McpTestSecret.Gate
             })
         },
         {
             "websearch",
             services => services.ConfigureMcp(new WebSearchSettings.McpSettings
             {
-                BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" }
+                BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" },
+                Mcp = McpTestSecret.Gate
             })
         },
         {
             "idealista",
             services => services.ConfigureMcp(new IdealistaSettings.McpSettings
             {
-                Idealista = new IdealistaSettings.IdealistaConfiguration { ApiKey = "x", ApiSecret = "x" }
+                Idealista = new IdealistaSettings.IdealistaConfiguration { ApiKey = "x", ApiSecret = "x" },
+                Mcp = McpTestSecret.Gate
             })
         },
         {
@@ -76,16 +79,17 @@ public class StatelessProtocolContractTests
                 HomeAssistant = new HaSettings.HomeAssistantConfiguration
                 {
                     BaseUrl = "http://ha.invalid", Token = "x"
-                }
+                },
+                Mcp = McpTestSecret.Gate
             })
         },
         {
             "printer",
-            services => services.ConfigurePrinter(new PrinterSettings { PrinterUri = "ipp://printer.invalid" })
+            services => services.ConfigurePrinter(new PrinterSettings { PrinterUri = "ipp://printer.invalid", Mcp = McpTestSecret.Gate })
         },
         {
             "timers",
-            services => services.ConfigureTimers(new TimerSettings())
+            services => services.ConfigureTimers(new TimerSettings { Mcp = McpTestSecret.Gate })
         }
     };
 
@@ -99,10 +103,7 @@ public class StatelessProtocolContractTests
         try
         {
             await using var client = await McpClient.CreateAsync(
-                new HttpClientTransport(new HttpClientTransportOptions
-                {
-                    Endpoint = new Uri($"http://localhost:{port}/mcp")
-                }));
+                McpTestSecret.Transport($"http://localhost:{port}/mcp"));
 
             client.NegotiatedProtocolVersion.ShouldBe(
                 "2026-07-28", $"{serverId} must stay on the stateless protocol");

@@ -12,7 +12,7 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
 {
     private async Task<McpClient> ConnectAsync() =>
         await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(fixture.McpEndpoint) }),
+            McpTestSecret.Transport(fixture.McpEndpoint),
             cancellationToken: CancellationToken.None);
 
     [Fact]

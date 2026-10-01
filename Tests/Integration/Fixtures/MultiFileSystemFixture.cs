@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Net;
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.Security;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
 using Domain.Tools.Files;
@@ -98,14 +99,18 @@ public class MultiFileSystemFixture : IAsyncLifetime
         return app;
     }
 
-    private sealed record MediaHostSettings(string BaseLibraryPath);
+    private sealed record MediaHostSettings(string BaseLibraryPath) : IMcpHostSettings
+    {
+        public McpGateSettings Mcp => McpTestSecret.Gate;
+    }
 
     private static IHost BuildVaultHost(int port, string vaultPath, Func<IMcpServerBuilder, IMcpServerBuilder> addResources)
     {
         var settings = new McpSettings
         {
             VaultPath = vaultPath,
-            AllowedExtensions = [".md", ".txt", ".json"]
+            AllowedExtensions = [".md", ".txt", ".json"],
+            Mcp = McpTestSecret.Gate
         };
 
         var builder = WebApplication.CreateBuilder();

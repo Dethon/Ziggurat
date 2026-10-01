@@ -142,8 +142,5 @@ public class VfsMoveToolIntegrationTests(MultiFileSystemFixture fx)
     }
 
     private static async Task<McpClient> Connect(string endpoint)
-        => await McpClient.CreateAsync(new HttpClientTransport(new HttpClientTransportOptions
-        {
-            Endpoint = new Uri(endpoint)
-        }), loggerFactory: NullLoggerFactory.Instance);
+        => await McpClient.CreateAsync(McpTestSecret.Transport(endpoint), loggerFactory: NullLoggerFactory.Instance);
 }

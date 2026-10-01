@@ -31,8 +31,9 @@ public static class InMemoryMcpServer
         await app.StartAsync();
 
         var endpoint = $"http://localhost:{port}/mcp";
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }));
+        // Presented whether or not the server is gated: a server booted from a hosting call asks for
+        // it, and one booted from the bare SDK ignores the header.
+        var client = await McpClient.CreateAsync(McpTestSecret.Transport(endpoint));
 
         return new RunningServer(app, client, endpoint);
     }

@@ -69,13 +69,18 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
                 // What compose's env_file does in production: the server's environment holds a
                 // deployment secret, which no command may see.
                 .WithEnvironment(PlantedSecretName, PlantedSecret)
+                // The deployment secret its /mcp asks for, as compose hands it every MCP server.
+                .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
                 // The published port answers before Kestrel has bound anything — Docker's proxy
                 // accepts the connection and the app then resets it — so a TCP check returns while
                 // the server is still starting and every test fails on a reset. `GET /mcp` is the
                 // cheapest request the transport really serves: 405, because the endpoint is POST.
+                // It presents the secret, or the gate in front of /mcp answers 401 before the
+                // transport is asked anything.
                 .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r
                     .ForPort(8080)
                     .ForPath("/mcp")
+                    .WithHeaders(McpTestSecret.Headers)
                     .ForStatusCode(HttpStatusCode.MethodNotAllowed)))
                 .Build();
             await _sandbox.StartAsync(ct);
@@ -97,7 +102,7 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
 
     public async Task<McpClient> ConnectAsync(CancellationToken ct) =>
         await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(McpEndpoint) }),
+            McpTestSecret.Transport(McpEndpoint),
             cancellationToken: ct);
 
     public async Task DisposeAsync()
