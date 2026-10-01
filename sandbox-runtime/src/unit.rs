@@ -106,6 +106,7 @@ fn execute(config: &UnitConfig, request: &ExecRequest, connection: &UnixStream) 
         },
         None => (None, None),
     };
+    let mut served = served;
     let spare = served.as_ref().map(Served::pid);
 
     let identity = Identity {
@@ -149,6 +150,10 @@ fn execute(config: &UnitConfig, request: &ExecRequest, connection: &UnixStream) 
 
     match ending {
         Ending::TimedOut => {
+            // Revoked first, so what the kill flushes reaches the mount as dropped, never applied.
+            if let Some(served) = served.as_mut() {
+                served.revoke();
+            }
             kill_tree(&mut child, spare);
             drain(&mut out, &mut err, &mut stdout, &mut stderr, Instant::now() + DRAIN_AFTER_KILL);
         }

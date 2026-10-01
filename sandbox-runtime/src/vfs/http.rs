@@ -102,6 +102,10 @@ impl Bridge for HttpBridge {
         .map(|_| ())
     }
 
+    fn revoke(&self) -> Result<(), Errno> {
+        self.post("revoke", &[], &[]).map(|_| ())
+    }
+
     fn write(&self, path: &str, content: &[u8], new: bool) -> Result<(), Errno> {
         self.post("write", &[("path", path), ("new", if new { "true" } else { "false" })], content)
             .map(|_| ())

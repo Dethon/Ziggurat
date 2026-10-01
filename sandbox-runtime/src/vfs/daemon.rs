@@ -1,6 +1,7 @@
 //! The daemon's life, driven by the unit over its stdin and stdout, one line each way:
 //! the unit writes the configuration, the daemon mounts and answers `ready` with the served names;
-//! then `exit` commits what the command still holds, unmounts and answers `done`. A unit that dies closes stdin, which is an `exit`.
+//! `revoke`, ahead of a kill, is answered `revoked` once the bridge has it; then `exit` commits
+//! what the command still holds, unmounts and answers `done`. A unit that dies closes stdin, which is an `exit`.
 
 use std::io::{self, BufRead, Write};
 use std::sync::Arc;
@@ -56,8 +57,13 @@ pub fn run() -> io::Result<()> {
 
     say(&serde_json::to_string(&Ready { served }).expect("serializes"))?;
     for line in lines {
-        if line?.trim() == "exit" {
-            break;
+        match line?.trim() {
+            "exit" => break,
+            "revoke" => {
+                vfs.revoke();
+                say("revoked")?;
+            }
+            _ => {}
         }
     }
     // Whatever the command still holds commits before the mount goes and before the unit answers,

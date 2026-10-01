@@ -87,6 +87,14 @@ impl Served {
         self.child.id() as i32
     }
 
+    /// Before a kill, never after: killing closes the command's files and the kernel's releases
+    /// would commit before a later revocation landed. Waits for the daemon to say the bridge has it.
+    pub fn revoke(&mut self) {
+        let _ = writeln!(self.stdin, "revoke");
+        let _ = self.stdin.flush();
+        let _ = self.lines.recv_timeout(READY_WITHIN);
+    }
+
     /// The command is over: the daemon commits what it still holds, unmounts and exits.
     pub fn finish(mut self) {
         let _ = writeln!(self.stdin, "exit");

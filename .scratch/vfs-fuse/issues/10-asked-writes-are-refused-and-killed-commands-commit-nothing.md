@@ -11,8 +11,8 @@ FUSE operations are not screened; this ticket changes nothing in the exec screen
 
 **Status:** ready-for-agent
 
-- [ ] For an agent whose whitelist covers the file tools, shell writes are applied
-- [ ] For an agent whose whitelist does not, a shell write is refused with `EACCES`, listed, and no prompt is raised
-- [ ] A remembered approval for the equivalent tool lets the shell write through
-- [ ] A command killed by its timeout mid-write leaves the mount unchanged, and the write is listed as dropped
-- [ ] A cancelled call behaves like a timeout
+- [x] For an agent whose whitelist covers the file tools, shell writes are applied
+- [x] For an agent whose whitelist does not, a shell write is refused with `EACCES`, listed, and no prompt is raised
+- [x] A remembered approval for the equivalent tool lets the shell write through
+- [x] A command killed by its timeout mid-write leaves the mount unchanged, and the write is listed as dropped
+- [x] A cancelled call behaves like a timeout

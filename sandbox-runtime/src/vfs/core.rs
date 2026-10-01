@@ -488,6 +488,12 @@ impl<B: Bridge> Vfs<B> {
         }
     }
 
+    /// Ahead of the kill. The daemon keeps sending what the kill flushes — the kernel's releases of
+    /// the dead command's files, and everything held — so the bridge can record each as dropped.
+    pub fn revoke(&self) {
+        let _ = self.bridge.revoke();
+    }
+
     /// The command is over: wait for the kernel's late releases, then commit everything held.
     pub fn finish(&self) {
         let deadline = Instant::now() + RELEASE_GRACE;

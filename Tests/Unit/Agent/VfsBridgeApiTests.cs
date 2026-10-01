@@ -141,6 +141,21 @@ public class VfsBridgeApiTests
         (change.Path, change.Operation, change.Status).ShouldBe(("/vault/notes/b.md", "create", "applied"));
     }
 
+    [Fact]
+    public async Task Revoke_MarksTheCallRevoked()
+    {
+        var call = Mint();
+        await using var app = await StartAsync();
+        using var client = app.GetTestClient();
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/vfs-bridge/revoke");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", call.Token);
+
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        call.Revoked.ShouldBeTrue();
+    }
+
     // A refusal carries the errno the daemon hands the kernel and the mount's own envelope.
     [Fact]
     public async Task ARefusal_AnswersItsErrnoAndTheEnvelope()

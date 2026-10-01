@@ -252,3 +252,30 @@ fn the_end_of_the_command_waits_for_a_late_release() {
 
     assert_eq!(vfs.bridge().mutations(), [format!("write {NOTE} overwrite late\n")]);
 }
+
+// The launcher revokes before it kills: the kernel then releases the dead command's open file and
+// the daemon commits it, and the bridge — revoked — drops it, as it drops whatever was held.
+#[test]
+fn after_a_revocation_every_commit_still_reaches_the_bridge_to_be_dropped() {
+    let vfs = vault();
+    let note = ino(&vfs, NOTE);
+    let notes = ino(&vfs, "/vault/notes");
+    let opened = vfs.open(note, true, true).unwrap();
+    vfs.write(opened.fh, 0, b"half").unwrap();
+    let (_, held) = vfs.create(notes, "new.md").unwrap();
+    vfs.release(held);
+
+    vfs.revoke();
+    vfs.release(opened.fh);
+    vfs.finish();
+
+    assert_eq!(
+        vfs.bridge().mutations(),
+        [
+            "revoke".to_string(),
+            format!("dropped write {NOTE} overwrite half"),
+            "dropped write /vault/notes/new.md create ".to_string()
+        ]
+    );
+    assert_eq!(vfs.bridge().content(NOTE).unwrap(), "old\n");
+}

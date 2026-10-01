@@ -45,6 +45,15 @@ public static class VfsBridgeApi
         bridge.MapPost("/rename", (HttpContext http, VfsBridge vfs, string path, string to, CancellationToken ct, bool overwrite = false) =>
             WithCall(http, vfs, async call => Json(await call.RenameAsync(path, to, overwrite, ct), _ => new { })));
 
+        // The launcher is about to kill the command: whatever its kill flushes arrives revoked and is
+        // dropped. The token keeps answering, so the drops are recorded, until exec returns.
+        bridge.MapPost("/revoke", (HttpContext http, VfsBridge vfs) =>
+            WithCall(http, vfs, call =>
+            {
+                vfs.Revoke(call.Token);
+                return Task.FromResult(Results.Json(new { }));
+            }));
+
         bridge.MapPost("/read", (HttpContext http, VfsBridge vfs, string path, CancellationToken ct) =>
             WithCall(http, vfs, async call => await call.ReadAsync(path, ct) switch
             {

@@ -58,6 +58,9 @@ pub trait Bridge: Send + Sync + 'static {
     /// `overwrite` is the daemon's knowledge that something is at `to`, which the bridge judges as
     /// a write there.
     fn rename(&self, from: &str, to: &str, overwrite: bool) -> Result<(), Errno>;
+
+    /// The command is about to be killed: what arrives from now on is dropped, and logged so.
+    fn revoke(&self) -> Result<(), Errno>;
 }
 
 /// The bridge's errno names, as the agent spells them (`Errnos` in the bridge).

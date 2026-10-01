@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! A bridge in memory, counting what it is asked, for the daemon core's tests.
 
 use std::collections::BTreeMap;
@@ -19,6 +21,7 @@ pub struct FakeBridge {
     pub calls: Mutex<Vec<String>>,
     /// Paths whose writes the mount refuses, as a mount refusing them would.
     pub refusing: Mutex<Vec<String>>,
+    pub revoked: Mutex<bool>,
 }
 
 impl FakeBridge {
@@ -57,8 +60,18 @@ impl FakeBridge {
         }
     }
 
+    // After a revocation the agent logs every commit as dropped and applies none.
     fn record(&self, call: String) {
+        let call = if *self.revoked.lock().unwrap() && !call.starts_with("revoke") {
+            format!("dropped {call}")
+        } else {
+            call
+        };
         self.calls.lock().unwrap().push(call);
+    }
+
+    fn is_revoked(&self) -> bool {
+        *self.revoked.lock().unwrap()
     }
 }
 
@@ -101,7 +114,7 @@ impl Bridge for FakeBridge {
             if new { "create" } else { "overwrite" },
             String::from_utf8_lossy(content)
         ));
-        if self.refusing.lock().unwrap().iter().any(|p| p == path) {
+        if self.is_revoked() || self.refusing.lock().unwrap().iter().any(|p| p == path) {
             return Err(libc::EACCES);
         }
         let mut nodes = self.nodes.lock().unwrap();
@@ -117,7 +130,7 @@ impl Bridge for FakeBridge {
 
     fn delete(&self, path: &str, directory: bool) -> Result<(), Errno> {
         self.record(format!("delete {path}{}", if directory { "/" } else { "" }));
-        if self.refusing.lock().unwrap().iter().any(|p| p == path) {
+        if self.is_revoked() || self.refusing.lock().unwrap().iter().any(|p| p == path) {
             return Err(libc::EACCES);
         }
         let mut nodes = self.nodes.lock().unwrap();
@@ -127,7 +140,7 @@ impl Bridge for FakeBridge {
 
     fn rename(&self, from: &str, to: &str, overwrite: bool) -> Result<(), Errno> {
         self.record(format!("rename {from} {to}{}", if overwrite { " overwrite" } else { "" }));
-        if self.refusing.lock().unwrap().iter().any(|p| p == from || p == to) {
+        if self.is_revoked() || self.refusing.lock().unwrap().iter().any(|p| p == from || p == to) {
             return Err(libc::EACCES);
         }
         let mut nodes = self.nodes.lock().unwrap();
@@ -140,6 +153,12 @@ impl Bridge for FakeBridge {
             nodes.remove(&p);
             nodes.insert(format!("{to}{}", &p[from.len()..]), node);
         });
+        Ok(())
+    }
+
+    fn revoke(&self) -> Result<(), Errno> {
+        self.record("revoke".into());
+        *self.revoked.lock().unwrap() = true;
         Ok(())
     }
 
