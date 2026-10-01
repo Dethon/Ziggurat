@@ -70,6 +70,13 @@ every case to no wrong action; the re-ask ceiling is scoped to the two prompts i
 against. Change a question's wording or the spoken prompt only with that test green, and re-probe
 rather than assuming a number carries across shapes.
 
+**The exec screen's reason is spoken before the question, never inside it.** A request carrying
+`ToolApprovalRequest.Screen` (an exec the agent's screen flagged) gets one short Spanish sentence —
+the first code's — spoken ahead of the unchanged `¿Apruebas …? Di sí o no.`, on the first attempt
+only; the `No entendí.` re-ask repeats the question and not the reason. The reader is handed the
+question alone: that is the prompt `ApprovalReaderJevTests` measured, and a reason folded into it
+would be a prompt nobody has measured — all 32 cases would need re-probing.
+
 **Local speaker commands.** `VoiceCommandMatcher` matches a normalized whole transcript (lowercase,
 accents and punctuation stripped, whitespace collapsed) against `VoiceSettings.Commands.Phrases`.
 `LocalCommandDispatcher` (`Services/LocalCommands/`) routes a match to the `ILocalCommandHandler`

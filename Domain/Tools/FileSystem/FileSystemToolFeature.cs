@@ -113,7 +113,10 @@ public class FileSystemToolFeature(
             (VfsMoveTool.Key, () => AIFunctionFactory.Create(new VfsMoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsMoveTool.Name}")),
             (VfsCopyTool.Key, () => AIFunctionFactory.Create(new VfsCopyTool(registry).RunAsync, name: $"domain__{Feature}__{VfsCopyTool.Name}")),
             (VfsRemoveTool.Key, () => AIFunctionFactory.Create(new VfsRemoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsRemoveTool.Name}")),
-            (VfsExecTool.Key, () => AIFunctionFactory.Create(new VfsExecTool(registry).RunAsync, name: $"domain__{Feature}__{VfsExecTool.Name}")),
+            // Carries where each call would run, read off this session's mounts, for the exec screen.
+            (VfsExecTool.Key, () => ExecReach.Carried(
+                AIFunctionFactory.Create(new VfsExecTool(registry).RunAsync, name: $"domain__{Feature}__{VfsExecTool.Name}"),
+                ExecReach.Over(registry))),
             (VfsFileInfoTool.Key, () => AIFunctionFactory.Create(new VfsFileInfoTool(registry).RunAsync, name: $"domain__{Feature}__{VfsFileInfoTool.Name}")),
         };
 

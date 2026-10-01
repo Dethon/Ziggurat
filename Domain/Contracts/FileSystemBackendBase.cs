@@ -55,6 +55,14 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     // Default false, so a new mount receives nothing until it says so.
     public virtual bool IsLandingTarget => false;
 
+    // Where this mount's shell runs a command, or null where it has none. Declared beside the exec
+    // override rather than derived from it, because executing is not the same as having a shell:
+    // /ha overrides exec for service calls. Read by the exec screen, which asks more of a command
+    // headed for somebody's own machine than of one headed for the deployment's own container.
+    //
+    // Default null, so a new mount's exec is never screened until it says where it runs.
+    public virtual ShellReach? ShellReach => null;
+
     // A caller-supplied pattern can be pathological, so every search matches under a bounded
     // timeout. Overridable because a test needs to trip it without waiting a real second.
     protected virtual TimeSpan SearchMatchTimeout => TimeSpan.FromSeconds(1);

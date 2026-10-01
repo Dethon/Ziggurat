@@ -58,7 +58,11 @@ public static class Scorecard
                 ["loader"] = Loaders(scenarios ?? []),
                 // What the judge answered across the pass: a run of deadlines or errors reads
                 // as a TypeSafe problem here, where "preload: off" would have hidden it.
-                ["preloadOutcomes"] = Outcomes(scenarios ?? [])
+                ["preloadOutcomes"] = Outcomes(scenarios ?? []),
+                // What the exec screen asked across the pass. Every prompt is approved here, so
+                // this changes no verdict; asked sandbox execs are its false positives on real
+                // traffic, and that count should sit near zero.
+                ["execScreen"] = Screened(ExecScreenTally.Sum((scenarios ?? []).Select(s => s.Screens)))
             },
             // Each claim row says how it is covered — "cited", "judged", or its exemption kind —
             // so a null rate stops meaning three different things.
@@ -72,6 +76,16 @@ public static class Scorecard
         return path;
     }
 
+    private static JsonObject Screened(ExecScreenTally tally) => new()
+    {
+        ["screened"] = tally.Screened,
+        ["asked"] = new JsonObject
+        {
+            ["contained"] = tally.AskedContained,
+            ["host"] = tally.AskedHost
+        }
+    };
+
     // A scenario's price beside its rate. Only where something was paid for: a scenario that did
     // not run has no spend key, so "cost nothing" never stands in for "never ran".
     private static JsonObject Priced(JsonObject rows, IEnumerable<ScenarioOutcome> outcomes)
@@ -82,6 +96,13 @@ public static class Scorecard
             if (spend.Paid && rows[group.Key] is JsonObject row)
             {
                 row["spend"] = Spelled(spend);
+            }
+
+            // Only where an exec was screened, so a scenario that ran none carries no zeros.
+            var screens = ExecScreenTally.Sum(group.Select(outcome => outcome.Screens));
+            if (screens.Screened > 0 && rows[group.Key] is JsonObject screenedRow)
+            {
+                screenedRow["execScreen"] = Screened(screens);
             }
         }
 
@@ -119,6 +140,17 @@ public static class Scorecard
                 ["cost"] = spend.PreloadCost,
                 ["inputTokens"] = spend.PreloadInputTokens,
                 ["requests"] = spend.PreloadRequests
+            };
+        }
+
+        // Beside the preload, and on the same condition: only where a screen was paid for.
+        if (spend.ScreenRequests > 0)
+        {
+            spelled["screen"] = new JsonObject
+            {
+                ["cost"] = spend.ScreenCost,
+                ["inputTokens"] = spend.ScreenInputTokens,
+                ["requests"] = spend.ScreenRequests
             };
         }
 
@@ -252,4 +284,6 @@ public sealed record ScenarioOutcome(
     } = [];
 
     public IReadOnlyDictionary<string, int> PreloadOutcomes { get; init; } = new Dictionary<string, int>();
+
+    public ExecScreenTally Screens { get; init; } = ExecScreenTally.None;
 }

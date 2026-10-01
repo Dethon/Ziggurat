@@ -9,6 +9,7 @@ using Domain.Monitor;
 using Domain.Outposts;
 using Domain.Prompts;
 using Domain.Skills;
+using Domain.Tools.FileSystem;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
@@ -104,17 +105,25 @@ public static class InjectorModule
                     sp.GetRequiredService<OpenRouterModelCapabilities>())
                 .AddHostedService<ModelCapabilityRefresher>()
                 .AddLemonadeChatHost(lemonadeChatHost)
-                .AddTypeSafe(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey), settings.SkillPreload)
+                .AddTypeSafe(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey), settings.SkillPreload, settings.ExecScreen)
                 .AddOutposts(settings.Outposts);
         }
 
-        // The judge is registered as every Jev host registers it; the preloader is this host's use.
-        private IServiceCollection AddTypeSafe(TypeSafeOptions typeSafe, SkillPreloadSettings skillPreload) =>
+        // The judge is registered as every Jev host registers it; the preloader and the exec screen
+        // are this host's uses. With no key the judge answers absence, so the screen still runs:
+        // every sandbox exec runs and every outpost exec is asked, which is the no-verdict rule.
+        private IServiceCollection AddTypeSafe(
+            TypeSafeOptions typeSafe, SkillPreloadSettings skillPreload, ExecScreenSettings execScreen) =>
             services
                 .AddTypeSafeJudge(typeSafe, keepConnectionAlive: false)
                 .AddSingleton<ISkillPreloader>(sp => new SkillPreloader(
                     sp.GetRequiredService<IJudge>(),
                     skillPreload,
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<IMetricsPublisher>()))
+                .AddSingleton<IExecScreen>(sp => new ExecScreen(
+                    sp.GetRequiredService<IJudge>(),
+                    execScreen,
                     sp.GetRequiredService<TimeProvider>(),
                     sp.GetRequiredService<IMetricsPublisher>()));
 

@@ -4,6 +4,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Prompts;
 using Domain.Skills;
+using Domain.Tools.FileSystem;
 using global::Agent.Settings;
 using Infrastructure.Agents;
 using Microsoft.Extensions.Configuration;
@@ -249,6 +250,28 @@ public class AgentAppSettingsTests
 
         shipped.DeadlineMs.ShouldBe(700);
         shipped.DeadlineMs.ShouldBe(new SkillPreloadSettings().DeadlineMs);
+    }
+
+    // Every bar of the exec screen is in the shipped file, at the value the probe measured with the
+    // shipped wording (.scratch/exec-screen/probe/README.md), so production can be re-read against
+    // the numbers that chose them rather than against a default nobody wrote down.
+    [Fact]
+    public void ExecScreen_ShipsEveryBarAtTheProbesValues()
+    {
+        var section = BoundConfig().GetSection("execScreen");
+        var shipped = section.Get<ExecScreenSettings>()!;
+
+        section.GetChildren().Select(c => c.Key).ShouldBe(
+            ["enabled", "deadlineMs", "recentRequests", "requestChars", "servesBar", "destroysBar", "sendsOutBar"],
+            ignoreOrder: true);
+        shipped.Enabled.ShouldBeTrue();
+        shipped.DeadlineMs.ShouldBe(1500);
+        shipped.RecentRequests.ShouldBe(3);
+        shipped.RequestChars.ShouldBe(1000);
+        shipped.ServesBar.ShouldBe(0.65);
+        shipped.DestroysBar.ShouldBe(0.75);
+        shipped.SendsOutBar.ShouldBe(0.6);
+        shipped.ShouldBe(new ExecScreenSettings());
     }
 
     // The local override is where a developer runs the agent against the compose stack, and a

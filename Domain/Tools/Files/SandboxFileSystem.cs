@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
 
@@ -29,6 +30,9 @@ public class SandboxFileSystem(
     // The sandbox is where a person's attachments belong: a container that is part of the
     // deployment, whose volume nobody else owns. Every other mount declares the default.
     public override bool IsLandingTarget => true;
+
+    // A container that is part of the deployment: what a command breaks here, a restart repairs.
+    public override ShellReach? ShellReach => DTOs.ShellReach.Contained;
 
     private static string WorkspaceUnder(string containerRoot, string homeDirectory)
     {

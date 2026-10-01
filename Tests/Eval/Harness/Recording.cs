@@ -161,6 +161,20 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
         }
     }
 
+    // What the exec screen was asked and what it put to the person, over this run.
+    private ExecScreenTally _screens = ExecScreenTally.None;
+
+    public ExecScreenTally Screens
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _screens;
+            }
+        }
+    }
+
     // The usage events are money, and a preload is the one other event a scenario asserts on:
     // it cannot come through the tool seam, which only sees calls the model emitted. The rest
     // of the stream is the deployment's telemetry.
@@ -172,6 +186,14 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
                 lock (_gate)
                 {
                     _spends.Add(Spend.Of(usage));
+                }
+
+                break;
+            case ExecScreenEvent screened:
+                lock (_gate)
+                {
+                    _spends.Add(Spend.OfScreen(screened));
+                    _screens += ExecScreenTally.Of(screened);
                 }
 
                 break;

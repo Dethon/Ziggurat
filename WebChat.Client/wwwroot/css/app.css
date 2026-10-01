@@ -2216,6 +2216,15 @@ select:focus:not(:focus-visible) {
     border-radius: 50%;
 }
 
+.approval-screen {
+    margin-bottom: 0.75rem;
+    padding-left: 0.625rem;
+    border-left: 3px solid var(--warning);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+}
+
 .tool-arguments {
     background: var(--bg-tertiary);
     border-radius: 10px;

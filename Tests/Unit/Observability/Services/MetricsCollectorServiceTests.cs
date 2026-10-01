@@ -1,3 +1,4 @@
+using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Microsoft.AspNetCore.SignalR;
@@ -182,6 +183,21 @@ public class MetricsCollectorServiceTests
                 ("modals:judgment:count", 1),
                 ("modals:latency:count", 1),
                 ("modals:latency:totalMs", 325)
+            ]),
+        new HashIncrementCase(
+            "ExecScreen",
+            new ExecScreenEvent
+            {
+                Reach = "host",
+                Outcome = ExecScreenOutcomes.Asked,
+                Codes = [ExecScreenCodes.Destructive],
+                DurationMs = 270,
+                Timestamp = _fixedTimestamp
+            },
+            [
+                ("execscreen:host:asked:count", 1),
+                ("execscreen:latency:count", 1),
+                ("execscreen:latency:totalMs", 270)
             ])
     };
 
@@ -320,7 +336,18 @@ public class MetricsCollectorServiceTests
                 Timestamp = _fixedTimestamp
             },
             $"metrics:modals:{FixedDate}",
-            "\"outcome\":\"left-standing\"")
+            "\"outcome\":\"left-standing\""),
+        new SortedSetCase(
+            "ExecScreen",
+            new ExecScreenEvent
+            {
+                Reach = "contained",
+                Outcome = ExecScreenOutcomes.Ran,
+                AbsenceReason = ExecScreenAbsences.Deadline,
+                Timestamp = _fixedTimestamp
+            },
+            $"metrics:execscreen:{FixedDate}",
+            "\"absenceReason\":\"deadline\"")
     };
 
     [Theory]

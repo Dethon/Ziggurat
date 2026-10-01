@@ -127,7 +127,8 @@ public static class EvalSuite
             {
                 Spend = recording.Spend,
                 Loader = ScenarioChecks.LoaderOf(scenario, recording),
-                PreloadOutcomes = recording.PreloadOutcomes
+                PreloadOutcomes = recording.PreloadOutcomes,
+                Screens = recording.Screens
             };
         });
 

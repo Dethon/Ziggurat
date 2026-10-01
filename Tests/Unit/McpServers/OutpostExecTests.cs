@@ -7,6 +7,7 @@ using Domain.Tools;
 using Domain.Tools.Files;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Bash;
 using Infrastructure.Utils;
@@ -93,6 +94,25 @@ public sealed class OutpostExecTests : IDisposable
     {
         Executing(jailed: false).DescribeMount.ShouldContain("Commands can be run");
         Plain().DescribeMount.ShouldContain("Commands cannot be run");
+    }
+
+    // An executing outpost's shell is somebody's own computer, and the exec screen asks more of a
+    // command that runs there. Carried on the type exec is declared by, so the claim cannot be
+    // made by a machine that offers no shell, and it travels to the agent in the resource body.
+    [Fact]
+    public void AnExecutingOutpost_SaysItsShellReachesTheHost()
+    {
+        var outpost = Executing(jailed: true);
+
+        outpost.ShellReach.ShouldBe(ShellReach.Host);
+        McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(outpost), [])!
+            .ShellReach.ShouldBe(ShellReach.Host);
+    }
+
+    [Fact]
+    public void APlainOutpost_HasNoShell()
+    {
+        Plain().ShellReach.ShouldBeNull();
     }
 
     // The whole reason a mount declares its own landing target: an exec-capable outpost would

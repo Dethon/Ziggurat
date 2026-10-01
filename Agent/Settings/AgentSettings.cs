@@ -27,6 +27,7 @@ public record AgentSettings
     public LemonadeChatConfiguration LemonadeChat { get; init; } = new();
     public TypeSafeOptions TypeSafe { get; init; } = new();
     public SkillPreloadSettings SkillPreload { get; init; } = new();
+    public ExecScreenSettings ExecScreen { get; init; } = new();
 }
 
 // The Lemonade chat host: somebody's own box on the local network, outside the compose stack, and

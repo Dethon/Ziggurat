@@ -750,6 +750,80 @@ public class RequestApprovalToolTests : IDisposable
             .ShouldBe([("Ambiguous", ApprovalDeciders.Judgment), ("Approved", ApprovalDeciders.Judgment)]);
     }
 
+    // The screen's reason is one sentence spoken before the unchanged question, and only the first
+    // time. The reader is still handed the question alone: that is the prompt its probe measured,
+    // and a reason folded into it would be a prompt nobody has measured.
+    [Fact]
+    public async Task RequestMode_AScreenedRequest_SpeaksTheReasonFirst_AndTheReaderHearsTheQuestionAlone()
+    {
+        _stt.SetupSequence(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "mmm", Confidence = 0.9 })
+            .ReturnsAsync(new TranscriptionResult { Text = "sí", Confidence = 0.9 });
+        var judge = new StubJudge(request => request.State["answer"]!.GetValue<string>() == "sí"
+            ? StubJudge.Answered((JudgedApprovalReader.ApprovedQuestionId, 0.97), (JudgedApprovalReader.DeclinedQuestionId, 0.01))
+            : StubJudge.Answered((JudgedApprovalReader.ApprovedQuestionId, 0.2), (JudgedApprovalReader.DeclinedQuestionId, 0.2)));
+        _reader = new JudgedApprovalReader(judge, new ApprovalJudgmentSettings(), TimeProvider.System);
+        var request = MakeRequest("domain__filesystem__exec") with { Screen = [ExecScreenCodes.NotRequested, ExecScreenCodes.SendsOut] };
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
+
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [request], turnModel: null, _services);
+
+        await feed.CancelAsync();
+        result.ShouldBe("approved");
+        Spoken().ShouldBe([
+            "Esto no parece parte de lo que pediste. ¿Apruebas exec? Di sí o no.",
+            "No entendí. ¿Apruebas exec? Di sí o no."
+        ]);
+        judge.Requests.Select(r => r.State["prompt"]!.GetValue<string>()).ShouldBe([
+            "¿Apruebas exec? Di sí o no.",
+            "No entendí. ¿Apruebas exec? Di sí o no."
+        ]);
+    }
+
+    [Theory]
+    [InlineData(ExecScreenCodes.Destructive, "Borraría o cambiaría algo que ya está en tu ordenador.")]
+    [InlineData(ExecScreenCodes.SendsOut, "Enviaría datos de tu ordenador a un servidor.")]
+    [InlineData(ExecScreenCodes.Unjudged, "Se ejecuta en tu ordenador y no he podido comprobarlo.")]
+    public async Task RequestMode_EachScreenCode_IsSpokenInSpanish(string code, string sentence)
+    {
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí", Confidence = 0.9 });
+        var request = MakeRequest("domain__filesystem__exec") with { Screen = [code] };
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
+
+        await RequestApprovalTool.RunAsync(_conversationId, ApprovalMode.Request, [request], turnModel: null, _services);
+
+        await feed.CancelAsync();
+        Spoken().ShouldBe([$"{sentence} ¿Apruebas exec? Di sí o no."]);
+    }
+
+    [Fact]
+    public async Task RequestMode_WithoutScreen_SpeaksTheQuestionAlone()
+    {
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí", Confidence = 0.9 });
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
+
+        await RequestApprovalTool.RunAsync(_conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+
+        await feed.CancelAsync();
+        Spoken().ShouldBe(["¿Apruebas download? Di sí o no."]);
+    }
+
+    private IReadOnlyList<string> Spoken() =>
+    [
+        .. _tts.Invocations
+            .Where(i => i.Method.Name == nameof(ITextToSpeech.SynthesizeAsync))
+            .Select(i => (string)i.Arguments[0])
+    ];
+
     [Fact]
     public async Task RequestMode_TheMetric_SaysWhoDecided_AndWhatJevAnswered()
     {

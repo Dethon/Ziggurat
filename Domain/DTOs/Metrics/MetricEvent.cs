@@ -18,6 +18,7 @@ namespace Domain.DTOs.Metrics;
 [JsonDerivedType(typeof(SkillPreloadEvent), "skill_preload")]
 [JsonDerivedType(typeof(MemoryJudgmentEvent), "memory_judgment")]
 [JsonDerivedType(typeof(ModalDismissalEvent), "modal_dismissal")]
+[JsonDerivedType(typeof(ExecScreenEvent), "exec_screen")]
 public abstract record MetricEvent
 {
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;

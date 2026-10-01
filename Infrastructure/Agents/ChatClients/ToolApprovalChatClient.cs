@@ -5,7 +5,9 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
+using Domain.Extensions;
 using Domain.Metrics;
+using Domain.Tools.FileSystem;
 using Infrastructure.Agents.Skills;
 using Infrastructure.Metrics;
 using Infrastructure.Utils;
@@ -21,6 +23,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly IMetricsPublisher _metricsPublisher;
     private readonly string _conversationId;
     private readonly IToolInvocationObserver? _observer;
+    private readonly IExecScreen? _execScreen;
+    private readonly string? _agentId;
     private int _observed;
 
     // Approved for every agent without a whitelist entry: loading a skill reads prose this repo
@@ -35,10 +39,14 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         string conversationId,
         IEnumerable<string>? whitelistPatterns = null,
         IMetricsPublisher? metricsPublisher = null,
-        IToolInvocationObserver? observer = null)
+        IToolInvocationObserver? observer = null,
+        IExecScreen? execScreen = null,
+        string? agentId = null)
         : base(innerClient)
     {
         _observer = observer;
+        _execScreen = execScreen;
+        _agentId = agentId;
         ArgumentNullException.ThrowIfNull(approvalHandler);
         ArgumentNullException.ThrowIfNull(conversationId);
         _approvalHandler = approvalHandler;
@@ -65,6 +73,14 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 
         if (_alwaysApproved.Contains(toolName) || _patternMatcher.IsMatch(toolName) || _dynamicallyApproved.Contains(toolName))
         {
+            // Every path that would run unasked is screened first — a remembered approval included,
+            // so one tap cannot switch the screen off for the rest of the conversation. A flag is
+            // not a refusal: it is the prompt a tool nobody whitelisted gets, saying why.
+            if (await ScreenAsync(context, cancellationToken) is { Asks: true } flagged)
+            {
+                return await AskAsync(context, request with { Screen = flagged.Codes }, cancellationToken);
+            }
+
             // The notification is display-only; overlapping it with the invocation keeps a
             // channel round trip off the tool's critical path. A notify failure still
             // surfaces, but no longer prevents the tool from executing.
@@ -75,6 +91,13 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             return await invokeTask;
         }
 
+        return await AskAsync(context, request, cancellationToken);
+    }
+
+    private async ValueTask<object?> AskAsync(
+        FunctionInvocationContext context, ToolApprovalRequest request, CancellationToken cancellationToken)
+    {
+        var toolName = request.ToolName;
         var result = await _approvalHandler.RequestApprovalAsync(
             _conversationId, [request], cancellationToken);
 
@@ -94,6 +117,42 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                 return $"Tool execution was rejected by user: {toolName}. Waiting for new input.";
         }
     }
+
+    // Only a call whose function carries an ExecReach is screened — the exec a session built over
+    // its own mounts — and only where the path lands on a mount with a shell. A call the person is
+    // being asked about anyway never reaches here: asking is already what a flag would produce.
+    private async Task<ExecScreenVerdict?> ScreenAsync(FunctionInvocationContext context, CancellationToken ct)
+    {
+        if (_execScreen is null
+            || context.Function.GetService<ExecReach>() is not { } reach
+            || ArgumentText(context.Arguments, "path") is not { } path
+            || reach.Of(path) is not { } shellReach)
+        {
+            return null;
+        }
+
+        var turnModel = context.Messages.LastOrDefault(m => m.Role == ChatRole.User)?.GetTurnModel();
+
+        return await _execScreen.ScreenAsync(
+            new ExecScreenRequest(
+                shellReach, ArgumentText(context.Arguments, "command") ?? "", path, context.Messages, turnModel)
+            {
+                AgentId = _agentId,
+                ConversationId = _conversationId
+            },
+            ct);
+    }
+
+    private static string? ArgumentText(AIFunctionArguments arguments, string name) =>
+        arguments.TryGetValue(name, out var value)
+            ? value switch
+            {
+                string text => text,
+                JsonElement { ValueKind: JsonValueKind.String } element => element.GetString(),
+                null => null,
+                _ => value.ToString()
+            }
+            : null;
 
     // Pass-through in both directions: what the observer is handed is the option set the agent
     // built and the route the inner client ends up reporting, and nothing about the turn changes

@@ -16,8 +16,13 @@ internal sealed class TestApprovalHandler(ToolApprovalResult result) : IToolAppr
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
-        ConversationIds.Add(conversationId);
-        RequestedApprovals.Add(requests);
+        // Locked: concurrent invocation can ask about two calls of one iteration at once.
+        lock (RequestedApprovals)
+        {
+            ConversationIds.Add(conversationId);
+            RequestedApprovals.Add(requests);
+        }
+
         return Task.FromResult(result);
     }
 
@@ -26,8 +31,12 @@ internal sealed class TestApprovalHandler(ToolApprovalResult result) : IToolAppr
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
-        ConversationIds.Add(conversationId);
-        AutoApprovedNotifications.Add(requests);
+        lock (RequestedApprovals)
+        {
+            ConversationIds.Add(conversationId);
+            AutoApprovedNotifications.Add(requests);
+        }
+
         return Task.CompletedTask;
     }
 }

@@ -131,7 +131,12 @@ public sealed class MultiAgentFactory(
             chatClient, approvalHandler, spec.ConversationId, spec.WhitelistPatterns, agentPublisher,
             // Absent in every deployment: only an evaluation harness registers one, and what it
             // watches has to be the agent the deployment builds rather than one assembled beside it.
-            serviceProvider?.GetService<IToolInvocationObserver>());
+            serviceProvider?.GetService<IToolInvocationObserver>(),
+            // Optional as the preloader is: a host with no screen runs an unasked exec as it did
+            // before the screen existed. A worker gets it by this same line, screened on its
+            // delegation prompt.
+            serviceProvider?.GetService<IExecScreen>(),
+            spec.MetricsAgentId);
 
         return new McpAgent(
             spec,

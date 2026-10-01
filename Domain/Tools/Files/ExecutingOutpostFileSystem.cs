@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Files;
@@ -18,6 +19,10 @@ public sealed class ExecutingOutpostFileSystem(
     ICommandRunner runner)
     : OutpostFileSystem(filesystemName, client, workingDirectory, allowedExtensions, jailed)
 {
+    // Somebody's own computer. Declared on the type exec is declared on, so a plain outpost — which
+    // offers no shell — cannot claim one.
+    public override ShellReach? ShellReach => DTOs.ShellReach.Host;
+
     public override string DescribeExec =>
         "Execute a bash command (`bash -lc <command>`) on this machine. The path argument is the "
         + "working directory: **the mount point itself means this outpost's own working directory**, "
