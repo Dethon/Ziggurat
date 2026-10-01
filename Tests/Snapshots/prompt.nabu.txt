@@ -1,4 +1,4 @@
-# nabu — 6364 tokens across 17 sections and 7 skills
+# nabu — 6578 tokens across 17 sections and 7 skills
 
   core_directive           CoreDirective         466 / 500    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               77 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -6,7 +6,7 @@
   subagents                Feature               350 / 400    When to delegate to a worker, and how to answer from what it returns.
   memory                   Feature               500 / 500    Memory is invisible plumbing: applied silently, never narrated, forgotten on request.
   skills                   Feature               245 / 250    What the advertised skill list is, and that a skill is loaded once, before acting, and only when a request calls for it.
-  filesystem_mounts        FileSystem             49 / 500    The mounts this session actually has, and which one a path belongs under.
+  filesystem_mounts        FileSystem            263 / 500    The mounts this session actually has, and which one a path belongs under.
   vault_prompt             Client                382 / 400    What the vault is, and that a task needing exec is transferred to the sandbox once.
   sandbox_prompt           Client                243 / 250    That the sandbox is the one mount with exec, where its workspace is, and that a run loads the skill.
   websearch_prompt         Client                189 / 400    That the browser exists, that a url comes from a search, and that no call is a probe.
@@ -119,6 +119,11 @@ All `domain__filesystem__*` tool paths must start with one of these mount prefix
 
 - `/vault` — the user's Obsidian vault.
 - `/sandbox` — the sandbox container's disk.
+
+### Other machines
+
+These are not part of your filesystem. Each is a separate computer, somebody's own, that offered its files to this conversation and can be gone in the next one. Address one as `outpost:<NAME>/<absolute path on that machine>` — never as `/<NAME>`, which would be a path in your own tree. A copy or move to or from one sends data between computers, and its `exec` runs on that person's machine, not in a sandbox.
+- `outpost:laptop` — laptop — a separate machine; a path on it is outpost:laptop followed by the machine's own absolute path. Working directory: outpost:laptop/home/someone (files land there and it is this mount's workspace). Not jailed: any path on the machine can be reached. Commands cannot be run on this machine. The machine decides whether this mount exists, so it can be absent for reasons that are nobody's fault.
 
 ## Vault Filesystem (Obsidian)
 

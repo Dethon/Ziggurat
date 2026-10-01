@@ -1,6 +1,11 @@
+using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Outposts;
 using Domain.Prompts;
+using Domain.Tools.Files;
+using Domain.Tools.FileSystem;
 using Microsoft.Extensions.Configuration;
+using Moq;
 using Tests.Integration.McpServers;
 
 namespace Tests.Unit.Domain.Prompts;
@@ -26,6 +31,16 @@ internal static class AgentPromptFixture
         - `/vault` — the user's Obsidian vault.
         - `/sandbox` — the sandbox container's disk.
         """;
+
+    // An agent that opted into outposts sees the machines live at session build, under words the
+    // filesystem feature generates. One machine stands in for them, described by the outpost's own
+    // generator, so the snapshot holds the real prose about machines rather than a paraphrase.
+    private static readonly string SampleMachines = FileSystemToolFeature.MachinesSection([
+        new FileSystemMount(
+            "laptop",
+            OutpostMountPoint.For("laptop"),
+            new OutpostFileSystem("laptop", Mock.Of<IFileSystemClient>(), "/home/someone", [".md"]).DescribeMount)
+    ]);
 
     private const string SampleUserContext =
         """
@@ -90,12 +105,13 @@ internal static class AgentPromptFixture
         return agent is not null
             ? Compose(
                 agent.Id, agent.Name, agent.Description, agent.McpServerEndpoints,
-                agent.EnabledFeatures, agent.PromptSections, agent.CustomInstructions, agent.Language)
+                agent.EnabledFeatures, agent.PromptSections, agent.CustomInstructions, agent.Language,
+                agent.UsesOutposts)
             : worker is not null
                 ? Compose(
                     worker.Id, worker.Name, worker.Description, worker.McpServerEndpoints,
                     worker.EnabledFeatures, worker.PromptSections, worker.CustomInstructions,
-                    worker.Language)
+                    worker.Language, worker.UsesOutposts)
                 : throw new InvalidOperationException($"No agent or subagent '{id}' in appsettings.json");
     }
 
@@ -107,7 +123,8 @@ internal static class AgentPromptFixture
         IEnumerable<string> features,
         IEnumerable<string> selected,
         string? customInstructions,
-        string? language) =>
+        string? language,
+        bool usesOutposts) =>
         PromptComposer.Compose(new PromptContext
         {
             AgentId = id,
@@ -115,7 +132,9 @@ internal static class AgentPromptFixture
             Description = description,
             Domain = [.. FeatureSections(features)],
             FileSystem = HasFilesystem(features)
-                ? [PromptManifest.Bind(PromptManifest.FilesystemMounts, SampleMounts)]
+                ? [PromptManifest.Bind(
+                    PromptManifest.FilesystemMounts,
+                    usesOutposts ? $"{SampleMounts}\n\n{SampleMachines}" : SampleMounts)]
                 : [],
             Client =
             [

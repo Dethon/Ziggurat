@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Outposts;
 using Domain.Prompts;
 using Microsoft.Extensions.AI;
 
@@ -133,13 +134,14 @@ public class FileSystemToolFeature(
             return null;
         }
 
-        var mountList = string.Join("\n", mounts.Select(FormatMount));
+        var mountList = string.Join("\n", mounts.Where(m => !IsMachine(m)).Select(FormatMount));
+        var machines = MachinesSection(mounts);
         return $$"""
             ## Available Filesystems
 
             All `domain__filesystem__*` tool paths must start with one of these mount prefixes. Pick the mount whose description matches your task; don't scatter related files across mounts.
             {{mountList}}
-
+            {{(machines.Length > 0 ? $"\n{machines}\n" : "")}}
             ### How capabilities work
 
             Each mount is backed by a different MCP server, and **each backend implements only the operations that make sense for it** — read-only mounts won't accept writes, non-shell mounts won't accept `exec`, and so on. Each mount lists the operations it supports above — call only an operation a mount advertises, so you don't waste a turn discovering an unsupported one by trial and error.
@@ -160,6 +162,25 @@ public class FileSystemToolFeature(
             - A path that starts under none of these mounts is not reachable in this session, by any tool or by a worker — the mount list above is complete. Say so in one sentence instead of hunting for it: no retries under other spellings, no search of a mount for a folder of that name (a `find` or a glob from the mount's root, a look through its home directory), no web tools, no delegation.
             """;
     }
+
+    // The outposts among a session's mounts, under a heading that says what they are, or nothing
+    // when there are none. Listed beside the vault, a machine read as one more branch of the tree,
+    // and a person's own computer is the last place a guess about where a file lives should land.
+    // Public so the prompt snapshots show these words rather than a fixture's paraphrase of them.
+    public static string MachinesSection(IEnumerable<FileSystemMount> mounts)
+    {
+        var machines = mounts.Where(IsMachine).ToList();
+        return machines.Count == 0
+            ? ""
+            : $"""
+              ### Other machines
+
+              These are not part of your filesystem. Each is a separate computer, somebody's own, that offered its files to this conversation and can be gone in the next one. Address one as `{OutpostMountPoint.Scheme}<NAME>/<absolute path on that machine>` — never as `/<NAME>`, which would be a path in your own tree. A copy or move to or from one sends data between computers, and its `exec` runs on that person's machine, not in a sandbox.
+              {string.Join("\n", machines.Select(FormatMount))}
+              """;
+    }
+
+    private static bool IsMachine(FileSystemMount mount) => OutpostMountPoint.Addresses(mount.MountPoint);
 
     private static string FormatMount(FileSystemMount mount)
     {

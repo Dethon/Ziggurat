@@ -62,9 +62,8 @@ public class OutpostFileSystem(
     // in it is read off the values the binary was started with, and there is no separate prompt
     // that could be edited into disagreeing.
     public override string DescribeMount =>
-        $"{FilesystemName} — a separate machine, somebody's own computer rather than part of your "
-        + $"filesystem, addressed as {MountPoint} followed by an absolute path on that machine. "
-        + $"Working directory: {VirtualWorkingDirectory} "
+        $"{FilesystemName} — a separate machine; a path on it is {MountPoint} followed by the "
+        + $"machine's own absolute path. Working directory: {VirtualWorkingDirectory} "
         + "(files land there and it is this mount's workspace). "
         + (jailed
             ? $"Jailed: every path outside {VirtualWorkingDirectory} is refused, and glob and text "
