@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
-# The root launcher (sandbox-runtime/): the container's entrypoint, which starts the server as a uid
-# of its own and runs each command as PUID. Static, so nothing in the runtime image can break it.
+# The root launcher and the per-exec FUSE daemon (sandbox-runtime/): the container's entrypoint,
+# which starts the server as a uid of its own and runs each command as PUID with the session's other
+# mounts at /vfs. Static, so nothing in the runtime image can break them.
 FROM rust:1.97.1-slim AS runtime-build
 WORKDIR /src/sandbox-runtime
 COPY ["sandbox-runtime/", "./"]
@@ -9,7 +10,7 @@ RUN target="$(uname -m)-unknown-linux-musl" \
  && rustup target add "$target" \
  && cargo build --release --locked --target "$target" \
  && mkdir -p /out \
- && cp "target/$target/release/sandbox-launcher" /out/
+ && cp "target/$target/release/sandbox-launcher" "target/$target/release/vfs-daemon" /out/
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 
@@ -36,6 +37,11 @@ RUN apt-get update \
 # the bit as well rather than relying on one guard alone.
 RUN chmod u-s /usr/bin/fusermount3
 
+# Where each exec's daemon mounts the session's other mounts, linked at /<name>. A mount named like
+# an empty system directory would lose its link to it, so those go: the media library's mount is
+# `media`. rmdir, not rm -r: a directory the image ever fills is a collision to decide, not delete.
+RUN mkdir /vfs && rmdir /media
+
 # The mount point, spelled inside the container. The sandbox mount *is* the container root, so this
 # states a truth that already held — and it is what makes the one spelling the filesystem prompt
 # teaches work in a command as well as in an argument. Without it the agent has to know the prefix
@@ -58,7 +64,7 @@ RUN dotnet publish "./McpServerSandbox.csproj" -c $BUILD_CONFIGURATION -o /app/p
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-COPY --from=runtime-build /out/sandbox-launcher /usr/local/bin/sandbox-launcher
+COPY --from=runtime-build /out/sandbox-launcher /out/vfs-daemon /usr/local/bin/
 
 # Root on purpose: the launcher owns the switch to PUID/PGID that compose's `user:` used to, starts
 # the server as SANDBOX_SERVER_UID and drops every command to PUID. tini reaps what a command

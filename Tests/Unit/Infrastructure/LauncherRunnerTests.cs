@@ -2,6 +2,7 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json.Nodes;
+using Domain.DTOs.FileSystem;
 using Infrastructure.Clients.Bash;
 using Shouldly;
 using Xunit;
@@ -22,7 +23,7 @@ public class LauncherRunnerTests : IDisposable
         Directory.CreateDirectory(Path.Combine(_root, "work"));
     }
 
-    private LauncherRunner Runner(IReadOnlyDictionary<string, string>? environment = null) => new(
+    private LauncherRunner Runner(IReadOnlyDictionary<string, string>? environment = null, string? bridgeUrl = null) => new(
         new BashRunnerOptions
         {
             ContainerRoot = _root,
@@ -31,7 +32,8 @@ public class LauncherRunnerTests : IDisposable
             OutputCapBytes = 512,
             Environment = environment ?? new Dictionary<string, string> { ["HOME"] = "/home/sandbox_user" }
         },
-        _socket);
+        _socket,
+        bridgeUrl);
 
     private static void SkipIfNotLinux() =>
         Skip.IfNot(RuntimeInformation.IsOSPlatform(OSPlatform.Linux), "Unix sockets as the launcher uses them");
@@ -86,6 +88,38 @@ public class LauncherRunnerTests : IDisposable
         request["timeoutSeconds"]!.GetValue<int>().ShouldBe(30);
         request["outputCapBytes"]!.GetValue<int>().ShouldBe(512);
         request["env"]!["HOME"]!.GetValue<string>().ShouldBe("/home/sandbox_user");
+    }
+
+    // The token goes to the launcher, which hands it to the call's daemon and to nothing the
+    // command can read — and only where the sandbox knows where the bridge is.
+    [SkippableFact]
+    public async Task RunAsync_WithACallToken_AsksTheLauncherToServeTheMountsThroughTheBridge()
+    {
+        SkipIfNotLinux();
+        var launcher = PlayLauncherAsync(
+            """{"stdout":"","stderr":"","exitCode":0,"timedOut":false,"truncated":false,"durationMs":1}""");
+
+        await Runner(bridgeUrl: "http://agent:8080/api/vfs-bridge")
+            .RunAsync("", "ls /vault", null, CancellationToken.None, new VfsBridgeGrant("tok-1"));
+
+        var bridge = JsonNode.Parse(await launcher)!["bridge"]!;
+        bridge["url"]!.GetValue<string>().ShouldBe("http://agent:8080/api/vfs-bridge");
+        bridge["token"]!.GetValue<string>().ShouldBe("tok-1");
+    }
+
+    [SkippableTheory]
+    [InlineData(null, "tok-1")]
+    [InlineData("http://agent:8080/api/vfs-bridge", null)]
+    public async Task RunAsync_WithoutBothATokenAndABridge_ServesNoMounts(string? bridgeUrl, string? token)
+    {
+        SkipIfNotLinux();
+        var launcher = PlayLauncherAsync(
+            """{"stdout":"","stderr":"","exitCode":0,"timedOut":false,"truncated":false,"durationMs":1}""");
+
+        await Runner(bridgeUrl: bridgeUrl).RunAsync(
+            "", "ls", null, CancellationToken.None, token is null ? null : new VfsBridgeGrant(token));
+
+        JsonNode.Parse(await launcher)!["bridge"].ShouldBeNull();
     }
 
     [SkippableFact]

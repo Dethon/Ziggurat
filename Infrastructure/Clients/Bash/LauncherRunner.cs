@@ -14,7 +14,10 @@ namespace Infrastructure.Clients.Bash;
 // line each way, and hanging up is the cancellation — the launcher kills the tree when its end
 // closes. Timeout, output cap and kill-tree are the launcher's to enforce, with the values
 // resolved here exactly as the in-process runner resolves them.
-public class LauncherRunner(BashRunnerOptions options, string socketPath) : ICommandRunner
+//
+// `bridgeUrl` is where the agent's exec bridge answers, as this container reaches it; with it and a
+// call token, the launcher serves the call's mounts to the command at /vfs.
+public class LauncherRunner(BashRunnerOptions options, string socketPath, string? bridgeUrl = null) : ICommandRunner
 {
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web)
     {
@@ -24,7 +27,8 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath) : ICom
     private readonly CommandCwd _cwd = new(options.ContainerRoot);
 
     public async Task<FsResult<FsExecResult>> RunAsync(
-        string path, string command, int? timeoutSeconds, CancellationToken cancellationToken)
+        string path, string command, int? timeoutSeconds, CancellationToken cancellationToken,
+        VfsBridgeGrant? bridge = null)
     {
         if (!_cwd.Resolve(path).TryGetValue(out var cwd, out var unresolved))
         {
@@ -36,7 +40,8 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath) : ICom
             cwd,
             CommandCwd.EffectiveTimeoutSeconds(options, timeoutSeconds),
             options.OutputCapBytes,
-            options.Environment ?? new Dictionary<string, string>());
+            options.Environment ?? new Dictionary<string, string>(),
+            bridge is not null && !string.IsNullOrEmpty(bridgeUrl) ? new LauncherBridge(bridgeUrl, bridge.Token) : null);
 
         using var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         await socket.ConnectAsync(new UnixDomainSocketEndPoint(socketPath), cancellationToken);
@@ -94,7 +99,10 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath) : ICom
         string Cwd,
         int TimeoutSeconds,
         int OutputCapBytes,
-        IReadOnlyDictionary<string, string> Env);
+        IReadOnlyDictionary<string, string> Env,
+        LauncherBridge? Bridge);
+
+    private sealed record LauncherBridge(string Url, string Token);
 
     private sealed record LauncherAnswer(
         string? Stdout,

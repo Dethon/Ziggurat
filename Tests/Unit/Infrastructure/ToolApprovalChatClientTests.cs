@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 using Shouldly;
@@ -140,6 +141,33 @@ public class ToolApprovalChatClientTests
 
         await responseTask;
         handler.NotifyCalls.ShouldBe(1);
+    }
+
+    // A tool that acts for the conversation without a model call of its own — the exec bridge —
+    // is handed this client's own answer to "would this run unasked", live: an approval the person
+    // remembers mid-turn counts from then on.
+    [Fact]
+    public async Task InvokeFunctionAsync_HandsTheCallThisClientsViewOfWhatRunsUnasked()
+    {
+        ToolPermission? seen = null;
+        var function = AIFunctionFactory.Create((AIFunctionArguments arguments) =>
+        {
+            seen = arguments.Context?[ToolPermission.ContextKey] as ToolPermission;
+            return "result";
+        }, "mcp__server__Asked");
+
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__Asked", "call1"));
+        var client = new ToolApprovalChatClient(
+            fakeClient, new TestApprovalHandler(result: ToolApprovalResult.ApprovedAndRemember), "conv",
+            whitelistPatterns: ["domain__filesystem__file_read"]);
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], new ChatOptions { Tools = [function] });
+
+        seen.ShouldNotBeNull();
+        seen.RunsUnasked("domain__filesystem__file_read").ShouldBeTrue("whitelisted");
+        seen.RunsUnasked("mcp__server__Asked").ShouldBeTrue("remembered when the person approved it");
+        seen.RunsUnasked("domain__filesystem__text_create").ShouldBeFalse("neither whitelisted nor remembered");
     }
 
     private sealed class GatedNotifyApprovalHandler(Task gate) : IToolApprovalHandler

@@ -41,10 +41,10 @@ public sealed partial class HaFileSystem(
     // that silently: the server's instance kept working and the one answering calls did not.
     // The watches and the catalog are shared by reference, which is the point; the class is sealed,
     // so the copy is exactly this type. HaFileSystemCallerViewTests pins caller-and-nothing-else.
-    public override FileSystemBackendBase For(ConversationContext? caller)
+    public override FileSystemBackendBase For(FileSystemCaller caller)
     {
         var view = (HaFileSystem)MemberwiseClone();
-        view._caller = caller;
+        view._caller = caller.Conversation;
         return view;
     }
 

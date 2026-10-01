@@ -29,7 +29,7 @@ public static class ConfigModule
                 Environment = CommandEnvironment.Minimal(settings.HomeDir, System.Environment.GetEnvironmentVariable)
             })
             .AddSingleton<ICommandRunner>(sp => settings.LauncherSocket is { Length: > 0 } socket
-                ? new LauncherRunner(sp.GetRequiredService<BashRunnerOptions>(), socket)
+                ? new LauncherRunner(sp.GetRequiredService<BashRunnerOptions>(), socket, settings.VfsBridgeUrl)
                 : new BashRunner(sp.GetRequiredService<BashRunnerOptions>()))
             .AddSingleton(sp => new SandboxFileSystem(
                 "sandbox",

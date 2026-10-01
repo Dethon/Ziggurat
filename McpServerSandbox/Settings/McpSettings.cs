@@ -22,4 +22,8 @@ public record McpSettings : IMcpHostSettings
     // Where the root launcher listens, announced by the launcher itself to the server it starts
     // (LAUNCHERSOCKET). Absent on a host with no launcher, which runs commands in-process.
     public string? LauncherSocket { get; init; }
+
+    // Where the agent's exec bridge answers, as this container reaches it — topology, so compose
+    // sets it. Absent, a command sees only the sandbox's own disk.
+    public string? VfsBridgeUrl { get; init; }
 }

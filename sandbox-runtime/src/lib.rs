@@ -2,6 +2,7 @@
 //! own uid and runs each command as PUID in a private mount namespace. See `CLAUDE.md`.
 
 pub mod home;
+pub mod vfs;
 pub mod output;
 pub mod proctree;
 pub mod protocol;
@@ -10,5 +11,7 @@ pub mod protocol;
 pub mod launcher;
 #[cfg(target_os = "linux")]
 pub mod privilege;
+#[cfg(target_os = "linux")]
+pub mod served;
 #[cfg(target_os = "linux")]
 pub mod unit;

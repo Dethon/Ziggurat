@@ -21,7 +21,7 @@ internal class McpFileSystemBackend(
     McpClient client,
     string filesystemName,
     IReadOnlySet<string>? advertisedOperations,
-    ILogger? logger = null) : IFileSystemBackend
+    ILogger? logger = null) : IFileSystemBackend, IBridgedExecBackend
 {
     public string FilesystemName => filesystemName;
 
@@ -101,6 +101,20 @@ internal class McpFileSystemBackend(
             ["command"] = command,
             ["timeoutSeconds"] = timeoutSeconds
         }), ct);
+
+    // The same fs_exec, with this call's token beside the conversation context on `_meta`: the
+    // schema the server reflects stays as it is, and the token reaches nothing but the server.
+    public async Task<FsResult<FsExecResult>> ExecAsync(
+        string path, string command, int? timeoutSeconds, VfsBridgeGrant grant, CancellationToken ct)
+    {
+        var node = await CallToolWithMetaAsync("fs_exec", WithFilesystem(new Dictionary<string, object?>
+        {
+            ["path"] = path,
+            ["command"] = command,
+            ["timeoutSeconds"] = timeoutSeconds
+        }), new JsonObject { [VfsBridgeGrant.MetaKey] = grant.ToMeta() }, ct);
+        return Typed<FsExecResult>("fs_exec", node);
+    }
 
     public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>
@@ -225,10 +239,11 @@ internal class McpFileSystemBackend(
     }
 
     private async Task<FsResult<T>> CallTypedAsync<T>(
-        string toolName, Dictionary<string, object?> args, CancellationToken ct) where T : class
-    {
-        var node = await CallToolAsync(toolName, args, ct);
+        string toolName, Dictionary<string, object?> args, CancellationToken ct) where T : class =>
+        Typed<T>(toolName, await CallToolAsync(toolName, args, ct));
 
+    private static FsResult<T> Typed<T>(string toolName, JsonNode node) where T : class
+    {
         var error = ToolErrorResult.FromEnvelope(node);
         if (error is not null)
         {
@@ -244,8 +259,23 @@ internal class McpFileSystemBackend(
     // a tool the model calls directly: a mount that answers by who is calling — the Home Assistant
     // watches record their creating agent — sees the same context either way. Without it the first
     // watch written in prod was refused for carrying no caller.
-    protected internal virtual async Task<JsonNode> CallToolAsync(string toolName, Dictionary<string, object?> args, CancellationToken ct)
+    protected internal virtual Task<JsonNode> CallToolAsync(string toolName, Dictionary<string, object?> args, CancellationToken ct) =>
+        CallToolWithMetaAsync(toolName, args, null, ct);
+
+    private async Task<JsonNode> CallToolWithMetaAsync(
+        string toolName, Dictionary<string, object?> args, JsonObject? extraMeta, CancellationToken ct)
     {
+        var meta = ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options);
+        if (extraMeta is not null)
+        {
+            meta ??= new JsonObject();
+            foreach (var (key, value) in extraMeta.ToList())
+            {
+                extraMeta.Remove(key);
+                meta[key] = value;
+            }
+        }
+
         CallToolResult result;
         try
         {
@@ -253,7 +283,7 @@ internal class McpFileSystemBackend(
             {
                 Name = toolName,
                 Arguments = args.ToDictionary(a => a.Key, a => JsonSerializer.SerializeToElement(a.Value)),
-                Meta = ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options)
+                Meta = meta
             }, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

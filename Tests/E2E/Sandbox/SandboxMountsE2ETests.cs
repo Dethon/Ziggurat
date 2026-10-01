@@ -1,0 +1,208 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Domain.DTOs;
+using Domain.DTOs.FileSystem;
+using Domain.Tools.FileSystem.Bridge;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
+using Shouldly;
+using Tests.E2E.Fixtures;
+using Tests.Unit.Domain.Tools.FileSystem.Bridge;
+
+namespace Tests.E2E.Sandbox;
+
+// Every mount of the calling session is a filesystem to the shell: the real image, its launcher
+// and its FUSE daemon, against the agent's bridge endpoint hosted by the fixture over an in-memory
+// registry. A test mints a call the way the exec tool does and hands its token over on `_meta`.
+[Trait("Category", "E2E")]
+[Collection(SandboxE2ECollection.Name)]
+public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
+{
+    private static (MemoryDisk Vault, RenderedMount Timers) Mounts() => (
+        new MemoryDisk("vault", new Dictionary<string, string>
+        {
+            ["notes/todo.md"] = "- [ ] TODO buy milk\n",
+            ["notes/deep/more.md"] = "another TODO here\n",
+            ["inbox.md"] = "nothing to see\n"
+        }),
+        new RenderedMount("timers", new Dictionary<string, string>
+        {
+            ["eggs/status.json"] = """{"label":"eggs","remainingSeconds":120}""",
+            ["tea/status.json"] = """{"label":"tea","remainingSeconds":30}"""
+        }));
+
+    private VfsCall Mint(params (global::Domain.Contracts.FileSystemBackendBase Backend, string MountPoint, ShellReach? Reach)[] extra)
+    {
+        var (vault, timers) = Mounts();
+        var registry = BridgeFixtures.Registry(
+            [(vault, "/vault", null), (timers, "/timers", null), .. extra]);
+        return fixture.Bridge.Mint(registry, _ => true);
+    }
+
+    [SkippableFact]
+    public async Task GrepOverTheVault_FindsWhatTheSearchToolWouldFind()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var call = Mint();
+
+        var result = await ExecAsync(client, "grep -rl TODO /vault | sort; cat /vault/notes/todo.md", call, cts.Token);
+
+        Stdout(result).ShouldBe("/vault/notes/deep/more.md\n/vault/notes/todo.md\n- [ ] TODO buy milk\n", result.ToString());
+    }
+
+    // A rendered file has no size the mount can give; served with direct I/O it is read in full.
+    [SkippableFact]
+    public async Task JqOnARenderedStatusFile_ReadsItWhole()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var call = Mint();
+
+        var result = await ExecAsync(client,
+            "jq -r .remainingSeconds /timers/eggs/status.json; wc -c < /timers/tea/status.json; python3 -c \"print(open('/timers/tea/status.json').read())\"",
+            call, cts.Token);
+
+        Stdout(result).ShouldBe("120\n37\n{\"label\":\"tea\",\"remainingSeconds\":30}\n", result.ToString());
+    }
+
+    [SkippableFact]
+    public async Task LsOfARenderedDirectory_ListsWhatGlobLists()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var call = Mint();
+
+        var result = await ExecAsync(client, "ls /timers; ls -d /timers/*/", call, cts.Token);
+
+        Stdout(result).ShouldBe("eggs\ntea\n/timers/eggs/\n/timers/tea/\n", result.ToString());
+    }
+
+    // An outpost is somebody's own computer, and the sandbox's own disk is the shell's already.
+    [SkippableFact]
+    public async Task NeitherAnOutpostNorTheSandbox_IsServed()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var call = Mint(
+            (new MemoryDisk("laptop", new Dictionary<string, string> { ["secret.txt"] = "mine" }), "outpost:laptop", null),
+            (new MemoryDisk("sandbox", new Dictionary<string, string> { ["x"] = "y" }), "/sandbox", ShellReach.Contained));
+
+        var result = await ExecAsync(client, "ls /vfs; ls /laptop 2>&1 | head -1", call, cts.Token);
+
+        var stdout = Stdout(result);
+        stdout.ShouldStartWith("timers\nvault\n", customMessage: result.ToString());
+        stdout.ShouldContain("No such file or directory");
+    }
+
+    // A name the image already uses keeps the image's directory; the mount is still reachable at
+    // /vfs/<name>.
+    [SkippableFact]
+    public async Task AMountNamedLikeAnImageDirectory_IsServedOnlyUnderVfs()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var call = Mint((new MemoryDisk("etc", new Dictionary<string, string> { ["mine.txt"] = "served\n" }), "/etc", null));
+
+        var result = await ExecAsync(client, "cat /vfs/etc/mine.txt; test -f /etc/os-release && echo image", call, cts.Token);
+
+        Stdout(result).ShouldBe("served\nimage\n", result.ToString());
+    }
+
+    // The media library's mount is `media`, and the image's empty /media is gone so it can link.
+    [SkippableFact]
+    public async Task AMountNamedMedia_IsLinkedAtSlashMedia()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var call = Mint((new MemoryDisk("media", new Dictionary<string, string> { ["film.txt"] = "reel\n" }), "/media", null));
+
+        var result = await ExecAsync(client, "cat /media/film.txt", call, cts.Token);
+
+        Stdout(result).ShouldBe("reel\n", result.ToString());
+    }
+
+    // The token is the daemon's alone: it reaches the launcher over its socket and the daemon over
+    // a pipe, never the command's environment, argv or a file the command can read.
+    [SkippableFact]
+    public async Task TheToken_NeverReachesAnythingTheCommandCanRead()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var call = Mint();
+
+        // Searched for hex-encoded, so the command's own command line — which /proc also shows —
+        // never holds the token it is looking for.
+        var hex = Convert.ToHexString(System.Text.Encoding.ASCII.GetBytes(call.Token)).ToLowerInvariant();
+
+        var result = await ExecAsync(client, $"""
+            ls /vault >/dev/null
+            env | od -An -tx1 | tr -d ' \n' | grep -c {hex}
+            cat /proc/*/cmdline /proc/*/environ 2>/dev/null | od -An -tx1 | tr -d ' \n' | grep -c {hex}
+            find /run /tmp /home -type f -readable -print0 2>/dev/null | xargs -0 cat 2>/dev/null | od -An -tx1 | tr -d ' \n' | grep -c {hex}
+            """, call, cts.Token);
+
+        Stdout(result).ShouldBe("0\n0\n0\n", result.ToString());
+    }
+
+    // Each exec has its own namespace and its own daemon: two sessions running at once each see
+    // their own mounts.
+    [SkippableFact]
+    public async Task ConcurrentExecsFromTwoSessions_EachSeeTheirOwnMounts()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var first = fixture.Bridge.Mint(BridgeFixtures.Registry(
+            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "first\n" }), "/vault", null)), _ => true);
+        var second = fixture.Bridge.Mint(BridgeFixtures.Registry(
+            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "second\n" }), "/vault", null)), _ => true);
+
+        var results = await Task.WhenAll(
+            ExecAsync(client, "sleep 1; cat /vault/who.txt", first, cts.Token),
+            ExecAsync(client, "sleep 1; cat /vault/who.txt", second, cts.Token));
+
+        Stdout(results[0]).ShouldBe("first\n", results[0].ToString());
+        Stdout(results[1]).ShouldBe("second\n", results[1].ToString());
+    }
+
+    // An exec the agent minted nothing for serves nothing.
+    [SkippableFact]
+    public async Task AnExecWithNoToken_SeesNoMounts()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+
+        var result = await ExecAsync(client, "ls -A /vfs | wc -l", null, cts.Token);
+
+        Stdout(result).ShouldBe("0\n", result.ToString());
+    }
+
+    private static string Stdout(JsonElement result) =>
+        result.TryGetProperty("stdout", out var stdout) ? stdout.GetString()! : result.ToString();
+
+    private static async Task<JsonElement> ExecAsync(McpClient client, string command, VfsCall? call, CancellationToken ct)
+    {
+        var result = await client.CallToolAsync(new CallToolRequestParams
+        {
+            Name = "fs_exec",
+            Arguments = new Dictionary<string, JsonElement>
+            {
+                ["path"] = JsonSerializer.SerializeToElement(""),
+                ["command"] = JsonSerializer.SerializeToElement(command)
+            },
+            Meta = call is null ? null : new JsonObject { [VfsBridgeGrant.MetaKey] = new VfsBridgeGrant(call.Token).ToMeta() }
+        }, cancellationToken: ct);
+
+        return JsonDocument.Parse(string.Join("\n", result.Content.OfType<TextContentBlock>().Select(c => c.Text)))
+            .RootElement.Clone();
+    }
+}

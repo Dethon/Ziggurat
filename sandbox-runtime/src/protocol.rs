@@ -17,6 +17,18 @@ pub struct ExecRequest {
     pub output_cap_bytes: usize,
     /// Exactly the command's environment. Nothing of the launcher's own is inherited.
     pub env: BTreeMap<String, String>,
+    /// Where present, the call's other mounts are served at /vfs through the agent's bridge.
+    #[serde(default)]
+    pub bridge: Option<BridgeGrant>,
+}
+
+/// The call token, and where the bridge it opens answers. Handed to the call's daemon over its
+/// stdin and to nothing the command can see.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BridgeGrant {
+    pub url: String,
+    pub token: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -50,6 +62,19 @@ mod tests {
         assert_eq!(request.command, "echo hi");
         assert_eq!(request.timeout_seconds, 60);
         assert_eq!(request.env["HOME"], "/home/sandbox_user");
+        assert_eq!(request.bridge, None);
+    }
+
+    #[test]
+    fn a_request_may_carry_the_bridge() {
+        let line = r#"{"command":"ls /vault","cwd":"/","timeoutSeconds":5,"outputCapBytes":10,"env":{},"bridge":{"url":"http://agent:8080/api/vfs-bridge","token":"t"}}"#;
+
+        let request: ExecRequest = serde_json::from_str(line).unwrap();
+
+        assert_eq!(
+            request.bridge,
+            Some(BridgeGrant { url: "http://agent:8080/api/vfs-bridge".into(), token: "t".into() })
+        );
     }
 
     #[test]

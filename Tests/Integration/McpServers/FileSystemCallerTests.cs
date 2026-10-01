@@ -59,6 +59,22 @@ public class FileSystemCallerTests
         InMemoryMcpServer.Text(result).ShouldContain("nobody");
     }
 
+    // The exec bridge's call token rides the same `_meta`, and reaches the backend the same way.
+    [Fact]
+    public async Task ACallCarryingABridgeToken_ReachesTheBackendWithIt()
+    {
+        await using var server = await StartAsync();
+
+        var result = await server.Client.CallToolAsync(new CallToolRequestParams
+        {
+            Name = "fs_info",
+            Arguments = new Dictionary<string, JsonElement> { ["path"] = JsonSerializer.SerializeToElement("/anything") },
+            Meta = new JsonObject { [VfsBridgeGrant.MetaKey] = new VfsBridgeGrant("tok-7").ToMeta() }
+        });
+
+        InMemoryMcpServer.Text(result).ShouldContain("token:tok-7");
+    }
+
     // A context that does not parse is answered in the standard error envelope every other failure
     // gets — a code the model can act on — rather than escaping for the SDK to wrap in its own words.
     [Fact]
@@ -81,18 +97,23 @@ public class FileSystemCallerTests
 
 // Answers the caller it was asked as, in the path field, so the test reads what the backend saw
 // through the same typed result every mount returns.
-public sealed class CallerEchoFileSystem(ConversationContext? caller = null) : FileSystemBackendBase
+public sealed class CallerEchoFileSystem(FileSystemCaller? caller = null) : FileSystemBackendBase
 {
     public override string FilesystemName => "probe";
 
     public override string DescribeMount => "Echoes its caller.";
 
-    public override FileSystemBackendBase For(ConversationContext? caller) => new CallerEchoFileSystem(caller);
+    public override FileSystemBackendBase For(FileSystemCaller caller) => new CallerEchoFileSystem(caller);
 
     public override Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>
         Task.FromResult<FsResult<FsInfoResult>>(new FsResult<FsInfoResult>.Ok(new FsInfoResult
         {
             Exists = true,
-            Path = caller is null ? "nobody" : $"{caller.AgentId}:{caller.ConversationId}"
+            Path = caller switch
+            {
+                { Bridge: { } bridge } => $"token:{bridge.Token}",
+                { Conversation: { } conversation } => $"{conversation.AgentId}:{conversation.ConversationId}",
+                _ => "nobody"
+            }
         }));
 }

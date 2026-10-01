@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -19,7 +20,9 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 {
     private readonly IToolApprovalHandler _approvalHandler;
     private readonly ToolPatternMatcher _patternMatcher;
-    private readonly HashSet<string> _dynamicallyApproved;
+    // Concurrent because it is read off the turn: a sandbox command's file operations ask it
+    // through the bridge while another call's approval may be remembering a tool.
+    private readonly ConcurrentDictionary<string, byte> _dynamicallyApproved;
     private readonly IMetricsPublisher _metricsPublisher;
     private readonly string _conversationId;
     private readonly IToolInvocationObserver? _observer;
@@ -51,7 +54,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         ArgumentNullException.ThrowIfNull(conversationId);
         _approvalHandler = approvalHandler;
         _patternMatcher = new ToolPatternMatcher(whitelistPatterns);
-        _dynamicallyApproved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _dynamicallyApproved = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _conversationId = conversationId;
 
@@ -71,7 +74,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             toolName,
             ToReadOnlyDictionary(context.CallContent.Arguments));
 
-        if (_alwaysApproved.Contains(toolName) || _patternMatcher.IsMatch(toolName) || _dynamicallyApproved.Contains(toolName))
+        if (RunsUnasked(toolName))
         {
             // Every path that would run unasked is screened first — a remembered approval included,
             // so one tap cannot switch the screen off for the rest of the conversation. A flag is
@@ -104,7 +107,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         switch (result)
         {
             case ToolApprovalResult.ApprovedAndRemember:
-                _dynamicallyApproved.Add(toolName);
+                _dynamicallyApproved.TryAdd(toolName, 0);
                 return await InvokeWithMetricsAsync(context, toolName, cancellationToken);
 
             case ToolApprovalResult.Approved:
@@ -117,6 +120,11 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                 return $"Tool execution was rejected by user: {toolName}. Waiting for new input.";
         }
     }
+
+    // The one question every unasked path answers: always approved, whitelisted, or remembered for
+    // this conversation.
+    private bool RunsUnasked(string toolName) =>
+        _alwaysApproved.Contains(toolName) || _patternMatcher.IsMatch(toolName) || _dynamicallyApproved.ContainsKey(toolName);
 
     // Only a call whose function carries an ExecReach is screened — the exec a session built over
     // its own mounts — and only where the path lands on a mount with a shell. A call the person is
@@ -247,6 +255,12 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         // same latency block twice. The scope publishes on both paths from one statement, and the
         // tool-call event reads its duration off the scope rather than a second stopwatch.
         using var latency = _metricsPublisher.MeasureLatency(LatencyStage.ToolExec, _conversationId);
+
+        // On the call's own arguments, so a tool acting for this conversation without a model call
+        // of its own — the exec bridge — asks exactly what this client would decide, at the moment
+        // it asks: an approval remembered mid-command counts from then on.
+        context.Arguments.Context ??= new Dictionary<object, object?>();
+        context.Arguments.Context[ToolPermission.ContextKey] = new ToolPermission(RunsUnasked);
         try
         {
             var result = await base.InvokeFunctionAsync(context, cancellationToken);

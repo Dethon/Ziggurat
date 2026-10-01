@@ -3,6 +3,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Prompts;
 using Domain.Tools.FileSystem;
+using Domain.Tools.FileSystem.Bridge;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -52,10 +53,11 @@ internal sealed class ThreadSession : IAsyncDisposable
         ILoggerFactory? loggerFactory,
         CancellationToken ct,
         McpPromptCache? promptCache = null,
-        ReadImageSupport? readImages = null)
+        ReadImageSupport? readImages = null,
+        VfsBridge? bridge = null)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
-            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages);
+            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages, bridge);
         var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
     }
@@ -80,7 +82,8 @@ internal sealed class ThreadSessionBuilder(
     IReadOnlySet<string> filesystemEnabledTools,
     ILoggerFactory? loggerFactory,
     McpPromptCache? promptCache = null,
-    ReadImageSupport? readImages = null)
+    ReadImageSupport? readImages = null,
+    VfsBridge? bridge = null)
 {
     private static readonly HashSet<string> _fileSystemMcpToolNames = [.. FileSystemOperations.ToolNames];
 
@@ -129,7 +132,7 @@ internal sealed class ThreadSessionBuilder(
             {
                 registry = fsRegistry;
                 var fsFeatureConfig = new FeatureConfig(EnabledTools: filesystemEnabledTools);
-                var feature = new FileSystemToolFeature(registry, readImages);
+                var feature = new FileSystemToolFeature(registry, readImages, bridge);
                 fileSystemTools = feature.GetTools(fsFeatureConfig).ToList();
                 fileSystemPrompts = feature.Prompt is { } mounts
                     ? [PromptManifest.Bind(PromptManifest.FilesystemMounts, mounts)]

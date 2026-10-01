@@ -38,7 +38,7 @@ public class HaFileSystemCallerViewTests
     {
         var mount = MountWithEveryDependency();
 
-        var view = mount.For(_jonas).ShouldBeOfType<HaFileSystem>();
+        var view = mount.For(new FileSystemCaller(_jonas, null)).ShouldBeOfType<HaFileSystem>();
 
         var fields = typeof(HaFileSystem).GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
         var differing = fields.Where(f => !Equals(f.GetValue(mount), f.GetValue(view))).ToList();
@@ -57,8 +57,8 @@ public class HaFileSystemCallerViewTests
     {
         var mount = MountWithEveryDependency();
 
-        var first = mount.For(_jonas);
-        var second = mount.For(_jonas with { AgentId = "jack" });
+        var first = mount.For(new FileSystemCaller(_jonas, null));
+        var second = mount.For(new FileSystemCaller(_jonas with { AgentId = "jack" }, null));
 
         first.ShouldNotBeSameAs(mount);
         first.ShouldNotBeSameAs(second);

@@ -14,4 +14,9 @@ public sealed record FsExecResult
     // tool puts the mount point in front before the model sees it, so a backend that answered in
     // container-absolute coordinates here would produce a path nothing can resolve.
     public required string Cwd { get; init; }
+
+    // What the command changed through the other mounts, when it ran in the sandbox with the
+    // bridge serving them; null — and left off the wire — where exec has no bridge (an outpost, an
+    // in-process host), so those answer exactly what they answered before.
+    public IReadOnlyList<VfsChange>? VfsChanges { get; init; }
 }

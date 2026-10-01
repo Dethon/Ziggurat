@@ -12,13 +12,14 @@ use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::output::CappedOutput;
 use crate::privilege::{become_identity, Identity};
 use crate::proctree;
 use crate::protocol::{ExecFailure, ExecRequest, ExecResponse};
+use crate::served::Served;
 
 pub struct UnitConfig {
     pub puid: u32,
@@ -96,6 +97,17 @@ fn isolate() -> io::Result<()> {
 }
 
 fn execute(config: &UnitConfig, request: &ExecRequest, connection: &UnixStream) -> io::Result<Option<ExecResponse>> {
+    // The other mounts, served for this call only. A daemon that cannot mount costs the command its
+    // view of them, never the command itself: it runs, and its stderr says why /vfs is missing.
+    let (served, unserved) = match &request.bridge {
+        Some(grant) => match Served::start(grant, config.puid, config.pgid) {
+            Ok(served) => (Some(served), None),
+            Err(e) => (None, Some(format!("sandbox-launcher: the other mounts are not served to this command: {e}\n"))),
+        },
+        None => (None, None),
+    };
+    let spare = served.as_ref().map(Served::pid);
+
     let identity = Identity {
         uid: config.puid,
         gid: config.pgid,
@@ -128,8 +140,26 @@ fn execute(config: &UnitConfig, request: &ExecRequest, connection: &UnixStream) 
     let deadline = started + Duration::from_secs(request.timeout_seconds);
     let mut stdout = CappedOutput::new(request.output_cap_bytes);
     let mut stderr = CappedOutput::new(request.output_cap_bytes);
-    let (ending, status) = pump(&mut child, &mut stdout, &mut stderr, connection, deadline)?;
+    if let Some(note) = &unserved {
+        stderr.push(note.as_bytes());
+    }
+    let mut out = child.stdout.take();
+    let mut err = child.stderr.take();
+    let (ending, status) = pump(&mut child, &mut out, &mut err, &mut stdout, &mut stderr, connection, deadline)?;
 
+    match ending {
+        Ending::TimedOut => {
+            kill_tree(&mut child, spare);
+            drain(&mut out, &mut err, &mut stdout, &mut stderr, Instant::now() + DRAIN_AFTER_KILL);
+        }
+        Ending::Cancelled => kill_tree(&mut child, spare),
+        Ending::Finished => {}
+    }
+
+    // The daemon's last commits land before the answer, so the exec result's change list is whole.
+    if let Some(served) = served {
+        served.finish();
+    }
     reap_orphans();
     if matches!(ending, Ending::Cancelled) {
         return Ok(None);
@@ -151,13 +181,13 @@ fn execute(config: &UnitConfig, request: &ExecRequest, connection: &UnixStream) 
 // background job is still writing belongs to this call, and the deadline still bounds it.
 fn pump(
     child: &mut Child,
+    out: &mut Option<ChildStdout>,
+    err: &mut Option<ChildStderr>,
     stdout: &mut CappedOutput,
     stderr: &mut CappedOutput,
     connection: &UnixStream,
     deadline: Instant,
 ) -> io::Result<(Ending, Option<i32>)> {
-    let mut out = child.stdout.take();
-    let mut err = child.stderr.take();
     let mut status: Option<i32> = None;
     let mut buffer = [0u8; 8192];
 
@@ -171,18 +201,16 @@ fn pump(
 
         let now = Instant::now();
         if now >= deadline {
-            kill_tree(child);
-            drain(&mut out, &mut err, stdout, stderr, Instant::now() + DRAIN_AFTER_KILL);
             return Ok((Ending::TimedOut, status));
         }
 
         // The child's exit has no fd here, so a short poll keeps the wait for it prompt.
         let wait_ms = (deadline - now).as_millis().min(50) as libc::c_int;
         let mut fds = vec![libc::pollfd { fd: connection.as_raw_fd(), events: libc::POLLRDHUP, revents: 0 }];
-        if let Some(o) = &out {
+        if let Some(o) = out.as_ref() {
             fds.push(libc::pollfd { fd: o.as_raw_fd(), events: libc::POLLIN, revents: 0 });
         }
-        if let Some(e) = &err {
+        if let Some(e) = err.as_ref() {
             fds.push(libc::pollfd { fd: e.as_raw_fd(), events: libc::POLLIN, revents: 0 });
         }
         let ready = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, wait_ms) };
@@ -195,16 +223,15 @@ fn pump(
         }
 
         if fds[0].revents & (libc::POLLRDHUP | libc::POLLHUP | libc::POLLERR) != 0 {
-            kill_tree(child);
             return Ok((Ending::Cancelled, status));
         }
 
         let readable = |fd: RawFd| fds.iter().any(|p| p.fd == fd && p.revents != 0);
         if out.as_ref().is_some_and(|o| readable(o.as_raw_fd())) {
-            read_into(&mut out, stdout, &mut buffer);
+            read_into(out, stdout, &mut buffer);
         }
         if err.as_ref().is_some_and(|e| readable(e.as_raw_fd())) {
-            read_into(&mut err, stderr, &mut buffer);
+            read_into(err, stderr, &mut buffer);
         }
     }
 }
@@ -250,14 +277,18 @@ fn exit_code(status: std::process::ExitStatus) -> i32 {
 }
 
 // The command's group first, then every descendant the subreaper collected, until none is left:
-// a process can fork between the listing and the kill, so one pass is not enough.
-fn kill_tree(child: &mut Child) {
+// a process can fork between the listing and the kill, so one pass is not enough. The call's
+// daemon is the unit's child too, and is spared: its last commits still have to land.
+fn kill_tree(child: &mut Child, spare: Option<i32>) {
     unsafe {
         libc::kill(-(child.id() as i32), libc::SIGKILL);
     }
     let me = std::process::id() as i32;
     for _ in 0..10 {
-        let living = proctree::descendants(me, &proctree::read_parents());
+        let living: Vec<i32> = proctree::descendants(me, &proctree::read_parents())
+            .into_iter()
+            .filter(|&pid| Some(pid) != spare)
+            .collect();
         if living.is_empty() {
             break;
         }

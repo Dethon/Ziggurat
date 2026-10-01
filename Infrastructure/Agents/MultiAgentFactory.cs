@@ -5,6 +5,7 @@ using Domain.DTOs.Channel;
 using Domain.Security;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
+using Domain.Tools.FileSystem.Bridge;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Metrics;
@@ -166,7 +167,10 @@ public sealed class MultiAgentFactory(
             // Optional for the same reason: a host with no judge preloads nothing and the model
             // loads for itself. A worker gets it by this same line, judged on its delegation
             // prompt, so a delegated task also starts on the task.
-            serviceProvider?.GetService<ISkillPreloader>());
+            serviceProvider?.GetService<ISkillPreloader>(),
+            // Optional as well: a host with no bridge endpoint runs sandbox commands with only the
+            // sandbox's own disk, as before the bridge existed.
+            serviceProvider?.GetService<VfsBridge>());
     }
 
     // Everything file_read needs to show the model a picture, resolved where the spec and the

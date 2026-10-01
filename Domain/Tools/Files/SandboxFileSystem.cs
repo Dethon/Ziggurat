@@ -54,7 +54,20 @@ public class SandboxFileSystem(
         + "truncated at the configured cap. On timeout the process tree is killed. Non-zero exit "
         + "codes are returned in the result, not as errors.";
 
+    // The token this caller's exec carries, if the agent minted one; the server's own instance has
+    // none, and the registrar asks for a view per call.
+    private VfsBridgeGrant? _bridge;
+
+    // A shallow copy with the token swapped, so the view keeps every dependency the mount was built
+    // with, as HaFileSystem's caller view does.
+    public override FileSystemBackendBase For(FileSystemCaller caller)
+    {
+        var view = (SandboxFileSystem)MemberwiseClone();
+        view._bridge = caller.Bridge;
+        return view;
+    }
+
     public override Task<FsResult<FsExecResult>> ExecAsync(
         string path, string command, int? timeoutSeconds, CancellationToken ct) =>
-        runner.RunAsync(path, command, timeoutSeconds, ct);
+        runner.RunAsync(path, command, timeoutSeconds, ct, _bridge);
 }

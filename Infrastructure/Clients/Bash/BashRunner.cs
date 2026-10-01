@@ -14,7 +14,8 @@ public class BashRunner(BashRunnerOptions options) : ICommandRunner
 {
     private readonly CommandCwd _cwd = new(options.ContainerRoot);
 
-    public async Task<FsResult<FsExecResult>> RunAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
+    public async Task<FsResult<FsExecResult>> RunAsync(
+        string path, string command, int? timeoutSeconds, CancellationToken ct, VfsBridgeGrant? bridge = null)
     {
         if (!_cwd.Resolve(path).TryGetValue(out var cwd, out var unresolved))
         {

@@ -2,12 +2,14 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Outposts;
 using Domain.Prompts;
+using Domain.Tools.FileSystem.Bridge;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
 
 public class FileSystemToolFeature(
-    IVirtualFileSystemRegistry registry, ReadImageSupport? readImages = null) : IDomainToolFeature
+    IVirtualFileSystemRegistry registry, ReadImageSupport? readImages = null, VfsBridge? bridge = null)
+    : IDomainToolFeature
 {
     private const string Feature = "filesystem";
 
@@ -61,6 +63,22 @@ public class FileSystemToolFeature(
     ];
 
     public string FeatureName => Feature;
+
+    // Each tool's leaf name against the key the feature config enables it by, so the exec bridge can
+    // ask whether this session offers the tool an operation stands for.
+    private static readonly IReadOnlyDictionary<string, string> _keysByName = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        [VfsFileReadTool.Name] = VfsFileReadTool.Key,
+        [VfsTextCreateTool.Name] = VfsTextCreateTool.Key,
+        [VfsTextEditTool.Name] = VfsTextEditTool.Key,
+        [VfsGlobFilesTool.Name] = VfsGlobFilesTool.Key,
+        [VfsTextSearchTool.Name] = VfsTextSearchTool.Key,
+        [VfsMoveTool.Name] = VfsMoveTool.Key,
+        [VfsCopyTool.Name] = VfsCopyTool.Key,
+        [VfsRemoveTool.Name] = VfsRemoveTool.Key,
+        [VfsExecTool.Name] = VfsExecTool.Key,
+        [VfsFileInfoTool.Name] = VfsFileInfoTool.Key
+    };
 
     public string? Prompt => BuildPrompt();
 
@@ -116,7 +134,11 @@ public class FileSystemToolFeature(
             (VfsRemoveTool.Key, () => AIFunctionFactory.Create(new VfsRemoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsRemoveTool.Name}")),
             // Carries where each call would run, read off this session's mounts, for the exec screen.
             (VfsExecTool.Key, () => ExecReach.Carried(
-                AIFunctionFactory.Create(new VfsExecTool(registry).RunAsync, name: $"domain__{Feature}__{VfsExecTool.Name}"),
+                AIFunctionFactory.Create(
+                    new VfsExecTool(registry, bridge, name =>
+                        config.EnabledTools is null
+                        || (_keysByName.TryGetValue(name, out var key) && config.EnabledTools.Contains(key))).RunAsync,
+                    name: $"domain__{Feature}__{VfsExecTool.Name}"),
                 ExecReach.Over(registry))),
             (VfsFileInfoTool.Key, () => AIFunctionFactory.Create(new VfsFileInfoTool(registry).RunAsync, name: $"domain__{Feature}__{VfsFileInfoTool.Name}")),
         };

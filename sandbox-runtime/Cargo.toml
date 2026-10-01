@@ -16,10 +16,19 @@ path = "src/lib.rs"
 name = "sandbox-launcher"
 path = "src/bins/sandbox-launcher.rs"
 
+[[bin]]
+name = "vfs-daemon"
+path = "src/bins/vfs-daemon.rs"
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 libc = "0.2"
+# Pure Rust, no libfuse: the daemon mounts as root with the mount syscall itself.
+fuser = { version = "0.18", default-features = false }
+# No TLS: the bridge is plain HTTP on the deployment's own network, and no TLS stack keeps the
+# static binary small.
+ureq = { version = "3", default-features = false }
 
 [profile.release]
 opt-level = 2

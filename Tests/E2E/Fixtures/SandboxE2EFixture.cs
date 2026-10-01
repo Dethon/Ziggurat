@@ -1,10 +1,16 @@
 using System.Diagnostics;
 using System.Net;
 using System.Runtime.InteropServices;
+using Agent.App;
+using Domain.Tools.FileSystem.Bridge;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Client;
+using Tests.Integration.Fixtures;
 
 namespace Tests.E2E.Fixtures;
 
@@ -19,6 +25,11 @@ namespace Tests.E2E.Fixtures;
 public sealed class SandboxE2EFixture : IAsyncLifetime
 {
     private IContainer? _sandbox;
+    private WebApplication? _bridgeHost;
+
+    // The bridge the container's daemons call: a test mints a call on it over a registry of its own
+    // and hands the token to fs_exec on the call's `_meta`, as the agent's exec tool does.
+    public VfsBridge Bridge { get; } = new(TimeProvider.System);
 
     public string McpEndpoint { get; private set; } = "";
 
@@ -54,6 +65,18 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
         WorkspaceOnHost = Path.Combine(Path.GetTempPath(), $"mcp-sandbox-home-{Guid.NewGuid():N}");
         Directory.CreateDirectory(WorkspaceOnHost);
 
+        // The agent's bridge endpoint, hosted here over whatever registry a test mints a call
+        // against: the container reaches it through the host gateway, as compose's sandbox reaches
+        // the agent by name.
+        var bridgePort = TestPort.GetAvailable();
+        var bridgeHost = WebApplication.CreateBuilder();
+        bridgeHost.WebHost.UseKestrel(options => options.Listen(IPAddress.Any, bridgePort));
+        bridgeHost.Services.AddSingleton(Bridge);
+        var bridgeApp = bridgeHost.Build();
+        bridgeApp.MapVfsBridge();
+        await bridgeApp.StartAsync();
+        _bridgeHost = bridgeApp;
+
         await E2EPhase.RunAsync(name, "container startup", _containerStartupTimeout, async ct =>
         {
             // Compose's pairing, reproduced: commands as an unprivileged user and a mount it owns at
@@ -66,9 +89,10 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
                 .WithPortBinding(8080, true)
                 .WithBindMount(WorkspaceOnHost, ContainerWorkspace, AccessMode.ReadWrite)
                 .AsCompose()
-                // What compose's env_file does in production: the server's environment holds a
-                // deployment secret, which no command may see.
+                // A deployment secret in the server's environment, which no command may see.
                 .WithEnvironment(PlantedSecretName, PlantedSecret)
+                .WithExtraHost("host.docker.internal", "host-gateway")
+                .WithEnvironment("VFSBRIDGEURL", $"http://host.docker.internal:{bridgePort}{VfsBridgeApi.Route}")
                 // The deployment secret its /mcp asks for, as compose hands it every MCP server.
                 .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
                 // The published port answers before Kestrel has bound anything — Docker's proxy
@@ -110,6 +134,11 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
         if (_sandbox is not null)
         {
             await _sandbox.DisposeAsync();
+        }
+
+        if (_bridgeHost is not null)
+        {
+            await _bridgeHost.DisposeAsync();
         }
 
         try

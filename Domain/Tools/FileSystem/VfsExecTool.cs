@@ -1,10 +1,20 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
+using Domain.DTOs.FileSystem;
+using Domain.Tools.FileSystem.Bridge;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
 
-public class VfsExecTool(IVirtualFileSystemRegistry registry)
+// `offered` answers whether this session offers a file tool by name: a command may do through the
+// mounts only what the session's own tools could, so a tool the agent was never given is refused
+// to the shell too. Null offers every tool.
+public class VfsExecTool(
+    IVirtualFileSystemRegistry registry,
+    VfsBridge? bridge = null,
+    Func<string, bool>? offered = null)
 {
     public const string Key = "exec";
     public const string Name = "exec";
@@ -28,6 +38,7 @@ public class VfsExecTool(IVirtualFileSystemRegistry registry)
         string command,
         [Description("Optional timeout in seconds. Backend clamps to its max.")]
         int? timeoutSeconds = null,
+        AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
         if (!registry.Resolve(path).TryGetValue(out var resolution, out var unresolved))
@@ -35,12 +46,55 @@ public class VfsExecTool(IVirtualFileSystemRegistry registry)
             return unresolved.ToNode();
         }
 
+        var exec = Bridged(resolution) is { } bridged && bridge is not null
+            ? await RunBridgedAsync(bridged, bridge, resolution, command, timeoutSeconds, Permission(arguments), cancellationToken)
+            : await resolution.Backend.ExecAsync(resolution.RelativePath, command, timeoutSeconds, cancellationToken);
+
         // The working directory is a path the caller never named — the backend answers it relative
         // to its own root — so it gets the mount point in front of it through the same translation
         // glob entries and search hits use. The root comes back as the empty path, which becomes
         // the mount point with a trailing slash.
-        return (await resolution.Backend.ExecAsync(resolution.RelativePath, command, timeoutSeconds, cancellationToken))
-            .Map(exec => exec with { Cwd = resolution.ToVirtualPath(exec.Cwd) })
-            .ToNode();
+        return exec.Map(e => e with { Cwd = resolution.ToVirtualPath(e.Cwd) }).ToNode();
     }
+
+    // The command runs with the other mounts served to it at /vfs: one token for this call, bound
+    // to this session's registry and to what its tools may do unasked, completed however the call
+    // ends — returned, failed or cancelled — so it never outlives the command it serves.
+    private async Task<FsResult<FsExecResult>> RunBridgedAsync(
+        IBridgedExecBackend backend,
+        VfsBridge vfs,
+        FileSystemResolution resolution,
+        string command,
+        int? timeoutSeconds,
+        ToolPermission permission,
+        CancellationToken ct)
+    {
+        var call = vfs.Mint(registry, toolName => (offered?.Invoke(toolName) ?? true) && permission.RunsUnasked(
+            FileSystemToolFeature.Callable(toolName)));
+        try
+        {
+            var exec = await backend.ExecAsync(
+                resolution.RelativePath, command, timeoutSeconds, new VfsBridgeGrant(call.Token), ct);
+            return exec.Map(e => e with { VfsChanges = vfs.Complete(call.Token) });
+        }
+        finally
+        {
+            vfs.Complete(call.Token);
+        }
+    }
+
+    // Only the deployment's own container gets a bridge: an outpost is somebody's computer and the
+    // mounts are never served onto it.
+    private IBridgedExecBackend? Bridged(FileSystemResolution resolution) =>
+        resolution.Backend is IBridgedExecBackend bridged
+        && registry.GetMounts().Any(m =>
+            string.Equals(m.MountPoint, resolution.MountPoint, StringComparison.OrdinalIgnoreCase)
+            && m.ShellReach == ShellReach.Contained)
+            ? bridged
+            : null;
+
+    private static ToolPermission Permission(AIFunctionArguments? arguments) =>
+        arguments?.Context?.TryGetValue(ToolPermission.ContextKey, out var view) == true && view is ToolPermission permission
+            ? permission
+            : ToolPermission.None;
 }

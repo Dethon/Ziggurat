@@ -12,6 +12,7 @@ using Domain.Metrics;
 using Domain.Prompts;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
+using Domain.Tools.FileSystem.Bridge;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Agents.Skills;
@@ -51,6 +52,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly string _conversationId;
     private readonly McpPromptCache? _promptCache;
     private readonly ReadImageSupport? _readImages;
+    private readonly VfsBridge? _bridge;
 
     private readonly SkillsProvider _skills;
     private readonly RedisChatMessageStore _history;
@@ -82,7 +84,8 @@ public sealed class McpAgent : DisposableAgent
         McpPromptCache? promptCache = null,
         OutpostAccess? outposts = null,
         ReadImageSupport? readImages = null,
-        ISkillPreloader? skillPreloader = null)
+        ISkillPreloader? skillPreloader = null,
+        VfsBridge? bridge = null)
     {
         _endpoints = spec.McpServerEndpoints;
         _usesOutposts = spec.UsesOutposts;
@@ -110,6 +113,7 @@ public sealed class McpAgent : DisposableAgent
         _conversationId = spec.ConversationId;
         _promptCache = promptCache;
         _readImages = readImages;
+        _bridge = bridge;
         _history = new RedisChatMessageStore(stateStore, metricsPublisher, spec.ConversationId);
         _skills = new SkillsProvider(SkillsOf, skillPreloader, _history.LastProvided, RegistryOf);
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
@@ -534,7 +538,7 @@ public sealed class McpAgent : DisposableAgent
             var newSession = await ThreadSession
                 .CreateAsync(composed.Endpoints, _name, _userId, _description,
                              _domainTools, _filesystemEnabledTools, _loggerFactory,
-                             ct, _promptCache, _readImages);
+                             ct, _promptCache, _readImages, _bridge);
 
             // The one moment a shadowed outpost is knowable, and the machine serving it has no way
             // to find out for itself — the next keepalive carries the answer home. Whether this

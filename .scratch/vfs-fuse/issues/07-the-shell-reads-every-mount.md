@@ -14,12 +14,12 @@ Writes are not served yet: they fail read-only. The sandbox service gains the FU
 
 **Status:** ready-for-agent
 
-- [ ] `grep -r <word> /vault` from a sandbox exec finds what the text search tool finds
-- [ ] `jq . /timers/<id>/status.json` (or the current rendered file) reads the full rendered content; a file whose size the mount does not report is served with direct I/O and never reads as empty
-- [ ] `ls` of a rendered directory lists what glob lists
-- [ ] Outposts are not under `/vfs`, and the sandbox's own disk is not served through FUSE
-- [ ] A mount whose identity collides with a non-empty image directory, or `sandbox`, is served only at `/vfs/<name>`; the empty `/media` is removed at image build
-- [ ] The bridge refuses an unknown, revoked or expired token, and is not routed by the public proxy
-- [ ] The token never appears in the command's environment or any file it can read
-- [ ] Concurrent execs from two sessions each see only their own session's mounts
-- [ ] Tested at the agreed seams: the exec tool with a scripted fake sandbox, the daemon core with a fake bridge, and the real image with a stub bridge
+- [x] `grep -r <word> /vault` from a sandbox exec finds what the text search tool finds
+- [x] `jq . /timers/<id>/status.json` (or the current rendered file) reads the full rendered content; a file whose size the mount does not report is served with direct I/O and never reads as empty
+- [x] `ls` of a rendered directory lists what glob lists
+- [x] Outposts are not under `/vfs`, and the sandbox's own disk is not served through FUSE
+- [x] A mount whose identity collides with a non-empty image directory, or `sandbox`, is served only at `/vfs/<name>`; the empty `/media` is removed at image build
+- [x] The bridge refuses an unknown, revoked or expired token, and is not routed by the public proxy
+- [x] The token never appears in the command's environment or any file it can read
+- [x] Concurrent execs from two sessions each see only their own session's mounts
+- [x] Tested at the agreed seams: the exec tool with a scripted fake sandbox, the daemon core with a fake bridge, and the real image with a stub bridge

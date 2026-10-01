@@ -33,9 +33,11 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     // that carried them, so a mount that has to know who is calling — the Home Assistant watches
     // record the agent that created them — answers a view of itself bound to that caller, and the
     // registrar asks for it once per call from the request's `_meta`. Plain data handed down, not
-    // an ambient to enter; null is a call that carried no context (a harness, a benchmark), and a
-    // mount that does not care answers itself. Not an operation: it advertises nothing.
-    public virtual FileSystemBackendBase For(ConversationContext? caller) => this;
+    // an ambient to enter; a null half is a call that carried none (a harness, a benchmark), and a
+    // mount that does not care answers itself. The sandbox is the other mount that cares: an exec
+    // carrying the bridge's call token runs with the other mounts served to it. Not an operation:
+    // it advertises nothing.
+    public virtual FileSystemBackendBase For(FileSystemCaller caller) => this;
 
     // The writable, persistent directory under this mount, in the backend's own coordinates, or
     // null where the mount has none — which is most of them (ADR 0025).
