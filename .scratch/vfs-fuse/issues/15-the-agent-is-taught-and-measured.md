@@ -40,3 +40,5 @@ What the runs found and this branch fixed before recording the above:
 - The checksum scenario used to require a copy into the sandbox; that is now the wrong route, so it runs in place, and the transfer claim moved to a scenario of its own (*a note copied to another mount is one copy call*).
 
 Deviations from the ticket's list: the cross-mount `mv` scenario is a batch `mv` inside the vault — jonas has no second mount a note belongs on — and the transfer half is pinned by the bridge's own tests and the real-image E2E. The outpost scenario asks what is on the machine without naming the sandbox, because the sandbox prompt allows one look at a path spelled as the user gave it.
+
+**2026-10-01, after the code review's fixes (9f743df02).** The Shell family re-armed: 5/5. `.eval-output/scorecard-full.json` is restored to the 2026-09-18 full pass, so a later comparison is not made against a partial ledger; this branch's family runs are the dated `scorecard-full.2026-10-01.*` files.

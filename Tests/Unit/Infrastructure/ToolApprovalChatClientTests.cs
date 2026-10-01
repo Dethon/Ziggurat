@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
@@ -168,6 +169,34 @@ public class ToolApprovalChatClientTests
         seen.RunsUnasked("domain__filesystem__file_read").ShouldBeTrue("whitelisted");
         seen.RunsUnasked("mcp__server__Asked").ShouldBeTrue("remembered when the person approved it");
         seen.RunsUnasked("domain__filesystem__text_create").ShouldBeFalse("neither whitelisted nor remembered");
+    }
+
+    // The same tools act outside the turn — the exec bridge answers a sandbox command's file
+    // operations on its own request — and still have to say which conversation they serve.
+    [Fact]
+    public async Task InvokeFunctionAsync_HandsTheCallTheConversationItServes()
+    {
+        ConversationContext? seen = null;
+        var function = AIFunctionFactory.Create((AIFunctionArguments arguments) =>
+        {
+            seen = arguments.Context?[typeof(ConversationContext)] as ConversationContext;
+            return "result";
+        }, "domain__filesystem__exec");
+        var conversation = new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1"));
+
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("domain__filesystem__exec", "call1"));
+        var client = new ToolApprovalChatClient(
+            fakeClient, new TestApprovalHandler(result: ToolApprovalResult.Approved), "conv",
+            whitelistPatterns: ["domain__filesystem*"]);
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], new ChatOptions
+        {
+            Tools = [function],
+            AdditionalProperties = new AdditionalPropertiesDictionary { ["ConversationContext"] = conversation }
+        });
+
+        seen.ShouldBe(conversation);
     }
 
     private sealed class GatedNotifyApprovalHandler(Task gate) : IToolApprovalHandler
