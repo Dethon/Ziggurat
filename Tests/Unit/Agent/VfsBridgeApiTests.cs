@@ -36,7 +36,7 @@ public class VfsBridgeApiTests
         }), "/vault", null)),
         permits ?? (_ => true));
 
-    public static TheoryData<string> Operations => ["attr", "list", "read"];
+    public static TheoryData<string> Operations => ["attr", "list", "read", "write"];
 
     [Theory]
     [MemberData(nameof(Operations))]
@@ -120,6 +120,25 @@ public class VfsBridgeApiTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         Encoding.UTF8.GetString(await response.Content.ReadAsByteArrayAsync()).ShouldBe("alpha\n");
+    }
+
+    [Fact]
+    public async Task Write_TakesTheWholeFileAsTheBody()
+    {
+        var call = Mint();
+        await using var app = await StartAsync();
+        using var client = app.GetTestClient();
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/vfs-bridge/write?path=%2Fvault%2Fnotes%2Fb.md&new=true")
+        {
+            Content = new ByteArrayContent("beta\n"u8.ToArray())
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", call.Token);
+
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var change = call.Changes.ShouldHaveSingleItem();
+        (change.Path, change.Operation, change.Status).ShouldBe(("/vault/notes/b.md", "create", "applied"));
     }
 
     // A refusal carries the errno the daemon hands the kernel and the mount's own envelope.

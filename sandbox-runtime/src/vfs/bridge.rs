@@ -46,6 +46,10 @@ pub trait Bridge: Send + Sync + 'static {
     fn attr(&self, path: &str) -> Result<Attr, Errno>;
     fn list(&self, path: &str) -> Result<Listing, Errno>;
     fn read(&self, path: &str) -> Result<Vec<u8>, Errno>;
+
+    /// The whole file, as the equivalent tool call would write it. `new` is the daemon's knowledge
+    /// that nothing was at the path, which the bridge would otherwise need a round trip to learn.
+    fn write(&self, path: &str, content: &[u8], new: bool) -> Result<(), Errno>;
 }
 
 /// The bridge's errno names, as the agent spells them (`Errnos` in the bridge).

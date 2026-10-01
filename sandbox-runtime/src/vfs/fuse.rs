@@ -4,9 +4,12 @@
 use std::ffi::OsStr;
 use std::time::{Duration, UNIX_EPOCH};
 
+use std::time::SystemTime;
+
 use fuser::{
-    Errno, FileAttr, FileHandle, FileType, Filesystem, FopenFlags, Generation, INodeNo, LockOwner, OpenAccMode,
-    OpenFlags, ReplyAttr, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen, Request,
+    BsdFileFlags, Errno, FileAttr, FileHandle, FileType, Filesystem, FopenFlags, Generation, INodeNo, LockOwner,
+    OpenAccMode, OpenFlags, RenameFlags, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry,
+    ReplyOpen, ReplyStatfs, ReplyWrite, Request, TimeOrNow, WriteFlags,
 };
 
 use super::bridge::{Bridge, Kind};
@@ -17,7 +20,8 @@ use super::core::{Node, Vfs};
 const TTL: Duration = Duration::ZERO;
 
 pub struct Fuse<B: Bridge> {
-    pub vfs: Vfs<B>,
+    /// Shared with the daemon's control loop, which ends the command through it.
+    pub vfs: std::sync::Arc<Vfs<B>>,
     /// The command's own uid and gid. Every node is theirs, so the kernel's permission check lets
     /// the command write; whether a write is allowed is the bridge's decision, never the mode's.
     pub uid: u32,
@@ -73,7 +77,8 @@ impl<B: Bridge> Filesystem for Fuse<B> {
 
     fn open(&self, _req: &Request, ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {
         let write = flags.acc_mode() != OpenAccMode::O_RDONLY;
-        match self.vfs.open(ino.0, write) {
+        let truncate = flags.0 & libc::O_TRUNC != 0;
+        match self.vfs.open(ino.0, write, truncate) {
             Ok(opened) => reply.opened(
                 FileHandle(opened.fh),
                 if opened.direct_io { FopenFlags::FOPEN_DIRECT_IO } else { FopenFlags::empty() },
@@ -97,6 +102,122 @@ impl<B: Bridge> Filesystem for Fuse<B> {
             Ok(bytes) => reply.data(&bytes),
             Err(e) => reply.error(errno(e)),
         }
+    }
+
+    fn create(
+        &self,
+        _req: &Request,
+        parent: INodeNo,
+        name: &OsStr,
+        _mode: u32,
+        _umask: u32,
+        _flags: i32,
+        reply: ReplyCreate,
+    ) {
+        match self.vfs.create(parent.0, &name.to_string_lossy()) {
+            Ok((node, fh)) => reply.created(
+                &TTL,
+                &self.attr(&node),
+                Generation(0),
+                FileHandle(fh),
+                FopenFlags::FOPEN_DIRECT_IO,
+            ),
+            Err(e) => reply.error(errno(e)),
+        }
+    }
+
+    fn write(
+        &self,
+        _req: &Request,
+        _ino: INodeNo,
+        fh: FileHandle,
+        offset: u64,
+        data: &[u8],
+        _write_flags: WriteFlags,
+        _flags: OpenFlags,
+        _lock_owner: Option<LockOwner>,
+        reply: ReplyWrite,
+    ) {
+        match self.vfs.write(fh.0, offset, data) {
+            Ok(written) => reply.written(written),
+            Err(e) => reply.error(errno(e)),
+        }
+    }
+
+    fn flush(&self, _req: &Request, _ino: INodeNo, fh: FileHandle, _lock_owner: LockOwner, reply: ReplyEmpty) {
+        self.vfs.flush(fh.0);
+        reply.ok();
+    }
+
+    fn fsync(&self, _req: &Request, _ino: INodeNo, _fh: FileHandle, _datasync: bool, reply: ReplyEmpty) {
+        reply.ok();
+    }
+
+    fn setattr(
+        &self,
+        _req: &Request,
+        ino: INodeNo,
+        _mode: Option<u32>,
+        _uid: Option<u32>,
+        _gid: Option<u32>,
+        size: Option<u64>,
+        _atime: Option<TimeOrNow>,
+        _mtime: Option<TimeOrNow>,
+        _ctime: Option<SystemTime>,
+        _fh: Option<FileHandle>,
+        _crtime: Option<SystemTime>,
+        _chgtime: Option<SystemTime>,
+        _bkuptime: Option<SystemTime>,
+        _flags: Option<BsdFileFlags>,
+        reply: ReplyAttr,
+    ) {
+        match self.vfs.setattr(ino.0, size) {
+            Ok(node) => reply.attr(&TTL, &self.attr(&node)),
+            Err(e) => reply.error(errno(e)),
+        }
+    }
+
+    fn mkdir(&self, _req: &Request, parent: INodeNo, name: &OsStr, _mode: u32, _umask: u32, reply: ReplyEntry) {
+        match self.vfs.mkdir(parent.0, &name.to_string_lossy()) {
+            Ok(node) => reply.entry(&TTL, &self.attr(&node), Generation(0)),
+            Err(e) => reply.error(errno(e)),
+        }
+    }
+
+    fn unlink(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        match self.vfs.unlink(parent.0, &name.to_string_lossy()) {
+            Ok(()) => reply.ok(),
+            Err(e) => reply.error(errno(e)),
+        }
+    }
+
+    fn rmdir(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        match self.vfs.rmdir(parent.0, &name.to_string_lossy()) {
+            Ok(()) => reply.ok(),
+            Err(e) => reply.error(errno(e)),
+        }
+    }
+
+    fn rename(
+        &self,
+        _req: &Request,
+        parent: INodeNo,
+        name: &OsStr,
+        newparent: INodeNo,
+        newname: &OsStr,
+        _flags: RenameFlags,
+        reply: ReplyEmpty,
+    ) {
+        match self.vfs.rename(parent.0, &name.to_string_lossy(), newparent.0, &newname.to_string_lossy()) {
+            Ok(()) => reply.ok(),
+            Err(e) => reply.error(errno(e)),
+        }
+    }
+
+    // Some writers check for free space before they write; the mounts have no such number, so the
+    // answer is generous rather than a zero that reads as full.
+    fn statfs(&self, _req: &Request, _ino: INodeNo, reply: ReplyStatfs) {
+        reply.statfs(1 << 30, 1 << 30, 1 << 30, 1 << 20, 1 << 20, 4096, 255, 4096);
     }
 
     fn release(

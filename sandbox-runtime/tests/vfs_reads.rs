@@ -40,7 +40,7 @@ fn a_disk_file_reports_the_size_the_mount_gives_and_reads_whole() {
     let ino = walk(&vfs, "/vault/notes/todo.md");
 
     let node = vfs.getattr(ino).unwrap();
-    let opened = vfs.open(ino, false).unwrap();
+    let opened = vfs.open(ino, false, false).unwrap();
 
     assert_eq!((node.kind, node.size, node.size_known), (Kind::File, 12, true));
     assert!(!opened.direct_io);
@@ -56,7 +56,7 @@ fn a_rendered_file_of_unknown_size_is_served_with_direct_io_and_never_reads_empt
     let ino = walk(&vfs, "/timers/eggs/status.json");
 
     let before = vfs.getattr(ino).unwrap();
-    let opened = vfs.open(ino, false).unwrap();
+    let opened = vfs.open(ino, false, false).unwrap();
     let content = vfs.read(opened.fh, 0, 4096).unwrap();
     let after = vfs.getattr(ino).unwrap();
 
@@ -101,5 +101,5 @@ fn a_directory_cannot_be_opened_as_a_file() {
     let vfs = vault();
     let notes = walk(&vfs, "/vault/notes");
 
-    assert_eq!(vfs.open(notes, false).err(), Some(libc::EISDIR));
+    assert_eq!(vfs.open(notes, false, false).err(), Some(libc::EISDIR));
 }

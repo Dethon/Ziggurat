@@ -87,4 +87,9 @@ impl Bridge for HttpBridge {
     fn read(&self, path: &str) -> Result<Vec<u8>, Errno> {
         self.post("read", &[("path", path)], &[])
     }
+
+    fn write(&self, path: &str, content: &[u8], new: bool) -> Result<(), Errno> {
+        self.post("write", &[("path", path), ("new", if new { "true" } else { "false" })], content)
+            .map(|_| ())
+    }
 }

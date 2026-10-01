@@ -155,6 +155,108 @@ public sealed class VfsCall
         }
     }
 
+    // A file the command wrote, whole, as the equivalent tool call would write it: text as a create
+    // with overwrite (the text tool, which applies the mount's own rules about what it authors as
+    // text), anything else as the blob write a copy streams through, where the mount offers one.
+    // `isNew` is the daemon's knowledge that nothing was at the path, which only names the change.
+    public async Task<BridgeAnswer<bool>> WriteAsync(string path, byte[] content, bool isNew, CancellationToken ct)
+    {
+        var operation = isNew ? VfsChange.Operations.Create : VfsChange.Operations.Write;
+        var text = AsText(content);
+        if (Revoked)
+        {
+            return Dropped<bool>(path, operation);
+        }
+
+        if (Resolve<bool>(path, text is null ? VfsCopyTool.Name : VfsTextCreateTool.Name, out var resolution) is { } refused)
+        {
+            return Logged(refused, path, operation);
+        }
+
+        var answer = text is not null
+            ? (await resolution.Backend.CreateAsync(resolution.RelativePath, text, overwrite: true, createDirectories: true, ct))
+                .TryGetValue(out _, out var error)
+                ? new BridgeAnswer<bool>.Ok(true)
+                : BridgeAnswer<bool>.From(error)
+            : await WriteBytesAsync(resolution, content, ct);
+        return Logged(answer, path, operation);
+    }
+
+    private static async Task<BridgeAnswer<bool>> WriteBytesAsync(FileSystemResolution resolution, byte[] content, CancellationToken ct)
+    {
+        try
+        {
+            await resolution.Backend.WriteChunksAsync(
+                resolution.RelativePath, One(content), overwrite: true, createDirectories: true, ct);
+            return new BridgeAnswer<bool>.Ok(true);
+        }
+        catch (NotSupportedException ex)
+        {
+            return BridgeAnswer<bool>.From(new ToolErrorResult
+            {
+                ErrorCode = ToolError.Codes.UnsupportedOperation,
+                Message = $"{ex.Message} Only text can be written here."
+            });
+        }
+        catch (FileSystemOperationException ex)
+        {
+            return BridgeAnswer<bool>.From(ex.Error);
+        }
+    }
+
+    private static async IAsyncEnumerable<ReadOnlyMemory<byte>> One(byte[] content)
+    {
+        await Task.CompletedTask;
+        yield return content;
+    }
+
+    // Text is what decodes as UTF-8 and holds no NUL: what a person would call a text file, and
+    // what the text tool can carry as a string.
+    private static string? AsText(byte[] content)
+    {
+        if (content.Contains((byte)0))
+        {
+            return null;
+        }
+
+        try
+        {
+            return new UTF8Encoding(false, throwOnInvalidBytes: true).GetString(content);
+        }
+        catch (DecoderFallbackException)
+        {
+            return null;
+        }
+    }
+
+    // Every change the command made through the mounts is recorded with the bridge's verdict,
+    // because bash swallows a refusal at close and this log is all the agent will see of it.
+    private BridgeAnswer<T> Logged<T>(BridgeAnswer<T> answer, string path, string operation, string? destination = null)
+    {
+        Record(new VfsChange
+        {
+            Path = path,
+            Operation = operation,
+            Destination = destination,
+            Status = answer is BridgeAnswer<T>.Ok ? VfsChange.Statuses.Applied : VfsChange.Statuses.Refused,
+            Error = (answer as BridgeAnswer<T>.Refused)?.Error?.ToNode()
+        });
+        return answer;
+    }
+
+    // Arrived after the command was killed or the call cancelled: never applied, and said so.
+    private BridgeAnswer<T> Dropped<T>(string path, string operation, string? destination = null)
+    {
+        Record(new VfsChange
+        {
+            Path = path,
+            Operation = operation,
+            Destination = destination,
+            Status = VfsChange.Statuses.Dropped
+        });
+        return new BridgeAnswer<T>.Refused(Errnos.Denied, null);
+    }
+
     private static async Task<BridgeAnswer<byte[]>> ReadTextAsync(FileSystemResolution resolution, CancellationToken ct) =>
         (await resolution.Backend.ReadAsync(resolution.RelativePath, null, null, ct)).TryGetValue(out var text, out var error)
             ? new BridgeAnswer<byte[]>.Ok(Encoding.UTF8.GetBytes(text.Content))

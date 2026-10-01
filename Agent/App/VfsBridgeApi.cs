@@ -29,6 +29,15 @@ public static class VfsBridgeApi
                 truncated = l.Truncated
             })));
 
+        // The body is the whole file; `new` says nothing was at the path when the command made it.
+        bridge.MapPost("/write", (HttpContext http, VfsBridge vfs, string path, CancellationToken ct, bool @new = false) =>
+            WithCall(http, vfs, async call =>
+            {
+                using var body = new MemoryStream();
+                await http.Request.Body.CopyToAsync(body, ct);
+                return Json(await call.WriteAsync(path, body.ToArray(), @new, ct), _ => new { });
+            }));
+
         bridge.MapPost("/read", (HttpContext http, VfsBridge vfs, string path, CancellationToken ct) =>
             WithCall(http, vfs, async call => await call.ReadAsync(path, ct) switch
             {

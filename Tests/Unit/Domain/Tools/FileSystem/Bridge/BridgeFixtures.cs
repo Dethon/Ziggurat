@@ -37,10 +37,52 @@ internal sealed class ScriptedSandbox(VfsBridge bridge, Func<VfsCall, Cancellati
     }
 }
 
-// A disk root in memory: bytes behind every file, info with a size, a glob over one level.
-internal class MemoryDisk(string name, IDictionary<string, string> files) : FileSystemBackendBase
+// A disk root in memory: bytes behind every file, info with a size, a glob over one level, text
+// create for the extensions it reads as text and blob writes for anything.
+internal class MemoryDisk(string name, IDictionary<string, string> files, string[]? textExtensions = null)
+    : FileSystemBackendBase
 {
     public IDictionary<string, string> Files { get; } = files;
+
+    public List<string> Writes { get; } = [];
+
+    private readonly string[] _text = textExtensions ?? [".md", ".txt", ".json"];
+
+    public override Task<FsResult<FsCreateResult>> CreateAsync(
+        string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
+    {
+        var key = path.Trim('/');
+        if (!_text.Contains(Path.GetExtension(key)))
+        {
+            return Task.FromResult(FsError.Invalid<FsCreateResult>($"Extension not allowed: {Path.GetExtension(key)}"));
+        }
+
+        if (!overwrite && Files.ContainsKey(key))
+        {
+            return Task.FromResult(FsError.AlreadyExists<FsCreateResult>(path));
+        }
+
+        Files[key] = content;
+        Writes.Add($"create {key}");
+        return Task.FromResult<FsResult<FsCreateResult>>(new FsResult<FsCreateResult>.Ok(new FsCreateResult
+        {
+            Status = "created", FilePath = path, Size = $"{content.Length}B", Lines = content.Split('\n').Length
+        }));
+    }
+
+    public override async Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+        bool overwrite, bool createDirectories, CancellationToken ct)
+    {
+        using var bytes = new MemoryStream();
+        await foreach (var chunk in chunks.WithCancellation(ct))
+        {
+            bytes.Write(chunk.Span);
+        }
+
+        Files[path.Trim('/')] = Encoding.Latin1.GetString(bytes.ToArray());
+        Writes.Add($"blob {path.Trim('/')}");
+        return bytes.Length;
+    }
 
     public override string FilesystemName => name;
 

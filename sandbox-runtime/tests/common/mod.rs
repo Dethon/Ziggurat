@@ -17,6 +17,8 @@ pub enum FakeNode {
 pub struct FakeBridge {
     pub nodes: Mutex<BTreeMap<String, FakeNode>>,
     pub calls: Mutex<Vec<String>>,
+    /// Paths whose writes the mount refuses, as a mount refusing them would.
+    pub refusing: Mutex<Vec<String>>,
 }
 
 impl FakeBridge {
@@ -34,6 +36,25 @@ impl FakeBridge {
 
     pub fn calls(&self) -> Vec<String> {
         self.calls.lock().unwrap().clone()
+    }
+
+    /// Only what changed something: the reads and listings a command makes are its own business.
+    pub fn mutations(&self) -> Vec<String> {
+        self.calls()
+            .into_iter()
+            .filter(|c| !(c.starts_with("attr ") || c.starts_with("list ") || c.starts_with("read ")))
+            .collect()
+    }
+
+    pub fn refuse(&self, path: &str) {
+        self.refusing.lock().unwrap().push(path.to_string());
+    }
+
+    pub fn content(&self, path: &str) -> Option<String> {
+        match self.nodes.lock().unwrap().get(path) {
+            Some(FakeNode::File(bytes, _)) => Some(String::from_utf8_lossy(bytes).into_owned()),
+            _ => None,
+        }
     }
 
     fn record(&self, call: String) {
@@ -72,6 +93,26 @@ impl Bridge for FakeBridge {
             })
             .collect();
         Ok(Listing { entries, truncated: false })
+    }
+
+    fn write(&self, path: &str, content: &[u8], new: bool) -> Result<(), Errno> {
+        self.record(format!(
+            "write {path} {} {}",
+            if new { "create" } else { "overwrite" },
+            String::from_utf8_lossy(content)
+        ));
+        if self.refusing.lock().unwrap().iter().any(|p| p == path) {
+            return Err(libc::EACCES);
+        }
+        let mut nodes = self.nodes.lock().unwrap();
+        // createDirectories: the parents a held mkdir made come into being with the file.
+        let mut parent = path.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+        while !parent.is_empty() && !nodes.contains_key(&parent) {
+            nodes.insert(parent.clone(), FakeNode::Dir);
+            parent = parent.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+        }
+        nodes.insert(path.to_string(), FakeNode::File(content.to_vec(), true));
+        Ok(())
     }
 
     fn read(&self, path: &str) -> Result<Vec<u8>, Errno> {

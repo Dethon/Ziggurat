@@ -15,9 +15,9 @@ Every outcome is logged against the call token and returned on the exec result a
 
 **Status:** ready-for-agent
 
-- [ ] `echo text > /vault/new.md` creates the note once, with no empty intermediate commit
-- [ ] `sed -i` on a vault note commits one write to the note, and its temp file never appears on the mount
-- [ ] `sed -i` on a file the mount refuses leaves it unchanged and lists a refused write with the mount's envelope
-- [ ] A write the matching tool would refuse (a disallowed extension, a rendered file that refuses writes) is refused the same way
-- [ ] `mkdir -p /vault/a/b && echo x > /vault/a/b/c.md` creates the note with its directories; an empty `mkdir` leaves nothing on the mount
-- [ ] The exec result carries `vfsChanges` with virtual paths, operation and status; backends without a bridge return it empty
+- [x] `echo text > /vault/new.md` creates the note once, with no empty intermediate commit
+- [x] `sed -i` on a vault note commits one write to the note, and its temp file never appears on the mount
+- [x] `sed -i` on a file the mount refuses leaves it unchanged and lists a refused write with the mount's envelope
+- [x] A write the matching tool would refuse (a disallowed extension, a rendered file that refuses writes) is refused the same way
+- [x] `mkdir -p /vault/a/b && echo x > /vault/a/b/c.md` creates the note with its directories; an empty `mkdir` leaves nothing on the mount
+- [x] The exec result carries `vfsChanges` with virtual paths, operation and status; backends without a bridge return it empty
