@@ -262,6 +262,11 @@ public static class ScenarioChecks
     // the scenario's own declaration, which says which worker may be handed what — so a scenario
     // that also had to permit the tool by name would be saying the same thing twice, and a scenario
     // that forgot would report the model's correct decision as an unnecessary call.
+    // A path or a command is not a tool name: a command is often a script of several lines, and a
+    // `*` in a permission means anything at all, newlines included.
+    private static Regex Wildcard(string pattern) =>
+        new($"^{Regex.Escape(pattern).Replace("\\*", ".*")}$", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
     private static IEnumerable<string> Unnecessary(Scenario scenario, Recording recording)
     {
         // Compiled once for the whole recording rather than once per call: a permission is a pair
@@ -269,8 +274,8 @@ public static class ScenarioChecks
         var permitted = scenario.Permitted
             .Select(p => (
                 Tool: new ToolPatternMatcher([p.Tool]),
-                Path: new ToolPatternMatcher([p.Path]),
-                Command: new ToolPatternMatcher([p.Command])))
+                Path: Wildcard(p.Path),
+                Command: Wildcard(p.Command)))
             .ToList();
 
         // A refused attempt at a required call, corrected into it: the tool named the fix and the

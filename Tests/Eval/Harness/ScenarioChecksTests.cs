@@ -458,6 +458,26 @@ public class ScenarioChecksTests
         ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
     }
 
+    // A script is more than one line, and a permission's `*` for the command means any command at
+    // all: compiled as a tool-name pattern it stopped at the first newline, so every multi-line exec
+    // read as an unnecessary call however it was permitted.
+    [Fact]
+    public async Task AMultiLineCommand_IsPermittedByAnyCommand()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            new ScriptedTurn.Step(Exec, new Dictionary<string, object?>
+            {
+                ["path"] = "/vault/Proyectos",
+                ["command"] = "printf 'a\\n' > x.txt\ncat x.txt"
+            }, "ok"),
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        var scenario = Timer() with { Permitted = [new CallPermission(Exec, "/vault*")] };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task APermittedToolOnADifferentPath_Fails()
     {
