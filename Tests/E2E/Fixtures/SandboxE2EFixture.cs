@@ -56,8 +56,8 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
 
         await E2EPhase.RunAsync(name, "container startup", _containerStartupTimeout, async ct =>
         {
-            // Compose's pairing, reproduced: an unprivileged user and a mount it owns at the home
-            // directory. Both halves are what make a permissions fact real here — the container
+            // Compose's pairing, reproduced: commands as an unprivileged user and a mount it owns at
+            // the home directory. Both halves are what make a permissions fact real here — the container
             // root stays root-owned and unwritable, and the workspace is writable because the host
             // directory belongs to whoever is running the test. The in-process fixture builds the
             // server against a temporary root the test user owns outright, so it cannot tell the
@@ -65,7 +65,10 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
             _sandbox = TestContainers.Container(E2EImages.McpSandbox.ImageName, "mcp-sandbox")
                 .WithPortBinding(8080, true)
                 .WithBindMount(WorkspaceOnHost, ContainerWorkspace, AccessMode.ReadWrite)
-                .WithCreateParameterModifier(parameters => parameters.User = $"{geteuid()}:{getegid()}")
+                .AsCompose()
+                // What compose's env_file does in production: the server's environment holds a
+                // deployment secret, which no command may see.
+                .WithEnvironment(PlantedSecretName, PlantedSecret)
                 // The published port answers before Kestrel has bound anything — Docker's proxy
                 // accepts the connection and the app then resets it — so a TCP check returns while
                 // the server is still starting and every test fails on a reset. `GET /mcp` is the
@@ -121,6 +124,13 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
     // published workspace is read off the mount rather than written here; this is only where the
     // host directory is attached.
     public const string ContainerWorkspace = "/home/sandbox_user";
+
+    public static uint Uid => geteuid();
+
+    public static uint Gid => getegid();
+
+    public const string PlantedSecretName = "OPENROUTER__APIKEY";
+    public const string PlantedSecret = "sk-planted-never-shown";
 
     [DllImport("libc", SetLastError = true)]
     private static extern uint geteuid();

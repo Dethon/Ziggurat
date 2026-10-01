@@ -1,5 +1,4 @@
 using System.Net;
-using System.Runtime.InteropServices;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
@@ -51,8 +50,7 @@ public sealed class EvalSandbox : IAsyncDisposable
 
         if (OperatingSystem.IsLinux())
         {
-            builder = builder.WithCreateParameterModifier(
-                parameters => parameters.User = $"{geteuid()}:{getegid()}");
+            builder = builder.AsCompose();
         }
 
         sandbox._container = builder.Build();
@@ -103,10 +101,4 @@ public sealed class EvalSandbox : IAsyncDisposable
             // A leftover temp directory is not a failing run.
         }
     }
-
-    [DllImport("libc")]
-    private static extern uint geteuid();
-
-    [DllImport("libc")]
-    private static extern uint getegid();
 }

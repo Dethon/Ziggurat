@@ -1,0 +1,28 @@
+[package]
+name = "sandbox-runtime"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97"
+license = "MIT"
+publish = false
+
+[lib]
+name = "sandbox_runtime"
+path = "src/lib.rs"
+
+# Binaries live in src/bins/, not src/bin/: the repo's .dockerignore drops every **/bin, which is
+# the .NET output directory, and the sandbox image builds this crate from the build context.
+[[bin]]
+name = "sandbox-launcher"
+path = "src/bins/sandbox-launcher.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+
+[profile.release]
+opt-level = 2
+lto = "thin"
+strip = true
+panic = "abort"

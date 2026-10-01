@@ -1,0 +1,22 @@
+# sandbox-runtime
+
+Standalone Rust crate (NOT in the .NET solution, sharing no build with `satellite/` or `speech-typist/`): the sandbox container's privileged half. It is built inside `McpServerSandbox/Dockerfile` (a `rust:1.97.1-slim` stage, static musl) and is the image's entrypoint. `cargo test` in this directory is the whole suite for the pure parts and must pass with no .NET project built, no Docker and no root; what needs the kernel and root is asserted against the real image by `Tests/E2E/Sandbox/SandboxLauncherE2ETests.cs`.
+
+Binaries live in `src/bins/`, never `src/bin/`: the repo's `.dockerignore` drops every `**/bin` (the .NET output directory), and the image builds this crate from the build context.
+
+## The launcher (`sandbox-launcher serve -- dotnet McpServerSandbox.dll`)
+
+Runs as root under `tini` (which reaps what an exec leaves behind once it is over).
+
+- **Two uids, one volume.** The MCP server runs as `SANDBOX_SERVER_UID` (1700) with PGID as its group, so a command — PUID, the volume's owner — cannot read its environment (`/proc/<pid>/environ`), trace it or kill it; the server holds the deployment's MCP secret. The file tools run inside that server, so the home volume is kept **group-shared** (`home::share` at boot: group-writable, directories setgid), commands and server both run with umask 002, and `home::adopt` hands whatever the server created to PUID before each command, so a command can `chmod +x` a script the file tool wrote. A file a command deliberately creates 0600 stays unreadable to the file tools; accepted.
+- **The socket is the server's alone**: `/run/sandbox/launcher.sock`, chowned to the server uid, 0600, and `SO_PEERCRED` checked on every connection. A command must never be able to ask for a command of its own, which would run outside its own timeout and namespace. The launcher announces the path to the server as `LAUNCHERSOCKET`; the server's `LauncherRunner` is chosen only when it is set.
+- **One unit per exec** (`sandbox-launcher unit`, a fresh process with the connection as stdin and stdout): `unshare(CLONE_NEWNS)` + `MS_PRIVATE` (a process of its own because unsharing changes the caller, and the accept loop must stay in the container's namespace), child subreaper, adopt, then `bash -lc` as PUID via `privilege::become_identity`: supplementary groups kept (compose's `group_add`, which is how `render` reaches the GPU) minus root's, gid, **the whole bounding set dropped**, ambient cleared, uid, **no-new-privs**, umask, then cwd. The bounding-set drop is load-bearing, not tidiness: the container holds SYS_ADMIN, and a child keeps the container's bounding set, so a setuid-root binary would get it back (spike finding 1); `fusermount3` additionally loses its setuid bit in the image.
+- **Protocol**: one JSON line each way (`protocol.rs`, camelCase, the .NET side's names). The server hangs up to cancel; the unit then kills the tree and answers nothing. A request it cannot run at all answers `{"error": ...}`.
+- **Timeout and kill-tree**: the deadline covers the command **and its pipes**: a background job still holding stdout belongs to the call, so `nohup x &` without a redirect is killed at the timeout where the in-process runner used to wait for it forever. The kill is the command's process group, then every descendant the subreaper collected, repeated until none is left. A process that redirected its output and detached outlives the exec, as before. Exit codes: a signal is `128+n`, a timeout `-1`.
+- **Output**: each stream capped at `outputCapBytes` on a UTF-8 boundary (`output.rs`), the rest drained so a chatty command never blocks on a full pipe.
+
+## Invariants
+
+- No workspace, no root `Cargo.toml`; the **same pinned toolchain** as the other two crates (`rust-toolchain.toml`, 1.97.1) and listed in both editors' rust-analyzer `linkedProjects` (`.vscode/settings.json`, `.zed/settings.json`). Pinning it apart makes serde's derives fail to expand in whichever crate loses the editor's one proc-macro server.
+- Everything between fork and exec (`privilege.rs`) is raw syscalls on memory prepared before the fork: no allocation, no formatting.
+- The launcher parses one JSON line per exec and nothing else the agent sends; that is the point of keeping it apart from the server, which parses everything.

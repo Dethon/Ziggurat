@@ -7,31 +7,21 @@ using Domain.Tools.Files;
 
 namespace Infrastructure.Clients.Bash;
 
+// The in-process runner: a child of the server, as the server's own user. The container runs the
+// launcher-backed one instead (LauncherRunner); this stays for in-process hosts — the integration
+// fixtures and the outpost — and both resolve and report the working directory the same way.
 public class BashRunner(BashRunnerOptions options) : ICommandRunner
 {
-    // The runner's own coordinates. Every working directory is resolved against this root and
-    // reported relative to it; which mount point goes in front is the exec tool's business, not
-    // this one's. The jail is the same containment decision the file tools make, so a path that
-    // climbs out — or reaches out through a symlink — lands back at the root rather than
-    // somewhere the response cannot name.
-    private readonly PathJail _jail = new(options.ContainerRoot);
+    private readonly CommandCwd _cwd = new(options.ContainerRoot);
 
     public async Task<FsResult<FsExecResult>> RunAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
-        if (!TryResolveCwd(path, out var cwd))
+        if (!_cwd.Resolve(path).TryGetValue(out var cwd, out var unresolved))
         {
-            return FsError.Invalid<FsExecResult>(_jail.DeniedMessage);
+            return new FsResult<FsExecResult>.Err(unresolved);
         }
 
-        if (!Directory.Exists(cwd))
-        {
-            return FsError.Fail<FsExecResult>(
-                ToolError.Codes.NotFound,
-                $"Working directory '{cwd}' does not exist or is not a directory.");
-        }
-
-        var effectiveTimeout = TimeSpan.FromSeconds(
-            Math.Clamp(timeoutSeconds ?? options.DefaultTimeoutSeconds, 1, options.MaxTimeoutSeconds));
+        var effectiveTimeout = TimeSpan.FromSeconds(CommandCwd.EffectiveTimeoutSeconds(options, timeoutSeconds));
 
         var psi = new ProcessStartInfo("bash")
         {
@@ -103,31 +93,8 @@ public class BashRunner(BashRunnerOptions options) : ICommandRunner
             TimedOut = timedOut,
             Truncated = stdoutResult.Truncated || stderrResult.Truncated,
             DurationMs = sw.ElapsedMilliseconds,
-            Cwd = ToRootRelative(cwd)
+            Cwd = _cwd.ToRootRelative(cwd)
         });
-    }
-
-    // Total: every path names a place under the root, including the empty one and an absolute one.
-    // There is no home-directory case — the mount point means the container root here as it does in
-    // glob, read, search and info.
-    //
-    // A path that still climbs out is refused rather than clamped. Redirecting it would answer for
-    // a directory the caller never asked for, which is the shape of mistake this whole change
-    // exists to remove; with the root at "/" nothing can climb out anyway.
-    private bool TryResolveCwd(string path, out string cwd)
-    {
-        var normalized = path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        cwd = Path.GetFullPath(Path.Combine(_jail.Root, normalized));
-
-        return _jail.Contains(cwd);
-    }
-
-    // The root reports as the empty path, which is the mount point with a trailing slash once the
-    // tool has prefixed it — the spelling glob already uses for a directory.
-    private string ToRootRelative(string cwd)
-    {
-        var relative = Path.GetRelativePath(_jail.Root, cwd);
-        return relative == "." ? "" : relative.Replace(Path.DirectorySeparatorChar, '/');
     }
 
     private static async Task<(string Text, bool Truncated)> ReadCappedAsync(

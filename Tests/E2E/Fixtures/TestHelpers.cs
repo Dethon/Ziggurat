@@ -206,7 +206,8 @@ internal static class TestHelpers
     private static string SafeImageName(string imageName) =>
         string.Concat(imageName.Select(c => char.IsLetterOrDigit(c) ? c : '_'));
 
-    private static readonly string[] _buildOutputDirs = ["bin", "obj"];
+    // target is cargo's: the sandbox image builds sandbox-runtime/ itself and never copies it.
+    private static readonly string[] _buildOutputDirs = ["bin", "obj", "target"];
 
     internal static DateTimeOffset GetNewestSourceTimestamp(
         string solutionRoot,

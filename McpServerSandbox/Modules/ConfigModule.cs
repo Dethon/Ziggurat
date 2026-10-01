@@ -28,7 +28,9 @@ public static class ConfigModule
                 // The container carries the deployment's secrets file; a command gets none of it.
                 Environment = CommandEnvironment.Minimal(settings.HomeDir, System.Environment.GetEnvironmentVariable)
             })
-            .AddSingleton<ICommandRunner, BashRunner>()
+            .AddSingleton<ICommandRunner>(sp => settings.LauncherSocket is { Length: > 0 } socket
+                ? new LauncherRunner(sp.GetRequiredService<BashRunnerOptions>(), socket)
+                : new BashRunner(sp.GetRequiredService<BashRunnerOptions>()))
             .AddSingleton(sp => new SandboxFileSystem(
                 "sandbox",
                 // The reusable disk root takes the mount's prose the same way it takes its name.

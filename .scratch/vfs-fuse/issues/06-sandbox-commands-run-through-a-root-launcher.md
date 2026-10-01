@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] A command runs as PUID with no effective capabilities, with supplementary groups kept
-- [ ] A command cannot read the server's process environment, `unshare`, or mount a FUSE filesystem (setuid stripped from `fusermount3`)
-- [ ] Timeout, kill-tree, output caps and exit codes behave exactly as before, over the same exec result
-- [ ] The integration suite's in-process sandbox still runs, without root
-- [ ] The crate follows the root rules: no workspace, the same pinned toolchain, in both editors' rust-analyzer project lists; its `cargo test` passes with no .NET built
-- [ ] Compose, the E2E stack and the eval's sandbox testcontainer start the new image
+- [x] A command runs as PUID with no effective capabilities, with supplementary groups kept
+- [x] A command cannot read the server's process environment, `unshare`, or mount a FUSE filesystem (setuid stripped from `fusermount3`)
+- [x] Timeout, kill-tree, output caps and exit codes behave exactly as before, over the same exec result
+- [x] The integration suite's in-process sandbox still runs, without root
+- [x] The crate follows the root rules: no workspace, the same pinned toolchain, in both editors' rust-analyzer project lists; its `cargo test` passes with no .NET built
+- [x] Compose, the E2E stack and the eval's sandbox testcontainer start the new image

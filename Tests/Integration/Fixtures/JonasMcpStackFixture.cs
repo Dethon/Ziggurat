@@ -58,9 +58,7 @@ public class JonasMcpStackFixture : IAsyncLifetime
             TestHelpers.EnsureImageAsync(
                 solutionRoot, "McpServerVault/Dockerfile", "mcp-vault:latest",
                 ["Domain", "Infrastructure", "McpServerVault"], ct),
-            TestHelpers.EnsureImageAsync(
-                solutionRoot, "McpServerSandbox/Dockerfile", "mcp-sandbox:latest",
-                ["Domain", "Infrastructure", "McpServerSandbox"], ct),
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.McpSandbox, ct),
             TestHelpers.EnsureImageAsync(
                 solutionRoot, "McpServerWebSearch/Dockerfile", "mcp-websearch:latest",
                 ["Domain", "Infrastructure", "McpServerWebSearch"], ct),
@@ -106,7 +104,7 @@ public class JonasMcpStackFixture : IAsyncLifetime
         await _homeAssistant.StartAsync(ct);
 
         _mcpVault = await StartContainer("mcp-vault:latest", "mcp-vault", ct);
-        _mcpSandbox = await StartContainer("mcp-sandbox:latest", "mcp-sandbox", ct);
+        _mcpSandbox = await StartContainer("mcp-sandbox:latest", "mcp-sandbox", ct, compose: b => b.AsCompose());
         _mcpWebsearch = await StartContainer("mcp-websearch:latest", "mcp-websearch", ct);
         _mcpIdealista = await StartContainer("mcp-idealista:latest", "mcp-idealista", ct);
         // mcp-homeassistant reaches the real HA above via the default BaseUrl (network alias
@@ -156,7 +154,8 @@ public class JonasMcpStackFixture : IAsyncLifetime
 
     private async Task<IContainer> StartContainer(
         string image, string alias, CancellationToken ct,
-        IReadOnlyDictionary<string, string>? environment = null)
+        IReadOnlyDictionary<string, string>? environment = null,
+        Func<ContainerBuilder, ContainerBuilder>? compose = null)
     {
         var builder = TestContainers.Container(image)
             .WithName($"{alias}-bench-{Guid.NewGuid():N}")
@@ -167,6 +166,7 @@ public class JonasMcpStackFixture : IAsyncLifetime
 
         builder = (environment ?? new Dictionary<string, string>())
             .Aggregate(builder, (b, kv) => b.WithEnvironment(kv.Key, kv.Value));
+        builder = compose?.Invoke(builder) ?? builder;
 
         var container = builder.Build();
         await container.StartAsync(ct);

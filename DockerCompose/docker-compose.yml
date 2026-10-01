@@ -265,7 +265,11 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerSandbox/Dockerfile
-    user: ${PUID:-1654}:${PGID:-1654}
+    # No `user:` — the image's entrypoint is a root launcher (sandbox-runtime/) that starts the MCP
+    # server as a uid of its own and runs every command as PUID:PGID, its bounding set dropped. It
+    # needs SYS_ADMIN for the per-command mount namespace; commands never hold it.
+    cap_add:
+      - SYS_ADMIN
     # Only /dev/dri, same as lemonade: the render node alone keeps this up on hosts with no
     # /dev/kfd (Intel iGPU, Raspberry Pi). An AMD host that wants ROCm/HIP inside the sandbox
     # adds the compute node via docker-compose.override.rocm.yml.
@@ -293,6 +297,8 @@ services:
       <<: *timezone
       HOME: /home/sandbox_user
       PATH: /home/sandbox_user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      PUID: ${PUID:-1654}
+      PGID: ${PGID:-1654}
     networks:
       - jackbot
     depends_on:

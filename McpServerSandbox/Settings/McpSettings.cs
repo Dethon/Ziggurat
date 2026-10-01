@@ -12,4 +12,8 @@ public record McpSettings
     public required int DefaultTimeoutSeconds { get; init; }
     public required int MaxTimeoutSeconds { get; init; }
     public required int OutputCapBytes { get; init; }
+
+    // Where the root launcher listens, announced by the launcher itself to the server it starts
+    // (LAUNCHERSOCKET). Absent on a host with no launcher, which runs commands in-process.
+    public string? LauncherSocket { get; init; }
 }

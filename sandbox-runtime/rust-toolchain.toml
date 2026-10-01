@@ -1,0 +1,6 @@
+# The same channel `satellite/` and `speech-typist/` pin, deliberately: an editor loads all three
+# crates in one session and runs a single proc-macro server against one toolchain's ABI — pin them
+# apart and serde's derives fail to expand in whichever crate loses.
+[toolchain]
+channel = "1.97.1"
+targets = ["x86_64-unknown-linux-musl"]
