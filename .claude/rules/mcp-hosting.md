@@ -56,9 +56,10 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   **Who is calling travels as data, never as an ambient**: a tool reads the call's
   `ConversationContext` off its `_meta` (`ConversationScope.Parse`) and hands on what it needs, and
   a filesystem backend — whose operations never see the request — is asked by the registrar for
-  itself as that caller sees it (`FileSystemBackendBase.For`, per call; `HaFileSystem` is the one
-  mount that overrides it). Absent means the call carried none, and a consumer refuses rather than
-  guesses. There is no `AsyncLocal` on this path; don't add one to save a parameter. The context
+  itself as that caller sees it (`FileSystemBackendBase.For(FileSystemCaller)`, per call: the
+  conversation context and, on an exec the agent minted one for, the exec bridge's call token —
+  `HaFileSystem` reads the first, `SandboxFileSystem` the second). Absent means the call carried
+  none, and a consumer refuses rather than guesses. There is no `AsyncLocal` on this path; don't add one to save a parameter. The context
   also carries `ConfigPatchModel`, the model the turn asked for. **The Jev client holds the local-box rule and every use feeds it explicitly**:
   `JudgmentRequest.TurnModel` is a required field, `TypeSafeJudge` sends nothing for a `lemonade/`
   id and answers `AbsenceReason.LocalTurn`, so a use cannot be written without saying which turn it

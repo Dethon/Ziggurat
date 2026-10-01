@@ -218,7 +218,10 @@ public static class MountScenarios
             CallPermission.Load(ObsidianVaultSkill.Name),
             CallPermission.Load(SandboxSkill.Name)
         ],
-        CallCeiling = 4,
+        // The checksum scenario's ceiling, which this one inherited the claim from: demonstrated on
+        // 2026-10-01, the model looks at both ends — an info, a glob or three — before the one copy,
+        // and checks the copy after. What the rule names is the transfer, which is one call.
+        CallCeiling = 8,
         Claims = [FileSystemToolFeature.TransferIsOneCall.Id],
         Guards =
         [
