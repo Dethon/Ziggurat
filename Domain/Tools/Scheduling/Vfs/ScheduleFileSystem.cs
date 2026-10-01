@@ -33,7 +33,8 @@ public sealed class ScheduleFileSystem(
     public override string DescribeInfo => "Get info about a schedule filesystem path";
 
     public override string DescribeRead =>
-        "Read a schedule filesystem file (schedule.json/status.json/agent_info.json/run_now.sh)";
+        "Read a schedule filesystem file (schedule.json/status.json/agent_info.json); run_now is an "
+        + "action, run with exec, never read";
 
     public override string DescribeSearch =>
         "Searches schedule.json content across schedules. Scope with directoryPath (e.g. /<agentId>) "
@@ -54,7 +55,7 @@ public sealed class ScheduleFileSystem(
 
     public override string DescribeExec =>
         "Run a schedule action. path is the schedule DIRECTORY (e.g. /jonas/my-schedule); command "
-        + "is 'run_now.sh' to fire it immediately. Not a shell — anything other than run_now.sh "
+        + "is './run_now' to fire it immediately. Not a shell — anything other than ./run_now "
         + "returns exit 127.";
 
     private static readonly JsonSerializerOptions _json = new()
@@ -85,7 +86,10 @@ public sealed class ScheduleFileSystem(
         }
 
         var files = ScheduleTree.Files(agents, all).Where(matches).Select(p => $"/{p}");
-        return Glob(pattern, () => dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList());
+        return Glob(
+            pattern,
+            () => dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList(),
+            entry => SchedulePath.Parse(entry).Kind == ScheduleNodeKind.RunNowFile);
     }
 
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
@@ -97,7 +101,8 @@ public sealed class ScheduleFileSystem(
         {
             Exists = exists,
             Path = path,
-            IsDirectory = exists ? isDir : null
+            IsDirectory = exists ? isDir : null,
+            Executable = exists && node.Kind == ScheduleNodeKind.RunNowFile
         });
     }
 
@@ -118,8 +123,7 @@ public sealed class ScheduleFileSystem(
                 content = RenderStatus(s);
                 break;
             case ScheduleNodeKind.RunNowFile when await GetScheduleAsync(node, ct) is not null:
-                content = "# Run this schedule now:\n#   exec run_now.sh\n";
-                break;
+                return ExecutableOnly<FsReadResult>(path, SchedulePath.RunNowFileName);
             default:
                 return NotFound<FsReadResult>(path);
         }
@@ -240,6 +244,11 @@ public sealed class ScheduleFileSystem(
             node = SchedulePath.Parse(path);
         }
 
+        if (node.Kind == ScheduleNodeKind.RunNowFile && await NodeExistsAsync(node, ct))
+        {
+            return ExecutableOnly<FsCreateResult>(path, SchedulePath.RunNowFileName);
+        }
+
         if (node.Kind != ScheduleNodeKind.ScheduleFile || node.AgentId is null || node.ScheduleId is null)
         {
             return Invalid<FsCreateResult>($"Create a schedule at /<agentId>/<scheduleId>/schedule.json (got '{path}')");
@@ -349,8 +358,8 @@ public sealed class ScheduleFileSystem(
         var dst = SchedulePath.Parse(destinationPath);
         if (src.Kind != ScheduleNodeKind.ScheduleDir || dst.Kind != ScheduleNodeKind.ScheduleDir)
         {
-            return IsReadOnlyFile(src.Kind) && await NodeExistsAsync(src, ct)
-                ? ReadOnly<FsMoveResult>(sourcePath)
+            return await NodeExistsAsync(src, ct) && RefuseFixedFile<FsMoveResult>(src.Kind, sourcePath) is { } refusal
+                ? refusal
                 : Invalid<FsMoveResult>("Move a schedule dir to /<agentId>/<scheduleId>");
         }
 
@@ -409,16 +418,16 @@ public sealed class ScheduleFileSystem(
             return NotFound<FsExecResult>(path);
         }
 
-        // The dotted spelling of the action file, stripped the way every exec-capable mount
-        // strips it.
+        // `./run_now` is the spelling taught, because a real shell needs it once exec runs in the
+        // sandbox; the bare name is the one a listing shows. Both name one action.
         var trimmed = command.Trim();
         if (trimmed.StartsWith("./", StringComparison.Ordinal))
         {
             trimmed = trimmed[2..];
         }
 
-        // Split the two refusals apart the way the timers mount does: a flag on the right script
-        // is a different mistake from the wrong script, and one message for both sends a model
+        // Split the two refusals apart the way the timers mount does: a flag on the right action
+        // is a different mistake from the wrong action, and one message for both sends a model
         // looking for a file that is already under its hand.
         if (trimmed != SchedulePath.RunNowFileName)
         {
@@ -532,13 +541,19 @@ public sealed class ScheduleFileSystem(
             ? cronValidator.GetNextOccurrence(spec.Cron, timeProvider.GetUtcNow(), timeProvider.LocalTimeZone)
             : null);
 
-    private static bool IsReadOnlyFile(ScheduleNodeKind kind) =>
-        kind is ScheduleNodeKind.StatusFile or ScheduleNodeKind.AgentInfoFile or ScheduleNodeKind.RunNowFile;
+    // The files the mount renders rather than stores: the two read-only ones refuse as read-only,
+    // the action as executable-only, and anything else is not one of them (null).
+    private static FsResult<T>? RefuseFixedFile<T>(ScheduleNodeKind kind, string path) where T : class => kind switch
+    {
+        ScheduleNodeKind.StatusFile or ScheduleNodeKind.AgentInfoFile => ReadOnly<T>(path),
+        ScheduleNodeKind.RunNowFile => ExecutableOnly<T>(path, SchedulePath.RunNowFileName),
+        _ => null
+    };
 
-    // A write aimed at a path that isn't a writable schedule.json is either a known read-only file
-    // (status.json/agent_info.json/run_now.sh) that exists — rejected as read-only — or a genuine miss.
+    // A write aimed at a path that isn't a writable schedule.json is either one of the rendered
+    // files that exists — refused for what it is — or a genuine miss.
     private async Task<FsResult<T>> RejectWriteAsync<T>(ScheduleNode node, string path, CancellationToken ct) where T : class =>
-        IsReadOnlyFile(node.Kind) && await NodeExistsAsync(node, ct) ? ReadOnly<T>(path) : NotFound<T>(path);
+        await NodeExistsAsync(node, ct) && RefuseFixedFile<T>(node.Kind, path) is { } refusal ? refusal : NotFound<T>(path);
 
     private static ToolErrorResult Error(string code, string message) =>
         new() { ErrorCode = code, Message = message };
@@ -546,6 +561,6 @@ public sealed class ScheduleFileSystem(
     // The zone the engine actually computes in, read off the injected TimeProvider rather than a
     // static call, so what the model is told and what a cron expression means cannot drift apart.
     private static string BuildMountDescription(string zone) =>
-        $$"""Scheduled agent tasks, grouped by agent. Discover agents by globbing /schedules (each agent is a directory); read /schedules/<agentId>/agent_info.json to learn what another agent does. Schedule against yourself — the agent directory whose agent_info.json name is your own — unless the user names another agent: the directory you write to decides who runs the prompt and where the result is delivered, so another agent's directory means someone else does the work and answers on their own channel. Create a schedule with fs_create at /schedules/<agentId>/<descriptive-unique-id>/schedule.json containing JSON {prompt, cron|runAt, userId?, deliverTo?}: provide EXACTLY ONE of cron (recurring, standard 5-field cron read in the {{zone}} time zone and adjusted automatically across daylight-saving changes, e.g. "0 9 * * *" = daily 09:00, "30 14 * * 1-5" = weekdays 14:30) or runAt (one-shot ISO-8601 datetime; give it a time zone — 'Z' for UTC or an offset like +02:00 — or omit one and it is read as {{zone}} local time; stored as UTC, auto-deleted after it fires). deliverTo is an optional list of channel ids (e.g. ["signalr","telegram"]) to receive the result; omit for the default. Change prompt/timing with fs_edit, reassign to another agent or rename with fs_move, remove with fs_delete. Read /schedules/<agentId>/<scheduleId>/status.json for createdAt/lastRunAt/nextRunAt, shown in the {{zone}} time zone. Fire a schedule immediately with fs_exec on its directory using command run_now.sh. Use descriptive, unique schedule ids.""";
+        $$"""Scheduled agent tasks, grouped by agent. Discover agents by globbing /schedules (each agent is a directory); read /schedules/<agentId>/agent_info.json to learn what another agent does. Schedule against yourself — the agent directory whose agent_info.json name is your own — unless the user names another agent: the directory you write to decides who runs the prompt and where the result is delivered, so another agent's directory means someone else does the work and answers on their own channel. Create a schedule with fs_create at /schedules/<agentId>/<descriptive-unique-id>/schedule.json containing JSON {prompt, cron|runAt, userId?, deliverTo?}: provide EXACTLY ONE of cron (recurring, standard 5-field cron read in the {{zone}} time zone and adjusted automatically across daylight-saving changes, e.g. "0 9 * * *" = daily 09:00, "30 14 * * 1-5" = weekdays 14:30) or runAt (one-shot ISO-8601 datetime; give it a time zone — 'Z' for UTC or an offset like +02:00 — or omit one and it is read as {{zone}} local time; stored as UTC, auto-deleted after it fires). deliverTo is an optional list of channel ids (e.g. ["signalr","telegram"]) to receive the result; omit for the default. Change prompt/timing with fs_edit, reassign to another agent or rename with fs_move, remove with fs_delete. Read /schedules/<agentId>/<scheduleId>/status.json for createdAt/lastRunAt/nextRunAt, shown in the {{zone}} time zone. Fire a schedule immediately with fs_exec on its directory using command ./run_now. Use descriptive, unique schedule ids.""";
 
 }

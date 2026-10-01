@@ -11,7 +11,7 @@ namespace Domain.Tools.Timers.Vfs;
 
 // Hub-local countdown timers as a VFS: create /<id>/timer.json to arm, read status.json for time
 // left, delete the directory to cancel. Timers are immutable (delete and recreate) and fire once.
-// /dismiss.sh (exec) silences every alert currently ringing — alarms and timers alike — so "stop
+// /dismiss (exec) silences every alert currently ringing — alarms and timers alike — so "stop
 // the alarm" works from any room or channel, not just by waking a targeted satellite.
 public sealed class TimerFileSystem(
     ITimerStore store, TimeProvider timeProvider, IAlertDismisser dismisser,
@@ -35,7 +35,7 @@ public sealed class TimerFileSystem(
     public override string DescribeMount =>
         "Short countdown timers that ring on the voice satellites: each is a directory "
         + "/timers/<id> holding its timer.json and a read-only status.json (remainingSeconds, "
-        + "firesAt), and dismiss.sh at /timers silences whatever is ringing (alarms and timers) "
+        + "firesAt), and the action ./dismiss at /timers silences whatever is ringing (alarms and timers) "
         + "from any room or channel. The file's shape and the target rules are in the "
         + "`countdown-timers` skill, not here. Use the HA alarms calendar for clock-time "
         + "alarms/reminders, not timers.";
@@ -63,14 +63,10 @@ public sealed class TimerFileSystem(
     public override string DescribeDelete => "Cancel a timer by deleting its directory /<timerId>";
 
     public override string DescribeExec =>
-        $"Silence every alert currently ringing: exec {TimerPath.DismissFileName} at the timers "
+        $"Silence every alert currently ringing: exec ./{TimerPath.DismissFileName} at the timers "
         + "root. One call covers every satellite and both kinds, whatever set the alert off, so "
         + "it is the whole of a silencing request — run it once and answer; there is no calendar "
         + "or home entity to visit afterwards. Not a shell — anything else returns exit 127.";
-
-    private const string DismissHelp =
-        "# Dismiss everything currently ringing (alarms and timers) on all satellites:\n"
-        + "#   exec dismiss.sh\n";
 
     private static readonly JsonSerializerOptions _json = new()
     {
@@ -83,6 +79,7 @@ public sealed class TimerFileSystem(
 
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
+        const string action = "/" + TimerPath.DismissFileName;
         if (!GlobPrologue(basePath, pattern).TryGetValue(out var scope, out var invalidPattern))
         {
             return new FsResult<FsGlobResult>.Err(invalidPattern);
@@ -105,7 +102,10 @@ public sealed class TimerFileSystem(
             .Concat([TimerPath.DismissFileName])
             .Where(matches)
             .Select(p => $"/{p}");
-        return Glob(pattern, () => dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList());
+        return Glob(
+            pattern,
+            () => dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList(),
+            entry => entry == action);
     }
 
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
@@ -117,7 +117,8 @@ public sealed class TimerFileSystem(
         {
             Exists = exists,
             Path = path,
-            IsDirectory = exists ? isDir : null
+            IsDirectory = exists ? isDir : null,
+            Executable = node.Kind == TimerNodeKind.DismissFile
         });
     }
 
@@ -134,8 +135,7 @@ public sealed class TimerFileSystem(
                 content = RenderStatus(t);
                 break;
             case TimerNodeKind.DismissFile:
-                content = DismissHelp;
-                break;
+                return ExecutableOnly<FsReadResult>(path, TimerPath.DismissFileName);
             default:
                 return NotFound<FsReadResult>(path);
         }
@@ -186,6 +186,11 @@ public sealed class TimerFileSystem(
         string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);
+        if (node.Kind == TimerNodeKind.DismissFile)
+        {
+            return ExecutableOnly<FsCreateResult>(path, TimerPath.DismissFileName);
+        }
+
         // A timer directory holds one writable file, so a body written to /<id> can only mean it.
         // A segment with an extension is a file spelled wrong, not a directory, and stays refused.
         if (node.Kind == TimerNodeKind.TimerDir && !node.TimerId!.Contains('.'))
@@ -252,7 +257,7 @@ public sealed class TimerFileSystem(
         var node = TimerPath.Parse(path);
         if (node.Kind == TimerNodeKind.DismissFile)
         {
-            return ReadOnly<FsRemoveResult>(path);
+            return ExecutableOnly<FsRemoveResult>(path, TimerPath.DismissFileName);
         }
         if (node.Kind != TimerNodeKind.TimerDir)
         {
@@ -276,12 +281,12 @@ public sealed class TimerFileSystem(
         if (node.Kind is not (TimerNodeKind.Root or TimerNodeKind.DismissFile))
         {
             return Fail<FsExecResult>(ToolError.Codes.UnsupportedOperation,
-                $"exec is only supported at the timers root: exec {TimerPath.DismissFileName}");
+                $"exec is only supported at the timers root: exec ./{TimerPath.DismissFileName}");
         }
 
-        // `./dismiss.sh` names the same action file as `dismiss.sh`: the HA mount strips the
-        // prefix before it looks an action up, and a mount that refused it taught the model only
-        // which mount it was standing on.
+        // `./dismiss` is the spelling taught, because a real shell needs it once exec runs in the
+        // sandbox; the bare name is what a model reading the listing types. Both name one action,
+        // as they do on every executing mount.
         var trimmed = command.Trim();
         if (trimmed.StartsWith("./", StringComparison.Ordinal))
         {
@@ -291,7 +296,7 @@ public sealed class TimerFileSystem(
         // A refusal that names only the whole command line cannot say whether the script or its
         // argument was wrong, and a model that guessed a flag reads it as the script being
         // elsewhere and goes looking. Answer the two cases separately.
-        if (node.Kind == TimerNodeKind.Root && trimmed != TimerPath.DismissFileName)
+        if (trimmed != TimerPath.DismissFileName)
         {
             var script = trimmed.Split(' ', 2)[0];
 

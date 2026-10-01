@@ -12,7 +12,9 @@ public static class SchedulePath
     public const string ScheduleFileName = "schedule.json";
     public const string StatusFileName = "status.json";
     public const string AgentInfoFileName = "agent_info.json";
-    public const string RunNowFileName = "run_now.sh";
+    // An action file, so it carries no extension: it runs, it is never a script to open, and a
+    // real shell will run it as `./run_now` once exec reaches the sandbox.
+    public const string RunNowFileName = "run_now";
 
     public static ScheduleNode Parse(string path)
     {

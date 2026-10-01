@@ -22,7 +22,7 @@ namespace Tests.Integration.McpServerTimers;
 // End-to-end proof of the extracted architecture: the timers half (store + TimerFileSystem +
 // TimerFireService) runs in-process against the HTTP adapters, and the voice hub runs on loopback
 // Kestrel exposing announce/dismiss/satellites. Arming a timer resolves its target over HTTP, firing
-// rings the satellite over HTTP, and both wake-dismiss and remote dismiss.sh cross the boundary.
+// rings the satellite over HTTP, and both wake-dismiss and remote ./dismiss cross the boundary.
 public class TimerRingE2ETests
 {
     // TimerFireService's own poll cadence. Named so an advance moves the clock by exactly the span
@@ -151,7 +151,7 @@ public class TimerRingE2ETests
         dismissed[0].Text.ShouldBe("pasta is ready");
         dismissed[0].Kind.ShouldBe(AnnounceKind.Timer);
 
-        // A second timer, silenced remotely through the VFS: exec dismiss.sh -> POST /api/voice/dismiss.
+        // A second timer, silenced remotely through the VFS: exec ./dismiss -> POST /api/voice/dismiss.
         var startsBefore = audioStarts.Count;
         var created2 = await fs.CreateAsync("/tea/timer.json",
             """{"durationSeconds": 2, "text": "tea is ready", "target": {"room": "Kitchen"}}""",
@@ -160,7 +160,7 @@ public class TimerRingE2ETests
         await AdvanceUntilAsync(
             timers, () => audioStarts.Count > startsBefore, "the second timer to ring");
 
-        var exec = (await fs.ExecAsync("/", "dismiss.sh", null, ct))
+        var exec = (await fs.ExecAsync("/", "./dismiss", null, ct))
             .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(0);
         exec.Stdout.ShouldContain("timer \"tea is ready\"");
