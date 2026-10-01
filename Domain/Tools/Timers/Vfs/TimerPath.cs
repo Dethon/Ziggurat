@@ -11,7 +11,9 @@ public static class TimerPath
 {
     public const string TimerFileName = "timer.json";
     public const string StatusFileName = "status.json";
-    public const string DismissFileName = "dismiss.sh";
+    // An action file, so it carries no extension: it runs, it is never a script to open, and a
+    // real shell will run it as `./dismiss` once exec reaches the sandbox.
+    public const string DismissFileName = "dismiss";
 
     public static TimerNode Parse(string path)
     {

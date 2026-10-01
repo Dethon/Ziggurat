@@ -46,7 +46,7 @@ public sealed partial class HaFileSystem
         var node = HaVfsPath.Parse(path);
         if (node.Kind != HaVfsKind.WatchFile)
         {
-            return RefuseWrite<FsCreateResult>(node, path, "created");
+            return await RefuseWriteAsync<FsCreateResult>(node, path, "created", ct);
         }
         if (!HaWatchAutomation.IsValidWatchId(node.WatchId))
         {
@@ -77,7 +77,7 @@ public sealed partial class HaFileSystem
         var node = HaVfsPath.Parse(path);
         if (node.Kind != HaVfsKind.WatchFile)
         {
-            return RefuseWrite<FsEditResult>(node, path, "edited");
+            return await RefuseWriteAsync<FsEditResult>(node, path, "edited", ct);
         }
         if (!HaWatchAutomation.IsValidWatchId(node.WatchId) || await _watches.GetAsync(node.WatchId!, ct) is not { } existing)
         {
@@ -107,7 +107,7 @@ public sealed partial class HaFileSystem
         var node = HaVfsPath.Parse(path);
         if (node.Kind is not (HaVfsKind.WatchDir or HaVfsKind.WatchFile))
         {
-            return RefuseWrite<FsRemoveResult>(node, path, "deleted");
+            return await RefuseWriteAsync<FsRemoveResult>(node, path, "deleted", ct);
         }
         if (!HaWatchAutomation.IsValidWatchId(node.WatchId) || await _watches.GetAsync(node.WatchId!, ct) is null)
         {
@@ -292,8 +292,16 @@ public sealed partial class HaFileSystem
         FsError.Invalid<T>(
             $"'{id}' is not a valid watch id: use a descriptive slug of letters, digits, '-' and '_' (e.g. laura-sugar-high).");
 
-    // A write anywhere but a watch file is refused by name — an existing read-only file as read-only,
-    // anything else as not the place — and the refusal says where writing is possible.
+    // A write anywhere but a watch file is refused by name — an existing action file as
+    // executable-only, an existing read-only file as read-only, anything else as not the place —
+    // and the refusal says what can be done there instead. Only an action the entity really has is
+    // refused as one: any leaf parses as an action, so the catalog decides.
+    private async Task<FsResult<T>> RefuseWriteAsync<T>(HaVfsNode node, string path, string verb, CancellationToken ct)
+        where T : class =>
+        node.Kind is HaVfsKind.ActionFile && Resolve(node, await catalogProvider.GetAsync(ct)).Exists
+            ? ExecutableOnly<T>(path, node.Service!)
+            : RefuseWrite<T>(node, path, verb);
+
     private static FsResult<T> RefuseWrite<T>(HaVfsNode node, string path, string verb) where T : class =>
         node.Kind is HaVfsKind.WatchStatusFile
             ? FsError.Fail<T>(ToolError.Codes.UnsupportedOperation,

@@ -11,7 +11,7 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 
 // The failure these cover: Home Assistant's service catalog has no way to delete a calendar event
 // (deletion is a WebSocket command) and its get_events answers without the uid deletion needs, so
-// an agent asked to cancel an alarm found `delete_event.sh` missing and created a duplicate
+// an agent asked to cancel an alarm found `delete_event` missing and created a duplicate
 // instead. The calendar's action files are served by the mount, the way the podcast listing is.
 public class HaCalendarActionsTests
 {
@@ -58,11 +58,11 @@ public class HaCalendarActionsTests
         var entries = (await fs.GlobAsync(CalendarDir, "*", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries;
 
-        entries.ShouldContain(e => e.EndsWith("/create_event.sh"));
-        entries.ShouldContain(e => e.EndsWith("/delete_event.sh"));
-        entries.ShouldContain(e => e.EndsWith("/get_events.sh"));
-        entries.ShouldNotContain(e => e.EndsWith("/update_event.sh"));
-        entries.Count(e => e.EndsWith("/create_event.sh")).ShouldBe(1);
+        entries.ShouldContain(e => e.EndsWith("/create_event"));
+        entries.ShouldContain(e => e.EndsWith("/delete_event"));
+        entries.ShouldContain(e => e.EndsWith("/get_events"));
+        entries.ShouldNotContain(e => e.EndsWith("/update_event"));
+        entries.Count(e => e.EndsWith("/create_event")).ShouldBe(1);
     }
 
     [Fact]
@@ -73,8 +73,8 @@ public class HaCalendarActionsTests
         var entries = (await fs.GlobAsync("entities/light/kitchen", "*", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries;
 
-        entries.ShouldNotContain(e => e.EndsWith("/delete_event.sh"));
-        entries.ShouldNotContain(e => e.EndsWith("/get_events.sh"));
+        entries.ShouldNotContain(e => e.EndsWith("/delete_event"));
+        entries.ShouldNotContain(e => e.EndsWith("/get_events"));
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public class HaCalendarActionsTests
     {
         var fs = Build(out _);
 
-        var help = await Exec(fs, "create_event.sh --help");
+        var help = await Exec(fs, "./create_event --help");
 
         help.ExitCode.ShouldBe(0);
         help.Stdout.ShouldContain("--rrule");
@@ -96,7 +96,7 @@ public class HaCalendarActionsTests
         var fs = Build(out var client);
 
         var exec = await Exec(fs,
-            """create_event.sh --summary "Take out the trash" --start_date_time "2026-09-02 21:30:00" --description '{"target":{"room":"Kitchen"},"insistent":{}}' """);
+            """./create_event --summary "Take out the trash" --start_date_time "2026-09-02 21:30:00" --description '{"target":{"room":"Kitchen"},"insistent":{}}' """);
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var (entityId, draft) = client.CreatedEvents.ShouldHaveSingleItem();
@@ -114,7 +114,7 @@ public class HaCalendarActionsTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, """create_event.sh --summary Wake --start_date_time 2026-09-03T07:00:00+02:00""");
+        var exec = await Exec(fs, """./create_event --summary Wake --start_date_time 2026-09-03T07:00:00+02:00""");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         client.CreatedEvents.Single().Draft.End.ShouldBe("2026-09-03T07:01:00+02:00");
@@ -126,7 +126,7 @@ public class HaCalendarActionsTests
         var fs = Build(out var client);
 
         var exec = await Exec(fs,
-            """create_event.sh --summary Wake --start_date_time "2026-09-03 07:00:00" --end_date_time "2026-09-03 07:05:00" --rrule "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" """);
+            """./create_event --summary Wake --start_date_time "2026-09-03 07:00:00" --end_date_time "2026-09-03 07:05:00" --rrule "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" """);
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var draft = client.CreatedEvents.Single().Draft;
@@ -139,7 +139,7 @@ public class HaCalendarActionsTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, """create_event.sh --summary Holiday --start_date 2026-12-25""");
+        var exec = await Exec(fs, """./create_event --summary Holiday --start_date 2026-12-25""");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var draft = client.CreatedEvents.Single().Draft;
@@ -152,7 +152,7 @@ public class HaCalendarActionsTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, """create_event.sh --summary Wake""");
+        var exec = await Exec(fs, """./create_event --summary Wake""");
 
         exec.ExitCode.ShouldBe(2);
         exec.Stderr.ShouldContain("start_date_time");
@@ -164,7 +164,7 @@ public class HaCalendarActionsTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, """create_event.sh --summary Wake --start_date_time "tomorrow at seven" """);
+        var exec = await Exec(fs, """./create_event --summary Wake --start_date_time "tomorrow at seven" """);
 
         exec.ExitCode.ShouldBe(2);
         exec.Stderr.ShouldContain("start_date_time");
@@ -187,7 +187,7 @@ public class HaCalendarActionsTests
             Rrule = "FREQ=WEEKLY"
         });
 
-        var exec = await Exec(fs, """get_events.sh --start_date_time "2026-09-02 00:00:00" --end_date_time "2026-09-09 00:00:00" """);
+        var exec = await Exec(fs, """./get_events --start_date_time "2026-09-02 00:00:00" --end_date_time "2026-09-09 00:00:00" """);
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         client.LastCalendarWindow.ShouldBe(("calendar.alarms", "2026-09-02 00:00:00", "2026-09-09 00:00:00"));
@@ -209,7 +209,7 @@ public class HaCalendarActionsTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, "get_events.sh");
+        var exec = await Exec(fs, "./get_events");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         client.LastCalendarWindow!.Value.Start.ShouldBe("2026-09-02T10:00:00+00:00");
@@ -221,7 +221,7 @@ public class HaCalendarActionsTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, """get_events.sh --start_date_time "2026-09-02 00:00:00" --days 1""");
+        var exec = await Exec(fs, """./get_events --start_date_time "2026-09-02 00:00:00" --days 1""");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         client.LastCalendarWindow!.Value.End.ShouldBe("2026-09-03 00:00:00");
@@ -232,7 +232,7 @@ public class HaCalendarActionsTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, "delete_event.sh --uid fd96f9b2");
+        var exec = await Exec(fs, "./delete_event --uid fd96f9b2");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         client.DeletedEvents.ShouldHaveSingleItem().ShouldBe(("calendar.alarms", "fd96f9b2", null, null));
@@ -245,7 +245,7 @@ public class HaCalendarActionsTests
         var fs = Build(out var client);
 
         var exec = await Exec(fs,
-            "delete_event.sh --uid 365f3228 --recurrence_id 20260903 --recurrence_range THISANDFUTURE");
+            "./delete_event --uid 365f3228 --recurrence_id 20260903 --recurrence_range THISANDFUTURE");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         client.DeletedEvents.Single().ShouldBe(("calendar.alarms", "365f3228", "20260903", "THISANDFUTURE"));
@@ -256,7 +256,7 @@ public class HaCalendarActionsTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, "delete_event.sh");
+        var exec = await Exec(fs, "./delete_event");
 
         exec.ExitCode.ShouldBe(2);
         exec.Stderr.ShouldContain("--uid");
@@ -269,20 +269,21 @@ public class HaCalendarActionsTests
         var fs = Build(out var client);
         client.CalendarFailure = new HomeAssistantNotFoundException("Home Assistant returned 404: Event not found");
 
-        var exec = await Exec(fs, "delete_event.sh --uid nope");
+        var exec = await Exec(fs, "./delete_event --uid nope");
 
         exec.ExitCode.ShouldBe(1);
         exec.Stderr.ShouldContain("Event not found");
     }
 
     [Fact]
-    public async Task Read_DeleteEventFile_ReturnsItsUsage()
+    public async Task Read_DeleteEventFile_IsRefusedAsExecutableOnly()
     {
         var fs = Build(out _);
 
-        var read = (await fs.ReadAsync($"{CalendarDir}/delete_event.sh", null, null, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+        var error = (await fs.ReadAsync($"{CalendarDir}/delete_event", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Err>().Error;
 
-        read.Content.ShouldContain("--uid");
+        error.Message.ShouldContain("executable-only");
+        error.Hint.ShouldNotBeNull().ShouldContain("./delete_event");
     }
 }

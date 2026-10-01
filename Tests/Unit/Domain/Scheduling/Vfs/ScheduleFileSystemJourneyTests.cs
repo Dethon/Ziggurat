@@ -154,7 +154,8 @@ public class ScheduleFileSystemJourneyTests
         glob.Entries.ShouldContain("/jonas/agent_info.json");
         glob.Entries.ShouldContain("/jonas/morning-news/schedule.json");
         glob.Entries.ShouldContain("/jonas/morning-news/status.json");
-        glob.Entries.ShouldNotContain("/jonas/morning-news/run_now.sh");
+        glob.Entries.ShouldNotContain("/jonas/morning-news/run_now");
+        glob.Executables.ShouldBeNull();
     }
 
     [Fact]
@@ -177,12 +178,13 @@ public class ScheduleFileSystemJourneyTests
         var fs = Build(store, new AgentCatalogEntry("jonas", "Jonas", "general"));
         await fs.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
 
-        var glob = (await fs.GlobAsync("/jonas/morning-news", "{schedule.json,run_now.sh}", CancellationToken.None))
+        var glob = (await fs.GlobAsync("/jonas/morning-news", "{schedule.json,run_now}", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
 
         glob.Entries.ShouldContain("/jonas/morning-news/schedule.json");
-        glob.Entries.ShouldContain("/jonas/morning-news/run_now.sh");
+        glob.Entries.ShouldContain("/jonas/morning-news/run_now");
         glob.Entries.ShouldNotContain("/jonas/morning-news/status.json");
+        glob.Executables.ShouldBe(["/jonas/morning-news/run_now"]);
     }
 
     [Fact]
@@ -196,10 +198,65 @@ public class ScheduleFileSystemJourneyTests
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
 
         glob.Entries.ShouldBe([
-            "/jonas/morning-news/run_now.sh",
+            "/jonas/morning-news/run_now",
             "/jonas/morning-news/schedule.json",
             "/jonas/morning-news/status.json"
         ]);
+        glob.Executables.ShouldBe(["/jonas/morning-news/run_now"]);
+    }
+
+    [Fact]
+    public async Task Info_TheRunNowAction_IsExecutable_AndTheSpecIsNot()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule());
+        var fs = Build(store);
+
+        var action = (await fs.InfoAsync("/jonas/morning-news/run_now", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+        var spec = (await fs.InfoAsync("/jonas/morning-news/schedule.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+
+        action.Exists.ShouldBeTrue();
+        action.Executable.ShouldBeTrue();
+        spec.Executable.ShouldBeFalse();
+    }
+
+    // An action file runs and is never opened. Its read used to answer a comment that told the
+    // model how to run it, which taught that it was a script to look inside; every route that
+    // opens it is now refused with the one call that works.
+    [Fact]
+    public async Task ReadEditDeleteOrMove_TheRunNowAction_IsRefusedAsExecutableOnly()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule());
+        var fs = Build(store);
+        const string action = "/jonas/morning-news/run_now";
+
+        var refusals = new[]
+        {
+            (await fs.ReadAsync(action, null, null, CancellationToken.None)).ShouldBeOfType<FsResult<FsReadResult>.Err>().Error,
+            (await fs.EditAsync(action, [new TextEdit("a", "b")], CancellationToken.None)).ShouldBeOfType<FsResult<FsEditResult>.Err>().Error,
+            (await fs.CreateAsync(action, ValidSpec, true, true, CancellationToken.None)).ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error,
+            (await fs.DeleteAsync(action, CancellationToken.None)).ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error,
+            (await fs.MoveAsync(action, "/jonas/elsewhere", CancellationToken.None)).ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error
+        };
+
+        refusals.ShouldAllBe(e => e.ErrorCode == ToolError.Codes.UnsupportedOperation
+                                  && e.Message.Contains("executable-only")
+                                  && e.Hint!.Contains("./run_now"));
+        store.Items.ShouldContainKey("morning-news");
+    }
+
+    // A schedule that does not exist has no action file either: the refusal is a miss, not a
+    // lesson about a file that is not there.
+    [Fact]
+    public async Task Read_TheRunNowActionOfAMissingSchedule_IsNotFound()
+    {
+        var fs = Build();
+
+        (await fs.ReadAsync("/jonas/ghost/run_now", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
     }
 
     [Fact]
@@ -399,20 +456,42 @@ public class ScheduleFileSystemJourneyTests
         truncated.Truncated.ShouldBeTrue();
     }
 
-    // The dotted spelling of an action file, accepted by the HA mount and now by the timers one.
-    // Three exec-capable mounts disagreeing on it cost a call to find out which one this was.
-    [Fact]
-    public async Task Exec_RunNowWithADotSlashPrefix_TriggersTheSameFire()
+    // `./run_now` is the spelling taught, because a real shell needs it once exec runs in the
+    // sandbox; the bare name is the one a listing shows. Both fire the same schedule.
+    [Theory]
+    [InlineData("./run_now")]
+    [InlineData("run_now")]
+    public async Task Exec_RunNowWithOrWithoutTheDotSlash_TriggersTheSameFire(string command)
     {
         var store = new FakeScheduleStore();
         await store.CreateAsync(SeedSchedule(id: "n", prompt: "p", nextRunAt: DateTime.UtcNow.AddDays(1)));
         var fs = Build(store);
 
-        var result = (await fs.ExecAsync("/jonas/n", "./run_now.sh", null, CancellationToken.None))
+        var result = (await fs.ExecAsync("/jonas/n", command, null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
 
         result.ExitCode.ShouldBe(0);
         (store.Items["n"].NextRunAt <= DateTime.UtcNow).ShouldBeTrue();
+    }
+
+    // The action lost its suffix, so the old name runs nothing and the refusal names the new one.
+    [Theory]
+    [InlineData("run_now.sh")]
+    [InlineData("./run_now.sh")]
+    public async Task Exec_TheOldScriptName_IsNotFoundAndNamesTheAction(string command)
+    {
+        var store = new FakeScheduleStore();
+        var nextRun = DateTime.UtcNow.AddDays(1);
+        await store.CreateAsync(SeedSchedule(id: "n", prompt: "p", nextRunAt: nextRun));
+        var fs = Build(store);
+
+        var result = (await fs.ExecAsync("/jonas/n", command, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(127);
+        result.Stderr.ShouldContain("command not found: run_now.sh");
+        result.Stderr.ShouldContain("available: run_now");
+        store.Items["n"].NextRunAt.ShouldBe(nextRun);
     }
 
     [Fact]
@@ -425,17 +504,17 @@ public class ScheduleFileSystemJourneyTests
         await neverRunStore.CreateAsync(SeedSchedule(id: "n", prompt: "p", nextRunAt: future));
         var neverRunFs = Build(neverRunStore);
 
-        var neverRun = await neverRunFs.ExecAsync("/jonas/n", "run_now.sh", null, CancellationToken.None);
+        var neverRun = await neverRunFs.ExecAsync("/jonas/n", "./run_now", null, CancellationToken.None);
         var neverRunResult = neverRun.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         neverRunResult.ExitCode.ShouldBe(0);
         (neverRunStore.Items["n"].NextRunAt <= DateTime.UtcNow).ShouldBeTrue();
         neverRunStore.Items["n"].LastRunAt.ShouldBeNull();
 
-        // run_now.sh preserves an existing LastRunAt (it represents the last actual fire, not this trigger).
+        // run_now preserves an existing LastRunAt (it represents the last actual fire, not this trigger).
         var alreadyRunStore = new FakeScheduleStore();
         await alreadyRunStore.CreateAsync(SeedSchedule(id: "n", prompt: "p", nextRunAt: future, lastRunAt: lastRun));
         var alreadyRunFs = Build(alreadyRunStore);
-        await alreadyRunFs.ExecAsync("/jonas/n", "run_now.sh", null, CancellationToken.None);
+        await alreadyRunFs.ExecAsync("/jonas/n", "./run_now", null, CancellationToken.None);
         alreadyRunStore.Items["n"].LastRunAt.ShouldBe(lastRun);
 
         var unknownCommandStore = new FakeScheduleStore();
@@ -444,10 +523,10 @@ public class ScheduleFileSystemJourneyTests
         var unknownCommand = await unknownCommandFs.ExecAsync("/jonas/n", "ls -la", null, CancellationToken.None);
         var unknownExec = unknownCommand.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         unknownExec.ExitCode.ShouldBe(127);
-        unknownExec.Stderr.ShouldContain("run_now.sh");
+        unknownExec.Stderr.ShouldContain("available: run_now");
 
         var ghostFs = Build();
-        (await ghostFs.ExecAsync("/jonas/ghost", "run_now.sh", null, CancellationToken.None))
+        (await ghostFs.ExecAsync("/jonas/ghost", "./run_now", null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsExecResult>.Err>();
     }
 
@@ -465,7 +544,7 @@ public class ScheduleFileSystemJourneyTests
         error!.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
     }
 
-    // Build() freezes the clock at 2026-01-01; run_now.sh must stamp that instant, not the wall clock.
+    // Build() freezes the clock at 2026-01-01; run_now must stamp that instant, not the wall clock.
     [Fact]
     public async Task Exec_RunNow_StampsNextRunAtFromTheInjectedClock()
     {
@@ -473,7 +552,7 @@ public class ScheduleFileSystemJourneyTests
         await store.CreateAsync(SeedSchedule(id: "n", prompt: "p", nextRunAt: DateTime.UtcNow.AddDays(1)));
         var fs = Build(store);
 
-        await fs.ExecAsync("/jonas/n", "run_now.sh", null, CancellationToken.None);
+        await fs.ExecAsync("/jonas/n", "./run_now", null, CancellationToken.None);
 
         store.Items["n"].NextRunAt.ShouldBe(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
     }

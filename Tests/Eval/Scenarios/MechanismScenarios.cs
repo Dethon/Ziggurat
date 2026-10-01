@@ -171,7 +171,7 @@ public static class MechanismScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^(\./)?create_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?create_event(\s|$)"),
                     Arg.Matches("command", @"2026-08-18[ T]07:00"),
                     // The description's JSON shape: without insistent the event is a one-shot
                     // announce that speaks once into a bedroom at seven and gives up.
@@ -231,7 +231,7 @@ public static class MechanismScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^(\./)?create_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?create_event(\s|$)"),
                     Arg.Matches("command", @"2026-08-18[ T]02:00")
                 ]
             }

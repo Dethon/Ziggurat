@@ -4,7 +4,7 @@ using Domain.DTOs.Voice;
 
 namespace Infrastructure.Clients.Voice;
 
-// The out-of-process "stop ringing": dismiss.sh in the timers server POSTs here so the hub cancels
+// The out-of-process "stop ringing": ./dismiss in the timers server POSTs here so the hub cancels
 // the live alert CancellationTokenSources, which only exist in the hub process.
 public sealed class HttpAlertDismisser(IHttpClientFactory httpClientFactory, string token) : IAlertDismisser
 {

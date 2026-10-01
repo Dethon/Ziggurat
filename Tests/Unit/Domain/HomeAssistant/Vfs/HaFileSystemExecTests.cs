@@ -28,7 +28,7 @@ public class HaFileSystemExecTests
     public async Task Exec_CallsService_WithParsedData()
     {
         var fs = Build(out var client);
-        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --brightness_pct 60", null, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/kitchen", "./turn_on --brightness_pct 60", null, CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall!.Value.Domain.ShouldBe("light");
@@ -41,7 +41,7 @@ public class HaFileSystemExecTests
     public async Task Exec_Help_ReturnsUsage_ExitZero_NoCall()
     {
         var fs = Build(out var client);
-        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --help", null, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/kitchen", "./turn_on --help", null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(0);
@@ -49,13 +49,35 @@ public class HaFileSystemExecTests
         client.LastCall.ShouldBeNull();
     }
 
-    [Fact]
-    public async Task Exec_DotSlashPrefixAccepted()
+    // `./turn_on` is the spelling taught, because a real shell needs it once exec runs in the
+    // sandbox; the bare name is the one a listing shows. Both run the one action.
+    [Theory]
+    [InlineData("./turn_on")]
+    [InlineData("turn_on")]
+    public async Task Exec_WithOrWithoutTheDotSlash_RunsTheAction(string command)
     {
         var fs = Build(out var client);
-        var result = await fs.ExecAsync("entities/light/kitchen", "./turn_on.sh", null, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/kitchen", command, null, CancellationToken.None);
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall.ShouldNotBeNull();
+    }
+
+    // The actions lost their suffix: the old spelling names nothing, and the refusal lists the
+    // names that do, so a model that learned `turn_on.sh` finds `turn_on` in the same answer.
+    [Theory]
+    [InlineData("turn_on.sh")]
+    [InlineData("./turn_on.sh --brightness_pct 60")]
+    public async Task Exec_TheOldScriptName_IsNotFoundAndListsTheActions(string command)
+    {
+        var fs = Build(out var client);
+        var result = await fs.ExecAsync("entities/light/kitchen", command, null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(127);
+        exec.Stderr.ShouldContain("command not found: turn_on.sh");
+        exec.Stderr.ShouldContain("Available actions: turn_on");
+        exec.Stderr.ShouldNotContain("turn_on.sh,");
+        client.LastCall.ShouldBeNull();
     }
 
     [Fact]
@@ -66,14 +88,14 @@ public class HaFileSystemExecTests
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(127);
-        exec.Stderr.ShouldContain("turn_on.sh");
+        exec.Stderr.ShouldContain("Available actions: turn_on");
     }
 
     [Fact]
     public async Task Exec_BadArg_Returns2()
     {
         var fs = Build(out _);
-        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --nope 1", null, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/kitchen", "./turn_on --nope 1", null, CancellationToken.None);
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(2);
         exec.Stderr.ShouldContain("nope");
@@ -83,7 +105,7 @@ public class HaFileSystemExecTests
     public async Task Exec_NotAnEntityDir_Returns127()
     {
         var fs = Build(out _);
-        var result = await fs.ExecAsync("entities/light", "turn_on.sh", null, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light", "./turn_on", null, CancellationToken.None);
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(127);
     }
 
@@ -92,7 +114,7 @@ public class HaFileSystemExecTests
     {
         var fs = Build(out var client);
         client.CallHandler = (_, _, _, _) => throw new HomeAssistantException("400 bad field", 400);
-        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --brightness_pct 60", null, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/kitchen", "./turn_on --brightness_pct 60", null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(1);
@@ -106,7 +128,7 @@ public class HaFileSystemExecTests
         var fs = Build(out var client);
         client.CallHandler = (_, _, _, _) =>
             throw new HomeAssistantException("Home Assistant returned 500: Server got itself in trouble", 500);
-        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --brightness_pct 60", null, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/kitchen", "./turn_on --brightness_pct 60", null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(1);
@@ -117,7 +139,7 @@ public class HaFileSystemExecTests
     }
 
     // A name that did not resolve: the recovery is one exact listing call, spelled out, not a
-    // bare `browse_media.sh` the model then has to guess arguments for — that bare spelling sent
+    // bare `./browse_media` the model then has to guess arguments for — that bare spelling sent
     // a model to a browse with the wrong content id, which fails with the same 500 and the same
     // advice, round and round.
     [Fact]
@@ -127,19 +149,19 @@ public class HaFileSystemExecTests
         client.CallHandler = (_, _, _, _) =>
             throw new HomeAssistantException("Home Assistant returned 500: Server got itself in trouble", 500);
         var result = await fs.ExecAsync("entities/media_player/kitchen",
-            "music_assistant.play_media.sh --media_id \"Radio Faro del Sur\" --media_type radio", null, CancellationToken.None);
+            "./music_assistant.play_media --media_id \"Radio Faro del Sur\" --media_type radio", null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(1);
-        exec.Stderr.ShouldContain("browse_media.sh --media_content_id playlists --media_content_type music_assistant");
+        exec.Stderr.ShouldContain("./browse_media --media_content_id playlists --media_content_type music_assistant");
         exec.Stderr.ShouldContain("say so");
     }
 
     // The listing itself failing cannot be answered with "list the library": that is the call
     // that just failed. It says which listing works and that nothing else lists the library.
     [Theory]
-    [InlineData("browse_media.sh --media_content_id radio --media_content_type music_assistant")]
-    [InlineData("search_media.sh --search_query \"Radio Faro del Sur\"")]
+    [InlineData("./browse_media --media_content_id radio --media_content_type music_assistant")]
+    [InlineData("./search_media --search_query \"Radio Faro del Sur\"")]
     public async Task Exec_ListingFails_SaysTheListingFailed_NotToListAgain(string command)
     {
         var fs = BuildPlayer(out var client);
@@ -150,7 +172,7 @@ public class HaFileSystemExecTests
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(1);
         exec.Stderr.ShouldContain("listing itself failed");
-        exec.Stderr.ShouldContain("browse_media.sh --media_content_id playlists --media_content_type music_assistant");
+        exec.Stderr.ShouldContain("./browse_media --media_content_id playlists --media_content_type music_assistant");
         exec.Stderr.ShouldNotContain("a named item may not exist");
     }
 
@@ -182,7 +204,7 @@ public class HaFileSystemExecTests
     {
         var fs = Build(out var client);
         client.CallHandler = (_, _, _, _) => throw new HomeAssistantException("boom");
-        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh", null, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/kitchen", "./turn_on", null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(1);
@@ -199,7 +221,7 @@ public class HaFileSystemExecTests
         };
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
 
-        var result = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh", 1, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "./turn_on", 1, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.TimedOut.ShouldBeTrue();
@@ -210,7 +232,7 @@ public class HaFileSystemExecTests
     public async Task ExecAsync_UnknownEntity_127_NoHint()
     {
         var fs = Build(out _);
-        var result = await fs.ExecAsync("entities/light/ghost", "turn_on.sh", null, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/ghost", "./turn_on", null, CancellationToken.None);
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(127);
         exec.Stderr.ShouldNotContain("Did you mean");
@@ -235,7 +257,7 @@ public class HaFileSystemExecTests
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
 
         var result = await fs.ExecAsync("entities/media_player/office",
-            """music_assistant.play_media.sh --media_id '["Track A","Track B"]'""", null, CancellationToken.None);
+            """./music_assistant.play_media --media_id '["Track A","Track B"]'""", null, CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall!.Value.Data!["media_id"]!.AsArray().Select(n => n!.GetValue<string>())
@@ -245,9 +267,9 @@ public class HaFileSystemExecTests
     [Fact]
     public async Task Exec_RoutesCrossDomainMusicAssistantService_ByQualifiedName()
     {
-        // The same-domain `media_player.play_media` (-> play_media.sh) needs a concrete
+        // The same-domain `media_player.play_media` (-> play_media) needs a concrete
         // media_content_id; Music Assistant's `music_assistant.play_media` (-> the domain-qualified
-        // music_assistant.play_media.sh) resolves a free-text name. Both must coexist without the
+        // music_assistant.play_media) resolves a free-text name. Both must coexist without the
         // qualified name colliding with the bare one, and exec must route to the right domain/service.
         var client = new FakeHaClient
         {
@@ -264,7 +286,7 @@ public class HaFileSystemExecTests
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
 
         var result = await fs.ExecAsync("entities/media_player/office",
-            "music_assistant.play_media.sh --media_id \"miles davis\"", null, CancellationToken.None);
+            "./music_assistant.play_media --media_id \"miles davis\"", null, CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall!.Value.Domain.ShouldBe("music_assistant");
@@ -282,7 +304,7 @@ public class HaFileSystemExecTests
         var fs = BuildSeekable(out var client);
 
         var result = await fs.ExecAsync("entities/media_player/office",
-            "media_seek.sh --seek_position 0", null, CancellationToken.None);
+            "./media_seek --seek_position 0", null, CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall!.Value.Data!["seek_position"]!.GetValue<double>().ShouldBe(1);
@@ -294,7 +316,7 @@ public class HaFileSystemExecTests
         var fs = BuildSeekable(out var client);
 
         var result = await fs.ExecAsync("entities/media_player/office",
-            "media_seek.sh --seek_position 42.5", null, CancellationToken.None);
+            "./media_seek --seek_position 42.5", null, CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall!.Value.Data!["seek_position"]!.GetValue<double>().ShouldBe(42.5);
@@ -306,7 +328,7 @@ public class HaFileSystemExecTests
         var fs = Build(out var client);
 
         var result = await fs.ExecAsync("entities/light/kitchen",
-            "turn_on.sh --brightness_pct 0", null, CancellationToken.None);
+            "./turn_on --brightness_pct 0", null, CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall!.Value.Data!["brightness_pct"]!.GetValue<double>().ShouldBe(0);

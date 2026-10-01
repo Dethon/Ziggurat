@@ -7,7 +7,7 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 public static class HaArgParser
 {
-    // `commandName` is the action-file name without `.sh` (e.g. `music_assistant.play_media` for a
+    // `commandName` is the action-file name (e.g. `music_assistant.play_media` for a
     // cross-domain service); it only feeds error hints so they point at the file the caller invoked.
     // Defaults to the bare service name for same-domain callers.
     public static JsonObject Parse(IReadOnlyList<string> tokens, HaServiceDefinition svc, string? commandName = null)
@@ -21,7 +21,7 @@ public static class HaArgParser
             {
                 // A shell operator is a different mistake from a stray word, and naming only the
                 // symbol let a model read the whole failure as being about its arguments:
-                // glm-5.3-flash chained a correct episode uri after media_stop.sh, was told
+                // glm-5.3-flash chained a correct episode uri after media_stop, was told
                 // "Expected a --flag but found '&&'", and went back to guessing the uri.
                 throw new ArgumentException(
                     token is "&&" or "||" or ";" or "|" or "&"
@@ -47,8 +47,8 @@ public static class HaArgParser
                     : string.Join(", ", svc.Fields.Keys.Order().Select(f => $"--{f}"));
 
                 throw new ArgumentException(
-                    $"Unknown argument '--{name}'. {command}.sh takes: {known}. "
-                    + $"Run `{command}.sh --help` for their types and options.");
+                    $"Unknown argument '--{name}'. ./{command} takes: {known}. "
+                    + $"Run `./{command} --help` for their types and options.");
             }
 
             string raw;

@@ -156,7 +156,7 @@ public class PromptStalenessTests
     {
         var bare = Regex.Matches(
                 TextOf(name),
-                @"`(?<tool>file_read|file_write|text_search|text_create|text_edit|glob|exec|move|copy|remove|file_info)`?\s*[(`]?\s*(?<arg>/[A-Za-z0-9_./<>*-]+|path=|command=|[a-z_.]+\.sh)")
+                @"`(?<tool>file_read|file_write|text_search|text_create|text_edit|glob|exec|move|copy|remove|file_info)`?\s*[(`]?\s*(?<arg>/[A-Za-z0-9_./<>*-]+|path=|command=|\./[a-z_.]+)")
             .Select(m => $"{m.Groups["tool"].Value} {m.Groups["arg"].Value}")
             .Distinct()
             .ToList();
@@ -243,7 +243,7 @@ public class PromptStalenessTests
     {
         var scope = HomeAssistantPrompt.SystemPrompt;
 
-        scope.ShouldContain("turn_on.sh",
+        scope.ShouldContain("./turn_on",
             Case.Insensitive,
             "the scope rule has to name the action a value-setting request must not add");
         scope.ShouldContain("already",

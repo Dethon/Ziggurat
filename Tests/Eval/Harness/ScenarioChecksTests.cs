@@ -753,8 +753,8 @@ public class ScenarioChecksTests
         // be permitting every action in it, including the one it exists to forbid.
         var recording = await ScriptedTurn.RunAsync(
             "listo",
-            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "media_seek.sh --help"),
-            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "media_seek.sh --seek_position 1"));
+            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "./media_seek --help"),
+            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "./media_seek --seek_position 1"));
 
         var scenario = Seeking();
 
@@ -766,8 +766,8 @@ public class ScenarioChecksTests
     {
         var recording = await ScriptedTurn.RunAsync(
             "listo",
-            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "media_seek.sh --seek_position 1"),
-            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "music_assistant.play_media.sh --media_id x"));
+            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "./media_seek --seek_position 1"),
+            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "./music_assistant.play_media --media_id x"));
 
         ScenarioChecks.Failures(Seeking(), recording)
             .ShouldHaveSingleItem().ShouldContain("play_media");
@@ -786,7 +786,7 @@ public class ScenarioChecksTests
             {
                 Label = "seek",
                 Tool = Exec,
-                Arguments = [Arg.Matches("command", @"^media_seek\.sh\b")]
+                Arguments = [Arg.Matches("command", @"^(\./)?media_seek(\s|$)")]
             }
         ],
         Permitted = [CallPermission.Manual(Exec, "/ha*")]

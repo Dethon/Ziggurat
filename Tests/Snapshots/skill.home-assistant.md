@@ -1,4 +1,4 @@
-# home-assistant — description 150 / 150 tokens, body 3571 / 3600 tokens, served by mcp-homeassistant
+# home-assistant — description 150 / 150 tokens, body 3568 / 3600 tokens, served by mcp-homeassistant
 
 ================================================================================================
 
@@ -15,7 +15,8 @@ does not resolve.
 
 - `/ha/entities/<class>/<id>/` — one directory per entity (e.g.
   `/ha/entities/light/kitchen_(kitchen)/`). Contains `state.json` (live state +
-  attributes) and one `<service>.sh` per available action.
+  attributes) and one action file `<service>` per available action, run from there
+  as `./<service>`.
 - `/ha/areas/<room>/<entity_id>/` — the same entities grouped by room; `<room>` is
   the area `id` slug (e.g. `salon`), which is what each `### <room>` heading in the
   setup index carries — not the display name.
@@ -32,20 +33,20 @@ does not resolve.
 1. Find the entity in the setup index you read; `domain__filesystem__glob` under `/ha/entities/<class>` or
    `/ha/areas/<room>` only for what the index does not settle. Do NOT glob to discover actions:
    the setup index lists them per class, and action files live in the entity
-   directory, so a glob of `/ha/entities/<class>/*.sh` returns nothing. An entity line
+   directory, so a glob of the class directory finds none. An entity line
    that goes on after ` — ` already names the action, its flag and the choices it
-   takes (`turn_on.sh --activity: Netflix, YouTube`): act on it directly, with no
-   `state.json` read and no `--help`. `turn_on.sh` on a remote or a media player is
+   takes (`./turn_on --activity: Netflix, YouTube`): act on it directly, with no
+   `state.json` read and no `--help`. `./turn_on` on a remote or a media player is
    how a TV is switched on, even when its state reads `unavailable`; the app opens
    in the same call. A name reaches you through speech recognition: take the nearest
    listed choice or entity ("flex" is Plex) rather than searching the home for the
    literal word, and say so only when nothing is close.
 2. Inspect when you need an attribute as input: `domain__filesystem__file_read` on
    `/ha/.../state.json`.
-3. Learn an action's arguments: `domain__filesystem__exec` of `<service>.sh --help`. The `.sh` files are
-   action stubs, not scripts — don't `file_read` them; `--help` prints the field list.
+3. Learn an action's arguments: `domain__filesystem__exec` of `./<service> --help`. Action files are
+   executable-only — a `file_read` of one is refused; `--help` prints the field list.
 4. Act: `domain__filesystem__exec` from the entity directory, e.g.
-   `domain__filesystem__exec(path="/ha/entities/light/kitchen_(kitchen)", command="turn_on.sh --brightness_pct 60")`.
+   `domain__filesystem__exec(path="/ha/entities/light/kitchen_(kitchen)", command="./turn_on --brightness_pct 60")`.
 
 ### Reading results
 
@@ -63,7 +64,7 @@ does not resolve.
 - `exitCode` 124 = the action timed out (`timedOut:true`); HA may or may not
   have applied it — re-check the relevant `state.json` before retrying.
 - `exitCode` 127 = not a real action file. `/ha` is NOT a shell — only the
-  listed `*.sh` files run. `stderr` lists the available actions.
+  listed action files run. `stderr` lists the available actions.
 
 These codes are for your own retry logic. In a written reply, give the reason from
 `stderr` in plain words; when your reply is read aloud, state success or failure in one
@@ -71,7 +72,7 @@ short clause and never voice exit codes or `stderr` text.
 
 ### History
 
-Every entity directory, read-only classes included, also has `history.sh`: the recorded
+Every entity directory, read-only classes included, also has `./history`: the recorded
 state changes over a window. Any question about the past or a trend — "how was her
 glucose overnight", "when did the door last open", "has the temperature been climbing"
 — is answered from it, never from `state.json` (one value) and never by reading it
@@ -88,12 +89,12 @@ right call for a whole day. Every instant this mount shows — a `state.json`'s
 same clock as the current time you are given: read it as local and never convert it.
 
 Sensors whose `state.json` carries a `state_class` (the setup index's `every entity with
-state_class` line) also have `statistics.sh`: Home Assistant's own hourly mean/min/max
+state_class` line) also have `./statistics`: Home Assistant's own hourly mean/min/max
 (sum and change for a total such as energy), kept for good, so it is the file for
 anything older than the recorder holds or coarser than a reading — "her average this
 month", "how much energy last week". No arguments = the last 7 days by the hour;
 `--days N` widens it and `--period day|week|month` coarsens it. Raw changes and the
-last few days: `history.sh`; averages, extremes and the long run: `statistics.sh`.
+last few days: `./history`; averages, extremes and the long run: `./statistics`.
 
 ### Alarms & reminders
 
@@ -101,9 +102,9 @@ An alarm or reminder is an event on the **alarms calendar** — the `calendar` e
 setup index lists as alarms. Its directory is `<object_id>_(<friendly-name>)` exactly as
 the index prints it — the object id keeps its underscores and only the friendly half is
 hyphenated, so copy the name from the index rather than guessing it or normalising one
-half to the other. That directory serves three action files: `create_event.sh`,
-`get_events.sh` and `delete_event.sh`. From the entity directory:
-`domain__filesystem__exec(command="create_event.sh --summary \"Take out the trash\"
+half to the other. That directory serves three action files: `./create_event`,
+`./get_events` and `./delete_event`. From the entity directory:
+`domain__filesystem__exec(command="./create_event --summary \"Take out the trash\"
       --start_date_time \"2026-06-19 21:30:00\"
       --description '{\"target\":{\"room\":\"Kitchen\"},\"insistent\":{\"gapSeconds\":30,\"maxRepeats\":5}}'")`
 
@@ -122,9 +123,9 @@ half to the other. That directory serves three action files: `create_event.sh`,
   the cap is reached. **`insistent` must be present** — omitting it makes a
   one-shot announce, not an alarm.
 
-To see, change or cancel alarms: `domain__filesystem__exec get_events.sh` lists every event with its `uid`
+To see, change or cancel alarms: `domain__filesystem__exec ./get_events` lists every event with its `uid`
 (no arguments covers the week ahead; `--days N` or `--start_date_time`/`--end_date_time`
-set the window). Cancel with `domain__filesystem__exec delete_event.sh --uid <uid>` — the uid comes from that
+set the window). Cancel with `domain__filesystem__exec ./delete_event --uid <uid>` — the uid comes from that
 listing, never from memory; to drop one occurrence of a recurring alarm add
 `--recurrence_id <the listing's recurrence_id>`. There is no update action: to change an
 alarm's time or message, delete it by uid and create the new one. That is internal —
@@ -140,13 +141,13 @@ be a recurring alarm, and deleting it by uid drops every day it was set for.
 
 Music plays through Music Assistant (MA). The MA player for a room is the `media_player`
 whose `state.json` attributes include `app_id: music_assistant` and `mass_player_type`.
-Other media_players (TVs, etc.) also list `music_assistant.*.sh` actions, but MA calls on
+Other media_players (TVs, etc.) also list `music_assistant.*` actions, but MA calls on
 them do nothing — when a room has more than one player, read `state.json` and pick the MA
 one. Default the target to the **speaking room**'s player (the room the request came
 from) unless another room is named; "everywhere" => run it on every room's MA player.
 
 - Tracks, artists, albums, radio: play directly by name from the player directory:
-  `domain__filesystem__exec music_assistant.play_media.sh --media_id "miles davis"` — add
+  `domain__filesystem__exec ./music_assistant.play_media --media_id "miles davis"` — add
   `--media_type artist|album|track|radio` to disambiguate. Free-text names resolve
   through the streaming providers.
 - Playlists ("my playlist", "songs I like", "música favorita", any saved list): NEVER guess
@@ -154,48 +155,48 @@ from) unless another room is named; "everywhere" => run it on every room's MA pl
   user used to describe the list are almost never its stored title — a request for
   "música favorita" resolves to a title like "Liked Songs dethonv". The rule is mechanical,
   not a judgement call about the phrasing: whenever you pass `--media_type playlist`, the
-  `--media_id` value MUST be a title you read from a `browse_media.sh` listing
+  `--media_id` value MUST be a title you read from a `./browse_media` listing
   in this same turn. List first:
-  `domain__filesystem__exec browse_media.sh --media_content_id playlists --media_content_type music_assistant`
+  `domain__filesystem__exec ./browse_media --media_content_id playlists --media_content_type music_assistant`
   then play the exact title it returned:
-  `domain__filesystem__exec music_assistant.play_media.sh --media_id "<exact title>" --media_type playlist`.
+  `domain__filesystem__exec ./music_assistant.play_media --media_id "<exact title>" --media_type playlist`.
   Inventing or translating a title (e.g. "Mi música favorita") does not fail cleanly — it
   comes back as a bare HA 500 that says nothing about what went wrong.
 - Podcasts: a SHOW plays by name, but a specific EPISODE never does. `play_media` looks a
   name up across tracks, albums, playlists, artists, radio and shows — never episodes — so an
   episode title resolves to the show and starts its **newest episode**, and reports success
   while doing it. An episode plays only by its exact uri. Get that uri first:
-  `domain__filesystem__exec music_assistant.podcast_episodes.sh --podcast "<show name>" --match "<words from the episode>"`
+  `domain__filesystem__exec ./music_assistant.podcast_episodes --podcast "<show name>" --match "<words from the episode>"`
   then play what it returned:
-  `domain__filesystem__exec music_assistant.play_media.sh --media_id "<the episode's uri>"`.
+  `domain__filesystem__exec ./music_assistant.play_media --media_id "<the episode's uri>"`.
   `--match` ignores case and accents; drop it to see the most recent titles, and widen it to
   fewer words if nothing matches. Do NOT look an episode up on Spotify or anywhere else on
   the web — that action already returns the id in playable form.
-  `browse_media.sh` cannot expand a podcast: it fails with a bare 500 for any show.
-- A 500 from `music_assistant.play_media.sh` means the item could not be resolved (the
+  `./browse_media` cannot expand a podcast: it fails with a bare 500 for any show.
+- A 500 from `./music_assistant.play_media` means the item could not be resolved (the
   name isn't in the library) — NOT that MA is down. Browse the library and use an exact
   title instead of retrying name variants. Never retry the same call with a reworded name
   or a different uri shape: if a name did not resolve, list the real items and pick one.
   And if the listing does not have it either, say so — the web is no fallback: nothing a
   web search returns is playable on a player, so never go looking online for a station,
   song or show the library could not resolve.
-- `search_media.sh` searches the entire provider catalog (public Spotify etc.), not the
+- `./search_media` searches the entire provider catalog (public Spotify etc.), not the
   user's saved items, and the URIs it returns are generally not playable via
   `play_media`. Use it only for content the user doesn't have saved, then play the
   result by its exact title.
-- Do NOT use the bare `play_media.sh` (`media_player.play_media`): it needs a concrete
-  `media_content_id`/URI you cannot know. Only `music_assistant.play_media.sh` resolves
+- Do NOT use the bare `./play_media` (`media_player.play_media`): it needs a concrete
+  `media_content_id`/URI you cannot know. Only `./music_assistant.play_media` resolves
   names.
-- Transport: `media_play.sh` / `media_pause.sh` / `media_next_track.sh` / `volume_set.sh`
+- Transport: `./media_play` / `./media_pause` / `./media_next_track` / `./volume_set`
   on the player.
 - "Play it from the beginning" / "start it over": use
-  `domain__filesystem__exec media_seek.sh --seek_position 1` on the player. Playing the uri again does NOT
+  `domain__filesystem__exec ./media_seek --seek_position 1` on the player. Playing the uri again does NOT
   restart it — MA keeps a resume point per podcast episode and audiobook, and every play
   of that item starts there, reporting success while doing it. Stopping first changes
-  nothing; the resume point just moves to where you stopped. `media_seek.sh` is the only
+  nothing; the resume point just moves to where you stopped. `./media_seek` is the only
   call that restarts, and it needs something already loaded on the player: if the item is
   not playing yet, play it first, then seek.
-- "Rewind/skip forward N minutes": a relative move is an absolute `media_seek.sh`, so read
+- "Rewind/skip forward N minutes": a relative move is an absolute `./media_seek`, so read
   `media_position` from the player's `state.json` first and add or subtract from it. That
   read is INPUT to the seek, not a confirmation of it. On a Music Assistant player the
   value comes from the queue and is current (`media_position_source: music_assistant`);
@@ -203,8 +204,8 @@ from) unless another room is named; "everywhere" => run it on every room's MA pl
   started or stopped, so treat it as a floor rather than the true position and say what you
   did. Never treat a rewind as a timer or a reminder — it is a seek on the player and
   nothing else.
-- Grouping (synced multi-room): `join.sh` (`media_player.join`; `--group_members` = the
-  other players) to play in sync; `unjoin.sh` (`media_player.unjoin`) to split a room
+- Grouping (synced multi-room): `./join` (`media_player.join`; `--group_members` = the
+  other players) to play in sync; `./unjoin` (`media_player.unjoin`) to split a room
   back out.
 Music ducks automatically while the satellite speaks — never lower or pause music just to
 talk.

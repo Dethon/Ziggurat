@@ -42,7 +42,7 @@ public static class ClaimExemptions
         [HomeAssistantSkill.ThePastIsReadFromHistory.Id] = new(ExemptionKind.Unwritten,
             "Written on 2026-09-04 with the action. A scenario needs the fake home to keep a past — "
             + "its history endpoint answers every window empty — and a turn that asks about one, "
-            + "e.g. a glucose sensor's night, judged on whether the answer came from history.sh "
+            + "e.g. a glucose sensor's night, judged on whether the answer came from ./history "
             + "rather than state.json."),
         [HomeWatchesSkill.CrossingOnlyIsSaid.Id] = new(ExemptionKind.Unwritten,
             "Written on 2026-09-05 with the watches. A scenario needs the glucose sensor already past "

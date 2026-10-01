@@ -13,7 +13,8 @@ public class SchedulePathTests
     [InlineData("/jonas/morning-news", ScheduleNodeKind.ScheduleDir)]
     [InlineData("/jonas/morning-news/schedule.json", ScheduleNodeKind.ScheduleFile)]
     [InlineData("/jonas/morning-news/status.json", ScheduleNodeKind.StatusFile)]
-    [InlineData("/jonas/morning-news/run_now.sh", ScheduleNodeKind.RunNowFile)]
+    [InlineData("/jonas/morning-news/run_now", ScheduleNodeKind.RunNowFile)]
+    [InlineData("/jonas/morning-news/run_now.sh", ScheduleNodeKind.Unknown)]
     [InlineData("/jonas/morning-news/bogus", ScheduleNodeKind.Unknown)]
     public void Parse_ResolvesNodeKinds(string path, ScheduleNodeKind expected)
     {
@@ -33,7 +34,7 @@ public class SchedulePathTests
     [InlineData("/status.json")]                       // reserved name as agent id
     [InlineData("/jonas/status.json")]                 // reserved name as schedule id
     [InlineData("/jonas/schedule.json")]               // reserved name as schedule id
-    [InlineData("/jonas/run_now.sh")]                  // reserved name as schedule id
+    [InlineData("/jonas/run_now")]                     // reserved name as schedule id
     [InlineData("/jonas/..")]                          // traversal marker as id
     [InlineData("/../morning-news/schedule.json")]     // traversal marker as agent id
     [InlineData("/jonas/./schedule.json")]             // dot segment as schedule id

@@ -253,6 +253,9 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
 
     protected static FsResult<T> ReadOnly<T>(string path) where T : class => FsError.ReadOnly<T>(path);
 
+    protected static FsResult<T> ExecutableOnly<T>(string path, string actionName) where T : class =>
+        FsError.ExecutableOnly<T>(path, actionName);
+
     protected static FsResult<T> Fail<T>(string code, string message, string? hint = null)
         where T : class => FsError.Fail<T>(code, message, hint);
 
@@ -357,6 +360,24 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
             Entries = entries,
             Truncated = false,
             Total = entries.Count
+        });
+
+    // A mount with action files marks the ones its listing returned. Asked of the materialized
+    // listing, inside the same guard, so the marks are always a subset of the entries; none
+    // matched leaves the field off, which is what a mount without actions answers.
+    protected static FsResult<FsGlobResult> Glob(
+        string pattern, Func<IReadOnlyList<string>> entries, Func<string, bool> isExecutable) =>
+        GlobRegex.Guarded(pattern, () =>
+        {
+            var listed = entries();
+            var executables = listed.Where(isExecutable).ToList();
+            return new FsResult<FsGlobResult>.Ok(new FsGlobResult
+            {
+                Entries = listed,
+                Truncated = false,
+                Total = listed.Count,
+                Executables = executables.Count == 0 ? null : executables
+            });
         });
 
     private string UnsupportedMessage(string operation) =>

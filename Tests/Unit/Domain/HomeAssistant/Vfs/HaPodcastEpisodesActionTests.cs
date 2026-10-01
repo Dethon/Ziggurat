@@ -64,7 +64,7 @@ public class HaPodcastEpisodesActionTests
     public async Task Exec_PlayMediaWithAProviderNativeUri_IsRefusedWithTheReason(string mediaId)
     {
         var exec = await Exec(
-            Build(out _), $"music_assistant.play_media.sh --media_id \"{mediaId}\"");
+            Build(out _), $"./music_assistant.play_media --media_id \"{mediaId}\"");
 
         exec.ExitCode.ShouldBe(2);
         exec.Stderr.ShouldContain("as the listing gave it", Case.Insensitive);
@@ -76,7 +76,7 @@ public class HaPodcastEpisodesActionTests
     public async Task Exec_PlayMediaWithAUriTheListingGaveOrAPlainName_IsNotRefused(string mediaId)
     {
         var exec = await Exec(
-            Build(out _), $"music_assistant.play_media.sh --media_id \"{mediaId}\"");
+            Build(out _), $"./music_assistant.play_media --media_id \"{mediaId}\"");
 
         exec.ExitCode.ShouldNotBe(2);
     }
@@ -86,7 +86,7 @@ public class HaPodcastEpisodesActionTests
     {
         var fs = Build(out var music);
 
-        var exec = await Exec(fs, "music_assistant.podcast_episodes.sh --podcast \"No es el fin del mundo\"");
+        var exec = await Exec(fs, "./music_assistant.podcast_episodes --podcast \"No es el fin del mundo\"");
 
         exec.ExitCode.ShouldBe(0);
         music.LastEpisodeLookup!.Value.ToString().ShouldBe(ShowUri);
@@ -105,7 +105,7 @@ public class HaPodcastEpisodesActionTests
     {
         var fs = Build(out _);
 
-        var exec = await Exec(fs, "music_assistant.podcast_episodes.sh --podcast \"No es el fin del mundo\" --match \"CONTROL TECNOLOGICO\"");
+        var exec = await Exec(fs, "./music_assistant.podcast_episodes --podcast \"No es el fin del mundo\" --match \"CONTROL TECNOLOGICO\"");
 
         var episodes = JsonNode.Parse(exec.Stdout)!["episodes"]!.AsArray();
         episodes.Count.ShouldBe(1);
@@ -117,7 +117,7 @@ public class HaPodcastEpisodesActionTests
     {
         var fs = Build(out var music);
 
-        var exec = await Exec(fs, $"music_assistant.podcast_episodes.sh --podcast \"{ShowUri}\"");
+        var exec = await Exec(fs, $"./music_assistant.podcast_episodes --podcast \"{ShowUri}\"");
 
         exec.ExitCode.ShouldBe(0);
         music.LastSearch.ShouldBeNull();
@@ -130,7 +130,7 @@ public class HaPodcastEpisodesActionTests
     {
         var fs = Build(out _);
 
-        var exec = await Exec(fs, "music_assistant.podcast_episodes.sh --podcast \"No es el fin del mundo\" --limit 2");
+        var exec = await Exec(fs, "./music_assistant.podcast_episodes --podcast \"No es el fin del mundo\" --limit 2");
 
         var payload = JsonNode.Parse(exec.Stdout)!;
         payload["episodes"]!.AsArray().Count.ShouldBe(2);
@@ -144,7 +144,7 @@ public class HaPodcastEpisodesActionTests
     {
         var fs = Build(out var music);
 
-        var exec = await Exec(fs, "music_assistant.podcast_episodes.sh --podcast \"Un podcast que no existe\"");
+        var exec = await Exec(fs, "./music_assistant.podcast_episodes --podcast \"Un podcast que no existe\"");
 
         exec.ExitCode.ShouldBe(1);
         exec.Stderr.ShouldContain("Un podcast que no existe");
@@ -156,7 +156,7 @@ public class HaPodcastEpisodesActionTests
     {
         var fs = Build(out _);
 
-        var exec = await Exec(fs, "music_assistant.podcast_episodes.sh --podcast \"No es el fin del mundo\" --match zzz");
+        var exec = await Exec(fs, "./music_assistant.podcast_episodes --podcast \"No es el fin del mundo\" --match zzz");
 
         exec.ExitCode.ShouldBe(0);
         var payload = JsonNode.Parse(exec.Stdout)!;
@@ -169,7 +169,7 @@ public class HaPodcastEpisodesActionTests
     {
         var fs = Build(out _);
 
-        var exec = await Exec(fs, "music_assistant.podcast_episodes.sh --match palantir");
+        var exec = await Exec(fs, "./music_assistant.podcast_episodes --match palantir");
 
         exec.ExitCode.ShouldBe(2);
         exec.Stderr.ShouldContain("--podcast");
@@ -180,7 +180,7 @@ public class HaPodcastEpisodesActionTests
     {
         var fs = Build(out var music);
 
-        var exec = await Exec(fs, "music_assistant.podcast_episodes.sh --help");
+        var exec = await Exec(fs, "./music_assistant.podcast_episodes --help");
 
         exec.ExitCode.ShouldBe(0);
         exec.Stdout.ShouldContain("--podcast");
@@ -195,7 +195,7 @@ public class HaPodcastEpisodesActionTests
         var fs = Build(out var music);
         music.Fault = new InvalidOperationException("Music Assistant is unreachable");
 
-        var exec = await Exec(fs, $"music_assistant.podcast_episodes.sh --podcast \"{ShowUri}\"");
+        var exec = await Exec(fs, $"./music_assistant.podcast_episodes --podcast \"{ShowUri}\"");
 
         exec.ExitCode.ShouldBe(1);
         exec.Stderr.ShouldContain("Music Assistant is unreachable");
@@ -208,7 +208,7 @@ public class HaPodcastEpisodesActionTests
     {
         var fs = Build(out _, musicConfigured: false);
 
-        var exec = await Exec(fs, "music_assistant.podcast_episodes.sh --podcast \"No es el fin del mundo\"");
+        var exec = await Exec(fs, "./music_assistant.podcast_episodes --podcast \"No es el fin del mundo\"");
 
         exec.ExitCode.ShouldBe(127);
         exec.Stderr[exec.Stderr.IndexOf("Available actions:", StringComparison.Ordinal)..]
@@ -223,6 +223,6 @@ public class HaPodcastEpisodesActionTests
         var result = await fs.GlobAsync(PlayerDir, "*", CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries
-            .ShouldContain(e => e.EndsWith("music_assistant.podcast_episodes.sh", StringComparison.Ordinal));
+            .ShouldContain(e => e.EndsWith("music_assistant.podcast_episodes", StringComparison.Ordinal));
     }
 }

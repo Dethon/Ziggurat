@@ -151,7 +151,7 @@ A subagent sees outposts only when its parent has `usesOutposts` and its own def
 
 Scheduling is a dual-role MCP server (`mcp-scheduling`) rather than an in-process agent feature. The agent connects to it both as a tool/filesystem server and as a channel:
 
-- **As a filesystem** (`filesystem://schedules`, mounted at `/schedules`) the agent manages schedules with the ordinary `Vfs*` tools. Each agent gets a directory; a schedule lives at `/schedules/<agentId>/<scheduleId>/schedule.json` containing `{prompt, cron|runAt, userId?, deliverTo?}` — exactly one of `cron` (recurring 5-field UTC cron) or `runAt` (one-shot ISO-8601 UTC datetime, auto-deleted after it fires). `agent_info.json` describes each agent and read-only `status.json` reports `createdAt`/`lastRunAt`/`nextRunAt`. Running `VfsExec` with `run_now.sh` on a schedule directory fires it immediately.
+- **As a filesystem** (`filesystem://schedules`, mounted at `/schedules`) the agent manages schedules with the ordinary `Vfs*` tools. Each agent gets a directory; a schedule lives at `/schedules/<agentId>/<scheduleId>/schedule.json` containing `{prompt, cron|runAt, userId?, deliverTo?}` — exactly one of `cron` (recurring 5-field UTC cron) or `runAt` (one-shot ISO-8601 UTC datetime, auto-deleted after it fires). `agent_info.json` describes each agent and read-only `status.json` reports `createdAt`/`lastRunAt`/`nextRunAt`. Running `VfsExec` with `./run_now` on a schedule directory fires it immediately.
 - **As a channel** a background dispatcher polls Redis for due schedules and emits a `channel/message` to the agent. The agent runs the prompt and fans the result out to the schedule's `deliverTo` channels (e.g. `["signalr", "telegram"]`), minting conversations as needed.
 
 The `scheduling_prompt` MCP prompt teaches the LLM the `/schedules` idiom.
@@ -183,11 +183,11 @@ The IPP transport is `IppPrinterClient` (`Infrastructure/Clients/Printer/`), a `
 
 ### Timers & Alarms
 
-Countdown timers are another non-disk MCP filesystem server (`mcp-timers`) exposing `filesystem://timers` (mounted at `/timers`). Creating `/timers/<id>/timer.json` arms a countdown, reading the read-only `status.json` reports the remaining seconds, removing the directory cancels it, and running `dismiss.sh` silences everything currently ringing. Timers are deliberately in-memory and hub-local — a timer just *rings*, it never messages the agent, which is why this is a pure tool server rather than a channel.
+Countdown timers are another non-disk MCP filesystem server (`mcp-timers`) exposing `filesystem://timers` (mounted at `/timers`). Creating `/timers/<id>/timer.json` arms a countdown, reading the read-only `status.json` reports the remaining seconds, removing the directory cancels it, and running `./dismiss` silences everything currently ringing. Timers are deliberately in-memory and hub-local — a timer just *rings*, it never messages the agent, which is why this is a pure tool server rather than a channel.
 
 The timers server has no audio path of its own. When a timer fires it calls the voice hub's token-gated HTTP endpoints (`/api/voice/announce`, `/api/voice/dismiss`, `/api/voice/satellites`), so ringing, dismissal (wake word or button on the satellite, or `dismiss.sh` from any channel), and satellite/room resolution all stay in one place — the hub. The `timers_prompt` MCP prompt teaches the `/timers` idiom and embeds the live satellite roster.
 
-Clock-time alarms and reminders ride Home Assistant instead: the agent creates events on a dedicated alarms calendar (served by the `/ha` mount as `create_event.sh`, `get_events.sh` and `delete_event.sh`, over HA's calendars endpoint and WebSocket API, because the service catalog cannot list an event's uid or delete one) and an HA automation bridges each firing to the same voice announce endpoint, with optional insistent repetition until acknowledged.
+Clock-time alarms and reminders ride Home Assistant instead: the agent creates events on a dedicated alarms calendar (served by the `/ha` mount as `./create_event`, `./get_events` and `./delete_event`, over HA's calendars endpoint and WebSocket API, because the service catalog cannot list an event's uid or delete one) and an HA automation bridges each firing to the same voice announce endpoint, with optional insistent repetition until acknowledged.
 
 ### Voice Satellites
 

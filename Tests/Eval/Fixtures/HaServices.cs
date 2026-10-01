@@ -58,7 +58,7 @@ internal static class HaServices
             Service("volume_set", "Sets the volume.", Number("volume_level", 0, 1)),
             Service("turn_off", "Turns the player off.")),
         // Targeted at media_player rather than at its own domain, the way Music Assistant's
-        // integration declares them: that cross-domain target is what puts `music_assistant.*.sh`
+        // integration declares them: that cross-domain target is what puts `music_assistant.*`
         // in every player's directory, and a fake that got it wrong would serve no action at all.
         Domain("music_assistant", targets: "media_player",
             Service("play_media", "Resolves a name in the user's library and plays it.",

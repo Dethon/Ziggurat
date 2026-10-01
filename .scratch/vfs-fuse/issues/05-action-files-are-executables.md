@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] On each executing mount, exec of `./<action>` and of `<action>` runs the action
-- [ ] The old `<action>.sh` answers not-found and lists the available names
-- [ ] Reading or editing an action file is refused with an envelope that says it is executable-only
-- [ ] Info reports an action file as executable, and glob marks it the same way; other backends' answers are unchanged
-- [ ] Prompts, skills and their snapshots teach `./<action>`
-- [ ] The timer, scheduling, Home Assistant and voice rules use the new names
+- [x] On each executing mount, exec of `./<action>` and of `<action>` runs the action
+- [x] The old `<action>.sh` answers not-found and lists the available names
+- [x] Reading or editing an action file is refused with an envelope that says it is executable-only
+- [x] Info reports an action file as executable, and glob marks it the same way; other backends' answers are unchanged
+- [x] Prompts, skills and their snapshots teach `./<action>`
+- [x] The timer, scheduling, Home Assistant and voice rules use the new names

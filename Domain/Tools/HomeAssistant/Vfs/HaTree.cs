@@ -60,7 +60,7 @@ public static class HaTree
         var classDomain = HaCatalog.ClassOf(entity.EntityId);
         foreach (var svc in HaActionResolver.ServicesFor(entity, catalog.Services))
         {
-            yield return $"{entityDir}/{HaActionResolver.CommandName(svc, classDomain)}.sh";
+            yield return $"{entityDir}/{HaActionResolver.CommandName(svc, classDomain)}";
         }
     }
 

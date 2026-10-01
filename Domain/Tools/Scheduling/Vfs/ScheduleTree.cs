@@ -8,7 +8,7 @@ namespace Domain.Tools.Scheduling.Vfs;
 //   <agentId>/                          (dir)
 //   <agentId>/agent_info.json           (file)
 //   <agentId>/<scheduleId>/             (dir)
-//   <agentId>/<scheduleId>/schedule.json|status.json|run_now.sh  (files)
+//   <agentId>/<scheduleId>/schedule.json|status.json|run_now  (files; run_now is an action)
 internal static class ScheduleTree
 {
     public static IReadOnlyList<string> Directories(IAgentCatalog agents, IReadOnlyList<Schedule> schedules)

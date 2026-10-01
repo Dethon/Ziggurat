@@ -31,9 +31,9 @@ public class HaTreeTests
 
         files.ShouldContain(HaVfsPath.SetupIndexFileName);
         files.ShouldContain("entities/light/kitchen/state.json");
-        files.ShouldContain("entities/light/kitchen/turn_on.sh");
+        files.ShouldContain("entities/light/kitchen/turn_on");
         files.ShouldContain("entities/sensor/salon_temp/state.json");
-        files.ShouldNotContain("entities/sensor/salon_temp/turn_on.sh"); // no actions for sensor
+        files.ShouldNotContain("entities/sensor/salon_temp/turn_on"); // no actions for sensor
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public class HaTreeTests
         dirs.ShouldContain("entities/climate/0x00158d00abcd_(aire-acondicionado-salon)");
         dirs.ShouldContain("areas/salon/climate.0x00158d00abcd_(aire-acondicionado-salon)");
         files.ShouldContain("entities/light/kitchen_(kitchen-light)/state.json");
-        files.ShouldContain("entities/light/kitchen_(kitchen-light)/turn_on.sh");
+        files.ShouldContain("entities/light/kitchen_(kitchen-light)/turn_on");
     }
 
     [Fact]
@@ -69,8 +69,8 @@ public class HaTreeTests
 
         var files = HaTree.Files(cat);
 
-        files.ShouldContain("entities/media_player/office/play_media.sh");
-        files.ShouldContain("entities/media_player/office/music_assistant.play_media.sh");
+        files.ShouldContain("entities/media_player/office/play_media");
+        files.ShouldContain("entities/media_player/office/music_assistant.play_media");
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class HaTreeTests
 
         hits.ShouldContain("entities/light/kitchen/");
         hits.ShouldContain("entities/light/kitchen/state.json");
-        hits.ShouldContain("entities/light/kitchen/turn_on.sh");
+        hits.ShouldContain("entities/light/kitchen/turn_on");
     }
 
     [Fact]
@@ -104,9 +104,9 @@ public class HaTreeTests
         recursive.ShouldContain("entities/light/kitchen/state.json");
         recursive.ShouldContain("entities/sensor/salon_temp/state.json");
 
-        var shFiles = HaTree.Glob(cat, Scope("entities", "**/*.sh"));
-        shFiles.ShouldNotBeEmpty();
-        shFiles.ShouldAllBe(h => h.EndsWith(".sh"));
+        var actions = HaTree.Glob(cat, Scope("entities", "**/turn_*"));
+        actions.ShouldNotBeEmpty();
+        actions.ShouldAllBe(h => h.EndsWith("/turn_on"));
     }
 
     // One matcher serves every mount, and the disk roots have always matched case-insensitively —

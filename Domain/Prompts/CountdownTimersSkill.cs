@@ -12,7 +12,7 @@ public static class CountdownTimersSkill
 
     // The whole trigger: the one line about this skill that is in every turn.
     public const string Description =
-        "Stopping an alarm or timer that is ringing right now (\"stop the alarm\", \"para la alarma\"), and touching a countdown under `/timers`: setting one (\"timer for eight minutes\", \"remind me in twenty\"), how long is left, listing, cancelling or adding time to one. Not for a calendar alarm named by what it is for — removing, moving or snoozing \"the dentist alarm\" is the home's — nor a watch, a scheduled task or moving a player. The timer.json shape, target rules, status.json, change by recreate, dismiss.sh.";
+        "Stopping an alarm or timer that is ringing right now (\"stop the alarm\", \"para la alarma\"), and touching a countdown under `/timers`: setting one (\"timer for eight minutes\", \"remind me in twenty\"), how long is left, listing, cancelling or adding time to one. Not for a calendar alarm named by what it is for — removing, moving or snoozing \"the dentist alarm\" is the home's — nor a watch, a scheduled task or moving a player. The timer.json shape, target rules, status.json, change by recreate, ./dismiss.";
 
     public static readonly string Body = $$"""
         - Create: `{{FileSystemToolFeature.Callable(VfsTextCreateTool.Name)}}` at `/timers/<descriptive-id>/timer.json` with JSON
@@ -38,9 +38,9 @@ public static class CountdownTimersSkill
           `status.json` for `remainingSeconds`, delete the timer, and recreate it with the
           adjusted remainder.
         - Stop ringing: when the user asks to stop or dismiss a ringing alarm/timer (from any room
-          or any channel), `{{FileSystemToolFeature.Callable(VfsExecTool.Name)}}` `dismiss.sh` at `/timers` — it silences everything
+          or any channel), `{{FileSystemToolFeature.Callable(VfsExecTool.Name)}}` `./dismiss` at `/timers` — it silences everything
           currently ringing on all satellites. A fired timer no longer appears under `/timers`;
-          `dismiss.sh` is the only way to silence it remotely. That one call is the whole task:
+          `./dismiss` is the only way to silence it remotely. That one call is the whole task:
           answer once it returns, and do not go looking for whatever set the alert off — not the
           alarms calendar, not the entity, not the setup index. What was ringing does not matter;
           it has stopped.
@@ -108,7 +108,7 @@ public static class CountdownTimersSkill
 
     public static readonly PromptClaim RingingIsStoppedByDismiss =
         new("countdown-timers.ringing-is-stopped-by-dismiss",
-            "A request to stop or dismiss a ringing timer runs dismiss.sh at /timers, from any room and any channel.");
+            "A request to stop or dismiss a ringing timer runs ./dismiss at /timers, from any room and any channel.");
 
     public static readonly IReadOnlyList<PromptClaim> Claims =
     [

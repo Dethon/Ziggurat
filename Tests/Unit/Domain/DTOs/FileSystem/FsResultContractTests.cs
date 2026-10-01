@@ -121,5 +121,47 @@ public class FsResultContractTests
         FsResultContract.TryValidate("fs_edit", node, out _).ShouldBeTrue();
     }
 
+    // An action file is marked on the two answers that describe a path without opening it. Every
+    // other backend leaves the marks at their defaults, and its answer must stay byte-identical.
+    [Fact]
+    public void InfoResult_OmitsExecutable_WhenFalse()
+    {
+        var node = FsResultContract.ToNode(new FsInfoResult { Exists = true, Path = "/vault/a.md", IsDirectory = false });
+
+        node.ToJsonString().ShouldBe("{\"exists\":true,\"path\":\"/vault/a.md\",\"isDirectory\":false}");
+    }
+
+    [Fact]
+    public void InfoResult_CarriesExecutable_WhenTrue_AndValidates()
+    {
+        var node = FsResultContract.ToNode(new FsInfoResult
+        {
+            Exists = true, Path = "/timers/dismiss", IsDirectory = false, Executable = true
+        });
+
+        node.ToJsonString().ShouldContain("\"executable\":true");
+        FsResultContract.TryValidate("fs_info", node, out var error).ShouldBeTrue(error);
+    }
+
+    [Fact]
+    public void GlobResult_OmitsExecutables_WhenUnset()
+    {
+        var node = FsResultContract.ToNode(new FsGlobResult { Entries = ["/a.md"], Truncated = false, Total = 1 });
+
+        node.ToJsonString().ShouldNotContain("executables");
+    }
+
+    [Fact]
+    public void GlobResult_CarriesExecutables_WhenSet_AndValidates()
+    {
+        var node = FsResultContract.ToNode(new FsGlobResult
+        {
+            Entries = ["/dismiss", "/kitchen/"], Truncated = false, Total = 2, Executables = ["/dismiss"]
+        });
+
+        node.ToJsonString().ShouldContain("\"executables\":[\"/dismiss\"]");
+        FsResultContract.TryValidate("fs_glob", node, out var error).ShouldBeTrue(error);
+    }
+
     private static JsonNode JsonNodeWith(string json) => JsonNode.Parse(json)!;
 }

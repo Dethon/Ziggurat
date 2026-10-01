@@ -34,7 +34,7 @@ public sealed class AlertHandle
 // of its active alerts (one wake dismisses everything ringing there — the Alexa "stop" model); each
 // alert's shared CTS also stops it on its sibling satellites. Returns what was dismissed so the
 // caller can hand the descriptions to the snooze context flow. DismissAll is the agent-reachable
-// variant (exec dismiss.sh on /timers): everything ringing anywhere, from any room or channel.
+// variant (exec ./dismiss on /timers): everything ringing anywhere, from any room or channel.
 public sealed class ActiveAlertRegistry
 {
     private readonly Dictionary<string, List<AlertHandle>> _bySatellite = new();

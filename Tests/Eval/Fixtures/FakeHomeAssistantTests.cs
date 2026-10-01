@@ -33,13 +33,13 @@ public class FakeHomeAssistantTests
         var index = (await mount.ReadAsync(Relative("/ha/" + HaVfsPath.SetupIndexFileName), null, null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
         var line = index.Split('\n').Single(l => l.Contains(HaCatalog.ObjectOf(FakeHomeAssistant.TvRemoteEntityId) + "_("));
-        line.ShouldContain("turn_on.sh --activity: ");
+        line.ShouldContain("./turn_on --activity: ");
         line.ShouldContain("Crunchyroll");
         line.ShouldContain("Plex");
         home.OpenOptionsFlows.ShouldBe(0);
 
         var result = await mount.ExecAsync(
-            Relative(FakeHomeAssistant.TvRemoteDirectory), "turn_on.sh --activity Crunchyroll", timeoutSeconds: null, CancellationToken.None);
+            Relative(FakeHomeAssistant.TvRemoteDirectory), "./turn_on --activity Crunchyroll", timeoutSeconds: null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(0, exec.Stderr);
@@ -54,24 +54,24 @@ public class FakeHomeAssistantTests
         var files = await Mount().GlobAsync(Relative("/ha/entities/calendar"), "**", CancellationToken.None);
 
         var directory = Relative(FakeHomeAssistant.AlarmsDirectory);
-        Paths(files).ShouldContain(directory + "/create_event.sh");
-        Paths(files).ShouldContain(directory + "/get_events.sh");
-        Paths(files).ShouldContain(directory + "/delete_event.sh");
-        Paths(files).ShouldNotContain(directory + "/update_event.sh");
+        Paths(files).ShouldContain(directory + "/create_event");
+        Paths(files).ShouldContain(directory + "/get_events");
+        Paths(files).ShouldContain(directory + "/delete_event");
+        Paths(files).ShouldNotContain(directory + "/update_event");
     }
 
     // The recorder's reads are served in the deployment whether or not Music Assistant is, so the
-    // fake mount serves them too: a scenario that asks about the past finds history.sh and gets the
+    // fake mount serves them too: a scenario that asks about the past finds ./history and gets the
     // fake's honest empty window, not a missing file.
     [Fact]
     public async Task EveryEntityDirectory_ServesHistory_AsTheDeploymentDoes()
     {
         var home = new FakeHomeAssistant();
         var files = await Mount(home).GlobAsync(Relative("/ha/entities/calendar"), "**", CancellationToken.None);
-        Paths(files).ShouldContain(Relative(FakeHomeAssistant.AlarmsDirectory) + "/history.sh");
+        Paths(files).ShouldContain(Relative(FakeHomeAssistant.AlarmsDirectory) + "/history");
 
         var result = await Mount(home).ExecAsync(
-            Relative(FakeHomeAssistant.AlarmsDirectory), "history.sh", timeoutSeconds: null, CancellationToken.None);
+            Relative(FakeHomeAssistant.AlarmsDirectory), "./history", timeoutSeconds: null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(0, exec.Stderr);
@@ -85,7 +85,7 @@ public class FakeHomeAssistantTests
         // and both are the deployment's own paths: the snooze scenario pinned the entities view
         // and an armed run that wrote the correct event through the area view went red on it.
         var files = await Mount().GlobAsync(Relative("/ha/areas"), "**", CancellationToken.None);
-        var areaView = Paths(files).Single(p => p.EndsWith("/create_event.sh"));
+        var areaView = Paths(files).Single(p => p.EndsWith("/create_event"));
         var areaDirectory = "/ha/" + areaView[..areaView.LastIndexOf('/')];
 
         Regex.IsMatch(areaDirectory, FakeHomeAssistant.AlarmsPathPattern, RegexOptions.IgnoreCase)
@@ -104,7 +104,7 @@ public class FakeHomeAssistantTests
 
         var result = await Mount(home, socket: socket).ExecAsync(
             Relative(FakeHomeAssistant.AlarmsDirectory),
-            """create_event.sh --summary "Levántate" --start_date_time "2026-08-18 07:00:00" """,
+            """./create_event --summary "Levántate" --start_date_time "2026-08-18 07:00:00" """,
             timeoutSeconds: null, CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
@@ -125,7 +125,7 @@ public class FakeHomeAssistantTests
         var home = new FakeHomeAssistant();
 
         var result = await Mount(home).ExecAsync(
-            Relative(FakeHomeAssistant.AlarmsDirectory), "get_events.sh --days 30",
+            Relative(FakeHomeAssistant.AlarmsDirectory), "./get_events --days 30",
             timeoutSeconds: null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
@@ -144,7 +144,7 @@ public class FakeHomeAssistantTests
 
         var result = await Mount(home, socket: socket).ExecAsync(
             Relative(FakeHomeAssistant.AlarmsDirectory),
-            $"delete_event.sh --uid {FakeHomeAssistant.TrashAlarmUid}",
+            $"./delete_event --uid {FakeHomeAssistant.TrashAlarmUid}",
             timeoutSeconds: null, CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
@@ -160,7 +160,7 @@ public class FakeHomeAssistantTests
         var home = new FakeHomeAssistant();
 
         await Mount(home).ExecAsync(
-            Relative(FakeHomeAssistant.KitchenLightDirectory), "turn_off.sh",
+            Relative(FakeHomeAssistant.KitchenLightDirectory), "./turn_off",
             timeoutSeconds: null, CancellationToken.None);
 
         home.StateOf(FakeHomeAssistant.KitchenLightEntityId).ShouldBe("off");
@@ -175,7 +175,7 @@ public class FakeHomeAssistantTests
         var home = new FakeHomeAssistant();
 
         await Mount(home).ExecAsync(
-            Relative(FakeHomeAssistant.AirConditionerDirectory), "set_temperature.sh --temperature 22",
+            Relative(FakeHomeAssistant.AirConditionerDirectory), "./set_temperature --temperature 22",
             timeoutSeconds: null, CancellationToken.None);
 
         var snapshot = home.Snapshot();
@@ -208,7 +208,7 @@ public class FakeHomeAssistantTests
         await mount.ReadAsync(Relative(FakeHomeAssistant.KitchenLightDirectory) + "/state.json",
             offset: null, limit: null, CancellationToken.None);
         await mount.GlobAsync(Relative("/ha/entities"), "**", CancellationToken.None);
-        await mount.ExecAsync(Relative(FakeHomeAssistant.KitchenLightDirectory), "turn_off.sh --help",
+        await mount.ExecAsync(Relative(FakeHomeAssistant.KitchenLightDirectory), "./turn_off --help",
             timeoutSeconds: null, CancellationToken.None);
 
         home.Snapshot().ShouldBe(before);
@@ -224,7 +224,7 @@ public class FakeHomeAssistantTests
 
         var result = await Mount(home).ExecAsync(
             Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
-            "browse_media.sh --media_content_id playlists --media_content_type music_assistant",
+            "./browse_media --media_content_id playlists --media_content_type music_assistant",
             timeoutSeconds: null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
@@ -242,7 +242,7 @@ public class FakeHomeAssistantTests
 
         var result = await Mount(home).ExecAsync(
             Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
-            """search_media.sh --search_query "Radio Faro del Sur" """,
+            """./search_media --search_query "Radio Faro del Sur" """,
             timeoutSeconds: null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
@@ -260,12 +260,12 @@ public class FakeHomeAssistantTests
 
         var result = await Mount(home).ExecAsync(
             Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
-            """music_assistant.play_media.sh --media_id "Mi música favorita" --media_type playlist""",
+            """./music_assistant.play_media --media_id "Mi música favorita" --media_type playlist""",
             timeoutSeconds: null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         exec.ExitCode.ShouldBe(1);
-        exec.Stderr.ShouldContain("browse_media.sh");
+        exec.Stderr.ShouldContain("./browse_media");
     }
 
     [Fact]
@@ -275,7 +275,7 @@ public class FakeHomeAssistantTests
 
         var result = await Mount(home).ExecAsync(
             Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
-            $"""music_assistant.play_media.sh --media_id "{FakeHomeAssistant.FavouritesPlaylist}" --media_type playlist""",
+            $"""./music_assistant.play_media --media_id "{FakeHomeAssistant.FavouritesPlaylist}" --media_type playlist""",
             timeoutSeconds: null, CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
@@ -297,7 +297,7 @@ public class FakeHomeAssistantTests
 
         var result = await Mount(home, music).ExecAsync(
             Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
-            """music_assistant.podcast_episodes.sh --podcast "No es el fin del mundo" --match "Palantir" """,
+            """./music_assistant.podcast_episodes --podcast "No es el fin del mundo" --match "Palantir" """,
             timeoutSeconds: null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
@@ -318,7 +318,7 @@ public class FakeHomeAssistantTests
 
         var result = await Mount(home, music).ExecAsync(
             Relative(FakeHomeAssistant.KitchenSpeakerDirectory),
-            """music_assistant.play_media.sh --media_id "spotify--w2nq2jMe://podcast_episode/4Fk1sWv0xKvJ6teiCpTAJN" """,
+            """./music_assistant.play_media --media_id "spotify--w2nq2jMe://podcast_episode/4Fk1sWv0xKvJ6teiCpTAJN" """,
             timeoutSeconds: null, CancellationToken.None);
 
         var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
@@ -340,7 +340,7 @@ public class FakeHomeAssistantTests
     public async Task TheCleanZoneHelp_SaysTheArgumentIsAnAreaSlug()
     {
         var result = await Mount().ExecAsync(
-            Relative(FakeHomeAssistant.VacuumDirectory), "clean_zone.sh --help",
+            Relative(FakeHomeAssistant.VacuumDirectory), "./clean_zone --help",
             timeoutSeconds: null, CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.Stdout
@@ -354,13 +354,13 @@ public class FakeHomeAssistantTests
 
         // The display name, lowercased the way a model derives it, cleans nothing…
         await Mount(home).ExecAsync(
-            Relative(FakeHomeAssistant.VacuumDirectory), "clean_zone.sh --cleaning_area_id estudio",
+            Relative(FakeHomeAssistant.VacuumDirectory), "./clean_zone --cleaning_area_id estudio",
             timeoutSeconds: null, CancellationToken.None);
         home.StateOf(FakeHomeAssistant.VacuumEntityId).ShouldBe("docked");
 
         // …and the frozen slug from the registry does.
         await Mount(home).ExecAsync(
-            Relative(FakeHomeAssistant.VacuumDirectory), "clean_zone.sh --cleaning_area_id despacho",
+            Relative(FakeHomeAssistant.VacuumDirectory), "./clean_zone --cleaning_area_id despacho",
             timeoutSeconds: null, CancellationToken.None);
         home.StateOf(FakeHomeAssistant.VacuumEntityId).ShouldBe("cleaning");
     }

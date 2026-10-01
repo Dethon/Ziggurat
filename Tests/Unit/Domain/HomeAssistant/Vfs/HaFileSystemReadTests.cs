@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Exceptions;
+using Domain.Tools;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -88,20 +89,66 @@ public class HaFileSystemReadTests
         read.Content.ShouldContain("1: ");
     }
 
+    // An action file runs and is never opened. Its read used to answer the usage, which taught it
+    // was a script to look inside; the usage is `--help`, and the refusal says so.
     [Fact]
-    public async Task ReadAsync_ActionFile_RendersHelp()
+    public async Task ReadAsync_ActionFile_IsRefusedAsExecutableOnly()
+    {
+        var fs = Build(out _);
+        var result = await fs.ReadAsync("entities/light/kitchen_(kitchen)/turn_on", null, null, CancellationToken.None);
+
+        var error = result.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error;
+        error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        error.Message.ShouldContain("executable-only");
+        error.Hint.ShouldNotBeNull().ShouldContain("./turn_on");
+    }
+
+    [Fact]
+    public async Task ReadAsync_TheOldScriptName_IsNotFound()
     {
         var fs = Build(out _);
         var result = await fs.ReadAsync("entities/light/kitchen_(kitchen)/turn_on.sh", null, null, CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("call light.turn_on on light.kitchen");
+
+        result.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
+    }
+
+    [Fact]
+    public async Task InfoAsync_ActionFile_IsExecutable_AndTheStateFileIsNot()
+    {
+        var fs = Build(out _);
+
+        var action = (await fs.InfoAsync("entities/light/kitchen_(kitchen)/turn_on", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+        var state = (await fs.InfoAsync("entities/light/kitchen_(kitchen)/state.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+
+        action.Exists.ShouldBeTrue();
+        action.IsDirectory.ShouldBe(false);
+        action.Executable.ShouldBeTrue();
+        state.Executable.ShouldBeFalse();
     }
 
     [Fact]
     public async Task InfoAsync_ActionFileForMissingEntity_ExistsFalse()
     {
         var fs = Build(out _);
-        var result = await fs.InfoAsync("entities/light/ghost/turn_on.sh", CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value.Exists.ShouldBeFalse();
+        var result = await fs.InfoAsync("entities/light/ghost/turn_on", CancellationToken.None);
+        var info = result.ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+        info.Exists.ShouldBeFalse();
+        info.Executable.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task GlobAsync_MarksTheActionFiles_AndNothingElse()
+    {
+        var fs = Build(out _);
+        var result = await fs.GlobAsync("entities/light/kitchen_(kitchen)", "*", CancellationToken.None);
+
+        var glob = result.ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+        glob.Entries.ShouldContain("entities/light/kitchen_(kitchen)/state.json");
+        glob.Executables.ShouldNotBeNull().ShouldContain("entities/light/kitchen_(kitchen)/turn_on");
+        glob.Executables.ShouldNotContain(e => e.EndsWith("state.json"));
+        glob.Executables.ShouldAllBe(e => glob.Entries.Contains(e));
     }
 
     [Fact]
@@ -116,7 +163,7 @@ public class HaFileSystemReadTests
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
 
         var result = await fs.ExecAsync(
-            "areas/salon/climate.0x01_(aire-acondicionado-salon)", "turn_off.sh", null, CancellationToken.None);
+            "areas/salon/climate.0x01_(aire-acondicionado-salon)", "./turn_off", null, CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall!.Value.EntityId.ShouldBe("climate.0x01");

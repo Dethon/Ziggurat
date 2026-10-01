@@ -47,11 +47,11 @@ public static class HaCalendarActions
     {
         Domain = Domain,
         Service = DeleteEventService,
-        Description = "Deletes an event by the uid get_events.sh lists it with.",
+        Description = "Deletes an event by the uid ./get_events lists it with.",
         Target = _target.DeepClone(),
         Fields = new Dictionary<string, HaServiceField>
         {
-            ["uid"] = new() { Required = true, Description = "The event's uid from get_events.sh." },
+            ["uid"] = new() { Required = true, Description = "The event's uid from ./get_events." },
             ["recurrence_id"] = new() { Description = "For a recurring event: the recurrence_id of the one occurrence to delete." },
             ["recurrence_range"] = new() { Description = "With recurrence_id: THISANDFUTURE deletes that occurrence and every later one." }
         }
