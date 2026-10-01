@@ -42,6 +42,15 @@ RUN chmod u-s /usr/bin/fusermount3
 # `media`. rmdir, not rm -r: a directory the image ever fills is a collision to decide, not delete.
 RUN mkdir /vfs && rmdir /media
 
+# Those links are what `find /vault` starts from, and find (like du) does not follow a link it is
+# given unless asked: without -H it would answer nothing, silently. A login shell — every exec is
+# `bash -lc` — gets the reading a person means.
+RUN printf '%s\n' \
+      '# The session'"'"'s mounts are links into /vfs; start from where they point.' \
+      'find() { command find -H "$@"; }' \
+      'du() { command du -H "$@"; }' \
+      > /etc/profile.d/vfs-links.sh
+
 # The mount point, spelled inside the container. The sandbox mount *is* the container root, so this
 # states a truth that already held — and it is what makes the one spelling the filesystem prompt
 # teaches work in a command as well as in an argument. Without it the agent has to know the prefix

@@ -52,6 +52,22 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         Stdout(result).ShouldBe("/vault/notes/deep/more.md\n/vault/notes/todo.md\n- [ ] TODO buy milk\n", result.ToString());
     }
 
+    // A mount is a link into /vfs, and find does not follow a link it starts from unless asked; a
+    // login shell asks for it, so `find /vault` walks the vault as it would a directory.
+    [SkippableFact]
+    public async Task FindFromAMountsPath_WalksTheMount()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var call = Mint();
+
+        var result = await ExecAsync(client, "find /vault -name '*.md' | sort", call, cts.Token);
+
+        Stdout(result).ShouldBe(
+            "/vault/inbox.md\n/vault/notes/deep/more.md\n/vault/notes/todo.md\n", result.ToString());
+    }
+
     // A rendered file has no size the mount can give; served with direct I/O it is read in full.
     [SkippableFact]
     public async Task JqOnARenderedStatusFile_ReadsItWhole()

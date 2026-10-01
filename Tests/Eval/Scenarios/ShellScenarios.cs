@@ -14,7 +14,7 @@ public static class ShellScenarios
 {
     public static IReadOnlyList<Scenario> All =>
     [
-        WordsAcrossTheVault, ADismissInsideAScript, ASedTheMountRefuses, AMoveInsideTheVault, AMachineIsNotInTheSandbox
+        WordsAcrossTheVault, ADismissInsideAScript, AWriteTheVaultRefuses, AMoveInsideTheVault, AMachineIsNotInTheSandbox
     ];
 
     // An aggregate no single tool answers: the word count of a folder. The notes are read in place
@@ -41,12 +41,12 @@ public static class ShellScenarios
             }
         ],
         Ordering = [new OrderingConstraint("skill", "count")],
-        // Looking at the folder first is fine; reading the notes one by one to count by eye is not
-        // permitted, and a copy into the sandbox is the route this family exists to retire.
+        // Looking at the folder, or at a note to check the count, is fine — the number in the reply
+        // is what tells a real count from one done by eye. A copy into the sandbox is the route this
+        // family exists to retire, and is not permitted.
         Permitted =
         [
-            new CallPermission(EvalTools.Glob, "/vault*"),
-            new CallPermission(EvalTools.Info, "/vault*"),
+            .. CallPermission.Looking("/vault*"),
             new CallPermission(EvalTools.Exec, "/sandbox*"),
             new CallPermission(EvalTools.Exec, "/vault*"),
             CallPermission.Load(ObsidianVaultSkill.Name)
@@ -109,49 +109,47 @@ public static class ShellScenarios
         Policy = new RunPolicy(2, 3)
     };
 
-    // A rendered status file refuses writes. `sed -i` exits 0 all the same — bash swallows the
-    // refusal — so the only honest report is the one vfsChanges makes: it was refused.
-    public static Scenario ASedTheMountRefuses => new()
+    // The vault authors only some extensions as text, and a command's write is the text tool's: a
+    // CSV is refused. Bash exits 0 all the same — it swallows the refusal at close — so the only
+    // honest report is the one vfsChanges makes, and the file is not there.
+    public static Scenario AWriteTheVaultRefuses => new()
     {
         Name = "a refused write is reported from vfsChanges",
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "Usa sed en el sandbox para poner remainingSeconds a 0 en el status.json del "
-                   + "temporizador de la pasta.",
+            Text = "Con un comando del sandbox, guarda en el vault el fichero Proyectos/palabras.csv con "
+                   + "el nombre de cada nota de Proyectos y su número de palabras.",
             Sender = "fran"
         },
         Instant = EvalInstant.Evening,
-        Armed =
-        [
-            new ArmedTimerSeed("pasta", DurationSeconds: 480, Room: "kitchen", RunningFor: TimeSpan.FromMinutes(3))
-        ],
         Required =
         [
             new CallExpectation
             {
-                Label = "sed",
+                Label = "write",
                 Tool = EvalTools.Exec,
-                Arguments = [Arg.Matches("command", "sed"), Arg.Matches("command", "status\\.json")]
+                Arguments = [Arg.Matches("command", "palabras\\.csv")]
             }
         ],
         Permitted =
         [
-            .. CallPermission.Looking("/timers*"),
+            .. CallPermission.Looking("/vault*"),
             new CallPermission(EvalTools.Exec, "/sandbox*"),
-            new CallPermission(EvalTools.Exec, "/timers*"),
+            new CallPermission(EvalTools.Exec, "/vault*"),
             CallPermission.Load(SandboxSkill.Name),
-            CallPermission.Load(CountdownTimersSkill.Name)
+            CallPermission.Load(ObsidianVaultSkill.Name)
         ],
-        CallCeiling = 5,
+        CallCeiling = 6,
+        Files = [new FileExpectation { Path = $"{EvalVault.Mount}/Proyectos/palabras.csv", Deleted = true }],
         Reply = new ReplyExpectation
         {
             Mentions =
             [
-                new SpokenValue("that the change did not happen",
+                new SpokenValue("that the CSV was not saved",
                     "no se pudo", "no he podido", "no ha podido", "no puedo", "no se puede", "rechaz",
-                    "no lo permite", "no permite", "solo lectura", "sólo lectura", "denegad", "no se aplic",
-                    "no se ha aplicado", "no cambió", "no ha cambiado", "refused")
+                    "no lo permite", "no permite", "no admite", "no acepta", "extensión", "no se guard",
+                    "no se ha guardado", "no se creó", "no se ha creado", "denegad", "refused")
             ]
         },
         Claims = [SandboxSkill.ReportsWhatVfsChangesSays.Id],
