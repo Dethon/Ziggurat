@@ -275,8 +275,11 @@ services:
       - SYS_ADMIN
     # docker-default denies every mount, so on an AppArmor host (prod) every exec would fail; this
     # profile allows only the launcher's own. Install it on the host before `up` — see its header.
+    # Docker's own syscall filter grants a SYS_ADMIN container bpf, perf_event_open, setns and more;
+    # ours is Docker's default with that cut to mount, umount2 and unshare(CLONE_NEWNS).
     security_opt:
       - apparmor=ziggurat-sandbox
+      - seccomp=./seccomp/ziggurat-sandbox.json
     # Only /dev/dri, same as lemonade: the render node alone keeps this up on hosts with no
     # /dev/kfd (Intel iGPU, Raspberry Pi). An AMD host that wants ROCm/HIP inside the sandbox
     # adds the compute node via docker-compose.override.rocm.yml.

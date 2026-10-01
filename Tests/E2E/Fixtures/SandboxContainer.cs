@@ -10,8 +10,12 @@ namespace Tests.E2E.Fixtures;
 // launcher needs SYS_ADMIN and /dev/fuse for each command's mount namespace and the FUSE mount of
 // the session's other mounts; commands never hold either. On an AppArmor host those mounts also need
 // compose's profile (`DockerCompose/apparmor/ziggurat-sandbox`) installed; a host without it ignores it.
+// Compose's syscall filter goes in as its content, which is what the Docker CLI sends for a path.
 public static class SandboxContainer
 {
+    private static readonly Lazy<string> _seccomp = new(() => File.ReadAllText(
+        Path.Combine(TestHelpers.FindSolutionRoot(), "DockerCompose", "seccomp", "ziggurat-sandbox.json")));
+
     public static ContainerBuilder AsCompose(this ContainerBuilder builder) =>
         builder
             .WithEnvironment("PUID", geteuid().ToString())
@@ -20,7 +24,7 @@ public static class SandboxContainer
             {
                 parameters.HostConfig.CapAdd = [.. parameters.HostConfig.CapAdd ?? [], "SYS_ADMIN"];
                 parameters.HostConfig.SecurityOpt =
-                    [.. parameters.HostConfig.SecurityOpt ?? [], "apparmor=ziggurat-sandbox"];
+                    [.. parameters.HostConfig.SecurityOpt ?? [], "apparmor=ziggurat-sandbox", "seccomp=" + _seccomp.Value];
                 parameters.HostConfig.Devices =
                 [
                     .. parameters.HostConfig.Devices ?? [],

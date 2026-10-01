@@ -126,6 +126,14 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
         McpEndpoint = $"http://{_sandbox.Hostname}:{_sandbox.GetMappedPublicPort(8080)}/mcp";
     }
 
+    // A root process inside the container, as the launcher and the vfs daemon are: what the
+    // container's own syscall filter leaves one, should a command ever get to run as them.
+    public async Task<string> ExecAsRootAsync(string command, CancellationToken ct)
+    {
+        var result = await _sandbox!.ExecAsync(["sh", "-c", command], ct);
+        return result.Stdout + result.Stderr;
+    }
+
     public async Task<McpClient> ConnectAsync(CancellationToken ct) =>
         await McpClient.CreateAsync(
             McpTestSecret.Transport(McpEndpoint),

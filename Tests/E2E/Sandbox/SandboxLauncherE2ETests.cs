@@ -102,6 +102,36 @@ public class SandboxLauncherE2ETests(SandboxE2EFixture fixture)
         stdout.ShouldContain("done");
     }
 
+    // The container holds SYS_ADMIN, which Docker's own filter answers with bpf, perf_event_open,
+    // setns and more — enough to read kernel memory and write into the host's processes. Only the
+    // launcher and the vfs daemon hold it, so this is what a command would have if it ever ran as
+    // one of them: the namespace the unit makes and nothing else. Each syscall is called with
+    // nonsense, so an allowed one fails EINVAL or EFAULT and only the filter answers EPERM.
+    [SkippableFact]
+    public async Task ARootProcessInTheContainer_GetsOnlyTheLaunchersSyscalls()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var output = await fixture.ExecAsRootAsync("""
+            python3 -c "
+            import ctypes, os
+            libc = ctypes.CDLL(None, use_errno=True)
+            for name, nr in (('bpf', 321), ('perf_event_open', 298), ('setns', 308)):
+                libc.syscall(nr, 0, 0, 0, 0, 0)
+                print(name, os.strerror(ctypes.get_errno()))
+            "
+            unshare -U true 2>/dev/null && echo "user namespace"
+            unshare -m true && echo "mount namespace"
+            """, cts.Token);
+
+        output.ShouldContain("bpf Operation not permitted");
+        output.ShouldContain("perf_event_open Operation not permitted");
+        output.ShouldContain("setns Operation not permitted");
+        output.ShouldNotContain("user namespace");
+        output.ShouldContain("mount namespace");
+    }
+
     // The filter answers clone3 ENOSYS, because its flags sit behind a pointer a filter cannot
     // read; glibc then falls back to clone, whose flags it can. Threads and process spawning are
     // what that fallback carries, so both must still work.
