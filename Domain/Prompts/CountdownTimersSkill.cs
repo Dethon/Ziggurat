@@ -44,6 +44,9 @@ public static class CountdownTimersSkill
           answer once it returns, and do not go looking for whatever set the alert off — not the
           alarms calendar, not the entity, not the setup index. What was ringing does not matter;
           it has stopped.
+        - Inside a sandbox command, `/timers` is a directory and `/timers/dismiss` runs from any
+          script with its own output and exit code — for a request that dismisses as one step of
+          a script. On its own, the one exec above is still the whole task.
         """;
 
     public static readonly SkillText Text = new(Name, Description, Body);

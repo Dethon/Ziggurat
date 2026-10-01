@@ -1,10 +1,10 @@
-# sandbox — description 99 / 130 tokens, body 956 / 1200 tokens, served by mcp-sandbox
+# sandbox — description 124 / 130 tokens, body 1271 / 1350 tokens, served by mcp-sandbox
 
 ================================================================================================
 
 ---
 name: sandbox
-description: Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone ("compute the sha256 of that file", "run this python", "clone the repo and count the lines"). Not for reading or writing files on another mount. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, and how a container path maps to a virtual one.
+description: Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone, a count or a rewrite over another mount's files ("compute the sha256 of that file", "run this python", "count the words in those notes"). Not for reading or editing one file, which the file tools do. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, how the other mounts appear inside a command, and how a container path maps to a virtual one.
 ---
 
 ### Layout
@@ -28,6 +28,12 @@ description: Running anything in the Linux sandbox — a command, a script, a ch
 - **The persistent workspace is the only place that is both writable and durable.** Most paths outside it refuse writes with permission denied, because you run as an unprivileged user — but world-writable locations like `/sandbox/tmp` accept them and are wiped when the container is recreated. Keep working files under `/sandbox/home/sandbox_user/...` and set that as the working directory when a command writes relative files.
 - **Paths in command output are container-native.** `pwd`, `find`, `which` and the rest answer in the container's own spelling (`/home/sandbox_user/x`, without the mount point). Put `/sandbox` in front of one before handing it to a filesystem tool as a path — inside another command it works as it stands. The `cwd` the exec tool reports is the exception: it already comes back as a virtual path.
 
+### The other mounts, inside a command
+
+- **They are directories.** The session's other mounts — never the machines, which are somebody else's computers — are at the paths the tools take: `/vault`, `/timers`, `/ha`. One the mounts section says is served only under `/vfs` is at `/vfs/<name>`. Work on their files in place — `grep -r`, `wc`, `jq`, `sed -i`, Python — with nothing copied into the workspace first; `exec` on such a mount runs here, in that directory.
+- **Actions run from scripts.** An action file runs as `./<name>` from its directory, or by its path, with its own output and exit code, so a script can branch on it. It cannot be read.
+- **Only what the file tools would do unasked.** A write is the text tool's create, `rm` the remove tool, `mv` the move tool, and the mount's own rules apply; what would need the person's approval is refused.
+- **Read `vfsChanges` before you report a change.** Bash says nothing when a mount refuses a write — `echo x > f` exits 0 — so the result lists every change the command made through the mounts: `applied`, `refused` with the mount's own reason, or `dropped` because a timeout cut it off. Say plainly what was refused or dropped. `vfsTruncated` names a directory a recursive command saw only part of.
 ### Working here
 
 Edit files under `/sandbox/home/sandbox_user/...` with the filesystem write tools, then run them with the exec tool. Both operate on the same volume.

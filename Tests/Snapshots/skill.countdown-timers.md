@@ -1,4 +1,4 @@
-# countdown-timers — description 126 / 130 tokens, body 579 / 900 tokens, served by mcp-timers
+# countdown-timers — description 126 / 130 tokens, body 640 / 900 tokens, served by mcp-timers
 
 ================================================================================================
 
@@ -36,3 +36,6 @@ description: Stopping an alarm or timer that is ringing right now ("stop the ala
   answer once it returns, and do not go looking for whatever set the alert off — not the
   alarms calendar, not the entity, not the setup index. What was ringing does not matter;
   it has stopped.
+- Inside a sandbox command, `/timers` is a directory and `/timers/dismiss` runs from any
+  script with its own output and exit code — for a request that dismisses as one step of
+  a script. On its own, the one exec above is still the whole task.

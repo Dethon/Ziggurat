@@ -26,7 +26,7 @@ public static class PromptManifest
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated.
-    public const int StandingTokens = 8_500;
+    public const int StandingTokens = 8_600;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -110,7 +110,8 @@ public static class PromptManifest
             Name = FilesystemMounts,
             Purpose = "The mounts this session actually has, and which one a path belongs under.",
             Priority = PromptPriority.FileSystem,
-            TokenBudget = 500,
+            // Raised from 500 for the section saying which mounts a sandbox command sees.
+            TokenBudget = 600,
             // The words are generated from the registry, so the claims live beside the code that
             // builds them rather than in a prompt file of their own.
             Claims = FileSystemToolFeature.Claims
@@ -118,7 +119,7 @@ public static class PromptManifest
         new()
         {
             Name = SandboxPrompt.Name,
-            Purpose = "That the sandbox is the one mount with exec, where its workspace is, and that a run loads the skill.",
+            Purpose = "That the sandbox is the one mount with a shell, that its commands see the other mounts, where its workspace is, and that a run loads the skill.",
             Priority = PromptPriority.Client,
             // The stub: the section had no choosing rule of its own and moved whole into the
             // sandbox skill. Ratcheted from 1,400.
@@ -128,7 +129,7 @@ public static class PromptManifest
         new()
         {
             Name = VaultPrompt.Name,
-            Purpose = "What the vault is, and that a task needing exec is transferred to the sandbox once.",
+            Purpose = "What the vault is, that script work over it runs in the sandbox on /vault in place, and that a transfer is one call.",
             Priority = PromptPriority.Client,
             // The stub: the conventions are the obsidian-vault skill. Ratcheted from 2,000.
             TokenBudget = 400,
@@ -308,7 +309,8 @@ public static class PromptManifest
             Name = SandboxSkill.Name,
             Description = SandboxSkill.Description,
             DescriptionBudget = 130,
-            BodyBudget = 1_200,
+            // Raised from 1,200 for the other mounts inside a command.
+            BodyBudget = 1_350,
             ServedBy = "mcp-sandbox",
             Claims = SandboxSkill.Claims
         },

@@ -54,7 +54,7 @@ public static class ConfigModule
             .AddSkill(SandboxSkill.Name, SandboxSkill.Description, sp =>
             {
                 var sandbox = sp.GetRequiredService<SandboxFileSystem>();
-                return SandboxSkill.Body(sandbox.MountPoint, sandbox.Workspace);
+                return SandboxSkill.Body(sandbox.MountPoint, sandbox.Workspace, settings.ServesMounts);
             })
             .WithPrompts<McpSystemPrompt>();
 

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Agent.App;
 using Agent.Modules;
 using Agent.Settings;
 using Domain.Agents;
@@ -8,6 +9,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
+using Domain.Tools.FileSystem.Bridge;
 using Domain.Tools.Memory;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents;
@@ -108,6 +110,12 @@ public sealed class EvalStack : IAsyncDisposable
 
     public IAgentFactory Factory { get; private set; } = null!;
 
+    // The agent's exec bridge, hosted the way the deployment hosts it: the sandbox's daemons call
+    // it for every file operation a command makes on the other mounts. One instance, registered
+    // into the agent's services over the one AddAgent made, so the tokens the exec tool mints are
+    // the ones this endpoint answers.
+    public VfsBridge Bridge { get; } = new(TimeProvider.System);
+
     public static async Task<EvalStack> StartAsync(
         Scenario scenario, string redisConnectionString, Recording recording)
     {
@@ -133,7 +141,7 @@ public sealed class EvalStack : IAsyncDisposable
         // *which* of them a request belongs in. A stack that hosted only the mount the answer
         // lands in would leave the model no wrong place to put it, and a discrimination with one
         // option is not one.
-        stack.Sandbox = await EvalSandbox.StartAsync();
+        stack.Sandbox = await EvalSandbox.StartAsync(await stack.StartBridgeAsync());
 
         stack.BuildAgentServices(shipped, recording, new Dictionary<string, string>
         {
@@ -146,6 +154,14 @@ public sealed class EvalStack : IAsyncDisposable
         });
 
         return stack;
+    }
+
+    private async Task<string> StartBridgeAsync()
+    {
+        var (url, host, port) = await EvalBridgeHost.StartAsync(Bridge);
+        _servers.Add(host);
+        _ports.Add(port);
+        return url;
     }
 
     private async Task<string> StartTimersAsync(Scenario scenario)
@@ -393,6 +409,7 @@ public sealed class EvalStack : IAsyncDisposable
         // reads it from.
         services.AddSingleton<IMetricsPublisher>(recording);
         services.AddSingleton<ISubAgentSpawner>(Workers);
+        services.AddSingleton(Bridge);
 
         // The memory feature, the way the deployment enables it: both shipped assistants list
         // `memory` among their features, so an eval without it would run a prompt one section

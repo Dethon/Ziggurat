@@ -36,6 +36,27 @@ public static class EvalVault
             System.Security.Cryptography.SHA256.HashData(
                 System.Text.Encoding.UTF8.GetBytes(SaucesContent)));
 
+    // What `wc -w` answers over every note in Cocina, counted from the seed itself — words are runs
+    // of anything but whitespace, as wc reads them — so the shell family can assert the number a
+    // real count over the real bytes produces.
+    public static int CocinaWordCount
+    {
+        get
+        {
+            var root = Seed();
+            try
+            {
+                return Directory.EnumerateFiles(Path.Combine(root, "Cocina"), "*.md")
+                    .Sum(file => File.ReadAllText(file)
+                        .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length);
+            }
+            finally
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     public static string Seed()
     {
         var root = Path.Combine(Path.GetTempPath(), $"eval-vault-{Guid.NewGuid():N}");

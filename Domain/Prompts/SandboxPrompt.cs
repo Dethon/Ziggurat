@@ -12,14 +12,21 @@ public static class SandboxPrompt
     // `workspace` arrives in the backend's own coordinates, as the mount publishes it, and is
     // composed into a virtual path here by the one translation — the model never reads a backend
     // spelling (ADR 0016).
-    public static string Build(string mountPoint, string workspace)
+    //
+    // `servesMounts`: this sandbox serves the session's other mounts to its commands (it has a
+    // launcher and an exec bridge to ask), so the prose can say so; otherwise it says nothing about
+    // them.
+    public static string Build(string mountPoint, string workspace, bool servesMounts = false)
     {
         var home = FileSystemResolution.ToVirtualPath(mountPoint, workspace);
+        var mounts = servesMounts
+            ? " A command sees the session's other mounts as directories at their usual paths."
+            : "";
 
         return $"""
             ## Sandbox Filesystem
 
-            You have access to a Linux sandbox container exposed as the virtual filesystem mounted at `{mountPoint}`. Among the filesystems available to you, the sandbox is the **only** one that supports command execution — other mounts return an "unsupported operation" error envelope if you try.
+            You have access to a Linux sandbox container exposed as the virtual filesystem mounted at `{mountPoint}`. Among the filesystems available to you, the sandbox is the **only** one with a shell.{mounts}
 
             Your **persistent workspace** is `{home}`; it is the only place that is both writable and durable. Before you run anything here — a command, a script, an install — load the `sandbox` skill: the layout, what is preinstalled, how exit codes, output and timeouts come back and how a container path maps to a virtual one are there.
 

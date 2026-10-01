@@ -1,4 +1,4 @@
-# home-assistant — description 150 / 150 tokens, body 3568 / 3600 tokens, served by mcp-homeassistant
+# home-assistant — description 150 / 150 tokens, body 3588 / 3600 tokens, served by mcp-homeassistant
 
 ================================================================================================
 
@@ -47,6 +47,7 @@ does not resolve.
    executable-only — a `file_read` of one is refused; `--help` prints the field list.
 4. Act: `domain__filesystem__exec` from the entity directory, e.g.
    `domain__filesystem__exec(path="/ha/entities/light/kitchen_(kitchen)", command="./turn_on --brightness_pct 60")`.
+   Inside a sandbox command an action also runs by its path, from any script.
 
 ### Reading results
 

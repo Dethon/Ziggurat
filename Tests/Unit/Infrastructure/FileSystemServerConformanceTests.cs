@@ -309,9 +309,21 @@ public class FileSystemServerConformanceTests
         using var provider = ConfiguredServer("sandbox");
         var backend = provider.GetRequiredService<SandboxFileSystem>();
 
-        var prompt = new McpSystemPrompt(backend).GetSandboxPrompt();
+        var prompt = new McpSystemPrompt(
+            backend, provider.GetRequiredService<McpServerSandbox.Settings.McpSettings>()).GetSandboxPrompt();
 
         prompt.ShouldContain($"{backend.MountPoint}/{backend.Workspace}");
+    }
+
+    // The prompt and the skill promise the other mounts only where a command will find them: a
+    // sandbox with both a launcher and a bridge.
+    [Fact]
+    public void TheSandboxsProse_SpeaksOfTheOtherMountsOnlyWhereItServesThem()
+    {
+        SandboxPrompt.Build("/box", "home/someone", servesMounts: true).ShouldContain("other mounts as directories");
+        SandboxPrompt.Build("/box", "home/someone").ShouldNotContain("other mounts");
+        SandboxSkill.Body("/box", "home/someone", servesMounts: true).ShouldContain("vfsChanges");
+        SandboxSkill.Body("/box", "home/someone").ShouldNotContain("vfsChanges");
     }
 
     // That the resource the registrar really builds carries the same three, so nothing between the

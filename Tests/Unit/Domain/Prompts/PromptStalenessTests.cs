@@ -37,7 +37,8 @@ public class PromptStalenessTests
 
     // Paths that are not mounts and are not meant to be: what a command sees from inside the
     // sandbox container, spelled as the container spells it.
-    private static readonly string[] _nativePaths = ["/etc", "/home", "/tmp", "/usr", "/var", "/"];
+    // /vfs is the sandbox's own: where a command finds the session's other mounts.
+    private static readonly string[] _nativePaths = ["/etc", "/home", "/tmp", "/usr", "/var", "/vfs", "/"];
 
     public static TheoryData<string> Sections =>
         [.. AgentPromptFixture.ServedText.Keys.Concat(AgentPromptFixture.FeatureText.Keys)

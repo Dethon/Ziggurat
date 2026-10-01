@@ -52,8 +52,13 @@ public class FileSystemToolFeature(
         new("mounts.an-unmounted-path-is-answered",
             "A path under none of the session's mounts is answered with a sentence saying it is not reachable, never hunted for through other tools, searched for across a mount or handed to a worker.");
 
+    public static readonly PromptClaim AnOutpostIsNeverInTheSandbox =
+        new("mounts.an-outpost-is-never-in-the-sandbox",
+            "A path on a machine (outpost:<NAME>) is never looked for from a sandbox command, which cannot reach it; it is reached only by the file tools on that machine's own address.");
+
     public static readonly IReadOnlyList<PromptClaim> Claims =
     [
+        AnOutpostIsNeverInTheSandbox,
         PathStartsAtAMount,
         CapabilitiesAreAdvertised,
         AnEnvelopeIsDataNotAReasonToRetry,
@@ -181,7 +186,7 @@ public class FileSystemToolFeature(
         return $$"""
             ### The other mounts inside a command
 
-            A command run with `exec` on `{{sandbox.MountPoint}}` sees every mount above but the machines as an ordinary directory, at the same path the tools take: {{places}}. Pipes, `grep -r`, `jq`, `sed -i` and scripts in any language work on them, and an action file runs as `./<name>` from its directory, or by its path, from any script.{{rerouted}}
+            A command run with `exec` on `{{sandbox.MountPoint}}` sees every mount above but the machines as an ordinary directory, at the same path the tools take: {{places}}. Pipes, `grep -r`, `jq`, `sed -i` and scripts in any language work on them, and an action file runs as `./<name>` from its directory, or by its path, from any script.{{rerouted}} A machine is never inside a command: reach one only with the file tools, at its own `outpost:` address.
 
             A command can do there only what the file tools would do unasked — a write is a `text_create` (or a copy, for anything that is not text), `rm` a `remove`, `mv` a `move` — and what would need the person's approval is refused. Bash does not report a refused write, so read the result's `vfsChanges`: every change the command made through these mounts, `applied`, `refused` with the mount's own reason, or `dropped` because a timeout cut it off. `vfsTruncated` names a directory a recursive command saw only part of.
             """;

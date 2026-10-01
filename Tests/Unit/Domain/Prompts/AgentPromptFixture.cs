@@ -66,7 +66,8 @@ internal static class AgentPromptFixture
     public static IReadOnlyDictionary<string, string> ServedText { get; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            [SandboxPrompt.Name] = SandboxPrompt.Build("/sandbox", "home/sandbox_user"),
+            // As the deployment builds it: a launcher and a bridge, so commands see the mounts.
+            [SandboxPrompt.Name] = SandboxPrompt.Build("/sandbox", "home/sandbox_user", servesMounts: true),
             [VaultPrompt.Name] = VaultPrompt.Prompt,
             [WebBrowsingPrompt.Name] = WebBrowsingPrompt.AgentSystemPrompt,
             [DownloaderPrompt.Name] = DownloaderPrompt.AgentSystemPrompt,
@@ -80,7 +81,7 @@ internal static class AgentPromptFixture
     // What each server ships as skills, bound to the manifest exactly as the client manager binds
     // what it reads off the wire: the served description and the served body, under the declaration.
     public static IReadOnlyDictionary<string, PromptSkill> ServedSkills { get; } =
-        new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.For("Europe/Madrid"), SandboxSkill.For("/sandbox", "home/sandbox_user"), CountdownTimersSkill.Text }
+        new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.For("Europe/Madrid"), SandboxSkill.For("/sandbox", "home/sandbox_user", servesMounts: true), CountdownTimersSkill.Text }
             .ToDictionary(
                 text => text.Name,
                 text => PromptManifest.BindSkill(text.Name, text.Description, text.Body),

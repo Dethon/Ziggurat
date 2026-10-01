@@ -26,4 +26,9 @@ public record McpSettings : IMcpHostSettings
     // Where the agent's exec bridge answers, as this container reaches it — topology, so compose
     // sets it. Absent, a command sees only the sandbox's own disk.
     public string? VfsBridgeUrl { get; init; }
+
+    // A command sees the session's other mounts only with both: a launcher to mount them in the
+    // command's namespace, and a bridge for its daemon to ask. What the prompt and the skill say
+    // follows this, so they never promise mounts a command will not find.
+    public bool ServesMounts => !string.IsNullOrEmpty(LauncherSocket) && !string.IsNullOrEmpty(VfsBridgeUrl);
 }

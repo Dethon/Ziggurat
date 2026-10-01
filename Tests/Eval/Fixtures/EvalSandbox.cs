@@ -27,7 +27,9 @@ public sealed class EvalSandbox : IAsyncDisposable
 
     public string Endpoint { get; private set; } = "";
 
-    public static async Task<EvalSandbox> StartAsync()
+    // `bridgeUrl`: the stack's exec bridge, as the container reaches it, so a command sees the
+    // stack's other mounts as the deployment's commands see theirs.
+    public static async Task<EvalSandbox> StartAsync(string? bridgeUrl = null)
     {
         await EnsureImageAsync();
 
@@ -55,6 +57,13 @@ public sealed class EvalSandbox : IAsyncDisposable
         if (OperatingSystem.IsLinux())
         {
             builder = builder.AsCompose();
+        }
+
+        if (bridgeUrl is not null)
+        {
+            builder = builder
+                .WithExtraHost("host.docker.internal", "host-gateway")
+                .WithEnvironment("VFSBRIDGEURL", bridgeUrl);
         }
 
         sandbox._container = builder.Build();

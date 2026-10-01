@@ -59,6 +59,7 @@ public static class HomeAssistantSkill
            executable-only — a `file_read` of one is refused; `--help` prints the field list.
         4. Act: `domain__filesystem__exec` from the entity directory, e.g.
            `domain__filesystem__exec(path="/ha/entities/light/kitchen_(kitchen)", command="./turn_on --brightness_pct 60")`.
+           Inside a sandbox command an action also runs by its path, from any script.
 
         ### Reading results
 
