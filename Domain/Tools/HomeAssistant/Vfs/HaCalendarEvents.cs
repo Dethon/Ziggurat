@@ -26,7 +26,7 @@ internal static class HaCalendarEvents
                 HaCalendarActions.CreateEventService => await CreateAsync(client, entityId, data, ct),
                 HaCalendarActions.DeleteEventService => await DeleteAsync(client, entityId, data, ct),
                 HaCalendarActions.GetEventsService => await ListAsync(client, entityId, data, time, ct),
-                _ => (127, "", $"command not found: {svc.Service}.sh")
+                _ => (127, "", $"command not found: {svc.Service}")
             };
         }
         catch (ArgumentException ex)
@@ -105,7 +105,7 @@ internal static class HaCalendarEvents
         IHomeAssistantClient client, string entityId, JsonObject data, CancellationToken ct)
     {
         var uid = Text(data, "uid")
-            ?? throw new ArgumentException("Missing required argument '--uid'. List the events with get_events.sh and pass the uid of the one to delete.");
+            ?? throw new ArgumentException("Missing required argument '--uid'. List the events with ./get_events and pass the uid of the one to delete.");
 
         await client.DeleteCalendarEventAsync(
             entityId, uid, Text(data, "recurrence_id"), Text(data, "recurrence_range"), ct);

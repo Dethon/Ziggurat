@@ -12,7 +12,7 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 // The need these cover: a glucose sensor updates every minute, and "how was it overnight" cannot be
 // answered from state.json, which holds one number. Home Assistant's recorder keeps the changes, but
 // the service catalog has no way to read them — the history endpoint is REST only — so the mount
-// serves `history.sh` in every entity directory, read-only classes included, the way the calendar's
+// serves `history` in every entity directory, read-only classes included, the way the calendar's
 // listing is served.
 public class HaHistoryActionTests
 {
@@ -53,14 +53,14 @@ public class HaHistoryActionTests
         {
             var entries = (await fs.GlobAsync(dir, "*", CancellationToken.None))
                 .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries;
-            entries.ShouldContain(e => e.EndsWith("/history.sh"), dir);
-            entries.Count(e => e.EndsWith("/history.sh")).ShouldBe(1, dir);
+            entries.ShouldContain(e => e.EndsWith("/history"), dir);
+            entries.Count(e => e.EndsWith("/history")).ShouldBe(1, dir);
         }
 
         // Bare name, never domain-qualified: it is nobody's service.
         var light = (await fs.GlobAsync("entities/light/kitchen", "*", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries;
-        light.ShouldContain(e => e.EndsWith("/turn_on.sh"));
+        light.ShouldContain(e => e.EndsWith("/turn_on"));
         light.ShouldNotContain(e => e.Contains("homeassistant.history"));
     }
 
@@ -69,7 +69,7 @@ public class HaHistoryActionTests
     {
         var fs = Build(out _);
 
-        var help = await Exec(fs, "history.sh --help");
+        var help = await Exec(fs, "./history --help");
 
         help.ExitCode.ShouldBe(0);
         help.Stdout.ShouldContain("--hours");
@@ -91,7 +91,7 @@ public class HaHistoryActionTests
             Change("100", "2026-09-04T12:41:22+00:00")
         ]);
 
-        var exec = await Exec(fs, "history.sh");
+        var exec = await Exec(fs, "./history");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         client.LastHistoryWindow.ShouldBe(("sensor.glucose", "2026-09-03T16:00:00+00:00", "2026-09-04T16:00:00+00:00"));
@@ -115,7 +115,7 @@ public class HaHistoryActionTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, "history.sh --hours 6");
+        var exec = await Exec(fs, "./history --hours 6");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         client.LastHistoryWindow!.Value.Start.ShouldBe("2026-09-04T10:00:00+00:00");
@@ -127,11 +127,11 @@ public class HaHistoryActionTests
     {
         var fs = Build(out var client);
 
-        var both = await Exec(fs, """history.sh --start_date_time "2026-09-03 22:00:00" --end_date_time "2026-09-04 08:00:00" """);
+        var both = await Exec(fs, """./history --start_date_time "2026-09-03 22:00:00" --end_date_time "2026-09-04 08:00:00" """);
         both.ExitCode.ShouldBe(0, both.Stderr);
         client.LastHistoryWindow.ShouldBe(("sensor.glucose", "2026-09-03 22:00:00", "2026-09-04 08:00:00"));
 
-        var startOnly = await Exec(fs, """history.sh --start_date_time "2026-09-03 22:00:00" """);
+        var startOnly = await Exec(fs, """./history --start_date_time "2026-09-03 22:00:00" """);
         startOnly.ExitCode.ShouldBe(0, startOnly.Stderr);
         client.LastHistoryWindow.ShouldBe(("sensor.glucose", "2026-09-03 22:00:00", "2026-09-04T16:00:00+00:00"));
     }
@@ -141,7 +141,7 @@ public class HaHistoryActionTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, """history.sh --end_date_time "2026-09-04 08:00:00" --hours 10""");
+        var exec = await Exec(fs, """./history --end_date_time "2026-09-04 08:00:00" --hours 10""");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         client.LastHistoryWindow.ShouldBe(("sensor.glucose", "2026-09-03 22:00:00", "2026-09-04 08:00:00"));
@@ -152,7 +152,7 @@ public class HaHistoryActionTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, """history.sh --hours 6 --start_date_time "2026-09-03 22:00:00" """);
+        var exec = await Exec(fs, """./history --hours 6 --start_date_time "2026-09-03 22:00:00" """);
 
         exec.ExitCode.ShouldBe(2);
         exec.Stderr.ShouldContain("--hours");
@@ -167,7 +167,7 @@ public class HaHistoryActionTests
         client.History.AddRange(Enumerable.Range(0, 30).Select(i =>
             Change((100 + i).ToString(), $"2026-09-04T12:{i:00}:00+00:00")));
 
-        var exec = await Exec(fs, "history.sh --limit 5");
+        var exec = await Exec(fs, "./history --limit 5");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
@@ -192,7 +192,7 @@ public class HaHistoryActionTests
             Change("120", "2026-09-04T12:31:00+00:00")
         ]);
 
-        var exec = await Exec(fs, "history.sh --every 15");
+        var exec = await Exec(fs, "./history --every 15");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
@@ -221,7 +221,7 @@ public class HaHistoryActionTests
         client.TimeZone = "Europe/Madrid";
         client.History.Add(Change("100", "2026-09-04T02:13:23+00:00"));
 
-        var exec = await Exec(fs, "history.sh");
+        var exec = await Exec(fs, "./history");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
@@ -245,7 +245,7 @@ public class HaHistoryActionTests
             Change("120", "2026-09-04T11:00:00+00:00")
         ]);
 
-        var exec = await Exec(fs, "history.sh --every 1440");
+        var exec = await Exec(fs, "./history --every 1440");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
@@ -271,7 +271,7 @@ public class HaHistoryActionTests
             Change("120", "2026-09-04T11:00:00+00:00")
         ]);
 
-        var exec = await Exec(fs, "history.sh --every 1440");
+        var exec = await Exec(fs, "./history --every 1440");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
@@ -290,10 +290,10 @@ public class HaHistoryActionTests
     {
         var fs = Build(out _);
 
-        var help = await Exec(fs, "history.sh --help");
+        var help = await Exec(fs, "./history --help");
 
         help.Stdout.ShouldNotContain("1-240");
-        var month = await Exec(fs, "history.sh --hours 720");
+        var month = await Exec(fs, "./history --hours 720");
         month.ExitCode.ShouldBe(0, month.Stderr);
     }
 
@@ -309,7 +309,7 @@ public class HaHistoryActionTests
             Change("0.014", "2026-09-04T12:14:00+00:00")
         ]);
 
-        var exec = await Exec(fs, "history.sh --every 60");
+        var exec = await Exec(fs, "./history --every 60");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var buckets = JsonNode.Parse(exec.Stdout)!["buckets"]!.AsArray();
@@ -326,7 +326,7 @@ public class HaHistoryActionTests
             Change("101", "2026-09-04T12:14:00+00:00")
         ]);
 
-        var exec = await Exec(fs, "history.sh --every 60");
+        var exec = await Exec(fs, "./history --every 60");
 
         var buckets = JsonNode.Parse(exec.Stdout)!["buckets"]!.AsArray();
         buckets[0]!["mean"]!.GetValue<double>().ShouldBe(100.7);
@@ -345,7 +345,7 @@ public class HaHistoryActionTests
             Change("120", "2026-10-25T02:30:00+00:00")
         ]);
 
-        var exec = await Exec(fs, "history.sh --every 60");
+        var exec = await Exec(fs, "./history --every 60");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var buckets = JsonNode.Parse(exec.Stdout)!["buckets"]!.AsArray();
@@ -364,7 +364,7 @@ public class HaHistoryActionTests
         client.TimeZone = "Europe/Madrid";
         client.History.AddRange([Change("100", "2026-03-29T01:30:00+00:00")]);
 
-        var exec = await Exec(fs, "history.sh --every 120");
+        var exec = await Exec(fs, "./history --every 120");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var buckets = JsonNode.Parse(exec.Stdout)!["buckets"]!.AsArray();
@@ -379,7 +379,7 @@ public class HaHistoryActionTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, "history.sh --every 60 --limit 5");
+        var exec = await Exec(fs, "./history --every 60 --limit 5");
 
         exec.ExitCode.ShouldBe(2);
         exec.Stderr.ShouldContain("--every");
@@ -393,7 +393,7 @@ public class HaHistoryActionTests
         var fs = Build(out var client);
         client.History.AddRange([Change("on", "2026-09-04T12:01:00+00:00"), Change("off", "2026-09-04T12:07:00+00:00")]);
 
-        var exec = await Exec(fs, "history.sh --every 15", "entities/light/kitchen");
+        var exec = await Exec(fs, "./history --every 15", "entities/light/kitchen");
 
         exec.ExitCode.ShouldBe(2);
         exec.Stderr.ShouldContain("--every");
@@ -408,7 +408,7 @@ public class HaHistoryActionTests
         var fs = Build(out var client);
         client.History.AddRange([Change("unavailable", "2026-09-04T12:01:00+00:00"), Change("unknown", "2026-09-04T13:07:00+00:00")]);
 
-        var exec = await Exec(fs, "history.sh --every 60");
+        var exec = await Exec(fs, "./history --every 60");
 
         exec.ExitCode.ShouldBe(2);
         exec.Stderr.ShouldContain("all 2 recorded states were unavailable or unknown");
@@ -428,7 +428,7 @@ public class HaHistoryActionTests
             Change("110", "2026-09-04T12:14:00+00:00")
         ]);
 
-        var exec = await Exec(fs, "history.sh --every 60");
+        var exec = await Exec(fs, "./history --every 60");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
@@ -451,7 +451,7 @@ public class HaHistoryActionTests
             Change("14e-4", "2026-09-04T12:14:00+00:00")
         ]);
 
-        var exec = await Exec(fs, "history.sh --every 60");
+        var exec = await Exec(fs, "./history --every 60");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var buckets = JsonNode.Parse(exec.Stdout)!["buckets"]!.AsArray();
@@ -463,7 +463,7 @@ public class HaHistoryActionTests
     {
         var fs = Build(out _);
 
-        var exec = await Exec(fs, "history.sh --hours 240");
+        var exec = await Exec(fs, "./history --hours 240");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
@@ -478,7 +478,7 @@ public class HaHistoryActionTests
     {
         var fs = Build(out _);
 
-        var exec = await Exec(fs, "history.sh --every 60 --hours 240");
+        var exec = await Exec(fs, "./history --every 60 --hours 240");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
@@ -494,20 +494,22 @@ public class HaHistoryActionTests
         var fs = Build(out var client);
         client.HistoryFailure = new HomeAssistantException("Home Assistant returned 400: Invalid datetime", 400);
 
-        var exec = await Exec(fs, "history.sh --start_date_time nonsense");
+        var exec = await Exec(fs, "./history --start_date_time nonsense");
 
         exec.ExitCode.ShouldBe(1);
         exec.Stderr.ShouldContain("Invalid datetime");
     }
 
+    // The usage is `--help`, never a read: an action file runs and is not opened.
     [Fact]
-    public async Task Read_TheActionFile_RendersItsHelp()
+    public async Task Read_TheActionFile_IsRefusedAsExecutableOnly()
     {
         var fs = Build(out _);
 
-        var read = (await fs.ReadAsync($"{GlucoseDir}/history.sh", null, null, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+        var error = (await fs.ReadAsync($"{GlucoseDir}/history", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Err>().Error;
 
-        read.Content.ShouldContain("--hours");
+        error.Message.ShouldContain("executable-only");
+        error.Hint.ShouldNotBeNull().ShouldContain("./history");
     }
 }

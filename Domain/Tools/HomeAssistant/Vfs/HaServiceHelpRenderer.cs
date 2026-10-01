@@ -9,7 +9,7 @@ public static class HaServiceHelpRenderer
     public static string Render(string entityId, HaServiceDefinition svc)
     {
         var sb = new StringBuilder();
-        sb.Append(svc.Service).Append(".sh — call ")
+        sb.Append(svc.Service).Append(" — call ")
           .Append(svc.Domain).Append('.').Append(svc.Service)
           .Append(" on ").Append(entityId).Append('\n');
 

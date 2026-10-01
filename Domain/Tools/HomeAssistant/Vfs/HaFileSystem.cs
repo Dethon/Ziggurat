@@ -63,10 +63,10 @@ public sealed partial class HaFileSystem(
         "Home Assistant as a filesystem. `read /ha/setup-index.md` first: the one-page index of every "
         + "entity under its room, the actions per class, the watches and the voice rooms. Browse "
         + "`/ha/entities/<class>/<id>/` or "
-        + "`/ha/areas/<room>/<entity_id>/`. `read state.json` for live state; `read <service>.sh` "
-        + "(or `exec '<service>.sh --help'`) for an action's arguments; `exec '<service>.sh --flag "
-        + "value'` to control a device. NOT a shell — exec only runs the listed *.sh action files "
-        + "(anything else returns exit 127). The one writable place is `/ha/watches/<id>/watch.json`: "
+        + "`/ha/areas/<room>/<entity_id>/`. `read state.json` for live state; `exec './<service> "
+        + "--help'` for an action's arguments; `exec './<service> --flag value'` to control a device. "
+        + "Action files are executable-only: they run, and cannot be read or written. NOT a shell — "
+        + "exec only runs the listed action files (anything else returns exit 127). The one writable place is `/ha/watches/<id>/watch.json`: "
         + "a standing instruction the home runs when an entity meets a condition (see the guide). "
         + "Everything else is read-only.";
 
@@ -74,7 +74,8 @@ public sealed partial class HaFileSystem(
     // name the mount's real files, which is what makes the Home Assistant surface usable.
     public override string DescribeRead =>
         "Reads a Home Assistant virtual file: state.json returns the entity's live state + "
-        + "attributes; a *.sh file returns its usage (same as --help); /ha/watches/<id>/watch.json "
+        + "attributes; an action file is executable-only (its usage is `exec './<service> --help'`); "
+        + "/ha/watches/<id>/watch.json "
         + "is a watch as written, status.json beside it its createdAt/lastTriggeredAt/spent.";
 
     public override string DescribeCreate =>
@@ -92,14 +93,15 @@ public sealed partial class HaFileSystem(
         + "the home. Nothing else on /ha can be deleted.";
 
     public override string DescribeInfo =>
-        "Returns metadata for a Home Assistant virtual path: exists, isDirectory. Cheap existence "
-        + "check before read/exec.";
+        "Returns metadata for a Home Assistant virtual path: exists, isDirectory, and executable "
+        + "for an action file. Cheap existence check before read/exec.";
 
     public override string DescribeGlob =>
         "Lists Home Assistant entities, areas, watches and action files matching a glob pattern. "
         + "`*` matches one path segment, `**` recurses. A trailing slash lists directories only "
-        + "(domains, entities, areas, watches — e.g. `*/`); otherwise files (`state.json`, `*.sh`, "
-        + "`watch.json`) and directories both match, with directories returned with a trailing slash.";
+        + "(domains, entities, areas, watches — e.g. `*/`); otherwise files (`state.json`, action "
+        + "files, `watch.json`) and directories both match, with directories returned with a trailing "
+        + "slash and the action files also listed under `executables`.";
 
     public override string DescribeSearch =>
         "Searches Home Assistant entity state files (entity_id, friendly_name, attributes). Scope "
@@ -109,8 +111,8 @@ public sealed partial class HaFileSystem(
     public override string DescribeExec =>
         "Runs a Home Assistant action file (a service call). path is the entity directory CWD "
         + "(e.g. /ha/entities/light/kitchen); command is an action file invocation like "
-        + "'turn_on.sh --brightness_pct 60'. Use '<service>.sh --help' to see arguments. This is "
-        + "NOT a shell — only *.sh action files run, one per call: no &&, no ;, no pipes, no "
+        + "'./turn_on --brightness_pct 60'. Use './<service> --help' to see arguments. This is "
+        + "NOT a shell — only the listed action files run, one per call: no &&, no ;, no pipes, no "
         + "chaining. Two actions are two calls. Anything else returns exit 127.";
 
     // Glob is uncapped: the result set is bounded by the home's entity count.
@@ -123,7 +125,10 @@ public sealed partial class HaFileSystem(
 
         var catalog = await catalogProvider.GetAsync(ct);
         var watchIds = await WatchIdsInScopeAsync(basePath, ct);
-        return Glob(pattern, () => HaTree.Glob(catalog, scope, watchIds));
+        return Glob(
+            pattern,
+            () => HaTree.Glob(catalog, scope, watchIds),
+            entry => HaVfsPath.Parse(entry).Kind == HaVfsKind.ActionFile);
     }
 
     // The watches are read live from the home, so they are fetched only for a glob that can reach
@@ -165,7 +170,13 @@ public sealed partial class HaFileSystem(
         var catalog = await catalogProvider.GetAsync(ct);
         var (exists, isDir) = Resolve(node, catalog);
 
-        return new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = exists, Path = path, IsDirectory = exists ? isDir : null });
+        return new FsResult<FsInfoResult>.Ok(new FsInfoResult
+        {
+            Exists = exists,
+            Path = path,
+            IsDirectory = exists ? isDir : null,
+            Executable = exists && node.Kind == HaVfsKind.ActionFile
+        });
     }
 
     public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
@@ -193,9 +204,14 @@ public sealed partial class HaFileSystem(
             return NotFound(path, resolution.Hint);
         }
 
-        return node.Kind == HaVfsKind.StateFile
-            ? await ReadStateAsync(path, resolution.Entity.EntityId, offset, limit, ct)
-            : ReadAction(path, resolution.Entity, node.Service!, catalog);
+        if (node.Kind == HaVfsKind.StateFile)
+        {
+            return await ReadStateAsync(path, resolution.Entity.EntityId, offset, limit, ct);
+        }
+
+        return Resolve(node, catalog).Exists
+            ? ExecutableOnly<FsReadResult>(path, node.Service!)
+            : NotFound(path);
     }
 
     public override async Task<FsResult<FsSearchResult>> SearchAsync(
@@ -239,7 +255,7 @@ public sealed partial class HaFileSystem(
 
     // Restricts the searched entity set to the requested scope: `path` (a single state file) or
     // `directoryPath` (a class/area/entity subtree). Null/root scope searches everything; an action
-    // file or unknown path scopes to nothing (action files are read via read/--help, not searched).
+    // file or unknown path scopes to nothing (an action file is never opened; its usage is --help).
     private static IReadOnlyList<HaEntityState> ScopeEntities(HaCatalog catalog, string? path, string? directoryPath)
     {
         var scope = path ?? directoryPath;
@@ -325,16 +341,6 @@ public sealed partial class HaFileSystem(
         && queue?.GetValueKind() is JsonValueKind.String
             ? queue.GetValue<string>()
             : null;
-
-    private static FsResult<FsReadResult> ReadAction(string path, HaEntityState entity, string service, HaCatalog catalog)
-    {
-        var classDomain = HaCatalog.ClassOf(entity.EntityId);
-        var svc = HaActionResolver.ServicesFor(entity, catalog.Services)
-            .FirstOrDefault(s => HaActionResolver.CommandName(s, classDomain).Equals(service, StringComparison.Ordinal));
-        return svc is null
-            ? NotFound(path)
-            : BuildReadResult(path, HaServiceHelpRenderer.Render(entity.EntityId, svc), null, null);
-    }
 
     private readonly record struct EntityResolution(HaEntityState? Entity, string? Hint);
 

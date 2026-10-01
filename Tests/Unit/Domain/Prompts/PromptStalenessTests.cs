@@ -243,7 +243,7 @@ public class PromptStalenessTests
     {
         var scope = HomeAssistantPrompt.SystemPrompt;
 
-        scope.ShouldContain("turn_on.sh",
+        scope.ShouldContain("./turn_on",
             Case.Insensitive,
             "the scope rule has to name the action a value-setting request must not add");
         scope.ShouldContain("already",

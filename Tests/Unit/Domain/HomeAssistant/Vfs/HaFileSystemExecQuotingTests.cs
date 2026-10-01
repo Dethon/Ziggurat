@@ -40,7 +40,7 @@ public class HaFileSystemExecQuotingTests
         var fs = Build(out var client);
 
         var value = await Argument(fs, client,
-            """turn_on.sh --effect "{\"target\":{\"room\":\"Kitchen\"}}" """, "effect");
+            """./turn_on --effect "{\"target\":{\"room\":\"Kitchen\"}}" """, "effect");
 
         value.ShouldBe("""{"target":{"room":"Kitchen"}}""");
         JsonNode.Parse(value)!["target"]!["room"]!.GetValue<string>().ShouldBe("Kitchen");
@@ -51,7 +51,7 @@ public class HaFileSystemExecQuotingTests
     {
         var fs = Build(out var client);
 
-        var value = await Argument(fs, client, """turn_on.sh --note "C:\\temp" """, "note");
+        var value = await Argument(fs, client, """./turn_on --note "C:\\temp" """, "note");
 
         value.ShouldBe(@"C:\temp");
     }
@@ -63,7 +63,7 @@ public class HaFileSystemExecQuotingTests
     {
         var fs = Build(out var client);
 
-        var value = await Argument(fs, client, """turn_on.sh --note "a\nb" """, "note");
+        var value = await Argument(fs, client, """./turn_on --note "a\nb" """, "note");
 
         value.ShouldBe(@"a\nb");
     }
@@ -73,7 +73,7 @@ public class HaFileSystemExecQuotingTests
     {
         var fs = Build(out var client);
 
-        var value = await Argument(fs, client, """turn_on.sh --effect '{"a":"b\"c"}' """, "effect");
+        var value = await Argument(fs, client, """./turn_on --effect '{"a":"b\"c"}' """, "effect");
 
         value.ShouldBe("""{"a":"b\"c"}""");
     }
@@ -83,7 +83,7 @@ public class HaFileSystemExecQuotingTests
     {
         var fs = Build(out var client);
 
-        var value = await Argument(fs, client, """turn_on.sh --note two\ words""", "note");
+        var value = await Argument(fs, client, """./turn_on --note two\ words""", "note");
 
         value.ShouldBe("two words");
     }

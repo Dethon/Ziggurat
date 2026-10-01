@@ -38,7 +38,7 @@ public static class MusicScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^(\./)?browse_media\.sh\b")
+                    Arg.Matches("command", @"^(\./)?browse_media(\s|$)")
                 ]
             },
             new CallExpectation
@@ -50,7 +50,7 @@ public static class MusicScenarios
                     // On the Music Assistant player, not on the television standing beside it in
                     // the same room and listing the same actions.
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^(\./)?music_assistant\.play_media\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?music_assistant\.play_media(\s|$)"),
                     Arg.Matches("command", FakeHomeAssistant.FavouritesPlaylist),
                     Arg.Matches("command", @"--media_type\s+""?playlist")
                 ]
@@ -107,7 +107,7 @@ public static class MusicScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^(\./)?music_assistant\.podcast_episodes\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?music_assistant\.podcast_episodes(\s|$)"),
                     // The show, not just the flag: --podcast with anything after it would pass a
                     // check on the flag's name alone.
                     Arg.Matches("command", "(?i)--podcast +\"?[^\"]*fin del mundo")
@@ -120,7 +120,7 @@ public static class MusicScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^(\./)?music_assistant\.play_media\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?music_assistant\.play_media(\s|$)"),
                     // The exact uri the listing returned. A play carrying the episode's title, or
                     // the show's name, does not match — which is the point.
                     Arg.Matches("command", "podcast_episode/4Fk1sWv0xKvJ6teiCpTAJN")
@@ -166,7 +166,7 @@ public static class MusicScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^(\./)?media_seek\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?media_seek(\s|$)"),
                     Arg.Matches("command", @"--seek_position\s+""?[01]\b")
                 ]
             }
@@ -183,7 +183,7 @@ public static class MusicScenarios
                 "Demonstrated on 2026-08-19 with the 'play it from the beginning' bullet deleted: "
                 + "'ponlo otra vez desde el principio' still came out as media_seek on the player that "
                 + "was playing, and not as another play. The first attempt at this demonstration was "
-                + "red for the wrong reason — the model read `media_seek.sh --help`, which the "
+                + "red for the wrong reason — the model read `media_seek --help`, which the "
                 + "scenario did not tolerate — which is what CallPermission.Manual now exists for.")
         ],
         Policy = new RunPolicy(2, 3)
@@ -220,7 +220,7 @@ public static class MusicScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^(\./)?media_seek\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?media_seek(\s|$)"),
                     // 4200 - 180. A seek computed from Home Assistant's stale 3600 lands on 3420,
                     // and the failure this scenario was written for lands on 0 — neither matches.
                     Arg.Matches("command", @"--seek_position\s+""?40(1[0-9]|2[0-9])\b")

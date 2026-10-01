@@ -29,15 +29,15 @@ public class HaFileSystemJourneyTests
         var state = await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
         state.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("\"state\": \"off\"");
 
-        var help = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh --help", null, CancellationToken.None);
+        var help = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "./turn_on --help", null, CancellationToken.None);
         help.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.Stdout.ShouldContain("--brightness_pct");
 
-        var act = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh --brightness_pct 60", null, CancellationToken.None);
+        var act = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "./turn_on --brightness_pct 60", null, CancellationToken.None);
         act.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall!.Value.Data!["brightness_pct"]!.GetValue<int>().ShouldBe(60);
 
         // 4b. a bare id (when a friendly name exists) is rejected with a hint
-        var nearMiss = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh", null, CancellationToken.None);
+        var nearMiss = await fs.ExecAsync("entities/light/kitchen", "./turn_on", null, CancellationToken.None);
         var nearMissExec = nearMiss.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
         nearMissExec.ExitCode.ShouldBe(127);
         nearMissExec.Stderr.ShouldContain("kitchen_(kitchen)");

@@ -544,6 +544,28 @@ public class HaWatchesTests
         client.UpsertedAutomations.Count.ShouldBe(1);
     }
 
+    // An action file is refused for what it is — it runs, it is never opened — rather than as one
+    // more place that is not a watch, so the refusal points at exec instead of at /ha/watches.
+    [Theory]
+    [InlineData("entities/cover/living_room_blinds/close_cover")]
+    [InlineData("areas/unassigned/cover.living_room_blinds/close_cover")]
+    public async Task CreateEditOrDelete_AnActionFile_AreRefusedAsExecutableOnly(string path)
+    {
+        var fs = Build(out var client);
+
+        var refusals = new[]
+        {
+            await Err(fs.CreateAsync(path, "{}", true, true, CancellationToken.None)),
+            await Err(fs.EditAsync(path, [new TextEdit("a", "b")], CancellationToken.None)),
+            await Err(fs.DeleteAsync(path, CancellationToken.None))
+        };
+
+        refusals.ShouldAllBe(e => e.ErrorCode == "unsupported_operation"
+                                  && e.Message.Contains("executable-only")
+                                  && e.Hint!.Contains("./close_cover"));
+        client.Calls.ShouldBeEmpty();
+    }
+
     [Theory]
     [InlineData("entities/cover/living_room_blinds")]
     [InlineData("entities/cover/living_room_blinds/state.json")]

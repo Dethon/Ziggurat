@@ -485,7 +485,7 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     // Everything else is a guess, and a guess is what the browse-first rule exists to prevent.
     //
     // "One the fake serves" has to include every uri the episode listing hands out, not only the
-    // episode already on the player: the mount answers podcast_episodes.sh from the Music
+    // episode already on the player: the mount answers podcast_episodes from the Music
     // Assistant fake, and a play of the uri it just returned was coming back as an unexplained
     // 500. The scenario that asks for exactly that was therefore unpassable — the model did as
     // the skill says, was refused, and had nothing left to try.

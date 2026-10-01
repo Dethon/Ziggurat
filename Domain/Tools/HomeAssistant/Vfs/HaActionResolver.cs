@@ -18,10 +18,10 @@ public static class HaActionResolver
     }
 
     // The action-file name an entity's directory exposes for a service. A same-domain service keeps
-    // its bare service name (`turn_on.sh`); a service from ANOTHER domain that targets this entity
+    // its bare service name (`turn_on`); a service from ANOTHER domain that targets this entity
     // class (e.g. `music_assistant.play_media` on a `media_player`) is domain-qualified
-    // (`music_assistant.play_media.sh`) so it never collides with a same-named same-domain service
-    // (`media_player.play_media` -> `play_media.sh`). exec/read/info resolve back through the same
+    // (`music_assistant.play_media`) so it never collides with a same-named same-domain service
+    // (`media_player.play_media` -> `play_media`). exec/read/info resolve back through the same
     // CommandName, so the qualified name round-trips.
     public static string CommandName(HaServiceDefinition svc, string classDomain) =>
         svc.AppliesToEveryEntity || svc.Domain.Equals(classDomain, StringComparison.Ordinal)

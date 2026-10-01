@@ -4,7 +4,7 @@ using Domain.Exceptions;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
-// Implements `statistics.sh` (see HaStatisticsActions): resolves the window, reads the recorder's
+// Implements `statistics` (see HaStatisticsActions): resolves the window, reads the recorder's
 // compiled rows through the client, and renders each row with only the measures it carries — a
 // measured sensor has mean/min/max, a total has state/sum/change — so a reader is never handed a
 // zero that means "not that kind of sensor".
@@ -47,7 +47,7 @@ internal static class HaStatistics
                 payload["suggestion"] =
                     "No statistics in this window. Home Assistant compiles them at twelve past each hour for "
                     + "a sensor with a state_class, so one given a state_class today has its first row within "
-                    + "the hour; 5minute rows last only the recorder's retention. For the raw changes, history.sh.";
+                    + "the hour; 5minute rows last only the recorder's retention. For the raw changes, ./history.";
             }
             return (0, payload.ToJsonString(), "");
         }
