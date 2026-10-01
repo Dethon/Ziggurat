@@ -176,7 +176,7 @@ public class SkillResourceTests
 
     private static Task<ThreadSession> BuildAsync(string endpoint, McpPromptCache? cache = null) =>
         ThreadSession.CreateAsync(
-            [McpServerEndpoint.Configured(endpoint)], "skills-test", "fran", "skills test",
+            [McpServerEndpoint.Configured(endpoint, McpTestSecret.Value)], "skills-test", "fran", "skills test",
             [], new HashSet<string>(), null, CancellationToken.None, cache);
 
     private static async Task<string> ReadAsync(RunningServer server, string uri)

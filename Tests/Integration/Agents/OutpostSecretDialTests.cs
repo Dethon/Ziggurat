@@ -23,8 +23,8 @@ public sealed class OutpostSecretDialTests : IAsyncLifetime
     private IHost _machine = null!;
     private string _endpoint = null!;
 
-    // The gate the outpost's own Program.cs installs, in front of the MCP endpoint, comparing with
-    // the rule both ends share.
+    // A gate in front of the MCP endpoint, as the outpost's /mcp has, comparing with the rule both
+    // ends share. Hand-written here so the dial is tested apart from the hosting library.
     public async Task InitializeAsync()
     {
         var port = TestPort.GetAvailable();

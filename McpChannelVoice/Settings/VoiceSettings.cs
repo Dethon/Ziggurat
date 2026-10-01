@@ -1,10 +1,15 @@
 using Domain.DTOs;
+using Domain.Security;
 using Infrastructure.Judgments;
+using Mcp.Hosting;
 
 namespace McpChannelVoice.Settings;
 
-public record VoiceSettings
+public record VoiceSettings : IMcpHostSettings
 {
+    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    public McpGateSettings Mcp { get; init; } = new();
+
     // Agent that handles voice transcripts. Sent as the message AgentId so the agent
     // host resolves this definition; null falls back to the first configured agent.
     public string? AgentId { get; init; }

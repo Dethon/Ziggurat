@@ -72,9 +72,6 @@ public class McpFileSystemBackendChunkTests(MultiFileSystemFixture fx)
 
     private static async Task<McpClient> CreateClient(string endpoint)
     {
-        return await McpClient.CreateAsync(new HttpClientTransport(new HttpClientTransportOptions
-        {
-            Endpoint = new Uri(endpoint)
-        }), loggerFactory: NullLoggerFactory.Instance);
+        return await McpClient.CreateAsync(McpTestSecret.Transport(endpoint), loggerFactory: NullLoggerFactory.Instance);
     }
 }

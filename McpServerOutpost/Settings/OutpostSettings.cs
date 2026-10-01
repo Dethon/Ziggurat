@@ -1,6 +1,9 @@
+using Domain.Security;
+using Mcp.Hosting;
+
 namespace McpServerOutpost.Settings;
 
-public record OutpostSettings
+public record OutpostSettings : IMcpHostSettings
 {
     // The one documented default, so a firewall rule is writable once. An operator running a
     // jailed outpost and an unjailed one on the same machine overrides it on the second.
@@ -47,4 +50,10 @@ public record OutpostSettings
     // The one value that is a secret, so the one that arrives as an environment variable rather
     // than as a flag: a command line is visible to every process on the machine.
     public string SharedSecret { get; init; } = "";
+
+    // The host gates /mcp with this machine's own secret, the one it registers with. The outpost
+    // is not part of the deployment and never holds the deployment's secret; answering with it
+    // here would make every outpost refuse the hub that dials it. Computed rather than bound, so
+    // no variable of the deployment's name can reach it.
+    McpGateSettings IMcpHostSettings.Mcp => new() { SharedSecret = SharedSecret };
 }

@@ -20,14 +20,15 @@ public enum McpEndpointOrigin
 // which is also where live outposts are merged in as dynamic ones.
 public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
 {
-    // What this endpoint has to present to be allowed to talk, or null where the endpoint is on
-    // the deployment's own network and the network is the boundary. An outpost is a port on
-    // somebody's own computer, so it asks: without this, anyone who could reach that port would get
-    // the machine's whole filesystem, fs_exec included, through nothing but a URL.
+    // What this endpoint has to present to be allowed to talk. Every server asks: a deployment
+    // server for the one deployment secret, because a tool believes whatever conversation context a
+    // call claims and the network is not a boundary worth trusting that to; an outpost for its own,
+    // because it is a port on somebody's own computer offering their whole filesystem, fs_exec
+    // included. Null presents nothing, which a gated server refuses.
     public string? Secret { get; init; }
 
-    public static McpServerEndpoint Configured(string address) =>
-        new(address, McpEndpointOrigin.Configured);
+    public static McpServerEndpoint Configured(string address, string? secret = null) =>
+        new(address, McpEndpointOrigin.Configured) { Secret = secret };
 
     public static McpServerEndpoint Dynamic(string address, string? secret = null) =>
         new(address, McpEndpointOrigin.Dynamic) { Secret = secret };

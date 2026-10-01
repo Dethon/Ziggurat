@@ -1,9 +1,7 @@
 using System.Net;
-using Domain.Security;
 using McpServerOutpost.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 var settings = builder.Configuration.GetOutpostSettings(args);
@@ -18,21 +16,11 @@ builder.WebHost.UseKestrel(options => options.Listen(IPAddress.IPv6Any, settings
 
 var app = builder.Build();
 
-// The other half of the shared secret. This port is on somebody's own computer, listening on every
-// interface, offering their whole filesystem and — where they asked for it — a shell; without this
-// anyone who could reach it would have all of that for the price of knowing the URL. The same
-// secret the machine presents when it registers, compared by the same rule the hub compares it by.
-app.Use(async (context, next) =>
-{
-    if (!SharedSecret.Matches(context.Request.Headers.Authorization.ToString(), settings.SharedSecret))
-    {
-        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        return;
-    }
-
-    await next(context);
-});
-
+// The other half of the shared secret is the host's gate on /mcp, installed by the hosting library
+// with the secret OutpostSettings answers for: this machine's own, the one it registers with. This
+// port is on somebody's own computer, listening on every interface, offering their whole filesystem
+// and — where they asked for it — a shell, so the gate is the same one every deployment server has
+// rather than one written here to drift from it.
 app.MapMcp("/mcp");
 
 await app.RunAsync();

@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.Security;
 using Domain.Tools;
 using Infrastructure.Utils;
 using Mcp.Hosting;
@@ -20,7 +21,10 @@ namespace Tests.Integration.McpServers;
 // backend that does not care answers itself.
 public class FileSystemCallerTests
 {
-    private sealed record ProbeSettings(string Name);
+    private sealed record ProbeSettings(string Name) : IMcpHostSettings
+    {
+        public McpGateSettings Mcp => McpTestSecret.Gate;
+    }
 
     private static Task<RunningServer> StartAsync() => InMemoryMcpServer.StartAsync(services =>
     {

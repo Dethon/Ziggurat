@@ -1,9 +1,14 @@
+using Domain.Security;
 using Infrastructure.Clients.Transcription;
+using Mcp.Hosting;
 
 namespace McpChannelTelegram.Settings;
 
-public record ChannelSettings
+public record ChannelSettings : IMcpHostSettings
 {
+    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    public McpGateSettings Mcp { get; init; } = new();
+
     public required AgentBotConfig[] Bots { get; init; }
     public required string[] AllowedUsernames { get; init; }
 

@@ -44,9 +44,13 @@ public sealed class EvalSandbox : IAsyncDisposable
         var builder = TestContainers.Container(E2EImages.McpSandbox.ImageName, "eval-sandbox")
             .WithPortBinding(8080, true)
             .WithBindMount(sandbox.WorkspaceOnHost, "/home/sandbox_user", AccessMode.ReadWrite)
+            // The deployment secret its /mcp asks for, which the stack's agent presents too. The
+            // wait presents it as well, or the gate answers 401 before the transport says 405.
+            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r
                 .ForPort(8080)
                 .ForPath("/mcp")
+                .WithHeaders(McpTestSecret.Headers)
                 .ForStatusCode(HttpStatusCode.MethodNotAllowed)));
 
         if (OperatingSystem.IsLinux())

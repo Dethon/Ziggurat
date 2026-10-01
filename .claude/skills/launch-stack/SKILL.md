@@ -31,6 +31,11 @@ The base compose maps `/dev/dri` into `plex`/`mcp-sandbox`/`lemonade` for GPU ac
 
 Services read secrets from .NET User Secrets mounted at `/home/app/.microsoft/usersecrets`; the OS override files map the host-side path. A crash with `Value cannot be an empty string. (Parameter 'connectionString')` means they aren't mounted — check you're using the right override.
 
+Two secrets live in `DockerCompose/.env` and must be set (any non-empty value) before the stack is useful:
+
+- `MCP__SHAREDSECRET` — every MCP server's `/mcp` (channel servers included) refuses a call without it, and the agent presents it on every configured endpoint and channel connection. One value reaches both ends. Unset, the agent's session builds and channel connections fail with 401 — by design, not a startup bug. Anything you point at a server's `/mcp` by hand (an MCP inspector, a script) sends `Authorization: Bearer <value>`.
+- `AGENTAPI__SHAREDSECRET` — `/api/agents` (custom-agent registration, routed by Caddy) refuses every verb without `Authorization: Bearer <value>`.
+
 ## Accessing the WebChat & Dashboard
 
 Caddy (port 443, Let's Encrypt TLS) is the entry point: `/hubs/*` → McpChannelSignalR, `/dashboard/*` → Observability, everything else → WebUI. **Connect through Caddy, not directly to webui:5001**, or SignalR won't reach the channel server.

@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Security;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Infrastructure.Judgments;
@@ -25,6 +26,10 @@ public record AgentSettings
     public RetentionSettings Retention { get; init; } = new();
     public OutpostConfiguration Outposts { get; init; } = new();
     public AgentApiConfiguration AgentApi { get; init; } = new();
+
+    // The deployment secret every configured MCP endpoint and channel connection presents, bound
+    // under the same name the servers bind it by (MCP__SHAREDSECRET), so one line reaches both ends.
+    public McpGateSettings Mcp { get; init; } = new();
     public LemonadeChatConfiguration LemonadeChat { get; init; } = new();
     public TypeSafeOptions TypeSafe { get; init; } = new();
     public SkillPreloadSettings SkillPreload { get; init; } = new();
