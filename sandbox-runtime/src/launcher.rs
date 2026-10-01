@@ -20,6 +20,8 @@ pub struct LauncherConfig {
     pub puid: u32,
     pub pgid: u32,
     pub server_uid: u32,
+    /// What each exec's vfs daemon becomes once it has mounted: neither root nor PUID.
+    pub daemon_uid: u32,
     pub home: String,
     pub socket: String,
     pub server_command: Vec<String>,
@@ -68,6 +70,7 @@ pub fn serve(config: LauncherConfig) -> io::Result<i32> {
         ("PUID", config.puid.to_string()),
         ("PGID", config.pgid.to_string()),
         ("SANDBOX_SERVER_UID", config.server_uid.to_string()),
+        ("SANDBOX_DAEMON_UID", config.daemon_uid.to_string()),
         ("SANDBOX_HOME", config.home.clone()),
         (
             "SANDBOX_COMMAND_GROUPS",

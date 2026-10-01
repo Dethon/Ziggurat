@@ -25,6 +25,7 @@ pub struct UnitConfig {
     pub puid: u32,
     pub pgid: u32,
     pub server_uid: u32,
+    pub daemon_uid: u32,
     pub home: String,
     pub groups: Vec<libc::gid_t>,
 }
@@ -110,7 +111,7 @@ fn execute(
     // The other mounts, served for this call only. A daemon that cannot mount costs the command its
     // view of them, never the command itself: it runs, and its stderr says why /vfs is missing.
     let (served, unserved) = match &request.bridge {
-        Some(grant) => match Served::start(grant, config.puid, config.pgid) {
+        Some(grant) => match Served::start(grant, config.puid, config.pgid, config.daemon_uid) {
             Ok(served) => (Some(served), None),
             Err(e) => (None, Some(format!("sandbox-launcher: the other mounts are not served to this command: {e}\n"))),
         },
@@ -344,6 +345,7 @@ pub fn config_from_env(vars: &HashMap<String, String>) -> Option<UnitConfig> {
         puid: number("PUID")?,
         pgid: number("PGID")?,
         server_uid: number("SANDBOX_SERVER_UID")?,
+        daemon_uid: number("SANDBOX_DAEMON_UID")?,
         home: vars.get("SANDBOX_HOME")?.clone(),
         groups: vars
             .get("SANDBOX_COMMAND_GROUPS")?

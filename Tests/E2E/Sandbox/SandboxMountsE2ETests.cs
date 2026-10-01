@@ -52,6 +52,33 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         Stdout(result).ShouldBe("/vault/notes/deep/more.md\n/vault/notes/todo.md\n- [ ] TODO buy milk\n", result.ToString());
     }
 
+    // The daemon answers every file operation and action a command makes, so it is the root
+    // process a command can reach most of; it mounts as root and then keeps nothing, in every
+    // thread — the bounding set and no-new-privs are per thread, and a thread that kept them could
+    // still exec a setuid-root binary back to root. The unit unmounts once it is done.
+    [SkippableFact]
+    public async Task TheDaemonServingACommand_HoldsNoPrivilegeOnceMounted()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+
+        var result = await ExecAsync(client, """
+            cat /vault/inbox.md >/dev/null
+            pid=$(pgrep -x vfs-daemon | head -1)
+            [ -n "$pid" ] || { echo "no daemon"; exit 2; }
+            for task in /proc/$pid/task/*; do grep -E '^(Uid|CapEff|CapBnd|NoNewPrivs)' $task/status; done
+            """, Mint(), cts.Token);
+
+        var stdout = Stdout(result);
+        stdout.ShouldNotContain("no daemon");
+        stdout.ShouldContain("Uid:");
+        stdout.ShouldNotMatch(@"Uid:\s+0\s");
+        stdout.ShouldNotMatch(@"CapEff:\s+0*[1-9a-f]");
+        stdout.ShouldNotMatch(@"CapBnd:\s+0*[1-9a-f]");
+        stdout.ShouldNotMatch(@"NoNewPrivs:\s+0");
+    }
+
     // A mount is a link into /vfs, and find does not follow a link it starts from unless asked; a
     // login shell asks for it, so `find /vault` walks the vault as it would a directory.
     [SkippableFact]

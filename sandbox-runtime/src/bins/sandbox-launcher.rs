@@ -24,6 +24,7 @@ fn main() {
                 puid: number("PUID", 1654),
                 pgid: number("PGID", 1654),
                 server_uid: number("SANDBOX_SERVER_UID", 1700),
+                daemon_uid: number("SANDBOX_DAEMON_UID", 1701),
                 home: vars.get("SANDBOX_HOME").cloned().unwrap_or_else(|| "/home/sandbox_user".into()),
                 socket: vars.get("LAUNCHER_SOCKET").cloned().unwrap_or_else(|| "/run/sandbox/launcher.sock".into()),
                 server_command,

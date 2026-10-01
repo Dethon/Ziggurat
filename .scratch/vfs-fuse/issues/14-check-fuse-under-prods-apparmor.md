@@ -39,3 +39,11 @@ The profile is `DockerCompose/apparmor/ziggurat-sandbox`: `docker-default`'s rul
 - The launcher installs a seccomp filter on every command after no-new-privs (`sandbox-runtime/src/seccomp.rs`): `unshare`/`clone` with `CLONE_NEWUSER` are EPERM, `clone3` is ENOSYS (glibc falls back to `clone`, as on a default Docker container), another ABI is ENOSYS. On prod unconfined it alone gets `Operation not permitted`, and it is what holds on the dev box, which has no AppArmor. Pinned by `SandboxLauncherE2ETests.ACommand_CannotUnshareOrMount` and `ACommand_StillMakesThreadsAndProcesses`, and a forked-child test in the crate.
 
 The updated profile is reinstalled on prod. The full launcher path passes again under it, with threads working and no denials.
+
+**2026-10-01, later still — what a compromised root process would have, cut down.** The remaining escape route was a bug in the container's own root processes (launcher, unit, FUSE daemon): Docker's filter grants a SYS_ADMIN container `bpf`, `perf_event_open`, `setns` and more, which from root reach kernel memory and the host's processes. Two changes:
+
+- The container runs under `DockerCompose/seccomp/ziggurat-sandbox.json` (compose `security_opt`, resolved beside the compose file; `SandboxContainer.AsCompose()` sends its content): Docker 29.8.0's default with that block cut to `mount`, `umount2` and `unshare(CLONE_NEWNS)`, and the `clone`/`clone3` namespace rules applied regardless. On prod, a root process with SYS_ADMIN now gets EPERM for `bpf`, `perf_event_open` and `setns`, where Docker's own filter answered EINVAL/EFAULT (allowed).
+- The FUSE daemon mounts as root, then becomes uid 1701 with no capabilities, no-new-privs and the user-namespace filter, before its first thread; the unit unmounts. On prod every daemon thread reads `Uid 1701, CapEff 0, CapBnd 0, NoNewPrivs 1, Seccomp 2`, and the full launcher path still passes.
+
+Pinned by `SandboxLauncherE2ETests.ARootProcessInTheContainer_GetsOnlyTheLaunchersSyscalls` and `SandboxMountsE2ETests.TheDaemonServingACommand_HoldsNoPrivilegeOnceMounted`; all 49 sandbox E2E tests pass. Nothing new to install on prod — the seccomp file travels with the repo.
+

@@ -33,7 +33,7 @@ pub struct Served {
 }
 
 impl Served {
-    pub fn start(grant: &BridgeGrant, uid: u32, gid: u32) -> io::Result<Served> {
+    pub fn start(grant: &BridgeGrant, uid: u32, gid: u32, daemon_uid: u32) -> io::Result<Served> {
         unsafe {
             let target = CString::new(MOUNTPOINT).unwrap();
             // The namespace inherited the container's view, which may hold another exec's mount.
@@ -64,6 +64,7 @@ impl Served {
             "uid": uid,
             "gid": gid,
             "mountpoint": MOUNTPOINT,
+            "runAs": daemon_uid,
             "actionSocket": crate::vfs::actions::SOCKET,
         });
         writeln!(stdin, "{config}")?;
@@ -97,13 +98,18 @@ impl Served {
         let _ = self.lines.recv_timeout(READY_WITHIN);
     }
 
-    /// The command is over: the daemon commits what it still holds, unmounts and exits.
+    /// The command is over: the daemon commits what it still holds and exits, and the mount goes
+    /// with it. Unmounting is the unit's, because the daemon gave up the right to once it mounted.
     pub fn finish(mut self) {
         let _ = writeln!(self.stdin, "exit");
         let _ = self.stdin.flush();
         let _ = self.lines.recv_timeout(DONE_WITHIN);
         drop(self.stdin);
         let _ = self.child.wait();
+        let target = CString::new(MOUNTPOINT).unwrap();
+        unsafe {
+            libc::umount2(target.as_ptr(), libc::MNT_DETACH);
+        }
     }
 }
 

@@ -21,6 +21,8 @@ pub struct DaemonConfig {
     pub uid: u32,
     pub gid: u32,
     pub mountpoint: String,
+    /// The uid (and gid) the daemon becomes once it has mounted and bound its socket.
+    pub run_as: u32,
     /// Where action helpers reach this daemon; absent, no action can run from a script.
     #[serde(default)]
     pub action_socket: Option<String>,
@@ -60,10 +62,16 @@ pub fn run() -> io::Result<()> {
     ];
     // allow_other: the daemon mounts as root, and the command reading through it is PUID.
     options.acl = fuser::SessionACL::All;
-    let session = fuser::spawn_mount(fuse, &config.mountpoint, &options)?;
+    let session = fuser::Session::new(fuse, &config.mountpoint, &options)?;
+    let actions = config.action_socket.as_deref().map(bind_actions).transpose()?;
 
-    if let Some(socket) = &config.action_socket {
-        serve_actions(socket, vfs.clone())?;
+    // Root was for the mount and the socket. Everything after answers the command, so it runs as
+    // nobody in particular — and before any thread exists, because capabilities, no-new-privs and
+    // the syscall filter are per thread, and a thread that kept them could exec back to root.
+    give_up_root(config.run_as)?;
+    let session = session.spawn()?;
+    if let Some(listener) = actions {
+        serve_actions(listener, vfs.clone());
     }
 
     say(&serde_json::to_string(&Ready { served }).expect("serializes"))?;
@@ -80,8 +88,20 @@ pub fn run() -> io::Result<()> {
     // Whatever the command still holds commits before the mount goes and before the unit answers,
     // so the agent's change log is whole when exec returns.
     vfs.finish();
-    drop(session);
+    // Not dropped: dropping unmounts, which needs the root this daemon gave up (fuser would then
+    // try a setuid fusermount the image does not have). Exiting closes the device, and the unit
+    // unmounts.
+    std::mem::forget(session);
     say("done")
+}
+
+fn give_up_root(uid: u32) -> io::Result<()> {
+    let threads = std::fs::read_dir("/proc/self/task")?.count();
+    if threads != 1 {
+        return Err(io::Error::other(format!("vfs-daemon: {threads} threads before giving up root")));
+    }
+    let identity = crate::privilege::Identity { uid, gid: uid, groups: vec![], cwd: Some(c"/".into()), umask: 0o077 };
+    unsafe { crate::privilege::become_identity(&identity) }
 }
 
 fn say(line: &str) -> io::Result<()> {
@@ -90,22 +110,26 @@ fn say(line: &str) -> io::Result<()> {
     out.flush()
 }
 
-/// Action helpers connect here, one connection per run. Only a process of this exec — one in this
-/// daemon's own mount namespace — is answered.
-fn serve_actions<B: Bridge>(socket: &str, vfs: Arc<Vfs<B>>) -> io::Result<()> {
+/// Action helpers connect here, one connection per run. Bound as root, since the socket's directory
+/// is this exec's own root-owned tmpfs; served once the daemon is nobody.
+fn bind_actions(socket: &str) -> io::Result<std::os::unix::net::UnixListener> {
     use std::os::unix::fs::PermissionsExt;
 
     let _ = std::fs::remove_file(socket);
     let listener = std::os::unix::net::UnixListener::bind(socket)?;
-    // The helper runs as PUID; the socket's directory is this exec's own tmpfs.
+    // The helper runs as PUID.
     std::fs::set_permissions(socket, std::fs::Permissions::from_mode(0o666))?;
+    Ok(listener)
+}
+
+/// Only a process of this exec — one in this daemon's own mount namespace — is answered.
+fn serve_actions<B: Bridge>(listener: std::os::unix::net::UnixListener, vfs: Arc<Vfs<B>>) {
     std::thread::spawn(move || {
         listener.incoming().filter_map(Result::ok).for_each(|connection| {
             let vfs = vfs.clone();
             std::thread::spawn(move || answer_action(connection, &vfs));
         });
     });
-    Ok(())
 }
 
 fn answer_action<B: Bridge>(connection: std::os::unix::net::UnixStream, vfs: &Vfs<B>) {
