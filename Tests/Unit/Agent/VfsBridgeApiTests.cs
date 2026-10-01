@@ -36,7 +36,7 @@ public class VfsBridgeApiTests
         }), "/vault", null)),
         permits ?? (_ => true));
 
-    public static TheoryData<string> Operations => ["attr", "list", "read", "write"];
+    public static TheoryData<string> Operations => ["attr", "list", "read", "write", "delete"];
 
     [Theory]
     [MemberData(nameof(Operations))]

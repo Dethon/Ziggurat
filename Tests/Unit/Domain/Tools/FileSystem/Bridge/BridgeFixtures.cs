@@ -48,6 +48,53 @@ internal class MemoryDisk(string name, IDictionary<string, string> files, string
 
     private readonly string[] _text = textExtensions ?? [".md", ".txt", ".json"];
 
+    // A mount with a rule about what may leave it, as the media library has for a live download.
+    public string? RefusesMoveOutOf { get; init; }
+
+    public override Task<FsResult<FsMoveOutCheckResult>> MoveOutCheckAsync(string path, CancellationToken ct) =>
+        Task.FromResult(RefusesMoveOutOf is { } refused && path.Trim('/').StartsWith(refused, StringComparison.Ordinal)
+            ? FsError.Fail<FsMoveOutCheckResult>(global::Domain.Tools.ToolError.Codes.PermissionDenied, $"{path} cannot leave {name}")
+            : FsMoveOutCheckResult.Allow(path));
+
+    public override Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct)
+    {
+        var (from, to) = (sourcePath.Trim('/'), destinationPath.Trim('/'));
+        if (!Files.ContainsKey(from))
+        {
+            return Task.FromResult(FsError.NotFound<FsMoveResult>(sourcePath));
+        }
+
+        if (Files.ContainsKey(to))
+        {
+            return Task.FromResult(FsError.AlreadyExists<FsMoveResult>(destinationPath));
+        }
+
+        Files[to] = Files[from];
+        Files.Remove(from);
+        Writes.Add($"move {from} {to}");
+        return Task.FromResult<FsResult<FsMoveResult>>(new FsResult<FsMoveResult>.Ok(new FsMoveResult
+        {
+            Status = "moved", Source = sourcePath, Destination = destinationPath, Message = "moved"
+        }));
+    }
+
+    public override Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
+    {
+        var key = path.Trim('/');
+        var removed = Files.Keys.Where(k => k == key || k.StartsWith(key + "/", StringComparison.Ordinal)).ToList();
+        if (removed.Count == 0)
+        {
+            return Task.FromResult(FsError.NotFound<FsRemoveResult>(path));
+        }
+
+        removed.ForEach(k => Files.Remove(k));
+        Writes.Add($"delete {key}");
+        return Task.FromResult<FsResult<FsRemoveResult>>(new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
+        {
+            Status = "deleted", Message = "deleted", OriginalPath = path, TrashPath = ""
+        }));
+    }
+
     public override Task<FsResult<FsCreateResult>> CreateAsync(
         string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
@@ -132,6 +179,31 @@ internal class MemoryDisk(string name, IDictionary<string, string> files, string
 // it will be.
 internal sealed class RenderedMount(string name, IDictionary<string, string> files) : FileSystemBackendBase
 {
+    public List<string> Deleted { get; } = [];
+
+    // A timer's shape: its directory is the thing to remove, its rendered files refuse alone.
+    public override Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
+    {
+        var key = path.Trim('/');
+        if (files.ContainsKey(key))
+        {
+            return Task.FromResult(FsError.Invalid<FsRemoveResult>($"Cancel it by deleting its directory: /{key[..key.IndexOf('/')]}"));
+        }
+
+        var removed = files.Keys.Where(k => k.StartsWith(key + "/", StringComparison.Ordinal)).ToList();
+        if (removed.Count == 0)
+        {
+            return Task.FromResult(FsError.NotFound<FsRemoveResult>(path));
+        }
+
+        removed.ForEach(k => files.Remove(k));
+        Deleted.Add(key);
+        return Task.FromResult<FsResult<FsRemoveResult>>(new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
+        {
+            Status = "deleted", Message = "cancelled", OriginalPath = path, TrashPath = ""
+        }));
+    }
+
     public override string FilesystemName => name;
 
     public override string DescribeMount => $"Rendered {name}.";

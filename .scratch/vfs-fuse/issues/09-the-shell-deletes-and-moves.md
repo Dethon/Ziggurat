@@ -6,8 +6,8 @@
 
 **Status:** ready-for-agent
 
-- [ ] `rm -r` of a timer through the shell cancels it, exactly as the remove tool does
-- [ ] `mv` within the vault is reported as a move, not a delete and a create
-- [ ] `mv` between two mounts is a transfer; a move-out refusal keeps the source and is listed as refused
-- [ ] `mv` between the sandbox's home and a mount stays a copy and an unlink by the kernel, and the mount sees a create or a delete
-- [ ] Each delete and move appears in `vfsChanges`
+- [x] `rm -r` of a timer through the shell cancels it, exactly as the remove tool does
+- [x] `mv` within the vault is reported as a move, not a delete and a create
+- [x] `mv` between two mounts is a transfer; a move-out refusal keeps the source and is listed as refused
+- [x] `mv` between the sandbox's home and a mount stays a copy and an unlink by the kernel, and the mount sees a create or a delete
+- [x] Each delete and move appears in `vfsChanges`

@@ -115,6 +115,34 @@ impl Bridge for FakeBridge {
         Ok(())
     }
 
+    fn delete(&self, path: &str, directory: bool) -> Result<(), Errno> {
+        self.record(format!("delete {path}{}", if directory { "/" } else { "" }));
+        if self.refusing.lock().unwrap().iter().any(|p| p == path) {
+            return Err(libc::EACCES);
+        }
+        let mut nodes = self.nodes.lock().unwrap();
+        nodes.retain(|p, _| p != path && !p.starts_with(&format!("{path}/")));
+        Ok(())
+    }
+
+    fn rename(&self, from: &str, to: &str, overwrite: bool) -> Result<(), Errno> {
+        self.record(format!("rename {from} {to}{}", if overwrite { " overwrite" } else { "" }));
+        if self.refusing.lock().unwrap().iter().any(|p| p == from || p == to) {
+            return Err(libc::EACCES);
+        }
+        let mut nodes = self.nodes.lock().unwrap();
+        let moved: Vec<(String, FakeNode)> = nodes
+            .iter()
+            .filter(|(p, _)| *p == from || p.starts_with(&format!("{from}/")))
+            .map(|(p, n)| (p.clone(), n.clone()))
+            .collect();
+        moved.into_iter().for_each(|(p, node)| {
+            nodes.remove(&p);
+            nodes.insert(format!("{to}{}", &p[from.len()..]), node);
+        });
+        Ok(())
+    }
+
     fn read(&self, path: &str) -> Result<Vec<u8>, Errno> {
         self.record(format!("read {path}"));
         match self.nodes.lock().unwrap().get(path) {

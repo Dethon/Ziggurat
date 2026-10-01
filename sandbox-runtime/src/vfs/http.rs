@@ -88,6 +88,20 @@ impl Bridge for HttpBridge {
         self.post("read", &[("path", path)], &[])
     }
 
+    fn delete(&self, path: &str, directory: bool) -> Result<(), Errno> {
+        self.post("delete", &[("path", path), ("directory", if directory { "true" } else { "false" })], &[])
+            .map(|_| ())
+    }
+
+    fn rename(&self, from: &str, to: &str, overwrite: bool) -> Result<(), Errno> {
+        self.post(
+            "rename",
+            &[("path", from), ("to", to), ("overwrite", if overwrite { "true" } else { "false" })],
+            &[],
+        )
+        .map(|_| ())
+    }
+
     fn write(&self, path: &str, content: &[u8], new: bool) -> Result<(), Errno> {
         self.post("write", &[("path", path), ("new", if new { "true" } else { "false" })], content)
             .map(|_| ())

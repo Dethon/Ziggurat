@@ -50,6 +50,14 @@ pub trait Bridge: Send + Sync + 'static {
     /// The whole file, as the equivalent tool call would write it. `new` is the daemon's knowledge
     /// that nothing was at the path, which the bridge would otherwise need a round trip to learn.
     fn write(&self, path: &str, content: &[u8], new: bool) -> Result<(), Errno>;
+
+    /// The remove tool's call: a file, or a directory and everything under it.
+    fn delete(&self, path: &str, directory: bool) -> Result<(), Errno>;
+
+    /// One rename, within a mount or across two: the bridge makes it the mount's move or a transfer.
+    /// `overwrite` is the daemon's knowledge that something is at `to`, which the bridge judges as
+    /// a write there.
+    fn rename(&self, from: &str, to: &str, overwrite: bool) -> Result<(), Errno>;
 }
 
 /// The bridge's errno names, as the agent spells them (`Errnos` in the bridge).

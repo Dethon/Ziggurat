@@ -9,7 +9,11 @@
 //!   `echo a > f` would otherwise commit an empty intermediate first;
 //! - a **new** file is held until it is renamed onto a path (a write there — temp-then-rename
 //!   writers like `sed -i` never commit their temp), an action runs, or the command ends;
-//! - a new directory exists only here until a file is committed under it, and arrives with it.
+//! - a new directory exists only here until a file is committed under it, and arrives with it;
+//! - a **delete** is held the same way, and an `rmdir` subsumes every held delete beneath it: GNU
+//!   `rm -r` unlinks every child before it removes the directory, and stops at the first child a
+//!   mount refuses — a timer's files refuse alone, its directory is the cancel — so the mount sees
+//!   the one delete the remove tool makes. At the end, deletes commit before held files.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -76,6 +80,8 @@ struct State {
     handles: HashMap<u64, Handle>,
     held_files: BTreeMap<String, Held>,
     held_dirs: BTreeSet<String>,
+    /// Paths deleted in the call and not yet on the mount, and whether each is a directory.
+    deleted: BTreeMap<String, bool>,
     writers: HashMap<u64, Writer>,
     next_ino: u64,
     next_fh: u64,
@@ -128,6 +134,11 @@ impl State {
             .collect()
     }
 
+    /// Deleted in the call, itself or under a deleted directory.
+    fn is_deleted(&self, path: &str) -> bool {
+        self.deleted.keys().any(|d| is_within(path, d))
+    }
+
     fn forget_answers(&mut self) {
         self.attrs.clear();
         self.listings.clear();
@@ -159,6 +170,9 @@ impl<B: Bridge> Vfs<B> {
         {
             let state = self.lock();
             if state.held(&path).is_none() {
+                if state.is_deleted(&path) {
+                    return Err(libc::ENOENT);
+                }
                 // A held directory has nothing on the mount; and a name the cached listing lacks is
                 // answered without a round trip — a shell's PATH search and a `find` probe ask for
                 // many names that are not there.
@@ -188,7 +202,10 @@ impl<B: Bridge> Vfs<B> {
             self.listing(&path)?.entries.into_iter().map(|e| (e.name, e.kind)).collect()
         };
         let mut state = self.lock();
-        let mut entries: BTreeMap<String, Kind> = from_mount.into_iter().collect();
+        let mut entries: BTreeMap<String, Kind> = from_mount
+            .into_iter()
+            .filter(|(name, _)| !state.is_deleted(&join(&path, name)))
+            .collect();
         entries.extend(state.held_children(&path));
         Ok(entries
             .into_iter()
@@ -369,26 +386,37 @@ impl<B: Bridge> Vfs<B> {
         Ok(Node { ino: state.ino_for(&path), kind: Kind::Dir, size: 0, size_known: true })
     }
 
+    /// A new file goes as if it never was; one on the mount is deleted when the command commits.
     pub fn unlink(&self, parent_ino: u64, name: &str) -> Result<(), Errno> {
         let path = join(&self.lock().path(parent_ino)?, name);
-        let mut state = self.lock();
-        if state.held_files.remove(&path).is_some() {
+        if self.lock().held_files.remove(&path).is_some() {
             return Ok(());
         }
-        Err(libc::EROFS)
+        if self.node_at(&path)?.kind == Kind::Dir {
+            return Err(libc::EISDIR);
+        }
+        self.lock().deleted.insert(path, false);
+        Ok(())
     }
 
     pub fn rmdir(&self, parent_ino: u64, name: &str) -> Result<(), Errno> {
         let path = join(&self.lock().path(parent_ino)?, name);
+        let ino = self.lookup(parent_ino, name)?.ino;
+        if self.node_at(&path)?.kind != Kind::Dir {
+            return Err(libc::ENOTDIR);
+        }
+        if !self.readdir(ino)?.is_empty() {
+            return Err(libc::ENOTEMPTY);
+        }
         let mut state = self.lock();
-        if state.held_dirs.contains(&path) {
-            if !state.held_children(&path).is_empty() {
-                return Err(libc::ENOTEMPTY);
-            }
-            state.held_dirs.remove(&path);
+        if state.held_dirs.remove(&path) {
             return Ok(());
         }
-        Err(libc::EROFS)
+        // The directory's own delete is the one the mount sees; what was deleted under it goes
+        // with it.
+        state.deleted.retain(|p, _| !is_within(p, &path));
+        state.deleted.insert(path, true);
+        Ok(())
     }
 
     pub fn rename(&self, parent_ino: u64, name: &str, new_parent_ino: u64, new_name: &str) -> Result<(), Errno> {
@@ -438,7 +466,25 @@ impl<B: Bridge> Vfs<B> {
                 });
                 Ok(())
             }
-            _ => Err(libc::EROFS),
+            Some(Kind::Action) => Err(libc::EACCES),
+            None => {
+                // Something on the mount: the bridge makes it the mount's move, or a transfer when
+                // the rename crosses mounts. Something already at the target is the daemon's to say.
+                let overwrite = {
+                    let state = self.lock();
+                    state.held_files.contains_key(&to) || state.is_deleted(&to)
+                };
+                let overwrite = overwrite || self.node_at(&to).is_ok();
+                let result = self.bridge.rename(&from, &to, overwrite);
+                let mut state = self.lock();
+                state.forget_answers();
+                if result.is_ok() {
+                    state.held_files.remove(&to);
+                    state.deleted.remove(&to);
+                    state.move_ino(&from, &to);
+                }
+                result
+            }
         }
     }
 
@@ -454,7 +500,17 @@ impl<B: Bridge> Vfs<B> {
                 .unwrap_or_else(|poisoned| poisoned.into_inner().0);
         }
         drop(state);
+        self.commit_deletes();
         self.commit_held();
+    }
+
+    /// Every held delete, shallowest first.
+    pub fn commit_deletes(&self) {
+        let deleted: Vec<(String, bool)> = std::mem::take(&mut self.lock().deleted).into_iter().collect();
+        deleted.iter().for_each(|(path, directory)| {
+            let _ = self.bridge.delete(path, *directory);
+        });
+        self.lock().forget_answers();
     }
 
     /// Every held file, in the order the command made them.

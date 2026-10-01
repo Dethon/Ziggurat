@@ -162,24 +162,95 @@ public sealed class VfsCall
     public async Task<BridgeAnswer<bool>> WriteAsync(string path, byte[] content, bool isNew, CancellationToken ct)
     {
         var operation = isNew ? VfsChange.Operations.Create : VfsChange.Operations.Write;
-        var text = AsText(content);
+        return Revoked
+            ? Dropped<bool>(path, operation)
+            : Logged(await WriteCoreAsync(path, content, ct), path, operation);
+    }
+
+    // The remove tool's call. A directory goes whole: `rm -r` reaches here as the directory's one
+    // delete, which on a timer is its cancel.
+    public async Task<BridgeAnswer<bool>> DeleteAsync(string path, bool directory, CancellationToken ct) =>
+        Revoked
+            ? Dropped<bool>(path, VfsChange.Operations.Delete)
+            : Logged(await DeleteCoreAsync(path, ct), path, VfsChange.Operations.Delete);
+
+    // One rename from the kernel, within a mount or across two (both sit in one FUSE filesystem
+    // behind links, so `mv` between mounts arrives here whole). Onto something already there it is
+    // judged as a write to that path — the spike's `sed -i` replaced a refusing file exactly this
+    // way — and otherwise it is the move tool's call: the mount's own move within one mount, a
+    // transfer with move intent across two, so the source is asked whether the path may leave
+    // before anything is copied.
+    public async Task<BridgeAnswer<bool>> RenameAsync(string from, string to, bool overwrite, CancellationToken ct)
+    {
         if (Revoked)
         {
-            return Dropped<bool>(path, operation);
+            return Dropped<bool>(from, VfsChange.Operations.Move, to);
         }
 
+        if (Resolve<bool>(from, VfsMoveTool.Name, out var source) is { } refusedSource)
+        {
+            return Logged(refusedSource, from, VfsChange.Operations.Move, to);
+        }
+
+        if (Resolve<bool>(to, VfsMoveTool.Name, out var destination) is { } refusedDestination)
+        {
+            return Logged(refusedDestination, from, VfsChange.Operations.Move, to);
+        }
+
+        var answer = overwrite
+            ? await ReplaceAsync(from, to, ct)
+            : (await Transfer.RunAsync(new TransferRequest
+            {
+                Source = source,
+                Destination = destination,
+                SourcePath = from,
+                DestinationPath = to,
+                Intent = TransferIntent.Move
+            }, ct)).TryGetValue(out _, out var error)
+                ? new BridgeAnswer<bool>.Ok(true)
+                : BridgeAnswer<bool>.From(error);
+        return Logged(answer, from, VfsChange.Operations.Move, to);
+    }
+
+    // The target takes the source's content under a write's rules, and only then does the source go.
+    private async Task<BridgeAnswer<bool>> ReplaceAsync(string from, string to, CancellationToken ct) =>
+        await ReadAsync(from, ct) switch
+        {
+            BridgeAnswer<byte[]>.Ok read => await WriteCoreAsync(to, read.Value, ct) switch
+            {
+                BridgeAnswer<bool>.Ok => await DeleteCoreAsync(from, ct),
+                var refused => refused
+            },
+            BridgeAnswer<byte[]>.Refused refused => new BridgeAnswer<bool>.Refused(refused.Errno, refused.Error),
+            _ => throw new InvalidOperationException("Unreachable bridge answer.")
+        };
+
+    private async Task<BridgeAnswer<bool>> DeleteCoreAsync(string path, CancellationToken ct)
+    {
+        if (Resolve<bool>(path, VfsRemoveTool.Name, out var resolution) is { } refused)
+        {
+            return refused;
+        }
+
+        return (await resolution.Backend.DeleteAsync(resolution.RelativePath, ct)).TryGetValue(out _, out var error)
+            ? new BridgeAnswer<bool>.Ok(true)
+            : BridgeAnswer<bool>.From(error);
+    }
+
+    private async Task<BridgeAnswer<bool>> WriteCoreAsync(string path, byte[] content, CancellationToken ct)
+    {
+        var text = AsText(content);
         if (Resolve<bool>(path, text is null ? VfsCopyTool.Name : VfsTextCreateTool.Name, out var resolution) is { } refused)
         {
-            return Logged(refused, path, operation);
+            return refused;
         }
 
-        var answer = text is not null
+        return text is not null
             ? (await resolution.Backend.CreateAsync(resolution.RelativePath, text, overwrite: true, createDirectories: true, ct))
                 .TryGetValue(out _, out var error)
                 ? new BridgeAnswer<bool>.Ok(true)
                 : BridgeAnswer<bool>.From(error)
             : await WriteBytesAsync(resolution, content, ct);
-        return Logged(answer, path, operation);
     }
 
     private static async Task<BridgeAnswer<bool>> WriteBytesAsync(FileSystemResolution resolution, byte[] content, CancellationToken ct)

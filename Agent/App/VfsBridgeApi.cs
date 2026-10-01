@@ -38,6 +38,13 @@ public static class VfsBridgeApi
                 return Json(await call.WriteAsync(path, body.ToArray(), @new, ct), _ => new { });
             }));
 
+        bridge.MapPost("/delete", (HttpContext http, VfsBridge vfs, string path, CancellationToken ct, bool directory = false) =>
+            WithCall(http, vfs, async call => Json(await call.DeleteAsync(path, directory, ct), _ => new { })));
+
+        // `overwrite` says something is already at `to`, which the bridge judges as a write there.
+        bridge.MapPost("/rename", (HttpContext http, VfsBridge vfs, string path, string to, CancellationToken ct, bool overwrite = false) =>
+            WithCall(http, vfs, async call => Json(await call.RenameAsync(path, to, overwrite, ct), _ => new { })));
+
         bridge.MapPost("/read", (HttpContext http, VfsBridge vfs, string path, CancellationToken ct) =>
             WithCall(http, vfs, async call => await call.ReadAsync(path, ct) switch
             {
