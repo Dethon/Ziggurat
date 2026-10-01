@@ -36,8 +36,9 @@ public static class ConfigModule
                 // The reusable disk root takes the mount's prose the same way it takes its name.
                 "Linux sandbox container — supports command execution via fs_exec (bash, python3, "
                 + "pip, git, curl, jq). Persistent /home/sandbox_user (named volume), ephemeral "
-                + "system dirs, full outbound network, no inbound ports. See the Sandbox Filesystem "
-                + "prompt for limits.",
+                + "system dirs, full outbound network, no inbound ports. Inside a command, the "
+                + "session's other mounts are directories too. See the Sandbox Filesystem prompt "
+                + "for limits.",
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.ContainerRoot),
                 // The one list, in Domain, so the sandbox and any other disk root over a real

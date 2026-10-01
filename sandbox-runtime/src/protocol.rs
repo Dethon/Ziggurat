@@ -47,6 +47,9 @@ pub struct ExecResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ExecFailure {
     pub error: String,
+    /// `not_found` for a working directory missing from the exec's namespace; absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
 }
 
 #[cfg(test)]

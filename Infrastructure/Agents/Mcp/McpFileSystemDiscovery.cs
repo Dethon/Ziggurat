@@ -137,7 +137,8 @@ internal static class McpFileSystemDiscovery
             Capabilities = capabilities,
             Workspace = metadata.Workspace,
             IsLandingTarget = metadata.LandingTarget,
-            ShellReach = ParseShellReach(metadata.ShellReach)
+            ShellReach = ParseShellReach(metadata.ShellReach),
+            OccupiedNames = metadata.OccupiedNames
         };
     }
 
@@ -155,5 +156,5 @@ internal static class McpFileSystemDiscovery
     // a string for the same reason in the other direction: absent, null and unknown all mean none.
     private record FileSystemResourceMetadata(
         string Name, string MountPoint, string? Description, string? Workspace, bool LandingTarget,
-        string? ShellReach);
+        string? ShellReach, IReadOnlyList<string>? OccupiedNames);
 }

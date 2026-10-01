@@ -66,6 +66,11 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     // Default null, so a new mount's exec is never screened until it says where it runs.
     public virtual ShellReach? ShellReach => null;
 
+    // The names at the root of this mount's shell that the session's other mounts cannot be linked
+    // at, because something of the shell's own is already there: those mounts are reachable from a
+    // command only at /vfs/<name>. Null for a mount without a shell of its own to collide with.
+    public virtual IReadOnlyList<string>? OccupiedNames => null;
+
     // A caller-supplied pattern can be pathological, so every search matches under a bounded
     // timeout. Overridable because a test needs to trip it without waiting a real second.
     protected virtual TimeSpan SearchMatchTimeout => TimeSpan.FromSeconds(1);

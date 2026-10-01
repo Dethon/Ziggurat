@@ -31,6 +31,33 @@ public class SandboxFileSystem(
     // deployment, whose volume nobody else owns. Every other mount declares the default.
     public override bool IsLandingTarget => true;
 
+    // Everything at the container's root but the links the launcher made into /vfs: a mount named
+    // like one of these — `etc`, `home`, or `sandbox`, this mount's own alias of the root — is
+    // served to a command only at /vfs/<name>. Read once: the image's root does not change under a
+    // running server.
+    private readonly Lazy<IReadOnlyList<string>> _occupied = new(() => Occupied(root.BaseLibraryPath));
+
+    public override IReadOnlyList<string>? OccupiedNames => _occupied.Value;
+
+    private static IReadOnlyList<string> Occupied(string containerRoot)
+    {
+        try
+        {
+            return
+            [
+                .. Directory.EnumerateFileSystemEntries(containerRoot)
+                    .Where(entry => new FileInfo(entry).LinkTarget is not { } target
+                                    || !target.StartsWith("/vfs/", StringComparison.Ordinal))
+                    .Select(entry => Path.GetFileName(entry))
+                    .Order(StringComparer.Ordinal)
+            ];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
     // A container that is part of the deployment: what a command breaks here, a restart repairs.
     public override ShellReach? ShellReach => DTOs.ShellReach.Contained;
 
@@ -52,7 +79,9 @@ public class SandboxFileSystem(
         + "is the root itself. Inside the command, a mount-prefixed path and the container's own "
         + "path name the same file. The reported cwd is relative to the sandbox root. Output is "
         + "truncated at the configured cap. On timeout the process tree is killed. Non-zero exit "
-        + "codes are returned in the result, not as errors.";
+        + "codes are returned in the result, not as errors. Where the call carries the agent's "
+        + "bridge, the calling session's other mounts are served at /vfs/<name>, linked at /<name> "
+        + "wherever the image leaves the name free.";
 
     // The token this caller's exec carries, if the agent minted one; the server's own instance has
     // none, and the registrar asks for a view per call.

@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Outposts;
 using Domain.Tools.FileSystem.Bridge;
 using Microsoft.Extensions.AI;
 
@@ -30,6 +31,15 @@ public class VfsExecTool(
         in the filesystem's native spelling, while the reported `cwd` is already virtual.
         """;
 
+    // Added to the description where the session's sandbox commands see its other mounts.
+    public const string BridgedDescription = """
+        In the sandbox, every other mount of this session but the machines is a directory at its own
+        path, and `exec` on a mount with no shell of its own runs in the sandbox in that directory.
+        `vfsChanges` in the result lists every change the command made through those mounts —
+        `applied`, `refused` with the mount's reason, or `dropped` — because bash does not report a
+        refused write; `vfsTruncated` names a directory a recursive command saw only part of.
+        """;
+
     [Description(ToolDescription)]
     public async Task<JsonNode> RunAsync(
         [Description("Virtual path used as CWD: the mount point itself for the filesystem's root, or any directory under it")]
@@ -46,15 +56,32 @@ public class VfsExecTool(
             return unresolved.ToNode();
         }
 
-        var exec = Bridged(resolution) is { } bridged && bridge is not null
-            ? await RunBridgedAsync(bridged, bridge, resolution, command, timeoutSeconds, Permission(arguments), cancellationToken)
-            : await resolution.Backend.ExecAsync(resolution.RelativePath, command, timeoutSeconds, cancellationToken);
+        if (bridge is not null && Bridged(resolution) is { } bridged)
+        {
+            // The working directory is a path the caller never named — the backend answers it
+            // relative to its own root — so it gets the mount point in front of it through the same
+            // translation glob entries and search hits use. The root comes back as the empty path,
+            // which becomes the mount point with a trailing slash.
+            return (await RunBridgedAsync(bridged, bridge, resolution.RelativePath, command, timeoutSeconds,
+                    Permission(arguments), cancellationToken))
+                .Map(e => e with { Cwd = resolution.ToVirtualPath(e.Cwd) })
+                .ToNode();
+        }
 
-        // The working directory is a path the caller never named — the backend answers it relative
-        // to its own root — so it gets the mount point in front of it through the same translation
-        // glob entries and search hits use. The root comes back as the empty path, which becomes
-        // the mount point with a trailing slash.
-        return exec.Map(e => e with { Cwd = resolution.ToVirtualPath(e.Cwd) }).ToNode();
+        // A mount with no shell of its own runs the command in the sandbox, in that mount's
+        // directory under /vfs — always there, whether or not the image let it have /<name> as well.
+        // The caller named the directory, so it is echoed back as the working directory.
+        if (bridge is not null && Rerouted(resolution) is { } sandbox)
+        {
+            var cwd = $"vfs/{resolution.MountPoint.Trim('/')}/{resolution.RelativePath.Trim('/')}".TrimEnd('/');
+            return (await RunBridgedAsync(sandbox, bridge, cwd, command, timeoutSeconds, Permission(arguments), cancellationToken))
+                .Map(e => e with { Cwd = path })
+                .ToNode();
+        }
+
+        return (await resolution.Backend.ExecAsync(resolution.RelativePath, command, timeoutSeconds, cancellationToken))
+            .Map(e => e with { Cwd = resolution.ToVirtualPath(e.Cwd) })
+            .ToNode();
     }
 
     // The command runs with the other mounts served to it at /vfs: one token for this call, bound
@@ -63,7 +90,7 @@ public class VfsExecTool(
     private async Task<FsResult<FsExecResult>> RunBridgedAsync(
         IBridgedExecBackend backend,
         VfsBridge vfs,
-        FileSystemResolution resolution,
+        string cwd,
         string command,
         int? timeoutSeconds,
         ToolPermission permission,
@@ -73,8 +100,7 @@ public class VfsExecTool(
             FileSystemToolFeature.Callable(toolName)));
         try
         {
-            var exec = await backend.ExecAsync(
-                resolution.RelativePath, command, timeoutSeconds, new VfsBridgeGrant(call.Token), ct);
+            var exec = await backend.ExecAsync(cwd, command, timeoutSeconds, new VfsBridgeGrant(call.Token), ct);
             var record = vfs.Complete(call.Token);
             return exec.Map(e => e with
             {
@@ -97,6 +123,25 @@ public class VfsExecTool(
             && m.ShellReach == ShellReach.Contained)
             ? bridged
             : null;
+
+    // The session's sandbox, for an exec on a mount that has no shell — never an outpost, which is
+    // somebody's own computer and keeps its own exec.
+    private IBridgedExecBackend? Rerouted(FileSystemResolution resolution)
+    {
+        var mounts = registry.GetMounts();
+        var mount = mounts.FirstOrDefault(m =>
+            string.Equals(m.MountPoint, resolution.MountPoint, StringComparison.OrdinalIgnoreCase));
+        if (mount is null || mount.ShellReach is not null || OutpostMountPoint.Addresses(mount.MountPoint))
+        {
+            return null;
+        }
+
+        return mounts
+            .Where(m => m.ShellReach == ShellReach.Contained)
+            .Select(m => registry.Resolve(m.MountPoint).TryGetValue(out var sandbox, out _) ? sandbox.Backend : null)
+            .OfType<IBridgedExecBackend>()
+            .FirstOrDefault();
+    }
 
     private static ToolPermission Permission(AIFunctionArguments? arguments) =>
         arguments?.Context?.TryGetValue(ToolPermission.ContextKey, out var view) == true && view is ToolPermission permission

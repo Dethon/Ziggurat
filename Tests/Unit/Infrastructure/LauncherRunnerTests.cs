@@ -176,6 +176,21 @@ public class LauncherRunnerTests : IDisposable
         result["message"]!.GetValue<string>().ShouldContain("cannot isolate the command");
     }
 
+    // The working directory exists, or not, inside the command's own namespace — a mount under /vfs
+    // is only there — so the launcher is the one to say it is missing.
+    [SkippableFact]
+    public async Task RunAsync_ADirectoryOnlyTheLauncherCanSee_IsAskedAndItsAbsenceIsNotFound()
+    {
+        SkipIfNotLinux();
+        var launcher = PlayLauncherAsync("""{"error":"no such working directory","code":"not_found"}""");
+
+        var result = (await Runner().RunAsync("vfs/timers", "ls", null, CancellationToken.None)).ToNode();
+
+        JsonNode.Parse(await launcher)!["cwd"]!.GetValue<string>().ShouldBe(Path.Combine(_root, "vfs", "timers"));
+        result["errorCode"]!.GetValue<string>().ShouldBe("not_found");
+        result["message"]!.GetValue<string>().ShouldContain("does not exist");
+    }
+
     // Hanging up is the cancellation: the launcher kills the tree when its connection closes.
     [SkippableFact]
     public async Task RunAsync_Cancelled_HangsUpOnTheLauncher()

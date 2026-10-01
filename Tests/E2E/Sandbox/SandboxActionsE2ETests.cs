@@ -94,17 +94,34 @@ public class SandboxActionsE2ETests(SandboxE2EFixture fixture)
         Stdout(result).ShouldBe("exit=126\n", result.ToString());
     }
 
+    // exec on a mount with no shell runs in the sandbox in that mount's directory under /vfs, which
+    // only the exec's own namespace has; a directory the mount does not have is not found there.
+    [SkippableFact]
+    public async Task AnExecWhoseWorkingDirectoryIsAMount_RunsThere()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+
+        var ran = await ExecAsync(client, "./run here && pwd", Mint(), cts.Token, path: "vfs/jobs");
+        var missing = await ExecAsync(client, "pwd", Mint(), cts.Token, path: "vfs/jobs/nope");
+
+        Stdout(ran).ShouldBe("ran with here\n/vfs/jobs\n", ran.ToString());
+        missing.GetProperty("errorCode").GetString().ShouldBe("not_found", missing.ToString());
+    }
+
     private static string Stdout(JsonElement result) =>
         result.TryGetProperty("stdout", out var stdout) ? stdout.GetString()! : result.ToString();
 
-    private static async Task<JsonElement> ExecAsync(McpClient client, string command, VfsCall call, CancellationToken ct)
+    private static async Task<JsonElement> ExecAsync(
+        McpClient client, string command, VfsCall call, CancellationToken ct, string path = "")
     {
         var result = await client.CallToolAsync(new CallToolRequestParams
         {
             Name = "fs_exec",
             Arguments = new Dictionary<string, JsonElement>
             {
-                ["path"] = JsonSerializer.SerializeToElement(""),
+                ["path"] = JsonSerializer.SerializeToElement(path),
                 ["command"] = JsonSerializer.SerializeToElement(command)
             },
             Meta = new JsonObject { [VfsBridgeGrant.MetaKey] = new VfsBridgeGrant(call.Token).ToMeta() }

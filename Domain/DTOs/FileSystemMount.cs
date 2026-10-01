@@ -21,4 +21,8 @@ public record FileSystemMount(string Name, string MountPoint, string Description
     // runs in the deployment's own container, an outpost's on a person's own computer, and /ha's
     // exec is a service call with no shell behind it.
     public ShellReach? ShellReach { get; init; }
+
+    // For a mount with a shell: the names at its root the session's other mounts cannot be linked
+    // at, so a command reaches those only at /vfs/<name>. Null where the mount has no shell.
+    public IReadOnlyList<string>? OccupiedNames { get; init; }
 }

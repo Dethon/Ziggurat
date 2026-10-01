@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-- [ ] For a session with a sandbox, `exec ./dismiss` on `/timers` runs in the sandbox and dismisses the timer
-- [ ] For a session without one, the same call runs the timer mount's catalog with the same effect
-- [ ] The screen judges a rerouted exec at `Contained` reach; an outpost's exec is still `Host`
-- [ ] The descriptions name the reachable mounts, any `/vfs`-only ones, and `vfsChanges`; snapshots cover them
+- [x] For a session with a sandbox, `exec ./dismiss` on `/timers` runs in the sandbox and dismisses the timer
+- [x] For a session without one, the same call runs the timer mount's catalog with the same effect
+- [x] The screen judges a rerouted exec at `Contained` reach; an outpost's exec is still `Host`
+- [x] The descriptions name the reachable mounts, any `/vfs`-only ones, and `vfsChanges`; snapshots cover them

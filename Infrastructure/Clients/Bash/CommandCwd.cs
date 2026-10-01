@@ -14,8 +14,10 @@ internal sealed class CommandCwd(string containerRoot)
     private readonly PathJail _jail = new(containerRoot);
 
     // Total: every path names a place under the root, including the empty one and an absolute one.
-    // With the root at "/" nothing can climb out anyway.
-    public FsResult<string> Resolve(string path)
+    // With the root at "/" nothing can climb out anyway. `mustExist` is false for the launcher's
+    // runner: a directory under /vfs exists only inside the exec's own namespace, so the launcher
+    // decides that there.
+    public FsResult<string> Resolve(string path, bool mustExist = true)
     {
         var normalized = path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
         var cwd = Path.GetFullPath(Path.Combine(_jail.Root, normalized));
@@ -25,12 +27,13 @@ internal sealed class CommandCwd(string containerRoot)
             return FsError.Invalid<string>(_jail.DeniedMessage);
         }
 
-        return Directory.Exists(cwd)
+        return !mustExist || Directory.Exists(cwd)
             ? new FsResult<string>.Ok(cwd)
-            : FsError.Fail<string>(
-                ToolError.Codes.NotFound,
-                $"Working directory '{cwd}' does not exist or is not a directory.");
+            : NotADirectory(cwd);
     }
+
+    public static FsResult<string> NotADirectory(string cwd) =>
+        FsError.Fail<string>(ToolError.Codes.NotFound, $"Working directory '{cwd}' does not exist or is not a directory.");
 
     // The root reports as the empty path, which is the mount point with a trailing slash once the
     // tool has prefixed it — the spelling glob already uses for a directory.

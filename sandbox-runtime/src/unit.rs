@@ -58,21 +58,26 @@ pub fn run(config: &UnitConfig) -> i32 {
 
     crate::home::adopt(Path::new(&config.home), config.server_uid, config.puid, config.pgid);
 
-    match execute(config, &request, &connection) {
+    match execute(config, &request, &connection, &mut answer) {
         Ok(Some(response)) => {
             let mut json = serde_json::to_string(&response).expect("a response always serializes");
             json.push('\n');
             let _ = answer.write_all(json.as_bytes());
             0
         }
-        // Nobody is listening for an answer to a cancelled call.
+        // Nobody is listening for an answer to a cancelled call, and a missing working directory
+        // was already answered.
         Ok(None) => 0,
         Err(e) => fail(&mut answer, &format!("cannot run the command: {e}")),
     }
 }
 
 fn fail(answer: &mut UnixStream, error: &str) -> i32 {
-    let mut json = serde_json::to_string(&ExecFailure { error: error.to_string() }).unwrap();
+    fail_with(answer, error, None)
+}
+
+fn fail_with(answer: &mut UnixStream, error: &str, code: Option<&str>) -> i32 {
+    let mut json = serde_json::to_string(&ExecFailure { error: error.to_string(), code: code.map(String::from) }).unwrap();
     json.push('\n');
     let _ = answer.write_all(json.as_bytes());
     1
@@ -96,7 +101,12 @@ fn isolate() -> io::Result<()> {
     Ok(())
 }
 
-fn execute(config: &UnitConfig, request: &ExecRequest, connection: &UnixStream) -> io::Result<Option<ExecResponse>> {
+fn execute(
+    config: &UnitConfig,
+    request: &ExecRequest,
+    connection: &UnixStream,
+    answer: &mut UnixStream,
+) -> io::Result<Option<ExecResponse>> {
     // The other mounts, served for this call only. A daemon that cannot mount costs the command its
     // view of them, never the command itself: it runs, and its stderr says why /vfs is missing.
     let (served, unserved) = match &request.bridge {
@@ -108,6 +118,15 @@ fn execute(config: &UnitConfig, request: &ExecRequest, connection: &UnixStream) 
     };
     let mut served = served;
     let spare = served.as_ref().map(Served::pid);
+
+    // Asked here, in the exec's own namespace: a directory under /vfs exists nowhere else.
+    if !std::path::Path::new(&request.cwd).is_dir() {
+        if let Some(served) = served {
+            served.finish();
+        }
+        fail_with(answer, &format!("no such working directory: {}", request.cwd), Some("not_found"));
+        return Ok(None);
+    }
 
     let identity = Identity {
         uid: config.puid,

@@ -30,7 +30,7 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath, string
         string path, string command, int? timeoutSeconds, CancellationToken cancellationToken,
         VfsBridgeGrant? bridge = null)
     {
-        if (!_cwd.Resolve(path).TryGetValue(out var cwd, out var unresolved))
+        if (!_cwd.Resolve(path, mustExist: false).TryGetValue(out var cwd, out var unresolved))
         {
             return new FsResult<FsExecResult>.Err(unresolved);
         }
@@ -75,6 +75,11 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath, string
         }
 
         var node = JsonSerializer.Deserialize<LauncherAnswer>(answer, _json);
+        if (node is { Code: "not_found" })
+        {
+            return new FsResult<FsExecResult>.Err(((FsResult<string>.Err)CommandCwd.NotADirectory(cwd)).Error);
+        }
+
         if (node is null || node.Error is not null || node.Stdout is null || node.Stderr is null)
         {
             return FsError.Fail<FsExecResult>(
@@ -111,5 +116,6 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath, string
         bool TimedOut,
         bool Truncated,
         long DurationMs,
-        string? Error);
+        string? Error,
+        string? Code);
 }

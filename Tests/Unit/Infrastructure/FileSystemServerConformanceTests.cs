@@ -185,6 +185,10 @@ public class FileSystemServerConformanceTests
         McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), [])!
             .ShellReach.ShouldBe(_shellReaches[name], serverId);
 
+        // Only a shell has a root of its own for the other mounts' links to collide with.
+        var occupied = McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), [])!.OccupiedNames;
+        (occupied is not null).ShouldBe(_shellReaches[name] == ShellReach.Contained, serverId);
+
         // The backend's own declaration of the same set: what it overrides is what the server
         // registers is what the mount publishes.
         FileSystemServerTools.SupportedToolNames(backendType)
