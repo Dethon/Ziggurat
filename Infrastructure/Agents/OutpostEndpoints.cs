@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Outposts;
 using Domain.Tools;
 using Microsoft.Extensions.Logging;
 
@@ -25,9 +26,11 @@ internal sealed record ComposedEndpoints(
 // likewise, and nothing ever mutates a session that already exists. That is the same rule ADR-0012
 // sets for a channel server's tool set, for the same reason.
 //
-// Configured endpoints stay first. Mount order is what decides a name collision — the existing
-// mount always wins — so an outpost calling itself "vault" is shadowed deterministically rather
-// than by whichever dial happened to finish first.
+// Configured endpoints stay first and outposts follow in the order the registry lists them. Mount
+// order is what decides a name collision — the existing mount always wins — and since an outpost is
+// addressed as a machine rather than as a path in the deployment's tree, the collision it can lose
+// is to another machine of the same name, decided by that order rather than by whichever dial
+// happened to finish first.
 internal static class OutpostEndpoints
 {
     public static async Task<ComposedEndpoints> ComposeAsync(
@@ -134,7 +137,7 @@ internal static class OutpostEndpoints
         foreach (var outpost in outposts.Where(o => !dialled.Contains(o.Endpoint, StringComparer.Ordinal)))
         {
             registry.DeclareAbsence(
-                $"/{outpost.Name}",
+                OutpostMountPoint.For(outpost.Name),
                 CapabilityState.Unavailable,
                 "the machine registered with the hub but did not answer when this conversation started");
         }

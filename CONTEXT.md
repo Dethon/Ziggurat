@@ -600,7 +600,8 @@ _Avoid_: caption, alt text, image name
 **Outpost**:
 A filesystem on a real machine that announces itself to the hub, rather than being configured
 into it. It is the only mount whose existence is decided by the machine it lives on, so it can
-be absent for reasons that are nobody's fault.
+be absent for reasons that are nobody's fault, and the only one presented as a separate machine
+at `outpost:<NAME>` rather than as a branch of the agent's own tree.
 _Avoid_: remote filesystem, host filesystem, satellite, node
 
 **Outpost registration**:
@@ -615,9 +616,11 @@ machine's root, so jailing changes what an operation will do and never what a pa
 _Avoid_: chrooted, restricted mount, sandboxed outpost
 
 **Shadowed outpost**:
-An outpost whose name is already some other mount's, and which is therefore not mounted at all.
-The existing mount always wins, so a name collision costs the outpost rather than quietly
-replacing what was there.
+An outpost shadowed by another outpost: its name is already another machine's, and it is
+therefore not mounted at all. Outposts are addressed as `outpost:<NAME>`, apart from the tree
+every other mount shares, so a machine named like a mount sits beside it and only another
+machine can shadow one. The first mounted always wins, so a name collision costs the newcomer
+rather than quietly replacing what was there.
 _Avoid_: duplicate mount, conflicting outpost, rejected registration
 
 ## Home watches

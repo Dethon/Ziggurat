@@ -264,7 +264,9 @@ public class FileSystemServerConformanceTests
 
         var published = Published(FileSystemServerResource.Describe(backend));
         published.Name.ShouldBe(name);
-        published.MountPoint.ShouldBe($"/{name}");
+        // An outpost is a separate machine, so its name is a machine address rather than a branch
+        // of the one tree every other mount shares.
+        published.MountPoint.ShouldBe(backend is OutpostFileSystem ? $"outpost:{name}" : $"/{name}");
         published.Description.ShouldBe(backend.DescribeMount);
         published.Description.ShouldNotBeNullOrWhiteSpace(name);
     }

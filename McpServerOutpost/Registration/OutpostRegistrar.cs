@@ -163,9 +163,9 @@ internal sealed class OutpostRegistrar(
                 break;
             case OutpostVerdict.Shadowed:
                 logger.LogError(
-                    "Outpost {Name} is SHADOWED: the agent already has a mount called '{Name}', so "
-                    + "this machine is registered and not mounted. Stop it and start it again under "
-                    + "a different --name",
+                    "Outpost {Name} is SHADOWED: another outpost already answers to "
+                    + "'outpost:{Name}', so this machine is registered and not mounted. Stop it and "
+                    + "start it again under a different --name",
                     registration.Name, registration.Name);
                 break;
         }

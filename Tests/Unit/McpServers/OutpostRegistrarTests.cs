@@ -176,8 +176,11 @@ public class OutpostRegistrarTests
 
         await clock.AdvancePastAsync(OutpostLifetime.KeepAliveInterval);
 
+        // Named as what it now can only be: another machine under the same name. A mount of the
+        // deployment's own is at a different address and never shadows one.
         await Eventually.Until(
-            () => logs.Messages.Any(m => m.Contains("SHADOWED", StringComparison.Ordinal)),
+            () => logs.Messages.Any(m => m.Contains("SHADOWED", StringComparison.Ordinal)
+                && m.Contains("another outpost", StringComparison.Ordinal)),
             "the machine says why it is not there");
         await registrar.StopAsync(CancellationToken.None);
     }

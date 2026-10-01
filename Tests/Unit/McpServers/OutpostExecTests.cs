@@ -26,7 +26,7 @@ namespace Tests.Unit.McpServers;
 // switch exec off — the outpost registers one of two backend types instead.
 public sealed class OutpostExecTests : IDisposable
 {
-    private const string Mount = "/laptop";
+    private const string Mount = "outpost:laptop";
 
     private readonly string _machine = Directory.CreateTempSubdirectory("outpost-exec-").FullName;
     private readonly string _workingDirectory;
@@ -107,6 +107,21 @@ public sealed class OutpostExecTests : IDisposable
         outpost.ShellReach.ShouldBe(ShellReach.Host);
         McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(outpost), [])!
             .ShellReach.ShouldBe(ShellReach.Host);
+    }
+
+    // The exec screen reads the reach off whichever mount a path resolves to, so the machine
+    // address has to resolve to the machine: a command bound for somebody's computer keeps the
+    // scrutiny it is owed under the spelling the model actually uses.
+    [Fact]
+    public void AnExecAtTheMachineAddress_ReachesTheHost()
+    {
+        var outpost = Executing(jailed: false);
+        var registry = new VirtualFileSystemRegistry();
+        registry.Mount(
+            McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(outpost), [VfsExecTool.Name])!,
+            outpost);
+
+        ExecReach.Over(registry).Of($"outpost:laptop{_workingDirectory}").ShouldBe(ShellReach.Host);
     }
 
     [Fact]

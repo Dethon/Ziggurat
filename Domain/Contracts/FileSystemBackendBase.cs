@@ -20,8 +20,9 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
 
     // The mount's identity, all of it derived from the one name: the address the resource is
     // published at, the path the registry mounts it under, and the name the agent addresses it by
-    // cannot disagree, so there is nothing to keep in sync.
-    public string MountPoint => "/" + FilesystemName;
+    // cannot disagree, so there is nothing to keep in sync. Virtual for the one mount that is not a
+    // branch of this tree at all — an outpost is a separate machine and is addressed as one.
+    public virtual string MountPoint => "/" + FilesystemName;
 
     // What the model reads about the mount as a whole, beside what it reads about each operation.
     // Abstract for the same reason FilesystemName is: a reusable disk root must not carry one

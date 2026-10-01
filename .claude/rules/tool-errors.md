@@ -44,5 +44,5 @@ decides), and **what to do instead** (the hint).
   `unsupported_operation`). `CapabilityError.For` requires a hint. A machine that registered with
   the hub and did not answer this session is declared on the registry at build time
   (`OutpostEndpoints.DeclareUnreachable` → `IVirtualFileSystemRegistry.DeclareAbsence`), so asking
-  for `/laptop` says the machine is not answering rather than that the path does not exist — the
+  for `outpost:laptop` says the machine is not answering rather than that the path does not exist — the
   answer that used to send the model hunting for a spelling mistake in a name it got right.

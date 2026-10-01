@@ -15,7 +15,7 @@ namespace Tests.Unit.Domain.Tools.Files;
 // machine's own spelling would pass against the backend and reach the model anyway.
 public sealed class JailedOutpostTests : IDisposable
 {
-    private const string Mount = "/laptop";
+    private const string Mount = "outpost:laptop";
 
     private readonly string _machine = Directory.CreateTempSubdirectory("outpost-jail-").FullName;
     private readonly string _workingDirectory;
