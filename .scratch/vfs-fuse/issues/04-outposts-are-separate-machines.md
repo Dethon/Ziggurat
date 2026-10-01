@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] Every file tool resolves and answers outpost paths in the `outpost:<NAME>` spelling (virtual-path conformance covers it)
-- [ ] Two outposts with the same name: the second is shadowed and its verdict travels home, as today
-- [ ] An outpost named like an existing mount is mounted, not shadowed
-- [ ] The prompt snapshot presents outposts as separate machines
-- [ ] The exec screen still treats an outpost's exec as `Host` reach
-- [ ] The virtual-filesystem and outpost rules, and the glossary's **Shadowed outpost**, describe the new spelling
+- [x] Every file tool resolves and answers outpost paths in the `outpost:<NAME>` spelling (virtual-path conformance covers it)
+- [x] Two outposts with the same name: the second is shadowed and its verdict travels home, as today
+- [x] An outpost named like an existing mount is mounted, not shadowed
+- [x] The prompt snapshot presents outposts as separate machines
+- [x] The exec screen still treats an outpost's exec as `Host` reach
+- [x] The virtual-filesystem and outpost rules, and the glossary's **Shadowed outpost**, describe the new spelling
