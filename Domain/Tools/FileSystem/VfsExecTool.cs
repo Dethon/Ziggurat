@@ -75,7 +75,12 @@ public class VfsExecTool(
         {
             var exec = await backend.ExecAsync(
                 resolution.RelativePath, command, timeoutSeconds, new VfsBridgeGrant(call.Token), ct);
-            return exec.Map(e => e with { VfsChanges = vfs.Complete(call.Token) });
+            var record = vfs.Complete(call.Token);
+            return exec.Map(e => e with
+            {
+                VfsChanges = record.Changes,
+                VfsTruncated = record.Truncated.Count > 0 ? record.Truncated : null
+            });
         }
         finally
         {

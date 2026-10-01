@@ -19,4 +19,8 @@ public sealed record FsExecResult
     // bridge serving them; null — and left off the wire — where exec has no bridge (an outpost, an
     // in-process host), so those answer exactly what they answered before.
     public IReadOnlyList<VfsChange>? VfsChanges { get; init; }
+
+    // The served directories whose listing the mount cut short at its walk budget: a recursive
+    // command over them saw only part of the tree. Null when every listing was whole.
+    public IReadOnlyList<string>? VfsTruncated { get; init; }
 }

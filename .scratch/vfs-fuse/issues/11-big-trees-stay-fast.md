@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-- [ ] A recursive grep over a vault-sized tree makes at most one listing per directory and one attribute fetch per entry
-- [ ] A write through the bridge, followed by a read in the same command, sees the new content
-- [ ] A walk that hits a mount's budget is reported on the exec result as truncated
-- [ ] No cache outlives its call: a second exec sees changes made by the file tools in between
+- [x] A recursive grep over a vault-sized tree makes at most one listing per directory and one attribute fetch per entry
+- [x] A write through the bridge, followed by a read in the same command, sees the new content
+- [x] A walk that hits a mount's budget is reported on the exec result as truncated
+- [x] No cache outlives its call: a second exec sees changes made by the file tools in between

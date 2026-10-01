@@ -60,12 +60,18 @@ public sealed class VfsBridge(TimeProvider time)
         }
     }
 
-    // The exec returned: the token stops answering and its change log is the result's.
-    public IReadOnlyList<VfsChange> Complete(string token) =>
-        _calls.TryRemove(token, out var call) ? call.Changes : [];
+    // The exec returned: the token stops answering, and what it recorded is the result's.
+    public VfsCallRecord Complete(string token) =>
+        _calls.TryRemove(token, out var call) ? new VfsCallRecord(call.Changes, call.Truncated) : VfsCallRecord.Empty;
 
     // Every mount the session has except an outpost — a separate machine, never reachable from the
     // sandbox — and the shell's own disk, which the command already has.
     private static IReadOnlyList<FileSystemMount> Served(IVirtualFileSystemRegistry registry) =>
         [.. registry.GetMounts().Where(m => !OutpostMountPoint.Addresses(m.MountPoint) && m.ShellReach is null)];
+}
+// What a call recorded: the changes it made through the mounts, and the directories a walk saw
+// only part of.
+public sealed record VfsCallRecord(IReadOnlyList<VfsChange> Changes, IReadOnlyList<string> Truncated)
+{
+    public static readonly VfsCallRecord Empty = new([], []);
 }

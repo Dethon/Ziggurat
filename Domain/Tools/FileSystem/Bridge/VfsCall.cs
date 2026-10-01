@@ -15,6 +15,7 @@ public sealed class VfsCall
     private readonly Func<string, bool> _permits;
     private readonly IReadOnlyDictionary<string, FileSystemMount> _served;
     private readonly ConcurrentQueue<VfsChange> _changes = new();
+    private readonly ConcurrentDictionary<string, byte> _truncated = new(StringComparer.Ordinal);
     private int _revoked;
 
     internal VfsCall(
@@ -41,6 +42,9 @@ public sealed class VfsCall
     public bool Revoked => Volatile.Read(ref _revoked) == 1;
 
     public IReadOnlyList<VfsChange> Changes => [.. _changes];
+
+    // Directories whose listing the mount's walk budget cut short.
+    public IReadOnlyList<string> Truncated => [.. _truncated.Keys.Order(StringComparer.Ordinal)];
 
     internal void Revoke() => Interlocked.Exchange(ref _revoked, 1);
 
@@ -119,7 +123,13 @@ public sealed class VfsCall
             .Where(e => e.Name.Length > 0)
             .DistinctBy(e => e.Name, StringComparer.Ordinal)
             .ToList();
-        return new BridgeAnswer<BridgeListing>.Ok(new BridgeListing(entries, value.Truncated || value.BudgetReached));
+        var truncated = value.Truncated || value.BudgetReached;
+        if (truncated)
+        {
+            _truncated.TryAdd(path.TrimEnd('/'), 0);
+        }
+
+        return new BridgeAnswer<BridgeListing>.Ok(new BridgeListing(entries, truncated));
     }
 
     // The whole file. Bytes where the mount has them — a disk root's blob read — and otherwise the

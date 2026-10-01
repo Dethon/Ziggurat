@@ -173,6 +173,43 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         Stdout(results[1]).ShouldBe("second\n", results[1].ToString());
     }
 
+    // The cache is the call's: what the file tools change between two execs, the second one sees.
+    [SkippableFact]
+    public async Task NoCacheOutlivesItsCall()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var (vault, _) = Mounts();
+        var registry = BridgeFixtures.Registry((vault, "/vault", null));
+
+        var first = await ExecAsync(client, "cat /vault/inbox.md", fixture.Bridge.Mint(registry, _ => true), cts.Token);
+        vault.Files["inbox.md"] = "changed by a tool\n";
+        var second = await ExecAsync(client, "cat /vault/inbox.md", fixture.Bridge.Mint(registry, _ => true), cts.Token);
+
+        Stdout(first).ShouldBe("nothing to see\n");
+        Stdout(second).ShouldBe("changed by a tool\n");
+    }
+
+    // A vault-sized tree stays practical to search from the shell.
+    [SkippableFact]
+    public async Task ARecursiveGrepOverAVaultSizedTree_StaysPractical()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var files = Enumerable.Range(0, 40)
+            .SelectMany(d => Enumerable.Range(0, 25).Select(f => (Path: $"d{d}/n{f}.md", Text: f == 0 ? "TODO here\n" : "nothing\n")))
+            .ToDictionary(x => x.Path, x => x.Text);
+        var call = fixture.Bridge.Mint(BridgeFixtures.Registry((new MemoryDisk("vault", files), "/vault", null)), _ => true);
+        var started = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = await ExecAsync(client, "grep -rl TODO /vault | wc -l", call, cts.Token);
+
+        Stdout(result).ShouldBe("40\n", result.ToString());
+        started.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(30));
+    }
+
     // An exec the agent minted nothing for serves nothing.
     [SkippableFact]
     public async Task AnExecWithNoToken_SeesNoMounts()
