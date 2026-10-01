@@ -8,7 +8,8 @@ namespace Tests.E2E.Fixtures;
 // server as its own uid and runs commands as PUID:PGID — here the user running the tests, so the
 // bind-mounted workspace is the command's to write, as the named volume is in production. The
 // launcher needs SYS_ADMIN and /dev/fuse for each command's mount namespace and the FUSE mount of
-// the session's other mounts; commands never hold either.
+// the session's other mounts; commands never hold either. On an AppArmor host those mounts also need
+// compose's profile (`DockerCompose/apparmor/ziggurat-sandbox`) installed; a host without it ignores it.
 public static class SandboxContainer
 {
     public static ContainerBuilder AsCompose(this ContainerBuilder builder) =>
@@ -18,6 +19,8 @@ public static class SandboxContainer
             .WithCreateParameterModifier(parameters =>
             {
                 parameters.HostConfig.CapAdd = [.. parameters.HostConfig.CapAdd ?? [], "SYS_ADMIN"];
+                parameters.HostConfig.SecurityOpt =
+                    [.. parameters.HostConfig.SecurityOpt ?? [], "apparmor=ziggurat-sandbox"];
                 parameters.HostConfig.Devices =
                 [
                     .. parameters.HostConfig.Devices ?? [],

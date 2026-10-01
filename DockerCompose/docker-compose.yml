@@ -273,6 +273,10 @@ services:
     # mounts at /vfs (with /dev/fuse below); commands never hold it.
     cap_add:
       - SYS_ADMIN
+    # docker-default denies every mount, so on an AppArmor host (prod) every exec would fail; this
+    # profile allows only the launcher's own. Install it on the host before `up` — see its header.
+    security_opt:
+      - apparmor=ziggurat-sandbox
     # Only /dev/dri, same as lemonade: the render node alone keeps this up on hosts with no
     # /dev/kfd (Intel iGPU, Raspberry Pi). An AMD host that wants ROCm/HIP inside the sandbox
     # adds the compute node via docker-compose.override.rocm.yml.

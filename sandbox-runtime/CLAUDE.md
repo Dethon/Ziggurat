@@ -26,5 +26,6 @@ Served by the daemon as every action file's content (it reads its sibling binary
 ## Invariants
 
 - No workspace, no root `Cargo.toml`; the **same pinned toolchain** as the other two crates (`rust-toolchain.toml`, 1.97.1) and listed in both editors' rust-analyzer `linkedProjects` (`.vscode/settings.json`, `.zed/settings.json`). Pinning it apart makes serde's derives fail to expand in whichever crate loses the editor's one proc-macro server.
+- Every mount the launcher, unit or daemon makes is named in `DockerCompose/apparmor/ziggurat-sandbox`, the profile prod runs the container under. A new mount, or new flags on one, needs its line there, or every exec on an AppArmor host fails while the dev box (no AppArmor) and `cargo test` stay green.
 - Everything between fork and exec (`privilege.rs`) is raw syscalls on memory prepared before the fork: no allocation, no formatting.
 - The launcher parses one JSON line per exec and nothing else the agent sends; that is the point of keeping it apart from the server, which parses everything.

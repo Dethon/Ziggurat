@@ -6,8 +6,8 @@
 
 **Status:** ready-for-human
 
-- [ ] The mount succeeds on prod, or the narrowest working security option is added and recorded on this ticket
-- [ ] A mode-`0111` ELF served through FUSE executes on the prod kernel
+- [x] The mount succeeds on prod, or the narrowest working security option is added and recorded on this ticket
+- [x] A mode-`0111` ELF served through FUSE executes on the prod kernel
 
 ## Comments
 
@@ -24,3 +24,11 @@ docker run --rm --device /dev/fuse --cap-add SYS_ADMIN -e PUID=1654 -e PGID=1654
 ```
 
 Then the full path: start the stack, and from WebChat ask jonas to run `ls /vault | head -3` in the sandbox, then `cd /timers && ls -l` (the action files show as `---x--x--x`). If AppArmor refuses, try the narrowest option first — a profile allowing `mount fstype=fuse.*`, `fstype=tmpfs` and `options=(rprivate)` — and only then `security_opt: [apparmor:unconfined]` on `mcp-sandbox`. Record what was needed here. The spike branch's probe (`spike/fuse-sandbox`, `McpServerSandbox/prototype-fuse-spike/`) also still applies, including the mode-0111 ELF check.
+
+**2026-10-01, done — a profile of its own was needed, unconfined was not.** Prod (`192.168.5.45`, Ubuntu 26.04.1, kernel 7.0.0-31, AppArmor parser 5.0.2) enforces `docker-default`. The branch's image was copied there as `mcp-sandbox:vfs-fuse-probe` (prod's `:latest` untouched) and driven through the real launcher: a Python stand-in for the server served a fake bridge on localhost and asked the launcher socket for one exec carrying a grant, so the real unit, daemon and helper ran.
+
+- `docker-default`: `cannot isolate the command: Permission denied` — every exec fails, as predicted above.
+- `apparmor=unconfined` and `apparmor=ziggurat-sandbox`: exit 0; `/vfs/probe` listed with the action file as `---x--x--x`, its text read through `/probe/hello.txt`, the mode-0111 `vfs-action` ELF executed and returned the bridge's output (`go-rc=0`), mountinfo showed `/run/vfs tmpfs` and `/vfs ziggurat-vfs`, `/proc/self/attr/current` read `ziggurat-sandbox (enforce)`, and the kernel log held no denial.
+- Under the profile, a tmpfs on `/mnt` and a bind mount of `/etc` are still refused.
+
+The profile is `DockerCompose/apparmor/ziggurat-sandbox`: `docker-default`'s rules with `deny mount` replaced by exactly the launcher's three — `options=(rprivate) -> /`, `fstype=tmpfs options=(rw, nosuid, nodev, noexec) tmpfs -> /run/vfs/`, `fstype=fuse options=(rw, nosuid, nodev) ziggurat-vfs -> /vfs/`. Compose names it in `security_opt`, and so does `SandboxContainer.AsCompose()`; a host without AppArmor (the dev box) ignores the option. It is **installed on prod** at `/etc/apparmor.d/ziggurat-sandbox` and loaded, so it survives a reboot; on a new host, run the install lines in its header before `up`, or the sandbox container refuses to start.
