@@ -24,10 +24,11 @@ internal static class McpFileSystemDiscovery
             .Where(c => c.ServerCapabilities.Resources is not null)
             .Select(client => GatherMountsAsync(client, logger, ct)));
 
-        // In the order the endpoints were dialled, which puts the deployment's own filesystems
-        // before any outpost. A mount point already taken is a collision the newcomer loses: it is
-        // shadowed, the existing mount is untouched, and the fact is logged, because at the machine
-        // this looks exactly like a registration that worked and a mount that never appeared.
+        // In the order the endpoints were dialled. A mount point already taken is a collision the
+        // newcomer loses: it is shadowed, the existing mount is untouched, and the fact is logged,
+        // because at the machine this looks exactly like a registration that worked and a mount
+        // that never appeared. Outposts publish machine addresses, so the newcomer that loses is a
+        // machine whose name another machine already has.
         var shadowed = new List<string>();
         foreach (var (mount, backend) in perClient.SelectMany(m => m))
         {

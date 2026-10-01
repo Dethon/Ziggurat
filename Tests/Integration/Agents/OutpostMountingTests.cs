@@ -8,24 +8,24 @@ using Tests.Integration.Fixtures;
 namespace Tests.Integration.Agents;
 
 // The payoff, at the seam that decides it: a machine that registered itself is dialled and mounted
-// when a session is built, and a machine whose name is already some other mount's is shadowed
-// rather than replacing it.
+// at its machine address when a session is built, a machine named like one of the deployment's own
+// mounts sits beside it, and a machine whose name another machine already has is shadowed rather
+// than replacing it.
 //
-// The fixtures stand in for machines. What an outpost is, at this seam, is an endpoint whose origin
-// is dynamic — where it came from and the order it is dialled in are exactly what this exercises.
-[Collection("MultiFileSystem")]
-public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServerFixture vault)
-    : IClassFixture<McpVaultServerFixture>
+// The machines are real outpost servers, so the address each one publishes is the outpost's own.
+// What this exercises is where an endpoint came from and the order it is dialled in.
+public class OutpostMountingTests(OutpostMachinesFixture machines, McpVaultServerFixture vault)
+    : IClassFixture<McpVaultServerFixture>, IClassFixture<OutpostMachinesFixture>
 {
     [Fact]
     public async Task AnOptedInAgent_MountsALiveOutpost()
     {
-        var endpoints = await ComposeAsync(usesOutposts: true, Registered("notes", machines.NotesEndpoint));
+        var endpoints = await ComposeAsync(usesOutposts: true, Registered("laptop", machines.Laptop));
 
         await using var session = await BuildAsync(endpoints);
 
         session.FileSystemRegistry.ShouldNotBeNull()
-            .GetMounts().Select(m => m.Name).ShouldBe(["vault", "notes"], ignoreOrder: true);
+            .GetMounts().Select(m => m.MountPoint).ShouldBe(["/vault", "outpost:laptop"], ignoreOrder: true);
     }
 
     // Nothing is opted in by default, so the same registration reaches an agent that did not ask
@@ -33,7 +33,7 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
     [Fact]
     public async Task AnAgentThatDidNotOptIn_MountsNoneOfThem()
     {
-        var endpoints = await ComposeAsync(usesOutposts: false, Registered("notes", machines.NotesEndpoint));
+        var endpoints = await ComposeAsync(usesOutposts: false, Registered("laptop", machines.Laptop));
 
         await using var session = await BuildAsync(endpoints);
 
@@ -50,10 +50,10 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
         var spec = SubAgentSpec(parentUsesOutposts: true, ownDefinitionUsesOutposts: true);
 
         await using var session = await BuildAsync(
-            await ComposeAsync(spec, Registered("notes", machines.NotesEndpoint)));
+            await ComposeAsync(spec, Registered("laptop", machines.Laptop)));
 
         session.FileSystemRegistry.ShouldNotBeNull()
-            .GetMounts().Select(m => m.Name).ShouldBe(["vault", "notes"], ignoreOrder: true);
+            .GetMounts().Select(m => m.MountPoint).ShouldBe(["/vault", "outpost:laptop"], ignoreOrder: true);
     }
 
     // The parent is the ceiling: a worker that asks for machines its parent cannot see gets none,
@@ -64,39 +64,54 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
         var spec = SubAgentSpec(parentUsesOutposts: false, ownDefinitionUsesOutposts: true);
 
         await using var session = await BuildAsync(
-            await ComposeAsync(spec, Registered("notes", machines.NotesEndpoint)));
+            await ComposeAsync(spec, Registered("laptop", machines.Laptop)));
 
         session.FileSystemRegistry.ShouldNotBeNull()
             .GetMounts().Select(m => m.Name).ShouldBe(["vault"]);
     }
 
-    // A stranger's machine cannot shadow the vault. The registration is perfectly valid and the
-    // dial succeeds — two clients come up — but the mount point is already taken, so the outpost
-    // is simply not there and the existing mount is untouched. Decided by mount order, which is
-    // why configured endpoints are composed first.
+    // A machine named like the vault is a separate machine at an address of its own, so it no
+    // longer competes with the vault for the name: both are mounted, each where it is spelled.
     [Fact]
-    public async Task AnOutpostWhoseNameIsAlreadyAMountsName_IsShadowed()
+    public async Task AnOutpostNamedLikeAMount_IsMountedBesideIt()
     {
-        var endpoints = await ComposeAsync(usesOutposts: true, Registered("vault", vault.McpEndpoint));
+        var endpoints = await ComposeAsync(usesOutposts: true, Registered("vault", machines.Vault));
 
         await using var session = await BuildAsync(endpoints);
 
-        session.ClientManager.Clients.Count.ShouldBe(2);
         session.FileSystemRegistry.ShouldNotBeNull()
-            .GetMounts().Select(m => m.Name).ShouldBe(["vault"]);
-        session.ShadowedNames.ShouldBe(["vault"]);
+            .GetMounts().Select(m => m.MountPoint).ShouldBe(["/vault", "outpost:vault"], ignoreOrder: true);
+        session.ShadowedNames.ShouldBeEmpty();
     }
 
-    // The verdict a session build produces, written back onto the registration so the next
+    // The collision that is left. The second machine's registration is perfectly valid and its
+    // dial succeeds — three clients come up — but its address is already the first one's, so it is
+    // simply not there and the first is untouched. Decided by mount order, not by dial timing.
+    [Fact]
+    public async Task ASecondOutpostWithTheSameName_IsShadowed()
+    {
+        var endpoints = await ComposeAsync(
+            usesOutposts: true,
+            Registered("laptop", machines.Laptop),
+            Registered(OutpostMachinesFixture.TwinName, machines.Twin));
+
+        await using var session = await BuildAsync(endpoints);
+
+        session.ClientManager.Clients.Count.ShouldBe(3);
+        session.FileSystemRegistry.ShouldNotBeNull()
+            .GetMounts().Select(m => m.Name).ShouldBe(["vault", "laptop"], ignoreOrder: true);
+        session.ShadowedNames.ShouldBe([OutpostMachinesFixture.TwinName]);
+    }
+
+    // The verdict a session build produces, written back onto each registration so the next
     // keepalive can carry it to the machine. This is the only moment it is knowable.
-    [Theory]
-    [InlineData("notes", OutpostVerdict.Mounted)]
-    [InlineData("vault", OutpostVerdict.Shadowed)]
-    public async Task TheBuild_WritesEachOutpostsVerdictOntoItsRegistration(
-        string name, OutpostVerdict expected)
+    [Fact]
+    public async Task TheBuild_WritesEachOutpostsVerdictOntoItsRegistration()
     {
         var registry = new StubRegistry([
-            Registered(name, name == "vault" ? vault.McpEndpoint : machines.NotesEndpoint)
+            Registered("laptop", machines.Laptop),
+            Registered(OutpostMachinesFixture.TwinName, machines.Twin),
+            Registered("vault", machines.Vault)
         ]);
         var access = Access(registry);
         var composed = await OutpostEndpoints.ComposeAsync(
@@ -108,7 +123,12 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
             access, recordsVerdicts: true, composed.Outposts, session.MountedNames, session.ShadowedNames,
             session.ClientManager.DialledEndpoints, logger: null, CancellationToken.None);
 
-        registry.Verdicts[name].ShouldBe(expected);
+        registry.Verdicts.ShouldBe(new Dictionary<string, OutpostVerdict>
+        {
+            ["laptop"] = OutpostVerdict.Mounted,
+            [OutpostMachinesFixture.TwinName] = OutpostVerdict.Shadowed,
+            ["vault"] = OutpostVerdict.Mounted
+        });
     }
 
     // The name alone proves nothing. An outpost registered under a name a configured mount already
@@ -136,20 +156,22 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
         registry.Verdicts.ShouldBeEmpty();
     }
 
-    // The two sessions the ADR is about, in the order they happen. The parent already mounts a
-    // filesystem called "notes", so the machine is shadowed in its session and its keepalive is
-    // owed exactly that. The subagent's endpoint list is not its parent's, so the same machine
-    // mounts there — and it writes nothing back, because "did the agent you registered with mount
-    // you" is not a question a delegated task gets to answer. Both verdicts are put in and read
-    // out through the recording seam; nothing here seeds the registration behind it.
+    // The two sessions the ADR is about, in the order they happen. The parent already has the
+    // first laptop among its configured endpoints — a machine can be named there by hand — so the
+    // twin is shadowed in its session and its keepalive is owed exactly that. The subagent's
+    // endpoint list is not its parent's, so the same machine mounts there — and it writes nothing
+    // back, because "did the agent you registered with mount you" is not a question a delegated
+    // task gets to answer. Both verdicts are put in and read out through the recording seam;
+    // nothing here seeds the registration behind it.
     [Fact]
     public async Task ASubAgentsBuild_LeavesTheVerdictItsParentRecorded()
     {
-        var registry = new StubRegistry([Registered("notes", machines.NotesEndpoint)]);
+        const string twin = OutpostMachinesFixture.TwinName;
+        var registry = new StubRegistry([Registered(twin, machines.Twin)]);
         var access = Access(registry);
 
         var parent = await OutpostEndpoints.ComposeAsync(
-            [McpServerEndpoint.Configured(machines.NotesEndpoint)], access, usesOutposts: true,
+            [McpServerEndpoint.Configured(machines.Laptop)], access, usesOutposts: true,
             logger: null, CancellationToken.None);
         await using (var parentSession = await BuildAsync(parent))
         {
@@ -160,7 +182,7 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
                 logger: null, CancellationToken.None);
         }
 
-        registry.Verdicts["notes"].ShouldBe(OutpostVerdict.Shadowed);
+        registry.Verdicts[twin].ShouldBe(OutpostVerdict.Shadowed);
 
         var spec = SubAgentSpec(parentUsesOutposts: true, ownDefinitionUsesOutposts: true);
         var composed = await OutpostEndpoints.ComposeAsync(
@@ -173,8 +195,8 @@ public class OutpostMountingTests(MultiFileSystemFixture machines, McpVaultServe
             logger: null, CancellationToken.None);
 
         session.FileSystemRegistry.ShouldNotBeNull()
-            .GetMounts().Select(m => m.Name).ShouldContain("notes");
-        registry.Verdicts["notes"].ShouldBe(OutpostVerdict.Shadowed);
+            .GetMounts().Select(m => m.Name).ShouldContain(twin);
+        registry.Verdicts[twin].ShouldBe(OutpostVerdict.Shadowed);
     }
 
     private static OutpostRegistration Registered(string name, string endpoint) =>

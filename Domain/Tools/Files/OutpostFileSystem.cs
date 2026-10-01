@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Outposts;
 using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.FileSystem;
@@ -53,12 +54,17 @@ public class OutpostFileSystem(
     // coordinates, which here are the machine's own absolute paths minus the leading slash.
     public override string Workspace => _workingDirectory.TrimStart('/');
 
+    // Declared here rather than assigned by the agent, because this mount's own prose and refusals
+    // name it: a machine that did not know its address would describe itself at one it is not at.
+    public override string MountPoint => OutpostMountPoint.For(FilesystemName);
+
     // Generated rather than written, so the prose cannot disagree with the behaviour: every fact
     // in it is read off the values the binary was started with, and there is no separate prompt
     // that could be edited into disagreeing.
     public override string DescribeMount =>
-        $"{FilesystemName} — a filesystem on a real machine, mounted at {MountPoint} with the "
-        + $"machine's own root as the mount root. Working directory: {VirtualWorkingDirectory} "
+        $"{FilesystemName} — a separate machine, somebody's own computer rather than part of your "
+        + $"filesystem, addressed as {MountPoint} followed by an absolute path on that machine. "
+        + $"Working directory: {VirtualWorkingDirectory} "
         + "(files land there and it is this mount's workspace). "
         + (jailed
             ? $"Jailed: every path outside {VirtualWorkingDirectory} is refused, and glob and text "

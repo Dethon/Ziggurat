@@ -25,33 +25,77 @@ public class VirtualFileSystemRegistryTests
     }
 
     // A mount point is a name the model addresses, so two mounts claiming one is a collision
-    // somebody has to lose. The one already there wins: it was configured, and the challenger is a
-    // machine that named itself. Outposts are mounted after the configured filesystems for exactly
-    // this reason, so which one loses is decided by mount order rather than by timing.
+    // somebody has to lose. The one already there wins, so which one loses is decided by mount
+    // order rather than by timing. Outposts live at machine addresses of their own, so the only
+    // claims that can collide there are two machines that gave themselves the same name.
     [Fact]
     public void Mount_AMountPointAlreadyTaken_IsShadowedAndTheExistingMountIsUntouched()
     {
-        var vault = CreateMockBackend("vault");
-        _registry.Mount(new FileSystemMount("vault", "/vault", "The real vault"), vault);
+        var laptop = CreateMockBackend("laptop");
+        _registry.Mount(new FileSystemMount("laptop", "outpost:laptop", "The first laptop"), laptop);
 
         _registry.TryMount(
-                new FileSystemMount("vault", "/vault", "Somebody's laptop calling itself the vault"),
+                new FileSystemMount("laptop", "outpost:laptop", "A second machine calling itself laptop"),
                 CreateMockBackend("impostor"))
             .ShouldBeFalse();
 
         var mounts = _registry.GetMounts();
         mounts.Count.ShouldBe(1);
-        mounts[0].Description.ShouldBe("The real vault");
-        Resolve("/vault/notes.md").Backend.ShouldBe(vault);
+        mounts[0].Description.ShouldBe("The first laptop");
+        Resolve("outpost:laptop/notes.md").Backend.ShouldBe(laptop);
     }
 
     [Fact]
     public void Mount_AFreeMountPoint_IsTaken()
     {
-        _registry.TryMount(new FileSystemMount("laptop", "/laptop", "A laptop"), CreateMockBackend("laptop"))
+        _registry.TryMount(new FileSystemMount("laptop", "outpost:laptop", "A laptop"), CreateMockBackend("laptop"))
             .ShouldBeTrue();
 
         _registry.GetMounts().Select(m => m.Name).ShouldBe(["laptop"]);
+    }
+
+    // A machine that named itself after a mount is a different thing at a different address, so
+    // it no longer competes with the mount for the name — both are there, each where it is spelled.
+    [Fact]
+    public void Mount_AnOutpostNamedLikeAMount_IsMountedBesideIt()
+    {
+        var vault = CreateMockBackend("vault");
+        var machine = CreateMockBackend("machine");
+        _registry.TryMount(new FileSystemMount("vault", "/vault", "The real vault"), vault).ShouldBeTrue();
+
+        _registry.TryMount(new FileSystemMount("vault", "outpost:vault", "A machine called vault"), machine)
+            .ShouldBeTrue();
+
+        Resolve("/vault/notes.md").Backend.ShouldBe(vault);
+        Resolve("vault/notes.md").Backend.ShouldBe(vault);
+        Resolve("outpost:vault/notes.md").Backend.ShouldBe(machine);
+    }
+
+    // The machine address is a whole spelling of its own, so it is resolved as given rather than
+    // read as a mount name that forgot its slash.
+    [Fact]
+    public void Resolve_AMachineAddress_ResolvesAtTheMachineItNames()
+    {
+        var backend = CreateMockBackend("laptop");
+        _registry.Mount(new FileSystemMount("laptop", "outpost:laptop", "A laptop"), backend);
+
+        var resolution = Resolve("outpost:laptop/home/someone/notes.md");
+
+        resolution.Backend.ShouldBe(backend);
+        resolution.RelativePath.ShouldBe("home/someone/notes.md");
+        resolution.MountPoint.ShouldBe("outpost:laptop");
+        Resolve("outpost:laptop").RelativePath.ShouldBe("");
+        Resolve("OUTPOST:Laptop/x.md").Backend.ShouldBe(backend);
+    }
+
+    [Fact]
+    public void Resolve_AMachineAddressNothingHasClaimed_IsAbsent()
+    {
+        _registry.Mount(new FileSystemMount("laptop", "outpost:laptop", "A laptop"), CreateMockBackend("laptop"));
+
+        _registry.Resolve("outpost:laptopextra/x.md").TryGetValue(out _, out var error).ShouldBeFalse();
+        error!.Message.ShouldContain("No filesystem mounted");
+        _registry.Resolve("/laptop/x.md").TryGetValue(out _, out _).ShouldBeFalse();
     }
 
     // "ha/setup-index.md" names a mount and forgot the slash. It cannot mean anything else, and
@@ -132,18 +176,18 @@ public class VirtualFileSystemRegistryTests
     public void Resolve_AMountThisSessionKnowsIsUnreachable_SaysSoAndInvitesARetry()
     {
         _registry.Mount(new FileSystemMount("library", "/library", "Library"), CreateMockBackend("library"));
-        _registry.DeclareAbsence("/laptop", CapabilityState.Unavailable, "it did not answer when this conversation started");
+        _registry.DeclareAbsence("outpost:laptop", CapabilityState.Unavailable, "it did not answer when this conversation started");
 
-        _registry.Resolve("/laptop/notes.md").TryGetValue(out _, out var error).ShouldBeFalse();
+        _registry.Resolve("outpost:laptop/notes.md").TryGetValue(out _, out var error).ShouldBeFalse();
 
         error!.ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
         error.Retryable.ShouldBeTrue();
         error.Message.ShouldContain("did not answer");
+        error.Message.ShouldContain("'outpost:laptop'");
     }
 
     // The plain Mount obeys the same rule as TryMount above — this used to be last-write-wins, and
-    // outposts are why it is not: a machine that named itself after an existing mount would
-    // otherwise replace it, and a stranger's laptop could shadow the vault.
+    // a second claim on a name must never quietly replace what the model was already using.
     [Fact]
     public void Mount_DuplicateMountPoint_LeavesTheFirstOneInPlace()
     {
