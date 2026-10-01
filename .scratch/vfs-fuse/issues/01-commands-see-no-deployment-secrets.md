@@ -6,8 +6,8 @@
 
 **Status:** ready-for-agent
 
-- [ ] A command's `env` contains none of the keys in the deployment's secrets file
-- [ ] A command still has a working home, login path, timezone and locale (`bash -lc` finds user-installed tools)
-- [ ] The render group membership still reaches commands, so GPU access is unchanged
-- [ ] Output caps, timeout and kill-tree behave as before
-- [ ] The sandbox's architecture rule notes that commands get a minimal environment, and why
+- [x] A command's `env` contains none of the keys in the deployment's secrets file
+- [x] A command still has a working home, login path, timezone and locale (`bash -lc` finds user-installed tools)
+- [x] The render group membership still reaches commands, so GPU access is unchanged
+- [x] Output caps, timeout and kill-tree behave as before
+- [x] The sandbox's architecture rule notes that commands get a minimal environment, and why

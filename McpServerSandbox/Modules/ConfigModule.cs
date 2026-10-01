@@ -24,7 +24,9 @@ public static class ConfigModule
                 ContainerRoot = settings.ContainerRoot,
                 DefaultTimeoutSeconds = settings.DefaultTimeoutSeconds,
                 MaxTimeoutSeconds = settings.MaxTimeoutSeconds,
-                OutputCapBytes = settings.OutputCapBytes
+                OutputCapBytes = settings.OutputCapBytes,
+                // The container carries the deployment's secrets file; a command gets none of it.
+                Environment = CommandEnvironment.Minimal(settings.HomeDir, System.Environment.GetEnvironmentVariable)
             })
             .AddSingleton<ICommandRunner, BashRunner>()
             .AddSingleton(sp => new SandboxFileSystem(

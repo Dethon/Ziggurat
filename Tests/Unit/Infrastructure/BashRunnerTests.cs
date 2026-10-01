@@ -158,6 +158,62 @@ public class BashRunnerTests
         result["message"]!.GetValue<string>().ShouldContain("does not exist");
     }
 
+    // The runner's own environment is the server's, which carries every deployment secret the
+    // container was started with. A command handed an environment sees that and nothing else.
+    [SkippableFact]
+    public async Task RunAsync_WithAnEnvironment_TheCommandSeesOnlyThatEnvironment()
+    {
+        SkipIfNotLinux();
+        // Unique per run, so planting it in this process cannot reach any other test.
+        var planted = $"ZIGGURAT_PLANTED_{Guid.NewGuid():N}";
+        System.Environment.SetEnvironmentVariable(planted, "leaked");
+        try
+        {
+            var runner = new BashRunner(_settings with
+            {
+                Environment = new Dictionary<string, string>
+                {
+                    ["HOME"] = "/tmp",
+                    ["PATH"] = "/usr/bin:/bin",
+                    ["ZIGGURAT_MARKER"] = "kept"
+                }
+            });
+
+            var result = (await runner.RunAsync("", "env", null, CancellationToken.None)).ToNode();
+
+            var names = result["stdout"]!.GetValue<string>()
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.Split('=', 2)[0])
+                .ToHashSet();
+            names.ShouldContain("ZIGGURAT_MARKER");
+            names.ShouldNotContain(planted);
+        }
+        finally
+        {
+            System.Environment.SetEnvironmentVariable(planted, null);
+        }
+    }
+
+    // A login shell still finds what the person installed under their home, because the login
+    // PATH is built from the environment the command is given, not from the server's.
+    [SkippableFact]
+    public async Task RunAsync_WithAMinimalEnvironment_ALoginShellStillHasAHomeAndAPath()
+    {
+        SkipIfNotLinux();
+        using var root = new TempRoot();
+        var runner = new BashRunner(root.Options with
+        {
+            Environment = CommandEnvironment.Minimal(root.Path, _ => null)
+        });
+
+        var result = (await runner.RunAsync("", "echo $HOME; command -v bash", null, CancellationToken.None)).ToNode();
+
+        result["exitCode"]!.GetValue<int>().ShouldBe(0);
+        var lines = result["stdout"]!.GetValue<string>().Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        lines[0].ShouldBe(root.Path);
+        lines[1].ShouldEndWith("/bash");
+    }
+
     [SkippableFact]
     public async Task RunAsync_Timeout_KillsProcessAndReportsTimedOut()
     {

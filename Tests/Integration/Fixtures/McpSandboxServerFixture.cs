@@ -55,7 +55,8 @@ public class McpSandboxServerFixture : IAsyncLifetime
                 ContainerRoot = settings.ContainerRoot,
                 DefaultTimeoutSeconds = settings.DefaultTimeoutSeconds,
                 MaxTimeoutSeconds = settings.MaxTimeoutSeconds,
-                OutputCapBytes = settings.OutputCapBytes
+                OutputCapBytes = settings.OutputCapBytes,
+                Environment = CommandEnvironment.Minimal(settings.HomeDir, System.Environment.GetEnvironmentVariable)
             })
             .AddSingleton<ICommandRunner, BashRunner>()
             .AddSingleton(sp => new SandboxFileSystem(

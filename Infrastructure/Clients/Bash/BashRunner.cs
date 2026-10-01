@@ -43,6 +43,15 @@ public class BashRunner(BashRunnerOptions options) : ICommandRunner
             CreateNoWindow = true
         };
 
+        if (options.Environment is { } environment)
+        {
+            psi.Environment.Clear();
+            foreach (var (name, value) in environment)
+            {
+                psi.Environment[name] = value;
+            }
+        }
+
         using var process = new Process { StartInfo = psi };
         var sw = Stopwatch.StartNew();
         process.Start();
