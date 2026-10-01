@@ -137,7 +137,25 @@ internal class McpFileSystemBackend(
                 WithFilesystem(new Dictionary<string, object?> { ["path"] = path }), ct)
             : Task.FromResult(FsMoveOutCheckResult.Allow(path));
 
-    public async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
+    // A server that advertised its operations and left the byte stream out has none: the stream
+    // answers as a backend without it does, rather than asking the wire for a tool the server never
+    // registered — which comes back as an internal error, and made every read through the shell of
+    // a rendered mount an EIO instead of the text the mount renders.
+    public IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct) =>
+        Lacks(FileSystemBackendBase.BlobReadOperation)
+            ? throw new NotSupportedException($"The {filesystemName} filesystem does not support '{FileSystemBackendBase.BlobReadOperation}'.")
+            : ReadChunksOverTheWireAsync(path, ct);
+
+    public Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+        bool overwrite, bool createDirectories, CancellationToken ct) =>
+        Lacks(FileSystemBackendBase.BlobWriteOperation)
+            ? throw new NotSupportedException($"The {filesystemName} filesystem does not support '{FileSystemBackendBase.BlobWriteOperation}'.")
+            : WriteChunksOverTheWireAsync(path, chunks, overwrite, createDirectories, ct);
+
+    private bool Lacks(string operation) =>
+        advertisedOperations is not null && !advertisedOperations.Contains($"fs_{operation}");
+
+    private async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksOverTheWireAsync(
         string path, [EnumeratorCancellation] CancellationToken ct)
     {
         const int chunkSize = 256 * 1024;
@@ -179,7 +197,7 @@ internal class McpFileSystemBackend(
         }
     }
 
-    public async Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+    private async Task<long> WriteChunksOverTheWireAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
         bool overwrite, bool createDirectories, CancellationToken ct)
     {
         long offset = 0;
