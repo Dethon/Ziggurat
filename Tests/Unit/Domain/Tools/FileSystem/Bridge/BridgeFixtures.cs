@@ -12,7 +12,7 @@ namespace Tests.Unit.Domain.Tools.FileSystem.Bridge;
 // The sandbox as the exec tool sees it, with the container replaced by a script: instead of running
 // a command, it replays the FUSE operations a command would have caused, against the bridge, with
 // the token the tool minted. What it returns is the exec result the launcher would have answered.
-internal sealed class ScriptedSandbox(VfsBridge bridge, Func<VfsCall, CancellationToken, Task<FsExecResult>> script)
+internal sealed class ScriptedSandbox(IVfsBridge bridge, Func<VfsCall, CancellationToken, Task<FsExecResult>> script)
     : FileSystemBackendBase, IBridgedExecBackend
 {
     public const string Mount = "/sandbox";

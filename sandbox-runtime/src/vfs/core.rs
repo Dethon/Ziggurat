@@ -390,7 +390,8 @@ impl<B: Bridge> Vfs<B> {
     /// A new directory lives here until a file is committed under it.
     pub fn mkdir(&self, parent_ino: u64, name: &str) -> Result<Node, Errno> {
         let path = join(&self.lock().path(parent_ino)?, name);
-        if self.node_at(&path).is_ok() {
+        // A path deleted earlier in the command is free again, as it would be on a disk.
+        if !self.lock().is_deleted(&path) && self.node_at(&path).is_ok() {
             return Err(libc::EEXIST);
         }
         let mut state = self.lock();
@@ -449,6 +450,9 @@ impl<B: Bridge> Vfs<B> {
                     state.move_ino(&from, &to);
                     return Ok(());
                 }
+                // A rename commits now, so what the command deleted before it commits first: a delete
+                // left for the end would remove what the rename just put there.
+                self.commit_deletes();
                 let new = self.node_at(&to).is_err();
                 let data = {
                     let mut state = self.lock();
@@ -562,7 +566,12 @@ impl<B: Bridge> Vfs<B> {
 
     fn commit_write(&self, path: &str, data: &[u8], new: bool) -> Result<(), Errno> {
         let result = self.bridge.write(path, data, new);
-        self.lock().forget_answers();
+        let mut state = self.lock();
+        state.forget_answers();
+        // The directories the command made above it arrived with it, and are the mount's now.
+        if result.is_ok() {
+            state.held_dirs.retain(|dir| !is_within(path, dir));
+        }
         result
     }
 

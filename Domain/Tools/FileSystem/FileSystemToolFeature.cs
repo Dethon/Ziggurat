@@ -8,7 +8,7 @@ using Microsoft.Extensions.AI;
 namespace Domain.Tools.FileSystem;
 
 public class FileSystemToolFeature(
-    IVirtualFileSystemRegistry registry, ReadImageSupport? readImages = null, VfsBridge? bridge = null)
+    IVirtualFileSystemRegistry registry, ReadImageSupport? readImages = null, IVfsBridge? bridge = null)
     : IDomainToolFeature
 {
     private const string Feature = "filesystem";
@@ -69,21 +69,11 @@ public class FileSystemToolFeature(
 
     public string FeatureName => Feature;
 
-    // Each tool's leaf name against the key the feature config enables it by, so the exec bridge can
-    // ask whether this session offers the tool an operation stands for.
-    private static readonly IReadOnlyDictionary<string, string> _keysByName = new Dictionary<string, string>(StringComparer.Ordinal)
-    {
-        [VfsFileReadTool.Name] = VfsFileReadTool.Key,
-        [VfsTextCreateTool.Name] = VfsTextCreateTool.Key,
-        [VfsTextEditTool.Name] = VfsTextEditTool.Key,
-        [VfsGlobFilesTool.Name] = VfsGlobFilesTool.Key,
-        [VfsTextSearchTool.Name] = VfsTextSearchTool.Key,
-        [VfsMoveTool.Name] = VfsMoveTool.Key,
-        [VfsCopyTool.Name] = VfsCopyTool.Key,
-        [VfsRemoveTool.Name] = VfsRemoveTool.Key,
-        [VfsExecTool.Name] = VfsExecTool.Key,
-        [VfsFileInfoTool.Name] = VfsFileInfoTool.Key
-    };
+    // Each tool's leaf name against the key the feature config enables it by, read off the one list,
+    // so the exec bridge can ask whether this session offers the tool an operation stands for.
+    private static readonly IReadOnlyDictionary<string, string> _keysByName = FileSystemOperations.All
+        .Where(o => o.ToolKey is not null && o.Capability is not null)
+        .ToDictionary(o => o.Capability!, o => o.ToolKey!, StringComparer.Ordinal);
 
     public string? Prompt => BuildPrompt();
 
@@ -168,7 +158,7 @@ public class FileSystemToolFeature(
     public static string ShellSection(IReadOnlyList<FileSystemMount> mounts)
     {
         var sandbox = mounts.FirstOrDefault(m => m.ShellReach == ShellReach.Contained);
-        var served = mounts.Where(m => !IsMachine(m) && m.ShellReach is null).ToList();
+        var served = mounts.Where(VfsCall.IsServed).ToList();
         if (sandbox is null || served.Count == 0)
         {
             return "";

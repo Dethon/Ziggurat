@@ -2,6 +2,7 @@ using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
+using Infrastructure.Agents;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
@@ -131,6 +132,21 @@ public class VfsBridgeMoveTests
         _vault.Files["b.md"].ShouldBe("alpha\n");
         _vault.Files.ShouldNotContainKey("a.md");
         Only(result).ShouldBe(("/vault/a.md", VfsChange.Operations.Move, VfsChange.Statuses.Applied, "/vault/b.md"));
+    }
+
+    // Onto something already there on another mount, the source is still asked whether the path
+    // may leave before anything is written: a refusal keeps both ends as they were.
+    [Fact]
+    public async Task MvOntoAnExistingFileOnAnotherMount_AsksTheMoveOutCheckFirst()
+    {
+        _vault.Files["film.txt"] = "old copy\n";
+
+        var (_, result) = await RunAsync((call, ct) =>
+            call.RenameAsync("/media/downloads/live/film.txt", "/vault/film.txt", overwrite: true, ct));
+
+        _vault.Files["film.txt"].ShouldBe("old copy\n");
+        _media.Files.ShouldContainKey("downloads/live/film.txt");
+        Only(result).ShouldBe(("/media/downloads/live/film.txt", VfsChange.Operations.Move, VfsChange.Statuses.Refused, "/vault/film.txt"));
     }
 
     // A move the move tool would ask about is refused before either mount is touched.

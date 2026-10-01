@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
 using Microsoft.Extensions.AI;
@@ -21,8 +22,21 @@ internal class McpFileSystemBackend(
     McpClient client,
     string filesystemName,
     IReadOnlySet<string>? advertisedOperations,
-    ILogger? logger = null) : IFileSystemBackend, IBridgedExecBackend
+    ILogger? logger = null) : IFileSystemBackend, IBridgedExecBackend, ICallerBoundBackend
 {
+    // Set on a view the exec bridge asked for: the caller it names rides `_meta` in place of the
+    // turn's, because the bridge's operations run on its own request with no turn in flight.
+    private bool _callerBound;
+    private ConversationContext? _boundCaller;
+
+    public IFileSystemBackend As(ConversationContext? caller)
+    {
+        var view = (McpFileSystemBackend)MemberwiseClone();
+        view._callerBound = true;
+        view._boundCaller = caller;
+        return view;
+    }
+
     public string FilesystemName => filesystemName;
 
     public Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
@@ -283,7 +297,9 @@ internal class McpFileSystemBackend(
     private async Task<JsonNode> CallToolWithMetaAsync(
         string toolName, Dictionary<string, object?> args, JsonObject? extraMeta, CancellationToken ct)
     {
-        var meta = ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options);
+        var meta = _callerBound
+            ? ConversationContextMeta.Build(_boundCaller)
+            : ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options);
         if (extraMeta is not null)
         {
             meta ??= new JsonObject();

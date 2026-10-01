@@ -142,3 +142,50 @@ fn a_refused_mv_leaves_the_source_where_it_was() {
     assert!(vfs.lookup(vault, "a.md").is_ok());
     assert_eq!(vfs.lookup(notes, "a.md").unwrap_err(), libc::ENOENT);
 }
+
+// `rm -r d && mkdir d`: a deleted directory is not there for the rest of the command, so making
+// it again is not refused as existing.
+#[test]
+fn a_directory_made_where_one_was_deleted_is_not_refused_as_existing() {
+    let vfs = mounts();
+    let vault = ino(&vfs, "/vault");
+    let sub = ino(&vfs, "/vault/sub");
+    names(&vfs, "/vault/sub").iter().for_each(|n| vfs.unlink(sub, n).unwrap());
+    vfs.rmdir(vault, "sub").unwrap();
+
+    assert!(vfs.mkdir(vault, "sub").is_ok());
+}
+
+// `rm f; echo x > t; mv t f`: the rename commits now, so the delete it replaces must commit first
+// — never afterwards, which would remove what the command just wrote.
+#[test]
+fn a_rename_onto_a_deleted_path_lands_after_the_delete_and_survives_the_end() {
+    let vfs = mounts();
+    let vault = ino(&vfs, "/vault");
+    vfs.unlink(vault, "a.md").unwrap();
+    let (_, fh) = vfs.create(vault, "t").unwrap();
+    vfs.write(fh, 0, b"x\n").unwrap();
+    vfs.release(fh);
+
+    vfs.rename(vault, "t", vault, "a.md").unwrap();
+    vfs.finish();
+
+    assert_eq!(vfs.bridge().mutations(), ["delete /vault/a.md", "write /vault/a.md create x\n"]);
+    assert_eq!(vfs.bridge().content("/vault/a.md").as_deref(), Some("x\n"));
+}
+
+// A file committed by a rename inside a directory the command made: the directory now exists on
+// the mount, and the file is visible for the rest of the command.
+#[test]
+fn a_file_committed_inside_a_new_directory_stays_visible() {
+    let vfs = mounts();
+    let vault = ino(&vfs, "/vault");
+    let dir = vfs.mkdir(vault, "new").unwrap().ino;
+    let (_, fh) = vfs.create(dir, ".tmp").unwrap();
+    vfs.write(fh, 0, b"y").unwrap();
+    vfs.release(fh);
+
+    vfs.rename(dir, ".tmp", dir, "note.md").unwrap();
+
+    assert!(vfs.lookup(dir, "note.md").is_ok());
+}

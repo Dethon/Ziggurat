@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
+using Infrastructure.Agents;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;

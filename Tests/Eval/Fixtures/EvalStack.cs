@@ -409,7 +409,7 @@ public sealed class EvalStack : IAsyncDisposable
         // reads it from.
         services.AddSingleton<IMetricsPublisher>(recording);
         services.AddSingleton<ISubAgentSpawner>(Workers);
-        services.AddSingleton(Bridge);
+        services.AddSingleton<IVfsBridge>(Bridge);
 
         // The memory feature, the way the deployment enables it: both shipped assistants list
         // `memory` among their features, so an eval without it would run a prompt one section

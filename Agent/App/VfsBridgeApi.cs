@@ -1,3 +1,5 @@
+using Domain.Contracts;
+using Domain.Security;
 using Domain.Tools.FileSystem.Bridge;
 
 namespace Agent.App;
@@ -19,10 +21,10 @@ public static class VfsBridgeApi
     {
         var bridge = app.MapGroup(Route);
 
-        bridge.MapPost("/attr", (HttpContext http, VfsBridge vfs, string path, CancellationToken ct) =>
+        bridge.MapPost("/attr", (HttpContext http, IVfsBridge vfs, string path, CancellationToken ct) =>
             WithCall(http, vfs, async call => Json(await call.AttrAsync(path, ct), a => new { kind = a.Kind, size = a.Size })));
 
-        bridge.MapPost("/list", (HttpContext http, VfsBridge vfs, string path, CancellationToken ct) =>
+        bridge.MapPost("/list", (HttpContext http, IVfsBridge vfs, string path, CancellationToken ct) =>
             WithCall(http, vfs, async call => Json(await call.ListAsync(path, ct), l => new
             {
                 entries = l.Entries.Select(e => new { name = e.Name, kind = e.Kind }),
@@ -30,7 +32,7 @@ public static class VfsBridgeApi
             })));
 
         // The body is the whole file; `new` says nothing was at the path when the command made it.
-        bridge.MapPost("/write", (HttpContext http, VfsBridge vfs, string path, CancellationToken ct, bool @new = false) =>
+        bridge.MapPost("/write", (HttpContext http, IVfsBridge vfs, string path, CancellationToken ct, bool @new = false) =>
             WithCall(http, vfs, async call =>
             {
                 using var body = new MemoryStream();
@@ -38,16 +40,16 @@ public static class VfsBridgeApi
                 return Json(await call.WriteAsync(path, body.ToArray(), @new, ct), _ => new { });
             }));
 
-        bridge.MapPost("/delete", (HttpContext http, VfsBridge vfs, string path, CancellationToken ct, bool directory = false) =>
+        bridge.MapPost("/delete", (HttpContext http, IVfsBridge vfs, string path, CancellationToken ct, bool directory = false) =>
             WithCall(http, vfs, async call => Json(await call.DeleteAsync(path, directory, ct), _ => new { })));
 
         // `overwrite` says something is already at `to`, which the bridge judges as a write there.
-        bridge.MapPost("/rename", (HttpContext http, VfsBridge vfs, string path, string to, CancellationToken ct, bool overwrite = false) =>
+        bridge.MapPost("/rename", (HttpContext http, IVfsBridge vfs, string path, string to, CancellationToken ct, bool overwrite = false) =>
             WithCall(http, vfs, async call => Json(await call.RenameAsync(path, to, overwrite, ct), _ => new { })));
 
         // The launcher is about to kill the command: whatever its kill flushes arrives revoked and is
         // dropped. The token keeps answering, so the drops are recorded, until exec returns.
-        bridge.MapPost("/revoke", (HttpContext http, VfsBridge vfs) =>
+        bridge.MapPost("/revoke", (HttpContext http, IVfsBridge vfs) =>
             WithCall(http, vfs, call =>
             {
                 vfs.Revoke(call.Token);
@@ -55,7 +57,7 @@ public static class VfsBridgeApi
             }));
 
         // An action file run from a script; the body carries the script's arguments.
-        bridge.MapPost("/action", (HttpContext http, VfsBridge vfs, string path, ActionRequest request, CancellationToken ct) =>
+        bridge.MapPost("/action", (HttpContext http, IVfsBridge vfs, string path, ActionRequest request, CancellationToken ct) =>
             WithCall(http, vfs, async call => Json(await call.ActionAsync(path, request.Argv ?? [], ct), a => new
             {
                 stdout = a.Stdout,
@@ -63,7 +65,7 @@ public static class VfsBridgeApi
                 exitCode = a.ExitCode
             })));
 
-        bridge.MapPost("/read", (HttpContext http, VfsBridge vfs, string path, CancellationToken ct) =>
+        bridge.MapPost("/read", (HttpContext http, IVfsBridge vfs, string path, CancellationToken ct) =>
             WithCall(http, vfs, async call => await call.ReadAsync(path, ct) switch
             {
                 BridgeAnswer<byte[]>.Ok ok => Results.Bytes(ok.Value, "application/octet-stream"),
@@ -73,11 +75,11 @@ public static class VfsBridgeApi
 
     public sealed record ActionRequest(IReadOnlyList<string>? Argv);
 
-    private static async Task<IResult> WithCall(HttpContext http, VfsBridge vfs, Func<VfsCall, Task<IResult>> answer)
+    private static async Task<IResult> WithCall(HttpContext http, IVfsBridge vfs, Func<VfsCall, Task<IResult>> answer)
     {
         var header = http.Request.Headers.Authorization.ToString();
-        const string scheme = "Bearer ";
-        return header.StartsWith(scheme, StringComparison.Ordinal) && vfs.Find(header[scheme.Length..]) is { } call
+        return header.StartsWith(SharedSecret.Scheme, StringComparison.Ordinal)
+               && vfs.Find(header[SharedSecret.Scheme.Length..]) is { } call
             ? await answer(call)
             : Results.Unauthorized();
     }

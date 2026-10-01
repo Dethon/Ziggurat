@@ -191,7 +191,7 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
 
     // The cache is the call's: what the file tools change between two execs, the second one sees.
     [SkippableFact]
-    public async Task NoCacheOutlivesItsCall()
+    public async Task TheNextExec_SeesWhatTheToolsChangedBetweenThem()
     {
         Skip.IfNot(fixture.Available, "Docker is not available");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));

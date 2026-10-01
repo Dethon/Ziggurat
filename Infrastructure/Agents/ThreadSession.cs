@@ -3,7 +3,6 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Prompts;
 using Domain.Tools.FileSystem;
-using Domain.Tools.FileSystem.Bridge;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -54,7 +53,7 @@ internal sealed class ThreadSession : IAsyncDisposable
         CancellationToken ct,
         McpPromptCache? promptCache = null,
         ReadImageSupport? readImages = null,
-        VfsBridge? bridge = null)
+        IVfsBridge? bridge = null)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
             userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages, bridge);
@@ -83,7 +82,7 @@ internal sealed class ThreadSessionBuilder(
     ILoggerFactory? loggerFactory,
     McpPromptCache? promptCache = null,
     ReadImageSupport? readImages = null,
-    VfsBridge? bridge = null)
+    IVfsBridge? bridge = null)
 {
     private static readonly HashSet<string> _fileSystemMcpToolNames = [.. FileSystemOperations.ToolNames];
 

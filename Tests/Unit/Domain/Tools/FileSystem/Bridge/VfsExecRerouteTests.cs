@@ -3,6 +3,7 @@ using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
+using Infrastructure.Agents;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
@@ -83,7 +84,7 @@ public class VfsExecRerouteTests
         ExecReach.Over(BridgeFixtures.Registry((_timers, "/timers", null)), reroutes: true).Of("/timers").ShouldBeNull();
     }
 
-    private sealed class RecordingSandbox(VfsBridge bridge, List<(string, string)> ran)
+    private sealed class RecordingSandbox(IVfsBridge bridge, List<(string, string)> ran)
         : FileSystemBackendBase, IBridgedExecBackend
     {
         public override string FilesystemName => "sandbox";

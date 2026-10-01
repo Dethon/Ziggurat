@@ -4,11 +4,13 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Metrics;
 using Domain.Tools.FileSystem;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Agents.Skills;
 using Infrastructure.Metrics;
 using Infrastructure.Utils;
@@ -261,6 +263,9 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         // it asks: an approval remembered mid-command counts from then on.
         context.Arguments.Context ??= new Dictionary<object, object?>();
         context.Arguments.Context[ToolPermission.ContextKey] = new ToolPermission(RunsUnasked);
+        // And the conversation the call serves, for the same tools: what they do outside the turn
+        // still has to say who is calling.
+        context.Arguments.Context[typeof(ConversationContext)] = ConversationContextMeta.TryRead(context.Options);
         try
         {
             var result = await base.InvokeFunctionAsync(context, cancellationToken);

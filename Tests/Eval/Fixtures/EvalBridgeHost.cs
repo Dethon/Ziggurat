@@ -1,6 +1,8 @@
 using System.Net;
 using Agent.App;
+using Domain.Contracts;
 using Domain.Tools.FileSystem.Bridge;
+using Infrastructure.Agents;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,7 +21,7 @@ public static class EvalBridgeHost
         var port = TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Any, port));
-        builder.Services.AddSingleton(bridge);
+        builder.Services.AddSingleton<IVfsBridge>(bridge);
         var app = builder.Build();
         app.MapVfsBridge();
         await app.StartAsync();

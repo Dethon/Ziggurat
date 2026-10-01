@@ -2,7 +2,9 @@ using System.Collections.Concurrent;
 using System.Text;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.Outposts;
 
 namespace Domain.Tools.FileSystem.Bridge;
 
@@ -13,21 +15,24 @@ public sealed class VfsCall
 {
     private readonly IVirtualFileSystemRegistry _registry;
     private readonly Func<string, bool> _permits;
+    private readonly ConversationContext? _caller;
     private readonly IReadOnlyDictionary<string, FileSystemMount> _served;
     private readonly ConcurrentQueue<VfsChange> _changes = new();
     private readonly ConcurrentDictionary<string, byte> _truncated = new(StringComparer.Ordinal);
     private int _revoked;
 
-    internal VfsCall(
+    public VfsCall(
         string token,
         IVirtualFileSystemRegistry registry,
         Func<string, bool> permits,
         IReadOnlyList<FileSystemMount> served,
+        ConversationContext? caller,
         DateTimeOffset expires)
     {
         Token = token;
         _registry = registry;
         _permits = permits;
+        _caller = caller;
         _served = served.ToDictionary(m => m.MountPoint.TrimStart('/'), StringComparer.OrdinalIgnoreCase);
         Expires = expires;
     }
@@ -41,12 +46,19 @@ public sealed class VfsCall
 
     public bool Revoked => Volatile.Read(ref _revoked) == 1;
 
+    // The one rule for which mounts a command sees: every mount but an outpost — a separate
+    // machine, never reachable from the sandbox — and a mount with a shell of its own, the
+    // sandbox being the command's own disk already. The prompt, the screen's reach and the exec
+    // tool's rerouting all ask this.
+    public static bool IsServed(FileSystemMount mount) =>
+        !OutpostMountPoint.Addresses(mount.MountPoint) && mount.ShellReach is null;
+
     public IReadOnlyList<VfsChange> Changes => [.. _changes];
 
     // Directories whose listing the mount's walk budget cut short.
     public IReadOnlyList<string> Truncated => [.. _truncated.Keys.Order(StringComparer.Ordinal)];
 
-    internal void Revoke() => Interlocked.Exchange(ref _revoked, 1);
+    public void Revoke() => Interlocked.Exchange(ref _revoked, 1);
 
     internal void Record(VfsChange change) => _changes.Enqueue(change);
 
@@ -208,7 +220,7 @@ public sealed class VfsCall
         }
 
         var answer = overwrite
-            ? await ReplaceAsync(from, to, ct)
+            ? await ReplaceAsync(source, destination, from, to, ct)
             : (await Transfer.RunAsync(new TransferRequest
             {
                 Source = source,
@@ -253,8 +265,18 @@ public sealed class VfsCall
             : $"'{word.Replace("'", "'\\''")}'";
 
     // The target takes the source's content under a write's rules, and only then does the source go.
-    private async Task<BridgeAnswer<bool>> ReplaceAsync(string from, string to, CancellationToken ct) =>
-        await ReadAsync(from, ct) switch
+    // Across mounts the source is first asked whether the path may leave it (ADR 0015), as the
+    // transfer a move onto a new path makes would ask it — a refusal keeps both ends as they were.
+    private async Task<BridgeAnswer<bool>> ReplaceAsync(
+        FileSystemResolution source, FileSystemResolution destination, string from, string to, CancellationToken ct)
+    {
+        if (!ReferenceEquals(source.Backend, destination.Backend)
+            && !(await source.Backend.MoveOutCheckAsync(source.RelativePath, ct)).TryGetValue(out _, out var refusal))
+        {
+            return BridgeAnswer<bool>.From(refusal);
+        }
+
+        return await ReadAsync(from, ct) switch
         {
             BridgeAnswer<byte[]>.Ok read => await WriteCoreAsync(to, read.Value, ct) switch
             {
@@ -264,6 +286,7 @@ public sealed class VfsCall
             BridgeAnswer<byte[]>.Refused refused => new BridgeAnswer<bool>.Refused(refused.Errno, refused.Error),
             _ => throw new InvalidOperationException("Unreachable bridge answer.")
         };
+    }
 
     private async Task<BridgeAnswer<bool>> DeleteCoreAsync(string path, CancellationToken ct)
     {
@@ -399,7 +422,11 @@ public sealed class VfsCall
             return BridgeAnswer<T>.From(error);
         }
 
-        resolution = resolved;
+        // The backend as this conversation sees it: the operation runs on the bridge's own request,
+        // where no turn is in flight to read the caller from.
+        resolution = resolved.Backend is ICallerBoundBackend bound
+            ? resolved with { Backend = bound.As(_caller) }
+            : resolved;
         return null;
     }
 

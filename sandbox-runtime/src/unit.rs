@@ -176,7 +176,14 @@ fn execute(
             kill_tree(&mut child, spare);
             drain(&mut out, &mut err, &mut stdout, &mut stderr, Instant::now() + DRAIN_AFTER_KILL);
         }
-        Ending::Cancelled => kill_tree(&mut child, spare),
+        // The agent completed its token as the call unwound, but nothing here waits on that race:
+        // revoked first, exactly as a timeout is.
+        Ending::Cancelled => {
+            if let Some(served) = served.as_mut() {
+                served.revoke();
+            }
+            kill_tree(&mut child, spare);
+        }
         Ending::Finished => {}
     }
 

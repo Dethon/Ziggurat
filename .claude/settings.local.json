@@ -50,6 +50,5 @@
       "Bash(docker compose build:*)",
       "Bash(docker compose:*)"
     ]
-  },
-  "outputStyle": "Concise"
+  }
 }

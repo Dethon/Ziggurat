@@ -12,7 +12,6 @@ using Domain.Metrics;
 using Domain.Prompts;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
-using Domain.Tools.FileSystem.Bridge;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Agents.Skills;
@@ -52,7 +51,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly string _conversationId;
     private readonly McpPromptCache? _promptCache;
     private readonly ReadImageSupport? _readImages;
-    private readonly VfsBridge? _bridge;
+    private readonly IVfsBridge? _bridge;
 
     private readonly SkillsProvider _skills;
     private readonly RedisChatMessageStore _history;
@@ -85,7 +84,7 @@ public sealed class McpAgent : DisposableAgent
         OutpostAccess? outposts = null,
         ReadImageSupport? readImages = null,
         ISkillPreloader? skillPreloader = null,
-        VfsBridge? bridge = null)
+        IVfsBridge? bridge = null)
     {
         _endpoints = spec.McpServerEndpoints;
         _usesOutposts = spec.UsesOutposts;

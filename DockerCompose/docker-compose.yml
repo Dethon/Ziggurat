@@ -665,7 +665,6 @@ services:
     # (docker-compose.override.npu.yml) instead adds /dev/accel/accel0, the XDNA NPU node.
     devices:
       - /dev/dri:/dev/dri
-      - /dev/fuse:/dev/fuse
     # /dev/dri/renderD* is root:render 0660 on Ubuntu/Debian, and --device preserves host
     # ownership. UID 10001 is in no such group, so without this the render node is EACCES,
     # ggml-vulkan enumerates zero devices, and whisper silently decodes on CPU. Set RENDER_GID

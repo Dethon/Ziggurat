@@ -2,8 +2,8 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
-using Domain.Outposts;
 using Domain.Tools.FileSystem.Bridge;
 using Microsoft.Extensions.AI;
 
@@ -14,7 +14,7 @@ namespace Domain.Tools.FileSystem;
 // to the shell too. Null offers every tool.
 public class VfsExecTool(
     IVirtualFileSystemRegistry registry,
-    VfsBridge? bridge = null,
+    IVfsBridge? bridge = null,
     Func<string, bool>? offered = null)
 {
     public const string Key = "exec";
@@ -63,7 +63,7 @@ public class VfsExecTool(
             // translation glob entries and search hits use. The root comes back as the empty path,
             // which becomes the mount point with a trailing slash.
             return (await RunBridgedAsync(bridged, bridge, resolution.RelativePath, command, timeoutSeconds,
-                    Permission(arguments), cancellationToken))
+                    Permission(arguments), Caller(arguments), cancellationToken))
                 .Map(e => e with { Cwd = resolution.ToVirtualPath(e.Cwd) })
                 .ToNode();
         }
@@ -74,7 +74,7 @@ public class VfsExecTool(
         if (bridge is not null && Rerouted(resolution) is { } sandbox)
         {
             var cwd = $"vfs/{resolution.MountPoint.Trim('/')}/{resolution.RelativePath.Trim('/')}".TrimEnd('/');
-            return (await RunBridgedAsync(sandbox, bridge, cwd, command, timeoutSeconds, Permission(arguments), cancellationToken))
+            return (await RunBridgedAsync(sandbox, bridge, cwd, command, timeoutSeconds, Permission(arguments), Caller(arguments), cancellationToken))
                 .Map(e => e with { Cwd = path })
                 .ToNode();
         }
@@ -89,15 +89,16 @@ public class VfsExecTool(
     // ends — returned, failed or cancelled — so it never outlives the command it serves.
     private async Task<FsResult<FsExecResult>> RunBridgedAsync(
         IBridgedExecBackend backend,
-        VfsBridge vfs,
+        IVfsBridge vfs,
         string cwd,
         string command,
         int? timeoutSeconds,
         ToolPermission permission,
+        ConversationContext? caller,
         CancellationToken ct)
     {
         var call = vfs.Mint(registry, toolName => (offered?.Invoke(toolName) ?? true) && permission.RunsUnasked(
-            FileSystemToolFeature.Callable(toolName)));
+            FileSystemToolFeature.Callable(toolName)), caller);
         try
         {
             var exec = await backend.ExecAsync(cwd, command, timeoutSeconds, new VfsBridgeGrant(call.Token), ct);
@@ -131,7 +132,7 @@ public class VfsExecTool(
         var mounts = registry.GetMounts();
         var mount = mounts.FirstOrDefault(m =>
             string.Equals(m.MountPoint, resolution.MountPoint, StringComparison.OrdinalIgnoreCase));
-        if (mount is null || mount.ShellReach is not null || OutpostMountPoint.Addresses(mount.MountPoint))
+        if (mount is null || !VfsCall.IsServed(mount))
         {
             return null;
         }
@@ -142,6 +143,11 @@ public class VfsExecTool(
             .OfType<IBridgedExecBackend>()
             .FirstOrDefault();
     }
+
+    private static ConversationContext? Caller(AIFunctionArguments? arguments) =>
+        arguments?.Context?.TryGetValue(typeof(ConversationContext), out var caller) == true
+            ? caller as ConversationContext
+            : null;
 
     private static ToolPermission Permission(AIFunctionArguments? arguments) =>
         arguments?.Context?.TryGetValue(ToolPermission.ContextKey, out var view) == true && view is ToolPermission permission

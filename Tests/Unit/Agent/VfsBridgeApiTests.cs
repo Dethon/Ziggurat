@@ -2,9 +2,11 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools.FileSystem.Bridge;
 using global::Agent.App;
+using Infrastructure.Agents;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -199,7 +201,7 @@ public class VfsBridgeApiTests
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
-        builder.Services.AddSingleton(_bridge);
+        builder.Services.AddSingleton<IVfsBridge>(_bridge);
 
         var app = builder.Build();
         app.MapVfsBridge();

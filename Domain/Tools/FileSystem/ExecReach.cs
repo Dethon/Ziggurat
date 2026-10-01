@@ -1,6 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
-using Domain.Outposts;
+using Domain.Tools.FileSystem.Bridge;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
@@ -27,7 +27,7 @@ public sealed class ExecReach(Func<string, ShellReach?> reachOf)
         var mount = mounts.FirstOrDefault(m =>
             string.Equals(m.MountPoint, resolution.MountPoint, StringComparison.OrdinalIgnoreCase));
         return mount?.ShellReach
-               ?? (reroutes && mount is not null && !OutpostMountPoint.Addresses(mount.MountPoint)
+               ?? (reroutes && mount is not null && VfsCall.IsServed(mount)
                    && mounts.Any(m => m.ShellReach == ShellReach.Contained)
                    ? ShellReach.Contained
                    : null);

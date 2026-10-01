@@ -2,6 +2,7 @@ using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
+using Infrastructure.Agents;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
@@ -46,7 +47,7 @@ public class VfsBridgeActionTests
 
     // The script's arguments arrive as the words they were, however they are spelled.
     [Fact]
-    public async Task ArgumentsArriveAsTheWordsTheyWere()
+    public async Task ArgumentsWithSpacesAndQuotes_ArriveAsTheWordsTheyWere()
     {
         await RunAsync("/timers/eggs/snooze", ["--minutes", "5", "it's late"]);
 

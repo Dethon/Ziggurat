@@ -19,16 +19,13 @@ internal static class ConversationContextMeta
     public static ConversationContext? TryRead(ChatOptions? options)
         => options?.AdditionalProperties?.GetValueOrDefault(OptionsKey) as ConversationContext;
 
-    public static JsonObject? TryBuild(ChatOptions? options)
-    {
-        if (TryRead(options) is not { } context)
-        {
-            return null;
-        }
+    public static JsonObject? TryBuild(ChatOptions? options) => Build(TryRead(options));
 
-        return new JsonObject
-        {
-            [MetaKey] = JsonSerializer.SerializeToNode(context, ChannelProtocol.SerializerOptions)
-        };
-    }
+    public static JsonObject? Build(ConversationContext? context) =>
+        context is null
+            ? null
+            : new JsonObject
+            {
+                [MetaKey] = JsonSerializer.SerializeToNode(context, ChannelProtocol.SerializerOptions)
+            };
 }
