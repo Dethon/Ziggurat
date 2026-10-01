@@ -5,6 +5,7 @@
 //! from ticket 08 on, when a write commits) behind the `Bridge` trait, so `cargo test` drives it
 //! with a fake bridge and no kernel.
 
+pub mod actions;
 pub mod bridge;
 pub mod core;
 

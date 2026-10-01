@@ -54,6 +54,15 @@ public static class VfsBridgeApi
                 return Task.FromResult(Results.Json(new { }));
             }));
 
+        // An action file run from a script; the body carries the script's arguments.
+        bridge.MapPost("/action", (HttpContext http, VfsBridge vfs, string path, ActionRequest request, CancellationToken ct) =>
+            WithCall(http, vfs, async call => Json(await call.ActionAsync(path, request.Argv ?? [], ct), a => new
+            {
+                stdout = a.Stdout,
+                stderr = a.Stderr,
+                exitCode = a.ExitCode
+            })));
+
         bridge.MapPost("/read", (HttpContext http, VfsBridge vfs, string path, CancellationToken ct) =>
             WithCall(http, vfs, async call => await call.ReadAsync(path, ct) switch
             {
@@ -61,6 +70,8 @@ public static class VfsBridgeApi
                 var refused => Refused(refused)
             }));
     }
+
+    public sealed record ActionRequest(IReadOnlyList<string>? Argv);
 
     private static async Task<IResult> WithCall(HttpContext http, VfsBridge vfs, Func<VfsCall, Task<IResult>> answer)
     {

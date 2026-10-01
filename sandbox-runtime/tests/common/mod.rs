@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use sandbox_runtime::vfs::bridge::{Attr, Bridge, Entry, Errno, Kind, Listing};
+use sandbox_runtime::vfs::bridge::{ActionOutput, Attr, Bridge, Entry, Errno, Kind, Listing};
 
 #[derive(Clone)]
 pub enum FakeNode {
@@ -154,6 +154,21 @@ impl Bridge for FakeBridge {
             nodes.insert(format!("{to}{}", &p[from.len()..]), node);
         });
         Ok(())
+    }
+
+    // Answers with the files beside the action, so a test can see what the action saw.
+    fn action(&self, path: &str, argv: &[String]) -> Result<ActionOutput, Errno> {
+        self.record(format!("action {path} {}", argv.join(" ")));
+        let dir = path.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default();
+        let beside: Vec<String> = self
+            .nodes
+            .lock()
+            .unwrap()
+            .keys()
+            .filter(|p| p.starts_with(&format!("{dir}/")) && !p[dir.len() + 1..].contains('/'))
+            .map(|p| p[dir.len() + 1..].to_string())
+            .collect();
+        Ok(ActionOutput { stdout: beside.join("\n"), stderr: String::new(), exit_code: 0 })
     }
 
     fn revoke(&self) -> Result<(), Errno> {

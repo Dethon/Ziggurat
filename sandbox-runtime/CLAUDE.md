@@ -19,6 +19,10 @@ Runs as root under `tini` (which reaps what an exec leaves behind once it is ove
 
 One per exec, started by the unit as root inside the exec's namespace when the request carries a bridge grant, configured over stdin (`daemon.rs`: config line in, `{"served": [...]}` out once mounted, `exit` in, `done` out). `core.rs` is the part with rules of its own — inodes per path, the per-call cache of what the bridge answered, open handles — behind the `Bridge` trait, driven in `tests/` by an in-memory fake bridge with no kernel; `fuse.rs` only spells replies (modes 0755/0644, action files 0111, every node owned by PUID:PGID so the kernel lets the command write and the bridge decides; kernel TTLs zero so a kernel-side cache never outlives a bridge write); `http.rs` is the bridge over HTTP (`ureq`, no TLS). Mounted with `allow_other` + `default_permissions` by the mount syscall itself (fuser, no libfuse), so `fusermount3` keeps no setuid bit. The unit spares the daemon from the kill-tree and waits for its `done` before answering, so the agent's change log is whole when exec returns.
 
+## The action helper (`vfs-action`, `src/vfs/actions.rs`)
+
+Served by the daemon as every action file's content (it reads its sibling binary at start), mode 0111. Run by the kernel as PUID, it maps its own executable path back to the action's virtual path, sends `{path, argv, cwd}` to `/run/vfs/action.sock` — the exec's own tmpfs, mounted by the unit before the daemon starts — and prints the action's stdout and stderr and exits with its code; anything else (run as itself, outside an exec, refused) is exit 126 with a line on stderr. The daemon answers a connection only from a descendant of its own parent, the unit.
+
 ## Invariants
 
 - No workspace, no root `Cargo.toml`; the **same pinned toolchain** as the other two crates (`rust-toolchain.toml`, 1.97.1) and listed in both editors' rust-analyzer `linkedProjects` (`.vscode/settings.json`, `.zed/settings.json`). Pinning it apart makes serde's derives fail to expand in whichever crate loses the editor's one proc-macro server.

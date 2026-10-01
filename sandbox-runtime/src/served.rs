@@ -40,6 +40,7 @@ impl Served {
             libc::umount2(target.as_ptr(), libc::MNT_DETACH);
         }
         std::fs::create_dir_all(MOUNTPOINT)?;
+        own_tmpfs(crate::vfs::actions::SOCKET_DIR)?;
 
         let daemon = std::env::current_exe()?.with_file_name("vfs-daemon");
         let mut child = Command::new(daemon)
@@ -63,6 +64,7 @@ impl Served {
             "uid": uid,
             "gid": gid,
             "mountpoint": MOUNTPOINT,
+            "actionSocket": crate::vfs::actions::SOCKET,
         });
         writeln!(stdin, "{config}")?;
         stdin.flush()?;
@@ -103,6 +105,28 @@ impl Served {
         drop(self.stdin);
         let _ = self.child.wait();
     }
+}
+
+/// A tmpfs of this namespace's own at `dir`: the action socket lives there, so a helper in another
+/// exec cannot even find this exec's daemon.
+fn own_tmpfs(dir: &str) -> io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let target = CString::new(dir).unwrap();
+    let fstype = CString::new("tmpfs").unwrap();
+    let options = CString::new("mode=0755").unwrap();
+    let mounted = unsafe {
+        libc::mount(
+            fstype.as_ptr(),
+            target.as_ptr(),
+            fstype.as_ptr(),
+            libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOEXEC,
+            options.as_ptr() as *const libc::c_void,
+        )
+    };
+    if mounted == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 /// True when /<name> is (now) the link into /vfs. False for a name that would leave the root,

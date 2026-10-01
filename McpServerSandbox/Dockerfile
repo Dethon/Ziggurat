@@ -10,7 +10,7 @@ RUN target="$(uname -m)-unknown-linux-musl" \
  && rustup target add "$target" \
  && cargo build --release --locked --target "$target" \
  && mkdir -p /out \
- && cp "target/$target/release/sandbox-launcher" "target/$target/release/vfs-daemon" /out/
+  && cp "target/$target/release/sandbox-launcher" "target/$target/release/vfs-daemon" "target/$target/release/vfs-action" /out/
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 
@@ -64,7 +64,7 @@ RUN dotnet publish "./McpServerSandbox.csproj" -c $BUILD_CONFIGURATION -o /app/p
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-COPY --from=runtime-build /out/sandbox-launcher /out/vfs-daemon /usr/local/bin/
+COPY --from=runtime-build /out/sandbox-launcher /out/vfs-daemon /out/vfs-action /usr/local/bin/
 
 # Root on purpose: the launcher owns the switch to PUID/PGID that compose's `user:` used to, starts
 # the server as SANDBOX_SERVER_UID and drops every command to PUID. tini reaps what a command

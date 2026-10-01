@@ -16,6 +16,9 @@ public abstract record BridgeAnswer<T>
     public static BridgeAnswer<T> From(ToolErrorResult error) => new Refused(Errnos.Of(error), error);
 }
 
+// What an action printed and how it ended, passed through by the helper as its own.
+public sealed record BridgeActionResult(string Stdout, string Stderr, int ExitCode);
+
 public static class BridgeKinds
 {
     public const string File = "file";

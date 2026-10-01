@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use super::bridge::{errno_named, Attr, Bridge, Entry, Errno, Kind, Listing};
+use super::bridge::{errno_named, ActionOutput, Attr, Bridge, Entry, Errno, Kind, Listing};
 
 pub struct HttpBridge {
     agent: ureq::Agent,
@@ -32,10 +32,15 @@ impl HttpBridge {
     }
 
     fn post(&self, op: &str, query: &[(&str, &str)], body: &[u8]) -> Result<Vec<u8>, Errno> {
+        self.post_with_type(op, query, body, "application/octet-stream")
+    }
+
+    fn post_with_type(&self, op: &str, query: &[(&str, &str)], body: &[u8], content_type: &str) -> Result<Vec<u8>, Errno> {
         let request = query
             .iter()
             .fold(self.agent.post(format!("{}/{op}", self.url)), |r, (k, v)| r.query(*k, *v))
-            .header("Authorization", &self.authorization);
+            .header("Authorization", &self.authorization)
+            .header("Content-Type", content_type);
         let mut response = request.send(body).map_err(|_| libc::EIO)?;
         let status = response.status().as_u16();
         let bytes = response.body_mut().with_config().limit(MAX_BODY).read_to_vec().map_err(|_| libc::EIO)?;
@@ -100,6 +105,12 @@ impl Bridge for HttpBridge {
             &[],
         )
         .map(|_| ())
+    }
+
+    fn action(&self, path: &str, argv: &[String]) -> Result<ActionOutput, Errno> {
+        let body = serde_json::to_vec(&serde_json::json!({ "argv": argv })).map_err(|_| libc::EIO)?;
+        let bytes = self.post_with_type("action", &[("path", path)], &body, "application/json")?;
+        serde_json::from_slice(&bytes).map_err(|_| libc::EIO)
     }
 
     fn revoke(&self) -> Result<(), Errno> {

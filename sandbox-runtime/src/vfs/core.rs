@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use super::bridge::{Attr, Bridge, Errno, Kind, Listing};
+use super::bridge::{ActionOutput, Attr, Bridge, Errno, Kind, Listing};
 
 pub const ROOT: u64 = 1;
 
@@ -150,6 +150,9 @@ pub struct Vfs<B: Bridge> {
     bridge: B,
     state: Mutex<State>,
     released: Condvar,
+    /// The action helper's own bytes, served as every action file: the kernel executes it without
+    /// anyone being able to read it, and it learns which action it is from its own path.
+    helper: Arc<Vec<u8>>,
 }
 
 impl<B: Bridge> Vfs<B> {
@@ -157,7 +160,12 @@ impl<B: Bridge> Vfs<B> {
         let mut state = State { next_ino: ROOT + 1, next_fh: 1, ..State::default() };
         state.paths.insert(ROOT, "/".into());
         state.inos.insert("/".into(), ROOT);
-        Self { bridge, state: Mutex::new(state), released: Condvar::new() }
+        Self { bridge, state: Mutex::new(state), released: Condvar::new(), helper: Arc::new(Vec::new()) }
+    }
+
+    pub fn with_helper(mut self, helper: Vec<u8>) -> Self {
+        self.helper = Arc::new(helper);
+        self
     }
 
     pub fn bridge(&self) -> &B {
@@ -237,9 +245,13 @@ impl<B: Bridge> Vfs<B> {
         let node = self.node_at(&path)?;
         match node.kind {
             Kind::Dir => return Err(libc::EISDIR),
-            // Executable-only: the kernel's mode check refuses the command already; the daemon
-            // refuses anyone else the same way.
-            Kind::Action => return Err(libc::EACCES),
+            Kind::Action if write => return Err(libc::EACCES),
+            // The kernel opens it to execute it; the command's own read is refused by the 0111
+            // mode before it ever gets here.
+            Kind::Action => {
+                let mut state = self.lock();
+                return Ok(Opened { fh: self.add_handle(&mut state, Handle::Read(self.helper.clone())), direct_io: false });
+            }
             Kind::File => {}
         }
 
@@ -488,6 +500,16 @@ impl<B: Bridge> Vfs<B> {
         }
     }
 
+    /// An action run from a script. Everything the script made or deleted so far reaches the mount
+    /// first — the barrier — so the action sees what the script prepared.
+    pub fn action(&self, path: &str, argv: &[String]) -> Result<ActionOutput, Errno> {
+        self.commit_deletes();
+        self.commit_held();
+        let output = self.bridge.action(path, argv);
+        self.lock().forget_answers();
+        output
+    }
+
     /// Ahead of the kill. The daemon keeps sending what the kill flushes — the kernel's releases of
     /// the dead command's files, and everything held — so the bridge can record each as dropped.
     pub fn revoke(&self) {
@@ -575,6 +597,9 @@ impl<B: Bridge> Vfs<B> {
             (None, None, Some(content)) => (content.len() as u64, true),
             (None, None, None) => (0, false),
         };
+        if attr.kind == Kind::Action {
+            return Ok(Node { ino, kind: Kind::Action, size: self.helper.len() as u64, size_known: true });
+        }
         Ok(Node { ino, kind: attr.kind, size, size_known: known || attr.kind != Kind::File })
     }
 

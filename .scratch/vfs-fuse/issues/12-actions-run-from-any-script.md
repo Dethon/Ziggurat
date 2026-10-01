@@ -11,9 +11,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] `/timers/dismiss` from a bash script stops ringing exactly as a direct exec does, with its output and exit code passed through
-- [ ] The same action called through Python's `subprocess` behaves the same
-- [ ] `cat` of an action file is refused
-- [ ] A file created earlier in the same script is visible to the action
-- [ ] A helper started outside an exec's namespace is refused
-- [ ] Each action is listed in `vfsChanges` as an action
+- [x] `/timers/dismiss` from a bash script stops ringing exactly as a direct exec does, with its output and exit code passed through
+- [x] The same action called through Python's `subprocess` behaves the same
+- [x] `cat` of an action file is refused
+- [x] A file created earlier in the same script is visible to the action
+- [x] A helper started outside an exec's namespace is refused
+- [x] Each action is listed in `vfsChanges` as an action

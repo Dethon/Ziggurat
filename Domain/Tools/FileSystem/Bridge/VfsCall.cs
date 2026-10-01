@@ -222,6 +222,36 @@ public sealed class VfsCall
         return Logged(answer, from, VfsChange.Operations.Move, to);
     }
 
+    // An action file run from a script: the exec tool's call on the action's directory, `./<name>`
+    // with the script's arguments as the words they were, so the mount's own catalog decides what it
+    // means. Every held file was committed by the daemon before this arrived, so an action sees what
+    // the script prepared.
+    public async Task<BridgeAnswer<BridgeActionResult>> ActionAsync(string path, IReadOnlyList<string> argv, CancellationToken ct)
+    {
+        if (Revoked)
+        {
+            return Dropped<BridgeActionResult>(path, VfsChange.Operations.Action);
+        }
+
+        var directory = path.TrimEnd('/')[..path.TrimEnd('/').LastIndexOf('/')];
+        if (Resolve<BridgeActionResult>(directory, VfsExecTool.Name, out var resolution) is { } refused)
+        {
+            return Logged(refused, path, VfsChange.Operations.Action);
+        }
+
+        var command = string.Join(' ', argv.Select(ShellQuote).Prepend($"./{path.TrimEnd('/')[(path.TrimEnd('/').LastIndexOf('/') + 1)..]}"));
+        var answer = (await resolution.Backend.ExecAsync(resolution.RelativePath, command, null, ct)).TryGetValue(out var exec, out var error)
+            ? new BridgeAnswer<BridgeActionResult>.Ok(new BridgeActionResult(exec.Stdout, exec.Stderr, exec.ExitCode))
+            : BridgeAnswer<BridgeActionResult>.From(error);
+        return Logged(answer, path, VfsChange.Operations.Action);
+    }
+
+    // The quoting the mounts' tokenizer reads back as one word.
+    private static string ShellQuote(string word) =>
+        word.Length > 0 && word.All(c => char.IsAsciiLetterOrDigit(c) || "-_./=:,@%+".Contains(c))
+            ? word
+            : $"'{word.Replace("'", "'\\''")}'";
+
     // The target takes the source's content under a write's rules, and only then does the source go.
     private async Task<BridgeAnswer<bool>> ReplaceAsync(string from, string to, CancellationToken ct) =>
         await ReadAsync(from, ct) switch

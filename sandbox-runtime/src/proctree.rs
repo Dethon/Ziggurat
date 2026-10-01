@@ -20,6 +20,13 @@ pub fn descendants(root: i32, parents: &HashMap<i32, i32>) -> HashSet<i32> {
     found
 }
 
+/// Whether `pid` is `ancestor` or one of its descendants, following `parent_of` up the tree.
+pub fn descends_from(pid: i32, ancestor: i32, parent_of: impl Fn(i32) -> Option<i32>) -> bool {
+    std::iter::successors(Some(pid), |&p| parent_of(p).filter(|&parent| parent > 0 && parent != p))
+        .take(256)
+        .any(|p| p == ancestor)
+}
+
 /// The parent of every process `/proc` can see. A process that exits mid-read is skipped.
 #[cfg(target_os = "linux")]
 pub fn read_parents() -> HashMap<i32, i32> {
@@ -57,6 +64,16 @@ mod tests {
         let found = descendants(10, &parents);
 
         assert_eq!(found, HashSet::from([11, 12, 13]));
+    }
+
+    #[test]
+    fn a_descendant_is_found_up_its_chain_and_a_stranger_is_not() {
+        let parents = HashMap::from([(30, 20), (20, 10), (10, 1), (40, 1)]);
+        let parent_of = |pid| parents.get(&pid).copied();
+
+        assert!(descends_from(30, 10, parent_of));
+        assert!(descends_from(10, 10, parent_of));
+        assert!(!descends_from(40, 10, parent_of));
     }
 
     #[test]

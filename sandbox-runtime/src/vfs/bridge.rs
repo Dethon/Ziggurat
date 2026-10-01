@@ -39,6 +39,15 @@ pub struct Listing {
     pub truncated: bool,
 }
 
+/// What an action printed and how it ended.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+}
+
 /// A refusal, as the errno the kernel will be handed.
 pub type Errno = i32;
 
@@ -61,6 +70,9 @@ pub trait Bridge: Send + Sync + 'static {
 
     /// The command is about to be killed: what arrives from now on is dropped, and logged so.
     fn revoke(&self) -> Result<(), Errno>;
+
+    /// An action file run from a script: the mount's exec on the action's directory.
+    fn action(&self, path: &str, argv: &[String]) -> Result<ActionOutput, Errno>;
 }
 
 /// The bridge's errno names, as the agent spells them (`Errnos` in the bridge).
