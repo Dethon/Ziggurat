@@ -136,7 +136,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         if (_execScreen is null
             || context.Function.GetService<ExecReach>() is not { } reach
             || ArgumentText(context.Arguments, "path") is not { } path
-            || reach.Of(path) is not { } shellReach)
+            || reach.Of(path, ArgumentText(context.Arguments, "command") ?? "") is not { } shellReach)
         {
             return null;
         }

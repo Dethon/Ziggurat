@@ -64,11 +64,11 @@ public class FileSystemToolFeatureTests
         var tools = new FileSystemToolFeature(registry).GetTools(config).ToList();
 
         var reach = tools.Single(t => t.Name == "domain__filesystem__exec").GetService<ExecReach>().ShouldNotBeNull();
-        reach.Of("/sandbox/home/sandbox_user").ShouldBe(ShellReach.Contained);
-        reach.Of("OUTPOST:Laptop/home/someone").ShouldBe(ShellReach.Host);
-        reach.Of("/laptop").ShouldBeNull();
-        reach.Of("/ha").ShouldBeNull();
-        reach.Of("/nowhere").ShouldBeNull();
+        reach.Of("/sandbox/home/sandbox_user", "ls").ShouldBe(ShellReach.Contained);
+        reach.Of("OUTPOST:Laptop/home/someone", "ls").ShouldBe(ShellReach.Host);
+        reach.Of("/laptop", "ls").ShouldBeNull();
+        reach.Of("/ha", "ls").ShouldBeNull();
+        reach.Of("/nowhere", "ls").ShouldBeNull();
         tools.Single(t => t.Name == "domain__filesystem__file_read").GetService<ExecReach>().ShouldBeNull();
     }
 

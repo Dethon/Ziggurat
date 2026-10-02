@@ -25,7 +25,7 @@ public class ToolApprovalChatClientExecScreenTests
         ["/ha"] = null
     };
 
-    private static ShellReach? ReachOf(string path) =>
+    private static ShellReach? ReachOf(string path, string command) =>
         _mounts.FirstOrDefault(m => path.StartsWith(m.Key, StringComparison.Ordinal)).Value;
 
     private static AIFunction ExecFunction(List<string>? ran = null) =>

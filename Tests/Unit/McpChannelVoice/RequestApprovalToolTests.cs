@@ -784,8 +784,9 @@ public class RequestApprovalToolTests : IDisposable
     }
 
     [Theory]
-    [InlineData(ExecScreenCodes.Destructive, "Borraría o cambiaría algo que ya está en tu ordenador.")]
-    [InlineData(ExecScreenCodes.SendsOut, "Enviaría datos de tu ordenador a un servidor.")]
+    [InlineData(ExecScreenCodes.Destructive, "Borraría o cambiaría algo que ya existe.")]
+    [InlineData(ExecScreenCodes.SendsOut, "Enviaría datos a un servidor.")]
+    [InlineData(ExecScreenCodes.RunsDownloaded, "Descargaría un programa y lo ejecutaría.")]
     [InlineData(ExecScreenCodes.Unjudged, "Se ejecuta en tu ordenador y no he podido comprobarlo.")]
     public async Task RequestMode_EachScreenCode_IsSpokenInSpanish(string code, string sentence)
     {

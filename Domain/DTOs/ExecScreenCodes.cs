@@ -7,11 +7,14 @@ public static class ExecScreenCodes
     // The command does not look like part of what the person asked for.
     public const string NotRequested = "not_requested";
 
-    // It would delete, overwrite or irreversibly change what is already on the person's machine.
+    // It would delete, overwrite or irreversibly change what is already there.
     public const string Destructive = "destructive";
 
-    // It would send data from the person's machine to a remote server.
+    // It would send data to a remote server.
     public const string SendsOut = "sends_out";
+
+    // It would download code or a program and run it.
+    public const string RunsDownloaded = "runs_downloaded";
 
     // Nobody could say: the judge was late, down, unconfigured, or the turn was the local box's.
     public const string Unjudged = "unjudged";

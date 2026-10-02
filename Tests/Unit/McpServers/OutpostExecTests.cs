@@ -121,7 +121,7 @@ public sealed class OutpostExecTests : IDisposable
             McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(outpost), [VfsExecTool.Name])!,
             outpost);
 
-        ExecReach.Over(registry).Of($"outpost:laptop{_workingDirectory}").ShouldBe(ShellReach.Host);
+        ExecReach.Over(registry).Of($"outpost:laptop{_workingDirectory}", "./build").ShouldBe(ShellReach.Host);
     }
 
     [Fact]

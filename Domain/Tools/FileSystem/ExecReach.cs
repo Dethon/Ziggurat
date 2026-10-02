@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools.FileSystem.Bridge;
@@ -9,14 +10,18 @@ namespace Domain.Tools.FileSystem;
 // It travels on the exec function itself, so the approval client reads it off the very call it
 // is deciding: an agent can hold several sessions, and a lookup held anywhere else would have to
 // guess which one a call came from.
-public sealed class ExecReach(Func<string, ShellReach?> reachOf)
+public sealed partial class ExecReach(Func<string, string, ShellReach?> reachOf)
 {
     // Null for a path no mount serves, and for a mount with no shell (/ha) that no sandbox runs.
-    public ShellReach? Of(string path) => reachOf(path);
+    public ShellReach? Of(string path, string command) => reachOf(path, command);
 
     // `reroutes`: an exec on a mount with no shell of its own runs in the session's sandbox
     // (VfsExecTool), so it reaches as far as the sandbox does — when there is a sandbox to run it in.
-    public static ExecReach Over(IVirtualFileSystemRegistry registry, bool reroutes = false) => new(path =>
+    // Except one action file run by itself, which is what exec on that mount was before it was
+    // rerouted (the mount's own catalog) and is not screened: each action is still gated by the
+    // bridge, and nothing else can run, because a served mount's only executables are its action
+    // files. Anything more is a sandbox script and reaches as far as one.
+    public static ExecReach Over(IVirtualFileSystemRegistry registry, bool reroutes = false) => new((path, command) =>
     {
         if (!registry.Resolve(path).TryGetValue(out var resolution, out _))
         {
@@ -29,9 +34,15 @@ public sealed class ExecReach(Func<string, ShellReach?> reachOf)
         return mount?.ShellReach
                ?? (reroutes && mount is not null && VfsCall.IsServed(mount)
                    && mounts.Any(m => m.ShellReach == ShellReach.Contained)
+                   && !BareAction().IsMatch(command)
                    ? ShellReach.Contained
                    : null);
     });
+
+    // `./name args`, one simple command: nothing that chains, pipes, redirects, backgrounds or
+    // substitutes, and no second line. Quotes are fine — arguments are data to the action.
+    [GeneratedRegex(@"\A[ \t]*\./[^\s/;&|<>()$`\\]+([ \t]+[^;&|<>()$`\n\r]*)?\z")]
+    private static partial Regex BareAction();
 
     // The exec function as the session offers it, answering GetService<ExecReach>() with this
     // lookup. Everything the model sees is the inner function's.

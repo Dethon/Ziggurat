@@ -142,7 +142,7 @@ public class RequestApprovalToolTests
 
         var message = RequestApprovalTool.FormatApprovalMessage([request]);
 
-        message.ShouldEndWith("<i>Why you're asked: It would delete or change something already on your computer.</i>");
+        message.ShouldEndWith("<i>Why you're asked: It would delete or change something that's already there.</i>");
     }
 
     [Fact]

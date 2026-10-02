@@ -8,8 +8,9 @@ public static class ExecScreenReasons
     private static readonly IReadOnlyDictionary<string, string> _english = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         [ExecScreenCodes.NotRequested] = "This doesn't look like part of what you asked for.",
-        [ExecScreenCodes.Destructive] = "It would delete or change something already on your computer.",
-        [ExecScreenCodes.SendsOut] = "It would send data from your computer to a remote server.",
+        [ExecScreenCodes.Destructive] = "It would delete or change something that's already there.",
+        [ExecScreenCodes.SendsOut] = "It would send data to a remote server.",
+        [ExecScreenCodes.RunsDownloaded] = "It would download a program and run it.",
         [ExecScreenCodes.Unjudged] = "It runs on your computer and couldn't be checked first."
     };
 

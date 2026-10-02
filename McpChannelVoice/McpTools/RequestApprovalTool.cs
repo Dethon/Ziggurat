@@ -140,8 +140,9 @@ public sealed class RequestApprovalTool
         requests.SelectMany(r => r.Screen ?? []).Select(code => code switch
             {
                 ExecScreenCodes.NotRequested => "Esto no parece parte de lo que pediste.",
-                ExecScreenCodes.Destructive => "Borraría o cambiaría algo que ya está en tu ordenador.",
-                ExecScreenCodes.SendsOut => "Enviaría datos de tu ordenador a un servidor.",
+                ExecScreenCodes.Destructive => "Borraría o cambiaría algo que ya existe.",
+                ExecScreenCodes.SendsOut => "Enviaría datos a un servidor.",
+                ExecScreenCodes.RunsDownloaded => "Descargaría un programa y lo ejecutaría.",
                 ExecScreenCodes.Unjudged => "Se ejecuta en tu ordenador y no he podido comprobarlo.",
                 _ => null
             })
