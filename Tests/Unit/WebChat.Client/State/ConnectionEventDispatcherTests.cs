@@ -34,7 +34,7 @@ public sealed class ConnectionEventDispatcherTests
         handler.Invoke(_sut, null);
 
         _mockDispatcher.Invocations.Count.ShouldBe(1);
-        _mockDispatcher.Invocations[0].Arguments[0].GetType().ShouldBe(expectedActionType);
+        _mockDispatcher.Invocations[0].Arguments[0].ShouldNotBeNull().GetType().ShouldBe(expectedActionType);
     }
 
     [Fact]

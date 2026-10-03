@@ -822,7 +822,7 @@ public class RequestApprovalToolTests : IDisposable
     [
         .. _tts.Invocations
             .Where(i => i.Method.Name == nameof(ITextToSpeech.SynthesizeAsync))
-            .Select(i => (string)i.Arguments[0])
+            .Select(i => (string)i.Arguments[0]!)
     ];
 
     [Fact]

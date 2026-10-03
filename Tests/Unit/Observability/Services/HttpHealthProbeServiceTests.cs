@@ -43,8 +43,8 @@ public class HttpHealthProbeServiceTests
 
     private int RosterWrites(string service) => _db.Invocations
         .Count(i => i.Method.Name == "SortedSetAddAsync"
-            && i.Arguments[0].ToString() == "metrics:health:seen"
-            && i.Arguments[1].ToString() == service);
+            && i.Arguments[0]?.ToString() == "metrics:health:seen"
+            && i.Arguments[1]?.ToString() == service);
 
     [Fact]
     public async Task ProbeAsync_TargetUnreachable_StillKeepsServiceOnTheRoster()
@@ -69,7 +69,7 @@ public class HttpHealthProbeServiceTests
         RosterWrites("tse-extractor").ShouldBe(1);
         _db.Invocations
             .Count(i => i.Method.Name == "StringSetAsync"
-                && i.Arguments[0].ToString() == "metrics:health:tse-extractor")
+                && i.Arguments[0]?.ToString() == "metrics:health:tse-extractor")
             .ShouldBe(1);
         _clientProxy.Verify(c => c.SendCoreAsync(
             "OnHealthUpdate",
@@ -87,7 +87,7 @@ public class HttpHealthProbeServiceTests
 
         _db.Invocations
             .Count(i => i.Method.Name == "StringSetAsync"
-                && i.Arguments[0].ToString() == "metrics:health:lemonade")
+                && i.Arguments[0]?.ToString() == "metrics:health:lemonade")
             .ShouldBe(1);
     }
 

@@ -22,6 +22,7 @@ public static class SandboxContainer
             .WithEnvironment("PGID", getegid().ToString())
             .WithCreateParameterModifier(parameters =>
             {
+                ArgumentNullException.ThrowIfNull(parameters.HostConfig);
                 parameters.HostConfig.CapAdd = [.. parameters.HostConfig.CapAdd ?? [], "SYS_ADMIN"];
                 parameters.HostConfig.SecurityOpt =
                     [.. parameters.HostConfig.SecurityOpt ?? [], "apparmor=ziggurat-sandbox", "seccomp=" + _seccomp.Value];
