@@ -41,7 +41,7 @@ public class PlaywrightWebBrowser(
     // How long a click that changed nothing it can see waits for a popup it may have opened. The
     // browser reports one only when the new page says it is ready: tens of milliseconds usually,
     // past a second on a cold one.
-    private static readonly TimeSpan PopupGrace = TimeSpan.FromMilliseconds(1500);
+    private static readonly TimeSpan _popupGrace = TimeSpan.FromMilliseconds(1500);
 
     public async Task<BrowseResult> NavigateAsync(BrowseRequest request, CancellationToken ct = default)
     {
@@ -576,7 +576,7 @@ public class PlaywrightWebBrowser(
                     && page.Url == ctx.UrlBefore
                     && await GetNearbyHtmlAsync(page, targetSelector) == nearbyBefore)
                 {
-                    await ctx.WaitForPopupAsync(PopupGrace);
+                    await ctx.WaitForPopupAsync(_popupGrace);
                 }
             }
 
