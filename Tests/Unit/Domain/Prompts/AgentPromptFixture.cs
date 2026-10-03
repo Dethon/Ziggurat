@@ -37,7 +37,7 @@ internal static class AgentPromptFixture
     // generator, so the snapshot holds the real prose about machines rather than a paraphrase.
     // A session whose sandbox serves its other mounts says so under the mounts, in the words the
     // filesystem feature generates from them; the sample is the vault and the sandbox above.
-    private static readonly string SampleShell = FileSystemToolFeature.ShellSection([
+    private static readonly string _sampleShell = FileSystemToolFeature.ShellSection([
         new FileSystemMount("vault", "/vault", "the user's Obsidian vault."),
         new FileSystemMount("sandbox", "/sandbox", "the sandbox container's disk.")
         {
@@ -46,7 +46,7 @@ internal static class AgentPromptFixture
         }
     ]);
 
-    private static readonly string SampleMachines = FileSystemToolFeature.MachinesSection([
+    private static readonly string _sampleMachines = FileSystemToolFeature.MachinesSection([
         new FileSystemMount(
             "laptop",
             OutpostMountPoint.For("laptop"),
@@ -149,8 +149,8 @@ internal static class AgentPromptFixture
                     string.Join("\n\n", new[]
                     {
                         SampleMounts,
-                        usesOutposts ? SampleMachines : null,
-                        endpoints.Any(e => ServiceOf(e) == "mcp-sandbox") ? SampleShell : null
+                        usesOutposts ? _sampleMachines : null,
+                        endpoints.Any(e => ServiceOf(e) == "mcp-sandbox") ? _sampleShell : null
                     }.OfType<string>()))]
                 : [],
             Client =
