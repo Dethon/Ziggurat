@@ -83,6 +83,8 @@ struct State {
     /// Paths deleted in the call and not yet on the mount, and whether each is a directory.
     deleted: BTreeMap<String, bool>,
     writers: HashMap<u64, Writer>,
+    /// Last releases whose commit has left the writer behind and not yet heard from the bridge.
+    committing: usize,
     next_ino: u64,
     next_fh: u64,
     next_seq: u64,
@@ -345,7 +347,9 @@ impl<B: Bridge> Vfs<B> {
                     match last {
                         Some(true) => {
                             let writer = state.writers.remove(&ino).expect("present");
-                            writer.dirty.then(|| (state.path(ino), writer.data))
+                            let commit = writer.dirty.then(|| (state.path(ino), writer.data));
+                            state.committing += usize::from(commit.is_some());
+                            commit
                         }
                         _ => None,
                     }
@@ -353,8 +357,11 @@ impl<B: Bridge> Vfs<B> {
                 _ => None,
             }
         };
-        if let Some((Ok(path), data)) = commit {
-            let _ = self.commit_write(&path, &data, false);
+        if let Some((path, data)) = commit {
+            if let Ok(path) = path {
+                let _ = self.commit_write(&path, &data, false);
+            }
+            self.lock().committing -= 1;
         }
         self.released.notify_all();
     }
@@ -520,11 +527,13 @@ impl<B: Bridge> Vfs<B> {
         let _ = self.bridge.revoke();
     }
 
-    /// The command is over: wait for the kernel's late releases, then commit everything held.
+    /// The command is over: wait for the kernel's late releases and the commits they started —
+    /// exec answers once this returns, and the change log must already hold them — then commit
+    /// everything held.
     pub fn finish(&self) {
         let deadline = Instant::now() + RELEASE_GRACE;
         let mut state = self.lock();
-        while !state.writers.is_empty() && Instant::now() < deadline {
+        while (!state.writers.is_empty() || state.committing > 0) && Instant::now() < deadline {
             state = self
                 .released
                 .wait_timeout(state, deadline.saturating_duration_since(Instant::now()))

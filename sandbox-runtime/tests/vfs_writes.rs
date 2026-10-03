@@ -5,6 +5,10 @@
 mod common;
 
 use common::{FakeBridge, FakeNode};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
+
 use sandbox_runtime::vfs::core::{Vfs, ROOT};
 
 const NOTE: &str = "/vault/notes/todo.md";
@@ -278,4 +282,35 @@ fn after_a_revocation_every_commit_still_reaches_the_bridge_to_be_dropped() {
         ]
     );
     assert_eq!(vfs.bridge().content(NOTE).unwrap(), "old\n");
+}
+
+// The last release commits after it lets go of the writer, and the kernel sends it on its own
+// thread after the command has exited. The command is not over until that commit has reached the
+// bridge: exec answers once finish returns, and a change log read then must already hold it.
+#[test]
+fn the_command_does_not_finish_while_a_release_is_still_committing() {
+    let vfs = Arc::new(vault());
+    vfs.bridge().hold_writes();
+    let opened = vfs.open(ino(&vfs, NOTE), true, true).unwrap();
+    vfs.write(opened.fh, 0, b"new\n").unwrap();
+
+    let releasing = {
+        let vfs = Arc::clone(&vfs);
+        thread::spawn(move || vfs.release(opened.fh))
+    };
+    vfs.bridge().wait_for_a_held_write();
+    let finishing = {
+        let vfs = Arc::clone(&vfs);
+        thread::spawn(move || vfs.finish())
+    };
+
+    // An absence is bought with time: long enough for a finish that does not wait to return.
+    thread::sleep(Duration::from_millis(300));
+    let finished_early = finishing.is_finished();
+    vfs.bridge().let_writes_through();
+    releasing.join().unwrap();
+    finishing.join().unwrap();
+
+    assert!(!finished_early, "finish returned while the release's commit was still in flight");
+    assert_eq!(vfs.bridge().mutations(), [format!("write {NOTE} overwrite new\n")]);
 }

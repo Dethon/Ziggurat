@@ -3,7 +3,7 @@
 //! A bridge in memory, counting what it is asked, for the daemon core's tests.
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 
 use sandbox_runtime::vfs::bridge::{ActionOutput, Attr, Bridge, Entry, Errno, Kind, Listing};
 
@@ -22,6 +22,16 @@ pub struct FakeBridge {
     /// Paths whose writes the mount refuses, as a mount refusing them would.
     pub refusing: Mutex<Vec<String>>,
     pub revoked: Mutex<bool>,
+    /// Writes wait while it holds, so a test can catch a commit mid-flight.
+    pub hold: Mutex<Hold>,
+    pub hold_changed: Condvar,
+}
+
+#[derive(Default)]
+pub struct Hold {
+    pub holding: bool,
+    /// How many writes are waiting on the hold right now.
+    pub waiting: usize,
 }
 
 impl FakeBridge {
@@ -47,6 +57,36 @@ impl FakeBridge {
             .into_iter()
             .filter(|c| !(c.starts_with("attr ") || c.starts_with("list ") || c.starts_with("read ")))
             .collect()
+    }
+
+    pub fn hold_writes(&self) {
+        self.hold.lock().unwrap().holding = true;
+    }
+
+    pub fn let_writes_through(&self) {
+        self.hold.lock().unwrap().holding = false;
+        self.hold_changed.notify_all();
+    }
+
+    /// Blocks until a write has reached the bridge and is waiting on the hold.
+    pub fn wait_for_a_held_write(&self) {
+        let mut hold = self.hold.lock().unwrap();
+        while hold.waiting == 0 {
+            hold = self.hold_changed.wait(hold).unwrap();
+        }
+    }
+
+    fn wait_while_held(&self) {
+        let mut hold = self.hold.lock().unwrap();
+        if !hold.holding {
+            return;
+        }
+        hold.waiting += 1;
+        self.hold_changed.notify_all();
+        while hold.holding {
+            hold = self.hold_changed.wait(hold).unwrap();
+        }
+        hold.waiting -= 1;
     }
 
     pub fn refuse(&self, path: &str) {
@@ -109,6 +149,7 @@ impl Bridge for FakeBridge {
     }
 
     fn write(&self, path: &str, content: &[u8], new: bool) -> Result<(), Errno> {
+        self.wait_while_held();
         self.record(format!(
             "write {path} {} {}",
             if new { "create" } else { "overwrite" },
