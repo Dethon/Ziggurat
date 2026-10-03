@@ -81,12 +81,18 @@ internal sealed class PlaywrightImageProbe(IPage page) : IImagePageProbe
                     const response = await fetch(url, { credentials });
                     const mediaType = response.headers.get('content-type');
                     if (!response.ok) return JSON.stringify({ ok: false, mediaType });
-                    const bytes = new Uint8Array(await response.arrayBuffer());
-                    let binary = '';
-                    for (let i = 0; i < bytes.length; i++) {
-                        binary += String.fromCharCode(bytes[i]);
-                    }
-                    return JSON.stringify({ ok: true, mediaType, data: btoa(binary) });
+                    // Never index a typed array here: Camoufox evaluates in an isolated world
+                    // since 152.0.4-beta.29, where reading a page-made Uint8Array through Xrays
+                    // throws, and the image would fall to the canvas rung and leave re-encoded.
+                    const blob = await response.blob();
+                    const dataUrl = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.onerror = () => reject(reader.error);
+                        reader.readAsDataURL(blob);
+                    });
+                    const data = dataUrl.slice(dataUrl.indexOf(',') + 1);
+                    return JSON.stringify({ ok: true, mediaType, data });
                 } catch {
                     return null;
                 }

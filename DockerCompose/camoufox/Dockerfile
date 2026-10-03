@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/playwright:v1.62.0-noble
+FROM mcr.microsoft.com/playwright:v1.63.0-noble
 
 WORKDIR /app
 
@@ -11,9 +11,15 @@ ENV NPM_CONFIG_FETCH_RETRIES=5 \
     NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000 \
     NPM_CONFIG_FETCH_TIMEOUT=300000
 
+# `camoufox-js fetch` takes the newest browser release it accepts, and has no version flag. Before
+# 0.12 it accepted prereleases, so the 156.0.1 betas (2026-09-30) arrived on the next rebuild and
+# crashed the server at launch: their properties.json drops navigator.product, which every
+# camoufox-js still writes into the config. 0.12 skips prereleases and lands on the newest stable.
+# Its peer range says playwright-core <1.61, but the version here must match the .NET client's,
+# and with patch-viewport.js it passes the integration suite -- hence --legacy-peer-deps.
 RUN set -eu; \
     for attempt in 1 2 3; do \
-        if npm install camoufox-js@0.9.3 playwright-core@1.62.0 && npx camoufox-js fetch; then \
+        if npm install --legacy-peer-deps camoufox-js@0.12.0 playwright-core@1.63.0 && npx camoufox-js fetch; then \
             exit 0; \
         fi; \
         echo "camoufox fetch attempt ${attempt} failed; retrying in 15s"; \
