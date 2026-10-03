@@ -14,6 +14,8 @@ public class BrowserSessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, BrowserSession> _sessions = new();
     private readonly SemaphoreSlim _createLock = new(1, 1);
     private readonly TimeProvider _timeProvider;
+
+    internal TimeProvider Time => _timeProvider;
     private readonly TimeSpan _idleTimeout;
     private readonly int _tabCap;
     private readonly ITimer? _pruneTimer;
@@ -542,10 +544,7 @@ public class BrowserSessionManager : IAsyncDisposable
             // Pending on the tab whose click spawned it, so the popup answers that click's action
             // and no other — a session-global handoff let a parallel action on another tab swallow
             // it and claim its URL and snapshot as its own answer.
-            if (opener is not null)
-            {
-                opener.PendingPopup = tab;
-            }
+            opener?.OfferPopup(tab);
 
             return tab;
         }
@@ -609,9 +608,7 @@ public class BrowserSessionManager : IAsyncDisposable
             return null;
         }
 
-        var pending = tab.PendingPopup;
-        tab.PendingPopup = null;
-        return pending;
+        return tab.TakePopup();
     }
 
     internal static string SafeUrl(IPage page)
@@ -977,6 +974,22 @@ public sealed class TabWorkContext
         _stampedCount = await stamp(_lease.Start);
     }
 
+    // A popup is reported only once the new page says it is ready, which can land after the
+    // gesture that opened it has returned and settled. Answers whether one was offered to this
+    // tab before the grace ran out; it ends the moment one is, so only a quiet act pays the grace.
+    public async Task<bool> WaitForPopupAsync(TimeSpan grace)
+    {
+        try
+        {
+            await _tab.PopupOffered.WaitAsync(grace, _manager.Time, _ct);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+    }
+
     internal void CommitLease()
     {
         if (_lease is null)
@@ -1011,8 +1024,48 @@ internal class BrowserTab(IPage page, string requestedUrl)
     // Its place in the session's touch order; the highest is the most recently touched.
     public long LastTouch { get; internal set; }
 
+    private readonly Lock _popupGate = new();
+    private TaskCompletionSource _popupOffered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     // The popup this tab's last click spawned, waiting for that click's action to answer from it.
-    internal BrowserTab? PendingPopup { get; set; }
+    private BrowserTab? _pendingPopup;
+
+    // Completes when a popup is offered after the last take, so a wait never mistakes an earlier
+    // call's leftover for its own.
+    internal Task PopupOffered
+    {
+        get
+        {
+            lock (_popupGate)
+            {
+                return _popupOffered.Task;
+            }
+        }
+    }
+
+    internal void OfferPopup(BrowserTab popup)
+    {
+        lock (_popupGate)
+        {
+            _pendingPopup = popup;
+            _popupOffered.TrySetResult();
+        }
+    }
+
+    internal BrowserTab? TakePopup()
+    {
+        lock (_popupGate)
+        {
+            var pending = _pendingPopup;
+            _pendingPopup = null;
+            if (_popupOffered.Task.IsCompleted)
+            {
+                _popupOffered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            return pending;
+        }
+    }
 
     // Serializes navigation, action, snapshot and image fetch on this one tab.
     internal SemaphoreSlim Gate { get; } = new(1, 1);

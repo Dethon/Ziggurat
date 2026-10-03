@@ -38,6 +38,11 @@ public class PlaywrightWebBrowser(
     private const int ConnectionRetryAttempts = 3;
     private const int ConnectionRetryDelayMs = 2_000;
 
+    // How long a click that changed nothing it can see waits for a popup it may have opened. The
+    // browser reports one only when the new page says it is ready: tens of milliseconds usually,
+    // past a second on a cold one.
+    private static readonly TimeSpan PopupGrace = TimeSpan.FromMilliseconds(1500);
+
     public async Task<BrowseResult> NavigateAsync(BrowseRequest request, CancellationToken ct = default)
     {
         if (!ValidateUrl(request.Url))
@@ -500,6 +505,10 @@ public class PlaywrightWebBrowser(
             // data-ref attributes that the locator depends on
             var before = await _snapshotService.CaptureAsync(page, null, request.SessionId, preserveRefs: true);
             var beforeLines = SnapshotLinesForDiff(before.Snapshot);
+            var targetSelector = $"[data-ref='{request.Ref}']";
+            var nearbyBefore = request.Action == WebActionType.Click
+                ? await GetNearbyHtmlAsync(page, targetSelector)
+                : null;
 
             switch (request.Action)
             {
@@ -560,6 +569,15 @@ public class PlaywrightWebBrowser(
             else
             {
                 await SmartWaitAsync(page, request, ct);
+
+                // A click that opened a popup looks, from its own page, like a click that did
+                // nothing at all.
+                if (nearbyBefore is not null
+                    && page.Url == ctx.UrlBefore
+                    && await GetNearbyHtmlAsync(page, targetSelector) == nearbyBefore)
+                {
+                    await ctx.WaitForPopupAsync(PopupGrace);
+                }
             }
 
             return new ElementActOutcome(null, beforeLines);
