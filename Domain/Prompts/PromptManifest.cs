@@ -57,8 +57,11 @@ public static class PromptManifest
             // words that keep a model from reading it as stop-and-wait are the words that earn
             // its place — seven of the user's notes went the turn it was missing. 500 for the
             // beside-a-call rule: it has to be read before the first call, so it cannot live in
-            // a skill, and the voice section's version of it never reaches a text agent.
-            TokenBudget = 500,
+            // a skill, and the voice section's version of it never reaches a text agent. 550 for
+            // what the carve-out's "work" is: widened from files in bulk to one file or many, it
+            // read to gpt-6-luna as covering a watch, and a removal the user named outright was
+            // answered with a confirmation question three runs of three.
+            TokenBudget = 550,
             Conflict = ConflictPolicy.Governs(PromptRules.Refusals),
             Claims = CoreDirectivePrompt.Claims
         },
