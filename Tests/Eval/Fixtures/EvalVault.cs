@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Tests.Eval.Fixtures;
 
 // A vault small enough to read in a dump and rich enough to break. Every piece of Obsidian syntax
@@ -36,19 +38,28 @@ public static class EvalVault
             System.Security.Cryptography.SHA256.HashData(
                 System.Text.Encoding.UTF8.GetBytes(SaucesContent)));
 
-    // What `wc -w` answers over every note in Cocina, counted from the seed itself — words are runs
-    // of anything but whitespace, as wc reads them — so the shell family can assert the number a
-    // real count over the real bytes produces.
-    public static int CocinaWordCount
+    // Every count of the words in Cocina a script over the real bytes produces. "Words" has no one
+    // definition: `wc -w` takes runs of anything but whitespace, frontmatter and a list's dash
+    // included, while a word regex takes letters and digits, and often joins a hyphenated
+    // compound or drops the frontmatter first. Each is a real count, and none is a number anybody
+    // reaches by eye — which is the difference the shell family's reply check exists to see.
+    public static IReadOnlyList<int> CocinaWordCounts
     {
         get
         {
             var root = Seed();
             try
             {
-                return Directory.EnumerateFiles(Path.Combine(root, "Cocina"), "*.md")
-                    .Sum(file => File.ReadAllText(file)
-                        .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length);
+                var notes = Directory.EnumerateFiles(Path.Combine(root, "Cocina"), "*.md")
+                    .Select(File.ReadAllText)
+                    .ToArray();
+
+                return
+                [
+                    .. _wordDefinitions
+                        .SelectMany(count => new[] { notes.Sum(count), notes.Select(Body).Sum(count) })
+                        .Distinct()
+                ];
             }
             finally
             {
@@ -56,6 +67,19 @@ public static class EvalVault
             }
         }
     }
+
+    private static readonly Func<string, int>[] _wordDefinitions =
+    [
+        text => text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length,
+        text => Regex.Count(text, @"\w+"),
+        text => Regex.Count(text, @"\w+(?:[-'’]\w+)*")
+    ];
+
+    // A note without its frontmatter block, the way a script that skips the metadata reads it.
+    private static string Body(string note) =>
+        Regex.Match(note, @"\A---\n.*?\n---\n", RegexOptions.Singleline) is { Success: true } frontmatter
+            ? note[frontmatter.Length..]
+            : note;
 
     public static string Seed()
     {

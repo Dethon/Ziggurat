@@ -19,7 +19,8 @@ public static class ShellScenarios
 
     // An aggregate no single tool answers: the word count of a folder. The notes are read in place
     // at /vault from a command, with nothing copied into the sandbox first — and the number is one
-    // only a real `wc` over the real bytes produces.
+    // only a real count over the real bytes produces, under whichever definition of a word the
+    // script chose.
     public static Scenario WordsAcrossTheVault => new()
     {
         Name = "a count over vault notes runs on /vault in place",
@@ -54,7 +55,11 @@ public static class ShellScenarios
         CallCeiling = 5,
         Reply = new ReplyExpectation
         {
-            Mentions = [new SpokenValue("the folder's word count", EvalVault.CocinaWordCount.ToString())]
+            Mentions =
+            [
+                new SpokenValue("the folder's word count",
+                    [.. EvalVault.CocinaWordCounts.Select(count => count.ToString())])
+            ]
         },
         Claims = [SandboxSkill.WorksOnTheMountsInPlace.Id, VaultPrompt.ScriptsRunInPlace.Id],
         Policy = new RunPolicy(2, 3)
