@@ -462,7 +462,9 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^(\./)?create_event(\s|$)"),
+                    // At the start of the command or of one chained to it: the delete and the
+                    // create as one exec is the move in one call.
+                    Arg.Matches("command", @"(^|(&&|;|\n)\s*)(\./)?create_event(\s|$)"),
                     Arg.Matches("command", @"2026-08-17[ T]22:30"),
                     Arg.Matches("command", "(?i)basura"),
                     Arg.Matches("command", "(?i)insistent")
