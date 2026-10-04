@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Judgments;
 using Domain.Tools.Web;
 using Moq;
 using Shouldly;
@@ -94,6 +95,23 @@ public class WebBrowseToolTests
         result.Envelope["httpStatus"]!.GetValue<int>().ShouldBe(200);
     }
 
+    // The modal judgment is the one thing the browse hands the turn to: its client keeps a local
+    // turn local and bills the rest to whoever asked.
+    [Fact]
+    public async Task TheTurnBehindTheCall_RidesTheBrowseRequest()
+    {
+        var caller = new JudgmentCaller("z-ai/glm-5", "fran", "jonas", "conv-7");
+        BrowseRequest? seen = null;
+        _browser
+            .Setup(b => b.NavigateAsync(It.IsAny<BrowseRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<BrowseRequest, CancellationToken>((r, _) => seen = r)
+            .ReturnsAsync(Result("https://a.test/"));
+
+        await new TestableWebBrowseTool(_browser.Object).RunAsync(caller: caller);
+
+        seen.ShouldNotBeNull().Caller.ShouldBe(caller);
+    }
+
     private void SetUpNavigate(BrowseResult result) =>
         _browser
             .Setup(b => b.NavigateAsync(It.IsAny<BrowseRequest>(), It.IsAny<CancellationToken>()))
@@ -107,8 +125,8 @@ public class WebBrowseToolTests
     private sealed class TestableWebBrowseTool(IWebBrowser browser) : WebBrowseTool(browser)
     {
         public Task<WebBrowseToolResult> RunAsync(
-            int offset = 0, bool snapshot = false) =>
-            RunAsync("s", turnModel: null, "https://a.test/", null, 10000, offset,
+            int offset = 0, bool snapshot = false, JudgmentCaller? caller = null) =>
+            RunAsync("s", caller ?? JudgmentCaller.None, "https://a.test/", null, 10000, offset,
                 useReadability: false, scrollToLoad: false, scrollSteps: 3, snapshot,
                 CancellationToken.None);
     }

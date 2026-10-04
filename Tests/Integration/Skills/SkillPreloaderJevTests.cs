@@ -4,6 +4,7 @@ using Domain.Judgments;
 using Domain.Prompts;
 using Domain.Skills;
 using Infrastructure.Judgments;
+using Infrastructure.Metrics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
@@ -96,6 +97,7 @@ public class SkillPreloaderJevTests
         var judge = TypeSafeJudge.Create(
             new HttpClient(),
             new TypeSafeOptions { ApiUrl = shipped.TypeSafe.ApiUrl, ApiKey = apiKey!, Model = shipped.TypeSafe.Model },
+            NoOpMetricsPublisher.Instance,
             NullLogger.Instance);
         // The shipped bars and cap; a generous deadline, because what is measured here is the
         // answer and not this network's tail.

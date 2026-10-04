@@ -25,7 +25,7 @@ public class ModalJudgmentRegistrationTests
 
         var judge = provider.GetRequiredService<IJudge>();
         var outcome = await judge.JudgeAsync(
-            new JudgmentRequest(new System.Text.Json.Nodes.JsonObject(), new Dictionary<string, JudgmentQuestion>(), JudgmentRequest.NoTurn),
+            new JudgmentRequest(new System.Text.Json.Nodes.JsonObject(), new Dictionary<string, JudgmentQuestion>(), JudgmentCaller.None),
             CancellationToken.None);
 
         outcome.ShouldBeOfType<JudgmentOutcome.Absent>().Reason.ShouldBe(AbsenceReason.Unconfigured);

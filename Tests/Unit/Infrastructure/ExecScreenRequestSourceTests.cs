@@ -50,7 +50,8 @@ public class ExecScreenRequestSourceTests
         var asked = await ScreenedOn(worker.Received.ShouldNotBeNull());
 
         Requests(asked).ShouldBe(["Descarga https://example.org/data.csv y cuenta sus filas."]);
-        asked.TurnModel.ShouldBe("z-ai/glm-5");
+        asked.Caller.TurnModel.ShouldBe("z-ai/glm-5");
+        asked.Caller.Sender.ShouldBe("fran");
     }
 
     // A scheduled fire mints a conversation of its own each time, so nothing a person said earlier

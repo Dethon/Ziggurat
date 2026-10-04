@@ -175,9 +175,10 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
         }
     }
 
-    // The usage events are money, and a preload is the one other event a scenario asserts on:
-    // it cannot come through the tool seam, which only sees calls the model emitted. The rest
-    // of the stream is the deployment's telemetry.
+    // The usage events are money — every model's, Jev's among them, whose client publishes one
+    // per judgment as a chat turn does — and a preload is the one other event a scenario asserts
+    // on: it cannot come through the tool seam, which only sees calls the model emitted. The rest
+    // of the stream, a judgment's own event included, is the deployment's telemetry.
     public void Publish(MetricEvent metricEvent)
     {
         switch (metricEvent)
@@ -192,7 +193,6 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
             case ExecScreenEvent screened:
                 lock (_gate)
                 {
-                    _spends.Add(Spend.OfScreen(screened));
                     _screens += ExecScreenTally.Of(screened);
                 }
 
@@ -200,7 +200,6 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
             case SkillPreloadEvent preload:
                 lock (_gate)
                 {
-                    _spends.Add(Spend.OfPreload(preload));
                     PreloadModel = preload.Model ?? PreloadModel;
                     _preloadOutcomes[preload.Outcome] = _preloadOutcomes.GetValueOrDefault(preload.Outcome) + 1;
                     // The loads first, then the reads the host made beside them, all below zero

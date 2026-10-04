@@ -141,14 +141,16 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             return null;
         }
 
-        var turnModel = context.Messages.LastOrDefault(m => m.Role == ChatRole.User)?.GetTurnModel();
+        var asking = context.Messages.LastOrDefault(m => m.Role == ChatRole.User);
 
         return await _execScreen.ScreenAsync(
             new ExecScreenRequest(
-                shellReach, ArgumentText(context.Arguments, "command") ?? "", path, context.Messages, turnModel)
+                shellReach, ArgumentText(context.Arguments, "command") ?? "", path, context.Messages,
+                asking?.GetTurnModel())
             {
                 AgentId = _agentId,
-                ConversationId = _conversationId
+                ConversationId = _conversationId,
+                Sender = asking?.GetSenderId()
             },
             ct);
     }

@@ -100,10 +100,10 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
         _ => []
     };
 
-    // turnModel is the model the browsing turn was addressed to, passed down from the tool call's
+    // caller is the browsing turn — its model and who asked — passed down from the tool call's
     // `_meta`; the judge's client sends nothing for the local box, and that comes back NotAsked.
     public async Task<ModalPick> PickAsync(
-        ModalType kind, IReadOnlyList<ModalControl> controls, string? turnModel, CancellationToken ct)
+        ModalType kind, IReadOnlyList<ModalControl> controls, JudgmentCaller caller, CancellationToken ct)
     {
         // Settings a judgment cannot be asked under, treated as nothing to ask rather than acted
         // on: a deadline that is not a wait threw out of the CancellationTokenSource constructor
@@ -113,7 +113,7 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
             return ModalPick.NotAsked;
         }
 
-        var request = Ask(kind, controls, settings.MaxControls, turnModel);
+        var request = Ask(kind, controls, settings.MaxControls, caller);
         if (request is null)
         {
             return ModalPick.NotAsked;
@@ -175,7 +175,7 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
     // `none`. What the judge is shown is what the pick clicks, so the filtering and the cutting
     // both happen here, before either list exists.
     public static JudgmentRequest? Ask(
-        ModalType kind, IReadOnlyList<ModalControl> controls, int maxControls, string? turnModel)
+        ModalType kind, IReadOnlyList<ModalControl> controls, int maxControls, JudgmentCaller caller)
     {
         var questions = QuestionsFor(kind);
         if (questions.Count == 0)
@@ -215,7 +215,7 @@ public sealed class ModalJudge(IJudge judge, ModalJudgmentSettings settings, Tim
                 q => q.Id,
                 q => (JudgmentQuestion)new ChoiceQuestion(q.Instructions, criteria),
                 StringComparer.Ordinal),
-            turnModel);
+            caller);
     }
 
     // The rule: the questions in their order, the first confident pick of a listed control wins,

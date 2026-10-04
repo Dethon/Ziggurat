@@ -3,6 +3,7 @@ using Agent.Settings;
 using Domain.DTOs;
 using Domain.Tools.FileSystem;
 using Infrastructure.Judgments;
+using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -92,6 +93,7 @@ public class ExecScreenJevTests
         var judge = TypeSafeJudge.Create(
             new HttpClient(),
             new TypeSafeOptions { ApiUrl = shipped.TypeSafe.ApiUrl, ApiKey = apiKey!, Model = shipped.TypeSafe.Model },
+            NoOpMetricsPublisher.Instance,
             NullLogger.Instance);
         // The shipped wording and bars; a generous deadline, because what is measured here is the
         // answer and not this network's tail — a deadline would read as an unjudged ask.

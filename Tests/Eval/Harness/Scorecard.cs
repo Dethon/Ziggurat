@@ -121,41 +121,28 @@ public static class Scorecard
 
     private static JsonObject Spelled(Spend spend)
     {
-        var spelled = new JsonObject
-        {
-            ["cost"] = spend.Cost,
-            ["inputTokens"] = spend.InputTokens,
-            ["cachedInputTokens"] = spend.CachedInputTokens,
-            ["outputTokens"] = spend.OutputTokens,
-            ["requests"] = spend.Requests,
-            ["cacheShare"] = spend.CacheShare
-        };
+        var spelled = Spelled(spend.Total);
 
-        // Only where a judgment was paid for: a pass with the preload off has no preload key,
-        // so "cost nothing" never stands in for "never asked".
-        if (spend.PreloadRequests > 0)
+        // Every model the scenario or the pass paid, by the id its usage named — the agent's, the
+        // rubric judge's, Jev's — each one like any other.
+        spelled["byModel"] = spend.ByModel.Aggregate(new JsonObject(), (node, entry) =>
         {
-            spelled["preload"] = new JsonObject
-            {
-                ["cost"] = spend.PreloadCost,
-                ["inputTokens"] = spend.PreloadInputTokens,
-                ["requests"] = spend.PreloadRequests
-            };
-        }
-
-        // Beside the preload, and on the same condition: only where a screen was paid for.
-        if (spend.ScreenRequests > 0)
-        {
-            spelled["screen"] = new JsonObject
-            {
-                ["cost"] = spend.ScreenCost,
-                ["inputTokens"] = spend.ScreenInputTokens,
-                ["requests"] = spend.ScreenRequests
-            };
-        }
+            node[entry.Key] = Spelled(entry.Value);
+            return node;
+        });
 
         return spelled;
     }
+
+    private static JsonObject Spelled(ModelSpend spend) => new()
+    {
+        ["cost"] = spend.Cost,
+        ["inputTokens"] = spend.InputTokens,
+        ["cachedInputTokens"] = spend.CachedInputTokens,
+        ["outputTokens"] = spend.OutputTokens,
+        ["requests"] = spend.Requests,
+        ["cacheShare"] = spend.CacheShare
+    };
 
     private static JsonObject Outcomes(IEnumerable<ScenarioOutcome> outcomes) =>
         ScenarioRunner.Summed(outcomes.Select(outcome => outcome.PreloadOutcomes))

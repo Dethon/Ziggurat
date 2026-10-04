@@ -3,6 +3,7 @@ using Agent.Settings;
 using Domain.DTOs;
 using Domain.Memory;
 using Infrastructure.Judgments;
+using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -143,6 +144,7 @@ public class MemoryJudgeJevTests
         var judge = TypeSafeJudge.Create(
             new HttpClient(),
             new TypeSafeOptions { ApiUrl = typeSafe.ApiUrl, ApiKey = apiKey!, Model = typeSafe.Model },
+            NoOpMetricsPublisher.Instance,
             NullLogger.Instance);
 
         var cases = JsonSerializer.Deserialize<Cases>(

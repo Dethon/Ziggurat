@@ -16,7 +16,39 @@ public class SpendTests
         recording.Publish(Usage(cost: 0.010m, input: 9_000, cached: 8_000, output: 100));
         recording.Publish(Usage(cost: 0.012m, input: 9_500, cached: 8_000, output: 300));
 
-        recording.Spend.ShouldBe(new Spend(0.022m, 18_500, 16_000, 400, Requests: 2));
+        recording.Spend.Total.ShouldBe(new ModelSpend(0.022m, 18_500, 16_000, 400, Requests: 2));
+    }
+
+    // Every model the run paid is a model like any other — the agent's, the rubric judge's, Jev's
+    // — summed into the total and kept apart by the id its usage named, so a pass can say what
+    // each one cost without a field per use.
+    [Fact]
+    public void ARecording_SplitsTheSpendByTheModelEachUsageNamed()
+    {
+        var recording = new Recording();
+
+        recording.Publish(Usage(cost: 0.010m, input: 9_000, cached: 8_000, output: 100, model: "z-ai/glm-5"));
+        recording.Publish(Usage(cost: 0.00002m, input: 400, cached: null, output: 60, model: "typesafe/jev"));
+        recording.Publish(Usage(cost: 0.012m, input: 9_500, cached: 8_000, output: 300, model: "z-ai/glm-5"));
+
+        var spend = recording.Spend;
+        spend.ByModel.Keys.ShouldBe(["typesafe/jev", "z-ai/glm-5"]);
+        spend.ByModel["z-ai/glm-5"].ShouldBe(new ModelSpend(0.022m, 18_500, 16_000, 400, Requests: 2));
+        spend.ByModel["typesafe/jev"].ShouldBe(new ModelSpend(0.00002m, 400, null, 60, Requests: 1));
+        spend.Total.ShouldBe(new ModelSpend(0.02202m, 18_900, 16_000, 460, Requests: 3));
+    }
+
+    // A judgment's own event is telemetry, not money: the judge's usage event is its bill, as a
+    // chat turn's is, and counting the judgment too would charge every judgment twice.
+    [Fact]
+    public void AJudgmentsOwnEvent_IsNotSpend()
+    {
+        var recording = new Recording();
+
+        recording.Publish(new SkillPreloadEvent { Outcome = SkillPreloadOutcomes.None, InputTokens = 2200, Cost = 0.0001m, Model = "j" });
+        recording.Publish(new ExecScreenEvent { Reach = "contained", Outcome = ExecScreenOutcomes.Ran, InputTokens = 500, Cost = 0.00002m, Model = "j" });
+
+        recording.Spend.ShouldBe(Spend.Nothing);
     }
 
     [Fact]
@@ -52,21 +84,32 @@ public class SpendTests
     }
 
     [Fact]
+    public void TwoSpends_AreEqual_ByWhatEachModelCost()
+    {
+        var once = Spend.Of("m", new ModelSpend(0.05m, 10_000, 5_000, 200, Requests: 3));
+        var again = Spend.Of("m", new ModelSpend(0.05m, 10_000, 5_000, 200, Requests: 3));
+
+        again.ShouldBe(once);
+        (once + Spend.Nothing).ShouldBe(once);
+        Spend.Of("other", once.Total).ShouldNotBe(once);
+    }
+
+    [Fact]
     public async Task TheRunnerSums_TheSpendOfEveryRunItTook()
     {
         var result = await ScenarioRunner.RunAsync(new RunPolicy(2, 2), _ =>
             Task.FromResult(new RunReading([], [])
             {
-                Spend = new Spend(0.05m, 10_000, 5_000, 200, Requests: 3)
+                Spend = Spend.Of("m", new ModelSpend(0.05m, 10_000, 5_000, 200, Requests: 3))
             }));
 
-        result.Spend.ShouldBe(new Spend(0.10m, 20_000, 10_000, 400, Requests: 6));
+        result.Spend.ShouldBe(Spend.Of("m", new ModelSpend(0.10m, 20_000, 10_000, 400, Requests: 6)));
     }
 
-    private static TokenUsageEvent Usage(decimal cost, int input, long? cached, int output) => new()
+    private static TokenUsageEvent Usage(decimal cost, int input, long? cached, int output, string model = "m") => new()
     {
         Sender = "eval",
-        Model = "m",
+        Model = model,
         InputTokens = input,
         OutputTokens = output,
         CachedInputTokens = cached,

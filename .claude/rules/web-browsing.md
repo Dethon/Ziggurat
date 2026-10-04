@@ -38,7 +38,7 @@ guard are one JS constant each so the three steps cannot disagree about which bu
 wall's. The judge and its bar, deadline and cap are the server's own `TypeSafe` / `Judgment`
 settings; an empty key is the feature off. **A turn addressed to the Lemonade chat host asks
 nothing** — the Jev client's rule, not this server's (`.claude/rules/mcp-hosting.md`). `web_browse`
-reads the turn's model off the call's `_meta` and it rides `BrowseRequest.TurnModel` through the
+reads the turn off the call's `_meta` and it rides `BrowseRequest.Caller` through the
 dismisser to `ModalJudge.PickAsync`; the client answers `AbsenceReason.LocalTurn`, which the judge
 reads as `NotAsked` rather than a miss, so the wall is left to the model exactly as with no key.
 

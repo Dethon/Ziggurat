@@ -143,6 +143,7 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
                     {
                         ConfigPatchModel = request.GetTurnModel(),
                         AgentId = context.Agent.Name,
+                        Sender = request.GetSenderId(),
                         Reader = SkillPreloadReads.ReaderOver(_registryOf(context.Session))
                     },
                     ct);

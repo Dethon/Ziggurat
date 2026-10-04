@@ -23,6 +23,7 @@ public static class TypeSafeRegistration
         services.AddSingleton<IJudge>(sp => TypeSafeJudge.Create(
             new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
             options,
+            sp.GetRequiredService<IMetricsPublisher>(),
             sp.GetRequiredService<ILogger<TypeSafeJudge>>()));
 
         if (!options.IsConfigured || !keepConnectionAlive)

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using Infrastructure.Judgments;
 using Microsoft.Extensions.Logging;
@@ -37,7 +38,10 @@ public class TypeSafeJudgeTests
         }
         """;
 
-    private static JudgmentRequest AChoiceAndTwoNouls(string? turnModel = JudgmentRequest.NoTurn) => new(
+    private static JudgmentRequest AChoiceAndTwoNouls(string? turnModel = null) =>
+        AChoiceAndTwoNouls(new JudgmentCaller(turnModel, Sender: null));
+
+    private static JudgmentRequest AChoiceAndTwoNouls(JudgmentCaller caller) => new(
         new JsonObject { ["request"] = "pon un temporizador de ocho minutos" },
         new Dictionary<string, JudgmentQuestion>
         {
@@ -52,7 +56,7 @@ public class TypeSafeJudgeTests
             ["needs_timers"] = new NoulQuestion("Does the request need this skill? Skill: Countdowns and alarms."),
             ["needs_home"] = new NoulQuestion("Does the request need this skill? Skill: Lights and climate.")
         },
-        turnModel);
+        caller);
 
     [Fact]
     public async Task Judge_AChoiceAndTwoNouls_PostsOneRequestOfTheDocumentedShape()
@@ -102,6 +106,74 @@ public class TypeSafeJudgeTests
 
         judgment.Answers["needs_timers"].ShouldBeOfType<NoulAnswer>().Probability.ShouldBe(0.97);
         judgment.Answers["needs_home"].ShouldBeOfType<NoulAnswer>().Probability.ShouldBe(0.04);
+    }
+
+    // A judgment is a model call like any other, and its bill lands where every other model's
+    // does: one usage event per answered call, on the provider's own figures, billed to whoever
+    // asked. Published here, where the usage is read, so every use of Jev is counted by asking.
+    [Fact]
+    public async Task Judge_AnAnsweredCall_PublishesItsUsageBilledToTheCaller()
+    {
+        var metrics = new RecordingMetricsPublisher();
+        var judge = Judge(new ScriptedHandler(_ => Ok(Answered)), metrics: metrics);
+
+        await judge.JudgeAsync(
+            AChoiceAndTwoNouls(new JudgmentCaller("openai/gpt-5.6-luna", "alice", "jonas", "conv-1")),
+            CancellationToken.None);
+
+        var usage = metrics.Published.OfType<TokenUsageEvent>().ShouldHaveSingleItem();
+        usage.Model.ShouldBe("typesafe/jev-1.13-20260917");
+        usage.InputTokens.ShouldBe(372);
+        usage.OutputTokens.ShouldBe(59);
+        usage.Cost.ShouldBe(0.000015624m);
+        usage.CachedInputTokens.ShouldBeNull();
+        usage.Sender.ShouldBe("alice");
+        usage.AgentId.ShouldBe("jonas");
+        usage.ConversationId.ShouldBe("conv-1");
+    }
+
+    [Fact]
+    public async Task Judge_AnAnsweredCallWithNobodyBehindIt_IsBilledToUnknown()
+    {
+        var metrics = new RecordingMetricsPublisher();
+        var judge = Judge(new ScriptedHandler(_ => Ok(Answered)), metrics: metrics);
+
+        await judge.JudgeAsync(AChoiceAndTwoNouls(JudgmentCaller.None), CancellationToken.None);
+
+        var usage = metrics.Published.OfType<TokenUsageEvent>().ShouldHaveSingleItem();
+        usage.Sender.ShouldBe("unknown");
+        usage.AgentId.ShouldBeNull();
+        usage.ConversationId.ShouldBeNull();
+    }
+
+    // The provider's cost is the bill; an answer that names none was still a call, at no figure.
+    [Fact]
+    public async Task Judge_AnAnswerWithNoCost_PublishesItsTokensAtZero()
+    {
+        var metrics = new RecordingMetricsPublisher();
+        var judge = Judge(
+            new ScriptedHandler(_ => Ok(Answered.Replace(", \"cost\": 0.000015624", ""))), metrics: metrics);
+
+        await judge.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
+
+        var usage = metrics.Published.OfType<TokenUsageEvent>().ShouldHaveSingleItem();
+        usage.Cost.ShouldBe(0m);
+        usage.InputTokens.ShouldBe(372);
+    }
+
+    // Nothing answered is nothing billed: a refusal, a failure, a timeout or a local turn asks
+    // the provider for nothing it charges.
+    [Fact]
+    public async Task Judge_AnAbsence_PublishesNoUsage()
+    {
+        var metrics = new RecordingMetricsPublisher();
+        var failing = Judge(new ScriptedHandler(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests)), metrics: metrics);
+        var local = Judge(new ScriptedHandler(_ => Ok(Answered)), metrics: metrics);
+
+        await failing.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
+        await local.JudgeAsync(AChoiceAndTwoNouls("lemonade/qwen3"), CancellationToken.None);
+
+        metrics.Published.ShouldBeEmpty();
     }
 
     [Theory]
@@ -245,7 +317,7 @@ public class TypeSafeJudgeTests
     {
         var handler = new ScriptedHandler(_ => Ok(Answered));
         var judge = TypeSafeJudge.Create(
-            new HttpClient(handler), _options with { ApiKey = "" }, new RecordingLogger());
+            new HttpClient(handler), _options with { ApiKey = "" }, new RecordingMetricsPublisher(), new RecordingLogger());
 
         var outcome = await judge.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
 
@@ -271,7 +343,7 @@ public class TypeSafeJudgeTests
     }
 
     [Theory]
-    [InlineData(JudgmentRequest.NoTurn)]
+    [InlineData(null)]
     [InlineData("openai/gpt-5.6-luna")]
     public async Task Judge_ARequestForAHostedTurnOrNoTurn_Asks(string? turnModel)
     {
@@ -283,7 +355,8 @@ public class TypeSafeJudgeTests
         handler.Requests.ShouldHaveSingleItem().Body.ShouldNotContain("turnModel", Case.Insensitive);
     }
 
-    private static IJudge Judge(ScriptedHandler handler, ILogger? logger = null, TimeSpan? timeout = null)
+    private static IJudge Judge(
+        ScriptedHandler handler, ILogger? logger = null, TimeSpan? timeout = null, RecordingMetricsPublisher? metrics = null)
     {
         var httpClient = new HttpClient(handler);
         if (timeout is { } t)
@@ -291,7 +364,7 @@ public class TypeSafeJudgeTests
             httpClient.Timeout = t;
         }
 
-        return TypeSafeJudge.Create(httpClient, _options, logger ?? new RecordingLogger());
+        return TypeSafeJudge.Create(httpClient, _options, metrics ?? new RecordingMetricsPublisher(), logger ?? new RecordingLogger());
     }
 
     private static HttpResponseMessage Ok(string json) =>

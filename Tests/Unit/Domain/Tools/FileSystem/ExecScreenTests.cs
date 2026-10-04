@@ -248,12 +248,17 @@ public class ExecScreenTests
         var judge = new ScriptedJudge(_ => Answered(0.97));
         var request = new ExecScreenRequest(
             ShellReach.Host, "cargo build --release", "/laptop/home/fran/app", Asked("compila el proyecto"),
-            TurnModel: "z-ai/glm-5");
+            TurnModel: "z-ai/glm-5")
+        {
+            Sender = "fran",
+            AgentId = "jonas",
+            ConversationId = "conv-1"
+        };
 
         await Screen(judge).ScreenAsync(request, CancellationToken.None);
 
         var asked = judge.Asked.ShouldHaveSingleItem();
-        asked.TurnModel.ShouldBe("z-ai/glm-5");
+        asked.Caller.ShouldBe(new JudgmentCaller("z-ai/glm-5", "fran", "jonas", "conv-1"));
         asked.State.Select(p => p.Key).ShouldBe(["request", "earlier_messages", "command", "working_directory", "machine"]);
         asked.State["request"]!.GetValue<string>().ShouldBe("compila el proyecto");
         asked.State["earlier_messages"]!.AsArray().ShouldBeEmpty();

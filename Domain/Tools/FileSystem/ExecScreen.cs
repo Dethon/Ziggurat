@@ -35,6 +35,9 @@ public sealed record ExecScreenRequest(
     public string? AgentId { get; init; }
 
     public string? ConversationId { get; init; }
+
+    // Who asked, whom the judgment's usage is billed to.
+    public string? Sender { get; init; }
 }
 
 public sealed record ExecScreenVerdict(IReadOnlyList<string> Codes)
@@ -153,7 +156,7 @@ public sealed class ExecScreen(
                 ["machine"] = Machine(request.Reach)
             },
             _questions,
-            request.TurnModel);
+            new JudgmentCaller(request.TurnModel, request.Sender, request.AgentId, request.ConversationId));
     }
 
     // The person's latest words, oldest first: the user-role messages alone, as the chat client

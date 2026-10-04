@@ -609,6 +609,7 @@ internal sealed class ConversationGroup(
             ConfigPatchModel = message.ConfigPatch?.Model,
             AgentId = message.AgentId,
             ChannelId = message.ChannelId,
+            Sender = message.Sender,
             ConversationId = state.DeliveryKey.ConversationId,
             // The session's mounts, built by the warmup awaited above: the reads a preloaded
             // skill declares are made over them, the way the model's own would be.

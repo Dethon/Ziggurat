@@ -5,6 +5,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Domain.Agents;
+using Domain.Contracts;
+using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +23,10 @@ namespace Infrastructure.Judgments;
 // A 401 or a 400 is different — the deployment is misconfigured, not the service unlucky — so
 // it is logged as an error naming the setting to fix, once, and then answered as absence like
 // the rest.
+//
+// An answer is a model call, and its usage is published here as every chat turn's is — one
+// TokenUsageEvent on the provider's own figures, billed to the request's caller — so Jev's cost
+// lands on the same totals as every other model's whichever use asked.
 public sealed class TypeSafeJudge : IJudge
 {
     public const string Endpoint = "alpha/decisions";
@@ -30,23 +36,27 @@ public sealed class TypeSafeJudge : IJudge
 
     private readonly HttpClient _httpClient;
     private readonly TypeSafeOptions _options;
+    private readonly IMetricsPublisher _metricsPublisher;
     private readonly ILogger _logger;
     // Each setting's rejection is logged once, so a key fixed and a model still wrong is heard.
     private readonly HashSet<string> _configurationErrorsLogged = [];
 
-    private TypeSafeJudge(HttpClient httpClient, TypeSafeOptions options, ILogger logger)
+    private TypeSafeJudge(
+        HttpClient httpClient, TypeSafeOptions options, IMetricsPublisher metricsPublisher, ILogger logger)
     {
         _httpClient = httpClient;
         _options = options;
+        _metricsPublisher = metricsPublisher;
         _logger = logger;
         httpClient.BaseAddress = options.BaseAddress;
         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
     }
 
     // The empty key registers a judge that answers absence, so nothing downstream checks the key.
-    public static IJudge Create(HttpClient httpClient, TypeSafeOptions options, ILogger logger) =>
+    public static IJudge Create(
+        HttpClient httpClient, TypeSafeOptions options, IMetricsPublisher metricsPublisher, ILogger logger) =>
         options.IsConfigured
-            ? new TypeSafeJudge(httpClient, options, logger)
+            ? new TypeSafeJudge(httpClient, options, metricsPublisher, logger)
             : UnconfiguredJudge.Instance;
 
     public async Task<JudgmentOutcome> JudgeAsync(JudgmentRequest request, CancellationToken deadline)
@@ -60,7 +70,7 @@ public sealed class TypeSafeJudge : IJudge
         // here, where the request would leave, so every use — the ones written and the ones not
         // yet — is covered by asking through this client: the request cannot be built without
         // naming the turn's model, and none of them has to know the rule.
-        if (LemonadeModelId.IsLemonade(request.TurnModel))
+        if (LemonadeModelId.IsLemonade(request.Caller.TurnModel))
         {
             return new JudgmentOutcome.Absent(AbsenceReason.LocalTurn);
         }
@@ -75,7 +85,9 @@ public sealed class TypeSafeJudge : IJudge
                 // which, and either way no retry clears it.
                 HttpStatusCode.BadRequest => await MisconfiguredAsync("typeSafe:model", response, deadline),
                 _ when !response.IsSuccessStatusCode => Unavailable(response.StatusCode),
-                _ => Parse(await response.Content.ReadFromJsonAsync<WireResponse>(_wireJson, deadline))
+                _ => Billed(
+                    Parse(await response.Content.ReadFromJsonAsync<WireResponse>(_wireJson, deadline)),
+                    request.Caller)
             };
         }
         catch (OperationCanceledException)
@@ -118,6 +130,25 @@ public sealed class TypeSafeJudge : IJudge
     {
         _logger.LogWarning("OpenRouter answered {Status} for a judgment; none this call", (int)status);
         return new JudgmentOutcome.Absent(AbsenceReason.Error);
+    }
+
+    private JudgmentOutcome Billed(JudgmentOutcome outcome, JudgmentCaller caller)
+    {
+        if (outcome is JudgmentOutcome.Answered { Judgment: var judgment })
+        {
+            _metricsPublisher.Publish(new TokenUsageEvent
+            {
+                Sender = caller.Sender ?? "unknown",
+                AgentId = caller.AgentId,
+                ConversationId = caller.ConversationId,
+                Model = judgment.Model,
+                InputTokens = judgment.Usage.InputTokens,
+                OutputTokens = judgment.Usage.OutputTokens,
+                Cost = judgment.Usage.Cost ?? 0m
+            });
+        }
+
+        return outcome;
     }
 
     private JudgmentOutcome Parse(WireResponse? wire)

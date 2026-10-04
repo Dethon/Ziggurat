@@ -49,13 +49,16 @@ public class InjectorModuleTests
     }
 
     private static JudgmentRequest ALocalTurn() =>
-        new(new JsonObject(), new Dictionary<string, JudgmentQuestion>(), "lemonade/qwen3");
+        new(new JsonObject(), new Dictionary<string, JudgmentQuestion>(), new JudgmentCaller("lemonade/qwen3", Sender: null));
 
     private static IJudge JudgeRegisteredBy(AgentSettings settings)
     {
         var services = new ServiceCollection().AddLogging().AddAgent(settings);
         var descriptor = services.Last(d => d.ServiceType == typeof(IJudge));
-        using var provider = new ServiceCollection().AddLogging().BuildServiceProvider();
+        using var provider = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IMetricsPublisher>(new RecordingMetricsPublisher())
+            .BuildServiceProvider();
         return (IJudge)descriptor.ImplementationFactory!(provider);
     }
 

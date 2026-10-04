@@ -296,7 +296,7 @@ public class RequestApprovalToolTests : IDisposable
         var feeder = FeedRoomToneAsync(feed.Token);
 
         (await RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, services)).ShouldBe("rejected");
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, services)).ShouldBe("rejected");
         await feed.CancelAsync();
 
         FloorOfNextGateFor(gates, _session).ShouldBe(90, tolerance: 5);
@@ -336,7 +336,7 @@ public class RequestApprovalToolTests : IDisposable
         var services = BuildServices(voice, wyoming, gates);
 
         var run = RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, services);
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, services);
 
         await PromptHeardThenMicOpenAsync();
         _session.Mic.Feed(Level(90));
@@ -364,7 +364,7 @@ public class RequestApprovalToolTests : IDisposable
         var feeder = FeedAnswerOverBackgroundAsync(feed.Token);
 
         var result = await RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, services);
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, services);
 
         await feed.CancelAsync();
         result.ShouldBe("rejected");
@@ -386,7 +386,7 @@ public class RequestApprovalToolTests : IDisposable
         var feeder = FeedAnswerOverBackgroundAsync(feed.Token);
 
         var result = await RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, services);
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, services);
 
         await feed.CancelAsync();
         result.ShouldBe("approved");
@@ -398,7 +398,7 @@ public class RequestApprovalToolTests : IDisposable
         var result = await RequestApprovalTool.RunAsync(
             _conversationId, ApprovalMode.Notify,
             [MakeRequest()],
-            turnModel: null, _services);
+            caller: JudgmentCaller.None, _services);
 
         result.ShouldBe("notified");
         // Auto-approved tool calls must not be narrated over voice — with no pending
@@ -417,7 +417,7 @@ public class RequestApprovalToolTests : IDisposable
         var result = await RequestApprovalTool.RunAsync(
             _conversationId, ApprovalMode.Notify,
             [MakeRequest()],
-            turnModel: null, _services);
+            caller: JudgmentCaller.None, _services);
 
         result.ShouldBe("notified");
         // The pending acknowledgement is spoken now so the user hears it while the tool runs.
@@ -433,11 +433,11 @@ public class RequestApprovalToolTests : IDisposable
     public async Task NotifyMode_SecondCallOfTheTurn_KeepsNarrationBuffered()
     {
         _accumulator.Append(_conversationId, "Dame un momento");
-        await RequestApprovalTool.RunAsync(_conversationId, ApprovalMode.Notify, [MakeRequest()], turnModel: null, _services);
+        await RequestApprovalTool.RunAsync(_conversationId, ApprovalMode.Notify, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
         _accumulator.Append(_conversationId, "Ahora miro el termostato");
         var result = await RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Notify, [MakeRequest()], turnModel: null, _services);
+            _conversationId, ApprovalMode.Notify, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
         result.ShouldBe("notified");
         _tts.Verify(
@@ -474,7 +474,7 @@ public class RequestApprovalToolTests : IDisposable
 
         try
         {
-            (await RequestApprovalTool.RunAsync(conversationId, ApprovalMode.Notify, [MakeRequest()], turnModel: null, _services))
+            (await RequestApprovalTool.RunAsync(conversationId, ApprovalMode.Notify, [MakeRequest()], caller: JudgmentCaller.None, _services))
                 .ShouldBe("notified");
 
             var job = await seen.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -508,7 +508,7 @@ public class RequestApprovalToolTests : IDisposable
         var feeder = FeedAnswersAsync(feed.Token);
 
         var result = await RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
         await feed.CancelAsync();
         result.ShouldBe("approved");
@@ -525,7 +525,7 @@ public class RequestApprovalToolTests : IDisposable
         var feeder = FeedAnswersAsync(feed.Token);
 
         var result = await RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
         await feed.CancelAsync();
         result.ShouldBe("rejected");
@@ -542,7 +542,7 @@ public class RequestApprovalToolTests : IDisposable
         var feeder = FeedAnswersAsync(feed.Token);
 
         var result = await RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
         await feed.CancelAsync();
         result.ShouldBe("rejected");
@@ -555,7 +555,7 @@ public class RequestApprovalToolTests : IDisposable
             .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
 
         var run = RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
         await PromptHeardThenMicOpenAsync();
 
@@ -578,7 +578,7 @@ public class RequestApprovalToolTests : IDisposable
             .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
 
         var run = RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
         await PromptHeardThenMicOpenAsync();
 
@@ -616,7 +616,7 @@ public class RequestApprovalToolTests : IDisposable
             voice, wyoming, new SilenceGateFactory(voice, wyoming, TimeProvider.System), fake);
 
         var run = RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, services);
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, services);
 
         // The prompt has been heard once a job queued behind it drains (same FIFO queue).
         var behindThePrompt = _session.Playback.Enqueue(new PlaybackJob(
@@ -648,7 +648,7 @@ public class RequestApprovalToolTests : IDisposable
     public async Task McpRun_UnknownConversation_ReturnsRejected()
     {
         var result = await RequestApprovalTool.RunAsync(
-            "ghost-01:999", ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+            "ghost-01:999", ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
         result.ShouldBe("rejected");
     }
@@ -700,7 +700,7 @@ public class RequestApprovalToolTests : IDisposable
             }, feed.Token);
 
             var result = await RequestApprovalTool.RunAsync(
-                conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+                conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
             await feed.CancelAsync();
 
@@ -736,7 +736,7 @@ public class RequestApprovalToolTests : IDisposable
         var feeder = FeedAnswersAsync(feed.Token);
 
         var result = await RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest("mcp__lights__turn_off")], turnModel: null, _services);
+            _conversationId, ApprovalMode.Request, [MakeRequest("mcp__lights__turn_off")], caller: JudgmentCaller.None, _services);
 
         await feed.CancelAsync();
         result.ShouldBe("approved");
@@ -769,7 +769,7 @@ public class RequestApprovalToolTests : IDisposable
         var feeder = FeedAnswersAsync(feed.Token);
 
         var result = await RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [request], turnModel: null, _services);
+            _conversationId, ApprovalMode.Request, [request], caller: JudgmentCaller.None, _services);
 
         await feed.CancelAsync();
         result.ShouldBe("approved");
@@ -797,7 +797,7 @@ public class RequestApprovalToolTests : IDisposable
         using var feed = new CancellationTokenSource();
         var feeder = FeedAnswersAsync(feed.Token);
 
-        await RequestApprovalTool.RunAsync(_conversationId, ApprovalMode.Request, [request], turnModel: null, _services);
+        await RequestApprovalTool.RunAsync(_conversationId, ApprovalMode.Request, [request], caller: JudgmentCaller.None, _services);
 
         await feed.CancelAsync();
         Spoken().ShouldBe([$"{sentence} ¿Apruebas exec? Di sí o no."]);
@@ -812,7 +812,7 @@ public class RequestApprovalToolTests : IDisposable
         using var feed = new CancellationTokenSource();
         var feeder = FeedAnswersAsync(feed.Token);
 
-        await RequestApprovalTool.RunAsync(_conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+        await RequestApprovalTool.RunAsync(_conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
         await feed.CancelAsync();
         Spoken().ShouldBe(["¿Apruebas download? Di sí o no."]);
@@ -838,7 +838,7 @@ public class RequestApprovalToolTests : IDisposable
         var feeder = FeedAnswersAsync(feed.Token);
 
         var result = await RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
         await feed.CancelAsync();
         result.ShouldBe("approved");
@@ -862,7 +862,7 @@ public class RequestApprovalToolTests : IDisposable
         var feeder = FeedAnswersAsync(feed.Token);
 
         var result = await RequestApprovalTool.RunAsync(
-            _conversationId, ApprovalMode.Request, [MakeRequest()], turnModel: null, _services);
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
         await feed.CancelAsync();
         result.ShouldBe("rejected");

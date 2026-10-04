@@ -103,7 +103,7 @@ public class JudgeTests
 
         await Judge.FailuresAsync(TheScenario(check), recording, "key", transport);
 
-        recording.Spend.ShouldBe(new Spend(0.004m, 1_200, null, 30, Requests: 1));
+        recording.Spend.ShouldBe(Spend.Of(Judge.Model, new ModelSpend(0.004m, 1_200, null, 30, Requests: 1)));
         // Asked for explicitly: the router omits the breakdown unless the request says so.
         transport.Requests[0].ShouldContain("\"usage\":{\"include\":true}");
     }

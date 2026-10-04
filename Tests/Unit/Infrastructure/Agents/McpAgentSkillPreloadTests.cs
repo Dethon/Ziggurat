@@ -208,7 +208,7 @@ public class McpAgentSkillPreloadTests
 
         await agent.RunAsync([message]);
 
-        judge.Asked.ShouldHaveSingleItem().TurnModel.ShouldBe("lemonade/qwen3");
+        judge.Asked.ShouldHaveSingleItem().Caller.TurnModel.ShouldBe("lemonade/qwen3");
         calls.ShouldHaveSingleItem().Messages.Select(m => m.Role.Value).ShouldBe(["user"]);
     }
 

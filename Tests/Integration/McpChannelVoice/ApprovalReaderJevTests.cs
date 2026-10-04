@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Domain.DTOs.Metrics;
+using Domain.Judgments;
 using Infrastructure.Judgments;
+using Infrastructure.Metrics;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Configuration;
@@ -120,7 +122,7 @@ public class ApprovalReaderJevTests
             await width.WaitAsync();
             try
             {
-                var reading = await reader.ReadAsync(c.Prompt, c.Answer, turnModel: null, CancellationToken.None);
+                var reading = await reader.ReadAsync(c.Prompt, c.Answer, JudgmentCaller.None, CancellationToken.None);
                 reading.DecidedBy.ShouldNotBe(ApprovalDecider.WordList, $"Jev did not answer for '{c.Answer}'");
                 return new Verdict(c, reading);
             }
@@ -143,6 +145,7 @@ public class ApprovalReaderJevTests
         var judge = TypeSafeJudge.Create(
             new HttpClient(),
             new TypeSafeOptions { ApiUrl = shipped.TypeSafe.ApiUrl, ApiKey = apiKey, Model = shipped.TypeSafe.Model },
+            NoOpMetricsPublisher.Instance,
             NullLogger.Instance);
         return new JudgedApprovalReader(judge, shipped.Approval.Judgment with { DeadlineMs = 15_000 }, TimeProvider.System);
     }

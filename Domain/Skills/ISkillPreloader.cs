@@ -38,6 +38,9 @@ public sealed record SkillPreloadRequest(
 
     public string? ChannelId { get; init; }
 
+    // Who asked, whom the judgment's usage is billed to.
+    public string? Sender { get; init; }
+
     public string? ConversationId { get; init; }
 
     // How a preload makes the reads a skill declares (SkillDeclaration.PreloadReads): the turn's

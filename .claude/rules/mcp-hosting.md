@@ -60,14 +60,18 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   conversation context and, on an exec the agent minted one for, the exec bridge's call token —
   `HaFileSystem` reads the first, `SandboxFileSystem` the second). Absent means the call carried
   none, and a consumer refuses rather than guesses. There is no `AsyncLocal` on this path; don't add one to save a parameter. The context
-  also carries `ConfigPatchModel`, the model the turn asked for. **The Jev client holds the local-box rule and every use feeds it explicitly**:
-  `JudgmentRequest.TurnModel` is a required field, `TypeSafeJudge` sends nothing for a `lemonade/`
-  id and answers `AbsenceReason.LocalTurn`, so a use cannot be written without saying which turn it
-  asks for, and none checks for itself — it only decides what that absence means to it (not a miss
-  to count). The value is passed down as plain data, never read from an ambient: a server's tool
-  parses it from the call's `_meta` (`ConversationScope.Parse`) and hands it on as a parameter, the
-  agent host takes it from the message, and a question with no turn behind it (the nightly
-  dreaming) says `JudgmentRequest.NoTurn`. Two
+  also carries `ConfigPatchModel`, the model the turn asked for. **The Jev client holds the local-box rule and the bill, and every use feeds it explicitly**:
+  `JudgmentRequest.Caller` (a `JudgmentCaller`: the turn's model, the sender, the agent and the
+  conversation) is a required field. `TypeSafeJudge` sends nothing for a `lemonade/` turn model and
+  answers `AbsenceReason.LocalTurn`, so a use cannot be written without saying which turn it asks
+  for, and none checks for itself — it only decides what that absence means to it (not a miss to
+  count). Every answered judgment publishes a `TokenUsageEvent` billed to the caller, as a chat turn
+  does, so Jev's cost lands on the dashboard's token totals with every other model's. No use
+  publishes a usage event of its own; a use's own event (`SkillPreloadEvent`, `ExecScreenEvent`)
+  may keep a copy of the cost for its dashboard family, and the eval's spend ignores that copy. The value is passed down as plain data, never read from an ambient: a
+  server's tool parses it from the call's `_meta` (`JudgmentCaller.For(ConversationScope.Parse(…))`)
+  and hands it on as a parameter, the agent host takes it from the message, and a question with no
+  turn behind it (memory) names the user with a null turn model. Two
   filters nested around each other would let the outer one convert the very cancellation the inner
   rethrows, so a second ask is a no-op and the first ask's error shape wins.
 - **`Tests/Integration/McpServers/McpServerRegistrations.cs` is the one server table.** Fourteen
