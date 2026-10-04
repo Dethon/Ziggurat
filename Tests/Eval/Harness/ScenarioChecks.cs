@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Domain.DTOs;
@@ -25,7 +26,8 @@ public static class ScenarioChecks
         .. Wrote(scenario, recording),
         .. Delegated(scenario, recording),
         .. ConditionallyDelegated(scenario, recording),
-        .. Forgot(scenario, recording)
+        .. Forgot(scenario, recording),
+        .. Dated(scenario, recording)
     ];
 
     // What a failure says when the host, not the model, made the call. One spelling, because the
@@ -247,6 +249,20 @@ public static class ScenarioChecks
             ? string.Join(", ", recording.Moved.Where(e => change.Names(e.Key)).Select(e => $"{e.Key}={e.Value}"))
                 is { Length: > 0 } moved ? moved : "absent"
             : recording.StateAfter.GetValueOrDefault(change.Key) ?? "absent";
+
+    // The scenario pins the turn to an instant, and the prompt's date has to agree with it: a
+    // prompt dated by the machine's clock tells the model one day and the message's timestamp
+    // another, and whichever it believes, a red that follows is the harness's. A recording with
+    // no prompt — a scripted one — has nothing to disagree with.
+    private static IEnumerable<string> Dated(Scenario scenario, Recording recording)
+    {
+        var pinned = $"Today is {scenario.Instant.ToString("dddd, yyyy-MM-dd", CultureInfo.InvariantCulture)}.";
+        return recording.SystemPrompt is { } prompt
+               && Regex.Match(prompt, @"Today is [^\n]*?\d{4}-\d{2}-\d{2}\.") is { Success: true } told
+               && told.Value != pinned
+            ? [$"the prompt said '{told.Value}' to a turn pinned to {scenario.Instant:yyyy-MM-dd}: the stack's clock is not the scenario's, so this run says nothing about the model"]
+            : [];
+    }
 
     private static IReadOnlyList<string> Answered(Scenario scenario, Recording recording) =>
         scenario.Reply is null ? [] : ReplyChecks.Failures(scenario.Reply, recording.Reply);

@@ -47,6 +47,30 @@ public class ScenarioChecksTests
         failures.ShouldHaveSingleItem().ShouldContain("/schedules/pasta/task.json");
     }
 
+    // The turn is pinned to the scenario's instant, and so must the prompt's date be: an agent
+    // told "today is" seven weeks after the message's own timestamp put an alarm on the real
+    // date, and the red read as the model's.
+    [Fact]
+    public async Task APromptDatedOtherThanThePinnedInstant_FailsAndNamesBothDates()
+    {
+        var recording = await ScriptedTurn.RunAsync("listo", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.OnTurn(new TurnObservation("## Date\n\nToday is Sunday, 2026-10-04.", null));
+
+        var failure = ScenarioChecks.Failures(Timer(), recording).ShouldHaveSingleItem();
+
+        failure.ShouldContain("2026-10-04");
+        failure.ShouldContain("2026-08-18");
+    }
+
+    [Fact]
+    public async Task APromptDatedThePinnedInstant_Passes()
+    {
+        var recording = await ScriptedTurn.RunAsync("listo", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.OnTurn(new TurnObservation("## Date\n\nToday is Tuesday, 2026-08-18.", null));
+
+        ScenarioChecks.Failures(Timer(), recording).ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task AnEntityThatMovedAndWasNotDeclared_FailsTheScenario()
     {

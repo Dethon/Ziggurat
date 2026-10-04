@@ -153,7 +153,9 @@ public sealed class MultiAgentFactory(
             effectiveClient,
             stateStore,
             agentPublisher,
-            TimeProvider.System,
+            // The deployment registers the system clock; an evaluation harness registers the
+            // instant its scenario is pinned to, so the prompt's date agrees with the turn's.
+            serviceProvider?.GetService<TimeProvider>() ?? TimeProvider.System,
             domainTools,
             domainPrompts,
             loggerFactory,

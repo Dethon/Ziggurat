@@ -276,6 +276,10 @@ public sealed class EvalStack : IAsyncDisposable
         builder.Services.AddHttpClient(VoiceHubHttp.ClientName)
             .ConfigurePrimaryHttpMessageHandler(() => VoiceHub);
 
+        // The scenario's instant for a listing's default window, a history's "now" and every
+        // stamp on the mount; real timers, because a watch write retries on a delay.
+        builder.Services.Replace(ServiceDescriptor.Singleton<TimeProvider>(new PinnedClock(Clock)));
+
         return await StartAsync(builder, port);
     }
 
@@ -410,6 +414,8 @@ public sealed class EvalStack : IAsyncDisposable
         services.AddSingleton<IMetricsPublisher>(recording);
         services.AddSingleton<ISubAgentSpawner>(Workers);
         services.AddSingleton<IVfsBridge>(Bridge);
+        // The scenario's instant, so the prompt's "today is" is the day the turn is stamped with.
+        services.Replace(ServiceDescriptor.Singleton<TimeProvider>(new PinnedClock(Clock)));
 
         // The memory feature, the way the deployment enables it: both shipped assistants list
         // `memory` among their features, so an eval without it would run a prompt one section
