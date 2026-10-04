@@ -90,7 +90,7 @@ public static class ShellScenarios
             {
                 Label = "script",
                 Tool = EvalTools.Exec,
-                Arguments = [Arg.Matches("command", "dismiss"), Arg.Matches("command", "(?s)dismiss.*(ls|find|cat|/timers)")]
+                Arguments = [Arg.Matches("command", "dismiss"), Arg.Matches("command", "(?s)dismiss.*(ls|find|cat|jq|status\\.json|/timers)")]
             }
         ],
         Permitted =
