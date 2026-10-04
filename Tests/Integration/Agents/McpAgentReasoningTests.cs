@@ -101,7 +101,13 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
     // request going missing.
     private const string PinnedOpenAiModel = "openai/gpt-5.6-luna";
 
-    private static readonly ProviderRouting _pinnedOpenAiProvider = new() { Only = ["openai"] };
+    // OpenAI and Azure both serve this model on the untranslated wire: probed by hand on
+    // 2026-10-04, every endpoint of both (openai, openai/flex, openai/fast, azure, azure/us,
+    // azure/eu) streamed `response.reasoning_summary_text.delta` on every call. Two rather than
+    // one so an OpenAI pool outage has somewhere to fall back. Amazon Bedrock, the model's other
+    // provider, is left out on purpose: it streamed no reasoning at all, summary or not, so a
+    // turn it served would fail this test whether or not the summary was asked for.
+    private static readonly ProviderRouting _pinnedOpenAiProvider = new() { Only = ["openai", "azure"] };
 
     [SkippableFact]
     public async Task Agent_OnTheUntranslatedOpenAiWire_StreamsReasoningContent()
@@ -112,35 +118,40 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
             apiUrl, apiKey, PinnedOpenAiModel, providerRouting: _pinnedOpenAiProvider);
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(10) }, TimeProvider.System);
 
-        await using var agent = new McpAgent(
-            TestAgentSpec.Default with
+        // One turn that streams reasoning proves the summary was asked for; a turn that came back
+        // without any says nothing, since which endpoint served it is out of the test's hands. Each
+        // attempt gets a fresh agent so a retry is not sent the earlier turn as history.
+        var reasoning = await LlmAttempt.UntilAsync(
+            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct =>
             {
-                DisplayName = "openai-reasoning-agent",
-                UserId = "openai-reasoning-test-user",
-                ReasoningEffort = "medium"
-            },
-            openRouter,
-            stateStore,
-            NoOpMetricsPublisher.Instance,
-            TimeProvider.System,
-            [],
-            []);
+                await using var agent = new McpAgent(
+                    TestAgentSpec.Default with
+                    {
+                        DisplayName = "openai-reasoning-agent",
+                        UserId = "openai-reasoning-test-user",
+                        ReasoningEffort = "medium"
+                    },
+                    openRouter,
+                    stateStore,
+                    NoOpMetricsPublisher.Instance,
+                    TimeProvider.System,
+                    [],
+                    []);
 
-        var reasoning = await LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct =>
-        {
-            var reasoningChunks = new List<string>();
-            await foreach (var update in agent.RunStreamingAsync(
-                "Compare 9.11 and 9.9. Which is larger? Show your reasoning.",
-                cancellationToken: ct))
-            {
-                foreach (var content in update.Contents.OfType<TextReasoningContent>())
+                var reasoningChunks = new List<string>();
+                await foreach (var update in agent.RunStreamingAsync(
+                    "Compare 9.11 and 9.9. Which is larger? Show your reasoning.",
+                    cancellationToken: ct))
                 {
-                    reasoningChunks.Add(content.Text);
+                    foreach (var content in update.Contents.OfType<TextReasoningContent>())
+                    {
+                        reasoningChunks.Add(content.Text);
+                    }
                 }
-            }
 
-            return string.Concat(reasoningChunks);
-        });
+                return string.Concat(reasoningChunks);
+            }),
+            reasoningText => !string.IsNullOrWhiteSpace(reasoningText));
 
         reasoning.ShouldNotBeNullOrWhiteSpace(
             "An OpenAI model on the Responses wire returns readable reasoning only when the request " +
