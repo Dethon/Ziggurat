@@ -26,6 +26,22 @@ public partial class CamoufoxPlaywrightVersionTests
         core.ShouldBe(client, "the camoufox playwright-core must be the Playwright minor the .NET client speaks");
     }
 
+    // @camoufox/camoufox is stamped with the one browser build released beside it and fetches
+    // exactly that, so the browser moves only when this version does. The older camoufox-js took
+    // whatever release was newest at build time: a rebuild could swap the browser with no diff
+    // here, and the build it settled on deadlocked every request once uBlock Origin ran.
+    [Fact]
+    public void TheCamoufoxSidecar_PinsItsBrowserThroughAnExactLibraryVersion()
+    {
+        var root = TestHelpers.FindSolutionRoot();
+        var dockerfile = File.ReadAllText(Path.Combine(root, "DockerCompose", "camoufox", "Dockerfile"));
+
+        dockerfile.ShouldNotContain("camoufox-js", Case.Sensitive,
+            "camoufox-js fetches the newest browser release, not one paired with the library");
+        LibraryVersion().IsMatch(dockerfile).ShouldBeTrue(
+            "the camoufox sidecar must install @camoufox/camoufox at an exact version");
+    }
+
     private static string MinorOf(Match match)
     {
         match.Success.ShouldBeTrue("a Playwright version pin was not found where this test expects it");
@@ -40,4 +56,7 @@ public partial class CamoufoxPlaywrightVersionTests
 
     [GeneratedRegex(@"playwright-core@(?<major>\d+)\.(?<minor>\d+)")]
     private static partial Regex CoreVersion();
+
+    [GeneratedRegex(@"@camoufox/camoufox@\d+\.\d+\.\d+(-[\w.]+)?\s")]
+    private static partial Regex LibraryVersion();
 }
