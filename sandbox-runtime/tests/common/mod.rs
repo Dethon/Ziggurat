@@ -194,6 +194,13 @@ impl Bridge for FakeBridge {
             nodes.remove(&p);
             nodes.insert(format!("{to}{}", &p[from.len()..]), node);
         });
+        // The mount's move creates the destination's parents, as a write does: a held mkdir's
+        // directory comes into being with the first thing moved into it.
+        let mut parent = to.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+        while !parent.is_empty() && !nodes.contains_key(&parent) {
+            nodes.insert(parent.clone(), FakeNode::Dir);
+            parent = parent.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+        }
         Ok(())
     }
 

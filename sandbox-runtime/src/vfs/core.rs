@@ -504,6 +504,9 @@ impl<B: Bridge> Vfs<B> {
                 if result.is_ok() {
                     state.held_files.remove(&to);
                     state.deleted.remove(&to);
+                    // The directories the command made above the target arrived with the move, and
+                    // are the mount's now — as for a committed write.
+                    state.held_dirs.retain(|dir| !is_within(&to, dir));
                     state.move_ino(&from, &to);
                 }
                 result

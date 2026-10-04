@@ -189,3 +189,26 @@ fn a_file_committed_inside_a_new_directory_stays_visible() {
 
     assert!(vfs.lookup(dir, "note.md").is_ok());
 }
+
+// `mkdir Aprendizaje && mv a.md b.md Aprendizaje/`: the mount's move brings the new directory
+// into being, so it is the mount's from then on — what was moved into it is there to stat, the
+// next move lands beside it, and a listing shows both. Held, it answered every name under it
+// as missing, and GNU mv reported a move the mount had made as "cannot stat".
+#[test]
+fn a_file_moved_into_a_new_directory_is_there_for_the_rest_of_the_command() {
+    let vfs = mounts();
+    let vault = ino(&vfs, "/vault");
+    let dir = vfs.mkdir(vault, "new").unwrap().ino;
+
+    vfs.rename(vault, "a.md", dir, "a.md").unwrap();
+    vfs.rename(vault, "b.md", dir, "b.md").unwrap();
+
+    assert!(vfs.lookup(dir, "a.md").is_ok());
+    assert!(vfs.lookup(dir, "b.md").is_ok());
+    assert_eq!(names(&vfs, "/vault/new"), ["a.md", "b.md"]);
+    vfs.finish();
+    assert_eq!(
+        vfs.bridge().mutations(),
+        ["rename /vault/a.md /vault/new/a.md", "rename /vault/b.md /vault/new/b.md"]
+    );
+}
