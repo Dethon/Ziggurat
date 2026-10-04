@@ -34,6 +34,10 @@ public static class ScenarioChecks
     // message is written in one place and read back in another to classify the red.
     internal const string PreloadedByTheHost = "preloaded by the host";
 
+    // What a failure says when the prompt's date was not the scenario's: the stack's red, read
+    // back by the same spelling to keep it out of the model's.
+    internal const string MisDated = "the stack's clock is not the scenario's";
+
     // Which red this is. A turn the provider refused or that ran out of time is neither prose's
     // fault: the model never answered, so its silence says nothing about a description. Otherwise
     // a required load that did not happen — or happened for another skill, which is the same
@@ -43,6 +47,7 @@ public static class ScenarioChecks
         failures.Count == 0
             ? null
             : recording.ProviderError is not null || recording.TimedOut
+                                                     || failures.Any(failure => failure.Contains(MisDated, StringComparison.Ordinal))
                 ? FailureKind.RunFailed
                 : scenario.Required
                     .Where(expectation => new ToolPatternMatcher([expectation.Tool]).IsMatch(EvalTools.LoadSkill))
@@ -260,7 +265,7 @@ public static class ScenarioChecks
         return recording.SystemPrompt is { } prompt
                && Regex.Match(prompt, @"Today is [^\n]*?\d{4}-\d{2}-\d{2}\.") is { Success: true } told
                && told.Value != pinned
-            ? [$"the prompt said '{told.Value}' to a turn pinned to {scenario.Instant:yyyy-MM-dd}: the stack's clock is not the scenario's, so this run says nothing about the model"]
+            ? [$"the prompt said '{told.Value}' to a turn pinned to {scenario.Instant:yyyy-MM-dd}: {MisDated}, so this run says nothing about the model"]
             : [];
     }
 

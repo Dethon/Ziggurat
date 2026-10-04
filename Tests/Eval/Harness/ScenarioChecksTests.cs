@@ -1038,6 +1038,19 @@ public class ScenarioChecksTests
         ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.RunFailed);
     }
 
+    // A prompt dated off the scenario's instant is the stack's red: the model was told two
+    // different days, and whichever it believed says nothing about any prose.
+    [Fact]
+    public async Task APromptDatedOffThePinnedInstant_IsARunFailedNotARuleIgnored()
+    {
+        var recording = await ScriptedTurn.RunAsync("listo", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.OnTurn(new TurnObservation("Today is Sunday, 2026-10-04.", null));
+
+        var failures = ScenarioChecks.Failures(Timer(), recording);
+
+        ScenarioChecks.KindOf(Timer(), recording, failures).ShouldBe(FailureKind.RunFailed);
+    }
+
     [Fact]
     public async Task AScenarioRequiringNoLoad_FailsAsARuleIgnored_AndPassesWithNoKind()
     {

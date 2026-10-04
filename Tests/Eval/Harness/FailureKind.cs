@@ -8,7 +8,8 @@ namespace Tests.Eval.Harness;
 // RunFailed is neither: the provider refused the turn or the deadline passed, so the model never
 // answered and nothing it did is evidence about any prose. Kept apart because an outage counted
 // as a missing load points the next edit at a description nobody read, on whichever scenario the
-// outage happened to land on.
+// outage happened to land on. A prompt dated off the scenario's instant is the same kind: the
+// stack told the model two different days, and whichever it believed says nothing about prose.
 // HostPreloaded is the third thing that is neither: the host put a skill into the conversation
 // that the scenario does not permit. The model read whatever it was given and its behaviour is
 // not evidence about that skill's prose either way, so counting it as a rule ignored sent the
