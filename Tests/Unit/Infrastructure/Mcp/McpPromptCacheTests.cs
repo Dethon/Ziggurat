@@ -27,10 +27,16 @@ public class McpPromptCacheTests
 
     // The fetch counter rises before the background refresh stores the new entry, so waiting on
     // the counter and then reading the cache can still observe the stale value. Wait on the value.
-    private static Task WaitForCachedValueAsync(
-        McpPromptCache cache, Func<CancellationToken, Task<PromptSection[]>> fetch, string[] expected) =>
+    // The probe is itself a read, and a read that saw the stale entry just before the refresh
+    // landed may start a second refresh; with the scenario's counting fetch that one stores v3
+    // over v2 and the wait never ends. So the probe's fetch only ever fails, which leaves the
+    // entry alone.
+    private static Task WaitForCachedValueAsync(McpPromptCache cache, string[] expected) =>
         WaitUntilAsync(() =>
-            cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None)
+            cache.GetOrFetchAsync(
+                    "server-a",
+                    _ => Task.FromException<PromptSection[]>(new InvalidOperationException("the probe must not refresh")),
+                    CancellationToken.None)
                 .GetAwaiter().GetResult().Select(p => p.Text).SequenceEqual(expected));
 
     [Fact]
@@ -69,7 +75,7 @@ public class McpPromptCacheTests
         var staleServed = await cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None);
 
         staleServed.Select(p => p.Text).ShouldBe(["v1"], "a stale hit must serve the cached value without blocking");
-        await WaitForCachedValueAsync(cache, fetch, ["v2"]);
+        await WaitForCachedValueAsync(cache, ["v2"]);
     }
 
     [Fact]
@@ -115,7 +121,7 @@ public class McpPromptCacheTests
         // Stale hit with an already-cancelled caller: serve stale now, refresh must still run.
         (await cache.GetOrFetchAsync("server-a", fetch, cancelled.Token)).Select(p => p.Text).ShouldBe(["v1"]);
 
-        await WaitForCachedValueAsync(cache, fetch, ["v2"]);
+        await WaitForCachedValueAsync(cache, ["v2"]);
     }
 
     // The entries are one dictionary of `object`, so the type a key was stored under is the
