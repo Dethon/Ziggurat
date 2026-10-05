@@ -234,11 +234,13 @@ impl<B: Bridge> Vfs<B> {
                 }
                 // A held directory has nothing on the mount; and a name the cached listing lacks is
                 // answered without a round trip — a shell's PATH search and a `find` probe ask for
-                // many names that are not there.
+                // many names that are not there. A listing the mount cut short answers for nothing
+                // it lacks: the file is still there, and a command told otherwise would create
+                // over it.
                 if state.held_dirs.contains(&parent_path) {
                     return Err(libc::ENOENT);
                 }
-                if let Some(listing) = state.listings.get(&parent_path) {
+                if let Some(listing) = state.listings.get(&parent_path).filter(|l| !l.truncated) {
                     if !listing.entries.iter().any(|e| e.name == name) {
                         return Err(libc::ENOENT);
                     }

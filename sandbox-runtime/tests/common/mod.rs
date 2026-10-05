@@ -21,6 +21,8 @@ pub struct FakeBridge {
     pub calls: Mutex<Vec<String>>,
     /// Paths whose writes the mount refuses, as a mount refusing them would.
     pub refusing: Mutex<Vec<String>>,
+    /// How many entries a listing carries before the mount cuts it short and says so.
+    pub listing_cap: Mutex<Option<usize>>,
     pub revoked: Mutex<bool>,
     /// The agent cannot be reached when the revocation is sent: it never learns of it.
     pub revocation_fails: Mutex<bool>,
@@ -91,6 +93,10 @@ impl FakeBridge {
         hold.waiting -= 1;
     }
 
+    pub fn cap_listings_at(&self, entries: usize) {
+        *self.listing_cap.lock().unwrap() = Some(entries);
+    }
+
     pub fn refuse(&self, path: &str) {
         self.refusing.lock().unwrap().push(path.to_string());
     }
@@ -135,7 +141,7 @@ impl Bridge for FakeBridge {
         self.record(format!("list {path}"));
         let prefix = if path == "/" { "/".to_string() } else { format!("{path}/") };
         let nodes = self.nodes.lock().unwrap();
-        let entries = nodes
+        let entries: Vec<Entry> = nodes
             .iter()
             .filter(|(p, _)| p.starts_with(&prefix) && p.len() > prefix.len() && !p[prefix.len()..].contains('/'))
             .map(|(p, node)| Entry {
@@ -147,7 +153,12 @@ impl Bridge for FakeBridge {
                 },
             })
             .collect();
-        Ok(Listing { entries, truncated: false })
+        match *self.listing_cap.lock().unwrap() {
+            Some(cap) if entries.len() > cap => {
+                Ok(Listing { entries: entries.into_iter().take(cap).collect(), truncated: true })
+            }
+            _ => Ok(Listing { entries, truncated: false }),
+        }
     }
 
     fn write(&self, path: &str, content: &[u8], new: bool) -> Result<(), Errno> {

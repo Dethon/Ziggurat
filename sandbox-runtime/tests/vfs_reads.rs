@@ -89,6 +89,28 @@ fn a_name_the_listing_lacks_is_not_found_without_asking_the_bridge() {
     assert_eq!(vfs.bridge().calls().len(), asked);
 }
 
+// A mount cuts a long listing short and says so. What it left out is still there, so the listing
+// cannot answer for a name it lacks: a file past the cut reads, and a write to it is a write to the
+// file that exists rather than a new one that would replace it.
+#[test]
+fn a_name_a_truncated_listing_lacks_is_still_asked_for() {
+    let vfs = Vfs::new(FakeBridge::with(&[
+        ("/vault", FakeNode::Dir),
+        ("/vault/a.md", FakeNode::File(b"first\n".to_vec(), true)),
+        ("/vault/b.md", FakeNode::File(b"second\n".to_vec(), true)),
+    ]));
+    vfs.bridge().cap_listings_at(1);
+    let vault = walk(&vfs, "/vault");
+    let listed: Vec<String> = vfs.readdir(vault).unwrap().into_iter().map(|e| e.name).collect();
+
+    let past_the_cut = vfs.lookup(vault, "b.md").unwrap();
+    let opened = vfs.open(past_the_cut.ino, false, false).unwrap();
+
+    assert_eq!(listed, ["a.md"]);
+    assert_eq!(vfs.read(opened.fh, 0, 4096).unwrap(), b"second\n");
+    assert_eq!(vfs.lookup(vault, "missing.md").unwrap_err(), libc::ENOENT);
+}
+
 #[test]
 fn a_missing_path_is_not_found() {
     let vfs = vault();
