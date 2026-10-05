@@ -498,16 +498,20 @@ impl<B: Bridge> Vfs<B> {
                 // left for the end would remove what the rename just put there.
                 self.commit_deletes();
                 let new = self.node_at(&to).is_err();
-                let data = {
-                    let mut state = self.lock();
-                    let Some(file) = state.held_files.remove(&from) else {
-                        drop(state);
-                        return self.rename(parent_ino, name, new_parent_ino, new_name);
-                    };
-                    state.move_ino(&from, &to);
-                    file.data
+                let Some(file) = self.lock().held_files.remove(&from) else {
+                    return self.rename(parent_ino, name, new_parent_ino, new_name);
                 };
-                self.commit_write(&to, &data, new)
+                // The file moves only once the mount took it. A refused rename is one the command
+                // was told failed: the file is still where it made it, under the inode it had.
+                let result = self.commit_write(&to, &file.data, new);
+                let mut state = self.lock();
+                match result {
+                    Ok(()) => state.move_ino(&from, &to),
+                    Err(_) => {
+                        state.held_files.entry(from).or_insert(file);
+                    }
+                }
+                result
             }
             Some(Kind::Dir) => {
                 self.lock().move_tree(&from, &to);

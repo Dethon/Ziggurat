@@ -358,3 +358,21 @@ fn the_command_does_not_finish_while_a_release_is_still_committing() {
     assert!(!finished_early, "finish returned while the release's commit was still in flight");
     assert_eq!(vfs.bridge().mutations(), [format!("write {NOTE} overwrite new\n")]);
 }
+
+// `sed -i` on a file the mount will not let be written: the rename onto it is refused, and the
+// temp is still where sed left it — the command was told the rename failed, so nothing moved.
+#[test]
+fn a_refused_rename_onto_a_path_leaves_the_new_file_where_it_was() {
+    let vfs = vault();
+    let notes = ino(&vfs, "/vault/notes");
+    let (temp, fh) = vfs.create(notes, "sedXYZ").unwrap();
+    vfs.write(fh, 0, b"new\n").unwrap();
+    vfs.release(fh);
+    vfs.bridge().refuse(NOTE);
+
+    assert_eq!(vfs.rename(notes, "sedXYZ", notes, "todo.md"), Err(libc::EACCES));
+
+    assert_eq!(vfs.lookup(notes, "sedXYZ").unwrap().ino, temp.ino);
+    assert_eq!(read_all(&vfs, "/vault/notes/sedXYZ"), "new\n");
+    assert_eq!(read_all(&vfs, NOTE), "old\n");
+}
