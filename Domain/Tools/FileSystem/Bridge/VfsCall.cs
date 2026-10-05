@@ -19,6 +19,12 @@ public sealed class VfsCall
     private readonly IReadOnlyDictionary<string, FileSystemMount> _served;
     private readonly ConcurrentQueue<VfsChange> _changes = new();
     private readonly ConcurrentDictionary<string, byte> _truncated = new(StringComparer.Ordinal);
+
+    // Each mount as this call's conversation sees it, made once. Whether two paths sit on one mount
+    // is asked by identity (Transfer, ReplaceAsync), so a view per resolve would make every mount
+    // a stranger to itself.
+    private readonly ConcurrentDictionary<IFileSystemBackend, IFileSystemBackend> _views =
+        new(ReferenceEqualityComparer.Instance);
     private int _revoked;
 
     public VfsCall(
@@ -446,7 +452,7 @@ public sealed class VfsCall
         // The backend as this conversation sees it: the operation runs on the bridge's own request,
         // where no turn is in flight to read the caller from.
         resolution = resolved.Backend is ICallerBoundBackend bound
-            ? resolved with { Backend = bound.As(_caller) }
+            ? resolved with { Backend = _views.GetOrAdd(resolved.Backend, _ => bound.As(_caller)) }
             : resolved;
         return null;
     }

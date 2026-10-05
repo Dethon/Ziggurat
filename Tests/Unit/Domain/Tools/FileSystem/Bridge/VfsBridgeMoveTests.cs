@@ -54,6 +54,48 @@ public class VfsBridgeMoveTests
         return (seen!, result);
     }
 
+    // Every prod mount is the agent's proxy of a remote one, and the bridge takes such a backend as
+    // the calling conversation sees it — a view, made on the spot. Two paths on one mount must still
+    // be one mount: a view per path made every `mv` inside a mount a copy and a delete, and asked the
+    // mount whether a file might leave it on its way to the next directory.
+    [Fact]
+    public async Task AMoveInsideAMountSeenThroughACallerView_IsStillThatMountsOwnMove()
+    {
+        var disk = new ViewedDisk("vault", new Dictionary<string, string> { ["a.md"] = "alpha\n" });
+        var call = _bridge.Mint(BridgeFixtures.Registry((disk, "/vault", null)), _ => true, null);
+
+        var answer = await call.RenameAsync("/vault/a.md", "/vault/c.md", overwrite: false, CancellationToken.None);
+
+        answer.ShouldBeOfType<BridgeAnswer<bool>.Ok>();
+        disk.Writes.ShouldBe(["move a.md c.md"]);
+    }
+
+    [Fact]
+    public async Task AReplaceInsideAMountSeenThroughACallerView_IsNotAskedWhetherItMayLeave()
+    {
+        var disk = new ViewedDisk("media", new Dictionary<string, string>
+        {
+            ["live/a.txt"] = "new\n",
+            ["live/b.txt"] = "old\n"
+        })
+        {
+            RefusesMoveOutOf = "live"
+        };
+        var call = _bridge.Mint(BridgeFixtures.Registry((disk, "/media", null)), _ => true, null);
+
+        var answer = await call.RenameAsync("/media/live/a.txt", "/media/live/b.txt", overwrite: true, CancellationToken.None);
+
+        answer.ShouldBeOfType<BridgeAnswer<bool>.Ok>();
+        disk.Files["live/b.txt"].ShouldBe("new\n");
+    }
+
+    private sealed class ViewedDisk(string name, IDictionary<string, string> files)
+        : MemoryDisk(name, files), global::Domain.Contracts.ICallerBoundBackend
+    {
+        public global::Domain.Contracts.IFileSystemBackend As(global::Domain.DTOs.Channel.ConversationContext? caller) =>
+            (global::Domain.Contracts.IFileSystemBackend)MemberwiseClone();
+    }
+
     private static (string, string, string, string?) Only(System.Text.Json.Nodes.JsonNode result)
     {
         var change = result["vfsChanges"]!.AsArray().ShouldHaveSingleItem()!;
