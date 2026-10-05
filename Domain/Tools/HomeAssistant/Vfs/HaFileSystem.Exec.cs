@@ -44,10 +44,8 @@ public sealed partial class HaFileSystem
             return done(127, "", $"No command. Available actions: {available}");
         }
 
-        // `./turn_on` is the spelling taught, because a real shell needs it once exec runs in the
-        // sandbox; the bare name is the one a listing shows. Both name one action. The suffix the
-        // actions used to carry names nothing now, and the refusal lists what does.
-        var serviceName = tokens[0].StartsWith("./", StringComparison.Ordinal) ? tokens[0][2..] : tokens[0];
+        // The suffix the actions used to carry names nothing now, and the refusal lists what does.
+        var serviceName = WithoutDotSlash(tokens[0]);
         var svc = actions.FirstOrDefault(a => HaActionResolver.CommandName(a, classDomain).Equals(serviceName, StringComparison.Ordinal));
         if (svc is null)
         {

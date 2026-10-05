@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -272,13 +272,16 @@ fn pump(
             return Ok((Ending::Cancelled, status));
         }
 
-        let readable = |fd: RawFd| fds.iter().any(|p| p.fd == fd && p.revents != 0);
-        if out.as_ref().is_some_and(|o| readable(o.as_raw_fd())) {
-            read_into(out, stdout, &mut buffer);
-        }
-        if err.as_ref().is_some_and(|e| readable(e.as_raw_fd())) {
-            read_into(err, stderr, &mut buffer);
-        }
+        read_ready(&fds, out, stdout, &mut buffer);
+        read_ready(&fds, err, stderr, &mut buffer);
+    }
+}
+
+// Reads `stream` where the poll found it ready; one that is closed, or was not polled, is left.
+fn read_ready<R: Read + AsRawFd>(fds: &[libc::pollfd], stream: &mut Option<R>, sink: &mut CappedOutput, buffer: &mut [u8]) {
+    let ready = stream.as_ref().is_some_and(|s| fds.iter().any(|p| p.fd == s.as_raw_fd() && p.revents != 0));
+    if ready {
+        read_into(stream, sink, buffer);
     }
 }
 
@@ -307,13 +310,8 @@ fn drain<A: Read + AsRawFd, B: Read + AsRawFd>(
         if unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, 50) } <= 0 {
             continue;
         }
-        let readable = |fd: RawFd| fds.iter().any(|p| p.fd == fd && p.revents != 0);
-        if out.as_ref().is_some_and(|o| readable(o.as_raw_fd())) {
-            read_into(out, stdout, &mut buffer);
-        }
-        if err.as_ref().is_some_and(|e| readable(e.as_raw_fd())) {
-            read_into(err, stderr, &mut buffer);
-        }
+        read_ready(&fds, out, stdout, &mut buffer);
+        read_ready(&fds, err, stderr, &mut buffer);
     }
 }
 

@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
+using Domain.Tools.FileSystem.Bridge;
 
 namespace Domain.Tools.Files;
 
@@ -47,7 +48,7 @@ public class SandboxFileSystem(
             [
                 .. Directory.EnumerateFileSystemEntries(containerRoot)
                     .Where(entry => new FileInfo(entry).LinkTarget is not { } target
-                                    || !target.StartsWith("/vfs/", StringComparison.Ordinal))
+                                    || !target.StartsWith($"{ServedMount.Root}/", StringComparison.Ordinal))
                     .Select(entry => Path.GetFileName(entry))
                     .Order(StringComparer.Ordinal)
             ];

@@ -165,8 +165,8 @@ public class FileSystemToolFeature(
         }
 
         var occupied = sandbox.OccupiedNames ?? [];
-        var places = string.Join(", ", served.Select(m => m.MountPoint.Trim('/') is var name && occupied.Contains(name)
-            ? $"`{m.MountPoint}` only at `/vfs/{name}` (the sandbox has a `{m.MountPoint}` of its own)"
+        var places = string.Join(", ", served.Select(m => occupied.Contains(ServedMount.NameOf(m.MountPoint))
+            ? $"`{m.MountPoint}` only at `{ServedMount.PathOf(m.MountPoint)}` (the sandbox has a `{m.MountPoint}` of its own)"
             : $"`{m.MountPoint}`"));
         // Every served mount is rerouted, but only the ones that offer `exec` are named: those are
         // the mounts the model is told it can exec on, so they are the ones whose exec moved.

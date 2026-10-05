@@ -284,14 +284,7 @@ public sealed class TimerFileSystem(
                 $"exec is only supported at the timers root: exec ./{TimerPath.DismissFileName}");
         }
 
-        // `./dismiss` is the spelling taught, because a real shell needs it once exec runs in the
-        // sandbox; the bare name is what a model reading the listing types. Both name one action,
-        // as they do on every executing mount.
-        var trimmed = command.Trim();
-        if (trimmed.StartsWith("./", StringComparison.Ordinal))
-        {
-            trimmed = trimmed[2..];
-        }
+        var trimmed = WithoutDotSlash(command.Trim());
 
         // A refusal that names only the whole command line cannot say whether the script or its
         // argument was wrong, and a model that guessed a flag reads it as the script being

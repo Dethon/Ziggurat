@@ -82,7 +82,8 @@ public class VfsExecTool(
                     $"'{path}' leaves {resolution.MountPoint} through '..'. Name the directory to run in by its own path.").ToNode();
             }
 
-            var cwd = $"vfs/{resolution.MountPoint.Trim('/')}/{resolution.RelativePath.Trim('/')}".TrimEnd('/');
+            // Relative to the sandbox's root, as every path its backend takes is.
+            var cwd = $"{ServedMount.PathOf(resolution.MountPoint).TrimStart('/')}/{resolution.RelativePath.Trim('/')}".TrimEnd('/');
             return (await RunBridgedAsync(sandbox, bridge, cwd, command, timeoutSeconds, Permission(arguments), Caller(arguments), cancellationToken))
                 .Map(e => e with { Cwd = path })
                 .ToNode();
@@ -145,7 +146,7 @@ public class VfsExecTool(
             : null;
 
     private static ConversationContext? Caller(AIFunctionArguments? arguments) =>
-        arguments?.Context?.TryGetValue(typeof(ConversationContext), out var caller) == true
+        arguments?.Context?.TryGetValue(ConversationContext.ContextKey, out var caller) == true
             ? caller as ConversationContext
             : null;
 

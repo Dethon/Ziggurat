@@ -43,7 +43,7 @@ public sealed class VfsCall
         _permission = permission;
         _offered = offered;
         _caller = caller;
-        _served = served.ToDictionary(m => m.MountPoint.TrimStart('/'), StringComparer.OrdinalIgnoreCase);
+        _served = served.ToDictionary(m => ServedMount.NameOf(m.MountPoint), StringComparer.OrdinalIgnoreCase);
     }
 
     public string Token { get; }

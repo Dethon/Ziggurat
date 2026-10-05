@@ -263,6 +263,12 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     protected static FsResult<T> ExecutableOnly<T>(string path, string actionName) where T : class =>
         FsError.ExecutableOnly<T>(path, actionName);
 
+    // An action as a catalog names it, however the command spelled it. `./<action>` is the spelling
+    // taught, because a real shell needs it once exec runs in the sandbox; the bare name is the one a
+    // listing shows and a model reading it types. Both name one action, on every executing mount.
+    protected static string WithoutDotSlash(string spelled) =>
+        spelled.StartsWith("./", StringComparison.Ordinal) ? spelled[2..] : spelled;
+
     protected static FsResult<T> Fail<T>(string code, string message, string? hint = null)
         where T : class => FsError.Fail<T>(code, message, hint);
 

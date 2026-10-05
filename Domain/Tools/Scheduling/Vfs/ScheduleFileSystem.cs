@@ -418,13 +418,7 @@ public sealed class ScheduleFileSystem(
             return NotFound<FsExecResult>(path);
         }
 
-        // `./run_now` is the spelling taught, because a real shell needs it once exec runs in the
-        // sandbox; the bare name is the one a listing shows. Both name one action.
-        var trimmed = command.Trim();
-        if (trimmed.StartsWith("./", StringComparison.Ordinal))
-        {
-            trimmed = trimmed[2..];
-        }
+        var trimmed = WithoutDotSlash(command.Trim());
 
         // Split the two refusals apart the way the timers mount does: a flag on the right action
         // is a different mistake from the wrong action, and one message for both sends a model

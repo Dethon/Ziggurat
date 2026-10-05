@@ -265,7 +265,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         context.Arguments.Context[ToolPermission.ContextKey] = new ToolPermission(RunsUnasked);
         // And the conversation the call serves, for the same tools: what they do outside the turn
         // still has to say who is calling.
-        context.Arguments.Context[typeof(ConversationContext)] = ConversationContextMeta.TryRead(context.Options);
+        context.Arguments.Context[ConversationContext.ContextKey] = ConversationContextMeta.TryRead(context.Options);
         try
         {
             var result = await base.InvokeFunctionAsync(context, cancellationToken);

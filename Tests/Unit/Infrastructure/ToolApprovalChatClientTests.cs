@@ -179,7 +179,7 @@ public class ToolApprovalChatClientTests
         ConversationContext? seen = null;
         var function = AIFunctionFactory.Create((AIFunctionArguments arguments) =>
         {
-            seen = arguments.Context?[typeof(ConversationContext)] as ConversationContext;
+            seen = arguments.Context?[ConversationContext.ContextKey] as ConversationContext;
             return "result";
         }, "domain__filesystem__exec");
         var conversation = new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1"));
