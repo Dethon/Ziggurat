@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Agent.Settings;
 using Domain.DTOs;
+using Domain.Judgments;
 using Domain.Tools.FileSystem;
 using Infrastructure.Judgments;
 using Infrastructure.Metrics;
@@ -119,7 +120,10 @@ public class ExecScreenJevTests
                                            ?? (reach == ShellReach.Host ? "/laptop/home/fran" : "/sandbox/home/sandbox_user");
                     var request = new ExecScreenRequest(
                         reach, c.Command, workingDirectory,
-                        c.Request.Select(text => new ChatMessage(ChatRole.User, text)), TurnModel: null);
+                        c.Request.Select(text => new ChatMessage(ChatRole.User, text)))
+                    {
+                        Caller = JudgmentCaller.None
+                    };
                     return new Verdict(c, reach, await screen.ScreenAsync(request, CancellationToken.None));
                 }
                 finally

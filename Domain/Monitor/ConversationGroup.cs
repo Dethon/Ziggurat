@@ -9,6 +9,7 @@ using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
+using Domain.Judgments;
 using Domain.Metrics;
 using Domain.Prompts;
 using Domain.Skills;
@@ -606,11 +607,9 @@ internal sealed class ConversationGroup(
         ChannelMessage message, IReadOnlyList<PromptSkill> skills, IReadOnlyList<ChatMessage> history, GroupState state) =>
         new(message.Content, skills, history)
         {
-            ConfigPatchModel = message.ConfigPatch?.Model,
-            AgentId = message.AgentId,
+            Caller = new JudgmentCaller(
+                message.ConfigPatch?.Model, message.Sender, message.AgentId, state.DeliveryKey.ConversationId),
             ChannelId = message.ChannelId,
-            Sender = message.Sender,
-            ConversationId = state.DeliveryKey.ConversationId,
             // The session's mounts, built by the warmup awaited above: the reads a preloaded
             // skill declares are made over them, the way the model's own would be.
             Reader = SkillPreloadReads.ReaderOver(state.Agent.GetFileSystemRegistry(state.Thread))

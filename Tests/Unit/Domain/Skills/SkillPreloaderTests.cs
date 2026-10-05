@@ -137,10 +137,7 @@ public class SkillPreloaderTests
         await Preloader(judge).PreloadAsync(
             Request("apaga la luz", [_home]) with
             {
-                ConfigPatchModel = "lemonade/qwen3",
-                Sender = "fran",
-                AgentId = "jonas",
-                ConversationId = "conv-1"
+                Caller = new JudgmentCaller("lemonade/qwen3", "fran", "jonas", "conv-1")
             },
             CancellationToken.None);
 
@@ -371,5 +368,5 @@ public class SkillPreloaderTests
         new(judge, settings ?? _settings, clock ?? new FakeTimeProvider());
 
     private static SkillPreloadRequest Request(string text, IReadOnlyList<PromptSkill> skills, IEnumerable<ChatMessage>? history = null) =>
-        new(text, skills, history ?? []);
+        new(text, skills, history ?? []) { Caller = JudgmentCaller.None };
 }

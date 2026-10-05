@@ -8,6 +8,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
+using Domain.Judgments;
 using Domain.Metrics;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.Mcp;
@@ -145,12 +146,9 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 
         return await _execScreen.ScreenAsync(
             new ExecScreenRequest(
-                shellReach, ArgumentText(context.Arguments, "command") ?? "", path, context.Messages,
-                asking?.GetTurnModel())
+                shellReach, ArgumentText(context.Arguments, "command") ?? "", path, context.Messages)
             {
-                AgentId = _agentId,
-                ConversationId = _conversationId,
-                Sender = asking?.GetSenderId()
+                Caller = new JudgmentCaller(asking?.GetTurnModel(), asking?.GetSenderId(), _agentId, _conversationId)
             },
             ct);
     }

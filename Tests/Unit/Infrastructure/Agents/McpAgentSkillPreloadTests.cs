@@ -91,7 +91,7 @@ public class McpAgentSkillPreloadTests
         await using var agent = Agent(client, server.Endpoint, preloader);
 
         var message = new ChatMessage(ChatRole.User, "enciende la luz del salón");
-        var request = new SkillPreloadRequest(message.Text, [TestSkills.Home, TestSkills.Timers], []);
+        var request = new SkillPreloadRequest(message.Text, [TestSkills.Home, TestSkills.Timers], []) { Caller = JudgmentCaller.None };
         SkillPreloadPending.Attach(message, preloader.PreloadAsync(request, CancellationToken.None));
 
         await agent.RunAsync([message]);

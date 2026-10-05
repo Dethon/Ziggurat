@@ -23,21 +23,17 @@ public interface IExecScreen
 }
 
 // The messages are the conversation as the chat client holds it: the screen reads the person's
-// words out of them itself, so no caller can hand it a tool's output by mistake. The turn model is
-// required for the reason JudgmentRequest's is — a turn addressed to the local box sends nothing.
+// words out of them itself, so no caller can hand it a tool's output by mistake.
 public sealed record ExecScreenRequest(
     ShellReach Reach,
     string Command,
     string WorkingDirectory,
-    IEnumerable<ChatMessage> Messages,
-    string? TurnModel)
+    IEnumerable<ChatMessage> Messages)
 {
-    public string? AgentId { get; init; }
-
-    public string? ConversationId { get; init; }
-
-    // Who asked, whom the judgment's usage is billed to.
-    public string? Sender { get; init; }
+    // The turn behind the command — the model it was addressed to and who asked — handed to the
+    // judgment as it is. Required for the reason JudgmentRequest's is: a turn addressed to the local
+    // box sends nothing, and the rest is billed to whoever asked.
+    public required JudgmentCaller Caller { get; init; }
 }
 
 public sealed record ExecScreenVerdict(IReadOnlyList<string> Codes)
@@ -156,7 +152,7 @@ public sealed class ExecScreen(
                 ["machine"] = Machine(request.Reach)
             },
             _questions,
-            new JudgmentCaller(request.TurnModel, request.Sender, request.AgentId, request.ConversationId));
+            request.Caller);
     }
 
     // The person's latest words, oldest first: the user-role messages alone, as the chat client
@@ -204,8 +200,8 @@ public sealed class ExecScreen(
 
     private static ExecScreenEvent ToEvent(ExecScreenRequest request, Screened screened, TimeSpan latency) => new()
     {
-        AgentId = request.AgentId,
-        ConversationId = request.ConversationId,
+        AgentId = request.Caller.AgentId,
+        ConversationId = request.Caller.ConversationId,
         Reach = JsonNamingPolicy.CamelCase.ConvertName(request.Reach.ToString()),
         Outcome = screened.Verdict.Asks ? ExecScreenOutcomes.Asked : ExecScreenOutcomes.Ran,
         Codes = screened.Verdict.Codes,

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.Extensions;
+using Domain.Judgments;
 using Domain.Prompts;
 using Domain.Skills;
 using Microsoft.Agents.AI;
@@ -141,9 +142,7 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
                 : await _preloader.PreloadAsync(
                     new SkillPreloadRequest(request.Text, skills, _historyOf(context.Session).Concat(requestMessages))
                     {
-                        ConfigPatchModel = request.GetTurnModel(),
-                        AgentId = context.Agent.Name,
-                        Sender = request.GetSenderId(),
+                        Caller = new JudgmentCaller(request.GetTurnModel(), request.GetSenderId(), context.Agent.Name),
                         Reader = SkillPreloadReads.ReaderOver(_registryOf(context.Session))
                     },
                     ct);

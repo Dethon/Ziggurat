@@ -117,7 +117,7 @@ public class SkillPreloaderJevTests
             await width.WaitAsync();
             try
             {
-                var preload = await preloader.PreloadAsync(new SkillPreloadRequest(c.Request, skills, []), CancellationToken.None);
+                var preload = await preloader.PreloadAsync(new SkillPreloadRequest(c.Request, skills, []) { Caller = JudgmentCaller.None }, CancellationToken.None);
                 preload.Outcome.ShouldNotBeOneOf(SkillPreloadOutcome.Error, SkillPreloadOutcome.NotAsked, SkillPreloadOutcome.Deadline);
                 return new Verdict(c, preload);
             }

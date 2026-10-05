@@ -17,9 +17,8 @@ public class SkillPreloadTelemetryTests
     private static SkillPreloadRequest Request(string text = "enciende la luz") =>
         new(text, [_home], [])
         {
-            AgentId = "nabu",
-            ChannelId = "voice",
-            ConversationId = "conv-1"
+            Caller = new JudgmentCaller(null, null, "nabu", "conv-1"),
+            ChannelId = "voice"
         };
 
     [Fact]
@@ -30,6 +29,7 @@ public class SkillPreloadTelemetryTests
             new FixedJudge(JudgeAnswers.Sure("home-assistant")), new SkillPreloadSettings(), new FakeTimeProvider(), published);
         var request = new SkillPreloadRequest("enciende la luz", [TestSkills.HomeWithIndex], [])
         {
+            Caller = JudgmentCaller.None,
             Reader = (_, _) => Task.FromResult<JsonNode?>(new JsonObject { ["content"] = "1: index" })
         };
 
@@ -126,7 +126,7 @@ public class SkillPreloadTelemetryTests
             new FixedJudge(new JudgmentOutcome.Absent(AbsenceReason.Unconfigured)), new SkillPreloadSettings(), new FakeTimeProvider(), published);
 
         await preloader.PreloadAsync(Request(), CancellationToken.None);
-        await preloader.PreloadAsync(new SkillPreloadRequest("hola", [], []), CancellationToken.None);
+        await preloader.PreloadAsync(new SkillPreloadRequest("hola", [], []) { Caller = JudgmentCaller.None }, CancellationToken.None);
         await new SkillPreloader(new FixedJudge(new JudgmentOutcome.Absent(AbsenceReason.Error)),
                 new SkillPreloadSettings { Enabled = false }, new FakeTimeProvider(), published)
             .PreloadAsync(Request(), CancellationToken.None);

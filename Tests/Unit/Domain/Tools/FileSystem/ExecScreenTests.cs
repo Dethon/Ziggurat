@@ -39,7 +39,10 @@ public class ExecScreenTests
         userMessages.Select(text => new ChatMessage(ChatRole.User, text));
 
     private static ExecScreenRequest Request(ShellReach reach, IEnumerable<ChatMessage>? messages = null) =>
-        new(reach, "ls -la", "/sandbox/home/sandbox_user", messages ?? Asked("¿qué hay en la carpeta?"), TurnModel: null);
+        new(reach, "ls -la", "/sandbox/home/sandbox_user", messages ?? Asked("¿qué hay en la carpeta?"))
+        {
+            Caller = JudgmentCaller.None
+        };
 
     private static ExecScreen Screen(
         IJudge judge, ExecScreenSettings? settings = null, TimeProvider? clock = null,
@@ -247,12 +250,9 @@ public class ExecScreenTests
     {
         var judge = new ScriptedJudge(_ => Answered(0.97));
         var request = new ExecScreenRequest(
-            ShellReach.Host, "cargo build --release", "/laptop/home/fran/app", Asked("compila el proyecto"),
-            TurnModel: "z-ai/glm-5")
+            ShellReach.Host, "cargo build --release", "/laptop/home/fran/app", Asked("compila el proyecto"))
         {
-            Sender = "fran",
-            AgentId = "jonas",
-            ConversationId = "conv-1"
+            Caller = new JudgmentCaller("z-ai/glm-5", "fran", "jonas", "conv-1")
         };
 
         await Screen(judge).ScreenAsync(request, CancellationToken.None);
@@ -317,7 +317,7 @@ public class ExecScreenTests
     {
         var metrics = new RecordingMetricsPublisher();
         var judge = new ScriptedJudge(_ => Answered(0.3, 0.9, 0.1, 0.05));
-        var request = Request(ShellReach.Host) with { AgentId = "jonas", ConversationId = "7:42" };
+        var request = Request(ShellReach.Host) with { Caller = new JudgmentCaller(null, null, "jonas", "7:42") };
 
         await Screen(judge, metrics: metrics).ScreenAsync(request, CancellationToken.None);
 

@@ -152,8 +152,8 @@ public sealed class SkillPreloader(
 
     public static SkillPreloadEvent ToEvent(SkillPreloadRequest request, SkillPreload preload) => new()
     {
-        AgentId = request.AgentId,
-        ConversationId = request.ConversationId,
+        AgentId = request.Caller.AgentId,
+        ConversationId = request.Caller.ConversationId,
         Channel = request.ChannelId,
         Outcome = WireOutcome(preload.Outcome),
         Skills = [.. preload.Skills.Select(s => s.Name)],
@@ -195,7 +195,7 @@ public sealed class SkillPreloader(
         return new JudgmentRequest(
             new JsonObject { ["request"] = request.Text },
             questions,
-            new JudgmentCaller(request.ConfigPatchModel, request.Sender, request.AgentId, request.ConversationId));
+            request.Caller);
     }
 
     private SkillPreload Decide(Judgment judgment, IReadOnlyList<PromptSkill> candidates, TimeSpan latency)

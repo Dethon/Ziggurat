@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Judgments;
 using Domain.Prompts;
 using Microsoft.Extensions.AI;
 
@@ -28,20 +29,15 @@ public sealed record SkillPreloadRequest(
     IReadOnlyList<PromptSkill> Skills,
     IEnumerable<ChatMessage> History)
 {
-    // The model the turn asked for, handed to the judge's client, which sends nothing for a turn
-    // addressed to the local box. A worker's request has no patch; it names its parent turn's.
-    public string? ConfigPatchModel { get; init; }
+    // The turn behind the request, handed to the judgment as it is: the model the turn asked for —
+    // the judge's client sends nothing for a turn addressed to the local box, and a worker's request
+    // names its parent turn's — and whom the judgment's usage is billed to. Required, so a preload
+    // cannot be asked without saying who is behind it; `JudgmentCaller.None` is a run with no turn.
+    public required JudgmentCaller Caller { get; init; }
 
     // Where the request came from, for the event each judgment publishes. Optional: a run with
     // no channel — an eval, a worker — is judged all the same.
-    public string? AgentId { get; init; }
-
     public string? ChannelId { get; init; }
-
-    // Who asked, whom the judgment's usage is billed to.
-    public string? Sender { get; init; }
-
-    public string? ConversationId { get; init; }
 
     // How a preload makes the reads a skill declares (SkillDeclaration.PreloadReads): the turn's
     // own file_read, over the session's mounts, answering what the tool would have answered the

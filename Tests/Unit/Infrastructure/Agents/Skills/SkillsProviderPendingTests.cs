@@ -71,7 +71,7 @@ public class SkillsProviderPendingTests
 
         await Provide(preloader.Object, request);
 
-        asked.ShouldNotBeNull().ConfigPatchModel.ShouldBe("lemonade/qwen3");
+        asked.ShouldNotBeNull().Caller.TurnModel.ShouldBe("lemonade/qwen3");
     }
 
     [Theory]
