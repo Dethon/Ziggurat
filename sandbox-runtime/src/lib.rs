@@ -1,6 +1,7 @@
 //! The sandbox container's privileged half: the root launcher that starts the MCP server as its
 //! own uid and runs each command as PUID in a private mount namespace. See `CLAUDE.md`.
 
+#[cfg(target_os = "linux")]
 pub mod home;
 pub mod vfs;
 pub mod output;
