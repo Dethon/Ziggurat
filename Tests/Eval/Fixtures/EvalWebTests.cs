@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Judgments;
 using Infrastructure.Clients.Browser;
 using Microsoft.Playwright;
 using Shouldly;
@@ -51,7 +52,7 @@ public class EvalWebTests : IAsyncLifetime
         var result = await _web.SearchClient().SearchAsync(new WebSearchQuery("horario del museo", 10));
 
         result.Results.ShouldHaveSingleItem().Snippet.ShouldContain(EvalWeb.StaleOpeningTime);
-        var page = await _browsing.NavigateAsync(new BrowseRequest("proof-museum", _web.MuseumUrl));
+        var page = await _browsing.NavigateAsync(new BrowseRequest("proof-museum", _web.MuseumUrl) { Caller = JudgmentCaller.None });
         page.Content.ShouldNotBeNull().ShouldContain(EvalWeb.OpeningTime);
     }
 
@@ -60,7 +61,7 @@ public class EvalWebTests : IAsyncLifetime
     {
         // The family's hard boundary, held by the browser rather than by a rule somebody has to
         // remember: everything but loopback is proxied to a port with nothing behind it.
-        var result = await _browsing.NavigateAsync(new BrowseRequest("proof-offline", "https://example.com"));
+        var result = await _browsing.NavigateAsync(new BrowseRequest("proof-offline", "https://example.com") { Caller = JudgmentCaller.None });
 
         result.Status.ShouldNotBe(BrowseStatus.Success);
     }
@@ -68,7 +69,7 @@ public class EvalWebTests : IAsyncLifetime
     [Fact]
     public async Task ReadingTheRecipe_ReturnsTheFactThatIsOnlyOnThePage()
     {
-        var result = await _browsing.NavigateAsync(new BrowseRequest("proof-recipe", _web.RecipeUrl));
+        var result = await _browsing.NavigateAsync(new BrowseRequest("proof-recipe", _web.RecipeUrl) { Caller = JudgmentCaller.None });
 
         // Partial counts, as it does for the museum above: the claim is that the resting time is on
         // the page and reachable, not that DOMContentLoaded arrived inside the production 30s
@@ -86,7 +87,7 @@ public class EvalWebTests : IAsyncLifetime
         // snapshot, the values go in by ref, and the submit navigates. If this cannot be done here
         // then a scenario failing it says nothing about the agent.
         const string session = "proof-booking";
-        await _browsing.NavigateAsync(new BrowseRequest(session, _web.BookingUrl));
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.BookingUrl) { Caller = JudgmentCaller.None });
         var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
 
         await _browsing.ActionAsync(new WebActionRequest(
@@ -115,14 +116,15 @@ public class EvalWebTests : IAsyncLifetime
     {
         // The page the partial-content rule needs: a first fetch at the default length truncates
         // and does not carry the number, so a reply with the number in it paid for the tail.
-        var first = await _browsing.NavigateAsync(new BrowseRequest("proof-chronicle", _web.ChronicleUrl));
+        var first = await _browsing.NavigateAsync(new BrowseRequest("proof-chronicle", _web.ChronicleUrl) { Caller = JudgmentCaller.None });
 
         first.Status.ShouldBe(BrowseStatus.Success);
         first.Truncated.ShouldBeTrue();
         first.Content.ShouldNotBeNull().ShouldNotContain(EvalWeb.RaffleTotal);
 
         var rest = await _browsing.NavigateAsync(new BrowseRequest(
-            "proof-chronicle", _web.ChronicleUrl, Offset: first.Content!.Length, MaxLength: 100_000));
+            "proof-chronicle", _web.ChronicleUrl, Offset: first.Content!.Length, MaxLength: 100_000)
+        { Caller = JudgmentCaller.None });
         rest.Truncated.ShouldBeFalse();
         rest.Content.ShouldNotBeNull().ShouldContain(EvalWeb.RaffleTotal);
     }
@@ -135,7 +137,8 @@ public class EvalWebTests : IAsyncLifetime
         // paragraph, told the user the site looked mispublished, and spent the reply's length on
         // the warning. Each day keeps the shared skeleton and carries something its own.
         var page = await _browsing.NavigateAsync(new BrowseRequest(
-            "proof-chronicle-days", _web.ChronicleUrl, MaxLength: 100_000));
+            "proof-chronicle-days", _web.ChronicleUrl, MaxLength: 100_000)
+        { Caller = JudgmentCaller.None });
 
         var days = System.Text.RegularExpressions.Regex
             .Split(page.Content.ShouldNotBeNull(), @"^## Día \d+\s*$", System.Text.RegularExpressions.RegexOptions.Multiline)
@@ -154,7 +157,7 @@ public class EvalWebTests : IAsyncLifetime
         // The reactive field the type-vs-fill rule needs, driven end to end: the suggestions only
         // exist after keystrokes, and the signup only lands when one of them was picked.
         const string session = "proof-signup";
-        await _browsing.NavigateAsync(new BrowseRequest(session, _web.SignupUrl));
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.SignupUrl) { Caller = JudgmentCaller.None });
         var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
 
         var typed = await _browsing.ActionAsync(new WebActionRequest(
@@ -193,7 +196,7 @@ public class EvalWebTests : IAsyncLifetime
         // keystrokes produce, so a filled field stays suggestion-less and typing is the only way
         // to a code.
         const string session = "proof-fill-inert";
-        await _browsing.NavigateAsync(new BrowseRequest(session, _web.SignupUrl));
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.SignupUrl) { Caller = JudgmentCaller.None });
         var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
 
         await _browsing.ActionAsync(new WebActionRequest(
@@ -209,7 +212,7 @@ public class EvalWebTests : IAsyncLifetime
         // Picking from the list is load-bearing: the hidden id is only set by the suggestion's own
         // click handler, so a form filled by value alone bounces and prints no code.
         const string session = "proof-signup-unpicked";
-        await _browsing.NavigateAsync(new BrowseRequest(session, _web.SignupUrl));
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.SignupUrl) { Caller = JudgmentCaller.None });
         var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
 
         await _browsing.ActionAsync(new WebActionRequest(
@@ -231,7 +234,7 @@ public class EvalWebTests : IAsyncLifetime
         // The back rule is only forced if the edition urls leak nowhere: a content read or a
         // snapshot that carried them would let a model browse forward and never return.
         const string session = "proof-archive";
-        var archive = await _browsing.NavigateAsync(new BrowseRequest(session, _web.ArchiveUrl));
+        var archive = await _browsing.NavigateAsync(new BrowseRequest(session, _web.ArchiveUrl) { Caller = JudgmentCaller.None });
         archive.Content.ShouldNotBeNull().ShouldNotContain("ed-3f7");
         archive.Content.ShouldNotContain("ed-b12");
 
@@ -263,7 +266,7 @@ public class EvalWebTests : IAsyncLifetime
         // The chaining page: four fields and a submit from one snapshot's refs — the form is
         // static, so nothing re-stamps between actions and no second snapshot is ever needed.
         const string session = "proof-materials";
-        await _browsing.NavigateAsync(new BrowseRequest(session, _web.MaterialsUrl));
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.MaterialsUrl) { Caller = JudgmentCaller.None });
         var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
 
         await _browsing.ActionAsync(new WebActionRequest(
@@ -293,7 +296,7 @@ public class EvalWebTests : IAsyncLifetime
         // Every field is load-bearing: the code is only behind a form filled whole, so a flow
         // that skipped a field cannot pass by submitting anyway.
         const string session = "proof-materials-short";
-        await _browsing.NavigateAsync(new BrowseRequest(session, _web.MaterialsUrl));
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.MaterialsUrl) { Caller = JudgmentCaller.None });
         var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
 
         await _browsing.ActionAsync(new WebActionRequest(

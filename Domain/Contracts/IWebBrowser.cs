@@ -82,9 +82,10 @@ public record BrowseRequest(
 {
     // The browsing turn — the model it was addressed to and who asked — from the tool call's
     // `_meta`. Handed to the modal judgment and nothing else: its client sends nothing for a turn
-    // addressed to the local box, and bills the rest to whoever asked. Unset is a browse with no
-    // turn behind it (a fixture, a harness).
-    public JudgmentCaller Caller { get; init; } = JudgmentCaller.None;
+    // addressed to the local box, and bills the rest to whoever asked. Required, so a new browse
+    // cannot be built without saying who is behind it; `JudgmentCaller.None` is a browse with no
+    // turn (a fixture, a harness).
+    public required JudgmentCaller Caller { get; init; }
 }
 
 public record BrowseResult(

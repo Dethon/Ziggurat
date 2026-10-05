@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Judgments;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Xunit.Abstractions;
@@ -40,7 +41,8 @@ public class PlaywrightWebBrowserTests(
         try
         {
             await fixture.Browser.NavigateAsync(new BrowseRequest(
-                SessionId: sessionId, Url: "https://example.com", MaxLength: 5000));
+                SessionId: sessionId, Url: "https://example.com", MaxLength: 5000)
+            { Caller = JudgmentCaller.None });
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var result = await fixture.Browser.ActionAsync(new WebActionRequest(
@@ -70,7 +72,8 @@ public class PlaywrightWebBrowserTests(
             var request = new BrowseRequest(
                 SessionId: sessionId,
                 Url: "https://example.com",
-                MaxLength: 5000);
+                MaxLength: 5000)
+            { Caller = JudgmentCaller.None };
             var result = await fixture.Browser.NavigateAsync(request);
 
             // Assert
@@ -98,7 +101,8 @@ public class PlaywrightWebBrowserTests(
             var request1 = new BrowseRequest(
                 SessionId: sessionId,
                 Url: "https://example.com",
-                MaxLength: 1000);
+                MaxLength: 1000)
+            { Caller = JudgmentCaller.None };
             // Partial counts throughout this case: what it pins is that the session survives two
             // navigations and ends up on the second URL, and a DOMContentLoaded that does not
             // arrive returns Partial with the page present and the session perfectly intact. The
@@ -110,7 +114,8 @@ public class PlaywrightWebBrowserTests(
             var request2 = new BrowseRequest(
                 SessionId: sessionId,
                 Url: "https://example.org",
-                MaxLength: 1000);
+                MaxLength: 1000)
+            { Caller = JudgmentCaller.None };
             var result2 = await fixture.Browser.NavigateAsync(request2);
 
             // Assert - both navigations should work and session should persist
@@ -140,7 +145,8 @@ public class PlaywrightWebBrowserTests(
             var browseRequest = new BrowseRequest(
                 SessionId: sessionId,
                 Url: "https://example.com",
-                MaxLength: 2000);
+                MaxLength: 2000)
+            { Caller = JudgmentCaller.None };
             await fixture.Browser.NavigateAsync(browseRequest);
 
             var result = await fixture.Browser.GetCurrentPageAsync(sessionId);
@@ -167,7 +173,8 @@ public class PlaywrightWebBrowserTests(
         var browseRequest = new BrowseRequest(
             SessionId: sessionId,
             Url: "https://example.com",
-            MaxLength: 1000);
+            MaxLength: 1000)
+        { Caller = JudgmentCaller.None };
         await fixture.Browser.NavigateAsync(browseRequest);
 
         await fixture.Browser.CloseSessionAsync(sessionId);
@@ -188,7 +195,8 @@ public class PlaywrightWebBrowserTests(
             var request = new BrowseRequest(
                 SessionId: sessionId,
                 Url: "https://this-domain-definitely-does-not-exist-xyz123.com",
-                MaxLength: 1000);
+                MaxLength: 1000)
+            { Caller = JudgmentCaller.None };
             var result = await fixture.Browser.NavigateAsync(request);
 
             result.Status.ShouldBe(BrowseStatus.Error);
@@ -228,7 +236,8 @@ public class PlaywrightWebBrowserTests(
                 fixture.Browser.NavigateAsync(new BrowseRequest(
                     SessionId: sid,
                     Url: urls[i],
-                    MaxLength: 5000))).ToList();
+                    MaxLength: 5000)
+                { Caller = JudgmentCaller.None })).ToList();
 
             var results = await Task.WhenAll(navigateTasks);
 
@@ -286,7 +295,8 @@ public class PlaywrightWebBrowserTests(
                 fixture.Browser.NavigateAsync(new BrowseRequest(
                     SessionId: sid,
                     Url: urls[i],
-                    MaxLength: 1000))));
+                    MaxLength: 1000)
+                { Caller = JudgmentCaller.None })));
             setupResults.ShouldAllBe(r => r.Status == BrowseStatus.Success || r.Status == BrowseStatus.Partial);
 
             var snapshotTasks = sessions.Select(sid =>
@@ -335,7 +345,8 @@ public class PlaywrightWebBrowserTests(
             // Set up: navigate each session in parallel (see NavigateAsync_ParallelSessions).
             var setupResults = await Task.WhenAll(sessions.Select((sid, i) =>
                 fixture.Browser.NavigateAsync(new BrowseRequest(
-                    SessionId: sid, Url: urls[i], MaxLength: 500))));
+                    SessionId: sid, Url: urls[i], MaxLength: 500)
+                { Caller = JudgmentCaller.None })));
             // Partial counts, as it does for the sibling above: this is setup, and the subject is
             // what the refs do afterwards. example.com is reached over the network from inside the
             // container, and a DOMContentLoaded that does not arrive returns Partial with the page
@@ -476,7 +487,8 @@ public class PlaywrightWebBrowserTests(
             SessionId: sessionId,
             Url: "https://www.reddit.com/r/anime/comments/wbj3yc/can_someone_recommend_a_hidden_gem_isekai_pls/",
             MaxLength: 20000,
-            UseReadability: true));
+            UseReadability: true)
+        { Caller = JudgmentCaller.None });
 
     // The comments are <shreddit-comment> custom elements, which is exactly what readability used
     // to discard as non-content. Asking the live DOM separates "reddit did not send the thread"

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
+using Domain.Judgments;
 using Infrastructure.HtmlProcessing;
 using Infrastructure.Metrics;
 using Microsoft.Playwright;
@@ -301,7 +302,8 @@ public class PlaywrightWebBrowser(
                 async ctx =>
                 {
                     var html = await ctx.Page.ContentAsync();
-                    var request = new BrowseRequest(SessionId: sessionId, Url: ctx.UrlBefore);
+                    // Only the page's content is processed here; nothing is judged, so nobody is asked.
+                    var request = new BrowseRequest(SessionId: sessionId, Url: ctx.UrlBefore) { Caller = JudgmentCaller.None };
                     var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
 
                     return new BrowseResult(

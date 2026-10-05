@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Judgments;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -29,7 +30,8 @@ public class CrossOriginImageProbeTests(IsolatedSessionBrowserFixture fixture)
             // fetch, and the envelope reports it as imagesBeyondWindow.
             var browsed = await fixture.Browser.NavigateAsync(new BrowseRequest(
                 sessionId, "https://commons.wikimedia.org/wiki/File:Cat_in_Efremov,_Russia1.jpg",
-                MaxLength: 100000));
+                MaxLength: 100000)
+            { Caller = JudgmentCaller.None });
 
             // Attestation only: the hermetic twins own the behaviour, so a third party's bad
             // day is a skip here, never a failure of a bare run.

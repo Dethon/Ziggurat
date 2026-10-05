@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Judgments;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -21,7 +22,8 @@ public class NoAcaoCdnFetchTests(IsolatedSessionBrowserFixture fixture)
         try
         {
             var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(
-                sessionId, "https://www.jpl.nasa.gov/images/", ScrollToLoad: true));
+                sessionId, "https://www.jpl.nasa.gov/images/", ScrollToLoad: true)
+            { Caller = JudgmentCaller.None });
             Skip.If(nav.Status != BrowseStatus.Success, "JPL unreachable.");
 
             // A .jpg ref, because it is the proof: a screenshot leaves as PNG, so bytes arriving

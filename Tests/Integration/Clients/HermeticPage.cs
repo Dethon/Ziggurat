@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.Judgments;
 using Infrastructure.Clients.Browser;
 using Shouldly;
 
@@ -29,7 +30,7 @@ internal static class HermeticPage
     {
         await EnsureRouteAsync(browser);
 
-        var nav = await browser.NavigateAsync(new BrowseRequest(sessionId, AnchorUrl));
+        var nav = await browser.NavigateAsync(new BrowseRequest(sessionId, AnchorUrl) { Caller = JudgmentCaller.None });
         nav.Status.ShouldBe(BrowseStatus.Success);
 
         await InjectAsync(browser, sessionId, markup);

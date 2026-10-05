@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Judgments;
 using Infrastructure.HtmlProcessing;
 using Shouldly;
 
@@ -238,7 +239,7 @@ public class PageImageEntryTests
         (await HtmlProcessor.ProcessAsync(Request(), html, CancellationToken.None)).Content!;
 
     private static BrowseRequest Request() =>
-        new(SessionId: "test", Url: "http://example.com/test", MaxLength: 100000);
+        new(SessionId: "test", Url: "http://example.com/test", MaxLength: 100000) { Caller = JudgmentCaller.None };
 
     private static string Page(string body) =>
         $"""

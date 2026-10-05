@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Judgments;
 using Infrastructure.HtmlProcessing;
 using Shouldly;
 
@@ -90,7 +91,7 @@ public class TruncationImageEntryTests
     {
         var html = Page(string.Join("\n", Enumerable.Range(1, 12).Select(i =>
             $"""<p>{new string('x', 200)}</p><img src="/p{i}.jpg" alt="Picture {i}" data-img-w="300" data-img-h="300" data-img-ref="i-{i}">""")));
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", MaxLength: 900);
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", MaxLength: 900) { Caller = JudgmentCaller.None };
 
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
@@ -109,11 +110,11 @@ public class TruncationImageEntryTests
             $"""<p>{new string('x', 200)}</p><img src="/p{i}.jpg" alt="Picture {i}" data-img-w="300" data-img-h="300" data-img-ref="i-{i}">""")));
 
         var whole = await HtmlProcessor.ProcessAsync(
-            new BrowseRequest("test", "http://example.com/test", MaxLength: 100000), html, CancellationToken.None);
+            new BrowseRequest("test", "http://example.com/test", MaxLength: 100000) { Caller = JudgmentCaller.None }, html, CancellationToken.None);
         var offset = whole.Content!.IndexOf("[image i-4", StringComparison.Ordinal);
 
         var window = await HtmlProcessor.ProcessAsync(
-            new BrowseRequest("test", "http://example.com/test", MaxLength: 100000, Offset: offset),
+            new BrowseRequest("test", "http://example.com/test", MaxLength: 100000, Offset: offset) { Caller = JudgmentCaller.None },
             html, CancellationToken.None);
 
         window.ImageCount.ShouldBe(9);
@@ -124,7 +125,7 @@ public class TruncationImageEntryTests
     public async Task APageWhoseImagesAllFit_ReportsNoneBeyondTheWindow()
     {
         var html = Page("""<img src="/p.jpg" alt="Only picture" data-img-w="300" data-img-h="300" data-img-ref="i-1">""");
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", MaxLength: 100000);
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", MaxLength: 100000) { Caller = JudgmentCaller.None };
 
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
@@ -141,9 +142,9 @@ public class TruncationImageEntryTests
             $"""<p>{new string('x', 200)}</p><img src="/p{i}.jpg" alt="Picture {i}" data-img-w="300" data-img-h="300" data-img-ref="i-{i}">""")));
 
         var whole = await HtmlProcessor.ProcessAsync(
-            new BrowseRequest("test", "http://example.com/test", MaxLength: 100000), html, CancellationToken.None);
+            new BrowseRequest("test", "http://example.com/test", MaxLength: 100000) { Caller = JudgmentCaller.None }, html, CancellationToken.None);
         var window = await HtmlProcessor.ProcessAsync(
-            new BrowseRequest("test", "http://example.com/test", MaxLength: 700), html, CancellationToken.None);
+            new BrowseRequest("test", "http://example.com/test", MaxLength: 700) { Caller = JudgmentCaller.None }, html, CancellationToken.None);
 
         window.ContentLength.ShouldBe(whole.ContentLength);
     }
