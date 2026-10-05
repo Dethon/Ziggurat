@@ -73,6 +73,29 @@ public class SandboxDeletesAndMovesE2ETests(SandboxE2EFixture fixture)
         Changes(call).ShouldBe([("/vault/a.md", "move", "applied", "/vault/keep/a.md")]);
     }
 
+    // The folder is emptied and made again before the file goes in. The move commits at once, so
+    // the folder's delete has to reach the mount ahead of it: left for the end of the command, it
+    // took the file that had just been moved there.
+    [SkippableFact]
+    public async Task MvIntoAFolderDeletedAndMadeAgain_KeepsTheFile()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var call = Mint();
+
+        var result = await ExecAsync(
+            client, "rm -r /vault/keep && mkdir /vault/keep && mv /vault/a.md /vault/keep/ && ls /vault/keep", call, cts.Token);
+
+        Stdout(result).ShouldBe("a.md\n", result.ToString());
+        _vault.Files.Keys.ShouldBe(["keep/a.md"]);
+        Changes(call).ShouldBe(
+        [
+            ("/vault/keep", "delete", "applied", null),
+            ("/vault/a.md", "move", "applied", "/vault/keep/a.md")
+        ]);
+    }
+
     [SkippableFact]
     public async Task MvBetweenTwoMounts_IsATransfer()
     {
