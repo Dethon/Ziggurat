@@ -376,3 +376,23 @@ fn a_refused_rename_onto_a_path_leaves_the_new_file_where_it_was() {
     assert_eq!(read_all(&vfs, "/vault/notes/sedXYZ"), "new\n");
     assert_eq!(read_all(&vfs, NOTE), "old\n");
 }
+
+// `exec 3>t; mv t done.md; echo more >&3`: the rename commits the file while it is still open, and
+// the descriptor follows it — what it writes afterwards is a write to the path it was renamed to.
+#[test]
+fn a_new_file_still_open_when_renamed_goes_on_being_written_at_its_new_path() {
+    let vfs = vault();
+    let notes = ino(&vfs, "/vault/notes");
+    let (_, fh) = vfs.create(notes, "t").unwrap();
+    vfs.write(fh, 0, b"one\n").unwrap();
+
+    vfs.rename(notes, "t", notes, "done.md").unwrap();
+    vfs.write(fh, 4, b"two\n").unwrap();
+    vfs.release(fh);
+    vfs.finish();
+
+    assert_eq!(
+        vfs.bridge().mutations(),
+        ["write /vault/notes/done.md create one\n", "write /vault/notes/done.md overwrite one\ntwo\n"]
+    );
+}

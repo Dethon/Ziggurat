@@ -56,3 +56,45 @@ fn an_action_commits_everything_held_first() {
     );
     assert!(output.stdout.contains("input.txt"), "{}", output.stdout);
 }
+
+// `exec 3>log.txt; ./run; echo done >&3`: the barrier commits the file while the script still has
+// it open. The descriptor goes on as an existing file's does — what it writes afterwards commits
+// on its release — rather than failing every write from then on.
+#[test]
+fn a_file_still_open_across_an_action_goes_on_being_written() {
+    let vfs = mounts();
+    let jobs = vfs.lookup(ROOT, "jobs").unwrap().ino;
+    let (_, fh) = vfs.create(jobs, "log.txt").unwrap();
+    vfs.write(fh, 0, b"before\n").unwrap();
+
+    vfs.action("/jobs/run", &[]).unwrap();
+    vfs.write(fh, 7, b"after\n").unwrap();
+    vfs.release(fh);
+    vfs.finish();
+
+    assert_eq!(
+        vfs.bridge().mutations(),
+        [
+            "write /jobs/log.txt create before\n",
+            "action /jobs/run ",
+            "write /jobs/log.txt overwrite before\nafter\n"
+        ]
+    );
+}
+
+// `mkdir out; ./run; echo x > out/f`: a directory nothing landed in is still the command's after
+// the barrier, so a file can be made in it.
+#[test]
+fn a_new_directory_nothing_landed_in_outlives_an_action() {
+    let vfs = mounts();
+    let jobs = vfs.lookup(ROOT, "jobs").unwrap().ino;
+    let out = vfs.mkdir(jobs, "out").unwrap().ino;
+
+    vfs.action("/jobs/run", &[]).unwrap();
+    let (_, fh) = vfs.create(out, "f").unwrap();
+    vfs.write(fh, 0, b"x").unwrap();
+    vfs.release(fh);
+    vfs.finish();
+
+    assert_eq!(vfs.bridge().mutations(), ["action /jobs/run ", "write /jobs/out/f create x"]);
+}

@@ -132,6 +132,22 @@ impl State {
             .collect();
     }
 
+    /// A held file has reached the mount at `path` while descriptors were still open on it. They
+    /// go on as an existing file's do: what they write from here commits on their last release.
+    fn carry_on(&mut self, path: &str, data: Vec<u8>) {
+        let Some(&ino) = self.inos.get(path) else {
+            return;
+        };
+        let mut open = 0;
+        self.handles.values_mut().filter(|handle| matches!(handle, Handle::Held(held) if *held == ino)).for_each(|handle| {
+            *handle = Handle::Write(ino);
+            open += 1;
+        });
+        if open > 0 {
+            self.writers.insert(ino, Writer { data, open, dirty: false });
+        }
+    }
+
     fn held(&self, path: &str) -> Option<Kind> {
         if self.held_dirs.contains(path) {
             Some(Kind::Dir)
@@ -506,7 +522,10 @@ impl<B: Bridge> Vfs<B> {
                 let result = self.commit_write(&to, &file.data, new);
                 let mut state = self.lock();
                 match result {
-                    Ok(()) => state.move_ino(&from, &to),
+                    Ok(()) => {
+                        state.move_ino(&from, &to);
+                        state.carry_on(&to, file.data);
+                    }
                     Err(_) => {
                         state.held_files.entry(from).or_insert(file);
                     }
@@ -609,11 +628,13 @@ impl<B: Bridge> Vfs<B> {
             let mut state = self.lock();
             let mut files: Vec<(String, Held)> = std::mem::take(&mut state.held_files).into_iter().collect();
             files.sort_by_key(|(_, h)| h.seq);
-            state.held_dirs.clear();
             files.into_iter().map(|(p, h)| (p, h.data)).collect()
         };
-        held.iter().for_each(|(path, data)| {
-            let _ = self.commit_write(path, data, true);
+        // A directory nothing landed in stays held: after an action the command can still fill it.
+        held.into_iter().for_each(|(path, data)| {
+            if self.commit_write(&path, &data, true).is_ok() {
+                self.lock().carry_on(&path, data);
+            }
         });
     }
 
