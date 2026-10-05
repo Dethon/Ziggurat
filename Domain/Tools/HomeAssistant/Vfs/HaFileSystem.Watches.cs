@@ -28,17 +28,16 @@ public sealed partial class HaFileSystem
         return (exists, node.Kind == HaVfsKind.WatchDir);
     }
 
-    private async Task<FsResult<FsReadResult>> ReadWatchAsync(string path, HaVfsNode node, int? offset, int? limit, CancellationToken ct)
+    private async Task<FsResult<string>> RenderWatchAsync(string path, HaVfsNode node, CancellationToken ct)
     {
         if (!HaWatchAutomation.IsValidWatchId(node.WatchId) || await _watches.GetAsync(node.WatchId!, ct) is not { } watch)
         {
             return NotFound(path);
         }
 
-        var text = node.Kind == HaVfsKind.WatchFile
+        return new FsResult<string>.Ok(node.Kind == HaVfsKind.WatchFile
             ? watch.Spec.ToJson()
-            : HaWatches.RenderStatus(watch, (await catalogProvider.GetAsync(ct)).HomeZone);
-        return BuildReadResult(path, text, offset, limit);
+            : HaWatches.RenderStatus(watch, (await catalogProvider.GetAsync(ct)).HomeZone));
     }
 
     public override async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)

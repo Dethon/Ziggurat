@@ -103,6 +103,53 @@ public class HaFileSystemReadTests
         error.Hint.ShouldNotBeNull().ShouldContain("./turn_on");
     }
 
+    // The byte read is what a sandbox command gets: the file as it is, so `jq .` parses it. The text
+    // read numbers its lines for the model, which no program reading the file can take.
+    [Fact]
+    public async Task ReadChunksAsync_StateFile_IsTheRenderedJsonItself()
+    {
+        var fs = Build(out _);
+
+        var text = await ReadBytesAsTextAsync(fs, "entities/light/kitchen_(kitchen)/state.json");
+
+        text.ShouldNotStartWith("1: ");
+        JsonNode.Parse(text)!["state"]!.GetValue<string>().ShouldBe("off");
+    }
+
+    [Fact]
+    public async Task ReadChunksAsync_ActionFile_IsRefusedAsExecutableOnly()
+    {
+        var fs = Build(out _);
+
+        var refused = await Should.ThrowAsync<FileSystemOperationException>(
+            () => ReadBytesAsTextAsync(fs, "entities/light/kitchen_(kitchen)/turn_on"));
+
+        refused.Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        refused.Error.Message.ShouldContain("executable-only");
+    }
+
+    [Fact]
+    public async Task ReadChunksAsync_MissingEntity_IsNotFound()
+    {
+        var fs = Build(out _);
+
+        var refused = await Should.ThrowAsync<FileSystemOperationException>(
+            () => ReadBytesAsTextAsync(fs, "entities/light/nope/state.json"));
+
+        refused.Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
+    }
+
+    private static async Task<string> ReadBytesAsTextAsync(HaFileSystem fs, string path)
+    {
+        using var bytes = new MemoryStream();
+        await foreach (var chunk in fs.ReadChunksAsync(path, CancellationToken.None))
+        {
+            bytes.Write(chunk.Span);
+        }
+
+        return System.Text.Encoding.UTF8.GetString(bytes.ToArray());
+    }
+
     [Fact]
     public async Task ReadAsync_TheOldScriptName_IsNotFound()
     {

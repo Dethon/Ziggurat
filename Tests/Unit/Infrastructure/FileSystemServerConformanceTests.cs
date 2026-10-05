@@ -61,8 +61,14 @@ public class FileSystemServerConformanceTests
                 "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
             ],
             // Read and exec over the home, plus the one writable subtree: a watch is created, edited
-            // and deleted as a file, and every other path refuses those three by name.
-            ["ha"] = ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_delete", "fs_exec"],
+            // and deleted as a file, and every other path refuses those three by name. The byte read
+            // is the rendered file itself, which is what a sandbox command reads: the text read
+            // numbers its lines.
+            ["ha"] =
+            [
+                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_delete", "fs_exec",
+                "fs_blob_read"
+            ],
             // The media library reads only the overlay's status file and writes no text, so it keeps
             // the plain disk surface plus read. It is also the one mount with a move-out rule, and
             // the only one that registers the check.

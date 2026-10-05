@@ -334,8 +334,8 @@ public class VfsFileReadToolTests
         store.Written.ShouldBeEmpty();
     }
 
-    // The three mounts with no bytes behind them render JSON and markdown and can hold no image
-    // file, but a path spelled with an image extension still reaches them.
+    // The mounts with no bytes behind them (timers, schedules) render JSON and markdown and can hold
+    // no image file, but a path spelled with an image extension still reaches them.
     [Fact]
     public async Task AMountThatHoldsNoBytes_RefusesRatherThanRenderingGarbage()
     {

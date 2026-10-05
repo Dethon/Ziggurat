@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -179,17 +181,37 @@ public sealed partial class HaFileSystem(
         });
     }
 
-    public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
+    public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
+        (await RenderAsync(path, ct)).TryGetValue(out var text, out var error)
+            ? BuildReadResult(path, text, offset, limit)
+            : new FsResult<FsReadResult>.Err(error);
+
+    // The rendered file as it is, with no line numbers: what a sandbox command reads through the
+    // bridge, so `jq .` parses a state file and `sed -i` on a watch writes back what it read. A path
+    // the text read refuses is refused here with the same envelope.
+    public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
+        string path, [EnumeratorCancellation] CancellationToken ct)
+    {
+        if (!(await RenderAsync(path, ct)).TryGetValue(out var text, out var error))
+        {
+            throw new FileSystemOperationException(error);
+        }
+
+        yield return Encoding.UTF8.GetBytes(text);
+    }
+
+    // Every file here is rendered, and both reads serve the one rendering.
+    private async Task<FsResult<string>> RenderAsync(string path, CancellationToken ct)
     {
         var node = HaVfsPath.Parse(path);
         if (node.Kind is HaVfsKind.SetupIndexFile)
         {
-            return BuildReadResult(path, await SetupIndex.GetAsync(ct), offset, limit);
+            return new FsResult<string>.Ok(await SetupIndex.GetAsync(ct));
         }
 
         if (node.Kind is HaVfsKind.WatchFile or HaVfsKind.WatchStatusFile)
         {
-            return await ReadWatchAsync(path, node, offset, limit, ct);
+            return await RenderWatchAsync(path, node, ct);
         }
 
         if (node.Kind is not (HaVfsKind.StateFile or HaVfsKind.ActionFile))
@@ -206,11 +228,11 @@ public sealed partial class HaFileSystem(
 
         if (node.Kind == HaVfsKind.StateFile)
         {
-            return await ReadStateAsync(path, resolution.Entity.EntityId, offset, limit, ct);
+            return await RenderStateAsync(path, resolution.Entity.EntityId, ct);
         }
 
         return Resolve(node, catalog).Exists
-            ? ExecutableOnly<FsReadResult>(path, node.Service!)
+            ? ExecutableOnly<string>(path, node.Service!)
             : NotFound(path);
     }
 
@@ -285,7 +307,7 @@ public sealed partial class HaFileSystem(
     private static string CanonicalStatePath(HaEntityState entity) =>
         $"entities/{HaCatalog.ClassOf(entity.EntityId)}/{HaSlug.Compose(HaCatalog.ObjectOf(entity.EntityId), HaCatalog.FriendlyName(entity))}/{HaVfsPath.StateFileName}";
 
-    private async Task<FsResult<FsReadResult>> ReadStateAsync(string path, string entityId, int? offset, int? limit, CancellationToken ct)
+    private async Task<FsResult<string>> RenderStateAsync(string path, string entityId, CancellationToken ct)
     {
         var entity = await clientFactory().GetStateAsync(entityId, ct);
         if (entity is null)
@@ -294,7 +316,7 @@ public sealed partial class HaFileSystem(
         }
 
         var homeZone = (await catalogProvider.GetAsync(ct)).HomeZone;
-        return BuildReadResult(path, HaStateRenderer.ToJson(entity, await LivePositionAsync(entity, ct), homeZone), offset, limit);
+        return new FsResult<string>.Ok(HaStateRenderer.ToJson(entity, await LivePositionAsync(entity, ct), homeZone));
     }
 
     // The position Home Assistant stores is stale between state transitions, so for a Music
@@ -406,11 +428,11 @@ public sealed partial class HaFileSystem(
     }
 
     // Home Assistant is a read + exec control surface with one writable subtree, the watches
-    // (HaFileSystem.Watches.cs). Move, copy and raw byte streaming have no meaning anywhere on it,
-    // so they are left unoverridden and the base answers them.
+    // (HaFileSystem.Watches.cs). Move, copy and writing bytes have no meaning anywhere on it, so
+    // they are left unoverridden and the base answers them.
 
-    private static FsResult<FsReadResult> NotFound(string path, string? canonicalName = null) =>
-        new FsResult<FsReadResult>.Err(new ToolErrorResult
+    private static FsResult<string> NotFound(string path, string? canonicalName = null) =>
+        new FsResult<string>.Err(new ToolErrorResult
         {
             ErrorCode = ToolError.Codes.NotFound,
             Message = $"No such path: {path}",
