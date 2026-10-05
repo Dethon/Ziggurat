@@ -519,17 +519,16 @@ impl<B: Bridge> Vfs<B> {
             None => {
                 // Something on the mount: the bridge makes it the mount's move, or a transfer when
                 // the rename crosses mounts. Something already at the target is the daemon's to say.
-                let overwrite = {
-                    let state = self.lock();
-                    state.held_files.contains_key(&to) || state.is_deleted(&to)
-                };
-                let overwrite = overwrite || self.node_at(&to).is_ok();
+                // It commits now, as a held file's rename does, so the deletes before it commit
+                // first: one left for the end would take what was just moved into the directory it
+                // names, and a target deleted a moment ago is a free path, not one to overwrite.
+                self.commit_deletes();
+                let overwrite = self.lock().held_files.contains_key(&to) || self.node_at(&to).is_ok();
                 let result = self.unsealed().and_then(|()| self.bridge.rename(&from, &to, overwrite));
                 let mut state = self.lock();
                 state.forget_answers();
                 if result.is_ok() {
                     state.held_files.remove(&to);
-                    state.deleted.remove(&to);
                     // The directories the command made above the target arrived with the move, and
                     // are the mount's now — as for a committed write.
                     state.held_dirs.retain(|dir| !is_within(&to, dir));
@@ -587,9 +586,13 @@ impl<B: Bridge> Vfs<B> {
         self.commit_held();
     }
 
-    /// Every held delete, shallowest first.
+    /// Every held delete, shallowest first. With none held nothing is asked and nothing forgotten:
+    /// a rename asks this every time, and a walk's cache must survive a `mv` that deleted nothing.
     pub fn commit_deletes(&self) {
         let deleted = std::mem::take(&mut self.lock().deleted);
+        if deleted.is_empty() {
+            return;
+        }
         deleted.iter().for_each(|path| {
             let _ = self.unsealed().and_then(|()| self.bridge.delete(path));
         });

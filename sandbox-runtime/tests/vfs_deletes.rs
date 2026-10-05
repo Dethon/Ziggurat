@@ -212,3 +212,36 @@ fn a_file_moved_into_a_new_directory_is_there_for_the_rest_of_the_command() {
         ["rename /vault/a.md /vault/new/a.md", "rename /vault/b.md /vault/new/b.md"]
     );
 }
+
+// `rm -r sub; mkdir sub; mv a.md sub/`: the mount's move commits now, so the delete of the
+// directory it lands in must commit first — left for the end, it took the moved file with it.
+#[test]
+fn a_move_into_a_directory_deleted_and_made_again_survives_the_end() {
+    let vfs = mounts();
+    let vault = ino(&vfs, "/vault");
+    vfs.rmdir(vault, "sub").unwrap();
+    let dir = vfs.mkdir(vault, "sub").unwrap().ino;
+
+    vfs.rename(vault, "a.md", dir, "a.md").unwrap();
+    vfs.finish();
+
+    assert_eq!(vfs.bridge().mutations(), ["delete /vault/sub", "rename /vault/a.md /vault/sub/a.md"]);
+    assert_eq!(vfs.bridge().content("/vault/sub/a.md").as_deref(), Some("a\n"));
+}
+
+// `rm -r eggs && mv sub eggs`: the target is gone by the time the move is asked, so it is a move
+// onto a free path, not an overwrite of a directory the mount would read as a file.
+#[test]
+fn a_move_onto_a_deleted_directory_is_a_move_onto_a_free_path() {
+    let vfs = mounts();
+    let vault = ino(&vfs, "/vault");
+    let timers = ino(&vfs, "/timers");
+    let eggs = ino(&vfs, "/timers/eggs");
+    names(&vfs, "/timers/eggs").iter().for_each(|n| vfs.unlink(eggs, n).unwrap());
+    vfs.rmdir(timers, "eggs").unwrap();
+
+    vfs.rename(vault, "sub", timers, "eggs").unwrap();
+    vfs.finish();
+
+    assert_eq!(vfs.bridge().mutations(), ["delete /timers/eggs", "rename /vault/sub /timers/eggs"]);
+}
