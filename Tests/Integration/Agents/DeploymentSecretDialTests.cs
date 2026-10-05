@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -5,6 +6,8 @@ using Domain.Prompts;
 using Domain.Security;
 using Infrastructure.Agents;
 using Mcp.Hosting;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -66,7 +69,58 @@ public sealed class DeploymentSecretDialTests : IAsyncLifetime
         await worker.WarmupSessionAsync(session);
     }
 
+    // Whoever may register an agent names its endpoints, and may name any address. The deployment
+    // secret opens every deployment server, so it goes only to an address the deployment's own
+    // settings name: a registration is dialled, but bare.
+    [Fact]
+    public async Task ARegisteredAgentsOwnEndpoint_IsNotHandedTheDeploymentSecret()
+    {
+        var presented = new ConcurrentBag<string>();
+        await using var elsewhere = await InMemoryMcpServer.StartAsync(services => services
+            .AddSingleton<IStartupFilter>(new RecordingFilter(presented))
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<TestEchoTool>());
+        var (factory, _, definitions) = FactoryAndDefinitions();
+        var registered = definitions.RegisterCustomAgent("fran", new CustomAgentRegistration
+        {
+            Name = "Registered",
+            Model = "test-model",
+            McpServerEndpoints = [elsewhere.Endpoint, _server.Endpoint]
+        });
+        presented.Clear();
+
+        await using var agent = factory.Create(
+            new AgentKey("conv-1", registered.Id), "fran", registered.Id, new Mock<IToolApprovalHandler>().Object);
+        var session = await agent.CreateSessionAsync();
+        await agent.WarmupSessionAsync(session);
+
+        presented.ShouldNotBeEmpty();
+        presented.ShouldAllBe(header => header == "");
+    }
+
+    // The session above also built against the gated server it named beside its own: a deployment
+    // server a registration names is still reached with the secret.
+    private sealed class RecordingFilter(ConcurrentBag<string> presented) : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use(async (context, inner) =>
+            {
+                presented.Add(context.Request.Headers.Authorization.ToString());
+                await inner(context);
+            });
+            next(app);
+        };
+    }
+
     private (MultiAgentFactory Factory, List<FeatureConfig> Captured) Factory()
+    {
+        var (factory, captured, _) = FactoryAndDefinitions();
+        return (factory, captured);
+    }
+
+    private (MultiAgentFactory Factory, List<FeatureConfig> Captured, AgentDefinitionProvider Definitions) FactoryAndDefinitions()
     {
         var captured = new List<FeatureConfig>();
         var toolRegistry = new Mock<IDomainToolRegistry>();
@@ -98,10 +152,11 @@ public sealed class DeploymentSecretDialTests : IAsyncLifetime
             .AddSingleton(new Mock<IThreadStateStore>().Object)
             .BuildServiceProvider();
 
+        var definitions = new AgentDefinitionProvider(options.Object, new CustomAgentRegistry());
         return (new MultiAgentFactory(
             services,
-            new AgentDefinitionProvider(options.Object, new CustomAgentRegistry()),
+            definitions,
             new OpenRouterConfig { ApiUrl = "http://test", ApiKey = "test-key" },
-            toolRegistry.Object), captured);
+            toolRegistry.Object), captured, definitions);
     }
 }

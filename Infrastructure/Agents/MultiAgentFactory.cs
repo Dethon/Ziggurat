@@ -86,9 +86,11 @@ public sealed class MultiAgentFactory(
     private DisposableAgent CreateFromDefinition(
         AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
     {
+        // Asked without a user, the provider lists the built-in agents alone: the deployment's own.
+        var deployment = new DeploymentEndpoints(definitionProvider.GetAll().SelectMany(a => a.McpServerEndpoints));
         var spec = AgentSpecProjection.ForAgent(
             definition, agentKey, userId, openRouterConfig, _patchableModels,
-            _lemonadeHost is { IsConfigured: true } host ? host.Address : null, _mcpSecret, _logger);
+            _lemonadeHost is { IsConfigured: true } host ? host.Address : null, _mcpSecret, deployment, _logger);
 
         return Build(spec, approvalHandler);
     }

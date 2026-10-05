@@ -39,8 +39,11 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   registers `McpSecretGate`, an `IStartupFilter` that answers 401 ahead of routing, comparing with
   `Domain/Security/SharedSecret.cs` (the one comparison every shared-secret gate uses). A deployment
   server's settings carry `McpGateSettings Mcp`, bound from `MCP__SHAREDSECRET` — one deployment-wide
-  value, which the agent binds under the same name and presents on every configured endpoint
-  (`AgentSpecProjection`, agents and workers alike) and every channel connection. The **outpost**
+  value, which the agent binds under the same name and presents on every endpoint the deployment's
+  own settings name (`AgentSpecProjection`, agents and workers alike; `DeploymentEndpoints` is the
+  list) and on every channel connection. A registered agent's endpoints are whatever
+  `POST /api/agents` said, so one the settings do not name is dialled bare — the secret opens every
+  server, and must not follow a registration to an address of its choosing. The **outpost**
   answers the member with its own `SharedSecret` and never sees the deployment's. **The gate guards
   the `/mcp` path and nothing else**: a server's other endpoints are called by browsers, Home
   Assistant and satellites, and the ones that need a gate carry their own token, so every server
