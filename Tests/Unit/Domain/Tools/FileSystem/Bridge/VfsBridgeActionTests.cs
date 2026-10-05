@@ -33,7 +33,7 @@ public class VfsBridgeActionTests
     }
 
     [Fact]
-    public async Task AnAction_IsTheMountsExecOnItsDirectory_WithItsRealOutputAndExitCode()
+    public async Task AnAction_IsTheMountsExecOnItsDirectoryWithItsRealOutputAndExitCode()
     {
         var (answer, result) = await RunAsync("/timers/dismiss", []);
 

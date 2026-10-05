@@ -106,7 +106,8 @@ public class SandboxLauncherE2ETests(SandboxE2EFixture fixture)
     // setns and more — enough to read kernel memory and write into the host's processes. Only the
     // launcher and the vfs daemon hold it, so this is what a command would have if it ever ran as
     // one of them: the namespace the unit makes and nothing else. Each syscall is called with
-    // nonsense, so an allowed one fails EINVAL or EFAULT and only the filter answers EPERM.
+    // nonsense, so an allowed one fails EINVAL or EFAULT and only the filter answers EPERM — by the
+    // number it has on the machine the image was built for, as the launcher's own filter is.
     [SkippableFact]
     public async Task ARootProcessInTheContainer_GetsOnlyTheLaunchersSyscalls()
     {
@@ -115,9 +116,10 @@ public class SandboxLauncherE2ETests(SandboxE2EFixture fixture)
 
         var output = await fixture.ExecAsRootAsync("""
             python3 -c "
-            import ctypes, os
+            import ctypes, os, platform
             libc = ctypes.CDLL(None, use_errno=True)
-            for name, nr in (('bpf', 321), ('perf_event_open', 298), ('setns', 308)):
+            numbers = {'x86_64': (321, 298, 308), 'aarch64': (280, 241, 268)}[platform.machine()]
+            for name, nr in zip(('bpf', 'perf_event_open', 'setns'), numbers):
                 libc.syscall(nr, 0, 0, 0, 0, 0)
                 print(name, os.strerror(ctypes.get_errno()))
             "

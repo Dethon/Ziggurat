@@ -38,7 +38,7 @@ public class VfsBridgeWriteTests
             c!["path"]!.GetValue<string>(), c["operation"]!.GetValue<string>(), c["status"]!.GetValue<string>()))];
 
     [Fact]
-    public async Task TextOntoAnExistingFile_IsACreateWithOverwrite_AndAWrite()
+    public async Task TextOntoAnExistingFile_IsACreateWithOverwriteAndAWrite()
     {
         var result = await Tool((call, ct) => call.WriteAsync("/vault/notes/todo.md", "new\n"u8.ToArray(), isNew: false, ct))
             .RunAsync("/sandbox", "echo new > /vault/notes/todo.md", arguments: BridgeFixtures.Whitelisted);

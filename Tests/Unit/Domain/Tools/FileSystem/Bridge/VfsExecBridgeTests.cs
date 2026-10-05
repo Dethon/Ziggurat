@@ -57,7 +57,7 @@ public class VfsExecBridgeTests
     }
 
     [Fact]
-    public async Task ARenderedFile_IsReadWhole_AndItsSizeIsLeftUnknown()
+    public async Task ARenderedFile_IsReadWholeAndItsSizeIsLeftUnknown()
     {
         BridgeAttr? attr = null;
         byte[]? read = null;
@@ -111,7 +111,7 @@ public class VfsExecBridgeTests
     // /vfs holds every mount the session has but two: an outpost is a separate machine, and the
     // sandbox is the shell's own disk.
     [Fact]
-    public async Task TheRoot_ListsEveryServedMount_AndNeitherAnOutpostNorTheSandbox()
+    public async Task TheRoot_ListsEveryServedMountAndNeitherAnOutpostNorTheSandbox()
     {
         BridgeListing? listing = null;
         BridgeAnswer<byte[]>? outpost = null;
@@ -199,7 +199,7 @@ public class VfsExecBridgeTests
     }
 
     [Fact]
-    public async Task AnExecWithTheBridge_ReportsItsChanges_EvenWhenThereAreNone()
+    public async Task AnExecWithTheBridge_ReportsItsChangesEvenWhenThereAreNone()
     {
         var (tool, _) = Build((_, _) => Task.FromResult(BridgeFixtures.Ran("")));
 

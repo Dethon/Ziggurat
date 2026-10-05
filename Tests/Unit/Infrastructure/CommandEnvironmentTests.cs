@@ -1,5 +1,6 @@
 using Infrastructure.Clients.Bash;
 using Shouldly;
+using Tests.E2E.Fixtures;
 using Xunit;
 
 namespace Tests.Unit.Infrastructure;
@@ -10,23 +11,12 @@ public class CommandEnvironmentTests
     // added there later is covered without touching this test.
     private static IReadOnlyList<string> DeploymentSecretKeys()
     {
-        var envFile = Path.Combine(RepositoryRoot(), "DockerCompose", ".env");
+        var envFile = Path.Combine(TestHelpers.FindSolutionRoot(), "DockerCompose", ".env");
         return File.ReadAllLines(envFile)
             .Select(line => line.Trim())
             .Where(line => line.Length > 0 && !line.StartsWith('#') && line.Contains('='))
             .Select(line => line.Split('=', 2)[0])
             .ToList();
-    }
-
-    private static string RepositoryRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Ziggurat.sln")))
-        {
-            dir = dir.Parent;
-        }
-
-        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found");
     }
 
     [Fact]
