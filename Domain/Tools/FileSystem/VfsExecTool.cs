@@ -73,6 +73,15 @@ public class VfsExecTool(
         // The caller named the directory, so it is echoed back as the working directory.
         if (bridge is not null && Rerouted(resolution) is { } sandbox)
         {
+            // The mount's directory in the sandbox is a real one, where `..` leads out — to /vfs, to
+            // the image's own /usr/bin. The screen judged this command as one on the mount, and a bare
+            // `./name` there as the mount's own action, so a path that climbs is not followed.
+            if (resolution.RelativePath.Split('/').Contains(".."))
+            {
+                return FsError.Invalid<FsExecResult>(
+                    $"'{path}' leaves {resolution.MountPoint} through '..'. Name the directory to run in by its own path.").ToNode();
+            }
+
             var cwd = $"vfs/{resolution.MountPoint.Trim('/')}/{resolution.RelativePath.Trim('/')}".TrimEnd('/');
             return (await RunBridgedAsync(sandbox, bridge, cwd, command, timeoutSeconds, Permission(arguments), Caller(arguments), cancellationToken))
                 .Map(e => e with { Cwd = path })

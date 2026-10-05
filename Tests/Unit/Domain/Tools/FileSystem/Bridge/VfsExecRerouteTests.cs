@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Tools;
 using Domain.Tools.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
 using Infrastructure.Agents;
@@ -58,6 +59,23 @@ public class VfsExecRerouteTests
 
         _sandboxRan.ShouldBe([("vfs/vault/notes", "grep -r TODO .")]);
         result["cwd"]!.GetValue<string>().ShouldBe("/vault/notes");
+    }
+
+    // The screen judged the command as one on this mount — a bare action there is not screened at
+    // all. A working directory that climbs out would run it somewhere else in the sandbox, on
+    // whatever `./name` is in that directory, so it runs nowhere.
+    [Theory]
+    [InlineData("/timers/../../usr/bin")]
+    [InlineData("/timers/..")]
+    [InlineData("/timers/eggs/../../sandbox/home")]
+    public async Task ExecOnAMountWithNoShellThroughAPathThatClimbs_RunsNowhere(string path)
+    {
+        var result = await new VfsExecTool(WithSandbox(), _bridge)
+            .RunAsync(path, "./bash /home/sandbox_user/x.sh", arguments: BridgeFixtures.Whitelisted);
+
+        _sandboxRan.ShouldBeEmpty();
+        _timers.Ran.ShouldBeEmpty();
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidArgument);
     }
 
     // jack has no sandbox: the same call runs the mount's own catalog, with the same effect.
