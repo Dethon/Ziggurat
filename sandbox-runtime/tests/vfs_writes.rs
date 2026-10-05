@@ -284,6 +284,26 @@ fn after_a_revocation_every_commit_still_reaches_the_bridge_to_be_dropped() {
     assert_eq!(vfs.bridge().content(NOTE).unwrap(), "old\n");
 }
 
+// The daemon holds a file whole, in memory, and the size is the command's to name: `truncate -s 1T`
+// or one write at a far offset must be refused as too large, not attempted — an allocation that
+// fails aborts the daemon and takes the mount with it.
+#[test]
+fn a_size_past_the_bound_is_refused_not_allocated() {
+    let vfs = vault();
+    let notes = ino(&vfs, "/vault/notes");
+    let note = ino(&vfs, NOTE);
+    let (node, held) = vfs.create(notes, "big.bin").unwrap();
+    let opened = vfs.open(note, true, false).unwrap();
+
+    assert_eq!(vfs.setattr(node.ino, Some(1 << 40)).unwrap_err(), libc::EFBIG);
+    assert_eq!(vfs.write(held, 1 << 40, b"x").unwrap_err(), libc::EFBIG);
+    assert_eq!(vfs.setattr(note, Some(1 << 40)).unwrap_err(), libc::EFBIG);
+    assert_eq!(vfs.write(opened.fh, u64::MAX, b"x").unwrap_err(), libc::EFBIG);
+    vfs.release(opened.fh);
+    assert_eq!(vfs.setattr(note, Some(1 << 40)).unwrap_err(), libc::EFBIG);
+    assert!(vfs.bridge().mutations().is_empty());
+}
+
 // The revocation never reached the agent — it was down, or answered too late. The daemon is then
 // the only one who knows the command was revoked, and an agent that never heard would apply
 // whatever the kill flushes: so the daemon sends nothing more.

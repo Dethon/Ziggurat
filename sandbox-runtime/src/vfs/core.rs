@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use super::bridge::{ActionOutput, Attr, Bridge, Errno, Kind, Listing};
+use super::bridge::{ActionOutput, Attr, Bridge, Errno, Kind, Listing, MAX_FILE};
 
 pub const ROOT: u64 = 1;
 
@@ -267,17 +267,21 @@ impl<B: Bridge> Vfs<B> {
             Kind::File => {}
         }
 
-        if self.lock().held_files.contains_key(&path) {
+        // Looked up and used under one lock: an action on another thread commits every held file,
+        // and one that left between a check and a take would be a panic, which aborts the daemon.
+        {
             let mut state = self.lock();
-            let handle = if write {
-                if truncate {
-                    state.held_files.get_mut(&path).expect("held").data.clear();
-                }
-                Handle::Held(ino)
-            } else {
-                Handle::Read(Arc::new(state.held_files[&path].data.clone()))
-            };
-            return Ok(Opened { fh: self.add_handle(&mut state, handle), direct_io: true });
+            if let Some(held) = state.held_files.get_mut(&path) {
+                let handle = if write {
+                    if truncate {
+                        held.data.clear();
+                    }
+                    Handle::Held(ino)
+                } else {
+                    Handle::Read(Arc::new(held.data.clone()))
+                };
+                return Ok(Opened { fh: self.add_handle(&mut state, handle), direct_io: true });
+            }
         }
 
         if write {
@@ -321,6 +325,8 @@ impl<B: Bridge> Vfs<B> {
     }
 
     pub fn write(&self, fh: u64, offset: u64, data: &[u8]) -> Result<u32, Errno> {
+        // Before anything is marked written: a refused write leaves the file as it was.
+        let end = fits(offset.saturating_add(data.len() as u64))?;
         let mut state = self.lock();
         let buffer = match state.handles.get(&fh).ok_or(libc::EBADF)? {
             Handle::Read(_) => return Err(libc::EBADF),
@@ -334,7 +340,6 @@ impl<B: Bridge> Vfs<B> {
                 &mut state.held_files.get_mut(&path).ok_or(libc::EBADF)?.data
             }
         };
-        let end = offset as usize + data.len();
         if buffer.len() < end {
             buffer.resize(end, 0);
         }
@@ -355,12 +360,11 @@ impl<B: Bridge> Vfs<B> {
                         w.open == 0
                     });
                     match last {
-                        Some(true) => {
-                            let writer = state.writers.remove(&ino).expect("present");
+                        Some(true) => state.writers.remove(&ino).and_then(|writer| {
                             let commit = writer.dirty.then(|| (state.path(ino), writer.data));
                             state.committing += usize::from(commit.is_some());
                             commit
-                        }
+                        }),
                         _ => None,
                     }
                 }
@@ -382,6 +386,7 @@ impl<B: Bridge> Vfs<B> {
     pub fn setattr(&self, ino: u64, size: Option<u64>) -> Result<Node, Errno> {
         let path = self.lock().path(ino)?;
         if let Some(size) = size {
+            let size = fits(size)? as u64;
             let resized_in_place = {
                 let mut state = self.lock();
                 if let Some(held) = state.held_files.get_mut(&path) {
@@ -459,13 +464,20 @@ impl<B: Bridge> Vfs<B> {
             // A new file renamed onto a path is a write there: the temp it was never reaches the
             // mount, and the target is judged as the file the command meant to write.
             Some(Kind::File) => {
-                let target_held = self.lock().held_files.contains_key(&to);
-                if target_held {
+                // The file is taken under the lock it is looked up under. Where an action on
+                // another thread committed it in between, it is on the mount now and the rename is
+                // the mount's: asked again, it finds nothing held and takes that road.
+                {
                     let mut state = self.lock();
-                    let file = state.held_files.remove(&from).expect("held");
-                    state.held_files.insert(to.clone(), file);
-                    state.move_ino(&from, &to);
-                    return Ok(());
+                    if state.held_files.contains_key(&to) {
+                        let Some(file) = state.held_files.remove(&from) else {
+                            drop(state);
+                            return self.rename(parent_ino, name, new_parent_ino, new_name);
+                        };
+                        state.held_files.insert(to.clone(), file);
+                        state.move_ino(&from, &to);
+                        return Ok(());
+                    }
                 }
                 // A rename commits now, so what the command deleted before it commits first: a delete
                 // left for the end would remove what the rename just put there.
@@ -473,7 +485,10 @@ impl<B: Bridge> Vfs<B> {
                 let new = self.node_at(&to).is_err();
                 let data = {
                     let mut state = self.lock();
-                    let file = state.held_files.remove(&from).expect("held");
+                    let Some(file) = state.held_files.remove(&from) else {
+                        drop(state);
+                        return self.rename(parent_ino, name, new_parent_ino, new_name);
+                    };
                     state.move_ino(&from, &to);
                     file.data
                 };
@@ -493,9 +508,10 @@ impl<B: Bridge> Vfs<B> {
                 });
                 moved_files.iter().for_each(|p| {
                     let target = rebase(p, &from, &to);
-                    let file = state.held_files.remove(p).expect("held");
-                    state.held_files.insert(target.clone(), file);
-                    state.move_ino(p, &target);
+                    if let Some(file) = state.held_files.remove(p) {
+                        state.held_files.insert(target.clone(), file);
+                        state.move_ino(p, &target);
+                    }
                 });
                 Ok(())
             }
@@ -682,6 +698,15 @@ impl<B: Bridge> Vfs<B> {
 
     fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// A size the daemon will hold, or EFBIG: the command names it, and the daemon allocates it.
+fn fits(size: u64) -> Result<usize, Errno> {
+    if size > MAX_FILE {
+        Err(libc::EFBIG)
+    } else {
+        Ok(size as usize)
     }
 }
 

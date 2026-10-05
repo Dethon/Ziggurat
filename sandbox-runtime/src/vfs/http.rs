@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use super::bridge::{errno_named, ActionOutput, Attr, Bridge, Entry, Errno, Kind, Listing};
+use super::bridge::{errno_named, ActionOutput, Attr, Bridge, Entry, Errno, Kind, Listing, MAX_FILE};
 
 pub struct HttpBridge {
     agent: ureq::Agent,
@@ -18,9 +18,6 @@ pub struct HttpBridge {
 /// unit's wait for it, so an agent that is slow to answer is one the daemon seals itself against
 /// rather than one the unit gives up on.
 const REVOKE_WITHIN: Duration = Duration::from_secs(10);
-
-/// A whole file is read in one answer; a bound keeps a runaway one from exhausting the daemon.
-const MAX_BODY: u64 = 1 << 30;
 
 impl HttpBridge {
     pub fn new(url: &str, token: &str) -> Self {
@@ -63,7 +60,7 @@ impl HttpBridge {
         };
         let mut response = request.send(body).map_err(|_| libc::EIO)?;
         let status = response.status().as_u16();
-        let bytes = response.body_mut().with_config().limit(MAX_BODY).read_to_vec().map_err(|_| libc::EIO)?;
+        let bytes = response.body_mut().with_config().limit(MAX_FILE).read_to_vec().map_err(|_| libc::EIO)?;
         match status {
             200 => Ok(bytes),
             422 => Err(serde_json::from_slice::<Value>(&bytes)

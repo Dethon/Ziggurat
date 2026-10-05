@@ -48,6 +48,13 @@ pub struct ActionOutput {
     pub exit_code: i32,
 }
 
+/// The largest file the daemon will hold. It holds a file whole, in memory — what it read, and what
+/// a command is writing until it commits — and a command names the size (`truncate -s 1T`), so
+/// without a bound one syscall is an allocation that aborts the daemon. The agent's own ceiling
+/// (`vfsBridge:maxFileBytes`) is the policy and sits below this; this is only what the daemon
+/// refuses to try.
+pub const MAX_FILE: u64 = 1 << 30;
+
 /// A refusal, as the errno the kernel will be handed.
 pub type Errno = i32;
 
@@ -88,6 +95,7 @@ pub fn errno_named(name: &str) -> Errno {
         "ENOTEMPTY" => libc::ENOTEMPTY,
         "EISDIR" => libc::EISDIR,
         "ENOTDIR" => libc::ENOTDIR,
+        "EFBIG" => libc::EFBIG,
         _ => libc::EIO,
     }
 }
