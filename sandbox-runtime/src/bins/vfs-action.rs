@@ -7,14 +7,18 @@ fn main() {
     use std::io::{BufRead, BufReader, Write};
     use std::os::unix::net::UnixStream;
 
-    use sandbox_runtime::vfs::actions::{virtual_path, ActionReply, ActionRequest, SOCKET};
+    use sandbox_runtime::vfs::actions::{arguments, virtual_path, ActionReply, ActionRequest, SOCKET};
 
     let exe = std::fs::read_link("/proc/self/exe").map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
     let Some(path) = virtual_path(&exe) else {
         eprintln!("vfs-action: run an action file under /vfs, not the helper itself");
         std::process::exit(126);
     };
-    let request = ActionRequest { path: path.clone(), argv: std::env::args().skip(1).collect() };
+    let Some(argv) = arguments(std::env::args_os().skip(1)) else {
+        eprintln!("vfs-action: {path}: an argument that is not UTF-8 text cannot be passed to an action");
+        std::process::exit(126);
+    };
+    let request = ActionRequest { path: path.clone(), argv };
 
     let Ok(mut connection) = UnixStream::connect(SOCKET) else {
         eprintln!("vfs-action: {path} can only run inside a sandbox command that has the mounts");

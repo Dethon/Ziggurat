@@ -48,7 +48,10 @@ pub fn run() -> io::Result<()> {
         .and_then(std::fs::read)
         .unwrap_or_default();
     let vfs = Arc::new(Vfs::new(bridge).with_helper(helper));
-    let fuse = Fuse { vfs: vfs.clone(), uid: config.uid, gid: config.gid, unit: unsafe { libc::getppid() } };
+    // Asked once, while the unit is certainly this daemon's parent: asked again after the unit died
+    // it would name whoever adopted the daemon, and every command in the container descends from that.
+    let unit = unsafe { libc::getppid() };
+    let fuse = Fuse { vfs: vfs.clone(), uid: config.uid, gid: config.gid, unit };
     let mut options = fuser::Config::default();
     options.mount_options = vec![
         fuser::MountOption::FSName("ziggurat-vfs".into()),
@@ -70,7 +73,7 @@ pub fn run() -> io::Result<()> {
     let served = vfs.served().unwrap_or_default();
     let session = session.spawn()?;
     if let Some(listener) = actions {
-        serve_actions(listener, vfs.clone());
+        serve_actions(listener, vfs.clone(), unit);
     }
 
     say(&serde_json::to_string(&Ready { served }).expect("serializes"))?;
@@ -122,23 +125,23 @@ fn bind_actions(socket: &str) -> io::Result<std::os::unix::net::UnixListener> {
 }
 
 /// Only a process of this exec — a descendant of the unit that started this daemon — is answered.
-fn serve_actions<B: Bridge>(listener: std::os::unix::net::UnixListener, vfs: Arc<Vfs<B>>) {
+fn serve_actions<B: Bridge>(listener: std::os::unix::net::UnixListener, vfs: Arc<Vfs<B>>, unit: i32) {
     std::thread::spawn(move || {
         listener.incoming().filter_map(Result::ok).for_each(|connection| {
             let vfs = vfs.clone();
-            std::thread::spawn(move || answer_action(connection, &vfs));
+            std::thread::spawn(move || answer_action(connection, &vfs, unit));
         });
     });
 }
 
-fn answer_action<B: Bridge>(connection: std::os::unix::net::UnixStream, vfs: &Vfs<B>) {
-    use super::actions::{ActionReply, ActionRequest};
+fn answer_action<B: Bridge>(connection: std::os::unix::net::UnixStream, vfs: &Vfs<B>, unit: i32) {
+    use super::actions::{request_line, ActionReply, ActionRequest};
 
-    if !of_this_exec(&connection) {
+    if !of_this_exec(&connection, unit) {
         return;
     }
-    let mut line = String::new();
-    if io::BufReader::new(&connection).read_line(&mut line).unwrap_or(0) == 0 {
+    let line = request_line(&connection);
+    if line.is_empty() {
         return;
     }
     let reply = match serde_json::from_str::<ActionRequest>(&line) {
@@ -156,8 +159,7 @@ fn answer_action<B: Bridge>(connection: std::os::unix::net::UnixStream, vfs: &Vf
 // a child subreaper, so everything the command starts stays under it. Asked of /proc/<pid>/stat,
 // which anyone may read — the peer's namespace link would need CAP_SYS_PTRACE, which the container
 // does not have. The socket living in the exec's own tmpfs is the other half of the check.
-fn of_this_exec(connection: &std::os::unix::net::UnixStream) -> bool {
-    let unit = unsafe { libc::getppid() };
+fn of_this_exec(connection: &std::os::unix::net::UnixStream, unit: i32) -> bool {
     crate::proctree::peer(connection)
         .is_some_and(|peer| crate::proctree::descends_from(peer.pid, unit, crate::proctree::parent_of))
 }
