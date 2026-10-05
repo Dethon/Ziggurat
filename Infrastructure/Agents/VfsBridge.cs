@@ -29,7 +29,7 @@ public sealed class VfsBridge(TimeProvider time) : IVfsBridge
     private readonly ConcurrentDictionary<string, (VfsCall Call, DateTimeOffset Expires)> _calls =
         new(StringComparer.Ordinal);
 
-    public VfsCall Mint(IVirtualFileSystemRegistry registry, Func<string, bool> permits, ConversationContext? caller = null)
+    public VfsCall Mint(IVirtualFileSystemRegistry registry, Func<string, bool> permits, ConversationContext? caller)
     {
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         var call = new VfsCall(token, registry, permits, [.. registry.GetMounts().Where(VfsCall.IsServed)], caller);

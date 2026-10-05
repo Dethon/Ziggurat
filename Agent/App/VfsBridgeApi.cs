@@ -40,8 +40,8 @@ public static class VfsBridgeApi
                 return Json(await call.WriteAsync(path, body.ToArray(), @new, ct), _ => new { });
             }));
 
-        bridge.MapPost("/delete", (HttpContext http, IVfsBridge vfs, string path, CancellationToken ct, bool directory = false) =>
-            WithCall(http, vfs, async call => Json(await call.DeleteAsync(path, directory, ct), _ => new { })));
+        bridge.MapPost("/delete", (HttpContext http, IVfsBridge vfs, string path, CancellationToken ct) =>
+            WithCall(http, vfs, async call => Json(await call.DeleteAsync(path, ct), _ => new { })));
 
         // `overwrite` says something is already at `to`, which the bridge judges as a write there.
         bridge.MapPost("/rename", (HttpContext http, IVfsBridge vfs, string path, string to, CancellationToken ct, bool overwrite = false) =>
@@ -75,14 +75,10 @@ public static class VfsBridgeApi
 
     public sealed record ActionRequest(IReadOnlyList<string>? Argv);
 
-    private static async Task<IResult> WithCall(HttpContext http, IVfsBridge vfs, Func<VfsCall, Task<IResult>> answer)
-    {
-        var header = http.Request.Headers.Authorization.ToString();
-        return header.StartsWith(SharedSecret.Scheme, StringComparison.Ordinal)
-               && vfs.Find(header[SharedSecret.Scheme.Length..]) is { } call
+    private static async Task<IResult> WithCall(HttpContext http, IVfsBridge vfs, Func<VfsCall, Task<IResult>> answer) =>
+        SharedSecret.Bearer(http.Request.Headers.Authorization.ToString()) is { } token && vfs.Find(token) is { } call
             ? await answer(call)
             : Results.Unauthorized();
-    }
 
     private static IResult Json<T>(BridgeAnswer<T> answer, Func<T, object> shape) => answer switch
     {

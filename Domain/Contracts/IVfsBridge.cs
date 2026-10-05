@@ -11,8 +11,8 @@ public interface IVfsBridge
 {
     // `caller`: the conversation the command serves, so a mount that answers by who is calling —
     // the Home Assistant watches record their author — sees the same caller through the shell as
-    // through a tool call. Null where the call carried none.
-    VfsCall Mint(IVirtualFileSystemRegistry registry, Func<string, bool> permits, ConversationContext? caller = null);
+    // through a tool call. Null where the call carried none — said, never left out.
+    VfsCall Mint(IVirtualFileSystemRegistry registry, Func<string, bool> permits, ConversationContext? caller);
 
     // Null for a token never minted, completed or expired: all three are a caller with no call.
     VfsCall? Find(string token);

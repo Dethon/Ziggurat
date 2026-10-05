@@ -36,7 +36,7 @@ public class VfsBridgeApiTests
         {
             ["notes/a.md"] = "alpha\n"
         }), "/vault", null)),
-        permits ?? (_ => true));
+        permits ?? (_ => true), null);
 
     public static TheoryData<string> Operations => ["attr", "list", "read", "write", "delete"];
 

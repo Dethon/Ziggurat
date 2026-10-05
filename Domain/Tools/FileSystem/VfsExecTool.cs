@@ -125,24 +125,14 @@ public class VfsExecTool(
             ? bridged
             : null;
 
-    // The session's sandbox, for an exec on a mount that has no shell — never an outpost, which is
-    // somebody's own computer and keeps its own exec.
-    private IBridgedExecBackend? Rerouted(FileSystemResolution resolution)
-    {
-        var mounts = registry.GetMounts();
-        var mount = mounts.FirstOrDefault(m =>
-            string.Equals(m.MountPoint, resolution.MountPoint, StringComparison.OrdinalIgnoreCase));
-        if (mount is null || !VfsCall.IsServed(mount))
-        {
-            return null;
-        }
-
-        return mounts
-            .Where(m => m.ShellReach == ShellReach.Contained)
-            .Select(m => registry.Resolve(m.MountPoint).TryGetValue(out var sandbox, out _) ? sandbox.Backend : null)
-            .OfType<IBridgedExecBackend>()
-            .FirstOrDefault();
-    }
+    // The session's sandbox, for an exec on a mount that has no shell — whether the mount has an
+    // exec of its own (the timers' catalog) or none (the vault): either is a directory there. Never
+    // an outpost, which is somebody's own computer and keeps its own exec.
+    private IBridgedExecBackend? Rerouted(FileSystemResolution resolution) =>
+        ExecReach.SandboxFor(registry.GetMounts(), resolution.MountPoint) is { } sandbox
+        && registry.Resolve(sandbox.MountPoint).TryGetValue(out var resolved, out _)
+            ? resolved.Backend as IBridgedExecBackend
+            : null;
 
     private static ConversationContext? Caller(AIFunctionArguments? arguments) =>
         arguments?.Context?.TryGetValue(typeof(ConversationContext), out var caller) == true

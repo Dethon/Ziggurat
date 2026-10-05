@@ -18,17 +18,13 @@ public static class SharedSecret
 
     // An unset secret refuses everything. The alternative reading — no secret configured meaning no
     // gate — turns a forgotten environment variable into an open door onto whatever is behind it.
-    public static bool Matches(string? presented, string configured)
-    {
-        if (string.IsNullOrEmpty(configured)
-            || presented is null
-            || !presented.StartsWith(Scheme, StringComparison.Ordinal))
-        {
-            return false;
-        }
+    public static bool Matches(string? presented, string configured) =>
+        !string.IsNullOrEmpty(configured)
+        && Bearer(presented) is { } token
+        && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(token), Encoding.UTF8.GetBytes(configured));
 
-        return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(presented[Scheme.Length..]),
-            Encoding.UTF8.GetBytes(configured));
-    }
+    // The token an Authorization header carries, or null where it is not a bearer one. Also read by
+    // the exec bridge, whose credential is a per-call token looked up rather than compared.
+    public static string? Bearer(string? header) =>
+        header is not null && header.StartsWith(Scheme, StringComparison.Ordinal) ? header[Scheme.Length..] : null;
 }

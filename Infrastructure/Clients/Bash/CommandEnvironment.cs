@@ -1,10 +1,11 @@
 namespace Infrastructure.Clients.Bash;
 
-// What a sandbox command is allowed to know about the process that started it. The sandbox
-// container is started with the deployment's whole secrets file, and a child inherits its parent's
-// environment by default, so without this a command could print the model provider key or the
-// Home Assistant token. The list is an allowlist on purpose: a secret added to the file later is
-// excluded without anyone remembering to exclude it.
+// What a sandbox command is allowed to know about the process that started it. The server's
+// environment holds the deployment's MCP secret (and once held its whole secrets file, which
+// compose no longer hands this container), and a child inherits its parent's environment by
+// default, so without this a command could print it. The list is an allowlist on purpose: a
+// secret that reaches the server's environment later is excluded without anyone remembering to
+// exclude it.
 public static class CommandEnvironment
 {
     public const string DefaultPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";

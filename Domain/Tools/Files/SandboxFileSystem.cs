@@ -98,5 +98,5 @@ public class SandboxFileSystem(
 
     public override Task<FsResult<FsExecResult>> ExecAsync(
         string path, string command, int? timeoutSeconds, CancellationToken ct) =>
-        runner.RunAsync(path, command, timeoutSeconds, ct, _bridge);
+        runner.RunAsync(path, command, timeoutSeconds, _bridge, ct);
 }

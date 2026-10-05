@@ -187,7 +187,7 @@ public sealed class VfsCall
 
     // The remove tool's call. A directory goes whole: `rm -r` reaches here as the directory's one
     // delete, which on a timer is its cancel.
-    public async Task<BridgeAnswer<bool>> DeleteAsync(string path, bool directory, CancellationToken ct) =>
+    public async Task<BridgeAnswer<bool>> DeleteAsync(string path, CancellationToken ct) =>
         Revoked
             ? Dropped<bool>(path, VfsChange.Operations.Delete)
             : Logged(await DeleteCoreAsync(path, ct), path, VfsChange.Operations.Delete);

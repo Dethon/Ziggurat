@@ -44,6 +44,22 @@ public class VfsExecRerouteTests
         result["cwd"]!.GetValue<string>().ShouldBe("/timers/eggs");
     }
 
+    // Not only the mounts with action files: one with no exec at all (the vault) is a directory in
+    // the sandbox like any other, so exec there runs in it rather than answering tool-missing.
+    [Fact]
+    public async Task ExecOnAMountWithNoExecOfItsOwn_RunsInTheSandboxThere()
+    {
+        var registry = BridgeFixtures.Registry(
+            (new RecordingSandbox(_bridge, _sandboxRan), ScriptedSandbox.Mount, ShellReach.Contained),
+            (new MemoryDisk("vault", new Dictionary<string, string>()), "/vault", null));
+
+        var result = await new VfsExecTool(registry, _bridge)
+            .RunAsync("/vault/notes", "grep -r TODO .", arguments: BridgeFixtures.Whitelisted);
+
+        _sandboxRan.ShouldBe([("vfs/vault/notes", "grep -r TODO .")]);
+        result["cwd"]!.GetValue<string>().ShouldBe("/vault/notes");
+    }
+
     // jack has no sandbox: the same call runs the mount's own catalog, with the same effect.
     [Fact]
     public async Task ExecWithNoSandbox_RunsTheMountsOwnCatalog()

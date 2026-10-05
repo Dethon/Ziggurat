@@ -93,8 +93,8 @@ impl Bridge for HttpBridge {
         self.post("read", &[("path", path)], &[])
     }
 
-    fn delete(&self, path: &str, directory: bool) -> Result<(), Errno> {
-        self.post("delete", &[("path", path), ("directory", if directory { "true" } else { "false" })], &[])
+    fn delete(&self, path: &str) -> Result<(), Errno> {
+        self.post("delete", &[("path", path)], &[])
             .map(|_| ())
     }
 

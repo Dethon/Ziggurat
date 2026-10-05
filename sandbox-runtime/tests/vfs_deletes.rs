@@ -42,7 +42,7 @@ fn rm_r_of_a_directory_is_one_delete_of_the_directory() {
     vfs.finish();
 
     assert!(before_exit.is_empty(), "{before_exit:?}");
-    assert_eq!(vfs.bridge().mutations(), ["delete /timers/eggs/"]);
+    assert_eq!(vfs.bridge().mutations(), ["delete /timers/eggs"]);
 }
 
 #[test]

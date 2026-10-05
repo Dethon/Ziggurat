@@ -15,8 +15,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
 use crate::protocol::BridgeGrant;
-
-pub const MOUNTPOINT: &str = "/vfs";
+use crate::vfs::daemon::{DaemonConfig, Ready};
+use crate::vfs::MOUNTPOINT;
 
 /// Mounting is a few syscalls and one listing; this only bounds a bridge that never answers.
 const READY_WITHIN: Duration = Duration::from_secs(20);
@@ -28,8 +28,6 @@ pub struct Served {
     child: Child,
     stdin: ChildStdin,
     lines: Receiver<String>,
-    /// Names served at /vfs/<name> only, because the image already has /<name>.
-    pub vfs_only: Vec<String>,
 }
 
 impl Served {
@@ -58,32 +56,28 @@ impl Served {
             });
         });
 
-        let config = serde_json::json!({
-            "bridgeUrl": grant.url,
-            "token": grant.token,
-            "uid": uid,
-            "gid": gid,
-            "mountpoint": MOUNTPOINT,
-            "runAs": daemon_uid,
-            "actionSocket": crate::vfs::actions::SOCKET,
-        });
-        writeln!(stdin, "{config}")?;
+        let config = DaemonConfig {
+            bridge_url: grant.url.clone(),
+            token: grant.token.clone(),
+            uid,
+            gid,
+            mountpoint: MOUNTPOINT.into(),
+            run_as: daemon_uid,
+            action_socket: Some(crate::vfs::actions::SOCKET.into()),
+        };
+        writeln!(stdin, "{}", serde_json::to_string(&config).expect("serializes"))?;
         stdin.flush()?;
 
         let ready = lines.recv_timeout(READY_WITHIN).map_err(|_| {
             let _ = child.kill();
             io::Error::other("the vfs daemon did not mount")
         })?;
-        let served: Vec<String> = serde_json::from_str::<serde_json::Value>(&ready)
-            .ok()
-            .and_then(|v| v["served"].as_array().cloned())
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|n| n.as_str().map(String::from))
-            .collect();
-        let vfs_only = served.iter().filter(|name| !link(name)).cloned().collect();
+        // A name the image already uses at its root gets no link, and is served at /vfs/<name> only.
+        serde_json::from_str::<Ready>(&ready).map(|r| r.served).unwrap_or_default().iter().for_each(|name| {
+            link(name);
+        });
 
-        Ok(Served { child, stdin, lines, vfs_only })
+        Ok(Served { child, stdin, lines })
     }
 
     pub fn pid(&self) -> i32 {

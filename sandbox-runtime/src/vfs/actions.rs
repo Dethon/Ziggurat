@@ -1,24 +1,22 @@
 //! The action helper's protocol with the call's daemon. The helper runs as PUID and holds no token:
-//! it hands the daemon its own virtual path, its arguments and its cwd over a socket that exists
+//! it hands the daemon its own virtual path and its arguments over a socket that exists
 //! only inside this exec's namespace, and the daemon — which checks the caller is a process of this
 //! exec — commits what the script holds and asks the bridge to run the action.
 
 use serde::{Deserialize, Serialize};
 
 use super::bridge::ActionOutput;
+use super::MOUNTPOINT;
 
 /// Inside each exec's private tmpfs, so another exec's helper cannot even find it.
 pub const SOCKET: &str = "/run/vfs/action.sock";
 pub const SOCKET_DIR: &str = "/run/vfs";
-
-const MOUNTPOINT: &str = "/vfs";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionRequest {
     pub path: String,
     pub argv: Vec<String>,
-    pub cwd: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,7 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
-using Domain.Security;
 
 namespace Agent.App;
 
@@ -17,12 +16,7 @@ public static class AgentApi
 {
     public static void MapAgents(this WebApplication app, string sharedSecret)
     {
-        var agents = app.MapGroup("/api/agents");
-        agents.AddEndpointFilter(async (context, next) =>
-            SharedSecret.Matches(
-                context.HttpContext.Request.Headers.Authorization.ToString(), sharedSecret)
-                ? await next(context)
-                : Results.Unauthorized());
+        var agents = app.MapGroup("/api/agents").RequireSharedSecret(sharedSecret);
 
         agents.MapGet("/", (IAgentDefinitionProvider provider, string? userId) =>
             provider.GetAll(userId).Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description)));

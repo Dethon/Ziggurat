@@ -1,7 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Outposts;
-using Domain.Security;
 
 namespace Agent.App;
 
@@ -15,12 +14,7 @@ public static class OutpostApi
 {
     public static void MapOutposts(this WebApplication app, string sharedSecret)
     {
-        var outposts = app.MapGroup("/api/outposts");
-        outposts.AddEndpointFilter(async (context, next) =>
-            SharedSecret.Matches(
-                context.HttpContext.Request.Headers.Authorization.ToString(), sharedSecret)
-                ? await next(context)
-                : Results.Unauthorized());
+        var outposts = app.MapGroup("/api/outposts").RequireSharedSecret(sharedSecret);
 
         // Refused rather than stored where the registration is one nobody could ever act on — a
         // blank name, an endpoint that is not an absolute URL. The shipped binary cannot produce

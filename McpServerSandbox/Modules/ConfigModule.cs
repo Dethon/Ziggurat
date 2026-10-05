@@ -25,7 +25,7 @@ public static class ConfigModule
                 DefaultTimeoutSeconds = settings.DefaultTimeoutSeconds,
                 MaxTimeoutSeconds = settings.MaxTimeoutSeconds,
                 OutputCapBytes = settings.OutputCapBytes,
-                // The container carries the deployment's secrets file; a command gets none of it.
+                // The server's environment holds the deployment's MCP secret; a command gets none of it.
                 Environment = CommandEnvironment.Minimal(settings.HomeDir, System.Environment.GetEnvironmentVariable)
             })
             .AddSingleton<ICommandRunner>(sp => settings.LauncherSocket is { Length: > 0 } socket

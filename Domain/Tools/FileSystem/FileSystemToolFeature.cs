@@ -168,10 +168,12 @@ public class FileSystemToolFeature(
         var places = string.Join(", ", served.Select(m => m.MountPoint.Trim('/') is var name && occupied.Contains(name)
             ? $"`{m.MountPoint}` only at `/vfs/{name}` (the sandbox has a `{m.MountPoint}` of its own)"
             : $"`{m.MountPoint}`"));
-        var shellless = served.Where(m => m.Capabilities.Contains(VfsExecTool.Name)).Select(m => $"`{m.MountPoint}`").ToList();
-        var rerouted = shellless.Count == 0
+        // Every served mount is rerouted, but only the ones that offer `exec` are named: those are
+        // the mounts the model is told it can exec on, so they are the ones whose exec moved.
+        var offeringExec = served.Where(m => m.Capabilities.Contains(VfsExecTool.Name)).Select(m => $"`{m.MountPoint}`").ToList();
+        var rerouted = offeringExec.Count == 0
             ? ""
-            : $" `exec` on {string.Join(", ", shellless)} runs in the sandbox, with that directory as the working directory.";
+            : $" `exec` on {string.Join(", ", offeringExec)} runs in the sandbox, with that directory as the working directory.";
 
         return $$"""
             ### The other mounts inside a command

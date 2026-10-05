@@ -27,7 +27,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = (await runner.RunAsync("", "echo hello", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("", "echo hello", null, null, CancellationToken.None)).ToNode();
 
         result["exitCode"]!.GetValue<int>().ShouldBe(0);
         result["stdout"]!.GetValue<string>().ShouldBe("hello\n");
@@ -41,7 +41,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = (await runner.RunAsync("", "false", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("", "false", null, null, CancellationToken.None)).ToNode();
 
         result["exitCode"]!.GetValue<int>().ShouldBe(1);
         result["timedOut"]!.GetValue<bool>().ShouldBeFalse();
@@ -53,7 +53,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = (await runner.RunAsync("", "pwd", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("", "pwd", null, null, CancellationToken.None)).ToNode();
 
         result["stdout"]!.GetValue<string>().Trim().ShouldBe("/");
     }
@@ -64,7 +64,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = (await runner.RunAsync(".", "pwd", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync(".", "pwd", null, null, CancellationToken.None)).ToNode();
 
         result["stdout"]!.GetValue<string>().Trim().ShouldBe("/");
     }
@@ -81,7 +81,7 @@ public class BashRunnerTests
         Directory.CreateDirectory(Path.Combine(root.Path, "work"));
         var runner = new BashRunner(root.Options);
 
-        var result = (await runner.RunAsync("work", "pwd", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("work", "pwd", null, null, CancellationToken.None)).ToNode();
 
         result["cwd"]!.GetValue<string>().ShouldBe("work");
         result["stdout"]!.GetValue<string>().Trim().ShouldBe(Path.Combine(root.Path, "work"));
@@ -96,7 +96,7 @@ public class BashRunnerTests
         using var root = new TempRoot();
         var runner = new BashRunner(root.Options);
 
-        var result = (await runner.RunAsync("", "pwd", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("", "pwd", null, null, CancellationToken.None)).ToNode();
 
         result["cwd"]!.GetValue<string>().ShouldBe("");
         result["stdout"]!.GetValue<string>().Trim().ShouldBe(root.Path);
@@ -112,7 +112,7 @@ public class BashRunnerTests
         Directory.CreateDirectory(Path.Combine(root.Path, "work"));
         var runner = new BashRunner(root.Options);
 
-        var result = (await runner.RunAsync("/work", "pwd", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("/work", "pwd", null, null, CancellationToken.None)).ToNode();
 
         result["cwd"]!.GetValue<string>().ShouldBe("work");
         result["stdout"]!.GetValue<string>().Trim().ShouldBe(Path.Combine(root.Path, "work"));
@@ -127,7 +127,7 @@ public class BashRunnerTests
         using var root = new TempRoot();
         var runner = new BashRunner(root.Options);
 
-        var result = (await runner.RunAsync("../../etc", "pwd", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("../../etc", "pwd", null, null, CancellationToken.None)).ToNode();
 
         result["ok"]!.GetValue<bool>().ShouldBeFalse();
         result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
@@ -140,7 +140,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = (await runner.RunAsync("tmp", "pwd", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("tmp", "pwd", null, null, CancellationToken.None)).ToNode();
 
         result["stdout"]!.GetValue<string>().Trim().ShouldBe("/tmp");
     }
@@ -151,7 +151,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = (await runner.RunAsync("does/not/exist", "echo hi", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("does/not/exist", "echo hi", null, null, CancellationToken.None)).ToNode();
 
         result["ok"]!.GetValue<bool>().ShouldBeFalse();
         result["errorCode"]!.GetValue<string>().ShouldBe("not_found");
@@ -179,7 +179,7 @@ public class BashRunnerTests
                 }
             });
 
-            var result = (await runner.RunAsync("", "env", null, CancellationToken.None)).ToNode();
+            var result = (await runner.RunAsync("", "env", null, null, CancellationToken.None)).ToNode();
 
             var names = result["stdout"]!.GetValue<string>()
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries)
@@ -206,7 +206,7 @@ public class BashRunnerTests
             Environment = CommandEnvironment.Minimal(root.Path, _ => null)
         });
 
-        var result = (await runner.RunAsync("", "echo $HOME; command -v bash", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("", "echo $HOME; command -v bash", null, null, CancellationToken.None)).ToNode();
 
         result["exitCode"]!.GetValue<int>().ShouldBe(0);
         var lines = result["stdout"]!.GetValue<string>().Split('\n', StringSplitOptions.RemoveEmptyEntries);
@@ -220,7 +220,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = (await runner.RunAsync("", "sleep 30", timeoutSeconds: 1, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("", "sleep 30", timeoutSeconds: 1, null, CancellationToken.None)).ToNode();
 
         result["timedOut"]!.GetValue<bool>().ShouldBeTrue();
         // After SIGKILL, exit code is typically 137 (128+SIGKILL=9) or -1 sentinel
@@ -233,7 +233,7 @@ public class BashRunnerTests
         var runner = new BashRunner(_settings);
 
         // 1024 byte cap: emit 4096 bytes
-        var result = (await runner.RunAsync("", "yes a | head -c 4096", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("", "yes a | head -c 4096", null, null, CancellationToken.None)).ToNode();
 
         result["truncated"]!.GetValue<bool>().ShouldBeTrue();
         result["stdout"]!.GetValue<string>().Length.ShouldBeLessThanOrEqualTo(_settings.OutputCapBytes);
@@ -246,7 +246,7 @@ public class BashRunnerTests
         var runner = new BashRunner(_settings);
 
         // Max is 3s. Request 999s. Then `sleep 30` should still time out (clamped to 3s).
-        var result = (await runner.RunAsync("", "sleep 30", timeoutSeconds: 999, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("", "sleep 30", timeoutSeconds: 999, null, CancellationToken.None)).ToNode();
 
         result["timedOut"]!.GetValue<bool>().ShouldBeTrue();
     }
@@ -258,7 +258,7 @@ public class BashRunnerTests
         var runner = new BashRunner(_settings);
 
         // Default is 2s. `sleep 30` should time out.
-        var result = (await runner.RunAsync("", "sleep 30", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("", "sleep 30", null, null, CancellationToken.None)).ToNode();
 
         result["timedOut"]!.GetValue<bool>().ShouldBeTrue();
     }
@@ -269,7 +269,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = (await runner.RunAsync("", "echo oops 1>&2", null, CancellationToken.None)).ToNode();
+        var result = (await runner.RunAsync("", "echo oops 1>&2", null, null, CancellationToken.None)).ToNode();
 
         result["stderr"]!.GetValue<string>().ShouldBe("oops\n");
     }
@@ -286,7 +286,7 @@ public class BashRunnerTests
         var command = $"sleep 3 && touch '{sentinel}'";
 
         using var cts = new CancellationTokenSource();
-        var task = runner.RunAsync("", command, timeoutSeconds: 30, cts.Token);
+        var task = runner.RunAsync("", command, timeoutSeconds: 30, null, cts.Token);
 
         // Give bash time to start, then cancel.
         await Task.Delay(300);
@@ -321,7 +321,7 @@ public class BashRunnerTests
         {
             using var cts = new CancellationTokenSource();
             // Continuous output keeps reader tasks pending on ReadAsync at the moment of cancel.
-            var task = runner.RunAsync("", "yes hello", timeoutSeconds: 30, cts.Token);
+            var task = runner.RunAsync("", "yes hello", timeoutSeconds: 30, null, cts.Token);
             await Task.Delay(200);
             cts.Cancel();
             await Should.ThrowAsync<OperationCanceledException>(task);

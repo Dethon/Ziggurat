@@ -20,7 +20,7 @@ public class SandboxKillAndApprovalE2ETests(SandboxE2EFixture fixture)
     private readonly MemoryDisk _vault = new("vault", new Dictionary<string, string> { ["a.md"] = "old\n" });
 
     private VfsCall Mint(Func<string, bool> permits) =>
-        fixture.Bridge.Mint(BridgeFixtures.Registry((_vault, "/vault", null)), permits);
+        fixture.Bridge.Mint(BridgeFixtures.Registry((_vault, "/vault", null)), permits, null);
 
     // Killed mid-write: an open file the kill closes and a new file still held both reach the
     // bridge after the revocation, and are dropped.

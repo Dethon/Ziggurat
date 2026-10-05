@@ -49,8 +49,8 @@ public class SandboxFileSystemTests
         await sandbox.For(new FileSystemCaller(null, grant)).ExecAsync("", "ls /vault", null, CancellationToken.None);
         await sandbox.ExecAsync("", "ls", null, CancellationToken.None);
 
-        runner.Verify(r => r.RunAsync("", "ls /vault", null, It.IsAny<CancellationToken>(), grant), Times.Once);
-        runner.Verify(r => r.RunAsync("", "ls", null, It.IsAny<CancellationToken>(), null), Times.Once);
+        runner.Verify(r => r.RunAsync("", "ls /vault", null, grant, It.IsAny<CancellationToken>()), Times.Once);
+        runner.Verify(r => r.RunAsync("", "ls", null, null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static SandboxFileSystem Sandbox(string containerRoot, string homeDirectory, ICommandRunner? runner = null) =>

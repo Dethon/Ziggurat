@@ -1,6 +1,7 @@
 //! Becoming somebody else, between fork and exec. Everything here runs in a forked child of a
 //! process that may have other threads, so it is raw syscalls on memory prepared before the fork:
-//! no allocation, no locks, no formatting.
+//! no allocation, no locks, no formatting. The vfs daemon is the one caller that is not a forked
+//! child: it drops in place, having checked it is still a single thread.
 
 use std::ffi::CString;
 use std::io;
@@ -31,7 +32,10 @@ fn check(result: libc::c_int) -> io::Result<()> {
 /// namespace, which needs no capability to make and is root inside.
 ///
 /// # Safety
-/// Call only between fork and exec, as `CommandExt::pre_exec` does.
+/// Call only in a process with exactly one thread: between fork and exec, as
+/// `CommandExt::pre_exec` does, or in a process that has counted its own threads first, as the vfs
+/// daemon does (`give_up_root`). Capabilities, no-new-privs and the syscall filter are per thread,
+/// so a second thread would keep what this one gave up.
 pub unsafe fn become_identity(identity: &Identity) -> io::Result<()> {
     unsafe {
         check(libc::setgroups(identity.groups.len(), identity.groups.as_ptr()))?;

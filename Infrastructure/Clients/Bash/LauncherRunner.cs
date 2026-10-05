@@ -27,8 +27,8 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath, string
     private readonly CommandCwd _cwd = new(options.ContainerRoot);
 
     public async Task<FsResult<FsExecResult>> RunAsync(
-        string path, string command, int? timeoutSeconds, CancellationToken cancellationToken,
-        VfsBridgeGrant? bridge = null)
+        string path, string command, int? timeoutSeconds, VfsBridgeGrant? bridge,
+        CancellationToken cancellationToken)
     {
         if (!_cwd.Resolve(path, mustExist: false).TryGetValue(out var cwd, out var unresolved))
         {

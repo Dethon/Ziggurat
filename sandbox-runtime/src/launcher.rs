@@ -6,7 +6,6 @@
 use std::ffi::CString;
 use std::fs;
 use std::io;
-use std::os::fd::AsRawFd;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::process::CommandExt;
@@ -82,7 +81,8 @@ pub fn serve(config: LauncherConfig) -> io::Result<i32> {
         listener
             .incoming()
             .filter_map(Result::ok)
-            .filter(|connection| peer_uid(connection) == Some(server_uid))
+            // Checked as well as the socket's mode: the mode is what a mistake in the image would undo.
+            .filter(|connection| crate::proctree::peer(connection).is_some_and(|peer| peer.uid == server_uid))
             .for_each(|connection| {
                 if let Err(e) = start_unit(connection, &unit_env) {
                     eprintln!("sandbox-launcher: cannot start a unit: {e}");
@@ -110,22 +110,6 @@ fn open_socket(config: &LauncherConfig) -> io::Result<UnixListener> {
     }
     fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     Ok(listener)
-}
-
-// Checked as well as the socket's mode: the mode is what a mistake in the image would undo.
-fn peer_uid(connection: &UnixStream) -> Option<u32> {
-    let mut credentials = libc::ucred { pid: 0, uid: 0, gid: 0 };
-    let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-    let result = unsafe {
-        libc::getsockopt(
-            connection.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_PEERCRED,
-            &mut credentials as *mut _ as *mut libc::c_void,
-            &mut length,
-        )
-    };
-    (result == 0).then_some(credentials.uid)
 }
 
 fn start_unit(connection: UnixStream, env: &[(&str, String)]) -> io::Result<()> {

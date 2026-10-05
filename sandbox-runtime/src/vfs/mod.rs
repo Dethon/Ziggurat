@@ -5,6 +5,9 @@
 //! from ticket 08 on, when a write commits) behind the `Bridge` trait, so `cargo test` drives it
 //! with a fake bridge and no kernel.
 
+/// Where an exec's mounts are served, each at `/vfs/<name>`.
+pub const MOUNTPOINT: &str = "/vfs";
+
 pub mod actions;
 pub mod bridge;
 pub mod core;

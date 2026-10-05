@@ -80,8 +80,8 @@ struct State {
     handles: HashMap<u64, Handle>,
     held_files: BTreeMap<String, Held>,
     held_dirs: BTreeSet<String>,
-    /// Paths deleted in the call and not yet on the mount, and whether each is a directory.
-    deleted: BTreeMap<String, bool>,
+    /// Paths deleted in the call and not yet on the mount.
+    deleted: BTreeSet<String>,
     writers: HashMap<u64, Writer>,
     /// Last releases whose commit has left the writer behind and not yet heard from the bridge.
     committing: usize,
@@ -138,7 +138,7 @@ impl State {
 
     /// Deleted in the call, itself or under a deleted directory.
     fn is_deleted(&self, path: &str) -> bool {
-        self.deleted.keys().any(|d| is_within(path, d))
+        self.deleted.iter().any(|d| is_within(path, d))
     }
 
     fn forget_answers(&mut self) {
@@ -415,7 +415,7 @@ impl<B: Bridge> Vfs<B> {
         if self.node_at(&path)?.kind == Kind::Dir {
             return Err(libc::EISDIR);
         }
-        self.lock().deleted.insert(path, false);
+        self.lock().deleted.insert(path);
         Ok(())
     }
 
@@ -434,8 +434,8 @@ impl<B: Bridge> Vfs<B> {
         }
         // The directory's own delete is the one the mount sees; what was deleted under it goes
         // with it.
-        state.deleted.retain(|p, _| !is_within(p, &path));
-        state.deleted.insert(path, true);
+        state.deleted.retain(|p| !is_within(p, &path));
+        state.deleted.insert(path);
         Ok(())
     }
 
@@ -550,9 +550,9 @@ impl<B: Bridge> Vfs<B> {
 
     /// Every held delete, shallowest first.
     pub fn commit_deletes(&self) {
-        let deleted: Vec<(String, bool)> = std::mem::take(&mut self.lock().deleted).into_iter().collect();
-        deleted.iter().for_each(|(path, directory)| {
-            let _ = self.bridge.delete(path, *directory);
+        let deleted = std::mem::take(&mut self.lock().deleted);
+        deleted.iter().for_each(|path| {
+            let _ = self.bridge.delete(path);
         });
         self.lock().forget_answers();
     }

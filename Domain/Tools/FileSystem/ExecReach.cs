@@ -29,15 +29,23 @@ public sealed partial class ExecReach(Func<string, string, ShellReach?> reachOf)
         }
 
         var mounts = registry.GetMounts();
-        var mount = mounts.FirstOrDefault(m =>
-            string.Equals(m.MountPoint, resolution.MountPoint, StringComparison.OrdinalIgnoreCase));
-        return mount?.ShellReach
-               ?? (reroutes && mount is not null && VfsCall.IsServed(mount)
-                   && mounts.Any(m => m.ShellReach == ShellReach.Contained)
-                   && !BareAction().IsMatch(command)
+        return mounts.FirstOrDefault(m => At(m, resolution.MountPoint))?.ShellReach
+               ?? (reroutes && SandboxFor(mounts, resolution.MountPoint) is not null && !BareAction().IsMatch(command)
                    ? ShellReach.Contained
                    : null);
     });
+
+    // The sandbox an exec on the mount at `mountPoint` runs in instead of the mount: the session's
+    // contained shell, when the mount is one a command is served. Null for a mount with a shell of
+    // its own, for an outpost, and for a session with no sandbox. The exec tool routes by this and
+    // the screen judges by it, so the two cannot disagree about where a command runs.
+    public static FileSystemMount? SandboxFor(IReadOnlyList<FileSystemMount> mounts, string mountPoint) =>
+        mounts.FirstOrDefault(m => At(m, mountPoint)) is { } mount && VfsCall.IsServed(mount)
+            ? mounts.FirstOrDefault(m => m.ShellReach == ShellReach.Contained)
+            : null;
+
+    private static bool At(FileSystemMount mount, string mountPoint) =>
+        string.Equals(mount.MountPoint, mountPoint, StringComparison.OrdinalIgnoreCase);
 
     // `./name args`, one simple command: nothing that chains, pipes, redirects, backgrounds or
     // substitutes, and no second line. Quotes are fine — arguments are data to the action.

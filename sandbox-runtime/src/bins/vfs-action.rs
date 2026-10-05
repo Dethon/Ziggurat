@@ -14,11 +14,7 @@ fn main() {
         eprintln!("vfs-action: run an action file under /vfs, not the helper itself");
         std::process::exit(126);
     };
-    let request = ActionRequest {
-        path: path.clone(),
-        argv: std::env::args().skip(1).collect(),
-        cwd: std::env::current_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(),
-    };
+    let request = ActionRequest { path: path.clone(), argv: std::env::args().skip(1).collect() };
 
     let Ok(mut connection) = UnixStream::connect(SOCKET) else {
         eprintln!("vfs-action: {path} can only run inside a sandbox command that has the mounts");

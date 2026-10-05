@@ -42,7 +42,7 @@ public class VfsBridgeOverTheWireTests
             server.Client, "timers",
             McpFileSystemDiscovery.AdvertisedOperations(FileSystemServerTools.SupportedToolNames(typeof(RenderedMount))));
         var call = new VfsBridge(new FakeTimeProvider())
-            .Mint(BridgeFixtures.Registry((new WireMount(backend), "/timers", null)), _ => true);
+            .Mint(BridgeFixtures.Registry((new WireMount(backend), "/timers", null)), _ => true, null);
 
         var read = await call.ReadAsync("/timers/pasta/status.json", CancellationToken.None);
 

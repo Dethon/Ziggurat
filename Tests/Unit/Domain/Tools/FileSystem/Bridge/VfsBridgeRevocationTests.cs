@@ -30,7 +30,7 @@ public class VfsBridgeRevocationTests
             await call.WriteAsync("/vault/before.md", "kept\n"u8.ToArray(), isNew: true, ct);
             _bridge.Revoke(call.Token);
             await call.WriteAsync("/vault/a.md", "half\n"u8.ToArray(), isNew: false, ct);
-            await call.DeleteAsync("/vault/before.md", directory: false, ct);
+            await call.DeleteAsync("/vault/before.md", ct);
             await call.RenameAsync("/vault/a.md", "/vault/b.md", overwrite: false, ct);
             return BridgeFixtures.Ran("") with { TimedOut = true, ExitCode = -1 };
         }).RunAsync("/sandbox", "slow", arguments: BridgeFixtures.Whitelisted);
@@ -51,7 +51,7 @@ public class VfsBridgeRevocationTests
     [Fact]
     public void ARevokedToken_StillAnswersUntilTheExecCompletesIt()
     {
-        var call = _bridge.Mint(BridgeFixtures.Registry((_vault, "/vault", null)), _ => true);
+        var call = _bridge.Mint(BridgeFixtures.Registry((_vault, "/vault", null)), _ => true, null);
 
         _bridge.Revoke(call.Token);
 

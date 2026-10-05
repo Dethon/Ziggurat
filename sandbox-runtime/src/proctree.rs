@@ -43,9 +43,29 @@ pub fn read_parents() -> HashMap<i32, i32> {
 // `/proc/<pid>/stat` is "pid (comm) state ppid ...", and comm may itself contain spaces and
 // parentheses, so the fields are counted from the last closing parenthesis.
 #[cfg(target_os = "linux")]
-fn parent_of(pid: i32) -> Option<i32> {
+pub fn parent_of(pid: i32) -> Option<i32> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     parse_ppid(&stat)
+}
+
+/// Who is on the other end of a unix socket, as the kernel recorded it at connect: nothing the peer
+/// sends can change it.
+#[cfg(target_os = "linux")]
+pub fn peer(connection: &std::os::unix::net::UnixStream) -> Option<libc::ucred> {
+    use std::os::fd::AsRawFd;
+
+    let mut credentials = libc::ucred { pid: 0, uid: 0, gid: 0 };
+    let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    let result = unsafe {
+        libc::getsockopt(
+            connection.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            &mut credentials as *mut _ as *mut libc::c_void,
+            &mut length,
+        )
+    };
+    (result == 0).then_some(credentials)
 }
 
 pub fn parse_ppid(stat: &str) -> Option<i32> {

@@ -1,7 +1,9 @@
 //! The daemon's life, driven by the unit over its stdin and stdout, one line each way:
-//! the unit writes the configuration, the daemon mounts and answers `ready` with the served names;
-//! `revoke`, ahead of a kill, is answered `revoked` once the bridge has it; then `exit` commits
-//! what the command still holds, unmounts and answers `done`. A unit that dies closes stdin, which is an `exit`.
+//! the unit writes the configuration, the daemon mounts, gives up root and answers
+//! `{"served": [...]}` with the names at the root; `revoke`, ahead of a kill, is answered `revoked`
+//! once the bridge has been told; then `exit` commits what the command still holds and answers
+//! `done`. The unit unmounts: the daemon gave up the right to. A unit that dies closes stdin, which
+//! is an `exit`.
 
 use std::io::{self, BufRead, Write};
 use std::sync::Arc;
@@ -41,11 +43,6 @@ pub fn run() -> io::Result<()> {
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
     let bridge = HttpBridge::new(&config.bridge_url, &config.token);
-    let served: Vec<String> = bridge
-        .list("/")
-        .map(|l| l.entries.into_iter().map(|e| e.name).collect())
-        .unwrap_or_default();
-
     let helper = std::env::current_exe()
         .map(|exe| exe.with_file_name("vfs-action"))
         .and_then(std::fs::read)
@@ -69,6 +66,8 @@ pub fn run() -> io::Result<()> {
     // nobody in particular — and before any thread exists, because capabilities, no-new-privs and
     // the syscall filter are per thread, and a thread that kept them could exec back to root.
     give_up_root(config.run_as)?;
+    // The first word from the bridge is read as nobody too: root parses nothing the agent sends.
+    let served = vfs.served().unwrap_or_default();
     let session = session.spawn()?;
     if let Some(listener) = actions {
         serve_actions(listener, vfs.clone());
@@ -122,7 +121,7 @@ fn bind_actions(socket: &str) -> io::Result<std::os::unix::net::UnixListener> {
     Ok(listener)
 }
 
-/// Only a process of this exec — one in this daemon's own mount namespace — is answered.
+/// Only a process of this exec — a descendant of the unit that started this daemon — is answered.
 fn serve_actions<B: Bridge>(listener: std::os::unix::net::UnixListener, vfs: Arc<Vfs<B>>) {
     std::thread::spawn(move || {
         listener.incoming().filter_map(Result::ok).for_each(|connection| {
@@ -158,21 +157,7 @@ fn answer_action<B: Bridge>(connection: std::os::unix::net::UnixStream, vfs: &Vf
 // which anyone may read — the peer's namespace link would need CAP_SYS_PTRACE, which the container
 // does not have. The socket living in the exec's own tmpfs is the other half of the check.
 fn of_this_exec(connection: &std::os::unix::net::UnixStream) -> bool {
-    use std::os::fd::AsRawFd;
-
-    let mut credentials = libc::ucred { pid: 0, uid: 0, gid: 0 };
-    let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-    let ok = unsafe {
-        libc::getsockopt(
-            connection.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_PEERCRED,
-            &mut credentials as *mut _ as *mut libc::c_void,
-            &mut length,
-        )
-    } == 0;
     let unit = unsafe { libc::getppid() };
-    ok && crate::proctree::descends_from(credentials.pid, unit, |pid| {
-        std::fs::read_to_string(format!("/proc/{pid}/stat")).ok().as_deref().and_then(crate::proctree::parse_ppid)
-    })
+    crate::proctree::peer(connection)
+        .is_some_and(|peer| crate::proctree::descends_from(peer.pid, unit, crate::proctree::parent_of))
 }

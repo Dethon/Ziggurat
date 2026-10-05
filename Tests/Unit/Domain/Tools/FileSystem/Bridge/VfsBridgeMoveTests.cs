@@ -66,7 +66,7 @@ public class VfsBridgeMoveTests
     [Fact]
     public async Task DeletingATimersDirectory_CancelsIt()
     {
-        var (_, result) = await RunAsync((call, ct) => call.DeleteAsync("/timers/eggs", directory: true, ct));
+        var (_, result) = await RunAsync((call, ct) => call.DeleteAsync("/timers/eggs", ct));
 
         _timers.Deleted.ShouldBe(["eggs"]);
         Only(result).ShouldBe(("/timers/eggs", VfsChange.Operations.Delete, VfsChange.Statuses.Applied, null));
@@ -77,7 +77,7 @@ public class VfsBridgeMoveTests
     {
         BridgeAnswer<bool>? answer = null;
         var (_, result) = await RunAsync(
-            async (call, ct) => answer = await call.DeleteAsync("/vault/a.md", directory: false, ct),
+            async (call, ct) => answer = await call.DeleteAsync("/vault/a.md", ct),
             BridgeFixtures.Allowing(FileSystemToolFeature.Callable(VfsFileReadTool.Name)));
 
         answer.ShouldBeOfType<BridgeAnswer<bool>.Refused>().Errno.ShouldBe(Errnos.Denied);

@@ -169,8 +169,8 @@ impl Bridge for FakeBridge {
         Ok(())
     }
 
-    fn delete(&self, path: &str, directory: bool) -> Result<(), Errno> {
-        self.record(format!("delete {path}{}", if directory { "/" } else { "" }));
+    fn delete(&self, path: &str) -> Result<(), Errno> {
+        self.record(format!("delete {path}"));
         if self.is_revoked() || self.refusing.lock().unwrap().iter().any(|p| p == path) {
             return Err(libc::EACCES);
         }

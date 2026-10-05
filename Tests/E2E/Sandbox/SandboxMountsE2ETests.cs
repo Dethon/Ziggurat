@@ -36,7 +36,7 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         var (vault, timers) = Mounts();
         var registry = BridgeFixtures.Registry(
             [(vault, "/vault", null), (timers, "/timers", null), .. extra]);
-        return fixture.Bridge.Mint(registry, _ => true);
+        return fixture.Bridge.Mint(registry, _ => true, null);
     }
 
     [SkippableFact]
@@ -204,9 +204,9 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         await using var client = await fixture.ConnectAsync(cts.Token);
         var first = fixture.Bridge.Mint(BridgeFixtures.Registry(
-            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "first\n" }), "/vault", null)), _ => true);
+            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "first\n" }), "/vault", null)), _ => true, null);
         var second = fixture.Bridge.Mint(BridgeFixtures.Registry(
-            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "second\n" }), "/vault", null)), _ => true);
+            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "second\n" }), "/vault", null)), _ => true, null);
 
         var results = await Task.WhenAll(
             ExecAsync(client, "sleep 1; cat /vault/who.txt", first, cts.Token),
@@ -226,9 +226,9 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         var (vault, _) = Mounts();
         var registry = BridgeFixtures.Registry((vault, "/vault", null));
 
-        var first = await ExecAsync(client, "cat /vault/inbox.md", fixture.Bridge.Mint(registry, _ => true), cts.Token);
+        var first = await ExecAsync(client, "cat /vault/inbox.md", fixture.Bridge.Mint(registry, _ => true, null), cts.Token);
         vault.Files["inbox.md"] = "changed by a tool\n";
-        var second = await ExecAsync(client, "cat /vault/inbox.md", fixture.Bridge.Mint(registry, _ => true), cts.Token);
+        var second = await ExecAsync(client, "cat /vault/inbox.md", fixture.Bridge.Mint(registry, _ => true, null), cts.Token);
 
         Stdout(first).ShouldBe("nothing to see\n");
         Stdout(second).ShouldBe("changed by a tool\n");
@@ -244,7 +244,7 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         var files = Enumerable.Range(0, 40)
             .SelectMany(d => Enumerable.Range(0, 25).Select(f => (Path: $"d{d}/n{f}.md", Text: f == 0 ? "TODO here\n" : "nothing\n")))
             .ToDictionary(x => x.Path, x => x.Text);
-        var call = fixture.Bridge.Mint(BridgeFixtures.Registry((new MemoryDisk("vault", files), "/vault", null)), _ => true);
+        var call = fixture.Bridge.Mint(BridgeFixtures.Registry((new MemoryDisk("vault", files), "/vault", null)), _ => true, null);
         var started = System.Diagnostics.Stopwatch.StartNew();
 
         var result = await ExecAsync(client, "grep -rl TODO /vault | wc -l", call, cts.Token);
