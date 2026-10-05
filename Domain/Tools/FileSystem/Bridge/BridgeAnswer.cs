@@ -44,10 +44,8 @@ public static class Errnos
 {
     public const string NotFound = "ENOENT";
     public const string Denied = "EACCES";
-    public const string ReadOnly = "EROFS";
     public const string Exists = "EEXIST";
     public const string Invalid = "EINVAL";
-    public const string NotSupported = "ENOTSUP";
     public const string TimedOut = "ETIMEDOUT";
     public const string Io = "EIO";
     public const string TooLarge = "EFBIG";

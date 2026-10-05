@@ -75,7 +75,7 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath, string
         }
 
         var node = JsonSerializer.Deserialize<LauncherAnswer>(answer, _json);
-        if (node is { Code: "not_found" })
+        if (node is { Code: ToolError.Codes.NotFound })
         {
             return new FsResult<FsExecResult>.Err(((FsResult<string>.Err)CommandCwd.NotADirectory(cwd)).Error);
         }

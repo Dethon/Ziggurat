@@ -105,8 +105,8 @@ public sealed class VfsCall
     // A mount with no info answers by its listing, where the entry's kind is all there is to know.
     private async Task<BridgeAnswer<BridgeAttr>> AttrFromParentAsync(string path, CancellationToken ct)
     {
-        var name = path.TrimEnd('/')[(path.TrimEnd('/').LastIndexOf('/') + 1)..];
-        var parent = path.TrimEnd('/')[..path.TrimEnd('/').LastIndexOf('/')];
+        var name = NameOf(path);
+        var parent = ParentOf(path);
         return await ListAsync(parent.Length == 0 ? "/" : parent, ct) switch
         {
             BridgeAnswer<BridgeListing>.Ok ok when ok.Value.Entries.FirstOrDefault(e => e.Name == name) is { } entry =>
@@ -276,13 +276,12 @@ public sealed class VfsCall
             return Dropped<BridgeActionResult>(path, VfsChange.Operations.Action);
         }
 
-        var directory = path.TrimEnd('/')[..path.TrimEnd('/').LastIndexOf('/')];
-        if (Resolve<BridgeActionResult>(directory, VfsExecTool.Name, out var resolution) is { } refused)
+        if (Resolve<BridgeActionResult>(ParentOf(path), VfsExecTool.Name, out var resolution) is { } refused)
         {
             return Logged(refused, path, VfsChange.Operations.Action);
         }
 
-        var command = string.Join(' ', argv.Select(ShellQuote).Prepend($"./{path.TrimEnd('/')[(path.TrimEnd('/').LastIndexOf('/') + 1)..]}"));
+        var command = string.Join(' ', argv.Select(ShellQuote).Prepend($"./{NameOf(path)}"));
         var answer = (await resolution.Backend.ExecAsync(resolution.RelativePath, command, null, ct)).TryGetValue(out var exec, out var error)
             ? new BridgeAnswer<BridgeActionResult>.Ok(new BridgeActionResult(exec.Stdout, exec.Stderr, exec.ExitCode))
             : BridgeAnswer<BridgeActionResult>.From(error);
@@ -501,6 +500,9 @@ public sealed class VfsCall
     private static string MountName(string path) => path.Trim('/').Split('/')[0];
 
     private static string NameOf(string entry) => entry.TrimEnd('/')[(entry.TrimEnd('/').LastIndexOf('/') + 1)..];
+
+    // Everything before the last name; empty for a path at the root.
+    private static string ParentOf(string path) => path.TrimEnd('/')[..path.TrimEnd('/').LastIndexOf('/')];
 
     private BridgeAnswer<byte[]> Within(string path, BridgeAnswer<byte[]> answer) =>
         answer is BridgeAnswer<byte[]>.Ok { Value.LongLength: var length } && length > MaxFileBytes

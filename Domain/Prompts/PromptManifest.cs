@@ -25,7 +25,8 @@ public static class PromptManifest
     // What the largest agent's standing sections are budgeted to, rounded up to the hundred. It is
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
-    // cannot grow back into the room it vacated.
+    // cannot grow back into the room it vacated. A section whose declared budget grows raises it
+    // the same way: the figure follows the declarations and is never set ahead of them.
     public const int StandingTokens = 8_600;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
