@@ -73,6 +73,12 @@ pub fn run(config: &UnitConfig) -> i32 {
     }
 }
 
+fn deadline(started: Instant, timeout_seconds: u64) -> io::Result<Instant> {
+    started
+        .checked_add(Duration::from_secs(timeout_seconds))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("a timeout of {timeout_seconds}s is out of range")))
+}
+
 fn fail(answer: &mut UnixStream, error: &str) -> i32 {
     fail_with(answer, error, None)
 }
@@ -156,9 +162,9 @@ fn execute(
             become_identity(&identity)
         });
     }
+    let deadline = deadline(started, request.timeout_seconds)?;
     let mut child = command.spawn()?;
 
-    let deadline = started + Duration::from_secs(request.timeout_seconds);
     let mut stdout = CappedOutput::new(request.output_cap_bytes);
     let mut stderr = CappedOutput::new(request.output_cap_bytes);
     if let Some(note) = &unserved {
@@ -166,7 +172,12 @@ fn execute(
     }
     let mut out = child.stdout.take();
     let mut err = child.stderr.take();
-    let (ending, status) = pump(&mut child, &mut out, &mut err, &mut stdout, &mut stderr, connection, deadline)?;
+    // A command whose output could not be read is still the unit's to end: it is killed as a
+    // cancelled one is, and the failure is answered once nothing of it is left.
+    let (ending, status, unread) = match pump(&mut child, &mut out, &mut err, &mut stdout, &mut stderr, connection, deadline) {
+        Ok((ending, status)) => (ending, status, None),
+        Err(e) => (Ending::Cancelled, None, Some(e)),
+    };
 
     match ending {
         Ending::TimedOut => {
@@ -193,6 +204,9 @@ fn execute(
         served.finish();
     }
     reap_orphans();
+    if let Some(e) = unread {
+        return Err(e);
+    }
     if matches!(ending, Ending::Cancelled) {
         return Ok(None);
     }
@@ -311,6 +325,21 @@ fn exit_code(status: std::process::ExitStatus) -> i32 {
 // The command's group first, then every descendant the subreaper collected, until none is left:
 // a process can fork between the listing and the kill, so one pass is not enough. The call's
 // daemon is the unit's child too, and is spared: its last commits still have to land.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The timeout is a number off the socket. One no clock can hold is refused before anything is
+    // started, rather than panicking with a command already running and nothing left to end it.
+    #[test]
+    fn a_timeout_no_clock_can_hold_is_refused() {
+        let now = Instant::now();
+
+        assert_eq!(deadline(now, 60).unwrap(), now + Duration::from_secs(60));
+        assert!(deadline(now, u64::MAX).is_err());
+    }
+}
+
 fn kill_tree(child: &mut Child, spare: Option<i32>) {
     unsafe {
         libc::kill(-(child.id() as i32), libc::SIGKILL);
