@@ -216,6 +216,35 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         Stdout(results[1]).ShouldBe("second\n", results[1].ToString());
     }
 
+    // One container and one uid: a command of another session can see this one's processes, and
+    // /proc/<pid>/root is a way into this exec's namespace, where its mounts are. The mount
+    // namespace alone does not keep them apart, so the daemon answers only its own exec's processes.
+    [SkippableFact]
+    public async Task ACommandOfAnotherSession_CannotReadThisOnesMountsThroughItsProcesses()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var owner = fixture.Bridge.Mint(BridgeFixtures.Registry(
+            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "the owner's\n" }), "/vault", null)), _ => true, null);
+        var stranger = fixture.Bridge.Mint(BridgeFixtures.Registry(
+            (new MemoryDisk("scratch", new Dictionary<string, string> { ["x.txt"] = "x\n" }), "/scratch", null)), _ => true, null);
+        // The bracket keeps the stranger's own command line from matching itself.
+        const string Reach = "sleep 1; for p in /proc/[0-9]*; do "
+                             + "if grep -qa '4\\.3133[7]' $p/cmdline 2>/dev/null; then cat $p/root/vfs/vault/who.txt; ls $p/root/vfs/vault; fi; "
+                             + "done 2>&1; echo looked";
+
+        var results = await Task.WhenAll(
+            ExecAsync(client, "cat /vault/who.txt; sleep 4.31337", owner, cts.Token),
+            ExecAsync(client, Reach, stranger, cts.Token));
+
+        Stdout(results[0]).ShouldBe("the owner's\n", results[0].ToString());
+        Stdout(results[1]).ShouldEndWith("looked\n", Case.Sensitive, results[1].ToString());
+        Stdout(results[1]).ShouldNotContain("the owner's", Case.Sensitive, results[1].ToString());
+        Stdout(results[1]).Split('\n').ShouldNotContain("who.txt", results[1].ToString());
+        Stdout(results[1]).ShouldContain("Permission denied", Case.Sensitive, results[1].ToString());
+    }
+
     // The cache is the call's: what the file tools change between two execs, the second one sees.
     [SkippableFact]
     public async Task TheNextExec_SeesWhatTheToolsChangedBetweenThem()

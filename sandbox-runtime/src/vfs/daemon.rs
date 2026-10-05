@@ -48,7 +48,7 @@ pub fn run() -> io::Result<()> {
         .and_then(std::fs::read)
         .unwrap_or_default();
     let vfs = Arc::new(Vfs::new(bridge).with_helper(helper));
-    let fuse = Fuse { vfs: vfs.clone(), uid: config.uid, gid: config.gid };
+    let fuse = Fuse { vfs: vfs.clone(), uid: config.uid, gid: config.gid, unit: unsafe { libc::getppid() } };
     let mut options = fuser::Config::default();
     options.mount_options = vec![
         fuser::MountOption::FSName("ziggurat-vfs".into()),

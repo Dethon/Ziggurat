@@ -26,9 +26,21 @@ pub struct Fuse<B: Bridge> {
     /// the command write; whether a write is allowed is the bridge's decision, never the mode's.
     pub uid: u32,
     pub gid: u32,
+    /// The unit that started this daemon: the process every process of this exec descends from.
+    pub unit: i32,
 }
 
 impl<B: Bridge> Fuse<B> {
+    /// Whether a request comes from a process of this exec. The mount is `allow_other` and every
+    /// command in the container runs as one uid, so the kernel lets any of them in: a command of
+    /// another session reaches this mount through `/proc/<pid>/root` of one of this exec's
+    /// processes, its own namespace notwithstanding. Asked wherever a name or an inode is turned
+    /// into something — never of a read, a write or a release, which carry a handle only an
+    /// admitted open could have made. Not cached: a pid is reused, and a command can make one be.
+    fn admits(&self, req: &Request) -> bool {
+        crate::proctree::descends_from(req.pid() as i32, self.unit, crate::proctree::parent_of)
+    }
+
     fn attr(&self, node: &Node) -> FileAttr {
         let (kind, perm, nlink) = match node.kind {
             Kind::Dir => (FileType::Directory, 0o755, 2),
@@ -61,21 +73,30 @@ fn errno(code: i32) -> Errno {
 }
 
 impl<B: Bridge> Filesystem for Fuse<B> {
-    fn lookup(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEntry) {
+    fn lookup(&self, req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEntry) {
+        if !self.admits(req) {
+            return reply.error(errno(libc::EACCES));
+        }
         match self.vfs.lookup(parent.0, &name.to_string_lossy()) {
             Ok(node) => reply.entry(&TTL, &self.attr(&node), Generation(0)),
             Err(e) => reply.error(errno(e)),
         }
     }
 
-    fn getattr(&self, _req: &Request, ino: INodeNo, _fh: Option<FileHandle>, reply: ReplyAttr) {
+    fn getattr(&self, req: &Request, ino: INodeNo, _fh: Option<FileHandle>, reply: ReplyAttr) {
+        if !self.admits(req) {
+            return reply.error(errno(libc::EACCES));
+        }
         match self.vfs.getattr(ino.0) {
             Ok(node) => reply.attr(&TTL, &self.attr(&node)),
             Err(e) => reply.error(errno(e)),
         }
     }
 
-    fn open(&self, _req: &Request, ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {
+    fn open(&self, req: &Request, ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {
+        if !self.admits(req) {
+            return reply.error(errno(libc::EACCES));
+        }
         let write = flags.acc_mode() != OpenAccMode::O_RDONLY;
         let truncate = flags.0 & libc::O_TRUNC != 0;
         match self.vfs.open(ino.0, write, truncate) {
@@ -106,7 +127,7 @@ impl<B: Bridge> Filesystem for Fuse<B> {
 
     fn create(
         &self,
-        _req: &Request,
+        req: &Request,
         parent: INodeNo,
         name: &OsStr,
         _mode: u32,
@@ -114,6 +135,9 @@ impl<B: Bridge> Filesystem for Fuse<B> {
         _flags: i32,
         reply: ReplyCreate,
     ) {
+        if !self.admits(req) {
+            return reply.error(errno(libc::EACCES));
+        }
         match self.vfs.create(parent.0, &name.to_string_lossy()) {
             Ok((node, fh)) => reply.created(
                 &TTL,
@@ -155,7 +179,7 @@ impl<B: Bridge> Filesystem for Fuse<B> {
 
     fn setattr(
         &self,
-        _req: &Request,
+        req: &Request,
         ino: INodeNo,
         _mode: Option<u32>,
         _uid: Option<u32>,
@@ -171,27 +195,39 @@ impl<B: Bridge> Filesystem for Fuse<B> {
         _flags: Option<BsdFileFlags>,
         reply: ReplyAttr,
     ) {
+        if !self.admits(req) {
+            return reply.error(errno(libc::EACCES));
+        }
         match self.vfs.setattr(ino.0, size) {
             Ok(node) => reply.attr(&TTL, &self.attr(&node)),
             Err(e) => reply.error(errno(e)),
         }
     }
 
-    fn mkdir(&self, _req: &Request, parent: INodeNo, name: &OsStr, _mode: u32, _umask: u32, reply: ReplyEntry) {
+    fn mkdir(&self, req: &Request, parent: INodeNo, name: &OsStr, _mode: u32, _umask: u32, reply: ReplyEntry) {
+        if !self.admits(req) {
+            return reply.error(errno(libc::EACCES));
+        }
         match self.vfs.mkdir(parent.0, &name.to_string_lossy()) {
             Ok(node) => reply.entry(&TTL, &self.attr(&node), Generation(0)),
             Err(e) => reply.error(errno(e)),
         }
     }
 
-    fn unlink(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+    fn unlink(&self, req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        if !self.admits(req) {
+            return reply.error(errno(libc::EACCES));
+        }
         match self.vfs.unlink(parent.0, &name.to_string_lossy()) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(errno(e)),
         }
     }
 
-    fn rmdir(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+    fn rmdir(&self, req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        if !self.admits(req) {
+            return reply.error(errno(libc::EACCES));
+        }
         match self.vfs.rmdir(parent.0, &name.to_string_lossy()) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(errno(e)),
@@ -200,7 +236,7 @@ impl<B: Bridge> Filesystem for Fuse<B> {
 
     fn rename(
         &self,
-        _req: &Request,
+        req: &Request,
         parent: INodeNo,
         name: &OsStr,
         newparent: INodeNo,
@@ -208,6 +244,9 @@ impl<B: Bridge> Filesystem for Fuse<B> {
         _flags: RenameFlags,
         reply: ReplyEmpty,
     ) {
+        if !self.admits(req) {
+            return reply.error(errno(libc::EACCES));
+        }
         match self.vfs.rename(parent.0, &name.to_string_lossy(), newparent.0, &newname.to_string_lossy()) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(errno(e)),
@@ -234,7 +273,10 @@ impl<B: Bridge> Filesystem for Fuse<B> {
         reply.ok();
     }
 
-    fn readdir(&self, _req: &Request, ino: INodeNo, _fh: FileHandle, offset: u64, mut reply: ReplyDirectory) {
+    fn readdir(&self, req: &Request, ino: INodeNo, _fh: FileHandle, offset: u64, mut reply: ReplyDirectory) {
+        if !self.admits(req) {
+            return reply.error(errno(libc::EACCES));
+        }
         let entries = match self.vfs.readdir(ino.0) {
             Ok(entries) => entries,
             Err(e) => return reply.error(errno(e)),
