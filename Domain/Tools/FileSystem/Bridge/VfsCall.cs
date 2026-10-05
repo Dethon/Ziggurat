@@ -303,16 +303,36 @@ public sealed class VfsCall
             return BridgeAnswer<bool>.From(refusal);
         }
 
-        return await ReadAsync(from, ct) switch
+        // The source goes last, so whether a command may remove it is settled before the target is
+        // touched: the gate's answer does not change in between.
+        if (Resolve<bool>(from, VfsRemoveTool.Name, out _) is { } unremovable)
         {
-            BridgeAnswer<byte[]>.Ok read => await WriteCoreAsync(to, read.Value, ct) switch
-            {
-                BridgeAnswer<bool>.Ok => await DeleteCoreAsync(from, ct),
-                var refused => refused
-            },
-            BridgeAnswer<byte[]>.Refused refused => new BridgeAnswer<bool>.Refused(refused.Errno, refused.Error),
-            _ => throw new InvalidOperationException("Unreachable bridge answer.")
-        };
+            return unremovable;
+        }
+
+        var read = await ReadAsync(from, ct);
+        if (read is not BridgeAnswer<byte[]>.Ok content)
+        {
+            var unread = (BridgeAnswer<byte[]>.Refused)read;
+            return new BridgeAnswer<bool>.Refused(unread.Errno, unread.Error);
+        }
+
+        var written = await WriteCoreAsync(to, content.Value, ct);
+        if (written is not BridgeAnswer<bool>.Ok)
+        {
+            return written;
+        }
+
+        // What the gate cannot know is the mount's own answer: a source it keeps is found out only
+        // now, with the target already written. The move is refused, and the write that landed is
+        // listed as the change it was — the list is the one record of what a command really did.
+        var removed = await DeleteCoreAsync(from, ct);
+        if (removed is BridgeAnswer<bool>.Refused)
+        {
+            Logged(written, to, VfsChange.Operations.Write);
+        }
+
+        return removed;
     }
 
     private async Task<BridgeAnswer<bool>> DeleteCoreAsync(string path, CancellationToken ct)

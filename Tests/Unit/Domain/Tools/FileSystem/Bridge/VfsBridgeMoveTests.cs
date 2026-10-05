@@ -191,6 +191,42 @@ public class VfsBridgeMoveTests
         Only(result).ShouldBe(("/media/downloads/live/film.txt", VfsChange.Operations.Move, VfsChange.Statuses.Refused, "/vault/film.txt"));
     }
 
+    // The source goes last, so whether it may go is asked first: a rename onto an existing file
+    // whose remove would ask a person is refused with both ends as they were, not after the target
+    // was already overwritten.
+    [Fact]
+    public async Task MvOntoAnExistingFileWhoseSourceTheRemoveToolWouldAskAbout_KeepsBothEnds()
+    {
+        var (_, result) = await RunAsync(
+            (call, ct) => call.RenameAsync("/vault/a.md", "/vault/b.md", overwrite: true, ct),
+            BridgeFixtures.Allowing(new[] { VfsMoveTool.Name, VfsFileReadTool.Name, VfsTextCreateTool.Name }
+                .Select(FileSystemToolFeature.Callable).ToArray()));
+
+        _vault.Files["b.md"].ShouldBe("beta\n");
+        _vault.Files.ShouldContainKey("a.md");
+        Only(result).ShouldBe(("/vault/a.md", VfsChange.Operations.Move, VfsChange.Statuses.Refused, "/vault/b.md"));
+    }
+
+    // A source its own mount will not let go — a timer's rendered file, which is deleted only with
+    // its directory — is found out after the target took its content. The list says both things
+    // that happened: the write that landed and the move that did not.
+    [Fact]
+    public async Task MvOntoAnExistingFileFromASourceItsMountKeeps_ListsTheWriteThatLanded()
+    {
+        var (_, result) = await RunAsync(
+            (call, ct) => call.RenameAsync("/timers/eggs/status.json", "/vault/b.md", overwrite: true, ct));
+
+        _vault.Files["b.md"].ShouldBe("{}");
+        var changes = result["vfsChanges"]!.AsArray()
+            .Select(c => (c!["path"]!.GetValue<string>(), c["operation"]!.GetValue<string>(), c["status"]!.GetValue<string>()))
+            .ToList();
+        changes.ShouldBe(
+        [
+            ("/vault/b.md", VfsChange.Operations.Write, VfsChange.Statuses.Applied),
+            ("/timers/eggs/status.json", VfsChange.Operations.Move, VfsChange.Statuses.Refused)
+        ]);
+    }
+
     // A move the move tool would ask about is refused before either mount is touched.
     [Fact]
     public async Task AMoveTheMoveToolWouldAskAbout_IsRefused()
