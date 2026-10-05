@@ -26,7 +26,7 @@ public class ApprovalJudgmentRegistrationTests
 
         provider.GetRequiredService<IApprovalReader>().ShouldBeOfType<JudgedApprovalReader>();
         var outcome = await provider.GetRequiredService<IJudge>().JudgeAsync(
-            new JudgmentRequest(new System.Text.Json.Nodes.JsonObject(), new Dictionary<string, JudgmentQuestion>(), JudgmentRequest.NoTurn),
+            new JudgmentRequest(new System.Text.Json.Nodes.JsonObject(), new Dictionary<string, JudgmentQuestion>(), JudgmentCaller.None),
             CancellationToken.None);
 
         outcome.ShouldBeOfType<JudgmentOutcome.Absent>().Reason.ShouldBe(AbsenceReason.Unconfigured);

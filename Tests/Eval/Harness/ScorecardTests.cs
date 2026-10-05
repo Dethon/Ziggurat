@@ -40,16 +40,16 @@ public class ScorecardTests : IDisposable
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
             [new ClaimOutcome("countdown-timers.loads-for-a-timer-request", 3, 3) { Loaders = [Loader.Host, Loader.Host, Loader.Model] }],
             [
-                new ScenarioOutcome("a timer", 3, 3, Spend: new Spend(0.10m, 20_000, 15_000, 400, 4, 0.0003m, 6_600, 3))
+                new ScenarioOutcome("a timer", 3, 3, Spend: Spend.Of("m", new ModelSpend(0.10m, 20_000, 15_000, 400, 4)) + Spend.Of("jev-1.13.0", new ModelSpend(0.0003m, 6_600, null, 90, 3)))
                 {
                     Loaders = [Loader.Host, Loader.Host, Loader.Model]
                 },
-                new ScenarioOutcome("an alarm", 1, 2, SkillNotLoaded: 1, Spend: new Spend(0.30m, 30_000, 15_000, 600, 6))
+                new ScenarioOutcome("an alarm", 1, 2, SkillNotLoaded: 1, Spend: Spend.Of("m", new ModelSpend(0.30m, 30_000, 15_000, 600, 6)))
                 {
                     Loaders = [Loader.Model, Loader.Nobody]
                 },
                 // Requires no load: contributes nothing to the split.
-                new ScenarioOutcome("a joke", 2, 2, Spend: new Spend(0.01m, 1_000, null, 50, 2)) { Loaders = [Loader.None, Loader.None] }
+                new ScenarioOutcome("a joke", 2, 2, Spend: Spend.Of("m", new ModelSpend(0.01m, 1_000, null, 50, 2))) { Loaders = [Loader.None, Loader.None] }
             ],
             preloadModel: "jev-1.13.0");
 
@@ -66,17 +66,19 @@ public class ScorecardTests : IDisposable
         scenarios.GetProperty("an alarm").GetProperty("loader").GetProperty("nobody").GetInt32().ShouldBe(1);
         scenarios.GetProperty("a joke").TryGetProperty("loader", out _).ShouldBeFalse();
 
-        var timer = scenarios.GetProperty("a timer").GetProperty("spend").GetProperty("preload");
+        var timer = scenarios.GetProperty("a timer").GetProperty("spend").GetProperty("byModel").GetProperty("jev-1.13.0");
         timer.GetProperty("cost").GetDecimal().ShouldBe(0.0003m);
         timer.GetProperty("inputTokens").GetInt64().ShouldBe(6_600);
         timer.GetProperty("requests").GetInt32().ShouldBe(3);
-        scenarios.GetProperty("an alarm").GetProperty("spend").TryGetProperty("preload", out _).ShouldBeFalse();
+        scenarios.GetProperty("an alarm").GetProperty("spend").GetProperty("byModel").TryGetProperty("jev-1.13.0", out _).ShouldBeFalse();
 
         var pass = summary.GetProperty("summary");
         pass.GetProperty("loader").GetProperty("host").GetInt32().ShouldBe(2);
         pass.GetProperty("loader").GetProperty("model").GetInt32().ShouldBe(2);
         pass.GetProperty("loader").GetProperty("nobody").GetInt32().ShouldBe(1);
-        pass.GetProperty("spend").GetProperty("preload").GetProperty("inputTokens").GetInt64().ShouldBe(6_600);
+        pass.GetProperty("spend").GetProperty("byModel").GetProperty("jev-1.13.0").GetProperty("inputTokens").GetInt64().ShouldBe(6_600);
+        pass.GetProperty("spend").GetProperty("byModel").GetProperty("m").GetProperty("requests").GetInt32().ShouldBe(12);
+        pass.GetProperty("spend").GetProperty("requests").GetInt32().ShouldBe(15);
     }
 
     [Fact]
@@ -116,8 +118,8 @@ public class ScorecardTests : IDisposable
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
             [new ClaimOutcome("timers.duration-under-4h", 2, 2)],
             [
-                new ScenarioOutcome("a timer", 2, 2, Spend: new Spend(0.10m, 20_000, 15_000, 400, 4)),
-                new ScenarioOutcome("an alarm", 2, 2, Spend: new Spend(0.30m, 30_000, 15_000, 600, 6)),
+                new ScenarioOutcome("a timer", 2, 2, Spend: Spend.Of("m", new ModelSpend(0.10m, 20_000, 15_000, 400, 4))),
+                new ScenarioOutcome("an alarm", 2, 2, Spend: Spend.Of("m", new ModelSpend(0.30m, 30_000, 15_000, 600, 6))),
                 // Never ran: no spend key at all, rather than a row that says it cost nothing.
                 new ScenarioOutcome("a watch", 0, 0)
             ]);
@@ -147,7 +149,7 @@ public class ScorecardTests : IDisposable
     public void ASpendNoProviderDetailed_LeavesCacheShareNull()
     {
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [],
-            [new ScenarioOutcome("a timer", 1, 1, Spend: new Spend(0.10m, 20_000, null, 400, 1))]);
+            [new ScenarioOutcome("a timer", 1, 1, Spend: Spend.Of("m", new ModelSpend(0.10m, 20_000, null, 400, 1)))]);
 
         var summary = Read(Path.Combine(_output, "scorecard-full.json"));
 
@@ -287,7 +289,7 @@ public class ScorecardTests : IDisposable
     [Fact]
     public void AScenarioThatOnlyPaidTheJudge_StillCarriesItsSpend()
     {
-        var judgedOnly = new Spend(0m, 0, null, 0, 0, PreloadCost: 0.0004m, PreloadInputTokens: 2200, PreloadRequests: 2);
+        var judgedOnly = Spend.Of("jev", new ModelSpend(0.0004m, 2200, null, 120, 2));
 
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"),
             [new ClaimOutcome("timers.sets-a-timer", 0, 2)],
@@ -296,11 +298,11 @@ public class ScorecardTests : IDisposable
         var summary = Read(Path.Combine(_output, "scorecard-full.json"));
 
         var row = summary.GetProperty("scenarios").GetProperty("a timer to set")
-            .GetProperty("spend").GetProperty("preload");
+            .GetProperty("spend").GetProperty("byModel").GetProperty("jev");
         row.GetProperty("requests").GetInt32().ShouldBe(2);
         row.GetProperty("inputTokens").GetInt64().ShouldBe(2200);
 
-        summary.GetProperty("summary").GetProperty("spend").GetProperty("preload")
+        summary.GetProperty("summary").GetProperty("spend").GetProperty("byModel").GetProperty("jev")
             .GetProperty("requests").GetInt32().ShouldBe(2);
     }
 

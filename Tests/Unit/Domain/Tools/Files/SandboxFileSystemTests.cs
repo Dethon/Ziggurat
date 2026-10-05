@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Moq;
@@ -35,7 +36,24 @@ public class SandboxFileSystemTests
         Should.Throw<ArgumentException>(() => Sandbox(containerRoot, homeDirectory));
     }
 
-    private static SandboxFileSystem Sandbox(string containerRoot, string homeDirectory) =>
+    // The call token rides the call's `_meta`, and the mount as that caller sees it hands it to
+    // the runner — the launcher, which gives it to the call's daemon and to nothing the command can
+    // read. A call that carried none runs with no bridge.
+    [Fact]
+    public async Task AnExecForACallerHoldingAToken_HandsTheTokenToTheRunner()
+    {
+        var runner = new Mock<ICommandRunner>();
+        var grant = new VfsBridgeGrant("tok-1");
+        var sandbox = Sandbox("/", "/home/sandbox_user", runner.Object);
+
+        await sandbox.For(new FileSystemCaller(null, grant)).ExecAsync("", "ls /vault", null, CancellationToken.None);
+        await sandbox.ExecAsync("", "ls", null, CancellationToken.None);
+
+        runner.Verify(r => r.RunAsync("", "ls /vault", null, grant, It.IsAny<CancellationToken>()), Times.Once);
+        runner.Verify(r => r.RunAsync("", "ls", null, null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private static SandboxFileSystem Sandbox(string containerRoot, string homeDirectory, ICommandRunner? runner = null) =>
         new("sandbox", "a sandbox", Mock.Of<IFileSystemClient>(),
-            new LibraryPathConfig(containerRoot), [".py"], Mock.Of<ICommandRunner>(), homeDirectory);
+            new LibraryPathConfig(containerRoot), [".py"], runner ?? Mock.Of<ICommandRunner>(), homeDirectory);
 }

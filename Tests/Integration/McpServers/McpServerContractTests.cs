@@ -3,6 +3,7 @@ using Domain.DTOs.Channel;
 using Domain.Prompts;
 using Infrastructure.Utils;
 using Mcp.Hosting;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.AspNetCore;
@@ -12,8 +13,8 @@ using Shouldly;
 namespace Tests.Integration.McpServers;
 
 // What every MCP server in the repo must have, however it is built: its own settings available to
-// everything it registers, a server, an HTTP transport, and one call-tool filter. Thirteen rows,
-// each driving the ConfigModule that ships.
+// everything it registers, a server, an HTTP transport, one call-tool filter, and one gate on
+// /mcp. Fourteen rows, each driving the ConfigModule that ships.
 //
 // Written as comparisons across servers rather than assertions about one, because the drift this
 // pins was invisible precisely because nothing compared them: two servers disagreed about how
@@ -54,6 +55,43 @@ public class McpServerContractTests
         server.Services.ShouldContain(
             descriptor => descriptor.ServiceType == typeof(IConfigureOptions<HttpServerTransportOptions>),
             $"{id} must add the HTTP transport");
+    }
+
+    // The gate comes with the host rather than with each server, so no server can be the one that
+    // forgot it — and it guards with the secret the server's own settings carry. Asserted on the
+    // registration because the behaviour over the wire is McpSecretGateTests', written once.
+    [Theory]
+    [MemberData(nameof(Servers))]
+    public void EveryServer_GatesItsMcpEndpointBehindTheSecretItsSettingsCarry(string id)
+    {
+        var row = McpServerRegistrations.Get(id);
+        using var server = new ConfiguredServer(row);
+
+        var gates = server.Services
+            .Where(descriptor => descriptor.ServiceType == typeof(IStartupFilter))
+            .Select(descriptor => descriptor.ImplementationInstance)
+            .OfType<McpSecretGate>()
+            .ToList();
+
+        gates.Count.ShouldBe(1, $"{id} must have exactly one /mcp gate");
+        gates[0].Secret.ShouldNotBeNullOrEmpty($"{id}'s row must configure a secret for this to mean anything");
+        gates[0].Secret.ShouldBe(((IMcpHostSettings)row.Settings).Mcp.SharedSecret,
+            $"{id} must gate /mcp with the secret its settings carry");
+    }
+
+    // Every deployment server shares one secret; the outpost is not part of the deployment, and the
+    // secret its /mcp asks for is the one it registers with — never the deployment's, which a
+    // machine on somebody's desk does not have.
+    [Fact]
+    public void TheOutpost_GatesItsMcpEndpointBehindItsOwnSecret()
+    {
+        using var server = new ConfiguredServer(McpServerRegistrations.Get("outpost"));
+
+        server.Services
+            .Select(descriptor => descriptor.ImplementationInstance)
+            .OfType<McpSecretGate>()
+            .Single().Secret
+            .ShouldBe(McpServerRegistrations.OutpostSecret);
     }
 
     // Two filters nested around each other is the failure this counts: the outer one converts the

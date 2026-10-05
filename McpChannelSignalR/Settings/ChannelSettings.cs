@@ -1,9 +1,14 @@
 using Domain.DTOs;
+using Domain.Security;
+using Mcp.Hosting;
 
 namespace McpChannelSignalR.Settings;
 
-public record ChannelSettings
+public record ChannelSettings : IMcpHostSettings
 {
+    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    public McpGateSettings Mcp { get; init; } = new();
+
     public required string RedisConnectionString { get; init; }
     public WebPushConfig? WebPush { get; init; }
     public AttachmentSettings Attachments { get; init; } = new();

@@ -79,10 +79,9 @@ public static class HaVfsPath
         {
             return new HaVfsNode(HaVfsKind.StateFile, ClassDomain: classDomain, Area: area, EntitySegment: segment);
         }
-        if (fileName.EndsWith(".sh", StringComparison.Ordinal))
-        {
-            return new HaVfsNode(HaVfsKind.ActionFile, ClassDomain: classDomain, Area: area, EntitySegment: segment, Service: fileName[..^3]);
-        }
-        return new HaVfsNode(HaVfsKind.Unknown);
+        // Every other leaf names an action: an action file carries no extension, so nothing in
+        // the name tells one from a stray file, and whether the entity has that action is
+        // resolution's question, asked against the catalog.
+        return new HaVfsNode(HaVfsKind.ActionFile, ClassDomain: classDomain, Area: area, EntitySegment: segment, Service: fileName);
     }
 }

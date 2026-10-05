@@ -21,7 +21,7 @@ public class ThreadSessionDialPolicyTests(McpVaultServerFixture vault) : IClassF
     public async Task ADeadDynamicEndpoint_LeavesTheSessionBuiltFromTheRest()
     {
         await using var session = await BuildAsync(
-            McpServerEndpoint.Configured(vault.McpEndpoint),
+            McpServerEndpoint.Configured(vault.McpEndpoint, McpTestSecret.Value),
             Dead(McpEndpointOrigin.Dynamic));
 
         session.ClientManager.Clients.Count.ShouldBe(1);
@@ -36,7 +36,7 @@ public class ThreadSessionDialPolicyTests(McpVaultServerFixture vault) : IClassF
     public async Task ADeadConfiguredEndpoint_FailsTheSession()
     {
         await Should.ThrowAsync<Exception>(() => BuildAsync(
-            McpServerEndpoint.Configured(vault.McpEndpoint),
+            McpServerEndpoint.Configured(vault.McpEndpoint, McpTestSecret.Value),
             Dead(McpEndpointOrigin.Configured)));
     }
 
@@ -50,7 +50,7 @@ public class ThreadSessionDialPolicyTests(McpVaultServerFixture vault) : IClassF
         var dialing = Stopwatch.StartNew();
 
         await using var session = await BuildAsync(
-            McpServerEndpoint.Configured(vault.McpEndpoint),
+            McpServerEndpoint.Configured(vault.McpEndpoint, McpTestSecret.Value),
             Dead(McpEndpointOrigin.Dynamic));
 
         dialing.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(10));

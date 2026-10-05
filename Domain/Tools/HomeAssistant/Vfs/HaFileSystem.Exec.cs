@@ -37,24 +37,19 @@ public sealed partial class HaFileSystem
         var entityId = resolution.Entity.EntityId;
         var classDomain = HaCatalog.ClassOf(entityId);
         var actions = HaActionResolver.ServicesFor(resolution.Entity, catalog.Services);
-        var available = string.Join(", ", actions.Select(a => $"{HaActionResolver.CommandName(a, classDomain)}.sh"));
+        var available = string.Join(", ", actions.Select(a => HaActionResolver.CommandName(a, classDomain)));
 
         if (tokens.Count == 0)
         {
             return done(127, "", $"No command. Available actions: {available}");
         }
 
-        var script = tokens[0].StartsWith("./", StringComparison.Ordinal) ? tokens[0][2..] : tokens[0];
-        if (!script.EndsWith(".sh", StringComparison.Ordinal))
-        {
-            return done(127, "", $"command not found: {tokens[0]}. This filesystem only runs action files. Available actions: {available}");
-        }
-
-        var serviceName = script[..^3];
+        // The suffix the actions used to carry names nothing now, and the refusal lists what does.
+        var serviceName = WithoutDotSlash(tokens[0]);
         var svc = actions.FirstOrDefault(a => HaActionResolver.CommandName(a, classDomain).Equals(serviceName, StringComparison.Ordinal));
         if (svc is null)
         {
-            return done(127, "", $"command not found: {script}. Available actions: {available}");
+            return done(127, "", $"command not found: {serviceName}. This filesystem only runs its action files. Available actions: {available}");
         }
 
         var args = tokens.Skip(1).ToList();
@@ -132,7 +127,7 @@ public sealed partial class HaFileSystem
         catch (OperationCanceledException) when (timeoutCts is { IsCancellationRequested: true } && !ct.IsCancellationRequested)
         {
             // 124 is the GNU `timeout` convention; the prompt documents it alongside the other codes.
-            return done(124, "", $"Action '{serviceName}.sh' timed out after {timeoutSeconds}s.", timedOut: true);
+            return done(124, "", $"Action './{serviceName}' timed out after {timeoutSeconds}s.", timedOut: true);
         }
         catch (HomeAssistantException ex)
         {
@@ -142,7 +137,7 @@ public sealed partial class HaFileSystem
             // was never wrong. 401/404 messages already say what's wrong; add nothing.
             var hint = ex.StatusCode switch
             {
-                400 => $"\nRe-check the field types with `{serviceName}.sh --help`; don't retry the same shape.",
+                400 => $"\nRe-check the field types with `./{serviceName} --help`; don't retry the same shape.",
                 >= 500 => ServerSideFailureHint(svc),
                 _ => ""
             };
@@ -153,10 +148,10 @@ public sealed partial class HaFileSystem
     // The one listing Music Assistant answers: anything else browse_media is asked for raises a
     // BrowseError, which reaches the caller as the same bare 500 a bad name gets.
     private const string LibraryListing =
-        "`browse_media.sh --media_content_id playlists --media_content_type music_assistant`";
+        "`./browse_media --media_content_id playlists --media_content_type music_assistant`";
 
     // A 5xx says the payload was fine and the service failed — and what to do next depends on
-    // which service. Sending every one of them to "list the library (`browse_media.sh`)" sent a
+    // which service. Sending every one of them to "list the library (`./browse_media`)" sent a
     // model whose play had failed to a browse with a guessed content id, which failed with the
     // same 500 and the same advice, and round it went until the ceiling. The listing call is
     // spelled out so it needs no guessing; a listing that failed says so, because "list the
@@ -176,7 +171,7 @@ public sealed partial class HaFileSystem
                    + $"name did not resolve. List the library with {LibraryListing} and play an exact "
                    + "title from it; if it is not there either, say so — do not retry a reworded name "
                    + "or another uri shape. For a podcast episode no title resolves and the listing "
-                   + "cannot expand a show: list them with `music_assistant.podcast_episodes.sh` and "
+                   + "cannot expand a show: list them with `./music_assistant.podcast_episodes` and "
                    + "play the uri it returns.";
         }
 

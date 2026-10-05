@@ -1,6 +1,11 @@
+using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Outposts;
 using Domain.Prompts;
+using Domain.Tools.Files;
+using Domain.Tools.FileSystem;
 using Microsoft.Extensions.Configuration;
+using Moq;
 using Tests.Integration.McpServers;
 
 namespace Tests.Unit.Domain.Prompts;
@@ -27,6 +32,27 @@ internal static class AgentPromptFixture
         - `/sandbox` — the sandbox container's disk.
         """;
 
+    // An agent that opted into outposts sees the machines live at session build, under words the
+    // filesystem feature generates. One machine stands in for them, described by the outpost's own
+    // generator, so the snapshot holds the real prose about machines rather than a paraphrase.
+    // A session whose sandbox serves its other mounts says so under the mounts, in the words the
+    // filesystem feature generates from them; the sample is the vault and the sandbox above.
+    private static readonly string _sampleShell = FileSystemToolFeature.ShellSection([
+        new FileSystemMount("vault", "/vault", "the user's Obsidian vault."),
+        new FileSystemMount("sandbox", "/sandbox", "the sandbox container's disk.")
+        {
+            ShellReach = ShellReach.Contained,
+            OccupiedNames = ["app", "bin", "etc", "home", "sandbox", "usr", "vfs"]
+        }
+    ]);
+
+    private static readonly string _sampleMachines = FileSystemToolFeature.MachinesSection([
+        new FileSystemMount(
+            "laptop",
+            OutpostMountPoint.For("laptop"),
+            new OutpostFileSystem("laptop", Mock.Of<IFileSystemClient>(), "/home/someone", [".md"]).DescribeMount)
+    ]);
+
     private const string SampleUserContext =
         """
         ## User Context
@@ -40,7 +66,8 @@ internal static class AgentPromptFixture
     public static IReadOnlyDictionary<string, string> ServedText { get; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            [SandboxPrompt.Name] = SandboxPrompt.Build("/sandbox", "home/sandbox_user"),
+            // As the deployment builds it: a launcher and a bridge, so commands see the mounts.
+            [SandboxPrompt.Name] = SandboxPrompt.Build("/sandbox", "home/sandbox_user", servesMounts: true),
             [VaultPrompt.Name] = VaultPrompt.Prompt,
             [WebBrowsingPrompt.Name] = WebBrowsingPrompt.AgentSystemPrompt,
             [DownloaderPrompt.Name] = DownloaderPrompt.AgentSystemPrompt,
@@ -54,7 +81,7 @@ internal static class AgentPromptFixture
     // What each server ships as skills, bound to the manifest exactly as the client manager binds
     // what it reads off the wire: the served description and the served body, under the declaration.
     public static IReadOnlyDictionary<string, PromptSkill> ServedSkills { get; } =
-        new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.For("Europe/Madrid"), SandboxSkill.For("/sandbox", "home/sandbox_user"), CountdownTimersSkill.Text }
+        new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.For("Europe/Madrid"), SandboxSkill.For("/sandbox", "home/sandbox_user", servesMounts: true), CountdownTimersSkill.Text }
             .ToDictionary(
                 text => text.Name,
                 text => PromptManifest.BindSkill(text.Name, text.Description, text.Body),
@@ -90,12 +117,13 @@ internal static class AgentPromptFixture
         return agent is not null
             ? Compose(
                 agent.Id, agent.Name, agent.Description, agent.McpServerEndpoints,
-                agent.EnabledFeatures, agent.PromptSections, agent.CustomInstructions, agent.Language)
+                agent.EnabledFeatures, agent.PromptSections, agent.CustomInstructions, agent.Language,
+                agent.UsesOutposts)
             : worker is not null
                 ? Compose(
                     worker.Id, worker.Name, worker.Description, worker.McpServerEndpoints,
                     worker.EnabledFeatures, worker.PromptSections, worker.CustomInstructions,
-                    worker.Language)
+                    worker.Language, worker.UsesOutposts)
                 : throw new InvalidOperationException($"No agent or subagent '{id}' in appsettings.json");
     }
 
@@ -107,7 +135,8 @@ internal static class AgentPromptFixture
         IEnumerable<string> features,
         IEnumerable<string> selected,
         string? customInstructions,
-        string? language) =>
+        string? language,
+        bool usesOutposts) =>
         PromptComposer.Compose(new PromptContext
         {
             AgentId = id,
@@ -115,7 +144,14 @@ internal static class AgentPromptFixture
             Description = description,
             Domain = [.. FeatureSections(features)],
             FileSystem = HasFilesystem(features)
-                ? [PromptManifest.Bind(PromptManifest.FilesystemMounts, SampleMounts)]
+                ? [PromptManifest.Bind(
+                    PromptManifest.FilesystemMounts,
+                    string.Join("\n\n", new[]
+                    {
+                        SampleMounts,
+                        usesOutposts ? _sampleMachines : null,
+                        endpoints.Any(e => ServiceOf(e) == "mcp-sandbox") ? _sampleShell : null
+                    }.OfType<string>()))]
                 : [],
             Client =
             [

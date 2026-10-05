@@ -25,8 +25,9 @@ public static class PromptManifest
     // What the largest agent's standing sections are budgeted to, rounded up to the hundred. It is
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
-    // cannot grow back into the room it vacated.
-    public const int StandingTokens = 8_500;
+    // cannot grow back into the room it vacated. A section whose declared budget grows raises it
+    // the same way: the figure follows the declarations and is never set ahead of them.
+    public const int StandingTokens = 8_600;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -57,8 +58,11 @@ public static class PromptManifest
             // words that keep a model from reading it as stop-and-wait are the words that earn
             // its place — seven of the user's notes went the turn it was missing. 500 for the
             // beside-a-call rule: it has to be read before the first call, so it cannot live in
-            // a skill, and the voice section's version of it never reaches a text agent.
-            TokenBudget = 500,
+            // a skill, and the voice section's version of it never reaches a text agent. 550 for
+            // what the carve-out's "work" is: widened from files in bulk to one file or many, it
+            // read to gpt-6-luna as covering a watch, and a removal the user named outright was
+            // answered with a confirmation question three runs of three.
+            TokenBudget = 550,
             Conflict = ConflictPolicy.Governs(PromptRules.Refusals),
             Claims = CoreDirectivePrompt.Claims
         },
@@ -110,7 +114,8 @@ public static class PromptManifest
             Name = FilesystemMounts,
             Purpose = "The mounts this session actually has, and which one a path belongs under.",
             Priority = PromptPriority.FileSystem,
-            TokenBudget = 500,
+            // Raised from 500 for the section saying which mounts a sandbox command sees.
+            TokenBudget = 600,
             // The words are generated from the registry, so the claims live beside the code that
             // builds them rather than in a prompt file of their own.
             Claims = FileSystemToolFeature.Claims
@@ -118,7 +123,7 @@ public static class PromptManifest
         new()
         {
             Name = SandboxPrompt.Name,
-            Purpose = "That the sandbox is the one mount with exec, where its workspace is, and that a run loads the skill.",
+            Purpose = "That the sandbox is the one mount with a shell, that its commands see the other mounts, where its workspace is, and that a run loads the skill.",
             Priority = PromptPriority.Client,
             // The stub: the section had no choosing rule of its own and moved whole into the
             // sandbox skill. Ratcheted from 1,400.
@@ -128,7 +133,7 @@ public static class PromptManifest
         new()
         {
             Name = VaultPrompt.Name,
-            Purpose = "What the vault is, and that a task needing exec is transferred to the sandbox once.",
+            Purpose = "What the vault is, that script work over it runs in the sandbox on /vault in place, and that a transfer is one call.",
             Priority = PromptPriority.Client,
             // The stub: the conventions are the obsidian-vault skill. Ratcheted from 2,000.
             TokenBudget = 400,
@@ -308,7 +313,8 @@ public static class PromptManifest
             Name = SandboxSkill.Name,
             Description = SandboxSkill.Description,
             DescriptionBudget = 130,
-            BodyBudget = 1_200,
+            // Raised from 1,200 for the other mounts inside a command.
+            BodyBudget = 1_350,
             ServedBy = "mcp-sandbox",
             Claims = SandboxSkill.Claims
         },

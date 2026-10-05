@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Domain.Security;
 using Domain.Tools;
 using Mcp.Hosting;
 using Microsoft.AspNetCore.Builder;
@@ -56,7 +57,10 @@ public class ChannelServerExtensionsTests
         Should.Throw<ArgumentException>(() =>
             new ServiceCollection().AddMcpServer().AddChannelServer(DeliveryPolicy.Broadcast, "channel-x"));
 
-    private sealed record ProbeSettings(string Name);
+    private sealed record ProbeSettings(string Name) : IMcpHostSettings
+    {
+        public McpGateSettings Mcp => McpTestSecret.Gate;
+    }
 
     // A channel server has one inbox and one delivery policy. The call-tool filter already guards
     // itself, so a second call used to leave the filter alone and silently swap the emitter — last

@@ -50,7 +50,8 @@ public class ExecScreenRequestSourceTests
         var asked = await ScreenedOn(worker.Received.ShouldNotBeNull());
 
         Requests(asked).ShouldBe(["Descarga https://example.org/data.csv y cuenta sus filas."]);
-        asked.TurnModel.ShouldBe("z-ai/glm-5");
+        asked.Caller.TurnModel.ShouldBe("z-ai/glm-5");
+        asked.Caller.Sender.ShouldBe("fran");
     }
 
     // A scheduled fire mints a conversation of its own each time, so nothing a person said earlier
@@ -98,15 +99,19 @@ public class ExecScreenRequestSourceTests
             execScreen: new ExecScreen(judge, new ExecScreenSettings(), new FakeTimeProvider()));
         var exec = ExecReach.Carried(
             AIFunctionFactory.Create((string path, string command) => "ok", Exec),
-            new ExecReach(_ => ShellReach.Host));
+            new ExecReach((_, _) => ShellReach.Host));
 
         await client.GetResponseAsync(messages, new ChatOptions { Tools = [exec] });
 
         return judge.Asked.ShouldHaveSingleItem();
     }
 
+    // What the judge was shown of the person, oldest first: the context, then the request itself.
     private static IReadOnlyList<string> Requests(JudgmentRequest asked) =>
-        [.. asked.State["request"]!.AsArray().Select(node => node!.GetValue<string>())];
+    [
+        .. asked.State["earlier_messages"]!.AsArray().Select(node => node!.GetValue<string>()),
+        asked.State["request"]!.GetValue<string>()
+    ];
 }
 
 file sealed class RecordingSession : AgentSession;

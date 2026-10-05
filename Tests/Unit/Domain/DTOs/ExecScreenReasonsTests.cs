@@ -9,8 +9,9 @@ public class ExecScreenReasonsTests
 {
     [Theory]
     [InlineData(ExecScreenCodes.NotRequested, "This doesn't look like part of what you asked for.")]
-    [InlineData(ExecScreenCodes.Destructive, "It would delete or change something already on your computer.")]
-    [InlineData(ExecScreenCodes.SendsOut, "It would send data from your computer to a remote server.")]
+    [InlineData(ExecScreenCodes.Destructive, "It would delete or change something that's already there.")]
+    [InlineData(ExecScreenCodes.SendsOut, "It would send data to a remote server.")]
+    [InlineData(ExecScreenCodes.RunsDownloaded, "It would download a program and run it.")]
     [InlineData(ExecScreenCodes.Unjudged, "It runs on your computer and couldn't be checked first.")]
     public void EachCode_SaysItsReason(string code, string line)
     {
@@ -21,7 +22,7 @@ public class ExecScreenReasonsTests
     public void SeveralCodes_AreOneLine_InTheOrderGiven()
     {
         ExecScreenReasons.English([ExecScreenCodes.NotRequested, ExecScreenCodes.SendsOut]).ShouldBe(
-            "This doesn't look like part of what you asked for. It would send data from your computer to a remote server.");
+            "This doesn't look like part of what you asked for. It would send data to a remote server.");
     }
 
     [Fact]

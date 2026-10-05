@@ -1,5 +1,11 @@
 using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Domain.DTOs.FileSystem;
+using Domain.Tools.FileSystem.Bridge;
+using Infrastructure.Agents;
 using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 using Shouldly;
 
 namespace Tests.Eval.Fixtures;
@@ -18,13 +24,49 @@ public class EvalSandboxTests
         await using var sandbox = await EvalSandbox.StartAsync();
 
         await using var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(sandbox.Endpoint)
-            }));
+            McpTestSecret.Transport(sandbox.Endpoint));
         var tools = await client.ListToolsAsync();
 
         tools.Select(t => t.Name).ShouldContain("fs_exec");
+    }
+
+    // The eval's own wiring of the shell over the mounts: the container reaches a bridge the stack
+    // hosts, and a command run with a minted call's token sees that call's mounts. A family run
+    // whose commands could not see /vault would read as the model ignoring the route.
+    [SkippableFact]
+    public async Task TheSandbox_ServesACallsMountsThroughABridgeTheStackHosts()
+    {
+        Skip.IfNot(OperatingSystem.IsLinux(), "The sandbox pairing needs Linux.");
+        Skip.IfNot(await DockerIsRunningAsync(), "Docker is not running.");
+        var bridge = new VfsBridge(TimeProvider.System, new VfsBridgeSettings());
+        var (url, host, port) = await EvalBridgeHost.StartAsync(bridge);
+        try
+        {
+            await using var sandbox = await EvalSandbox.StartAsync(url);
+            await using var client = await McpClient.CreateAsync(McpTestSecret.Transport(sandbox.Endpoint));
+            var call = bridge.Mint(Unit.Domain.Tools.FileSystem.Bridge.BridgeFixtures.Registry(
+                (new Unit.Domain.Tools.FileSystem.Bridge.MemoryDisk(
+                    "vault", new Dictionary<string, string> { ["hello.md"] = "served\n" }), "/vault", null)), Unit.Domain.Tools.FileSystem.Bridge.BridgeFixtures.Everything, null, null);
+
+            var result = await client.CallToolAsync(new CallToolRequestParams
+            {
+                Name = "fs_exec",
+                Arguments = new Dictionary<string, JsonElement>
+                {
+                    ["path"] = JsonSerializer.SerializeToElement(""),
+                    ["command"] = JsonSerializer.SerializeToElement("cat /vault/hello.md")
+                },
+                Meta = new JsonObject { [VfsBridgeGrant.MetaKey] = new VfsBridgeGrant(call.Token).ToMeta() }
+            });
+
+            string.Join("", result.Content.OfType<TextContentBlock>().Select(c => c.Text)).ShouldContain("served");
+        }
+        finally
+        {
+            await host.StopAsync();
+            host.Dispose();
+            Integration.Fixtures.TestPort.Release(port);
+        }
     }
 
     private static async Task<bool> DockerIsRunningAsync()

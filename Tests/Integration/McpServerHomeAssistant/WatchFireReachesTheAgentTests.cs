@@ -32,7 +32,8 @@ public class WatchFireReachesTheAgentTests
         {
             HomeAssistant = new HomeAssistantConfiguration { BaseUrl = "http://home-assistant.test", Token = FakeHomeAssistant.Token },
             Announce = new AnnounceTokenSettings { Token = "secret" },
-            Delivery = new DeliverySettings { DefaultDeliverTo = ["signalr"] }
+            Delivery = new DeliverySettings { DefaultDeliverTo = ["signalr"] },
+            Mcp = McpTestSecret.Gate
         });
         var home = new FakeHomeAssistant();
         builder.Services.AddHttpClient(nameof(IHomeAssistantClient)).ConfigurePrimaryHttpMessageHandler(() => home);
@@ -43,7 +44,8 @@ public class WatchFireReachesTheAgentTests
 
         try
         {
-            await using var connection = new McpChannelConnection("homeassistant", healthCheckInterval: TimeSpan.FromMilliseconds(200));
+            await using var connection = new McpChannelConnection(
+                "homeassistant", healthCheckInterval: TimeSpan.FromMilliseconds(200), mcpSecret: McpTestSecret.Value);
             var run = connection.RunAsync($"http://localhost:{port}/mcp",
                 () => [new AgentCatalogEntry("jonas", "Jonas", "the assistant")], cts.Token);
             var reading = connection.Messages.FirstAsync(cts.Token).AsTask();

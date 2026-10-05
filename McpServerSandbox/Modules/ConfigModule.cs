@@ -24,16 +24,21 @@ public static class ConfigModule
                 ContainerRoot = settings.ContainerRoot,
                 DefaultTimeoutSeconds = settings.DefaultTimeoutSeconds,
                 MaxTimeoutSeconds = settings.MaxTimeoutSeconds,
-                OutputCapBytes = settings.OutputCapBytes
+                OutputCapBytes = settings.OutputCapBytes,
+                // The server's environment holds the deployment's MCP secret; a command gets none of it.
+                Environment = CommandEnvironment.Minimal(settings.HomeDir, System.Environment.GetEnvironmentVariable)
             })
-            .AddSingleton<ICommandRunner, BashRunner>()
+            .AddSingleton<ICommandRunner>(sp => settings.LauncherSocket is { Length: > 0 } socket
+                ? new LauncherRunner(sp.GetRequiredService<BashRunnerOptions>(), socket, settings.VfsBridgeUrl)
+                : new BashRunner(sp.GetRequiredService<BashRunnerOptions>()))
             .AddSingleton(sp => new SandboxFileSystem(
                 "sandbox",
                 // The reusable disk root takes the mount's prose the same way it takes its name.
                 "Linux sandbox container — supports command execution via fs_exec (bash, python3, "
                 + "pip, git, curl, jq). Persistent /home/sandbox_user (named volume), ephemeral "
-                + "system dirs, full outbound network, no inbound ports. See the Sandbox Filesystem "
-                + "prompt for limits.",
+                + "system dirs, full outbound network, no inbound ports. Inside a command, the "
+                + "session's other mounts are directories too. See the Sandbox Filesystem prompt "
+                + "for limits.",
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.ContainerRoot),
                 // The one list, in Domain, so the sandbox and any other disk root over a real
@@ -49,7 +54,7 @@ public static class ConfigModule
             .AddSkill(SandboxSkill.Name, SandboxSkill.Description, sp =>
             {
                 var sandbox = sp.GetRequiredService<SandboxFileSystem>();
-                return SandboxSkill.Body(sandbox.MountPoint, sandbox.Workspace);
+                return SandboxSkill.Body(sandbox.MountPoint, sandbox.Workspace, settings.ServesMounts);
             })
             .WithPrompts<McpSystemPrompt>();
 

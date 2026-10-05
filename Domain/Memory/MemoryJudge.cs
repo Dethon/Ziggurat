@@ -8,7 +8,12 @@ using Microsoft.Extensions.AI;
 namespace Domain.Memory;
 
 // Who the judgment is about, for the event it publishes.
-public sealed record MemoryJudgmentContext(string UserId, string? AgentId = null, string? ConversationId = null);
+public sealed record MemoryJudgmentContext(string UserId, string? AgentId = null, string? ConversationId = null)
+{
+    // No turn is behind a memory question — dreaming has none, and extraction is never enqueued
+    // for a turn addressed to the local box — so it bills the user alone.
+    public JudgmentCaller Caller => new(TurnModel: null, UserId, AgentId, ConversationId);
+}
 
 // Gate: whether the extractor is asked at all. Skip is only ever true on an answer.
 public sealed record GateVerdict(bool Skip, IReadOnlyDictionary<string, double> Scores)
@@ -107,7 +112,7 @@ public sealed class MemoryJudge(
     // One request per cluster: the memories by index, one four-way choice per pair. The state and
     // the questions carry no memory id — there is nothing for a model to retype, and the answer is
     // mapped back by index here.
-    public static JudgmentRequest PairRequest(IReadOnlyList<MemoryEntry> cluster)
+    public static JudgmentRequest PairRequest(IReadOnlyList<MemoryEntry> cluster, MemoryJudgmentContext context)
     {
         var state = new JsonObject
         {
@@ -121,7 +126,7 @@ public sealed class MemoryJudge(
                     string.Format(RelationInstructions, pair.i, pair.j), RelationCriteria),
                 StringComparer.Ordinal);
 
-        return new JudgmentRequest(state, questions, JudgmentRequest.NoTurn);
+        return new JudgmentRequest(state, questions, context.Caller);
     }
 
     public async Task<PairVerdict> RelateAsync(
@@ -132,7 +137,7 @@ public sealed class MemoryJudge(
             return PairVerdict.Unanswered;
         }
 
-        var (outcome, latency) = await AskAsync(PairRequest(cluster), ct);
+        var (outcome, latency) = await AskAsync(PairRequest(cluster, context), ct);
         if (outcome is not JudgmentOutcome.Answered answered)
         {
             PublishAbsence(MemoryJudgmentKinds.Pairs, context, outcome, latency);
@@ -222,7 +227,7 @@ public sealed class MemoryJudge(
             return GateVerdict.Extract;
         }
 
-        var (outcome, latency) = await AskAsync(State(window), Nouls(GateQuestions), ct);
+        var (outcome, latency) = await AskAsync(State(window), Nouls(GateQuestions), context, ct);
         if (outcome is not JudgmentOutcome.Answered answered)
         {
             PublishAbsence(MemoryJudgmentKinds.Gate, context, outcome, latency);
@@ -255,7 +260,7 @@ public sealed class MemoryJudge(
         var state = State(window);
         state["candidate"] = candidate.Content;
 
-        var (outcome, latency) = await AskAsync(state, Nouls(VerifyQuestions), ct);
+        var (outcome, latency) = await AskAsync(state, Nouls(VerifyQuestions), context, ct);
         if (outcome is not JudgmentOutcome.Answered answered)
         {
             PublishAbsence(MemoryJudgmentKinds.Verify, context, outcome, latency);
@@ -295,8 +300,9 @@ public sealed class MemoryJudge(
     }
 
     private Task<(JudgmentOutcome Outcome, TimeSpan Latency)> AskAsync(
-        JsonObject state, IReadOnlyDictionary<string, JudgmentQuestion> questions, CancellationToken ct) =>
-        AskAsync(new JudgmentRequest(state, questions, JudgmentRequest.NoTurn), ct);
+        JsonObject state, IReadOnlyDictionary<string, JudgmentQuestion> questions, MemoryJudgmentContext context,
+        CancellationToken ct) =>
+        AskAsync(new JudgmentRequest(state, questions, context.Caller), ct);
 
     private async Task<(JudgmentOutcome Outcome, TimeSpan Latency)> AskAsync(JudgmentRequest request, CancellationToken ct)
     {

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.Judgments;
 using Domain.Tools;
 using Domain.Tools.Web;
 using Infrastructure.Utils;
@@ -42,8 +43,8 @@ public class McpWebBrowseTool(IWebBrowser browser)
                 "Conversation context is missing from request _meta; cannot scope the browser session."));
         }
 
-        var turnModel = ConversationScope.Parse(context.Params?.Meta)?.ConfigPatchModel;
-        var result = await RunAsync(sessionId, turnModel, url, selector, maxLength, offset,
+        var caller = JudgmentCaller.For(ConversationScope.Parse(context.Params?.Meta));
+        var result = await RunAsync(sessionId, caller, url, selector, maxLength, offset,
             useReadability, scrollToLoad, scrollSteps, snapshot, ct);
         return result.Body is null
             ? ToolResponse.Create(result.Envelope)

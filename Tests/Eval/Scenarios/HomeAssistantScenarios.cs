@@ -60,7 +60,7 @@ public static class HomeAssistantScenarios
                     // Either view: the setup index lists the area path first and the entities path
                     // second, and both are the mount's own.
                     Arg.PathMatches(FakeHomeAssistant.AirConditionerPathPattern),
-                    Arg.Matches("command", @"^(\./)?turn_on\.sh")
+                    Arg.Matches("command", @"^(\./)?turn_on(\s|$)")
                 ]
             }
         ],
@@ -118,7 +118,7 @@ public static class HomeAssistantScenarios
                     // Either view: the setup index lists the area path first and the entities path
                     // second, and both are the mount's own.
                     Arg.PathMatches(FakeHomeAssistant.AirConditionerPathPattern),
-                    Arg.Matches("command", @"^(\./)?set_temperature\.sh.*\b22\b")
+                    Arg.Matches("command", @"^(\./)?set_temperature\s.*\b22\b")
                 ]
             }
         ],
@@ -172,7 +172,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.VacuumPathPattern),
-                    Arg.Matches("command", @"^(\./)?clean_zone\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?clean_zone(\s|$)"),
                     Arg.Matches("command",
                         $@"--cleaning_area_id[= ]+""?{FakeHomeAssistant.StudyAreaSlug}\b")
                 ]
@@ -230,7 +230,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.WashingMachinePathPattern),
-                    Arg.Matches("command", @"^(\./)?turn_on\.sh")
+                    Arg.Matches("command", @"^(\./)?turn_on(\s|$)")
                 ]
             }
         ],
@@ -275,13 +275,13 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.KitchenSpeakerPathPattern),
-                    Arg.Matches("command", @"^(\./)?music_assistant\.play_media\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?music_assistant\.play_media(\s|$)"),
                     Arg.Matches("command", "(?i)faro")
                 ]
             }
         ],
         // The honest recoveries, and nothing else: the library listing (which holds no radio),
-        // and the provider-catalog search. A bare play_media.sh is not among them.
+        // and the provider-catalog search. A bare ./play_media is not among them.
         Permitted =
         [
             .. CallPermission.LookingAndManuals("/ha*"),
@@ -345,7 +345,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^(\./)?create_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?create_event(\s|$)"),
                     Arg.Matches("command", @"2026-08-17[ T]20:05"),
                     Arg.Matches("command", "(?i)basura"),
                     Arg.Matches("command", "(?i)insistent")
@@ -397,7 +397,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^(\./)?get_events\.sh\b")
+                    Arg.Matches("command", @"^(\./)?get_events(\s|$)")
                 ]
             },
             new CallExpectation
@@ -407,7 +407,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^(\./)?delete_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?delete_event(\s|$)"),
                     Arg.Matches("command", $@"--uid[= ]+""?{FakeHomeAssistant.TrashAlarmUid}\b")
                 ]
             }
@@ -451,7 +451,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^(\./)?delete_event\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?delete_event(\s|$)"),
                     Arg.Matches("command", $@"--uid[= ]+""?{FakeHomeAssistant.TrashAlarmUid}\b")
                 ]
             },
@@ -462,7 +462,9 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.AlarmsPathPattern),
-                    Arg.Matches("command", @"^(\./)?create_event\.sh\b"),
+                    // At the start of the command or of one chained to it: the delete and the
+                    // create as one exec is the move in one call.
+                    Arg.Matches("command", @"(^|(&&|;|\n)\s*)(\./)?create_event(\s|$)"),
                     Arg.Matches("command", @"2026-08-17[ T]22:30"),
                     Arg.Matches("command", "(?i)basura"),
                     Arg.Matches("command", "(?i)insistent")
@@ -516,7 +518,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.TvRemotePathPattern),
-                    Arg.Matches("command", @"^(\./)?turn_on\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?turn_on(\s|$)"),
                     Arg.Matches("command", @"--activity[= ]+""?Crunchyroll""?\s*$")
                 ]
             }
@@ -583,7 +585,7 @@ public static class HomeAssistantScenarios
                 Arguments =
                 [
                     Arg.PathMatches(FakeHomeAssistant.TvRemotePathPattern),
-                    Arg.Matches("command", @"^(\./)?turn_on\.sh\b"),
+                    Arg.Matches("command", @"^(\./)?turn_on(\s|$)"),
                     Arg.Matches("command", @"--activity[= ]+""?Plex""?\s*$")
                 ]
             }

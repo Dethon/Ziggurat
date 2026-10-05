@@ -554,6 +554,101 @@ public class TabProtocolTests
             .ShouldBeOfType<TabOutcome<IPage>.Ran>().Result.ShouldBeSameAs(popupPage.Mock.Object);
     }
 
+    // The browser reports a popup only once the new page says it is ready, which can be well after
+    // the click that opened it has returned; an act that waits for one is answered from it the
+    // moment it is adopted, not after the wait runs out.
+    [Fact]
+    public async Task APopupAdoptedWhileTheActWaitsForIt_EndsTheWaitAndAnswersTheAction()
+    {
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        var clock = new ArmedClock();
+        await using var manager = new BrowserSessionManager(clock);
+        var grace = TimeSpan.FromSeconds(7);
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 1);
+        var popupPage = FakePage.Create("https://popup.test/window");
+
+        bool? arrived = null;
+        var outcome = await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            ActThat(async cx =>
+            {
+                var waiting = cx.WaitForPopupAsync(grace);
+                await clock.WaitUntilArmedAsync(grace);
+                pages[0].RaisePopup(popupPage);
+                arrived = await waiting;
+            }),
+            answer: _ => Task.FromResult("from the acting tab"),
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("from the popup")));
+
+        arrived.ShouldBe(true);
+        var ran = outcome.ShouldBeOfType<TabOutcome<string>.Ran>();
+        ran.PopupAnswered.ShouldBeTrue();
+        ran.Result.ShouldBe("from the popup");
+    }
+
+    [Fact]
+    public async Task AWaitForAPopupThatNeverComes_GivesUpAtTheGrace()
+    {
+        var (ctx, _) = TabPoolFakes.CreateContext();
+        var clock = new ArmedClock();
+        await using var manager = new BrowserSessionManager(clock);
+        var grace = TimeSpan.FromSeconds(7);
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 1);
+
+        bool? arrived = null;
+        var outcome = await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            ActThat(async cx =>
+            {
+                var waiting = cx.WaitForPopupAsync(grace);
+                await clock.AdvancePastAsync(grace);
+                arrived = await waiting;
+            }),
+            answer: _ => Task.FromResult("from the acting tab"),
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("from the popup")));
+
+        arrived.ShouldBe(false);
+        var ran = outcome.ShouldBeOfType<TabOutcome<string>.Ran>();
+        ran.PopupAnswered.ShouldBeFalse();
+        ran.Result.ShouldBe("from the acting tab");
+    }
+
+    [Fact]
+    public async Task AStalePendingPopup_DoesNotEndALaterActsWait()
+    {
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        var clock = new ArmedClock();
+        await using var manager = new BrowserSessionManager(clock);
+        var grace = TimeSpan.FromSeconds(7);
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 1);
+
+        // Adopted by an earlier, unrelated call: it must not read as this act's popup.
+        pages[0].RaisePopup(FakePage.Create("https://popup.test/window"));
+
+        bool? arrived = null;
+        await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            ActThat(async cx =>
+            {
+                var waiting = cx.WaitForPopupAsync(grace);
+                await clock.AdvancePastAsync(grace);
+                arrived = await waiting;
+            }),
+            answer: _ => Task.FromResult("from the acting tab"),
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("from the popup")));
+
+        arrived.ShouldBe(false);
+    }
+
     [Fact]
     public async Task AStalePendingPopupFromAnEarlierCall_DoesNotDivertTheAction()
     {

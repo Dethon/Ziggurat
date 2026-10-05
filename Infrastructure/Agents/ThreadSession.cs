@@ -52,10 +52,11 @@ internal sealed class ThreadSession : IAsyncDisposable
         ILoggerFactory? loggerFactory,
         CancellationToken ct,
         McpPromptCache? promptCache = null,
-        ReadImageSupport? readImages = null)
+        ReadImageSupport? readImages = null,
+        IVfsBridge? bridge = null)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
-            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages);
+            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages, bridge);
         var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
     }
@@ -80,7 +81,8 @@ internal sealed class ThreadSessionBuilder(
     IReadOnlySet<string> filesystemEnabledTools,
     ILoggerFactory? loggerFactory,
     McpPromptCache? promptCache = null,
-    ReadImageSupport? readImages = null)
+    ReadImageSupport? readImages = null,
+    IVfsBridge? bridge = null)
 {
     private static readonly HashSet<string> _fileSystemMcpToolNames = [.. FileSystemOperations.ToolNames];
 
@@ -113,7 +115,7 @@ internal sealed class ThreadSessionBuilder(
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         var fsRegistry = new VirtualFileSystemRegistry();
         var shadowed = await McpFileSystemDiscovery.DiscoverAndMountAsync(
-            clientManager.Clients, fsRegistry, fsLogger, ct);
+            clientManager.Clients, clientManager.DynamicClients, fsRegistry, fsLogger, ct);
 
         if (fsRegistry.GetMounts().Count > 0)
         {
@@ -129,7 +131,7 @@ internal sealed class ThreadSessionBuilder(
             {
                 registry = fsRegistry;
                 var fsFeatureConfig = new FeatureConfig(EnabledTools: filesystemEnabledTools);
-                var feature = new FileSystemToolFeature(registry, readImages);
+                var feature = new FileSystemToolFeature(registry, readImages, bridge);
                 fileSystemTools = feature.GetTools(fsFeatureConfig).ToList();
                 fileSystemPrompts = feature.Prompt is { } mounts
                     ? [PromptManifest.Bind(PromptManifest.FilesystemMounts, mounts)]

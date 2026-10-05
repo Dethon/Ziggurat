@@ -171,7 +171,7 @@ public class McpLibraryConversationScopeTests : IAsyncLifetime
     }
 
     private Task<McpClient> CreateClientAsync() => McpClient.CreateAsync(
-        new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(_endpoint) }));
+        McpTestSecret.Transport(_endpoint));
 
     private static JsonObject MetaFor(string agentId, string conversationId)
     {

@@ -25,7 +25,7 @@ public static class HaMusicActions
         Service = PodcastEpisodesService,
         Description =
             "List a podcast's episodes with the exact URI each one plays by. "
-            + "Pass an episode's uri to music_assistant.play_media.sh --media_id to play it.",
+            + "Pass an episode's uri to ./music_assistant.play_media --media_id to play it.",
         // Names the media_player class so HaActionResolver's cross-domain rule gives it a slot in
         // every player directory, exactly like music_assistant.play_media.
         Target = JsonNode.Parse("""{"entity":[{"domain":["media_player"]}]}"""),

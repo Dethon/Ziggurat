@@ -1,3 +1,4 @@
+using Domain.Security;
 using Mcp.Hosting;
 using McpChannelServiceBus.Modules;
 using McpChannelSignalR.Modules;
@@ -94,15 +95,22 @@ public static class McpServerRegistrations
     //
     // The tool servers all take unreachable-but-well-formed connection details for the same reason
     // the channel rows do: registration must run with no container and no network.
+    // Every deployment row gates /mcp behind the one deployment secret; the outpost behind its own,
+    // which is deliberately a different value so a row that fell through to the deployment's
+    // would be caught rather than agree by coincidence.
+    public static McpGateSettings DeploymentGate => McpTestSecret.Gate;
+
+    public const string OutpostSecret = "outpost-own-secret";
+
     public static IReadOnlyList<McpServerRow> All =>
     [
         Row("signalr", "McpChannelSignalR", McpServerRole.Channel,
-            new SignalRSettings.ChannelSettings { RedisConnectionString = UnreachableRedis },
+            new SignalRSettings.ChannelSettings { RedisConnectionString = UnreachableRedis, Mcp = DeploymentGate },
             (services, settings) => services.ConfigureChannel(settings),
             DeliveryPolicy.Broadcast),
 
         Row("telegram", "McpChannelTelegram", McpServerRole.Channel,
-            new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [] },
+            new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [], Mcp = DeploymentGate },
             (services, settings) => services.ConfigureChannel(settings),
             DeliveryPolicy.BufferAlways),
 
@@ -111,7 +119,8 @@ public static class McpServerRegistrations
             {
                 ServiceBusConnectionString = FakeServiceBusConnectionString,
                 PromptQueueName = "prompts",
-                ResponseQueueName = "responses"
+                ResponseQueueName = "responses",
+                Mcp = DeploymentGate
             },
             (services, settings) => services.ConfigureChannel(settings),
             DeliveryPolicy.GateOnLive),
@@ -121,14 +130,14 @@ public static class McpServerRegistrations
         // live/fake Redis endpoint is needed — defaults are enough, exactly as ConfigModuleTests
         // already relies on for the rest of the voice DI graph.
         Row("voice", "McpChannelVoice", McpServerRole.Channel,
-            new VoiceSettings.VoiceSettings(),
+            new VoiceSettings.VoiceSettings { Mcp = DeploymentGate },
             (services, settings) => services.ConfigureVoiceChannel(settings),
             DeliveryPolicy.Broadcast),
 
         // Same lazy IConnectionMultiplexer factory as voice, so the connection string just needs to
         // satisfy the required property.
         Row("scheduling", "McpServerScheduling", McpServerRole.DualRole,
-            new SchedulingSettings.SchedulingSettings { RedisConnectionString = UnreachableRedis },
+            new SchedulingSettings.SchedulingSettings { RedisConnectionString = UnreachableRedis, Mcp = DeploymentGate },
             (services, settings) => services.ConfigureScheduling(settings),
             DeliveryPolicy.GateOnLive),
 
@@ -144,7 +153,8 @@ public static class McpServerRegistrations
                 },
                 DownloadLocation = "/downloads",
                 BaseLibraryPath = "/media",
-                RedisConnectionString = UnreachableRedis
+                RedisConnectionString = UnreachableRedis,
+                Mcp = DeploymentGate
             },
             (services, settings) => services.ConfigureMcp(settings),
             DeliveryPolicy.GateOnLive),
@@ -159,7 +169,8 @@ public static class McpServerRegistrations
                 HomeAssistant = new HaSettings.HomeAssistantConfiguration
                 {
                     BaseUrl = "http://home-assistant:8123", Token = "x"
-                }
+                },
+                Mcp = DeploymentGate
             },
             (services, settings) => services.ConfigureMcp(settings),
             DeliveryPolicy.Broadcast),
@@ -167,14 +178,15 @@ public static class McpServerRegistrations
         Row("idealista", "McpServerIdealista", McpServerRole.Tool,
             new IdealistaSettings.McpSettings
             {
-                Idealista = new IdealistaSettings.IdealistaConfiguration { ApiKey = "x", ApiSecret = "x" }
+                Idealista = new IdealistaSettings.IdealistaConfiguration { ApiKey = "x", ApiSecret = "x" },
+                Mcp = DeploymentGate
             },
             (services, settings) => services.ConfigureMcp(settings)),
 
         // The spool path is never touched during registration: PrintSpool creates its directory on
         // the first write, and nothing here writes.
         Row("printer", "McpServerPrinter", McpServerRole.Tool,
-            new PrinterSettings.PrinterSettings { PrinterUri = "ipp://printer:631/ipp/print" },
+            new PrinterSettings.PrinterSettings { PrinterUri = "ipp://printer:631/ipp/print", Mcp = DeploymentGate },
             (services, settings) => services.ConfigurePrinter(settings)),
 
         // The one server with no shipped appsettings.json, because it has no Dockerfile and no
@@ -185,7 +197,8 @@ public static class McpServerRegistrations
             new OutpostSettings.OutpostSettings
             {
                 Name = "outpost",
-                WorkingDirectory = "/home/someone/project"
+                WorkingDirectory = "/home/someone/project",
+                SharedSecret = OutpostSecret
             },
             (services, settings) => services.ConfigureMcp(settings)),
 
@@ -199,17 +212,18 @@ public static class McpServerRegistrations
                 HomeDir = "/srv/jail/home/sandbox_user",
                 DefaultTimeoutSeconds = 30,
                 MaxTimeoutSeconds = 300,
-                OutputCapBytes = 65536
+                OutputCapBytes = 65536,
+                Mcp = DeploymentGate
             },
             (services, settings) => services.ConfigureMcp(settings)),
 
         // The voice hub is reached through a named HttpClient, which never dials at registration.
         Row("timers", "McpServerTimers", McpServerRole.Tool,
-            new TimersSettings.TimerSettings(),
+            new TimersSettings.TimerSettings { Mcp = DeploymentGate },
             (services, settings) => services.ConfigureTimers(settings)),
 
         Row("vault", "McpServerVault", McpServerRole.Tool,
-            new VaultSettings.McpSettings { VaultPath = "/vault", AllowedExtensions = [".md"] },
+            new VaultSettings.McpSettings { VaultPath = "/vault", AllowedExtensions = [".md"], Mcp = DeploymentGate },
             (services, settings) => services.ConfigureMcp(settings)),
 
         // CapSolver and Camoufox left absent, which is how a deployment without them runs: the
@@ -219,7 +233,8 @@ public static class McpServerRegistrations
             new WebSearchSettings.McpSettings
             {
                 BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" },
-                RedisConnectionString = UnreachableRedis
+                RedisConnectionString = UnreachableRedis,
+                Mcp = DeploymentGate
             },
             (services, settings) => services.ConfigureMcp(settings))
     ];

@@ -172,7 +172,7 @@ public static class VoiceScenarios
             {
                 Label = "dismiss",
                 Tool = EvalTools.Exec,
-                Arguments = [Arg.Path("/timers"), Arg.Matches("command", @"^\.?/?dismiss\.sh")]
+                Arguments = [Arg.Path("/timers"), Arg.Matches("command", @"^(\./)?dismiss\s*$")]
             }
         ],
         Permitted = [.. CallPermission.Looking("/timers*")],

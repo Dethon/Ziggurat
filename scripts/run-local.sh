@@ -23,6 +23,11 @@ CONFIG="${CONFIG:-Debug}"
 TFM="${TFM:-net10.0}"
 ENV_FILE="$ROOT/DockerCompose/.env"
 
+# Every MCP server's /mcp asks for the deployment secret and the agent presents it, so every
+# service started here gets the same value — the one in the environment if there is one, else a
+# fixed local one. It is passed after .env is sourced, so an empty placeholder there cannot win.
+MCP_SECRET="${MCP__SHAREDSECRET:-local-mcp-secret}"
+
 # name|project directory|port|set ASPNETCORE_ENVIRONMENT|load DockerCompose/.env|extra env (; separated)|program args (space separated)
 SERVICES=(
   "agent|Agent|5000|yes|no||--chat Web --reasoning"
@@ -97,6 +102,7 @@ start_service() {
     local -a envs=(
       "DOTNET_ENVIRONMENT=Local"
       "ASPNETCORE_URLS=http://localhost:$port"
+      "MCP__SHAREDSECRET=$MCP_SECRET"
     )
     [[ $aspnet_env == yes ]] && envs+=("ASPNETCORE_ENVIRONMENT=Local")
 

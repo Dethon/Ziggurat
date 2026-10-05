@@ -1,11 +1,12 @@
 {
     "dotnet.backgroundAnalysis.compilerDiagnosticsScope": "fullSolution",
     "dotnet.backgroundAnalysis.analyzerDiagnosticsScope": "fullSolution",
-    // Two independent Rust crates, no workspace and no Cargo.toml at the root — so rust-analyzer
-    // discovers two projects and cannot pick one ("more than one project"). Naming both is what
+    // Three independent Rust crates, no workspace and no Cargo.toml at the root — so rust-analyzer
+    // discovers several projects and cannot pick one ("more than one project"). Naming each is what
     // makes it load each on its own terms instead.
     "rust-analyzer.linkedProjects": [
         "satellite/Cargo.toml",
-        "speech-typist/Cargo.toml"
+        "speech-typist/Cargo.toml",
+        "sandbox-runtime/Cargo.toml"
     ]
 }

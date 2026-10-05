@@ -174,19 +174,20 @@ public class ScenarioChecksPreloadTests
         ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
     }
 
+    // The preload names the judge; what the judge cost is its own usage event, spent like any
+    // model's, never the preload's copy of it.
     [Fact]
-    public void APreload_IsSpentAtWhatTheProviderCharged_AndNamesTheJudge()
+    public void APreload_NamesTheJudge_AndIsSpentOnlyByItsUsage()
     {
         var recording = Recorded([Timers], (Create, Created));
         recording.Publish(new TokenUsageEvent { Sender = "u", Model = "m", InputTokens = 9000, OutputTokens = 100, Cost = 0.02m });
+        recording.Publish(new TokenUsageEvent { Sender = "u", Model = "jev-1.13.0", InputTokens = 2200, OutputTokens = 60, Cost = 0.0000924m });
 
         var spend = recording.Spend;
 
-        spend.Cost.ShouldBe(0.02m);
-        spend.Requests.ShouldBe(1);
-        spend.PreloadRequests.ShouldBe(1);
-        spend.PreloadInputTokens.ShouldBe(2200);
-        spend.PreloadCost.ShouldBe(0.0000924m);
+        spend.Cost.ShouldBe(0.0200924m);
+        spend.Requests.ShouldBe(2);
+        spend.ByModel["jev-1.13.0"].ShouldBe(new ModelSpend(0.0000924m, 2200, null, 60, 1));
         recording.PreloadModel.ShouldBe("jev-1.13.0");
     }
 
@@ -196,7 +197,7 @@ public class ScenarioChecksPreloadTests
         var recording = new Recording();
         recording.Publish(new SkillPreloadEvent { Outcome = SkillPreloadOutcomes.SkippedLemonade });
 
-        recording.Spend.PreloadRequests.ShouldBe(0);
+        recording.Spend.ShouldBe(Spend.Nothing);
         recording.Calls.ShouldBeEmpty();
         recording.PreloadModel.ShouldBeNull();
     }

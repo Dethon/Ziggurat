@@ -61,8 +61,14 @@ public class FileSystemServerConformanceTests
                 "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
             ],
             // Read and exec over the home, plus the one writable subtree: a watch is created, edited
-            // and deleted as a file, and every other path refuses those three by name.
-            ["ha"] = ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_delete", "fs_exec"],
+            // and deleted as a file, and every other path refuses those three by name. The byte read
+            // is the rendered file itself, which is what a sandbox command reads: the text read
+            // numbers its lines.
+            ["ha"] =
+            [
+                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_delete", "fs_exec",
+                "fs_blob_read"
+            ],
             // The media library reads only the overlay's status file and writes no text, so it keeps
             // the plain disk surface plus read. It is also the one mount with a move-out rule, and
             // the only one that registers the check.
@@ -185,6 +191,10 @@ public class FileSystemServerConformanceTests
         McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), [])!
             .ShellReach.ShouldBe(_shellReaches[name], serverId);
 
+        // Only a shell has a root of its own for the other mounts' links to collide with.
+        var occupied = McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), [])!.OccupiedNames;
+        (occupied is not null).ShouldBe(_shellReaches[name] == ShellReach.Contained, serverId);
+
         // The backend's own declaration of the same set: what it overrides is what the server
         // registers is what the mount publishes.
         FileSystemServerTools.SupportedToolNames(backendType)
@@ -264,7 +274,9 @@ public class FileSystemServerConformanceTests
 
         var published = Published(FileSystemServerResource.Describe(backend));
         published.Name.ShouldBe(name);
-        published.MountPoint.ShouldBe($"/{name}");
+        // An outpost is a separate machine, so its name is a machine address rather than a branch
+        // of the one tree every other mount shares.
+        published.MountPoint.ShouldBe(backend is OutpostFileSystem ? $"outpost:{name}" : $"/{name}");
         published.Description.ShouldBe(backend.DescribeMount);
         published.Description.ShouldNotBeNullOrWhiteSpace(name);
     }
@@ -303,9 +315,21 @@ public class FileSystemServerConformanceTests
         using var provider = ConfiguredServer("sandbox");
         var backend = provider.GetRequiredService<SandboxFileSystem>();
 
-        var prompt = new McpSystemPrompt(backend).GetSandboxPrompt();
+        var prompt = new McpSystemPrompt(
+            backend, provider.GetRequiredService<McpServerSandbox.Settings.McpSettings>()).GetSandboxPrompt();
 
         prompt.ShouldContain($"{backend.MountPoint}/{backend.Workspace}");
+    }
+
+    // The prompt and the skill promise the other mounts only where a command will find them: a
+    // sandbox with both a launcher and a bridge.
+    [Fact]
+    public void TheSandboxsProse_SpeaksOfTheOtherMountsOnlyWhereItServesThem()
+    {
+        SandboxPrompt.Build("/box", "home/someone", servesMounts: true).ShouldContain("other mounts as directories");
+        SandboxPrompt.Build("/box", "home/someone").ShouldNotContain("other mounts");
+        SandboxSkill.Body("/box", "home/someone", servesMounts: true).ShouldContain("vfsChanges");
+        SandboxSkill.Body("/box", "home/someone").ShouldNotContain("vfsChanges");
     }
 
     // That the resource the registrar really builds carries the same three, so nothing between the

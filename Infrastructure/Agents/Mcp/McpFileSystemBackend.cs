@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
 using Microsoft.Extensions.AI;
@@ -21,8 +22,21 @@ internal class McpFileSystemBackend(
     McpClient client,
     string filesystemName,
     IReadOnlySet<string>? advertisedOperations,
-    ILogger? logger = null) : IFileSystemBackend
+    ILogger? logger = null) : IFileSystemBackend, IBridgedExecBackend, ICallerBoundBackend
 {
+    // Set on a view the exec bridge asked for: the caller it names rides `_meta` in place of the
+    // turn's, because the bridge's operations run on its own request with no turn in flight.
+    private bool _callerBound;
+    private ConversationContext? _boundCaller;
+
+    public IFileSystemBackend As(ConversationContext? caller)
+    {
+        var view = (McpFileSystemBackend)MemberwiseClone();
+        view._callerBound = true;
+        view._boundCaller = caller;
+        return view;
+    }
+
     public string FilesystemName => filesystemName;
 
     public Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
@@ -102,6 +116,20 @@ internal class McpFileSystemBackend(
             ["timeoutSeconds"] = timeoutSeconds
         }), ct);
 
+    // The same fs_exec, with this call's token beside the conversation context on `_meta`: the
+    // schema the server reflects stays as it is, and the token reaches nothing but the server.
+    public async Task<FsResult<FsExecResult>> ExecAsync(
+        string path, string command, int? timeoutSeconds, VfsBridgeGrant grant, CancellationToken ct)
+    {
+        var node = await CallToolWithMetaAsync("fs_exec", WithFilesystem(new Dictionary<string, object?>
+        {
+            ["path"] = path,
+            ["command"] = command,
+            ["timeoutSeconds"] = timeoutSeconds
+        }), new JsonObject { [VfsBridgeGrant.MetaKey] = grant.ToMeta() }, ct);
+        return Typed<FsExecResult>("fs_exec", node);
+    }
+
     public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>
         CallTypedAsync<FsCopyResult>("fs_copy", WithFilesystem(new Dictionary<string, object?>
@@ -123,7 +151,25 @@ internal class McpFileSystemBackend(
                 WithFilesystem(new Dictionary<string, object?> { ["path"] = path }), ct)
             : Task.FromResult(FsMoveOutCheckResult.Allow(path));
 
-    public async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
+    // A server that advertised its operations and left the byte stream out has none: the stream
+    // answers as a backend without it does, rather than asking the wire for a tool the server never
+    // registered — which comes back as an internal error, and made every read through the shell of
+    // a rendered mount an EIO instead of the text the mount renders.
+    public IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct) =>
+        Lacks(FileSystemBackendBase.BlobReadOperation)
+            ? throw new NotSupportedException($"The {filesystemName} filesystem does not support '{FileSystemBackendBase.BlobReadOperation}'.")
+            : ReadChunksOverTheWireAsync(path, ct);
+
+    public Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+        bool overwrite, bool createDirectories, CancellationToken ct) =>
+        Lacks(FileSystemBackendBase.BlobWriteOperation)
+            ? throw new NotSupportedException($"The {filesystemName} filesystem does not support '{FileSystemBackendBase.BlobWriteOperation}'.")
+            : WriteChunksOverTheWireAsync(path, chunks, overwrite, createDirectories, ct);
+
+    private bool Lacks(string operation) =>
+        advertisedOperations is not null && !advertisedOperations.Contains($"fs_{operation}");
+
+    private async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksOverTheWireAsync(
         string path, [EnumeratorCancellation] CancellationToken ct)
     {
         const int chunkSize = 256 * 1024;
@@ -165,7 +211,7 @@ internal class McpFileSystemBackend(
         }
     }
 
-    public async Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+    private async Task<long> WriteChunksOverTheWireAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
         bool overwrite, bool createDirectories, CancellationToken ct)
     {
         long offset = 0;
@@ -225,10 +271,11 @@ internal class McpFileSystemBackend(
     }
 
     private async Task<FsResult<T>> CallTypedAsync<T>(
-        string toolName, Dictionary<string, object?> args, CancellationToken ct) where T : class
-    {
-        var node = await CallToolAsync(toolName, args, ct);
+        string toolName, Dictionary<string, object?> args, CancellationToken ct) where T : class =>
+        Typed<T>(toolName, await CallToolAsync(toolName, args, ct));
 
+    private static FsResult<T> Typed<T>(string toolName, JsonNode node) where T : class
+    {
         var error = ToolErrorResult.FromEnvelope(node);
         if (error is not null)
         {
@@ -244,8 +291,25 @@ internal class McpFileSystemBackend(
     // a tool the model calls directly: a mount that answers by who is calling — the Home Assistant
     // watches record their creating agent — sees the same context either way. Without it the first
     // watch written in prod was refused for carrying no caller.
-    protected internal virtual async Task<JsonNode> CallToolAsync(string toolName, Dictionary<string, object?> args, CancellationToken ct)
+    protected internal virtual Task<JsonNode> CallToolAsync(string toolName, Dictionary<string, object?> args, CancellationToken ct) =>
+        CallToolWithMetaAsync(toolName, args, null, ct);
+
+    private async Task<JsonNode> CallToolWithMetaAsync(
+        string toolName, Dictionary<string, object?> args, JsonObject? extraMeta, CancellationToken ct)
     {
+        var meta = _callerBound
+            ? ConversationContextMeta.Build(_boundCaller)
+            : ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options);
+        if (extraMeta is not null)
+        {
+            meta ??= new JsonObject();
+            foreach (var (key, value) in extraMeta.ToList())
+            {
+                extraMeta.Remove(key);
+                meta[key] = value;
+            }
+        }
+
         CallToolResult result;
         try
         {
@@ -253,7 +317,7 @@ internal class McpFileSystemBackend(
             {
                 Name = toolName,
                 Arguments = args.ToDictionary(a => a.Key, a => JsonSerializer.SerializeToElement(a.Value)),
-                Meta = ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options)
+                Meta = meta
             }, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

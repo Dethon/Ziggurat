@@ -12,4 +12,9 @@ public record ConversationContext(
     string ConversationId,
     string UserId,
     ReplyTarget Origin,
-    string? ConfigPatchModel = null);
+    string? ConfigPatchModel = null)
+{
+    // Where the approval client puts the conversation a call serves on that call's own arguments,
+    // beside ToolPermission's: a tool acting outside the turn reads who it acts for from there.
+    public static readonly object ContextKey = typeof(ConversationContext);
+}

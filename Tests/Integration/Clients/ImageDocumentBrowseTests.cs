@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Domain.Contracts;
+using Domain.Judgments;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -25,7 +26,8 @@ public class ImageDocumentBrowseTests(IsolatedSessionBrowserFixture fixture)
             var sw = Stopwatch.StartNew();
             var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(
                 sessionId,
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Cat_August_2010-4.jpg/330px-Cat_August_2010-4.jpg"));
+                "https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Cat_August_2010-4.jpg/330px-Cat_August_2010-4.jpg")
+            { Caller = JudgmentCaller.None });
             sw.Stop();
 
             // Attestation only: skip -- never fail -- when the third party is having a bad day,

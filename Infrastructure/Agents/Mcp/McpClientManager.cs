@@ -1,6 +1,6 @@
 using Domain.Contracts;
-using Domain.Outposts;
 using Domain.Prompts;
+using Domain.Security;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
@@ -22,6 +22,10 @@ internal sealed class McpClientManager : IAsyncDisposable
 
     public IReadOnlyList<McpClient> Clients { get; }
 
+    // The clients whose endpoint a machine registered at runtime. Discovery reads this: what such a
+    // server says about itself is its own word, and who registered it is the hub's own knowledge.
+    public IReadOnlySet<McpClient> DynamicClients { get; }
+
     // The addresses whose dial produced a client. The verdict writer reads this: an outpost whose
     // dial was dropped must not be judged by its name, which a configured mount can coincidentally
     // hold — the address is the one thing that is the machine's own.
@@ -38,12 +42,14 @@ internal sealed class McpClientManager : IAsyncDisposable
 
     private McpClientManager(
         IReadOnlyList<McpClient> clients,
+        IReadOnlySet<McpClient> dynamicClients,
         IReadOnlyList<string> dialledEndpoints,
         IReadOnlyList<AITool> tools,
         IReadOnlyList<PromptSection> prompts,
         IReadOnlyList<PromptSkill> skills)
     {
         Clients = clients;
+        DynamicClients = dynamicClients;
         DialledEndpoints = dialledEndpoints;
         Tools = tools;
         Prompts = prompts;
@@ -69,7 +75,16 @@ internal sealed class McpClientManager : IAsyncDisposable
         await Task.WhenAll(toolsTask, promptsTask, skillsTask);
         var clients = clientsWithEndpoints.Select(c => c.Client).ToArray();
         var dialled = clientsWithEndpoints.Select(c => c.Address).ToArray();
-        return new McpClientManager(clients, dialled, await toolsTask, await promptsTask, await skillsTask);
+        var dynamicAddresses = endpoints
+            .Where(e => e.Origin is McpEndpointOrigin.Dynamic)
+            .Select(e => e.Address)
+            .ToHashSet(StringComparer.Ordinal);
+        var dynamicClients = clientsWithEndpoints
+            .Where(c => dynamicAddresses.Contains(c.Address))
+            .Select(c => c.Client)
+            .ToHashSet();
+        return new McpClientManager(
+            clients, dynamicClients, dialled, await toolsTask, await promptsTask, await skillsTask);
     }
 
     public async ValueTask DisposeAsync()
@@ -122,7 +137,7 @@ internal sealed class McpClientManager : IAsyncDisposable
                     // present the same shared secret: the machine when it registers, and this when
                     // it dials the machine back.
                     AdditionalHeaders = endpoint.Secret is { } secret
-                        ? new Dictionary<string, string> { ["Authorization"] = OutpostSecret.Header(secret) }
+                        ? new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(secret) }
                         : null
                 }),
                 new McpClientOptions

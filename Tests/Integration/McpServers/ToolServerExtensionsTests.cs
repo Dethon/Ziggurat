@@ -1,3 +1,4 @@
+using Domain.Security;
 using Mcp.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -14,7 +15,10 @@ namespace Tests.Integration.McpServers;
 // flag — the dual-role servers are genuinely both.
 public class ToolServerExtensionsTests
 {
-    private sealed record ProbeSettings(string Name);
+    private sealed record ProbeSettings(string Name) : IMcpHostSettings
+    {
+        public McpGateSettings Mcp => McpTestSecret.Gate;
+    }
 
     // The host on its own carries no error rule: a server that offers the agent nothing to call has
     // nothing to map an exception for.

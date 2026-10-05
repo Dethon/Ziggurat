@@ -1,6 +1,7 @@
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using Domain.Contracts;
+using Domain.Judgments;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Infrastructure.Clients.Browser;
@@ -123,7 +124,8 @@ internal sealed class CamoufoxBackend
             var request = new BrowseRequest(
                 SessionId: "test-init",
                 Url: "https://example.com",
-                MaxLength: 1000);
+                MaxLength: 1000)
+            { Caller = JudgmentCaller.None };
             var result = await Browser.NavigateAsync(request, cts.Token);
 
             if (result.Status == BrowseStatus.Success)
@@ -226,7 +228,8 @@ internal sealed class CamoufoxBackend
             var request = new BrowseRequest(
                 SessionId: "test-init",
                 Url: "https://example.com",
-                MaxLength: 1000);
+                MaxLength: 1000)
+            { Caller = JudgmentCaller.None };
             var result = await Browser.NavigateAsync(request, warmupCts.Token);
 
             if (result.Status == BrowseStatus.Success)

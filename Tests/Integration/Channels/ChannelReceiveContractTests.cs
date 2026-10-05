@@ -4,6 +4,7 @@ using System.Net;
 using System.Text.Json;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Domain.Security;
 using Infrastructure.Clients.Channels;
 using Mcp.Hosting;
 using McpChannelTelegram.Modules;
@@ -76,10 +77,7 @@ public class ChannelReceiveContractTests
         try
         {
             await using var client = await McpClient.CreateAsync(
-                new HttpClientTransport(new HttpClientTransportOptions
-                {
-                    Endpoint = new Uri($"http://localhost:{port}/mcp")
-                }));
+                McpTestSecret.Transport($"http://localhost:{port}/mcp"));
 
             // The clean break, pinned per server rather than in one place. Stateless = false does
             // not select a mode of the current protocol: it falls back to the legacy initialize
@@ -149,8 +147,8 @@ public class ChannelReceiveContractTests
         var app = await StartChannelServerAsync(
             port,
             services => services.ConfigureChannel(
-                new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [] }));
-        await using var connection = new McpChannelConnection("telegram");
+                new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [], Mcp = McpTestSecret.Gate }));
+        await using var connection = new McpChannelConnection("telegram", mcpSecret: McpTestSecret.Value);
         try
         {
             // Emitted before anything has ever polled: the cold-start window this policy exists for.
@@ -175,6 +173,86 @@ public class ChannelReceiveContractTests
             await app.StopAsync();
             await app.DisposeAsync();
         }
+    }
+
+    // Every channel server's /mcp is gated like any deployment server's, so the agent's connection
+    // presents the deployment secret on its first dial and on every reconnect after it, and what the
+    // server emits still arrives. Booted through the hosting library, because a bare SDK server is
+    // ungated and would stay green against a connection that sent nothing.
+    [Fact]
+    public async Task McpChannelConnection_ToAGatedChannelServer_ConnectsReconnectsAndDelivers()
+    {
+        var port = TestPort.GetAvailable();
+        var endpoint = $"http://localhost:{port}/mcp";
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.Services
+            .AddMcpHost(new GatedChannelSettings())
+            .AddChannelServer(DeliveryPolicy.Broadcast, noOutboundSurface: true);
+        var app = builder.Build();
+        app.MapMcp("/mcp");
+        await app.StartAsync();
+
+        await using var connection = new McpChannelConnection("signalr", mcpSecret: McpTestSecret.Value);
+        try
+        {
+            await connection.ConnectAsync(endpoint, CancellationToken.None);
+            await connection.ReconnectAsync(endpoint, CancellationToken.None);
+
+            var emitter = app.Services.GetRequiredService<ChannelNotificationEmitter>();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            // Broadcast discards what nobody is polling for, so it is emitted until the reconnected
+            // pump is there to take it.
+            await Eventually.Until(async ValueTask<bool> () => await emitter.EmitAsync(new ChannelMessageNotification
+            {
+                ConversationId = "conv-gated",
+                Sender = "user",
+                Content = "through the gate"
+            }), "the reconnected pump to be polling");
+
+            var received = await connection.Messages.FirstAsync(cts.Token);
+            received.Content.ShouldBe("through the gate");
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
+    // The other half: a connection that holds no secret is refused at the door rather than
+    // connecting and finding nothing to poll.
+    [Fact]
+    public async Task McpChannelConnection_WithoutTheSecret_IsRefusedByAGatedChannelServer()
+    {
+        var port = TestPort.GetAvailable();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.Services
+            .AddMcpHost(new GatedChannelSettings())
+            .AddChannelServer(DeliveryPolicy.Broadcast, noOutboundSurface: true);
+        var app = builder.Build();
+        app.MapMcp("/mcp");
+        await app.StartAsync();
+
+        await using var connection = new McpChannelConnection("signalr");
+        try
+        {
+            await Should.ThrowAsync<Exception>(
+                () => connection.ConnectAsync($"http://localhost:{port}/mcp", CancellationToken.None));
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
+    private sealed record GatedChannelSettings : IMcpHostSettings
+    {
+        public McpGateSettings Mcp => McpTestSecret.Gate;
     }
 
     [Fact]
@@ -391,7 +469,7 @@ public class ChannelReceiveContractTests
             await connection.ConnectAsync(endpoint, CancellationToken.None);
 
             await using var rival = await McpClient.CreateAsync(
-                new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }));
+                McpTestSecret.Transport(endpoint));
 
             using var contention = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             var rivalLoop = Task.Run(async () =>
@@ -442,10 +520,7 @@ public class ChannelReceiveContractTests
         try
         {
             await using var client = await McpClient.CreateAsync(
-                new HttpClientTransport(new HttpClientTransportOptions
-                {
-                    Endpoint = new Uri($"http://localhost:{port}/mcp")
-                }));
+                McpTestSecret.Transport($"http://localhost:{port}/mcp"));
 
             var held = Poll(client, SignalRSubscriberId, maxWaitMs: 10_000);
             await Task.Delay(200);

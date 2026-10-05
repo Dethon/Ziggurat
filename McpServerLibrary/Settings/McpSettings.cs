@@ -1,9 +1,14 @@
+using Domain.Security;
 using JetBrains.Annotations;
+using Mcp.Hosting;
 
 namespace McpServerLibrary.Settings;
 
-public record McpSettings
+public record McpSettings : IMcpHostSettings
 {
+    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    public McpGateSettings Mcp { get; init; } = new();
+
     public required JackettConfiguration Jackett { get; init; }
     public required QBittorrentConfiguration QBittorrent { get; init; }
     public required string DownloadLocation { get; init; }

@@ -52,7 +52,7 @@ public class HomeAssistantClientAndroidTvTests : IDisposable
 
         // The app that was given no name is no activity: the remote's own list says "" for it.
         apps.ShouldBe(["Crunchyroll", "Netflix", "Plex"]);
-        _server.LogEntries.Select(e => $"{e.RequestMessage.Method} {e.RequestMessage.Path}")
+        _server.LogEntries.Select(e => $"{e.RequestMessage!.Method} {e.RequestMessage.Path}")
             .ShouldBe(["POST /api/config/config_entries/options/flow", "DELETE /api/config/config_entries/options/flow/flow-1"]);
     }
 
@@ -71,7 +71,7 @@ public class HomeAssistantClientAndroidTvTests : IDisposable
         var apps = await _client.ListAndroidTvAppsAsync("entry-1");
 
         apps.ShouldBeEmpty();
-        _server.LogEntries.Count(e => e.RequestMessage.Method == "DELETE").ShouldBe(1);
+        _server.LogEntries.Count(e => e.RequestMessage?.Method == "DELETE").ShouldBe(1);
     }
 
     [Fact]

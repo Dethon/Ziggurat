@@ -29,7 +29,7 @@ public static class HaStatisticsActions
         Description =
             "Long-term statistics of this sensor: mean/min/max per period for a measurement, sum and "
             + "change for a total. Home Assistant compiles them hourly and keeps them for good, so they "
-            + $"reach past history.sh's retention. With no arguments, the last {DefaultDays} days by the hour.",
+            + $"reach past ./history's retention. With no arguments, the last {DefaultDays} days by the hour.",
         Fields = new Dictionary<string, HaServiceField>
         {
             ["days"] = new()

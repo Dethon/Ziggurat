@@ -47,6 +47,30 @@ public class ScenarioChecksTests
         failures.ShouldHaveSingleItem().ShouldContain("/schedules/pasta/task.json");
     }
 
+    // The turn is pinned to the scenario's instant, and so must the prompt's date be: an agent
+    // told "today is" seven weeks after the message's own timestamp put an alarm on the real
+    // date, and the red read as the model's.
+    [Fact]
+    public async Task APromptDatedOtherThanThePinnedInstant_FailsAndNamesBothDates()
+    {
+        var recording = await ScriptedTurn.RunAsync("listo", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.OnTurn(new TurnObservation("## Date\n\nToday is Sunday, 2026-10-04.", null));
+
+        var failure = ScenarioChecks.Failures(Timer(), recording).ShouldHaveSingleItem();
+
+        failure.ShouldContain("2026-10-04");
+        failure.ShouldContain("2026-08-18");
+    }
+
+    [Fact]
+    public async Task APromptDatedThePinnedInstant_Passes()
+    {
+        var recording = await ScriptedTurn.RunAsync("listo", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.OnTurn(new TurnObservation("## Date\n\nToday is Tuesday, 2026-08-18.", null));
+
+        ScenarioChecks.Failures(Timer(), recording).ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task AnEntityThatMovedAndWasNotDeclared_FailsTheScenario()
     {
@@ -458,6 +482,26 @@ public class ScenarioChecksTests
         ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
     }
 
+    // A script is more than one line, and a permission's `*` for the command means any command at
+    // all: compiled as a tool-name pattern it stopped at the first newline, so every multi-line exec
+    // read as an unnecessary call however it was permitted.
+    [Fact]
+    public async Task AMultiLineCommand_IsPermittedByAnyCommand()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            new ScriptedTurn.Step(Exec, new Dictionary<string, object?>
+            {
+                ["path"] = "/vault/Proyectos",
+                ["command"] = "printf 'a\\n' > x.txt\ncat x.txt"
+            }, "ok"),
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+
+        var scenario = Timer() with { Permitted = [new CallPermission(Exec, "/vault*")] };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task APermittedToolOnADifferentPath_Fails()
     {
@@ -753,8 +797,8 @@ public class ScenarioChecksTests
         // be permitting every action in it, including the one it exists to forbid.
         var recording = await ScriptedTurn.RunAsync(
             "listo",
-            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "media_seek.sh --help"),
-            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "media_seek.sh --seek_position 1"));
+            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "./media_seek --help"),
+            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "./media_seek --seek_position 1"));
 
         var scenario = Seeking();
 
@@ -766,8 +810,8 @@ public class ScenarioChecksTests
     {
         var recording = await ScriptedTurn.RunAsync(
             "listo",
-            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "media_seek.sh --seek_position 1"),
-            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "music_assistant.play_media.sh --media_id x"));
+            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "./media_seek --seek_position 1"),
+            ScriptedTurn.Exec("/ha/entities/media_player/altavoz", "./music_assistant.play_media --media_id x"));
 
         ScenarioChecks.Failures(Seeking(), recording)
             .ShouldHaveSingleItem().ShouldContain("play_media");
@@ -786,7 +830,7 @@ public class ScenarioChecksTests
             {
                 Label = "seek",
                 Tool = Exec,
-                Arguments = [Arg.Matches("command", @"^media_seek\.sh\b")]
+                Arguments = [Arg.Matches("command", @"^(\./)?media_seek(\s|$)")]
             }
         ],
         Permitted = [CallPermission.Manual(Exec, "/ha*")]
@@ -992,6 +1036,19 @@ public class ScenarioChecksTests
         var failures = ScenarioChecks.Failures(scenario, recording);
 
         ScenarioChecks.KindOf(scenario, recording, failures).ShouldBe(FailureKind.RunFailed);
+    }
+
+    // A prompt dated off the scenario's instant is the stack's red: the model was told two
+    // different days, and whichever it believed says nothing about any prose.
+    [Fact]
+    public async Task APromptDatedOffThePinnedInstant_IsARunFailedNotARuleIgnored()
+    {
+        var recording = await ScriptedTurn.RunAsync("listo", ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        recording.OnTurn(new TurnObservation("Today is Sunday, 2026-10-04.", null));
+
+        var failures = ScenarioChecks.Failures(Timer(), recording);
+
+        ScenarioChecks.KindOf(Timer(), recording, failures).ShouldBe(FailureKind.RunFailed);
     }
 
     [Fact]

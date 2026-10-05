@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Outposts;
 using Domain.Tools;
 
 namespace Infrastructure.Agents;
@@ -16,10 +17,10 @@ internal sealed class VirtualFileSystemRegistry : IVirtualFileSystemRegistry
     public void Mount(FileSystemMount mount, IFileSystemBackend backend) => TryMount(mount, backend);
 
     // First wins. A mount point is a name the model addresses, so two mounts claiming one is not a
-    // merge to resolve but a collision somebody has to lose — and the one already there is the one
-    // that was configured, while the challenger is a machine that named itself. Outposts are
-    // mounted after the configured filesystems for exactly this reason, so which one loses is
-    // decided by mount order rather than by whichever dial happened to finish first.
+    // merge to resolve but a collision somebody has to lose, decided by mount order rather than by
+    // whichever dial happened to finish first. An outpost publishes a machine address rather than a
+    // path in this tree, so a machine calling itself "vault" never meets the vault here: the only
+    // claims that can collide on an address are two machines that gave themselves the same name.
     //
     // False means the mount was shadowed: perfectly valid, simply not there.
     public bool TryMount(FileSystemMount mount, IFileSystemBackend backend)
@@ -39,8 +40,9 @@ internal sealed class VirtualFileSystemRegistry : IVirtualFileSystemRegistry
     {
         // "ha/setup-index.md" names a mount and forgot the slash: it can mean nothing else, and
         // refusing it with "paths start at a mount point" only bought the same call with the
-        // slash on. Anything that does not start with a mount's name is still refused below.
-        if (!virtualPath.StartsWith('/') && virtualPath.Length > 0)
+        // slash on. Anything that does not start with a mount's name is still refused below. A
+        // machine address is a whole spelling of its own and is matched as given.
+        if (!virtualPath.StartsWith('/') && virtualPath.Length > 0 && !OutpostMountPoint.Addresses(virtualPath))
         {
             virtualPath = "/" + virtualPath;
         }
@@ -62,7 +64,9 @@ internal sealed class VirtualFileSystemRegistry : IVirtualFileSystemRegistry
 
     private ToolErrorResult Missing(string virtualPath)
     {
-        var root = "/" + virtualPath.TrimStart('/').Split('/')[0];
+        var root = OutpostMountPoint.Addresses(virtualPath)
+            ? virtualPath.Split('/')[0]
+            : "/" + virtualPath.TrimStart('/').Split('/')[0];
 
         // A name this session knows something about answers with what it knows. A machine that
         // registered and did not answer is temporarily gone rather than imaginary, and that is the

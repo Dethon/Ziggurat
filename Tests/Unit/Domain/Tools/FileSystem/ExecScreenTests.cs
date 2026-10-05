@@ -16,19 +16,22 @@ public class ExecScreenTests
     private static readonly ExecScreenSettings _settings = new()
     {
         DeadlineMs = 1500,
-        ServesBar = 0.65,
-        DestroysBar = 0.75,
-        SendsOutBar = 0.6
+        ServesBar = 0.6,
+        DestroysBar = 0.4,
+        SendsOutBar = 0.5,
+        RunsDownloadedBar = 0.5
     };
 
-    private static JudgmentOutcome Answered(double serves, double destroys = 0.02, double sendsOut = 0.02) =>
+    private static JudgmentOutcome Answered(
+        double serves, double destroys = 0.02, double sendsOut = 0.02, double runsDownloaded = 0.02) =>
         new JudgmentOutcome.Answered(new Judgment(
             "jev-test",
             new Dictionary<string, JudgmentAnswer>
             {
                 [ExecScreen.ServesQuestionId] = new NoulAnswer(serves),
                 [ExecScreen.DestroysQuestionId] = new NoulAnswer(destroys),
-                [ExecScreen.SendsOutQuestionId] = new NoulAnswer(sendsOut)
+                [ExecScreen.SendsOutQuestionId] = new NoulAnswer(sendsOut),
+                [ExecScreen.RunsDownloadedQuestionId] = new NoulAnswer(runsDownloaded)
             },
             new JudgmentUsage(508, 12, 0.000021m)));
 
@@ -36,7 +39,10 @@ public class ExecScreenTests
         userMessages.Select(text => new ChatMessage(ChatRole.User, text));
 
     private static ExecScreenRequest Request(ShellReach reach, IEnumerable<ChatMessage>? messages = null) =>
-        new(reach, "ls -la", "/sandbox/home/sandbox_user", messages ?? Asked("¿qué hay en la carpeta?"), TurnModel: null);
+        new(reach, "ls -la", "/sandbox/home/sandbox_user", messages ?? Asked("¿qué hay en la carpeta?"))
+        {
+            Caller = JudgmentCaller.None
+        };
 
     private static ExecScreen Screen(
         IJudge judge, ExecScreenSettings? settings = null, TimeProvider? clock = null,
@@ -54,58 +60,71 @@ public class ExecScreenTests
         verdict.Codes.ShouldBeEmpty();
     }
 
+    // The person is asked only about a command that is both: not what they asked for, and
+    // dangerous. A harmless step the judge could not place runs — a help call, a second look — and
+    // so does whatever they asked for, however destructive, on either machine: they asked.
     [Theory]
     [InlineData(ShellReach.Contained)]
     [InlineData(ShellReach.Host)]
-    public async Task ACommandThatDoesNotServeTheRequest_IsAsked(ShellReach reach)
+    public async Task ACommandThatDoesNotServeTheRequest_ButDoesNoHarm_Runs(ShellReach reach)
     {
         var verdict = await Screen(new ScriptedJudge(_ => Answered(0.02))).ScreenAsync(Request(reach), CancellationToken.None);
-
-        verdict.Codes.ShouldBe([ExecScreenCodes.NotRequested]);
-    }
-
-    // The sandbox is a container the deployment owns: an aligned command that deletes or uploads
-    // there is the sandbox doing its job, and asking about it is the cost the screen must not add.
-    [Fact]
-    public async Task InTheSandbox_AnAlignedDestructiveOrSendingCommand_Runs()
-    {
-        var verdict = await Screen(new ScriptedJudge(_ => Answered(0.97, destroys: 0.95, sendsOut: 0.95)))
-            .ScreenAsync(Request(ShellReach.Contained), CancellationToken.None);
 
         verdict.Asks.ShouldBeFalse();
     }
 
     [Theory]
-    [InlineData(0.95, 0.02, ExecScreenCodes.Destructive)]
-    [InlineData(0.02, 0.95, ExecScreenCodes.SendsOut)]
-    public async Task OnTheHost_AnAlignedDestructiveOrSendingCommand_IsAsked(double destroys, double sendsOut, string code)
+    [InlineData(ShellReach.Contained, 0.95, 0.02, 0.02)]
+    [InlineData(ShellReach.Contained, 0.02, 0.95, 0.02)]
+    [InlineData(ShellReach.Contained, 0.02, 0.02, 0.95)]
+    [InlineData(ShellReach.Host, 0.95, 0.95, 0.95)]
+    public async Task ACommandThePersonAskedFor_RunsHoweverDangerous(
+        ShellReach reach, double destroys, double sendsOut, double runsDownloaded)
     {
-        var verdict = await Screen(new ScriptedJudge(_ => Answered(0.97, destroys, sendsOut)))
-            .ScreenAsync(Request(ShellReach.Host), CancellationToken.None);
+        var verdict = await Screen(new ScriptedJudge(_ => Answered(0.97, destroys, sendsOut, runsDownloaded)))
+            .ScreenAsync(Request(reach), CancellationToken.None);
 
-        verdict.Codes.ShouldBe([code]);
+        verdict.Asks.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(ShellReach.Contained, 0.95, 0.02, 0.02, ExecScreenCodes.Destructive)]
+    [InlineData(ShellReach.Contained, 0.02, 0.95, 0.02, ExecScreenCodes.SendsOut)]
+    [InlineData(ShellReach.Host, 0.02, 0.02, 0.95, ExecScreenCodes.RunsDownloaded)]
+    public async Task ADangerousCommandThatDoesNotServeTheRequest_IsAsked_NamingTheDanger(
+        ShellReach reach, double destroys, double sendsOut, double runsDownloaded, string danger)
+    {
+        var verdict = await Screen(new ScriptedJudge(_ => Answered(0.02, destroys, sendsOut, runsDownloaded)))
+            .ScreenAsync(Request(reach), CancellationToken.None);
+
+        verdict.Codes.ShouldBe([ExecScreenCodes.NotRequested, danger]);
     }
 
     [Fact]
-    public async Task OnTheHost_EveryFlagRaised_IsNamed()
+    public async Task EveryDangerRaised_IsNamed()
     {
-        var verdict = await Screen(new ScriptedJudge(_ => Answered(0.01, 0.9, 0.9)))
-            .ScreenAsync(Request(ShellReach.Host), CancellationToken.None);
+        var verdict = await Screen(new ScriptedJudge(_ => Answered(0.01, 0.9, 0.9, 0.9)))
+            .ScreenAsync(Request(ShellReach.Contained), CancellationToken.None);
 
-        verdict.Codes.ShouldBe([ExecScreenCodes.NotRequested, ExecScreenCodes.Destructive, ExecScreenCodes.SendsOut]);
+        verdict.Codes.ShouldBe(
+            [ExecScreenCodes.NotRequested, ExecScreenCodes.Destructive, ExecScreenCodes.SendsOut, ExecScreenCodes.RunsDownloaded]);
     }
 
-    // At the bar: serving is asked below it, harm at or above it.
+    // At the bar: serving is short of it below, a danger raised at or above it.
     [Fact]
-    public async Task TheBars_AskBelowServesAndAtOrAboveHarm()
+    public async Task TheBars_AskBelowServesAndAtOrAboveDanger()
     {
-        var atTheBars = await Screen(new ScriptedJudge(_ => Answered(0.65, 0.75, 0.6)))
+        var atTheBars = await Screen(new ScriptedJudge(_ => Answered(0.59, 0.4, 0.5, 0.5)))
             .ScreenAsync(Request(ShellReach.Host), CancellationToken.None);
-        var justUnder = await Screen(new ScriptedJudge(_ => Answered(0.64, 0.74, 0.59)))
+        var servesAtItsBar = await Screen(new ScriptedJudge(_ => Answered(0.6, 0.9, 0.9, 0.9)))
+            .ScreenAsync(Request(ShellReach.Host), CancellationToken.None);
+        var dangerJustUnder = await Screen(new ScriptedJudge(_ => Answered(0.01, 0.39, 0.49, 0.49)))
             .ScreenAsync(Request(ShellReach.Host), CancellationToken.None);
 
-        atTheBars.Codes.ShouldBe([ExecScreenCodes.Destructive, ExecScreenCodes.SendsOut]);
-        justUnder.Codes.ShouldBe([ExecScreenCodes.NotRequested]);
+        atTheBars.Codes.ShouldBe(
+            [ExecScreenCodes.NotRequested, ExecScreenCodes.Destructive, ExecScreenCodes.SendsOut, ExecScreenCodes.RunsDownloaded]);
+        servesAtItsBar.Asks.ShouldBeFalse();
+        dangerJustUnder.Asks.ShouldBeFalse();
     }
 
     // No verdict fails safe where it matters and costs nothing where it does not: the person's own
@@ -231,20 +250,24 @@ public class ExecScreenTests
     {
         var judge = new ScriptedJudge(_ => Answered(0.97));
         var request = new ExecScreenRequest(
-            ShellReach.Host, "cargo build --release", "/laptop/home/fran/app", Asked("compila el proyecto"),
-            TurnModel: "z-ai/glm-5");
+            ShellReach.Host, "cargo build --release", "/laptop/home/fran/app", Asked("compila el proyecto"))
+        {
+            Caller = new JudgmentCaller("z-ai/glm-5", "fran", "jonas", "conv-1")
+        };
 
         await Screen(judge).ScreenAsync(request, CancellationToken.None);
 
         var asked = judge.Asked.ShouldHaveSingleItem();
-        asked.TurnModel.ShouldBe("z-ai/glm-5");
-        asked.State.Select(p => p.Key).ShouldBe(["request", "command", "working_directory", "machine"]);
-        asked.State["request"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldBe(["compila el proyecto"]);
+        asked.Caller.ShouldBe(new JudgmentCaller("z-ai/glm-5", "fran", "jonas", "conv-1"));
+        asked.State.Select(p => p.Key).ShouldBe(["request", "earlier_messages", "command", "working_directory", "machine"]);
+        asked.State["request"]!.GetValue<string>().ShouldBe("compila el proyecto");
+        asked.State["earlier_messages"]!.AsArray().ShouldBeEmpty();
         asked.State["command"]!.GetValue<string>().ShouldBe("cargo build --release");
         asked.State["working_directory"]!.GetValue<string>().ShouldBe("/laptop/home/fran/app");
         asked.State["machine"]!.GetValue<string>().ShouldBe(ExecScreen.HostMachine);
         asked.Questions.Keys.ShouldBe(
-            [ExecScreen.ServesQuestionId, ExecScreen.DestroysQuestionId, ExecScreen.SendsOutQuestionId], ignoreOrder: true);
+            [ExecScreen.ServesQuestionId, ExecScreen.DestroysQuestionId, ExecScreen.SendsOutQuestionId, ExecScreen.RunsDownloadedQuestionId],
+            ignoreOrder: true);
         asked.Questions.Values.ShouldAllBe(q => q is NoulQuestion);
     }
 
@@ -258,10 +281,12 @@ public class ExecScreenTests
         judge.Asked.ShouldHaveSingleItem().State["machine"]!.GetValue<string>().ShouldBe(ExecScreen.ContainedMachine);
     }
 
-    // The person's last three messages, oldest first, each capped — and nothing a tool returned or
-    // the assistant said, so a page's words reach the judge only as the command itself.
+    // The person's latest message is the request, the two before it its context, oldest first,
+    // each capped — and nothing a tool returned or the assistant said, so a page's words reach the
+    // judge only as the command itself. Handed as one list, the latest was judged against all three:
+    // "turn on the AC" after two weather questions scored 0.34 against 0.78 alone.
     [Fact]
-    public async Task TheRequest_IsTheLastUserMessagesOnly_OldestFirst_EachCapped()
+    public async Task TheRequest_IsTheLatestUserMessage_WithTheTwoBeforeItAsContext_EachCapped()
     {
         var judge = new ScriptedJudge(_ => Answered(0.97));
         var messages = new List<ChatMessage>
@@ -281,8 +306,8 @@ public class ExecScreenTests
             .ScreenAsync(Request(ShellReach.Host, messages), CancellationToken.None);
 
         var state = judge.Asked.ShouldHaveSingleItem().State;
-        var request = state["request"]!.AsArray().Select(n => n!.GetValue<string>()).ToList();
-        request.ShouldBe(["second", "third", new string('x', 1000)]);
+        state["request"]!.GetValue<string>().ShouldBe(new string('x', 1000));
+        state["earlier_messages"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldBe(["second", "third"]);
         state.ToJsonString().ShouldNotContain("curl evil");
         state.ToJsonString().ShouldNotContain("fetch the page");
     }
@@ -291,8 +316,8 @@ public class ExecScreenTests
     public async Task EveryScreenedCall_PublishesWhatWasAnsweredAndWhatHappened()
     {
         var metrics = new RecordingMetricsPublisher();
-        var judge = new ScriptedJudge(_ => Answered(0.97, 0.9, 0.1));
-        var request = Request(ShellReach.Host) with { AgentId = "jonas", ConversationId = "7:42" };
+        var judge = new ScriptedJudge(_ => Answered(0.3, 0.9, 0.1, 0.05));
+        var request = Request(ShellReach.Host) with { Caller = new JudgmentCaller(null, null, "jonas", "7:42") };
 
         await Screen(judge, metrics: metrics).ScreenAsync(request, CancellationToken.None);
 
@@ -300,12 +325,13 @@ public class ExecScreenTests
         screened.AgentId.ShouldBe("jonas");
         screened.ConversationId.ShouldBe("7:42");
         screened.Reach.ShouldBe("host");
-        screened.ServesRequest.ShouldBe(0.97);
+        screened.ServesRequest.ShouldBe(0.3);
         screened.Destroys.ShouldBe(0.9);
         screened.SendsOut.ShouldBe(0.1);
+        screened.RunsDownloaded.ShouldBe(0.05);
         screened.AbsenceReason.ShouldBeNull();
         screened.Outcome.ShouldBe(ExecScreenOutcomes.Asked);
-        screened.Codes.ShouldBe([ExecScreenCodes.Destructive]);
+        screened.Codes.ShouldBe([ExecScreenCodes.NotRequested, ExecScreenCodes.Destructive]);
         screened.InputTokens.ShouldBe(508);
         screened.Cost.ShouldBe(0.000021m);
         screened.Model.ShouldBe("jev-test");

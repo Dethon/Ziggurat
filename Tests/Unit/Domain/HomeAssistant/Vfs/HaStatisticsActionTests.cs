@@ -11,7 +11,7 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 
 // Long-term statistics outlive the recorder's retention: hourly mean/min/max (or sum and change for
 // a total) that Home Assistant compiles for every sensor with a state_class and keeps for good.
-// They are WebSocket-only, so the mount serves `statistics.sh` — in the directories of exactly the
+// They are WebSocket-only, so the mount serves `statistics` — in the directories of exactly the
 // entities that have them.
 public class HaStatisticsActionTests
 {
@@ -61,11 +61,11 @@ public class HaStatisticsActionTests
     {
         var fs = Build(out _);
 
-        (await Glob(fs, TempDir)).ShouldContain("statistics.sh");
-        (await Glob(fs, "entities/sensor/energy")).ShouldContain("statistics.sh");
-        (await Glob(fs, "entities/sensor/glucose")).ShouldNotContain("statistics.sh");
-        (await Glob(fs, "entities/light/kitchen")).ShouldNotContain("statistics.sh");
-        (await Glob(fs, "entities/sensor/glucose")).ShouldContain("history.sh");
+        (await Glob(fs, TempDir)).ShouldContain("statistics");
+        (await Glob(fs, "entities/sensor/energy")).ShouldContain("statistics");
+        (await Glob(fs, "entities/sensor/glucose")).ShouldNotContain("statistics");
+        (await Glob(fs, "entities/light/kitchen")).ShouldNotContain("statistics");
+        (await Glob(fs, "entities/sensor/glucose")).ShouldContain("history");
     }
 
     [Fact]
@@ -73,10 +73,10 @@ public class HaStatisticsActionTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, "statistics.sh", "entities/sensor/glucose");
+        var exec = await Exec(fs, "./statistics", "entities/sensor/glucose");
 
         exec.ExitCode.ShouldBe(127);
-        exec.Stderr.ShouldContain("history.sh");
+        exec.Stderr.ShouldContain("history");
         client.LastStatisticsWindow.ShouldBeNull();
     }
 
@@ -85,7 +85,7 @@ public class HaStatisticsActionTests
     {
         var fs = Build(out _);
 
-        var help = await Exec(fs, "statistics.sh --help");
+        var help = await Exec(fs, "./statistics --help");
 
         help.ExitCode.ShouldBe(0);
         help.Stdout.ShouldContain("--days");
@@ -105,7 +105,7 @@ public class HaStatisticsActionTests
             Row("2026-09-04T13:00:00+00:00", mean: 22.25, min: 22, max: 23)
         ]);
 
-        var exec = await Exec(fs, "statistics.sh");
+        var exec = await Exec(fs, "./statistics");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         client.LastStatisticsWindow.ShouldBe(("sensor.temperature", "2026-08-28T16:00:00+00:00", "2026-09-04T16:00:00+00:00", "hour"));
@@ -131,7 +131,7 @@ public class HaStatisticsActionTests
         var fs = Build(out var client);
         client.Statistics.Add(Row("2026-09-04T12:00:00+00:00", sum: 1200.5, change: 0.7, state: 1200.5));
 
-        var exec = await Exec(fs, "statistics.sh", "entities/sensor/energy");
+        var exec = await Exec(fs, "./statistics", "entities/sensor/energy");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var row = JsonNode.Parse(exec.Stdout)!["rows"]![0]!.AsObject();
@@ -146,7 +146,7 @@ public class HaStatisticsActionTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, "statistics.sh --days 90 --period day");
+        var exec = await Exec(fs, "./statistics --days 90 --period day");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         client.LastStatisticsWindow.ShouldBe(("sensor.temperature", "2026-06-06T16:00:00+00:00", "2026-09-04T16:00:00+00:00", "day"));
@@ -157,7 +157,7 @@ public class HaStatisticsActionTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, """statistics.sh --start_date_time "2026-08-01 00:00:00" --end_date_time "2026-09-01 00:00:00" --period week""");
+        var exec = await Exec(fs, """./statistics --start_date_time "2026-08-01 00:00:00" --end_date_time "2026-09-01 00:00:00" --period week""");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         client.LastStatisticsWindow.ShouldBe(("sensor.temperature", "2026-08-01 00:00:00", "2026-09-01 00:00:00", "week"));
@@ -168,7 +168,7 @@ public class HaStatisticsActionTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, """statistics.sh --days 3 --start_date_time "2026-08-01 00:00:00" """);
+        var exec = await Exec(fs, """./statistics --days 3 --start_date_time "2026-08-01 00:00:00" """);
 
         exec.ExitCode.ShouldBe(2);
         exec.Stderr.ShouldContain("--days");
@@ -180,7 +180,7 @@ public class HaStatisticsActionTests
     {
         var fs = Build(out var client);
 
-        var exec = await Exec(fs, "statistics.sh --period fortnight");
+        var exec = await Exec(fs, "./statistics --period fortnight");
 
         exec.ExitCode.ShouldBe(2);
         exec.Stderr.ShouldContain("hour");
@@ -193,7 +193,7 @@ public class HaStatisticsActionTests
         var fs = Build(out var client);
         client.Statistics.AddRange(Enumerable.Range(0, 12).Select(i => Row($"2026-09-04T{i:00}:00:00+00:00", mean: i)));
 
-        var exec = await Exec(fs, "statistics.sh --limit 4");
+        var exec = await Exec(fs, "./statistics --limit 4");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
@@ -210,7 +210,7 @@ public class HaStatisticsActionTests
     {
         var fs = Build(out _);
 
-        var exec = await Exec(fs, "statistics.sh");
+        var exec = await Exec(fs, "./statistics");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var payload = JsonNode.Parse(exec.Stdout)!.AsObject();
@@ -224,7 +224,7 @@ public class HaStatisticsActionTests
         var fs = Build(out var client);
         client.StatisticsFailure = new HomeAssistantException("Home Assistant refused the command (invalid_start_time): Invalid start_time");
 
-        var exec = await Exec(fs, "statistics.sh --start_date_time nonsense");
+        var exec = await Exec(fs, "./statistics --start_date_time nonsense");
 
         exec.ExitCode.ShouldBe(1);
         exec.Stderr.ShouldContain("Invalid start_time");
@@ -238,7 +238,7 @@ public class HaStatisticsActionTests
         client.TimeZone = "Europe/Madrid";
         client.Statistics.Add(Row("2026-09-04T12:00:00+00:00", mean: 21.5, min: 21, max: 22));
 
-        var exec = await Exec(fs, "statistics.sh");
+        var exec = await Exec(fs, "./statistics");
 
         exec.ExitCode.ShouldBe(0, exec.Stderr);
         var payload = JsonNode.Parse(exec.Stdout)!.AsObject();

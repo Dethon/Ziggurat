@@ -455,7 +455,7 @@ public class MetricsCollectorServiceTests
 
         _db.Invocations
             .Count(i => i.Method.Name == "StringSetAsync"
-                && i.Arguments[0].ToString() == "metrics:health:agent-1")
+                && i.Arguments[0]?.ToString() == "metrics:health:agent-1")
             .ShouldBe(1);
 
         _clientProxy.Verify(c => c.SendCoreAsync(
@@ -477,9 +477,9 @@ public class MetricsCollectorServiceTests
 
         _db.Invocations
             .Count(i => i.Method.Name == "SortedSetAddAsync"
-                && i.Arguments[0].ToString() == "metrics:health:seen"
-                && i.Arguments[1].ToString() == "agent-1"
-                && Math.Abs((double)i.Arguments[2] - _fixedTimestamp.ToUnixTimeSeconds()) < 1)
+                && i.Arguments[0]?.ToString() == "metrics:health:seen"
+                && i.Arguments[1]?.ToString() == "agent-1"
+                && Math.Abs((double)i.Arguments[2]! - _fixedTimestamp.ToUnixTimeSeconds()) < 1)
             .ShouldBe(1);
 
         _db.Invocations.ShouldNotContain(i => i.Method.Name == "SetAddAsync");
@@ -504,9 +504,9 @@ public class MetricsCollectorServiceTests
         var cutoff = now.Subtract(TimeSpan.FromDays(7)).ToUnixTimeSeconds();
         _db.Invocations
             .Count(i => i.Method.Name == "SortedSetRemoveRangeByScoreAsync"
-                && i.Arguments[0].ToString() == "metrics:health:seen"
-                && double.IsNegativeInfinity((double)i.Arguments[1])
-                && Math.Abs((double)i.Arguments[2] - cutoff) < 1)
+                && i.Arguments[0]?.ToString() == "metrics:health:seen"
+                && double.IsNegativeInfinity((double)i.Arguments[1]!)
+                && Math.Abs((double)i.Arguments[2]! - cutoff) < 1)
             .ShouldBe(1);
 
         _db.Invocations.ShouldNotContain(i => i.Method.Name == "SetMembersAsync");
@@ -519,7 +519,7 @@ public class MetricsCollectorServiceTests
 
         _db.Invocations
             .Count(i => i.Method.Name == "KeyDeleteAsync"
-                && i.Arguments[0].ToString() == "metrics:health:known")
+                && i.Arguments[0]?.ToString() == "metrics:health:known")
             .ShouldBe(1);
     }
 
@@ -538,8 +538,8 @@ public class MetricsCollectorServiceTests
 
         _db.Invocations
             .Count(i => i.Method.Name == "ListLeftPushAsync"
-                && i.Arguments[0].ToString() == "metrics:errors:recent"
-                && i.Arguments[1].ToString()!.Contains("\"errorType\":\"NullRef\""))
+                && i.Arguments[0]?.ToString() == "metrics:errors:recent"
+                && i.Arguments[1]!.ToString()!.Contains("\"errorType\":\"NullRef\""))
             .ShouldBe(1);
 
         _db.Verify(d => d.ListTrimAsync(

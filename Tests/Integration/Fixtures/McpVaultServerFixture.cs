@@ -28,7 +28,8 @@ public class McpVaultServerFixture : IAsyncLifetime
         var settings = new McpSettings
         {
             VaultPath = VaultPath,
-            AllowedExtensions = [".md", ".txt", ".json"]
+            AllowedExtensions = [".md", ".txt", ".json"],
+            Mcp = McpTestSecret.Gate
         };
 
         var builder = WebApplication.CreateBuilder();

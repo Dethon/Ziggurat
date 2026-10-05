@@ -54,7 +54,7 @@ public sealed class SkillPreloader(
         using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(settings.DeadlineMs), timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
 
-        var outcome = await judge.JudgeAsync(Ask(request.Text, candidates, request.ConfigPatchModel), linked.Token);
+        var outcome = await judge.JudgeAsync(Ask(request, candidates), linked.Token);
         var latency = timeProvider.GetElapsedTime(started);
 
         // The turn being torn down is not a judgment that missed. The judge reads any cancellation
@@ -152,8 +152,8 @@ public sealed class SkillPreloader(
 
     public static SkillPreloadEvent ToEvent(SkillPreloadRequest request, SkillPreload preload) => new()
     {
-        AgentId = request.AgentId,
-        ConversationId = request.ConversationId,
+        AgentId = request.Caller.AgentId,
+        ConversationId = request.Caller.ConversationId,
         Channel = request.ChannelId,
         Outcome = WireOutcome(preload.Outcome),
         Skills = [.. preload.Skills.Select(s => s.Name)],
@@ -178,7 +178,7 @@ public sealed class SkillPreloader(
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "An outcome with no wire spelling")
     };
 
-    private static JudgmentRequest Ask(string text, IReadOnlyList<PromptSkill> candidates, string? turnModel)
+    private static JudgmentRequest Ask(SkillPreloadRequest request, IReadOnlyList<PromptSkill> candidates)
     {
         var criteria = candidates
             .Select(s => KeyValuePair.Create(s.Name, s.Description))
@@ -192,7 +192,10 @@ public sealed class SkillPreloader(
                 ChoiceQuestionId, new ChoiceQuestion(ChoiceInstructions, criteria)))
             .ToDictionary(StringComparer.Ordinal);
 
-        return new JudgmentRequest(new JsonObject { ["request"] = text }, questions, turnModel);
+        return new JudgmentRequest(
+            new JsonObject { ["request"] = request.Text },
+            questions,
+            request.Caller);
     }
 
     private SkillPreload Decide(Judgment judgment, IReadOnlyList<PromptSkill> candidates, TimeSpan latency)

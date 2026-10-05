@@ -1,8 +1,10 @@
 using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Security;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
+using Domain.Tools.FileSystem.Bridge;
 using Infrastructure.Judgments;
 using JetBrains.Annotations;
 
@@ -24,10 +26,16 @@ public record AgentSettings
     public ReadImageConfiguration ReadImages { get; init; } = new();
     public RetentionSettings Retention { get; init; } = new();
     public OutpostConfiguration Outposts { get; init; } = new();
+    public AgentApiConfiguration AgentApi { get; init; } = new();
+
+    // The deployment secret every configured MCP endpoint and channel connection presents, bound
+    // under the same name the servers bind it by (MCP__SHAREDSECRET), so one line reaches both ends.
+    public McpGateSettings Mcp { get; init; } = new();
     public LemonadeChatConfiguration LemonadeChat { get; init; } = new();
     public TypeSafeOptions TypeSafe { get; init; } = new();
     public SkillPreloadSettings SkillPreload { get; init; } = new();
     public ExecScreenSettings ExecScreen { get; init; } = new();
+    public VfsBridgeSettings VfsBridge { get; init; } = new();
 }
 
 // The Lemonade chat host: somebody's own box on the local network, outside the compose stack, and
@@ -45,6 +53,14 @@ public record OutpostConfiguration
     // arrives as an environment variable rather than as configuration or a flag. Empty means no
     // machine may attach: an unset secret refuses every registration rather than accepting any,
     // because a deployment that forgot to set it must not be one anyone on the network can join.
+    public string SharedSecret { get; [UsedImplicitly] init; } = "";
+}
+
+// The custom-agent registration API's gate. A secret, so it arrives as an environment variable
+// and nowhere else; empty refuses every call, because a deployment that forgot to set it must not
+// be one anyone reaching the public proxy can register agents on.
+public record AgentApiConfiguration
+{
     public string SharedSecret { get; [UsedImplicitly] init; } = "";
 }
 

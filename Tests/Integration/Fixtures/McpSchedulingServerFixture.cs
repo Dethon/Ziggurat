@@ -29,7 +29,8 @@ public class McpSchedulingServerFixture : IAsyncLifetime
         {
             RedisConnectionString = _redis.ConnectionString,
             DispatchIntervalSeconds = 3600,
-            Delivery = new DeliverySettings { DefaultDeliverTo = ["signalr"] }
+            Delivery = new DeliverySettings { DefaultDeliverTo = ["signalr"] },
+            Mcp = McpTestSecret.Gate
         };
 
         var builder = WebApplication.CreateBuilder();

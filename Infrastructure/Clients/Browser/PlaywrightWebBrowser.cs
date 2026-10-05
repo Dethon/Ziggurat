@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
+using Domain.Judgments;
 using Infrastructure.HtmlProcessing;
 using Infrastructure.Metrics;
 using Microsoft.Playwright;
@@ -37,6 +38,11 @@ public class PlaywrightWebBrowser(
     private const int DefaultOperationTimeoutMs = 15_000;
     private const int ConnectionRetryAttempts = 3;
     private const int ConnectionRetryDelayMs = 2_000;
+
+    // How long a click that changed nothing it can see waits for a popup it may have opened. The
+    // browser reports one only when the new page says it is ready: tens of milliseconds usually,
+    // past a second on a cold one.
+    private static readonly TimeSpan _popupGrace = TimeSpan.FromMilliseconds(1500);
 
     public async Task<BrowseResult> NavigateAsync(BrowseRequest request, CancellationToken ct = default)
     {
@@ -228,7 +234,7 @@ public class PlaywrightWebBrowser(
 
         // One event per overlay the dismisser detected, whatever became of it; a page with no
         // overlay publishes nothing, so the count is of walls and not of browses.
-        var overlays = await _modalDismisser.DismissAsync(page, request.TurnModel, ct);
+        var overlays = await _modalDismisser.DismissAsync(page, request.Caller, ct);
         foreach (var overlay in overlays)
         {
             _metricsPublisher.Publish(overlay.ToEvent());
@@ -296,7 +302,8 @@ public class PlaywrightWebBrowser(
                 async ctx =>
                 {
                     var html = await ctx.Page.ContentAsync();
-                    var request = new BrowseRequest(SessionId: sessionId, Url: ctx.UrlBefore);
+                    // Only the page's content is processed here; nothing is judged, so nobody is asked.
+                    var request = new BrowseRequest(SessionId: sessionId, Url: ctx.UrlBefore) { Caller = JudgmentCaller.None };
                     var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
 
                     return new BrowseResult(
@@ -500,6 +507,10 @@ public class PlaywrightWebBrowser(
             // data-ref attributes that the locator depends on
             var before = await _snapshotService.CaptureAsync(page, null, request.SessionId, preserveRefs: true);
             var beforeLines = SnapshotLinesForDiff(before.Snapshot);
+            var targetSelector = $"[data-ref='{request.Ref}']";
+            var nearbyBefore = request.Action == WebActionType.Click
+                ? await GetNearbyHtmlAsync(page, targetSelector)
+                : null;
 
             switch (request.Action)
             {
@@ -560,6 +571,15 @@ public class PlaywrightWebBrowser(
             else
             {
                 await SmartWaitAsync(page, request, ct);
+
+                // A click that opened a popup looks, from its own page, like a click that did
+                // nothing at all.
+                if (nearbyBefore is not null
+                    && page.Url == ctx.UrlBefore
+                    && await GetNearbyHtmlAsync(page, targetSelector) == nearbyBefore)
+                {
+                    await ctx.WaitForPopupAsync(_popupGrace);
+                }
             }
 
             return new ElementActOutcome(null, beforeLines);

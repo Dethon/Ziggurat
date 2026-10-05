@@ -57,17 +57,18 @@ public class FileSystemToolFeatureTests
     {
         var registry = new VirtualFileSystemRegistry();
         registry.Mount(new FileSystemMount("sandbox", "/sandbox", "s") { ShellReach = ShellReach.Contained }, Mock.Of<IFileSystemBackend>());
-        registry.Mount(new FileSystemMount("laptop", "/laptop", "l") { ShellReach = ShellReach.Host }, Mock.Of<IFileSystemBackend>());
+        registry.Mount(new FileSystemMount("laptop", "outpost:laptop", "l") { ShellReach = ShellReach.Host }, Mock.Of<IFileSystemBackend>());
         registry.Mount(new FileSystemMount("ha", "/ha", "h"), Mock.Of<IFileSystemBackend>());
         var config = new FeatureConfig(EnabledTools: new HashSet<string>(["exec", "read"], StringComparer.OrdinalIgnoreCase));
 
         var tools = new FileSystemToolFeature(registry).GetTools(config).ToList();
 
         var reach = tools.Single(t => t.Name == "domain__filesystem__exec").GetService<ExecReach>().ShouldNotBeNull();
-        reach.Of("/sandbox/home/sandbox_user").ShouldBe(ShellReach.Contained);
-        reach.Of("/Laptop").ShouldBe(ShellReach.Host);
-        reach.Of("/ha").ShouldBeNull();
-        reach.Of("/nowhere").ShouldBeNull();
+        reach.Of("/sandbox/home/sandbox_user", "ls").ShouldBe(ShellReach.Contained);
+        reach.Of("OUTPOST:Laptop/home/someone", "ls").ShouldBe(ShellReach.Host);
+        reach.Of("/laptop", "ls").ShouldBeNull();
+        reach.Of("/ha", "ls").ShouldBeNull();
+        reach.Of("/nowhere", "ls").ShouldBeNull();
         tools.Single(t => t.Name == "domain__filesystem__file_read").GetService<ExecReach>().ShouldBeNull();
     }
 
@@ -139,6 +140,36 @@ public class FileSystemToolFeatureTests
         feature.Prompt.ShouldNotBeNull();
         feature.Prompt.ShouldNotContain("vault");
         feature.Prompt.ShouldNotContain("sandbox");
+    }
+
+    // An outpost is somebody's own computer, not a folder of the agent's: listed beside the vault it
+    // read as one more branch of the tree, and a person's laptop is the last place a guess about
+    // where a file lives should land. So the machines get a heading of their own that says what they
+    // are, and the tree's list holds only the tree.
+    [Fact]
+    public void Prompt_PresentsOutpostsAsSeparateMachines()
+    {
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.GetMounts()).Returns([
+            new FileSystemMount("notes", "/notes", "Notes"),
+            new FileSystemMount("laptop", "outpost:laptop", "A laptop") { Capabilities = ["file_read", "exec"] }
+        ]);
+
+        var prompt = new FileSystemToolFeature(registry.Object).Prompt.ShouldNotBeNull();
+
+        var machines = prompt.IndexOf("### Other machines", StringComparison.Ordinal);
+        machines.ShouldBeGreaterThan(prompt.IndexOf("- `/notes` — Notes", StringComparison.Ordinal));
+        prompt.IndexOf("- `outpost:laptop` — A laptop", StringComparison.Ordinal).ShouldBeGreaterThan(machines);
+        prompt.ShouldContain("separate computer");
+        prompt.ShouldContain("`outpost:<NAME>/");
+        prompt.ShouldContain("operations: domain__filesystem__file_read, domain__filesystem__exec");
+    }
+
+    [Fact]
+    public void Prompt_WithNoOutposts_SaysNothingAboutMachines()
+    {
+        _feature.Prompt!.ShouldNotContain("outpost");
+        _feature.Prompt!.ShouldNotContain("Other machines");
     }
 
     [Fact]

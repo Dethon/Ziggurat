@@ -75,7 +75,7 @@ public static class SchedulingSkill
         - **Change** — `domain__filesystem__text_edit` the `schedule.json` to adjust the prompt, timing, or delivery.
         - **Reassign / rename** — `domain__filesystem__move` a schedule directory to a different `<agentId>` or `<scheduleId>`.
         - **Remove** — `domain__filesystem__remove` the schedule directory.
-        - **Run now** — `domain__filesystem__exec` of `run_now.sh` on a schedule directory to fire it immediately without waiting for its next scheduled time.
+        - **Run now** — `domain__filesystem__exec` of `./run_now` on a schedule directory to fire it immediately without waiting for its next scheduled time. Inside a sandbox command the same action runs by its path, `/schedules/<agentId>/<scheduleId>/run_now`, from any script.
         """;
 
     public static SkillText For(string zoneId) => new(Name, Description, Body(zoneId));

@@ -2,7 +2,7 @@ using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
 
-// The out-of-process "stop ringing" surface: the timers server's dismiss.sh POSTs here so the hub
+// The out-of-process "stop ringing" surface: the timers server's ./dismiss POSTs here so the hub
 // cancels the live alert CancellationTokenSources (which only exist in this process).
 public static class DismissEndpoint
 {

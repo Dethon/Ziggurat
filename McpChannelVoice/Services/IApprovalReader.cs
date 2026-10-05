@@ -1,4 +1,5 @@
 using Domain.DTOs.Metrics;
+using Domain.Judgments;
 
 namespace McpChannelVoice.Services;
 
@@ -6,10 +7,10 @@ namespace McpChannelVoice.Services;
 // the transcript; what stands behind it — a judge, a word list, both — is the reader's business.
 public interface IApprovalReader
 {
-    // turnModel is the model the turn that asked for the approval was addressed to, from the
-    // call's `_meta`: a reader that asks a hosted judge hands it on, and the judge's client sends
-    // nothing for the local box.
-    Task<ApprovalReading> ReadAsync(string prompt, string answer, string? turnModel, CancellationToken ct);
+    // caller is the turn that asked for the approval — its model and who asked — from the call's
+    // `_meta`: a reader that asks a hosted judge hands it on, and the judge's client sends nothing
+    // for the local box and bills the rest to whoever asked.
+    Task<ApprovalReading> ReadAsync(string prompt, string answer, JudgmentCaller caller, CancellationToken ct);
 }
 
 public sealed record ApprovalReading(

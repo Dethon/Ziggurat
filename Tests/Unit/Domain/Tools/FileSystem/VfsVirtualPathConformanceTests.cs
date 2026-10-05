@@ -5,7 +5,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
-using Moq;
+using Infrastructure.Agents;
 using Shouldly;
 
 namespace Tests.Unit.Domain.Tools.FileSystem;
@@ -21,8 +21,12 @@ namespace Tests.Unit.Domain.Tools.FileSystem;
 // compile past the first run.
 public class VfsVirtualPathConformanceTests
 {
-    private const string Mount = "/mnt";
     private const string Elsewhere = "/elsewhere";
+
+    // Where the hostile backend is mounted: a branch of the one tree, and a separate machine. The
+    // invariant is the same at both, and resolving each is the registry's own job rather than this
+    // test's, so the real one answers.
+    public static readonly IReadOnlyList<string> Mounts = ["/mnt", "outpost:mnt"];
 
     // The three spellings a backend really answers in. A disk root reports the container-absolute
     // path; the virtual filesystems disagree with each other about the leading slash. Every tool
@@ -49,28 +53,24 @@ public class VfsVirtualPathConformanceTests
 
     private sealed record Exemption(string Field, IReadOnlyList<string> ToolKeys, string Reason);
 
-    public static TheoryData<string, string> EveryToolInEverySpelling()
-    {
-        var data = new TheoryData<string, string>();
-        foreach (var key in ToolKeys)
-        {
-            foreach (var spelling in Spellings.Keys)
+    public static TheoryData<string, string, string> EveryToolInEverySpelling() =>
+        ToolKeys
+            .SelectMany(key => Spellings.Keys.SelectMany(spelling => Mounts.Select(mount => (key, spelling, mount))))
+            .Aggregate(new TheoryData<string, string, string>(), (data, c) =>
             {
-                data.Add(key, spelling);
-            }
-        }
-
-        return data;
-    }
+                data.Add(c.key, c.spelling, c.mount);
+                return data;
+            });
 
     private static IEnumerable<string> ToolKeys =>
         FileSystemOperations.All.Where(o => o.ToolKey is not null).Select(o => o.ToolKey!);
 
     [Theory]
     [MemberData(nameof(EveryToolInEverySpelling))]
-    public async Task EveryToolAnswersInVirtualPaths_WhateverItsBackendSpellsThemAs(string toolKey, string spelling)
+    public async Task EveryToolAnswersInVirtualPaths_WhateverItsBackendSpellsThemAs(
+        string toolKey, string spelling, string mount)
     {
-        var response = await Invoke(toolKey, Spellings[spelling]);
+        var response = await Invoke(toolKey, Spellings[spelling], mount);
 
         // A tool that failed would pass the path check by having no paths at all.
         response["ok"].ShouldBeNull($"{toolKey} answered an error envelope: {response.ToJsonString()}");
@@ -80,30 +80,34 @@ public class VfsVirtualPathConformanceTests
 
         var leaked = strings
             .Where(s => !IsExempt(toolKey, s.Field))
-            .Where(s => !s.Value.StartsWith(Mount + "/", StringComparison.Ordinal)
+            .Where(s => !s.Value.StartsWith(mount + "/", StringComparison.Ordinal)
                 && !s.Value.StartsWith(Elsewhere + "/", StringComparison.Ordinal))
             .ToList();
 
         leaked.ShouldBeEmpty(
-            $"{toolKey} answered in backend coordinates ({spelling}): "
+            $"{toolKey} answered in backend coordinates ({spelling}, at {mount}): "
             + string.Join(", ", leaked.Select(s => $"{s.Field}='{s.Value}'")));
     }
 
-    public static TheoryData<string> EverySpelling() => new(Spellings.Keys);
+    public static TheoryData<string, string> EverySpellingAtEveryMount() =>
+        Spellings.Keys
+            .SelectMany(spelling => Mounts.Select(mount => (spelling, mount)))
+            .Aggregate(new TheoryData<string, string>(), (data, c) =>
+            {
+                data.Add(c.spelling, c.mount);
+                return data;
+            });
 
     // The image envelope is a second response shape for the one read tool, and it carries a path of
     // its own. Driven separately because the tool set above comes from the operation list, which has
     // a single entry for the read whichever kind of file it turns out to be about.
     [Theory]
-    [MemberData(nameof(EverySpelling))]
-    public async Task TheImageEnvelopeAnswersInVirtualPaths_WhateverItsBackendSpellsThemAs(string spelling)
+    [MemberData(nameof(EverySpellingAtEveryMount))]
+    public async Task TheImageEnvelopeAnswersInVirtualPaths_WhateverItsBackendSpellsThemAs(
+        string spelling, string mount)
     {
-        var backend = new HostileBackend(Spellings[spelling]);
-        var registry = new Mock<IVirtualFileSystemRegistry>();
-        registry.Setup(r => r.Resolve(It.IsAny<string>()))
-            .Returns<string>(p => Resolved(backend, p[(Mount.Length + 1)..], Mount));
-
-        var response = await new VfsFileReadTool(registry.Object).RunAsync($"{Mount}/docs/shot.png");
+        var response = await new VfsFileReadTool(Registry(Spellings[spelling], mount))
+            .RunAsync($"{mount}/docs/shot.png");
 
         // A media type carries a slash and is not a path, so it is the one field the slash heuristic
         // cannot judge here.
@@ -111,11 +115,11 @@ public class VfsVirtualPathConformanceTests
         paths.ShouldNotBeEmpty("the envelope reported no path at all, so this proves nothing");
 
         var leaked = paths
-            .Where(s => !s.Value.StartsWith(Mount + "/", StringComparison.Ordinal))
+            .Where(s => !s.Value.StartsWith(mount + "/", StringComparison.Ordinal))
             .ToList();
 
         leaked.ShouldBeEmpty(
-            $"the image envelope answered in backend coordinates ({spelling}): "
+            $"the image envelope answered in backend coordinates ({spelling}, at {mount}): "
             + string.Join(", ", leaked.Select(s => $"{s.Field}='{s.Value}'")));
     }
 
@@ -124,34 +128,34 @@ public class VfsVirtualPathConformanceTests
 
     // The two transfer tools are mapped in by hand: their answer is FsTransferResult, which is not
     // any backend operation's result type, so nothing derives it from the one list for us.
-    private static async Task<JsonNode> Invoke(string toolKey, Func<string, string> spell)
+    private static async Task<JsonNode> Invoke(string toolKey, Func<string, string> spell, string mount)
     {
-        var backend = new HostileBackend(spell);
-        var sink = new StreamingSink();
-        var registry = new Mock<IVirtualFileSystemRegistry>();
-        registry.Setup(r => r.Resolve(It.Is<string>(p => p.StartsWith(Mount, StringComparison.Ordinal))))
-            .Returns<string>(p => Resolved(backend, p[(Mount.Length + 1)..], Mount));
-        registry.Setup(r => r.Resolve(It.Is<string>(p => p.StartsWith(Elsewhere, StringComparison.Ordinal))))
-            .Returns<string>(p => Resolved(sink, p[(Elsewhere.Length + 1)..], Elsewhere));
-
-        var vfs = registry.Object;
+        var vfs = Registry(spell, mount);
         return toolKey switch
         {
-            "read" => await new VfsFileReadTool(vfs).RunAsync($"{Mount}/docs/note.md"),
-            "create" => await new VfsTextCreateTool(vfs).RunAsync($"{Mount}/docs/note.md", "hello"),
+            "read" => await new VfsFileReadTool(vfs).RunAsync($"{mount}/docs/note.md"),
+            "create" => await new VfsTextCreateTool(vfs).RunAsync($"{mount}/docs/note.md", "hello"),
             "edit" => await new VfsTextEditTool(vfs).RunAsync(
-                $"{Mount}/docs/note.md", [new TextEdit("a", "b")]),
-            "glob" => await new VfsGlobFilesTool(vfs).RunAsync($"{Mount}/docs", "**/*"),
-            "search" => await new VfsTextSearchTool(vfs).RunAsync("needle", directoryPath: $"{Mount}/docs"),
-            "move" => await new VfsMoveTool(vfs).RunAsync($"{Mount}/docs", $"{Elsewhere}/docs"),
-            "copy" => await new VfsCopyTool(vfs).RunAsync($"{Mount}/docs", $"{Elsewhere}/docs"),
-            "remove" => await new VfsRemoveTool(vfs).RunAsync($"{Mount}/docs/note.md"),
-            "info" => await new VfsFileInfoTool(vfs).RunAsync($"{Mount}/docs/note.md"),
+                $"{mount}/docs/note.md", [new TextEdit("a", "b")]),
+            "glob" => await new VfsGlobFilesTool(vfs).RunAsync($"{mount}/docs", "**/*"),
+            "search" => await new VfsTextSearchTool(vfs).RunAsync("needle", directoryPath: $"{mount}/docs"),
+            "move" => await new VfsMoveTool(vfs).RunAsync($"{mount}/docs", $"{Elsewhere}/docs"),
+            "copy" => await new VfsCopyTool(vfs).RunAsync($"{mount}/docs", $"{Elsewhere}/docs"),
+            "remove" => await new VfsRemoveTool(vfs).RunAsync($"{mount}/docs/note.md"),
+            "info" => await new VfsFileInfoTool(vfs).RunAsync($"{mount}/docs/note.md"),
             // Two segments deep so the bare mount-relative spelling still carries a slash — one
             // segment would make the check vacuous for this tool.
-            "exec" => await new VfsExecTool(vfs).RunAsync($"{Mount}/docs/sub", "ls"),
+            "exec" => await new VfsExecTool(vfs).RunAsync($"{mount}/docs/sub", "ls"),
             _ => throw new ArgumentOutOfRangeException(nameof(toolKey), toolKey, "No case for this tool.")
         };
+    }
+
+    private static VirtualFileSystemRegistry Registry(Func<string, string> spell, string mount)
+    {
+        var registry = new VirtualFileSystemRegistry();
+        registry.Mount(new FileSystemMount("mnt", mount, "The hostile backend"), new HostileBackend(spell));
+        registry.Mount(new FileSystemMount("elsewhere", Elsewhere, "The sink"), new StreamingSink());
+        return registry;
     }
 
     // Every string in the response that looks like a path, with the field it came from. The
@@ -166,10 +170,6 @@ public class VfsVirtualPathConformanceTests
                 [(field, text)],
             _ => []
         };
-
-    private static FsResult<FileSystemResolution> Resolved(
-        IFileSystemBackend backend, string relativePath, string mountPoint) =>
-        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));
 
     // A backend that answers every operation in the spelling it was built with, and never in the
     // caller's. Nothing else in its answers carries a slash, so anything slash-shaped in a response
@@ -219,7 +219,9 @@ public class VfsVirtualPathConformanceTests
             {
                 Entries = [spell("docs/note.md"), spell("docs/sub/"), spell("elsewhere/secret.md")],
                 Truncated = false,
-                Total = 3
+                Total = 3,
+                // The executable marks name entries too, so they are translated like them.
+                Executables = [spell("docs/note.md")]
             }));
 
         public override Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path,

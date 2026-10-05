@@ -1,7 +1,13 @@
+using Domain.Security;
+using Mcp.Hosting;
+
 namespace McpServerIdealista.Settings;
 
-public record McpSettings
+public record McpSettings : IMcpHostSettings
 {
+    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    public McpGateSettings Mcp { get; init; } = new();
+
     public required IdealistaConfiguration Idealista { get; init; }
 }
 

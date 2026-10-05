@@ -50,7 +50,7 @@ public class VfsMoveToolIntegrationTests(MultiFileSystemFixture fx)
         await using var notesClient = await Connect(fx.NotesEndpoint);
         var registry = new VirtualFileSystemRegistry();
         await McpFileSystemDiscovery.DiscoverAndMountAsync(
-            [mediaClient, notesClient], registry, NullLogger.Instance, CancellationToken.None);
+            [mediaClient, notesClient], new HashSet<McpClient>(), registry, NullLogger.Instance, CancellationToken.None);
 
         var result = await new VfsMoveTool(registry).RunAsync("/media/downloads/7", "/notes/7");
 
@@ -78,7 +78,7 @@ public class VfsMoveToolIntegrationTests(MultiFileSystemFixture fx)
         await using var notesClient = await Connect(fx.NotesEndpoint);
         var registry = new VirtualFileSystemRegistry();
         await McpFileSystemDiscovery.DiscoverAndMountAsync(
-            [mediaClient, notesClient], registry, NullLogger.Instance, CancellationToken.None);
+            [mediaClient, notesClient], new HashSet<McpClient>(), registry, NullLogger.Instance, CancellationToken.None);
 
         var result = await new VfsMoveTool(registry).RunAsync("/media/Movies/film.mkv", "/notes/film.mkv");
 
@@ -102,7 +102,7 @@ public class VfsMoveToolIntegrationTests(MultiFileSystemFixture fx)
         await using var mediaClient = await Connect(fx.MediaEndpoint);
         var registry = new VirtualFileSystemRegistry();
         await McpFileSystemDiscovery.DiscoverAndMountAsync(
-            [mediaClient], registry, NullLogger.Instance, CancellationToken.None);
+            [mediaClient], new HashSet<McpClient>(), registry, NullLogger.Instance, CancellationToken.None);
 
         var result = await new VfsMoveTool(registry)
             .RunAsync("/media/downloads/9/payload.mkv", "/media/Movies/payload.mkv");
@@ -124,7 +124,7 @@ public class VfsMoveToolIntegrationTests(MultiFileSystemFixture fx)
         await using var notesClient = await Connect(fx.NotesEndpoint);
         var registry = new VirtualFileSystemRegistry();
         await McpFileSystemDiscovery.DiscoverAndMountAsync(
-            [mediaClient, notesClient], registry, NullLogger.Instance, CancellationToken.None);
+            [mediaClient, notesClient], new HashSet<McpClient>(), registry, NullLogger.Instance, CancellationToken.None);
 
         var result = await new VfsMoveTool(registry).RunAsync("/media/downloads/8", "/notes/8");
 
@@ -142,8 +142,5 @@ public class VfsMoveToolIntegrationTests(MultiFileSystemFixture fx)
     }
 
     private static async Task<McpClient> Connect(string endpoint)
-        => await McpClient.CreateAsync(new HttpClientTransport(new HttpClientTransportOptions
-        {
-            Endpoint = new Uri(endpoint)
-        }), loggerFactory: NullLoggerFactory.Instance);
+        => await McpClient.CreateAsync(McpTestSecret.Transport(endpoint), loggerFactory: NullLoggerFactory.Instance);
 }

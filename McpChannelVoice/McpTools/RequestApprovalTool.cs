@@ -6,6 +6,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
+using Domain.Judgments;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
@@ -26,18 +27,18 @@ public sealed class RequestApprovalTool
         RequestContext<CallToolRequestParams> context,
         IServiceProvider services,
         CancellationToken cancellationToken = default) =>
-        // The model the asking turn was addressed to, from the context the agent stamps on this
-        // hop: the reader hands it to the judge's client, which sends nothing for the local box.
+        // The asking turn, from the context the agent stamps on this hop: the reader hands it to
+        // the judge's client, which sends nothing for the local box and bills the rest to it.
         RunAsync(
             conversationId, mode, requests,
-            ConversationScope.Parse(context.Params?.Meta)?.ConfigPatchModel,
+            JudgmentCaller.For(ConversationScope.Parse(context.Params?.Meta)),
             services, cancellationToken);
 
     public static async Task<string> RunAsync(
         string conversationId,
         ApprovalMode mode,
         IReadOnlyList<ToolApprovalRequest> requests,
-        string? turnModel,
+        JudgmentCaller caller,
         IServiceProvider services,
         CancellationToken cancellationToken = default)
     {
@@ -107,7 +108,7 @@ public sealed class RequestApprovalTool
             }
             // Read for what it means, against the prompt as it was spoken: the re-ask's wording is
             // the prompt the person is answering.
-            var reading = await reader.ReadAsync(prompt, answer, turnModel, cancellationToken);
+            var reading = await reader.ReadAsync(prompt, answer, caller, cancellationToken);
 
             metrics.Publish(new VoiceEvent
             {
@@ -140,8 +141,9 @@ public sealed class RequestApprovalTool
         requests.SelectMany(r => r.Screen ?? []).Select(code => code switch
             {
                 ExecScreenCodes.NotRequested => "Esto no parece parte de lo que pediste.",
-                ExecScreenCodes.Destructive => "Borraría o cambiaría algo que ya está en tu ordenador.",
-                ExecScreenCodes.SendsOut => "Enviaría datos de tu ordenador a un servidor.",
+                ExecScreenCodes.Destructive => "Borraría o cambiaría algo que ya existe.",
+                ExecScreenCodes.SendsOut => "Enviaría datos a un servidor.",
+                ExecScreenCodes.RunsDownloaded => "Descargaría un programa y lo ejecutaría.",
                 ExecScreenCodes.Unjudged => "Se ejecuta en tu ordenador y no he podido comprobarlo.",
                 _ => null
             })

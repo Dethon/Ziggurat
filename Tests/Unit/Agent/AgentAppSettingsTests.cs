@@ -252,8 +252,8 @@ public class AgentAppSettingsTests
         shipped.DeadlineMs.ShouldBe(new SkillPreloadSettings().DeadlineMs);
     }
 
-    // Every bar of the exec screen is in the shipped file, at the value the probe measured with the
-    // shipped wording (.scratch/exec-screen/probe/README.md), so production can be re-read against
+    // Every bar of the exec screen is in the shipped file, at the value measured with the shipped
+    // wording (ExecScreenJevTests' cases), so production can be re-read against
     // the numbers that chose them rather than against a default nobody wrote down.
     [Fact]
     public void ExecScreen_ShipsEveryBarAtTheProbesValues()
@@ -262,15 +262,16 @@ public class AgentAppSettingsTests
         var shipped = section.Get<ExecScreenSettings>()!;
 
         section.GetChildren().Select(c => c.Key).ShouldBe(
-            ["enabled", "deadlineMs", "recentRequests", "requestChars", "servesBar", "destroysBar", "sendsOutBar"],
+            ["enabled", "deadlineMs", "recentRequests", "requestChars", "servesBar", "destroysBar", "sendsOutBar", "runsDownloadedBar"],
             ignoreOrder: true);
         shipped.Enabled.ShouldBeTrue();
         shipped.DeadlineMs.ShouldBe(1500);
         shipped.RecentRequests.ShouldBe(3);
         shipped.RequestChars.ShouldBe(1000);
-        shipped.ServesBar.ShouldBe(0.65);
-        shipped.DestroysBar.ShouldBe(0.75);
-        shipped.SendsOutBar.ShouldBe(0.6);
+        shipped.ServesBar.ShouldBe(0.6);
+        shipped.DestroysBar.ShouldBe(0.4);
+        shipped.SendsOutBar.ShouldBe(0.5);
+        shipped.RunsDownloadedBar.ShouldBe(0.5);
         shipped.ShouldBe(new ExecScreenSettings());
     }
 

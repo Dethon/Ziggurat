@@ -600,7 +600,8 @@ _Avoid_: caption, alt text, image name
 **Outpost**:
 A filesystem on a real machine that announces itself to the hub, rather than being configured
 into it. It is the only mount whose existence is decided by the machine it lives on, so it can
-be absent for reasons that are nobody's fault.
+be absent for reasons that are nobody's fault, and the only one presented as a separate machine
+at `outpost:<NAME>` rather than as a branch of the agent's own tree.
 _Avoid_: remote filesystem, host filesystem, satellite, node
 
 **Outpost registration**:
@@ -615,10 +616,39 @@ machine's root, so jailing changes what an operation will do and never what a pa
 _Avoid_: chrooted, restricted mount, sandboxed outpost
 
 **Shadowed outpost**:
-An outpost whose name is already some other mount's, and which is therefore not mounted at all.
-The existing mount always wins, so a name collision costs the outpost rather than quietly
-replacing what was there.
+An outpost shadowed by another outpost: its name is already another machine's, and it is
+therefore not mounted at all. Outposts are addressed as `outpost:<NAME>`, apart from the tree
+every other mount shares, so a machine named like a mount sits beside it and only another
+machine can shadow one. The first mounted always wins, so a name collision costs the newcomer
+rather than quietly replacing what was there.
 _Avoid_: duplicate mount, conflicting outpost, rejected registration
+
+## The shell over the mounts
+
+**Action file**:
+An executable entry a mount serves, run and never read: `/timers/dismiss`, a schedule's `run_now`,
+each Home Assistant service. It has no `.sh` and no contents anyone can open; it runs as
+`./<name>` from its directory, or by its path from any script inside a sandbox command, and
+answers with the action's own output and exit code.
+_Avoid_: script, action script, `.sh` file
+
+**Bridge**:
+The agent endpoint that answers a sandbox command's file operations, one request per operation,
+for one call. It decides what each operation means — through the calling session's registry, as
+the file tool would — so the daemon serving the mounts in the sandbox decides nothing.
+_Avoid_: proxy, FUSE backend, file server
+
+**Call token**:
+The bridge's per-call capability: minted by the exec tool for one exec, bound to the session's
+registry, its approval context and the mounts it serves, and completed when the exec returns.
+Revoked before a kill, so whatever the kill flushes is recorded as dropped rather than applied.
+_Avoid_: session token, bridge key, credential
+
+**Held file**:
+A new file a command made, kept in the call's cache until it is renamed onto a path, an action
+runs, or the command ends — so a temp-then-rename writer never commits its temp file. Deletes
+are held the same way.
+_Avoid_: buffered file, pending write, temp file
 
 ## Home watches
 

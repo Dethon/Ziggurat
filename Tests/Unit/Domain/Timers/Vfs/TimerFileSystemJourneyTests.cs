@@ -104,7 +104,8 @@ public class TimerFileSystemJourneyTests
 
         var glob = (await fs.GlobAsync("/", "**", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
-        glob.Entries.ShouldBe(["/dismiss.sh", "/pasta/", "/pasta/status.json", "/pasta/timer.json"]);
+        glob.Entries.ShouldBe(["/dismiss", "/pasta/", "/pasta/status.json", "/pasta/timer.json"]);
+        glob.Executables.ShouldBe(["/dismiss"]);
 
         var spec = (await fs.ReadAsync("/pasta/timer.json", null, null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
@@ -254,7 +255,7 @@ public class TimerFileSystemJourneyTests
         var fs = new TimerFileSystem(
             new InMemoryTimerStore(), new FakeTimeProvider(), new UnreachableDismisser(), new FakeSatelliteCatalog());
 
-        var result = await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None);
+        var result = await fs.ExecAsync("/", "./dismiss", null, CancellationToken.None);
 
         var err = result.ShouldBeOfType<FsResult<FsExecResult>.Err>();
         err.Error.ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
@@ -310,14 +311,18 @@ public class TimerFileSystemJourneyTests
             .ShouldBeOfType<FsResult<FsRemoveResult>.Err>();
     }
 
-    [Fact]
-    public async Task Exec_DismissAtRoot_SilencesRingingAlertsAndReportsThem()
+    // `./dismiss` is the spelling taught, because a real shell needs it once exec runs in the
+    // sandbox; the bare name is what a model that reads the listing types, and it runs the same.
+    [Theory]
+    [InlineData("./dismiss")]
+    [InlineData("dismiss")]
+    public async Task Exec_DismissAtRoot_SilencesRingingAlertsAndReportsThem(string command)
     {
         var (fs, _, _, dismisser) = Build();
         dismisser.Ringing.Add(new DismissedAlert("Take out the trash", AnnounceKind.Alarm));
         dismisser.Ringing.Add(new DismissedAlert("pasta", AnnounceKind.Timer));
 
-        var result = (await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None))
+        var result = (await fs.ExecAsync("/", command, null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
 
         result.ExitCode.ShouldBe(0);
@@ -331,7 +336,7 @@ public class TimerFileSystemJourneyTests
         var (fs, _, _, dismisser) = Build();
         dismisser.Ringing.Add(new DismissedAlert("pasta", AnnounceKind.Timer));
 
-        var result = (await fs.ExecAsync("/dismiss.sh", "dismiss.sh", null, CancellationToken.None))
+        var result = (await fs.ExecAsync("/dismiss", "./dismiss", null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
 
         result.ExitCode.ShouldBe(0);
@@ -343,28 +348,30 @@ public class TimerFileSystemJourneyTests
     {
         var (fs, _, _, _) = Build();
 
-        var result = (await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None))
+        var result = (await fs.ExecAsync("/", "./dismiss", null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
 
         result.ExitCode.ShouldBe(0);
         result.Stdout.ShouldContain("nothing is ringing");
     }
 
-    // `./dismiss.sh` is how a model that has been told the mount holds an action *file* spells
-    // running it, and it is what the HA mount already accepts — it strips the prefix before it
-    // looks the action up. Rejecting it here made the two mounts disagree, and a model that tried
-    // the dotted form first paid a call to learn which mount it was on.
-    [Fact]
-    public async Task Exec_DismissWithADotSlashPrefix_RunsTheSameAction()
+    // The action lost its suffix: the old spelling names nothing, and the refusal lists what
+    // does, so a model that learned `dismiss.sh` finds the new name in the same answer.
+    [Theory]
+    [InlineData("dismiss.sh")]
+    [InlineData("./dismiss.sh")]
+    public async Task Exec_TheOldScriptName_IsNotFoundAndNamesTheAction(string command)
     {
         var (fs, _, _, dismisser) = Build();
         dismisser.Ringing.Add(new DismissedAlert("pasta", AnnounceKind.Timer));
 
-        var result = (await fs.ExecAsync("/", "./dismiss.sh", null, CancellationToken.None))
+        var result = (await fs.ExecAsync("/", command, null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
 
-        result.ExitCode.ShouldBe(0);
-        result.Stdout.ShouldContain("timer \"pasta\"");
+        result.ExitCode.ShouldBe(127);
+        result.Stderr.ShouldContain("command not found: dismiss.sh");
+        result.Stderr.ShouldContain("available: dismiss");
+        dismisser.Ringing.ShouldNotBeEmpty();
     }
 
     // "nothing is ringing" is the same sentence whether the model has just silenced the alert
@@ -376,7 +383,7 @@ public class TimerFileSystemJourneyTests
     {
         var (fs, _, _, _) = Build();
 
-        var result = (await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None))
+        var result = (await fs.ExecAsync("/", "./dismiss", null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
 
         result.ExitCode.ShouldBe(0);
@@ -390,14 +397,14 @@ public class TimerFileSystemJourneyTests
         var (fs, _, _, dismisser) = Build();
         dismisser.Ringing.Add(new DismissedAlert("pasta", AnnounceKind.Timer));
 
-        var result = (await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None))
+        var result = (await fs.ExecAsync("/", "./dismiss", null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
 
         result.Stdout.ShouldContain("timer \"pasta\"");
         result.Stdout.ShouldContain("nothing further to do");
     }
 
-    // dismiss.sh takes no arguments, and a model that reaches for a plausible one ("--all", to
+    // dismiss takes no arguments, and a model that reaches for a plausible one ("--all", to
     // be sure it covers every satellite) got a bare "command not found" naming the file it had
     // just typed. The refusal has to say the flag is the problem, not the script, or the next
     // guess is that the script is somewhere else.
@@ -406,12 +413,12 @@ public class TimerFileSystemJourneyTests
     {
         var (fs, _, _, _) = Build();
 
-        var result = (await fs.ExecAsync("/", "dismiss.sh --all", null, CancellationToken.None))
+        var result = (await fs.ExecAsync("/", "./dismiss --all", null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
 
         result.ExitCode.ShouldBe(127);
         result.Stderr.ShouldContain("takes no arguments");
-        result.Stderr.ShouldContain("dismiss.sh");
+        result.Stderr.ShouldContain("dismiss");
     }
 
     [Fact]
@@ -419,22 +426,67 @@ public class TimerFileSystemJourneyTests
     {
         var (fs, _, _, _) = Build();
 
-        var result = (await fs.ExecAsync("/", "reboot.sh", null, CancellationToken.None))
+        var result = (await fs.ExecAsync("/", "reboot", null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
 
         result.ExitCode.ShouldBe(127);
-        result.Stderr.ShouldContain("dismiss.sh");
+        result.Stderr.ShouldContain("available: dismiss");
     }
 
+    // An action file runs and is never opened, on every route: a read that answered a comment
+    // taught it was a script to look inside, and a write would have nothing to mean.
     [Fact]
-    public async Task Read_DismissScript_ExplainsItself()
+    public async Task Read_TheDismissAction_IsRefusedAsExecutableOnly()
     {
         var (fs, _, _, _) = Build();
 
-        var read = (await fs.ReadAsync("/dismiss.sh", null, null, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+        var error = (await fs.ReadAsync("/dismiss", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Err>().Error;
 
-        read.Content.ShouldContain("exec dismiss.sh");
+        error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        error.Message.ShouldContain("executable-only");
+        error.Hint.ShouldNotBeNull().ShouldContain("./dismiss");
+    }
+
+    [Fact]
+    public async Task CreateOrDelete_TheDismissAction_IsRefusedAsExecutableOnly()
+    {
+        var (fs, store, _, _) = Build();
+
+        (await fs.CreateAsync("/dismiss", PastaSpec, true, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error.Message.ShouldContain("executable-only");
+        (await fs.DeleteAsync("/dismiss", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.Message.ShouldContain("executable-only");
+        (await store.ListAsync(CancellationToken.None)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Info_TheDismissAction_IsExecutable_AndNothingElseIs()
+    {
+        var (fs, _, _, _) = Build();
+        await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
+
+        var action = (await fs.InfoAsync("/dismiss", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+        var spec = (await fs.InfoAsync("/pasta/timer.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+
+        action.Exists.ShouldBeTrue();
+        action.IsDirectory.ShouldBe(false);
+        action.Executable.ShouldBeTrue();
+        spec.Executable.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Glob_ThatMatchesNoAction_MarksNothing()
+    {
+        var (fs, _, _, _) = Build();
+        await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
+
+        var glob = (await fs.GlobAsync("/", "*/*.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Executables.ShouldBeNull();
     }
 
     [Fact]

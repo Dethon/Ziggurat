@@ -1,12 +1,15 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Outposts;
 using Domain.Prompts;
+using Domain.Tools.FileSystem.Bridge;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
 
 public class FileSystemToolFeature(
-    IVirtualFileSystemRegistry registry, ReadImageSupport? readImages = null) : IDomainToolFeature
+    IVirtualFileSystemRegistry registry, ReadImageSupport? readImages = null, IVfsBridge? bridge = null)
+    : IDomainToolFeature
 {
     private const string Feature = "filesystem";
 
@@ -49,8 +52,13 @@ public class FileSystemToolFeature(
         new("mounts.an-unmounted-path-is-answered",
             "A path under none of the session's mounts is answered with a sentence saying it is not reachable, never hunted for through other tools, searched for across a mount or handed to a worker.");
 
+    public static readonly PromptClaim AnOutpostIsNeverInTheSandbox =
+        new("mounts.an-outpost-is-never-in-the-sandbox",
+            "A path on a machine (outpost:<NAME>) is never looked for from a sandbox command, which cannot reach it; it is reached only by the file tools on that machine's own address.");
+
     public static readonly IReadOnlyList<PromptClaim> Claims =
     [
+        AnOutpostIsNeverInTheSandbox,
         PathStartsAtAMount,
         CapabilitiesAreAdvertised,
         AnEnvelopeIsDataNotAReasonToRetry,
@@ -60,6 +68,12 @@ public class FileSystemToolFeature(
     ];
 
     public string FeatureName => Feature;
+
+    // Each tool's leaf name against the key the feature config enables it by, read off the one list,
+    // so the exec bridge can ask whether this session offers the tool an operation stands for.
+    private static readonly IReadOnlyDictionary<string, string> _keysByName = FileSystemOperations.All
+        .Where(o => o.ToolKey is not null && o.Capability is not null)
+        .ToDictionary(o => o.Capability!, o => o.ToolKey!, StringComparer.Ordinal);
 
     public string? Prompt => BuildPrompt();
 
@@ -115,14 +129,59 @@ public class FileSystemToolFeature(
             (VfsRemoveTool.Key, () => AIFunctionFactory.Create(new VfsRemoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsRemoveTool.Name}")),
             // Carries where each call would run, read off this session's mounts, for the exec screen.
             (VfsExecTool.Key, () => ExecReach.Carried(
-                AIFunctionFactory.Create(new VfsExecTool(registry).RunAsync, name: $"domain__{Feature}__{VfsExecTool.Name}"),
-                ExecReach.Over(registry))),
+                AIFunctionFactory.Create(
+                    new VfsExecTool(registry, bridge, name =>
+                        config.EnabledTools is null
+                        || (_keysByName.TryGetValue(name, out var key) && config.EnabledTools.Contains(key))).RunAsync,
+                    new AIFunctionFactoryOptions
+                    {
+                        Name = $"domain__{Feature}__{VfsExecTool.Name}",
+                        Description = ShellReachesMounts
+                            ? $"{VfsExecTool.ToolDescription}\n{VfsExecTool.BridgedDescription}"
+                            : VfsExecTool.ToolDescription
+                    }),
+                ExecReach.Over(registry, reroutes: bridge is not null))),
             (VfsFileInfoTool.Key, () => AIFunctionFactory.Create(new VfsFileInfoTool(registry).RunAsync, name: $"domain__{Feature}__{VfsFileInfoTool.Name}")),
         };
 
         return tools
             .Where(t => config.EnabledTools is null || config.EnabledTools.Contains(t.Key))
             .Select(t => t.Factory());
+    }
+
+    // Whether this session's sandbox commands see its other mounts: a sandbox, and a bridge to serve
+    // them through.
+    private bool ShellReachesMounts => bridge is not null && ShellSection(registry.GetMounts()).Length > 0;
+
+    // What a sandbox command reaches of the session's other mounts, and where. Static so the prompt
+    // snapshots can build it from sample mounts exactly as a session builds it from live ones.
+    public static string ShellSection(IReadOnlyList<FileSystemMount> mounts)
+    {
+        var sandbox = ExecReach.Sandbox(mounts);
+        var served = mounts.Where(VfsCall.IsServed).ToList();
+        if (sandbox is null || served.Count == 0)
+        {
+            return "";
+        }
+
+        var occupied = sandbox.OccupiedNames ?? [];
+        var places = string.Join(", ", served.Select(m => occupied.Contains(ServedMount.NameOf(m.MountPoint))
+            ? $"`{m.MountPoint}` only at `{ServedMount.PathOf(m.MountPoint)}` (the sandbox has a `{m.MountPoint}` of its own)"
+            : $"`{m.MountPoint}`"));
+        // Every served mount is rerouted, but only the ones that offer `exec` are named: those are
+        // the mounts the model is told it can exec on, so they are the ones whose exec moved.
+        var offeringExec = served.Where(m => m.Capabilities.Contains(VfsExecTool.Name)).Select(m => $"`{m.MountPoint}`").ToList();
+        var rerouted = offeringExec.Count == 0
+            ? ""
+            : $" `exec` on {string.Join(", ", offeringExec)} runs in the sandbox, with that directory as the working directory.";
+
+        return $$"""
+            ### The other mounts inside a command
+
+            A command run with `exec` on `{{sandbox.MountPoint}}` sees every mount above but the machines as an ordinary directory, at the same path the tools take: {{places}}. Pipes, `grep -r`, `jq`, `sed -i` and scripts in any language work on them, and an action file runs as `./<name>` from its directory, or by its path, from any script.{{rerouted}} A machine is never inside a command: reach one only with the file tools, at its own `outpost:` address.
+
+            A command can do there only what the file tools would do unasked — a write is a `text_create` (or a copy, for anything that is not text), `rm` a `remove`, `mv` a `move` — and what would need the person's approval is refused. Bash does not report a refused write, so read the result's `vfsChanges`: every change the command made through these mounts, `applied`, `refused` with the mount's own reason, or `dropped` because a timeout cut it off. `vfsTruncated` names a directory a recursive command saw only part of.
+            """;
     }
 
     private string? BuildPrompt()
@@ -133,13 +192,15 @@ public class FileSystemToolFeature(
             return null;
         }
 
-        var mountList = string.Join("\n", mounts.Select(FormatMount));
+        var mountList = string.Join("\n", mounts.Where(m => !IsMachine(m)).Select(FormatMount));
+        var machines = MachinesSection(mounts);
+        var shell = ShellReachesMounts ? ShellSection(mounts) : "";
         return $$"""
             ## Available Filesystems
 
             All `domain__filesystem__*` tool paths must start with one of these mount prefixes. Pick the mount whose description matches your task; don't scatter related files across mounts.
             {{mountList}}
-
+            {{(machines.Length > 0 ? $"\n{machines}\n" : "")}}{{(shell.Length > 0 ? $"\n{shell}\n" : "")}}
             ### How capabilities work
 
             Each mount is backed by a different MCP server, and **each backend implements only the operations that make sense for it** — read-only mounts won't accept writes, non-shell mounts won't accept `exec`, and so on. Each mount lists the operations it supports above — call only an operation a mount advertises, so you don't waste a turn discovering an unsupported one by trial and error.
@@ -154,12 +215,31 @@ public class FileSystemToolFeature(
 
             ### Cross-mount reminders
 
-            - Each mount is its own backend. Tools see only the filesystem of the mount you target — they cannot reach files on a different mount. If you need data from one mount available to a command on another (e.g. for `exec`), copy it across first.
+            - Each mount is its own backend. Tools see only the filesystem of the mount you target — they cannot reach files on a different mount. {{(shell.Length > 0 ? "A sandbox command sees the other mounts directly (above), so data a command needs from one stays where it is." : "If you need data from one mount available to a command on another (e.g. for `exec`), copy it across first.")}}
             - `move` and `copy` accept source and destination on different mounts and handle the transfer natively (streaming for cross-FS, recursing into directories) — prefer a single `copy`/`move` call over reading on one mount and creating on another.
             - Paths are virtual: always include the mount prefix. Don't pass bare `/home/...` or `/notes/...` — start with one of the mount points listed above.
             - A path that starts under none of these mounts is not reachable in this session, by any tool or by a worker — the mount list above is complete. Say so in one sentence instead of hunting for it: no retries under other spellings, no search of a mount for a folder of that name (a `find` or a glob from the mount's root, a look through its home directory), no web tools, no delegation.
             """;
     }
+
+    // The outposts among a session's mounts, under a heading that says what they are, or nothing
+    // when there are none. Listed beside the vault, a machine read as one more branch of the tree,
+    // and a person's own computer is the last place a guess about where a file lives should land.
+    // Public so the prompt snapshots show these words rather than a fixture's paraphrase of them.
+    public static string MachinesSection(IEnumerable<FileSystemMount> mounts)
+    {
+        var machines = mounts.Where(IsMachine).ToList();
+        return machines.Count == 0
+            ? ""
+            : $"""
+              ### Other machines
+
+              These are not part of your filesystem. Each is a separate computer, somebody's own, that offered its files to this conversation and can be gone in the next one. Address one as `{OutpostMountPoint.Scheme}<NAME>/<absolute path on that machine>` — never as `/<NAME>`, which would be a path in your own tree. A copy or move to or from one sends data between computers, and its `exec` runs on that person's machine, not in a sandbox.
+              {string.Join("\n", machines.Select(FormatMount))}
+              """;
+    }
+
+    private static bool IsMachine(FileSystemMount mount) => OutpostMountPoint.Addresses(mount.MountPoint);
 
     private static string FormatMount(FileSystemMount mount)
     {

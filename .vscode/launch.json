@@ -223,6 +223,7 @@
       "cwd": "${workspaceFolder}/Agent",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:5000"
       }
@@ -259,6 +260,7 @@
       "cwd": "${workspaceFolder}/McpServerLibrary",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6001"
       }
     },
@@ -270,6 +272,7 @@
       "cwd": "${workspaceFolder}/McpServerVault",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6002"
       }
     },
@@ -281,6 +284,7 @@
       "cwd": "${workspaceFolder}/McpServerWebSearch",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6003"
       }
     },
@@ -292,6 +296,7 @@
       "cwd": "${workspaceFolder}/McpServerIdealista",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6005"
       }
     },
@@ -303,6 +308,7 @@
       "cwd": "${workspaceFolder}/McpServerHomeAssistant",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6006"
       }
     },
@@ -314,6 +320,7 @@
       "cwd": "${workspaceFolder}/McpServerSandbox",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6004"
       }
     },
@@ -325,6 +332,7 @@
       "cwd": "${workspaceFolder}/McpChannelSignalR",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:6010"
       }
@@ -337,6 +345,7 @@
       "cwd": "${workspaceFolder}/McpChannelTelegram",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6011"
       }
     },
@@ -348,6 +357,7 @@
       "cwd": "${workspaceFolder}/McpChannelServiceBus",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6012"
       }
     },
@@ -360,6 +370,7 @@
       "envFile": "${workspaceFolder}/DockerCompose/.env",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:6015",
         "RedisConnectionString": "localhost:6379",
@@ -377,6 +388,7 @@
       "cwd": "${workspaceFolder}/McpServerScheduling",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6013",
         "RedisConnectionString": "localhost:6379"
       }
@@ -389,6 +401,7 @@
       "cwd": "${workspaceFolder}/McpServerPrinter",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6014",
         "SPOOLPATH": "${workspaceFolder}/McpServerPrinter/.spool"
       }
@@ -402,6 +415,7 @@
       "envFile": "${workspaceFolder}/DockerCompose/.env",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
+        "MCP__SHAREDSECRET": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6016",
         "VoiceHub__BaseUrl": "http://localhost:6015"
       }

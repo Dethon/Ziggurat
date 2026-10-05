@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Agent.App;
 using Agent.Modules;
 using Agent.Settings;
 using Domain.Agents;
@@ -8,6 +9,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
+using Domain.Tools.FileSystem.Bridge;
 using Domain.Tools.Memory;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents;
@@ -108,6 +110,12 @@ public sealed class EvalStack : IAsyncDisposable
 
     public IAgentFactory Factory { get; private set; } = null!;
 
+    // The agent's exec bridge, hosted the way the deployment hosts it: the sandbox's daemons call
+    // it for every file operation a command makes on the other mounts. One instance, registered
+    // into the agent's services over the one AddAgent made, so the tokens the exec tool mints are
+    // the ones this endpoint answers.
+    public VfsBridge Bridge { get; } = new(TimeProvider.System, new VfsBridgeSettings());
+
     public static async Task<EvalStack> StartAsync(
         Scenario scenario, string redisConnectionString, Recording recording)
     {
@@ -133,7 +141,7 @@ public sealed class EvalStack : IAsyncDisposable
         // *which* of them a request belongs in. A stack that hosted only the mount the answer
         // lands in would leave the model no wrong place to put it, and a discrimination with one
         // option is not one.
-        stack.Sandbox = await EvalSandbox.StartAsync();
+        stack.Sandbox = await EvalSandbox.StartAsync(await stack.StartBridgeAsync());
 
         stack.BuildAgentServices(shipped, recording, new Dictionary<string, string>
         {
@@ -148,12 +156,20 @@ public sealed class EvalStack : IAsyncDisposable
         return stack;
     }
 
+    private async Task<string> StartBridgeAsync()
+    {
+        var (url, host, port) = await EvalBridgeHost.StartAsync(Bridge);
+        _servers.Add(host);
+        _ports.Add(port);
+        return url;
+    }
+
     private async Task<string> StartTimersAsync(Scenario scenario)
     {
         var port = TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
-        builder.Services.ConfigureTimers(new TimerSettings());
+        builder.Services.ConfigureTimers(new TimerSettings { Mcp = McpTestSecret.Gate });
 
         // After the server's own registration, so the last word is the pinned one. The hub is
         // replaced at the transport rather than at the adapter: the adapters, their token header
@@ -213,7 +229,8 @@ public sealed class EvalStack : IAsyncDisposable
         builder.Services.ConfigureMcp(new VaultSettings
         {
             VaultPath = VaultPath,
-            AllowedExtensions = [".md", ".txt", ".json", ".yaml", ".yml"]
+            AllowedExtensions = [".md", ".txt", ".json", ".yaml", ".yml"],
+            Mcp = McpTestSecret.Gate
         });
 
         return await StartAsync(builder, port);
@@ -245,7 +262,8 @@ public sealed class EvalStack : IAsyncDisposable
             {
                 BaseUrl = Music.BaseUrl,
                 Token = FakeMusicAssistantServer.ValidToken
-            }
+            },
+            Mcp = McpTestSecret.Gate
         });
 
         // The typed client keeps its name from the interface it is registered against, so this
@@ -257,6 +275,10 @@ public sealed class EvalStack : IAsyncDisposable
         // server rings: a room the roster does not have is refused here as it is in prod.
         builder.Services.AddHttpClient(VoiceHubHttp.ClientName)
             .ConfigurePrimaryHttpMessageHandler(() => VoiceHub);
+
+        // The scenario's instant for a listing's default window, a history's "now" and every
+        // stamp on the mount; real timers, because a watch write retries on a delay.
+        builder.Services.Replace(ServiceDescriptor.Singleton<TimeProvider>(new PinnedClock(Clock)));
 
         return await StartAsync(builder, port);
     }
@@ -278,7 +300,8 @@ public sealed class EvalStack : IAsyncDisposable
             {
                 ApiKey = "eval",
                 ApiUrl = EvalWeb.SearchApiUrl
-            }
+            },
+            Mcp = McpTestSecret.Gate
         });
 
         // The typed client keeps its name from the interface it is registered against.
@@ -317,7 +340,8 @@ public sealed class EvalStack : IAsyncDisposable
             // Long enough that nothing dispatches during a turn. The clock is pinned anyway, so a
             // due schedule is one the scenario armed rather than one the turn created.
             DispatchIntervalSeconds = 3600,
-            Delivery = new DeliverySettings { DefaultDeliverTo = ["signalr"] }
+            Delivery = new DeliverySettings { DefaultDeliverTo = ["signalr"] },
+            Mcp = McpTestSecret.Gate
         });
         builder.Services.Replace(ServiceDescriptor.Singleton(_ => (TimeProvider)Clock));
 
@@ -353,17 +377,19 @@ public sealed class EvalStack : IAsyncDisposable
         return $"http://localhost:{port}/mcp";
     }
 
-    // The shipped configuration, with three edits and no fourth: the secrets come from user
+    // The shipped configuration, with four edits and no fifth: the secrets come from user
     // secrets rather than from the environment the container would have had, nothing dials a
     // channel — the boundary of an eval is the agent, and what a channel does with a reply
-    // afterwards is covered by the channel and end-to-end suites — and the model is whatever
-    // ZIGGURAT_EVAL_MODEL asks for, so a pass against another model needs no edit to the file.
+    // afterwards is covered by the channel and end-to-end suites — the model is whatever
+    // ZIGGURAT_EVAL_MODEL asks for, so a pass against another model needs no edit to the file, and
+    // the deployment secret is the one every server this stack hosts is gated behind.
     // Bound once per process, so an edit to the file mid-pass reaches no stack of it.
     private static AgentSettings ShippedSettings(string redisConnectionString) =>
         EvalModel.FromEnvironment(ShippedDefinition.Repository.Settings) with
         {
             Redis = new RedisConfiguration { ConnectionString = redisConnectionString },
-            ChannelEndpoints = []
+            ChannelEndpoints = [],
+            Mcp = McpTestSecret.Gate
         };
 
     // The agent itself, built by the real factory. Only the configured endpoint urls are rewritten,
@@ -387,6 +413,9 @@ public sealed class EvalStack : IAsyncDisposable
         // reads it from.
         services.AddSingleton<IMetricsPublisher>(recording);
         services.AddSingleton<ISubAgentSpawner>(Workers);
+        services.AddSingleton<IVfsBridge>(Bridge);
+        // The scenario's instant, so the prompt's "today is" is the day the turn is stamped with.
+        services.Replace(ServiceDescriptor.Singleton<TimeProvider>(new PinnedClock(Clock)));
 
         // The memory feature, the way the deployment enables it: both shipped assistants list
         // `memory` among their features, so an eval without it would run a prompt one section

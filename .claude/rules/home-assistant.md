@@ -19,7 +19,14 @@ Home Assistant runs at `http://<host>:8123` (published on all interfaces). On fi
 
 The agent reaches HA in-network at `http://homeassistant:8123` via `McpServerHomeAssistant`. For voice alarms/reminders it creates events on a dedicated Local Calendar (prod: `calendar.assistant_alarms`, "Assistant Alarms" — the prompt never hard-codes the id, it says "the calendar the setup index lists as alarms") that an HA automation bridges to the voice announce endpoint; the `home_assistant_guide` prompt (`Domain/Prompts/HomeAssistantPrompt.cs`) teaches the idiom, and the one-time `rest_command` + automation provisioning lives in the HA instance itself — `docs/home-assistant-bridges.md` has the YAML. Without that automation an event is created and nothing rings.
 
-The HA VFS engine is `Domain/Tools/HomeAssistant/Vfs/*.cs`.
+The HA VFS engine is `Domain/Tools/HomeAssistant/Vfs/*.cs`. Each action an entity admits is an
+**action file** named for its service with no extension (`turn_on`, `music_assistant.play_media`),
+run from the entity directory as `./turn_on` or `turn_on` alike — `./` is the spelling taught,
+because a real shell needs it once exec runs in the sandbox. An action file is executable-only:
+read, create, edit and delete refuse it (`FsError.ExecutableOnly`), info reports `executable`,
+glob lists it under `executables`, and its usage is `--help`. The old `<service>.sh` spelling
+names nothing and answers 127 with the available names. Since any leaf other than `state.json`
+parses as an action, whether one exists is the catalog's answer, never the parser's.
 
 ## The calendar's action files are served, not forwarded
 
@@ -27,7 +34,7 @@ HA's service catalog cannot drive a calendar: `calendar.get_events` answers with
 event is addressed by (its response is filtered to start/end/summary/description/location/status),
 `calendar.create_event` takes no `rrule`, and there is **no delete or update service** — those exist
 only as WebSocket commands (`calendar/event/create|delete|update`). A real turn hit this: asked to
-move an alarm, the agent found `update_event.sh` missing and created a second event beside the first.
+move an alarm, the agent found `update_event` missing and created a second event beside the first.
 
 So `HaCalendarActions` declares `create_event`, `get_events` and `delete_event` as served actions
 (the podcast pattern), always registered, and `HaCatalogProvider` **replaces** the catalog's
@@ -53,7 +60,7 @@ string, an unquoted backslash escape). Before it did, `--description "{\"target\
 as `{\target\:…}` and the bridge could not read the alarm's target. The prompt now shows the
 description single-quoted.
 
-## Every entity has `history.sh`, served by the mount
+## Every entity has `history`, served by the mount
 
 The service catalog cannot read the recorder — the history endpoint (`GET /api/history/period/
 {start}`) is REST only — so `HaHistoryActions.History` is a served action (the calendar pattern)
@@ -85,13 +92,13 @@ comes back is bounded by the recorder's retention (10 days by default, 90 on pro
 the API says which, so the help and the empty answer say "unless this home raised it" rather
 than naming a bound the model would treat as fact. See `docs/adr/0037`.
 
-**`statistics.sh` is the read that outlives retention.** Long-term statistics (hourly mean/min/max,
+**`statistics` is the read that outlives retention.** Long-term statistics (hourly mean/min/max,
 or state/sum/change for a total) are WebSocket-only (`recorder/statistics_during_period`), compiled
 at :12 each hour for every sensor with a `state_class`, and kept for good. `HaStatisticsActions.
 Statistics` is the same every-entity served action narrowed by `RequiresAttribute = "state_class"`,
 so it appears in exactly the directories that have rows behind it — the resolver now takes the
 `HaEntityState`, not its id, for that reason — and the index says `every entity with state_class:
-statistics.sh`. `HaStatistics` runs it through `ListStatisticsAsync` (`--days`, `--period
+statistics`. `HaStatistics` runs it through `ListStatisticsAsync` (`--days`, `--period
 5minute|hour|day|week|month`, `--limit`); `HaWindow` resolves both reads' windows. Rows render only
 the measures the sensor's kind has. `FakeHomeAssistantSocket` answers the command from its
 `Statistics` map; the real-container test imports rows with `recorder.import_statistics` and
@@ -175,7 +182,7 @@ and only MA's own websocket API can produce it. `IMusicAssistantClient` /
 (no HTTP command endpoint exists); it authenticates with a long-lived MA token, and accumulates
 frames flagged `partial: true`.
 
-The capability reaches the agent as `music_assistant.podcast_episodes.sh` in every media_player
+The capability reaches the agent as `music_assistant.podcast_episodes` in every media_player
 directory. It is a **virtual action**: `HaMusicActions.PodcastEpisodes` is a synthetic
 `HaServiceDefinition` injected via `HaCatalogProvider(extraServices:)` so glob/`--help`/exec resolve
 it like a real service, and `HaFileSystem.ExecAsync` intercepts it and runs `HaPodcastEpisodes`
@@ -206,7 +213,7 @@ spent learning that `remote.turn_on --activity <app>` opens an app and which app
 things fix that:
 
 - **A choosing entity's index line carries its choices and the action that takes them.**
-  `HomeAssistantSetupSummary` appends ` — <service>.sh --<flag>: a, b, c` for the lists that ARE
+  `HomeAssistantSetupSummary` appends ` — ./<service> --<flag>: a, b, c` for the lists that ARE
   an action's argument (`activity_list` → `turn_on --activity`, `source_list` → `select_source
   --source`, `options` → `select_option --option`), only when the entity admits that action and
   the list is non-empty. The header says the segment stops at the dash. Widen the table only for

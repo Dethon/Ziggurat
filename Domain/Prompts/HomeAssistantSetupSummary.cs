@@ -30,9 +30,9 @@ public class HomeAssistantSetupSummary(
 
 
     private const string ActionsHeader =
-        "Action files live in the ENTITY directory (`/ha/entities/<class>/<id>/<action>.sh`), "
-        + "never in the class directory — `glob` on `/ha/entities/<class>/*.sh` always returns "
-        + "nothing. Use this table instead of globbing to discover actions. The `every entity` "
+        "Action files live in the ENTITY directory (`/ha/entities/<class>/<id>/<action>`), "
+        + "never in the class directory, and run from there as `./<action>` — a glob of the class "
+        + "directory finds none. Use this table instead of globbing to discover actions. The `every entity` "
         + "lines name the actions every directory has, read-only classes included (an `every "
         + "entity with <attribute>` line: every entity whose state.json carries that attribute); "
         + "a class absent from the rest has only those. If one entity lacks a listed action, "
@@ -152,7 +152,7 @@ public class HomeAssistantSetupSummary(
             .Where(hint => admitted.Contains(hint.Service))
             .Select(hint => (hint, choices: Choices(entity, hint.Attribute)))
             .Where(x => x.choices.Count > 0)
-            .Select(x => $" — {x.hint.Service}.sh --{x.hint.Argument}: {string.Join(", ", x.choices)}")
+            .Select(x => $" — ./{x.hint.Service} --{x.hint.Argument}: {string.Join(", ", x.choices)}")
             .FirstOrDefault() ?? string.Empty;
     }
 
@@ -187,7 +187,7 @@ public class HomeAssistantSetupSummary(
             .ThenBy(g => g.Key, StringComparer.Ordinal)
             .Select(g =>
                 (g.Key is null ? "every entity: " : $"every entity with {g.Key}: ")
-                + string.Join(", ", g.Select(svc => $"{svc.Service}.sh").Distinct(StringComparer.Ordinal).OrderBy(a => a, StringComparer.Ordinal)))
+                + string.Join(", ", g.Select(svc => svc.Service).Distinct(StringComparer.Ordinal).OrderBy(a => a, StringComparer.Ordinal)))
             .ToList();
 
     private static IReadOnlyList<string> ActionsFor(string classDomain, HaCatalog catalog) =>
@@ -196,7 +196,7 @@ public class HomeAssistantSetupSummary(
             .SelectMany(entity => HaActionResolver
                 .ServicesFor(entity, catalog.Services)
                 .Where(svc => !svc.AppliesToEveryEntity)
-                .Select(svc => $"{HaActionResolver.CommandName(svc, classDomain)}.sh"))
+                .Select(svc => HaActionResolver.CommandName(svc, classDomain)))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(a => a, StringComparer.Ordinal)
             .ToList();

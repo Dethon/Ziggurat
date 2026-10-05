@@ -23,10 +23,11 @@ internal static class E2EImages
         ["Domain", "Infrastructure", "Mcp.Hosting", "McpChannelSignalR"]);
 
     // The only image whose contents a test asserts on rather than merely runs: the mount-point
-    // alias is baked in here and nowhere else, so no in-process fixture can see it.
+    // alias and the root launcher (sandbox-runtime/) are baked in here and nowhere else, so no
+    // in-process fixture can see them.
     internal static E2EImageSpec McpSandbox { get; } = new(
         "McpServerSandbox/Dockerfile", "mcp-sandbox:latest",
-        ["Domain", "Infrastructure", "Mcp.Hosting", "McpServerSandbox"]);
+        ["Domain", "Infrastructure", "Mcp.Hosting", "McpServerSandbox", "sandbox-runtime"]);
 
     internal static E2EImageSpec Agent { get; } = new(
         "Agent/Dockerfile", "agent:latest", ["Domain", "Infrastructure", "Agent"]);

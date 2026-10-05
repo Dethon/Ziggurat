@@ -41,6 +41,7 @@ public sealed class ExecutingOutpostFileSystem(
         // loud in DescribeExec above, which is the mount's own answer the exec tool tells the model
         // to rely on.
         var cwd = string.IsNullOrEmpty(path.Trim('/')) || path == "." ? WorkingDirectory : path;
-        return Refused<FsExecResult>(cwd) ?? await runner.RunAsync(cwd, command, timeoutSeconds, ct);
+        // No bridge: the session's mounts are never served onto somebody's own computer.
+        return Refused<FsExecResult>(cwd) ?? await runner.RunAsync(cwd, command, timeoutSeconds, bridge: null, ct);
     }
 }

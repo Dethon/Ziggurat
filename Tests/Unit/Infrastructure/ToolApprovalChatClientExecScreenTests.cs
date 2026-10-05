@@ -25,7 +25,7 @@ public class ToolApprovalChatClientExecScreenTests
         ["/ha"] = null
     };
 
-    private static ShellReach? ReachOf(string path) =>
+    private static ShellReach? ReachOf(string path, string command) =>
         _mounts.FirstOrDefault(m => path.StartsWith(m.Key, StringComparison.Ordinal)).Value;
 
     private static AIFunction ExecFunction(List<string>? ran = null) =>
@@ -122,9 +122,9 @@ public class ToolApprovalChatClientExecScreenTests
         request.Command.ShouldBe("cargo build");
         request.WorkingDirectory.ShouldBe("/laptop/home/fran");
         request.Messages.Where(m => m.Role == ChatRole.User).ShouldHaveSingleItem().Text.ShouldBe("compila el proyecto");
-        request.TurnModel.ShouldBe("lemonade/qwen3");
-        request.ConversationId.ShouldBe("7:42");
-        request.AgentId.ShouldBe("jonas");
+        request.Caller.TurnModel.ShouldBe("lemonade/qwen3");
+        request.Caller.ConversationId.ShouldBe("7:42");
+        request.Caller.AgentId.ShouldBe("jonas");
     }
 
     // A call the person is asked about anyway is not screened: asking is already what a flag

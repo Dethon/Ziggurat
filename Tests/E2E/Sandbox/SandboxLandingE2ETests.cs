@@ -109,7 +109,7 @@ public class SandboxLandingE2ETests(SandboxE2EFixture fixture)
         McpClient client, CancellationToken ct)
     {
         var registry = new VirtualFileSystemRegistry();
-        await McpFileSystemDiscovery.DiscoverAndMountAsync([client], registry, NullLogger.Instance, ct);
+        await McpFileSystemDiscovery.DiscoverAndMountAsync([client], new HashSet<McpClient>(), registry, NullLogger.Instance, ct);
         return registry;
     }
 }

@@ -1,5 +1,4 @@
 using System.Net;
-using System.Runtime.InteropServices;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
@@ -28,7 +27,9 @@ public sealed class EvalSandbox : IAsyncDisposable
 
     public string Endpoint { get; private set; } = "";
 
-    public static async Task<EvalSandbox> StartAsync()
+    // `bridgeUrl`: the stack's exec bridge, as the container reaches it, so a command sees the
+    // stack's other mounts as the deployment's commands see theirs.
+    public static async Task<EvalSandbox> StartAsync(string? bridgeUrl = null)
     {
         await EnsureImageAsync();
 
@@ -44,15 +45,25 @@ public sealed class EvalSandbox : IAsyncDisposable
         var builder = TestContainers.Container(E2EImages.McpSandbox.ImageName, "eval-sandbox")
             .WithPortBinding(8080, true)
             .WithBindMount(sandbox.WorkspaceOnHost, "/home/sandbox_user", AccessMode.ReadWrite)
+            // The deployment secret its /mcp asks for, which the stack's agent presents too. The
+            // wait presents it as well, or the gate answers 401 before the transport says 405.
+            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r
                 .ForPort(8080)
                 .ForPath("/mcp")
+                .WithHeaders(McpTestSecret.Headers)
                 .ForStatusCode(HttpStatusCode.MethodNotAllowed)));
 
         if (OperatingSystem.IsLinux())
         {
-            builder = builder.WithCreateParameterModifier(
-                parameters => parameters.User = $"{geteuid()}:{getegid()}");
+            builder = builder.AsCompose();
+        }
+
+        if (bridgeUrl is not null)
+        {
+            builder = builder
+                .WithExtraHost("host.docker.internal", "host-gateway")
+                .WithEnvironment("VFSBRIDGEURL", bridgeUrl);
         }
 
         sandbox._container = builder.Build();
@@ -103,10 +114,4 @@ public sealed class EvalSandbox : IAsyncDisposable
             // A leftover temp directory is not a failing run.
         }
     }
-
-    [DllImport("libc")]
-    private static extern uint geteuid();
-
-    [DllImport("libc")]
-    private static extern uint getegid();
 }

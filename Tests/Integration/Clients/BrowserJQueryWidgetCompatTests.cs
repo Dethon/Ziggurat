@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
+using Domain.Judgments;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Xunit.Abstractions;
@@ -178,7 +179,7 @@ public class BrowserJQueryWidgetCompatTests(
         // budget and comes back Partial with a usable blank page, and insisting on Success made
         // that a failure of whichever widget case ran first. Nothing here reads example.com's own
         // content.
-        var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.com"));
+        var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.com") { Caller = JudgmentCaller.None });
         nav.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
         var jquery = await File.ReadAllTextAsync(JQueryAssetPath());

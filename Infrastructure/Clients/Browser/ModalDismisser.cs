@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
+using Domain.Judgments;
 using Domain.Tools.Web;
 using Microsoft.Playwright;
 
@@ -103,9 +104,9 @@ public class ModalDismisser(ModalJudge? judge = null)
     // What the browse envelope reports: the overlays that were closed. The measure is DismissAsync.
     public async Task<IReadOnlyList<ModalDismissed>> DismissModalsAsync(
         IPage page,
-        string? turnModel,
+        JudgmentCaller caller,
         CancellationToken ct) =>
-        (await DismissAsync(page, turnModel, ct))
+        (await DismissAsync(page, caller, ct))
             .Select(outcome => outcome.Dismissed)
             .OfType<ModalDismissed>()
             .ToList();
@@ -113,12 +114,12 @@ public class ModalDismisser(ModalJudge? judge = null)
     // One outcome per overlay the last pass detected: how it was closed, or that it was left
     // standing. A page with no overlay answers an empty list — nothing to count.
     //
-    // turnModel is the model the browsing turn was addressed to, from the tool call's `_meta`. It
+    // caller is the browsing turn — its model and who asked — from the tool call's `_meta`. It
     // is only ever handed to the judge, whose client sends nothing for the local box; the selector
     // and text paths never leave the page and run the same either way.
     public async Task<IReadOnlyList<ModalOverlayOutcome>> DismissAsync(
         IPage page,
-        string? turnModel,
+        JudgmentCaller caller,
         CancellationToken ct)
     {
         var patterns = _defaultPatterns;
@@ -152,7 +153,7 @@ public class ModalDismisser(ModalJudge? judge = null)
                 // every other detection as left-standing counted the wall that just closed as a
                 // miss. Rescan and keep only the kinds whose overlay is still there — the same
                 // rule the judgment path applies after each of its own dismissals.
-                return await StillStandingAsync(page, outcomes, turnModel, ct);
+                return await StillStandingAsync(page, outcomes, caller, ct);
             }
 
             if (sw.ElapsedMilliseconds >= ModalDetectionWindowMs)
@@ -161,7 +162,7 @@ public class ModalDismisser(ModalJudge? judge = null)
                 // no visible overlay, so it would only cost latency on the common no-modal page.
                 // An overlay the last pass detected and neither path could close is the miss this
                 // measure exists to count — and the one thing the judge is asked about.
-                return await JudgeStandingOverlaysAsync(page, outcomes, turnModel, ct);
+                return await JudgeStandingOverlaysAsync(page, outcomes, caller, ct);
             }
 
             await Task.Delay(ModalPollIntervalMs, ct);
@@ -181,7 +182,7 @@ public class ModalDismisser(ModalJudge? judge = null)
     private async Task<IReadOnlyList<ModalOverlayOutcome>> JudgeStandingOverlaysAsync(
         IPage page,
         IReadOnlyList<ModalOverlayOutcome> outcomes,
-        string? turnModel,
+        JudgmentCaller caller,
         CancellationToken ct)
     {
         if (judge is null || outcomes.All(o => o.Path != ModalDismissalPath.LeftStanding))
@@ -202,7 +203,7 @@ public class ModalDismisser(ModalJudge? judge = null)
                 continue;
             }
 
-            var result = await TryJudgeSafeAsync(page, PatternFor(outcome.Kind), judge, turnModel, ct);
+            var result = await TryJudgeSafeAsync(page, PatternFor(outcome.Kind), judge, caller, ct);
             judged.Add(result);
             if (result.Dismissed is null || remaining.Count == 0)
             {
@@ -230,7 +231,7 @@ public class ModalDismisser(ModalJudge? judge = null)
     private async Task<IReadOnlyList<ModalOverlayOutcome>> StillStandingAsync(
         IPage page,
         IReadOnlyList<ModalOverlayOutcome> outcomes,
-        string? turnModel,
+        JudgmentCaller caller,
         CancellationToken ct)
     {
         var standing = outcomes.Where(o => o.Path == ModalDismissalPath.LeftStanding).ToList();
@@ -245,18 +246,18 @@ public class ModalDismisser(ModalJudge? judge = null)
         return
         [
             .. outcomes.Where(o => o.Path != ModalDismissalPath.LeftStanding),
-            .. await JudgeStandingOverlaysAsync(page, survivors, turnModel, ct)
+            .. await JudgeStandingOverlaysAsync(page, survivors, caller, ct)
         ];
     }
 
     private static ModalPattern PatternFor(ModalType kind) => _defaultPatterns.First(p => p.Type == kind);
 
     private static async Task<ModalOverlayOutcome> TryJudgeSafeAsync(
-        IPage page, ModalPattern pattern, ModalJudge modalJudge, string? turnModel, CancellationToken ct)
+        IPage page, ModalPattern pattern, ModalJudge modalJudge, JudgmentCaller caller, CancellationToken ct)
     {
         try
         {
-            return await TryJudgeAsync(page, pattern, modalJudge, turnModel, ct);
+            return await TryJudgeAsync(page, pattern, modalJudge, caller, ct);
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {
@@ -265,7 +266,7 @@ public class ModalDismisser(ModalJudge? judge = null)
     }
 
     private static async Task<ModalOverlayOutcome> TryJudgeAsync(
-        IPage page, ModalPattern pattern, ModalJudge modalJudge, string? turnModel, CancellationToken ct)
+        IPage page, ModalPattern pattern, ModalJudge modalJudge, JudgmentCaller caller, CancellationToken ct)
     {
         var urlBefore = page.Url;
         var containerSelector = pattern.ContainerSelector ?? "*";
@@ -276,7 +277,7 @@ public class ModalDismisser(ModalJudge? judge = null)
             return ModalOverlayOutcome.LeftStanding(pattern.Type);
         }
 
-        var pick = await modalJudge.PickAsync(pattern.Type, controls, turnModel, ct);
+        var pick = await modalJudge.PickAsync(pattern.Type, controls, caller, ct);
         if (pick.Status != ModalPickStatus.Picked)
         {
             return ModalOverlayOutcome.LeftStanding(pattern.Type, pick);

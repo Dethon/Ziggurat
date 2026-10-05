@@ -44,7 +44,7 @@ entity to Home Assistant, which has never heard of it.
   - `{"kind": "prompt", "prompt": "…"}` — YOU run the prompt when it fires, as the agent
     that created the watch, and your answer goes to `deliverTo`. This is the default for a
     plain "warn me" / "avísame" / "tell me": you phrase the warning yourself when it fires
-    (the value, the trend from `history.sh`). The fire brings you what fired — entity,
+    (the value, the trend from `./history`). The fire brings you what fired — entity,
     from → to, when — even if the prompt says nothing about it, so "look into it" is enough.
   - `{"kind": "announce", "text": "…", "target": {…}, "insistent": {…}}` — a fixed
     sentence spoken in the home with no agent involved. Its whole shape is here; no other

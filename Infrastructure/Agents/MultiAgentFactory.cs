@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Security;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
@@ -36,6 +37,15 @@ public sealed class MultiAgentFactory(
     private readonly LemonadeChatHostOptions? _lemonadeHost =
         serviceProvider?.GetService<LemonadeChatHostOptions>();
 
+    // The secret every configured endpoint presents, read once for every agent and worker this
+    // factory builds. Absent in a host that registered none, and empty in a deployment that never
+    // set it; both present nothing and a gated server refuses, so the gate rather than this decides
+    // what an unset secret means.
+    private readonly string? _mcpSecret =
+        serviceProvider?.GetService<McpGateSettings>() is { SharedSecret.Length: > 0 } gate
+            ? gate.SharedSecret
+            : null;
+
     // One source for every agent this factory builds, read on each turn that carries a patch.
     private readonly IPatchableModelSource _patchableModels = new PatchableModelWhitelist(
         openRouterConfig.PatchableModelIds ?? [], LemonadeModelsOf(serviceProvider));
@@ -68,7 +78,7 @@ public sealed class MultiAgentFactory(
         IToolApprovalHandler approvalHandler,
         SpawnContext spawn)
     {
-        var spec = AgentSpecProjection.ForSubAgent(definition, spawn, openRouterConfig, _logger);
+        var spec = AgentSpecProjection.ForSubAgent(definition, spawn, openRouterConfig, _mcpSecret, _logger);
 
         return Build(spec, approvalHandler);
     }
@@ -76,9 +86,11 @@ public sealed class MultiAgentFactory(
     private DisposableAgent CreateFromDefinition(
         AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
     {
+        // Asked without a user, the provider lists the built-in agents alone: the deployment's own.
+        var deployment = new DeploymentEndpoints(definitionProvider.GetAll().SelectMany(a => a.McpServerEndpoints));
         var spec = AgentSpecProjection.ForAgent(
             definition, agentKey, userId, openRouterConfig, _patchableModels,
-            _lemonadeHost is { IsConfigured: true } host ? host.Address : null, _logger);
+            _lemonadeHost is { IsConfigured: true } host ? host.Address : null, _mcpSecret, deployment, _logger);
 
         return Build(spec, approvalHandler);
     }
@@ -143,7 +155,9 @@ public sealed class MultiAgentFactory(
             effectiveClient,
             stateStore,
             agentPublisher,
-            TimeProvider.System,
+            // The deployment registers the system clock; an evaluation harness registers the
+            // instant its scenario is pinned to, so the prompt's date agrees with the turn's.
+            serviceProvider?.GetService<TimeProvider>() ?? TimeProvider.System,
             domainTools,
             domainPrompts,
             loggerFactory,
@@ -156,7 +170,10 @@ public sealed class MultiAgentFactory(
             // Optional for the same reason: a host with no judge preloads nothing and the model
             // loads for itself. A worker gets it by this same line, judged on its delegation
             // prompt, so a delegated task also starts on the task.
-            serviceProvider?.GetService<ISkillPreloader>());
+            serviceProvider?.GetService<ISkillPreloader>(),
+            // Optional as well: a host with no bridge endpoint runs sandbox commands with only the
+            // sandbox's own disk, as before the bridge existed.
+            serviceProvider?.GetService<IVfsBridge>());
     }
 
     // Everything file_read needs to show the model a picture, resolved where the spec and the

@@ -99,6 +99,18 @@ public class MemoryJudgeGateTests
         request.Questions.Values.ShouldAllBe(q => q is NoulQuestion);
     }
 
+    // No turn is behind a memory question, so it bills the user it is about.
+    [Fact]
+    public async Task TheJudgment_IsBilledToTheUserItIsAbout_WithNoTurn()
+    {
+        var judge = StubJudge.Nouls(("fact", 0.0), ("preference", 0.0), ("instruction", 0.0));
+
+        await Judge(judge).GateAsync(_window, _context, CancellationToken.None);
+
+        judge.Requests.ShouldHaveSingleItem().Caller
+            .ShouldBe(new JudgmentCaller(TurnModel: null, "user1", "nabu", "conv-1"));
+    }
+
     [Fact]
     public async Task AnAnsweredCall_PublishesOneEventSayingWhetherItSkipped()
     {

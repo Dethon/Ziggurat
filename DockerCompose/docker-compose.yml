@@ -216,6 +216,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
       - jackbot
     depends_on:
@@ -248,6 +249,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
       - jackbot
     depends_on:
@@ -265,12 +267,25 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerSandbox/Dockerfile
-    user: ${PUID:-1654}:${PGID:-1654}
+    # No `user:` — the image's entrypoint is a root launcher (sandbox-runtime/) that starts the MCP
+    # server as a uid of its own and runs every command as PUID:PGID, its bounding set dropped. It
+    # needs SYS_ADMIN for the per-command mount namespace and the FUSE mount of the session's other
+    # mounts at /vfs (with /dev/fuse below); commands never hold it.
+    cap_add:
+      - SYS_ADMIN
+    # docker-default denies every mount, so on an AppArmor host (prod) every exec would fail; this
+    # profile allows only the launcher's own. Install it on the host before `up` — see its header.
+    # Docker's own syscall filter grants a SYS_ADMIN container bpf, perf_event_open, setns and more;
+    # ours is Docker's default with that cut to mount, umount2 and unshare(CLONE_NEWNS).
+    security_opt:
+      - apparmor=ziggurat-sandbox
+      - seccomp=./seccomp/ziggurat-sandbox.json
     # Only /dev/dri, same as lemonade: the render node alone keeps this up on hosts with no
     # /dev/kfd (Intel iGPU, Raspberry Pi). An AMD host that wants ROCm/HIP inside the sandbox
     # adds the compute node via docker-compose.override.rocm.yml.
     devices:
       - /dev/dri:/dev/dri
+      - /dev/fuse:/dev/fuse
     # /dev/dri/renderD* is root:render 0660 and --device preserves host ownership, so PUID
     # needs render as a supplementary GID or every open is EACCES and whatever the agent
     # installed silently falls back to CPU. Set RENDER_GID from the target host:
@@ -287,12 +302,20 @@ services:
     volumes:
       - ${SANDBOX_HOME_PATH:-./volumes/sandbox}:/home/sandbox_user
     restart: unless-stopped
-    env_file:
-      - .env
+    # No env_file: this container runs whatever the model writes, so it is handed the one secret it
+    # needs by name rather than the deployment's whole secrets file. Commands get none of it either
+    # way — the launcher gives them a minimal environment, and the server runs as a uid they cannot
+    # inspect.
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
       HOME: /home/sandbox_user
       PATH: /home/sandbox_user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      PUID: ${PUID:-1654}
+      PGID: ${PGID:-1654}
+      # Where a command's file operations on the other mounts are answered: the agent's exec
+      # bridge, on this network only (the proxy never routes it).
+      VFSBRIDGEURL: http://agent:8080/api/vfs-bridge
     networks:
       - jackbot
     depends_on:
@@ -337,6 +360,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
       - jackbot
     depends_on:
@@ -364,6 +388,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
       - jackbot
     depends_on:
@@ -393,6 +418,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
       - jackbot
     depends_on:
@@ -422,6 +448,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
       Dictation__Transcription__Model: *stt-model
     networks:
       - jackbot
@@ -448,6 +475,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
       Dictation__Transcription__Model: *stt-model
     networks:
       - jackbot
@@ -474,6 +502,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
       - jackbot
     depends_on:
@@ -496,6 +525,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
       - jackbot
     depends_on:
@@ -523,6 +553,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
       - jackbot
     depends_on:
@@ -546,6 +577,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
       - jackbot
     depends_on:
@@ -578,6 +610,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
       Announce__Escalation__WebhookUrl: ""
       Stt__OpenAi__Model: *stt-model
       Tse__Mode: "${Tse__Mode:-Off}"
@@ -715,6 +748,8 @@ services:
       - .env
     environment:
       <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      AGENTAPI__SHAREDSECRET: ${AGENTAPI__SHAREDSECRET}
     networks:
       - jackbot
     depends_on:

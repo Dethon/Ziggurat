@@ -5,16 +5,27 @@ using Shouldly;
 
 namespace Tests.Unit.Domain.Tools.Files;
 
-// An outpost is a text disk root over a real machine, mounted under the name its operator gave it,
+// An outpost is a text disk root over a real machine, addressed by the name its operator gave it,
 // with the machine's own root as the mount root. What is worth pinning here is the prose, because
 // it is generated from the values the binary was started with rather than written — which is what
 // stops it disagreeing with the behaviour.
 public class OutpostFileSystemTests
 {
+    // A separate machine rather than a branch of the agent's own tree, so it is not spelled like
+    // one: `/vault` would be a machine competing with the vault for its name.
     [Fact]
-    public void TheMountPoint_IsTheNameItWasGiven()
+    public void TheMountPoint_IsTheNameItWasGivenAsAMachineAddress()
     {
-        Outpost("laptop", "/home/someone/project").MountPoint.ShouldBe("/laptop");
+        Outpost("laptop", "/home/someone/project").MountPoint.ShouldBe("outpost:laptop");
+    }
+
+    [Fact]
+    public void TheGeneratedDescription_NamesTheWorkingDirectoryAtTheMachineAddress()
+    {
+        var description = Outpost("laptop", "/home/someone/project").DescribeMount;
+
+        description.ShouldContain("outpost:laptop/home/someone/project");
+        description.ShouldNotContain(" /laptop");
     }
 
     // The mount root is the machine's root whether the outpost is jailed or not, so the same file
@@ -75,7 +86,7 @@ public class OutpostFileSystemTests
         var outpost = Outpost("laptop", "/");
 
         outpost.Workspace.ShouldBe("");
-        outpost.DescribeMount.ShouldContain("/laptop/");
+        outpost.DescribeMount.ShouldContain("outpost:laptop/");
     }
 
     private static OutpostFileSystem Outpost(string name, string workingDirectory) =>

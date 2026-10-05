@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.Judgments;
 using Infrastructure.Clients.Browser;
 using Microsoft.Playwright;
 using Moq;
@@ -32,7 +33,8 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         // Act
         var request = new BrowseRequest(
             SessionId: "test",
-            Url: url);
+            Url: url)
+        { Caller = JudgmentCaller.None };
         var result = await _browser.NavigateAsync(request);
 
         // Assert
@@ -65,7 +67,8 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         await using var browser = new PlaywrightWebBrowser(wsEndpoint: null);
         var request = new BrowseRequest(
             SessionId: "test",
-            Url: "https://example.com");
+            Url: "https://example.com")
+        { Caller = JudgmentCaller.None };
 
         // Act & Assert
         await Should.ThrowAsync<InvalidOperationException>(
@@ -113,10 +116,10 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
             wsEndpoint: "ws://dummy:9377/browser",
             browserFactory: () => Task.FromResult(browserMock.Object));
 
-        var nav1 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://a.test/"));
+        var nav1 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://a.test/") { Caller = JudgmentCaller.None });
         await firstGotoEntered.Task;
 
-        var nav2 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://a.test/"));
+        var nav2 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://a.test/") { Caller = JudgmentCaller.None });
         var secondStarted = await Task.WhenAny(nav2, Eventually.Settle()) == nav2;
 
         // While the first navigation holds the tab, the second must not have navigated.
@@ -171,10 +174,10 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
             wsEndpoint: "ws://dummy:9377/browser",
             browserFactory: () => Task.FromResult(browserMock.Object));
 
-        var nav1 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://a.test/"));
+        var nav1 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://a.test/") { Caller = JudgmentCaller.None });
         await firstGotoEntered.Task;
 
-        var nav2 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://b.test/"));
+        var nav2 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://b.test/") { Caller = JudgmentCaller.None });
 
         // The second browse lands on its own tab and finishes while the first still navigates.
         (await Task.WhenAny(nav2, Task.Delay(2000))).ShouldBe(nav2);
@@ -220,7 +223,7 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
             wsEndpoint: "ws://dummy:9377/browser",
             browserFactory: () => Task.FromResult(browserMock.Object));
 
-        var nav = browser.NavigateAsync(new BrowseRequest(SessionId: "s", Url: "https://a.test/"));
+        var nav = browser.NavigateAsync(new BrowseRequest(SessionId: "s", Url: "https://a.test/") { Caller = JudgmentCaller.None });
         await gotoEntered.Task;
 
         var snapshot = browser.SnapshotAsync(new SnapshotRequest("s"));
@@ -304,7 +307,7 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         await using var browser = new PlaywrightWebBrowser(
             wsEndpoint: "ws://dummy:9377/browser", browserFactory: factory);
 
-        var result = await browser.NavigateAsync(new BrowseRequest(SessionId: "s", Url: "https://a.test/"));
+        var result = await browser.NavigateAsync(new BrowseRequest(SessionId: "s", Url: "https://a.test/") { Caller = JudgmentCaller.None });
 
         connections.Count.ShouldBe(2);
         result.ErrorMessage.ShouldNotBeNull();
@@ -342,7 +345,7 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         await using var browser = new PlaywrightWebBrowser(
             wsEndpoint: "ws://dummy:9377/browser", browserFactory: factory);
 
-        var result = await browser.NavigateAsync(new BrowseRequest(SessionId: "s", Url: "https://a.test/"));
+        var result = await browser.NavigateAsync(new BrowseRequest(SessionId: "s", Url: "https://a.test/") { Caller = JudgmentCaller.None });
 
         // It reconnected (so it genuinely retried) but the retry still failed closed.
         connections.Count.ShouldBe(2);
@@ -479,7 +482,7 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
             wsEndpoint: "ws://dummy:9377/browser",
             browserFactory: () => Task.FromResult(browserMock.Object));
 
-        await browser.NavigateAsync(new BrowseRequest(SessionId: sessionId, Url: url));
+        await browser.NavigateAsync(new BrowseRequest(SessionId: sessionId, Url: url) { Caller = JudgmentCaller.None });
         return (browser, page);
     }
 

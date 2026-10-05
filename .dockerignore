@@ -56,3 +56,7 @@ temp
 
 # Rust satellite crate (deployed to hardware, not containerized; target/ is volatile cargo output)
 satellite
+speech-typist
+
+# The sandbox runtime crate is built inside the sandbox image; its cargo output never is.
+sandbox-runtime/target

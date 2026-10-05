@@ -147,8 +147,8 @@ public class OutpostEndpointsTests
     }
 
     // A machine that registered and then did not answer is the one absence worth trying again, and
-    // the registry is where that is remembered — otherwise the model asks for /laptop, is told the
-    // path does not exist, and looks for a spelling mistake in a name that was right.
+    // the registry is where that is remembered — otherwise the model asks for outpost:laptop, is
+    // told the path does not exist, and looks for a spelling mistake in a name that was right.
     [Fact]
     public void DeclareUnreachable_AMachineThatRegisteredAndWasNotDialled_IsRememberedAsUnavailable()
     {
@@ -157,7 +157,7 @@ public class OutpostEndpointsTests
         OutpostEndpoints.DeclareUnreachable(registry, [_laptop], dialled: []);
 
         var (mountPoint, state, detail) = registry.Declared.ShouldHaveSingleItem();
-        mountPoint.ShouldBe("/laptop");
+        mountPoint.ShouldBe("outpost:laptop");
         state.ShouldBe(CapabilityState.Unavailable);
         detail.ShouldContain("did not answer");
     }

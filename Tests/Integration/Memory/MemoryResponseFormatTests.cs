@@ -5,6 +5,7 @@ using Domain.Judgments;
 using Domain.Memory;
 using Infrastructure.Judgments;
 using Infrastructure.Memory;
+using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -330,6 +331,7 @@ internal static class LiveMemoryJudge
                 ApiKey = _configuration["openRouter:apiKey"] ?? "",
                 Model = _configuration["typeSafe:model"] ?? new TypeSafeOptions().Model
             },
+            NoOpMetricsPublisher.Instance,
             NullLogger.Instance);
 
         return new MemoryJudge(judge, new MemoryJudgmentSettings(), TimeProvider.System);

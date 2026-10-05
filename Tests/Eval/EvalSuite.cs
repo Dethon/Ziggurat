@@ -21,6 +21,7 @@ public static class EvalSuite
         .. WatchScenarios.All,
         .. VaultScenarios.All,
         .. MountScenarios.All,
+        .. ShellScenarios.All,
         .. DelegationScenarios.All,
         .. MemoryScenarios.All,
         .. MusicScenarios.All,

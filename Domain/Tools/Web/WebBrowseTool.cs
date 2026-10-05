@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Judgments;
 
 namespace Domain.Tools.Web;
 
@@ -19,10 +20,10 @@ public class WebBrowseTool(IWebBrowser browser)
         dismissed on the way in.
         """;
 
-    // turnModel is the model the turn was addressed to, from the call's `_meta` (BrowseRequest).
+    // caller is the turn behind the call, from its `_meta` (BrowseRequest).
     protected async Task<WebBrowseToolResult> RunAsync(
         string sessionId,
-        string? turnModel,
+        JudgmentCaller caller,
         string url,
         string? selector,
         int maxLength,
@@ -47,7 +48,7 @@ public class WebBrowseTool(IWebBrowser browser)
             ScrollToLoad: scrollToLoad,
             ScrollSteps: scrollSteps)
         {
-            TurnModel = turnModel
+            Caller = caller
         };
 
         var result = await browser.NavigateAsync(request, ct);

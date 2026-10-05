@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Domain.DTOs;
@@ -25,12 +26,17 @@ public static class ScenarioChecks
         .. Wrote(scenario, recording),
         .. Delegated(scenario, recording),
         .. ConditionallyDelegated(scenario, recording),
-        .. Forgot(scenario, recording)
+        .. Forgot(scenario, recording),
+        .. Dated(scenario, recording)
     ];
 
     // What a failure says when the host, not the model, made the call. One spelling, because the
     // message is written in one place and read back in another to classify the red.
     internal const string PreloadedByTheHost = "preloaded by the host";
+
+    // What a failure says when the prompt's date was not the scenario's: the stack's red, read
+    // back by the same spelling to keep it out of the model's.
+    internal const string MisDated = "the stack's clock is not the scenario's";
 
     // Which red this is. A turn the provider refused or that ran out of time is neither prose's
     // fault: the model never answered, so its silence says nothing about a description. Otherwise
@@ -41,6 +47,7 @@ public static class ScenarioChecks
         failures.Count == 0
             ? null
             : recording.ProviderError is not null || recording.TimedOut
+                                                     || failures.Any(failure => failure.Contains(MisDated, StringComparison.Ordinal))
                 ? FailureKind.RunFailed
                 : scenario.Required
                     .Where(expectation => new ToolPatternMatcher([expectation.Tool]).IsMatch(EvalTools.LoadSkill))
@@ -248,6 +255,20 @@ public static class ScenarioChecks
                 is { Length: > 0 } moved ? moved : "absent"
             : recording.StateAfter.GetValueOrDefault(change.Key) ?? "absent";
 
+    // The scenario pins the turn to an instant, and the prompt's date has to agree with it: a
+    // prompt dated by the machine's clock tells the model one day and the message's timestamp
+    // another, and whichever it believes, a red that follows is the harness's. A recording with
+    // no prompt — a scripted one — has nothing to disagree with.
+    private static IEnumerable<string> Dated(Scenario scenario, Recording recording)
+    {
+        var pinned = $"Today is {scenario.Instant.ToString("dddd, yyyy-MM-dd", CultureInfo.InvariantCulture)}.";
+        return recording.SystemPrompt is { } prompt
+               && Regex.Match(prompt, @"Today is [^\n]*?\d{4}-\d{2}-\d{2}\.") is { Success: true } told
+               && told.Value != pinned
+            ? [$"the prompt said '{told.Value}' to a turn pinned to {scenario.Instant:yyyy-MM-dd}: {MisDated}, so this run says nothing about the model"]
+            : [];
+    }
+
     private static IReadOnlyList<string> Answered(Scenario scenario, Recording recording) =>
         scenario.Reply is null ? [] : ReplyChecks.Failures(scenario.Reply, recording.Reply);
 
@@ -262,6 +283,11 @@ public static class ScenarioChecks
     // the scenario's own declaration, which says which worker may be handed what — so a scenario
     // that also had to permit the tool by name would be saying the same thing twice, and a scenario
     // that forgot would report the model's correct decision as an unnecessary call.
+    // A path or a command is not a tool name: a command is often a script of several lines, and a
+    // `*` in a permission means anything at all, newlines included.
+    private static Regex Wildcard(string pattern) =>
+        new($"^{Regex.Escape(pattern).Replace("\\*", ".*")}$", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
     private static IEnumerable<string> Unnecessary(Scenario scenario, Recording recording)
     {
         // Compiled once for the whole recording rather than once per call: a permission is a pair
@@ -269,8 +295,8 @@ public static class ScenarioChecks
         var permitted = scenario.Permitted
             .Select(p => (
                 Tool: new ToolPatternMatcher([p.Tool]),
-                Path: new ToolPatternMatcher([p.Path]),
-                Command: new ToolPatternMatcher([p.Command])))
+                Path: Wildcard(p.Path),
+                Command: Wildcard(p.Command)))
             .ToList();
 
         // A refused attempt at a required call, corrected into it: the tool named the fix and the

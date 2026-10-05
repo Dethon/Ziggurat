@@ -51,7 +51,7 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
         var url = await ServeAsync(browser, CookieWall);
         var sessionId = Guid.NewGuid().ToString();
 
-        var result = await browser.NavigateAsync(new BrowseRequest(sessionId, url));
+        var result = await browser.NavigateAsync(new BrowseRequest(sessionId, url) { Caller = JudgmentCaller.None });
 
         var dismissed = result.DismissedModals.ShouldNotBeNull().ShouldHaveSingleItem();
         dismissed.Type.ShouldBe(ModalType.CookieConsent);
@@ -77,7 +77,7 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
         var url = await ServeAsync(browser, CookieWall);
         var sessionId = Guid.NewGuid().ToString();
 
-        var result = await browser.NavigateAsync(new BrowseRequest(sessionId, url));
+        var result = await browser.NavigateAsync(new BrowseRequest(sessionId, url) { Caller = JudgmentCaller.None });
 
         result.DismissedModals.ShouldBeEmpty();
         (await browser.EvaluateOnSessionAsync<bool>(sessionId,
@@ -107,7 +107,7 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
             "<button style='display:none'>Oculto</button>" +
             "</div><p>Main content</p>");
 
-        await browser.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), url));
+        await browser.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), url) { Caller = JudgmentCaller.None });
 
         var request = judge.Requests.ShouldHaveSingleItem();
         request.State.Select(p => p.Key).ShouldBe(["overlay_kind", "controls"]);
@@ -128,7 +128,7 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
         var url = await ServeAsync(browser, CookieWall);
         var sessionId = Guid.NewGuid().ToString();
 
-        var result = await browser.NavigateAsync(new BrowseRequest(sessionId, url));
+        var result = await browser.NavigateAsync(new BrowseRequest(sessionId, url) { Caller = JudgmentCaller.None });
 
         result.DismissedModals.ShouldBeEmpty();
         _published.Published.OfType<ModalDismissalEvent>().ShouldHaveSingleItem().Outcome.ShouldBe(ModalDismissalOutcomes.LeftStanding);
@@ -145,11 +145,11 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
         var apiKey = ModalJudgeJevTests.RequireKey();
 
         var off = await BrowserAsync(StubJudge.Absent(AbsenceReason.Unconfigured));
-        var standing = await off.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), await ServeAsync(off, CookieWall)));
+        var standing = await off.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), await ServeAsync(off, CookieWall)) { Caller = JudgmentCaller.None });
         standing.DismissedModals.ShouldBeEmpty();
 
         var on = await BrowserAsync(ModalJudgeJevTests.ShippedJudge(apiKey));
-        var dismissed = await on.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), await ServeAsync(on, CookieWall)));
+        var dismissed = await on.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), await ServeAsync(on, CookieWall)) { Caller = JudgmentCaller.None });
 
         var closed = dismissed.DismissedModals.ShouldNotBeNull().ShouldHaveSingleItem();
         closed.Selector.ShouldBe("judgment(1)");
@@ -168,7 +168,7 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
         var browser = await BrowserAsync(judge);
         var url = await ServeAsync(browser, CookieWall.Replace("class='cookie-consent'", "class='modal cookie-consent'"));
 
-        var result = await browser.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), url));
+        var result = await browser.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), url) { Caller = JudgmentCaller.None });
 
         result.DismissedModals.ShouldNotBeNull().ShouldHaveSingleItem().Selector.ShouldBe("judgment(1)");
         judge.Requests.ShouldHaveSingleItem();

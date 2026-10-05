@@ -537,7 +537,7 @@ public class ChatMonitorTests
         logger.Verify(l => l.Log(
             LogLevel.Error,
             It.IsAny<EventId>(),
-            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.Is<It.IsAnyType>((state, _) => $"{state}".Contains("conv-1")),
             It.IsAny<HttpRequestException>(),
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
@@ -683,7 +683,7 @@ public class ChatMonitorTests
         logger.Verify(l => l.Log(
             LogLevel.Warning,
             It.IsAny<EventId>(),
-            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.Is<It.IsAnyType>((state, _) => $"{state}".Contains("conv-1")),
             It.IsAny<Exception?>(),
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
@@ -723,7 +723,7 @@ public class ChatMonitorTests
         logger.Verify(l => l.Log(
             LogLevel.Error,
             It.IsAny<EventId>(),
-            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.Is<It.IsAnyType>((state, _) => $"{state}".Contains("conv-1")),
             It.IsAny<HttpRequestException>(),
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
@@ -762,7 +762,7 @@ public class ChatMonitorTests
         logger.Verify(l => l.Log(
             LogLevel.Error,
             It.IsAny<EventId>(),
-            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.Is<It.IsAnyType>((state, _) => $"{state}".Contains("conv-1")),
             It.IsAny<HttpRequestException>(),
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }

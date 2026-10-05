@@ -1,8 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
+using Domain.Judgments;
 using Domain.Tools.Web;
 using Infrastructure.Judgments;
+using Infrastructure.Metrics;
 using McpServerWebSearch.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -86,7 +88,7 @@ public class ModalJudgeJevTests
             try
             {
                 var controls = c.Controls.Select((name, i) => new ModalControl(i, "button", name)).ToList();
-                var pick = await judge.PickAsync(c.Kind, controls, turnModel: null, CancellationToken.None);
+                var pick = await judge.PickAsync(c.Kind, controls, JudgmentCaller.None, CancellationToken.None);
                 pick.Status.ShouldNotBeOneOf(ModalPickStatus.Absent, ModalPickStatus.NotAsked);
                 return new Verdict(c, pick);
             }
@@ -110,6 +112,7 @@ public class ModalJudgeJevTests
         var judge = TypeSafeJudge.Create(
             new HttpClient(),
             new TypeSafeOptions { ApiUrl = shipped.TypeSafe.ApiUrl, ApiKey = apiKey, Model = shipped.TypeSafe.Model },
+            NoOpMetricsPublisher.Instance,
             NullLogger.Instance);
         return new ModalJudge(judge, shipped.Judgment with { DeadlineMs = 15_000 }, TimeProvider.System);
     }

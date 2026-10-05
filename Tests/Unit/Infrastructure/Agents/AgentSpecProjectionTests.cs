@@ -54,11 +54,14 @@ public sealed class AgentSpecProjectionTests
 
     private static AgentSpec AgentSpec() => AgentSpecProjection.ForAgent(
         _agentDefinition, new AgentKey("conv-1", "jack"), "fran", _openRouter,
-        new FixedPatchableModelSource(["model-a", "model-b"]), lemonadeHostAddress: null, logger: null);
+        new FixedPatchableModelSource(["model-a", "model-b"]), lemonadeHostAddress: null,
+        mcpSecret: McpSecret, new DeploymentEndpoints(_agentDefinition.McpServerEndpoints), logger: null);
 
     private static AgentSpec SubAgentSpec() => AgentSpecProjection.ForSubAgent(
         _subAgentDefinition, new SpawnContext("conv-1", "fran", ["allow-*"], UsesOutposts: false),
-        _openRouter, null);
+        _openRouter, McpSecret, null);
+
+    private const string McpSecret = "deployment-secret";
 
     // One row per field the two paths resolve, so a new difference is a new row rather than a
     // new test. A row whose two expectations are equal is a difference this change removed on
@@ -93,10 +96,12 @@ public sealed class AgentSpecProjectionTests
         Row("provider routing", s => s.ProviderRouting, _declaredRouting, _globalRouting),
         // An endpoint stops being a bare string here. Everything the projection reads came out of
         // appsettings.json, so everything it composes is marked configured; a dynamic one is
-        // contributed later, by the registry of live outposts, and never by a definition.
+        // contributed later, by the registry of live outposts, and never by a definition. Every
+        // configured endpoint is a deployment server, so every one presents the deployment secret
+        // its /mcp asks for — a worker's as much as its parent's.
         Row("mcp server endpoints", s => s.McpServerEndpoints,
-            new[] { McpServerEndpoint.Configured("http://tools") },
-            new[] { McpServerEndpoint.Configured("http://tools") })
+            new[] { McpServerEndpoint.Configured("http://tools", McpSecret) },
+            new[] { McpServerEndpoint.Configured("http://tools", McpSecret) })
     ];
 
     [Theory]
@@ -123,7 +128,7 @@ public sealed class AgentSpecProjectionTests
         AgentSpecProjection.ForSubAgent(
                 _subAgentDefinition with { UsesOutposts = ownDefinition },
                 new SpawnContext("conv-1", "fran", ["allow-*"], UsesOutposts: parent),
-                _openRouter, null)
+                _openRouter, McpSecret, null)
             .UsesOutposts.ShouldBe(expected);
     }
 

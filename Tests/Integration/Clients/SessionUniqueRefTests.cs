@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Domain.Contracts;
+using Domain.Judgments;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -107,7 +108,7 @@ public partial class SessionUniqueRefTests(IsolatedSessionBrowserFixture fixture
         // DOMContentLoaded that never arrives spends the production 30s budget and returns Partial
         // with a usable page, and demanding Success turned that into a failure of whatever the case
         // was really asserting.
-        var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.com"));
+        var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.com") { Caller = JudgmentCaller.None });
         nav.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
         await fixture.Browser.EvaluateOnSessionAsync(

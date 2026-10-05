@@ -5,7 +5,7 @@ using Domain.Exceptions;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
-// Implements `history.sh` (see HaHistoryActions): resolves the window, reads the recorder through
+// Implements `history` (see HaHistoryActions): resolves the window, reads the recorder through
 // the client, and answers either every change or one summary per bucket.
 //
 // The window's strings cross to Home Assistant as written (HaDateTimeText). The instants that come
@@ -55,7 +55,7 @@ internal static class HaHistory
                     "No recorded changes in this window: either nothing changed, or the window is older than the "
                     + "recorder's retention (10 days unless this home raised it; nothing here says which). Widen the "
                     + "window with --hours or check the dates before concluding the past is gone; for a sensor with a "
-                    + "state_class, statistics.sh reaches further back.";
+                    + "state_class, ./statistics reaches further back.";
             }
             return (0, payload.ToJsonString(), "");
         }

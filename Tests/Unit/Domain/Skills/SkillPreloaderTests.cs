@@ -130,14 +130,18 @@ public class SkillPreloaderTests
     }
 
     [Fact]
-    public async Task Preload_TheTurnsModel_IsHandedToTheJudge_OnTheRequest()
+    public async Task Preload_TheTurnAndWhoAsked_AreHandedToTheJudge_OnTheRequest()
     {
         var judge = new ScriptedJudge(_ => new JudgmentOutcome.Absent(AbsenceReason.LocalTurn));
 
         await Preloader(judge).PreloadAsync(
-            Request("apaga la luz", [_home]) with { ConfigPatchModel = "lemonade/qwen3" }, CancellationToken.None);
+            Request("apaga la luz", [_home]) with
+            {
+                Caller = new JudgmentCaller("lemonade/qwen3", "fran", "jonas", "conv-1")
+            },
+            CancellationToken.None);
 
-        judge.Asked.ShouldHaveSingleItem().TurnModel.ShouldBe("lemonade/qwen3");
+        judge.Asked.ShouldHaveSingleItem().Caller.ShouldBe(new JudgmentCaller("lemonade/qwen3", "fran", "jonas", "conv-1"));
     }
 
     [Fact]
@@ -364,5 +368,5 @@ public class SkillPreloaderTests
         new(judge, settings ?? _settings, clock ?? new FakeTimeProvider());
 
     private static SkillPreloadRequest Request(string text, IReadOnlyList<PromptSkill> skills, IEnumerable<ChatMessage>? history = null) =>
-        new(text, skills, history ?? []);
+        new(text, skills, history ?? []) { Caller = JudgmentCaller.None };
 }

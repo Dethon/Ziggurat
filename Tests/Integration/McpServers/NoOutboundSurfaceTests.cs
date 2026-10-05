@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Domain.Security;
 using Mcp.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
@@ -16,7 +17,10 @@ namespace Tests.Integration.McpServers;
 // absent" from "forgotten".
 public class NoOutboundSurfaceTests
 {
-    private sealed record ProbeSettings(string Name);
+    private sealed record ProbeSettings(string Name) : IMcpHostSettings
+    {
+        public McpGateSettings Mcp => McpTestSecret.Gate;
+    }
 
     [Fact]
     public void AChannelServerWithoutTheArgument_GetsNoStubs() =>

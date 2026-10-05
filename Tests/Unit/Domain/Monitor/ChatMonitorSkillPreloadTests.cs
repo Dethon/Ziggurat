@@ -143,10 +143,11 @@ public class ChatMonitorSkillPreloadTests
         judge.Asked[1].Questions["skill"].ShouldBeOfType<ChoiceQuestion>().Criteria.Keys.ShouldBe([_home.Name, "none"]);
     }
 
-    // The judge's client sends nothing for a turn addressed to the local box, and it knows the
-    // turn only by what the request says: the group hands on the model the message asked for.
+    // The judge's client sends nothing for a turn addressed to the local box, and bills the rest
+    // to whoever asked, and it knows the turn only by what the request says: the group hands on
+    // the model the message asked for and who sent it.
     [Fact]
-    public async Task ThePreload_NamesTheModelTheTurnAskedFor()
+    public async Task ThePreload_NamesTheModelTheTurnAskedFor_AndWhoAsked()
     {
         var agent = MonitorTestMocks.CreateAgent();
         agent.Skills = [_home];
@@ -154,7 +155,7 @@ public class ChatMonitorSkillPreloadTests
         var channel = MonitorTestMocks.CreateChannel(
             messages:
             [
-                MonitorTestMocks.CreateChannelMessage(content: "enciende la luz") with
+                MonitorTestMocks.CreateChannelMessage(content: "enciende la luz", sender: "fran", agentId: "jonas") with
                 {
                     ConfigPatch = new AgentConfigPatch { Model = "lemonade/qwen3" }
                 }
@@ -163,16 +164,20 @@ public class ChatMonitorSkillPreloadTests
 
         await monitor.Monitor(CancellationToken.None);
 
-        judge.Models.ShouldBe(["lemonade/qwen3"]);
+        var caller = judge.Callers.ShouldHaveSingleItem();
+        caller.TurnModel.ShouldBe("lemonade/qwen3");
+        caller.Sender.ShouldBe("fran");
+        caller.AgentId.ShouldBe("jonas");
+        caller.ConversationId.ShouldBe("conv-1");
     }
 
     private sealed class CallerRecordingJudge : IJudge
     {
-        public List<string?> Models { get; } = [];
+        public List<JudgmentCaller> Callers { get; } = [];
 
         public Task<JudgmentOutcome> JudgeAsync(JudgmentRequest request, CancellationToken deadline)
         {
-            Models.Add(request.TurnModel);
+            Callers.Add(request.Caller);
             return Task.FromResult<JudgmentOutcome>(new JudgmentOutcome.Absent(AbsenceReason.LocalTurn));
         }
     }

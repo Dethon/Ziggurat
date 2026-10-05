@@ -221,9 +221,9 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
         }
         catch (NotSupportedException ex)
         {
-            // The three mounts with no bytes behind them render JSON and markdown. A path spelled
-            // with an image extension still reaches them, and the honest answer is that this mount
-            // cannot serve bytes — not a picture decoded from a rendered document.
+            // The mounts with no bytes behind them (timers, schedules) render JSON and markdown. A
+            // path spelled with an image extension still reaches them, and the honest answer is
+            // that this mount cannot serve bytes — not a picture decoded from a rendered document.
             return FsError.Fail<CappedBytes>(
                 ToolError.Codes.UnsupportedOperation,
                 $"{resolution.RelativePath} cannot be read as an image: {ex.Message}");

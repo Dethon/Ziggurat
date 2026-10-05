@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Domain.Contracts;
+using Domain.Judgments;
 using Infrastructure.HtmlProcessing;
 using Shouldly;
 
@@ -23,7 +24,7 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test") { Caller = JudgmentCaller.None };
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -55,7 +56,7 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "https://www.aemet.es/");
+        var request = new BrowseRequest(SessionId: "test", Url: "https://www.aemet.es/") { Caller = JudgmentCaller.None };
 
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
@@ -79,7 +80,7 @@ public class HtmlProcessorTests
                    <body><p>Content</p></body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: ".nonexistent");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: ".nonexistent") { Caller = JudgmentCaller.None };
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -106,7 +107,7 @@ public class HtmlProcessorTests
                    <body><p>Content</p></body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test") { Caller = JudgmentCaller.None };
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -134,7 +135,7 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test") { Caller = JudgmentCaller.None };
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -159,7 +160,7 @@ public class HtmlProcessorTests
                     <body>{longContent}</body>
                     </html>
                     """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", MaxLength: 500);
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", MaxLength: 500) { Caller = JudgmentCaller.None };
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -192,7 +193,7 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: ".product");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: ".product") { Caller = JudgmentCaller.None };
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -225,7 +226,7 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: "img");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: "img") { Caller = JudgmentCaller.None };
 
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
@@ -264,7 +265,7 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test") { Caller = JudgmentCaller.None };
 
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
@@ -299,7 +300,7 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test") { Caller = JudgmentCaller.None };
 
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
@@ -326,7 +327,7 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: ".card");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: ".card") { Caller = JudgmentCaller.None };
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -352,7 +353,7 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Offset: 0, MaxLength: 50);
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Offset: 0, MaxLength: 50) { Caller = JudgmentCaller.None };
 
         // Act - First chunk
         var result1 = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -378,7 +379,7 @@ public class HtmlProcessorTests
         var longContent = string.Join("\n",
             Enumerable.Range(1, 200).Select(i => $"<p>Paragraph {i} with some content.</p>"));
         var html = $"<html><body>{longContent}</body></html>";
-        var request = new BrowseRequest(SessionId: "t", Url: "http://example.com/", MaxLength: 500);
+        var request = new BrowseRequest(SessionId: "t", Url: "http://example.com/", MaxLength: 500) { Caller = JudgmentCaller.None };
 
         var whole = await HtmlProcessor.ProcessAsync(
             request with { MaxLength = 100000 }, html, CancellationToken.None);
@@ -407,7 +408,7 @@ public class HtmlProcessorTests
             <p>Text after the picture.</p>
             </body></html>
             """;
-        var request = new BrowseRequest(SessionId: "t", Url: "http://example.com/", MaxLength: 300);
+        var request = new BrowseRequest(SessionId: "t", Url: "http://example.com/", MaxLength: 300) { Caller = JudgmentCaller.None };
 
         var offset = 0;
         var listed = 0;
@@ -433,7 +434,7 @@ public class HtmlProcessorTests
     public async Task ProcessAsync_APageThatFitsWhole_HasNoNextOffset()
     {
         var html = "<html><body><p>All of it.</p></body></html>";
-        var request = new BrowseRequest(SessionId: "t", Url: "http://example.com/");
+        var request = new BrowseRequest(SessionId: "t", Url: "http://example.com/") { Caller = JudgmentCaller.None };
 
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
@@ -452,7 +453,7 @@ public class HtmlProcessorTests
                    <body><p>Short content</p></body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Offset: 100000);
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Offset: 100000) { Caller = JudgmentCaller.None };
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -482,7 +483,8 @@ public class HtmlProcessorTests
         var request = new BrowseRequest(
             SessionId: "test",
             Url: "http://example.com/test",
-            Selector: "li.item.active");
+            Selector: "li.item.active")
+        { Caller = JudgmentCaller.None };
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -506,7 +508,7 @@ public class HtmlProcessorTests
                    "<p>Has\x00null\x01and\x02control\x1Fchars</p>" +
                    "<p>Tabs\tand\nnewlines are fine</p>" +
                    "</body></html>";
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test") { Caller = JudgmentCaller.None };
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);

@@ -49,14 +49,17 @@ public class InjectorModuleTests
     }
 
     private static JudgmentRequest ALocalTurn() =>
-        new(new JsonObject(), new Dictionary<string, JudgmentQuestion>(), "lemonade/qwen3");
+        new(new JsonObject(), new Dictionary<string, JudgmentQuestion>(), new JudgmentCaller("lemonade/qwen3", Sender: null));
 
     private static IJudge JudgeRegisteredBy(AgentSettings settings)
     {
+        // The judge as the agent's own container builds it: every collaborator is the registered
+        // one but the metrics publisher, whose real one is a Redis connection.
         var services = new ServiceCollection().AddLogging().AddAgent(settings);
-        var descriptor = services.Last(d => d.ServiceType == typeof(IJudge));
-        using var provider = new ServiceCollection().AddLogging().BuildServiceProvider();
-        return (IJudge)descriptor.ImplementationFactory!(provider);
+        services.RemoveAll<IMetricsPublisher>();
+        services.AddSingleton<IMetricsPublisher>(new RecordingMetricsPublisher());
+        using var provider = services.BuildServiceProvider();
+        return provider.GetRequiredService<IJudge>();
     }
 
     private static List<HostedConnectionKeepAlive> KeepAlivesRegisteredBy(AgentSettings settings)

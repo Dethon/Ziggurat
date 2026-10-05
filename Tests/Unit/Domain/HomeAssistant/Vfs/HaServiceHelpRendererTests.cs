@@ -20,7 +20,7 @@ public class HaServiceHelpRendererTests
 
         var help = HaServiceHelpRenderer.Render("light.kitchen", svc);
 
-        help.ShouldContain("turn_on.sh — call light.turn_on on light.kitchen");
+        help.ShouldContain("turn_on — call light.turn_on on light.kitchen");
         help.ShouldContain("--brightness_pct");
         help.ShouldContain("1-100");
         help.ShouldContain("--flash");

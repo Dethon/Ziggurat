@@ -21,8 +21,10 @@ services:
   plex:
     devices: !reset []
 
+  # The render node goes; /dev/fuse stays, or the sandbox's commands lose the session's mounts.
   mcp-sandbox:
-    devices: !reset []
+    devices: !override
+      - /dev/fuse:/dev/fuse
 
   lemonade:
     devices: !reset []

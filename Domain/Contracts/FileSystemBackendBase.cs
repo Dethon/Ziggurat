@@ -20,8 +20,9 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
 
     // The mount's identity, all of it derived from the one name: the address the resource is
     // published at, the path the registry mounts it under, and the name the agent addresses it by
-    // cannot disagree, so there is nothing to keep in sync.
-    public string MountPoint => "/" + FilesystemName;
+    // cannot disagree, so there is nothing to keep in sync. Virtual for the one mount that is not a
+    // branch of this tree at all — an outpost is a separate machine and is addressed as one.
+    public virtual string MountPoint => "/" + FilesystemName;
 
     // What the model reads about the mount as a whole, beside what it reads about each operation.
     // Abstract for the same reason FilesystemName is: a reusable disk root must not carry one
@@ -32,9 +33,11 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     // that carried them, so a mount that has to know who is calling — the Home Assistant watches
     // record the agent that created them — answers a view of itself bound to that caller, and the
     // registrar asks for it once per call from the request's `_meta`. Plain data handed down, not
-    // an ambient to enter; null is a call that carried no context (a harness, a benchmark), and a
-    // mount that does not care answers itself. Not an operation: it advertises nothing.
-    public virtual FileSystemBackendBase For(ConversationContext? caller) => this;
+    // an ambient to enter; a null half is a call that carried none (a harness, a benchmark), and a
+    // mount that does not care answers itself. The sandbox is the other mount that cares: an exec
+    // carrying the bridge's call token runs with the other mounts served to it. Not an operation:
+    // it advertises nothing.
+    public virtual FileSystemBackendBase For(FileSystemCaller caller) => this;
 
     // The writable, persistent directory under this mount, in the backend's own coordinates, or
     // null where the mount has none — which is most of them (ADR 0025).
@@ -62,6 +65,11 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     //
     // Default null, so a new mount's exec is never screened until it says where it runs.
     public virtual ShellReach? ShellReach => null;
+
+    // The names at the root of this mount's shell that the session's other mounts cannot be linked
+    // at, because something of the shell's own is already there: those mounts are reachable from a
+    // command only at /vfs/<name>. Null for a mount without a shell of its own to collide with.
+    public virtual IReadOnlyList<string>? OccupiedNames => null;
 
     // A caller-supplied pattern can be pathological, so every search matches under a bounded
     // timeout. Overridable because a test needs to trip it without waiting a real second.
@@ -252,6 +260,15 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
 
     protected static FsResult<T> ReadOnly<T>(string path) where T : class => FsError.ReadOnly<T>(path);
 
+    protected static FsResult<T> ExecutableOnly<T>(string path, string actionName) where T : class =>
+        FsError.ExecutableOnly<T>(path, actionName);
+
+    // An action as a catalog names it, however the command spelled it. `./<action>` is the spelling
+    // taught, because a real shell needs it once exec runs in the sandbox; the bare name is the one a
+    // listing shows and a model reading it types. Both name one action, on every executing mount.
+    protected static string WithoutDotSlash(string spelled) =>
+        spelled.StartsWith("./", StringComparison.Ordinal) ? spelled[2..] : spelled;
+
     protected static FsResult<T> Fail<T>(string code, string message, string? hint = null)
         where T : class => FsError.Fail<T>(code, message, hint);
 
@@ -356,6 +373,24 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
             Entries = entries,
             Truncated = false,
             Total = entries.Count
+        });
+
+    // A mount with action files marks the ones its listing returned. Asked of the materialized
+    // listing, inside the same guard, so the marks are always a subset of the entries; none
+    // matched leaves the field off, which is what a mount without actions answers.
+    protected static FsResult<FsGlobResult> Glob(
+        string pattern, Func<IReadOnlyList<string>> entries, Func<string, bool> isExecutable) =>
+        GlobRegex.Guarded(pattern, () =>
+        {
+            var listed = entries();
+            var executables = listed.Where(isExecutable).ToList();
+            return new FsResult<FsGlobResult>.Ok(new FsGlobResult
+            {
+                Entries = listed,
+                Truncated = false,
+                Total = listed.Count,
+                Executables = executables.Count == 0 ? null : executables
+            });
         });
 
     private string UnsupportedMessage(string operation) =>

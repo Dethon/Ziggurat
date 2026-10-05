@@ -11,10 +11,7 @@ public class McpVaultServerTests(McpVaultServerFixture fixture) : IClassFixture<
     public async Task McpServer_ReadFilesystemResource_ReturnsMetadata()
     {
         var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
+            McpTestSecret.Transport(fixture.McpEndpoint),
             cancellationToken: CancellationToken.None);
 
         var content = await client.ReadResourceAsync("filesystem://vault");
@@ -34,10 +31,7 @@ public class McpVaultServerTests(McpVaultServerFixture fixture) : IClassFixture<
         fixture.CreateFile("test-read.md", "# Hello World");
 
         var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
+            McpTestSecret.Transport(fixture.McpEndpoint),
             cancellationToken: CancellationToken.None);
 
         var result = await client.CallToolAsync(

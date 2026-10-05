@@ -87,7 +87,7 @@ public class HomeAssistantSetupSummaryTests
     }
 
     // "Turn on the TV and put Crunchyroll" took ten model turns: the index named the remote and its
-    // actions, but not that `turn_on.sh --activity <app>` is how an app opens nor which apps exist,
+    // actions, but not that `./turn_on --activity <app>` is how an app opens nor which apps exist,
     // so the model read state.json three times and `--help` five before it found `activity_list`.
     // The choices an entity offers are the argument its action takes, so the entity's own line
     // says both — one line per choosing entity, against seven round trips.
@@ -118,9 +118,9 @@ public class HomeAssistantSetupSummaryTests
 
         var text = await Build(client).GetAsync(CancellationToken.None);
 
-        text.ShouldContain("remote.tv_(tv) — turn_on.sh --activity: Crunchyroll, Netflix\n");
-        text.ShouldContain("media_player.tv_(tv) — select_source.sh --source: HDMI 1, HDMI 2\n");
-        text.ShouldContain("select.mode_(mode) — select_option.sh --option: eco, boost\n");
+        text.ShouldContain("remote.tv_(tv) — ./turn_on --activity: Crunchyroll, Netflix\n");
+        text.ShouldContain("media_player.tv_(tv) — ./select_source --source: HDMI 1, HDMI 2\n");
+        text.ShouldContain("select.mode_(mode) — ./select_option --option: eco, boost\n");
         // The header has to say the segment stops at the dash, or the model copies the whole line.
         text.ShouldContain("` — `");
     }
@@ -160,7 +160,7 @@ public class HomeAssistantSetupSummaryTests
     [Fact]
     public async Task GetAsync_ListsAvailableActionsPerEntityClass()
     {
-        // The prompt used to tell the agent to `glob <entity-dir>/*.sh` to discover actions, which
+        // The prompt used to tell the agent to `glob <entity-dir>/*.sh` (as the actions were then spelled) to discover actions, which
         // cost a round trip per turn — and its first guess, the CLASS directory, always returns
         // nothing because action files live one level deeper. Naming the actions up front removes
         // both turns for ~350 tokens, a trade worth roughly 100:1 against a ~1.15s round trip.
@@ -182,7 +182,7 @@ public class HomeAssistantSetupSummaryTests
         var text = await Build(client).GetAsync(CancellationToken.None);
 
         text.ShouldContain("## Actions by entity class");
-        text.ShouldContain("light: turn_off.sh, turn_on.sh");
+        text.ShouldContain("light: turn_off, turn_on");
         // A read-only class must not appear at all rather than as an empty entry.
         text.ShouldNotContain("sensor:");
     }
@@ -285,7 +285,7 @@ public class HomeAssistantSetupSummaryWatchesTests
 
 public class HomeAssistantSetupSummaryEveryEntityTests
 {
-    // Listing `history.sh` on every class line would put every read-only class into the table and
+    // Listing `history` on every class line would put every read-only class into the table and
     // say the same word once per class; the index says it once instead.
     [Fact]
     public async Task GetAsync_AnEveryEntityAction_IsAnnouncedOnce_NotPerClass()
@@ -305,15 +305,15 @@ public class HomeAssistantSetupSummaryEveryEntityTests
 
         var text = await summary.GetAsync(CancellationToken.None);
 
-        text.ShouldContain("every entity: history.sh\nevery entity with state_class: statistics.sh\n");
-        text.ShouldContain("light: turn_on.sh");
-        text.ShouldNotContain("light: history.sh");
-        text.ShouldNotContain("sensor: history.sh");
-        text.ShouldNotContain("sensor: statistics.sh");
+        text.ShouldContain("every entity: history\nevery entity with state_class: statistics\n");
+        text.ShouldContain("light: turn_on");
+        text.ShouldNotContain("light: history");
+        text.ShouldNotContain("sensor: history");
+        text.ShouldNotContain("sensor: statistics");
     }
 
     // A narrowed action is announced only when some entity admits it: a home with no state_class
-    // sensor has no statistics.sh anywhere, and a line naming it would send the model looking.
+    // sensor has no statistics action anywhere, and a line naming it would send the model looking.
     [Fact]
     public async Task GetAsync_ANarrowedActionNoEntityAdmits_IsNotAnnounced()
     {
@@ -328,7 +328,7 @@ public class HomeAssistantSetupSummaryEveryEntityTests
 
         var text = await summary.GetAsync(CancellationToken.None);
 
-        text.ShouldContain("every entity: history.sh\n");
-        text.ShouldNotContain("statistics.sh");
+        text.ShouldContain("every entity: history\n");
+        text.ShouldNotContain("statistics\n");
     }
 }

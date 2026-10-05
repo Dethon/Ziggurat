@@ -1,7 +1,13 @@
+using Domain.Security;
+using Mcp.Hosting;
+
 namespace McpServerPrinter.Settings;
 
-public record PrinterSettings
+public record PrinterSettings : IMcpHostSettings
 {
+    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    public McpGateSettings Mcp { get; init; } = new();
+
     public required string PrinterUri { get; init; }
     public string SpoolPath { get; init; } = "/spool";
     public int SubmitDebounceMilliseconds { get; init; } = 750;

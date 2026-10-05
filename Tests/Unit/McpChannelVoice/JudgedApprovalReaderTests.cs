@@ -22,16 +22,17 @@ public class JudgedApprovalReaderTests
 
     private static Task<ApprovalReading> ReadAsync(double approved, double declined, string answer) =>
         Reader(StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, approved), (JudgedApprovalReader.DeclinedQuestionId, declined)))
-            .ReadAsync(Prompt, answer, turnModel: null, CancellationToken.None);
+            .ReadAsync(Prompt, answer, JudgmentCaller.None, CancellationToken.None);
 
     [Fact]
-    public async Task TheTurnsModel_IsHandedToTheJudge_OnTheRequest()
+    public async Task TheCaller_IsHandedToTheJudge_OnTheRequest()
     {
         var judge = StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.95), (JudgedApprovalReader.DeclinedQuestionId, 0.03));
+        var caller = new JudgmentCaller("lemonade/qwen3", "fran", "nabu", "sat-kitchen");
 
-        await Reader(judge).ReadAsync(Prompt, "adelante", "lemonade/qwen3", CancellationToken.None);
+        await Reader(judge).ReadAsync(Prompt, "adelante", caller, CancellationToken.None);
 
-        judge.Requests.ShouldHaveSingleItem().TurnModel.ShouldBe("lemonade/qwen3");
+        judge.Requests.ShouldHaveSingleItem().Caller.ShouldBe(caller);
     }
 
     // The client holds the rule and sends nothing for a turn addressed to the local box; here
@@ -39,7 +40,7 @@ public class JudgedApprovalReaderTests
     [Fact]
     public async Task AJudgeThatSentNothingForALocalTurn_LeavesTheWordListToDecide()
     {
-        var reading = await Reader(StubJudge.Absent(AbsenceReason.LocalTurn)).ReadAsync(Prompt, "sí", turnModel: null, CancellationToken.None);
+        var reading = await Reader(StubJudge.Absent(AbsenceReason.LocalTurn)).ReadAsync(Prompt, "sí", JudgmentCaller.None, CancellationToken.None);
 
         reading.Response.ShouldBe(ApprovalResponse.Approved);
         reading.DecidedBy.ShouldBe(ApprovalDecider.WordList);
@@ -158,7 +159,7 @@ public class JudgedApprovalReaderTests
     [InlineData(AbsenceReason.Error)]
     public async Task JevAbsent_TheWordListDecides_AndNoProbabilityIsReported(AbsenceReason reason)
     {
-        var reading = await Reader(StubJudge.Absent(reason)).ReadAsync(Prompt, "sí, claro", turnModel: null, CancellationToken.None);
+        var reading = await Reader(StubJudge.Absent(reason)).ReadAsync(Prompt, "sí, claro", JudgmentCaller.None, CancellationToken.None);
 
         reading.Response.ShouldBe(ApprovalResponse.Approved);
         reading.DecidedBy.ShouldBe(ApprovalDecider.WordList);
@@ -170,7 +171,7 @@ public class JudgedApprovalReaderTests
     public async Task AJudgeMissingAQuestion_IsAbsent()
     {
         var reading = await Reader(StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.97)))
-            .ReadAsync(Prompt, "no", turnModel: null, CancellationToken.None);
+            .ReadAsync(Prompt, "no", JudgmentCaller.None, CancellationToken.None);
 
         reading.Response.ShouldBe(ApprovalResponse.Declined);
         reading.DecidedBy.ShouldBe(ApprovalDecider.WordList);
@@ -185,7 +186,7 @@ public class JudgedApprovalReaderTests
         var never = new TaskCompletionSource<JudgmentOutcome>();
         var judge = new NeverAnsweringJudge(never.Task);
 
-        var reading = Reader(judge, time).ReadAsync(Prompt, "sí", turnModel: null, CancellationToken.None);
+        var reading = Reader(judge, time).ReadAsync(Prompt, "sí", JudgmentCaller.None, CancellationToken.None);
         await Eventually.Until(() => judge.Asked, "the reader asked the judge");
         reading.IsCompleted.ShouldBeFalse();
 
@@ -205,7 +206,7 @@ public class JudgedApprovalReaderTests
         using var caller = new CancellationTokenSource();
         var judge = new NeverAnsweringJudge(new TaskCompletionSource<JudgmentOutcome>().Task);
 
-        var reading = Reader(judge, new FakeTimeProvider()).ReadAsync(Prompt, "sí", turnModel: null, caller.Token);
+        var reading = Reader(judge, new FakeTimeProvider()).ReadAsync(Prompt, "sí", JudgmentCaller.None, caller.Token);
         await Eventually.Until(() => judge.Asked, "the reader asked the judge");
         await caller.CancelAsync();
 
@@ -224,7 +225,7 @@ public class JudgedApprovalReaderTests
         await caller.CancelAsync();
 
         await Should.ThrowAsync<OperationCanceledException>(
-            () => Reader(StubJudge.Absent(reason)).ReadAsync(Prompt, "sí", turnModel: null, caller.Token));
+            () => Reader(StubJudge.Absent(reason)).ReadAsync(Prompt, "sí", JudgmentCaller.None, caller.Token));
     }
 
     [Fact]
@@ -233,7 +234,7 @@ public class JudgedApprovalReaderTests
         var judge = StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.02), (JudgedApprovalReader.DeclinedQuestionId, 0.98));
 
         var reading = await Reader(judge, settings: _shipped with { Enabled = false })
-            .ReadAsync(Prompt, "sí", turnModel: null, CancellationToken.None);
+            .ReadAsync(Prompt, "sí", JudgmentCaller.None, CancellationToken.None);
 
         judge.Requests.ShouldBeEmpty();
         reading.Response.ShouldBe(ApprovalResponse.Approved);
@@ -247,7 +248,7 @@ public class JudgedApprovalReaderTests
     {
         var judge = StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.95), (JudgedApprovalReader.DeclinedQuestionId, 0.03));
 
-        await Reader(judge).ReadAsync(Prompt, "sí a todo", turnModel: null, CancellationToken.None);
+        await Reader(judge).ReadAsync(Prompt, "sí a todo", JudgmentCaller.None, CancellationToken.None);
 
         var request = judge.Requests.ShouldHaveSingleItem();
         request.State.Count.ShouldBe(2);
@@ -271,7 +272,7 @@ public class JudgedApprovalReaderTests
         var judge = StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.02), (JudgedApprovalReader.DeclinedQuestionId, 0.98));
 
         var reading = await Reader(judge, settings: _shipped with { DeadlineMs = deadlineMs })
-            .ReadAsync(Prompt, "sí, claro", turnModel: null, CancellationToken.None);
+            .ReadAsync(Prompt, "sí, claro", JudgmentCaller.None, CancellationToken.None);
 
         reading.Response.ShouldBe(ApprovalResponse.Approved);
         reading.DecidedBy.ShouldBe(ApprovalDecider.WordList);
@@ -288,7 +289,7 @@ public class JudgedApprovalReaderTests
         var judge = StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.02), (JudgedApprovalReader.DeclinedQuestionId, 0.98));
 
         var reading = await Reader(judge, settings: _shipped with { Sure = sure, Counter = counter })
-            .ReadAsync(Prompt, "no", turnModel: null, CancellationToken.None);
+            .ReadAsync(Prompt, "no", JudgmentCaller.None, CancellationToken.None);
 
         reading.Response.ShouldBe(ApprovalResponse.Declined);
         reading.DecidedBy.ShouldBe(ApprovalDecider.WordList);
@@ -299,7 +300,7 @@ public class JudgedApprovalReaderTests
     {
         var judge = StubJudge.Nouls((JudgedApprovalReader.ApprovedQuestionId, 0.95), (JudgedApprovalReader.DeclinedQuestionId, 0.03));
 
-        var reading = await Reader(judge).ReadAsync(Prompt, "", turnModel: null, CancellationToken.None);
+        var reading = await Reader(judge).ReadAsync(Prompt, "", JudgmentCaller.None, CancellationToken.None);
 
         judge.Requests.ShouldBeEmpty();
         reading.Response.ShouldBe(ApprovalResponse.Ambiguous);

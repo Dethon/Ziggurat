@@ -1,0 +1,58 @@
+# The sandbox's AppArmor profile (mcp-sandbox's `security_opt`): docker-default, plus exactly the
+# mounts sandbox-runtime's launcher makes in each command's private namespace — docker-default
+# denies every mount, which on an AppArmor host fails every exec with "cannot isolate the command".
+# A new mount in the launcher needs its line here. Verified on prod (Ubuntu 26.04, kernel 7.0,
+# AppArmor 5.0) on 2026-10-01: the three below pass, a tmpfs elsewhere or a bind mount is refused.
+#
+# Docker loads no profile itself; an AppArmor host needs it in the kernel before the stack starts:
+#   sudo install -m 644 DockerCompose/apparmor/ziggurat-sandbox /etc/apparmor.d/
+#   sudo apparmor_parser -r -W /etc/apparmor.d/ziggurat-sandbox
+# A host without AppArmor ignores the option.
+#
+# abi 4.0 is what makes `userns` a rule; the launcher's own syscall filter (sandbox-runtime's
+# seccomp.rs) refuses the same thing to commands on hosts with no AppArmor at all.
+abi <abi/4.0>,
+
+#include <tunables/global>
+
+profile ziggurat-sandbox flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  network,
+  capability,
+  file,
+  umount,
+  # Nothing in the container needs a user namespace, and one is root inside: the usual first step
+  # of a kernel escalation. Docker allows making one once the container holds SYS_ADMIN.
+  deny userns,
+  signal (receive) peer=unconfined,
+  signal (receive) peer=runc,
+  signal (receive) peer=crun,
+  signal (receive) peer=dockerd,
+  signal (send,receive) peer=ziggurat-sandbox,
+
+  # Every command's namespace stops propagating to the container's.
+  mount options=(rprivate) -> /,
+  # The command's own action socket directory.
+  mount fstype=tmpfs options=(rw, nosuid, nodev, noexec) tmpfs -> /run/vfs/,
+  # The other mounts, served by the command's FUSE daemon.
+  mount fstype=fuse options=(rw, nosuid, nodev) ziggurat-vfs -> /vfs/,
+
+  deny @{PROC}/* w,
+  deny @{PROC}/{[^1-9],[^1-9][^0-9],[^1-9s][^0-9y][^0-9s],[^1-9][^0-9][^0-9][^0-9/]*}/** w,
+  deny @{PROC}/sys/[^k]** w,
+  deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/kcore rwklx,
+
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/devices/virtual/powercap/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+
+  ptrace (trace,read,tracedby,readby) peer=ziggurat-sandbox,
+}

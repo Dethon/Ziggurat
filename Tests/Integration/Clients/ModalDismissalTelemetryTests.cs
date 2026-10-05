@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
+using Domain.Judgments;
 using Infrastructure.Clients.Browser;
 using Microsoft.Playwright;
 using Shouldly;
@@ -51,7 +52,7 @@ public class ModalDismissalTelemetryTests(IsolatedSessionBrowserFixture fixture)
             "style='position:fixed;top:0;left:0;right:0;height:200px;background:#ddd;z-index:9999'>" +
             "Usamos cookies. <button class='cmp-secondary'>Rechazar todo</button></div><p>Main content</p>");
 
-        var result = await _browser!.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), url));
+        var result = await _browser!.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), url) { Caller = JudgmentCaller.None });
 
         result.Status.ShouldBe(BrowseStatus.Success);
         result.DismissedModals.ShouldBeEmpty();
@@ -73,7 +74,7 @@ public class ModalDismissalTelemetryTests(IsolatedSessionBrowserFixture fixture)
             "We use cookies. <button class='cmp-primary' " +
             "onclick=\"document.getElementById('cmp').style.display='none'\">Accept</button></div><p>Main content</p>");
 
-        var result = await _browser!.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), url));
+        var result = await _browser!.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), url) { Caller = JudgmentCaller.None });
 
         result.DismissedModals.ShouldNotBeNull().ShouldHaveSingleItem().Selector.ShouldBe("text(accept)");
         var evt = _published.Published.OfType<ModalDismissalEvent>().ShouldHaveSingleItem();
@@ -91,7 +92,7 @@ public class ModalDismissalTelemetryTests(IsolatedSessionBrowserFixture fixture)
 
         var url = await ServeAsync("<h1>Hello</h1><p>Plain page with no modals.</p>");
 
-        var result = await _browser!.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), url));
+        var result = await _browser!.NavigateAsync(new BrowseRequest(Guid.NewGuid().ToString(), url) { Caller = JudgmentCaller.None });
 
         result.Status.ShouldBe(BrowseStatus.Success);
         _published.Published.OfType<ModalDismissalEvent>().ShouldBeEmpty();

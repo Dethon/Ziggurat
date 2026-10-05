@@ -1,7 +1,7 @@
 namespace Domain.DTOs.Metrics;
 
 // One exec screened before it would have run unasked, whatever the judge answered. The bars are
-// re-read from these: the three probabilities per call, which way each call went, and — for the
+// re-read from these: the four probabilities per call, which way each call went, and — for the
 // calls that got no verdict — why, so an outage on the host path is heard as prompts it caused.
 public record ExecScreenEvent : MetricEvent
 {
@@ -19,6 +19,8 @@ public record ExecScreenEvent : MetricEvent
     public double? Destroys { get; init; }
 
     public double? SendsOut { get; init; }
+
+    public double? RunsDownloaded { get; init; }
 
     // One of ExecScreenAbsences, or null when the judge answered in time.
     public string? AbsenceReason { get; init; }

@@ -78,7 +78,7 @@ public class ActiveAlertRegistryTests
     [Fact]
     public void DismissAll_CancelsEveryActiveAlertAcrossSatellites_AndReturnsDescriptions()
     {
-        // The agent-reachable "stop": exec dismiss.sh silences everything ringing anywhere.
+        // The agent-reachable "stop": exec ./dismiss silences everything ringing anywhere.
         var registry = new ActiveAlertRegistry();
         using var cts1 = new CancellationTokenSource();
         using var cts2 = new CancellationTokenSource();

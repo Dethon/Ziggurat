@@ -38,7 +38,7 @@ public class ScorecardLedgerTests : IDisposable
     {
         _ledger.Record(EvalTier.Full, _first, new ScenarioResult(true, 2, 2, [])
         {
-            Spend = new Spend(0.25m, 40_000, 30_000, 800, 4)
+            Spend = Spend.Of("m", new ModelSpend(0.25m, 40_000, 30_000, 800, 4))
         });
         _ledger.WriteAll(_output, Unresolved);
 

@@ -8,18 +8,13 @@ namespace Agent.App;
 // registry owns every decision — how long an entry lives, what is published when — so these stay
 // one-liners, exactly as the custom-agent registration endpoint beside them is.
 //
-// The gate is OutpostSecret's, shared with the machine's own: anyone who can reach this port could
+// The gate is SharedSecret's, shared with the machine's own: anyone who can reach this port could
 // otherwise attach a machine to somebody else's assistant.
 public static class OutpostApi
 {
     public static void MapOutposts(this WebApplication app, string sharedSecret)
     {
-        var outposts = app.MapGroup("/api/outposts");
-        outposts.AddEndpointFilter(async (context, next) =>
-            OutpostSecret.Matches(
-                context.HttpContext.Request.Headers.Authorization.ToString(), sharedSecret)
-                ? await next(context)
-                : Results.Unauthorized());
+        var outposts = app.MapGroup("/api/outposts").RequireSharedSecret(sharedSecret);
 
         // Refused rather than stored where the registration is one nobody could ever act on — a
         // blank name, an endpoint that is not an absolute URL. The shipped binary cannot produce

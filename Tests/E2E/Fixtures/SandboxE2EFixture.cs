@@ -1,10 +1,18 @@
 using System.Diagnostics;
 using System.Net;
 using System.Runtime.InteropServices;
+using Agent.App;
+using Domain.Contracts;
+using Domain.Tools.FileSystem.Bridge;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
+using Infrastructure.Agents;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Client;
+using Tests.Integration.Fixtures;
 
 namespace Tests.E2E.Fixtures;
 
@@ -19,6 +27,11 @@ namespace Tests.E2E.Fixtures;
 public sealed class SandboxE2EFixture : IAsyncLifetime
 {
     private IContainer? _sandbox;
+    private WebApplication? _bridgeHost;
+
+    // The bridge the container's daemons call: a test mints a call on it over a registry of its own
+    // and hands the token to fs_exec on the call's `_meta`, as the agent's exec tool does.
+    public VfsBridge Bridge { get; } = new(TimeProvider.System, new VfsBridgeSettings());
 
     public string McpEndpoint { get; private set; } = "";
 
@@ -54,10 +67,22 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
         WorkspaceOnHost = Path.Combine(Path.GetTempPath(), $"mcp-sandbox-home-{Guid.NewGuid():N}");
         Directory.CreateDirectory(WorkspaceOnHost);
 
+        // The agent's bridge endpoint, hosted here over whatever registry a test mints a call
+        // against: the container reaches it through the host gateway, as compose's sandbox reaches
+        // the agent by name.
+        var bridgePort = TestPort.GetAvailable();
+        var bridgeHost = WebApplication.CreateBuilder();
+        bridgeHost.WebHost.UseKestrel(options => options.Listen(IPAddress.Any, bridgePort));
+        bridgeHost.Services.AddSingleton<IVfsBridge>(Bridge);
+        var bridgeApp = bridgeHost.Build();
+        bridgeApp.MapVfsBridge();
+        await bridgeApp.StartAsync();
+        _bridgeHost = bridgeApp;
+
         await E2EPhase.RunAsync(name, "container startup", _containerStartupTimeout, async ct =>
         {
-            // Compose's pairing, reproduced: an unprivileged user and a mount it owns at the home
-            // directory. Both halves are what make a permissions fact real here — the container
+            // Compose's pairing, reproduced: commands as an unprivileged user and a mount it owns at
+            // the home directory. Both halves are what make a permissions fact real here — the container
             // root stays root-owned and unwritable, and the workspace is writable because the host
             // directory belongs to whoever is running the test. The in-process fixture builds the
             // server against a temporary root the test user owns outright, so it cannot tell the
@@ -65,14 +90,23 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
             _sandbox = TestContainers.Container(E2EImages.McpSandbox.ImageName, "mcp-sandbox")
                 .WithPortBinding(8080, true)
                 .WithBindMount(WorkspaceOnHost, ContainerWorkspace, AccessMode.ReadWrite)
-                .WithCreateParameterModifier(parameters => parameters.User = $"{geteuid()}:{getegid()}")
+                .AsCompose()
+                // A deployment secret in the server's environment, which no command may see.
+                .WithEnvironment(PlantedSecretName, PlantedSecret)
+                .WithExtraHost("host.docker.internal", "host-gateway")
+                .WithEnvironment("VFSBRIDGEURL", $"http://host.docker.internal:{bridgePort}{VfsBridgeApi.Route}")
+                // The deployment secret its /mcp asks for, as compose hands it every MCP server.
+                .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
                 // The published port answers before Kestrel has bound anything — Docker's proxy
                 // accepts the connection and the app then resets it — so a TCP check returns while
                 // the server is still starting and every test fails on a reset. `GET /mcp` is the
                 // cheapest request the transport really serves: 405, because the endpoint is POST.
+                // It presents the secret, or the gate in front of /mcp answers 401 before the
+                // transport is asked anything.
                 .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r
                     .ForPort(8080)
                     .ForPath("/mcp")
+                    .WithHeaders(McpTestSecret.Headers)
                     .ForStatusCode(HttpStatusCode.MethodNotAllowed)))
                 .Build();
             await _sandbox.StartAsync(ct);
@@ -92,9 +126,17 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
         McpEndpoint = $"http://{_sandbox.Hostname}:{_sandbox.GetMappedPublicPort(8080)}/mcp";
     }
 
+    // A root process inside the container, as the launcher and the vfs daemon are: what the
+    // container's own syscall filter leaves one, should a command ever get to run as them.
+    public async Task<string> ExecAsRootAsync(string command, CancellationToken ct)
+    {
+        var result = await _sandbox!.ExecAsync(["sh", "-c", command], ct);
+        return result.Stdout + result.Stderr;
+    }
+
     public async Task<McpClient> ConnectAsync(CancellationToken ct) =>
         await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(McpEndpoint) }),
+            McpTestSecret.Transport(McpEndpoint),
             cancellationToken: ct);
 
     public async Task DisposeAsync()
@@ -102,6 +144,11 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
         if (_sandbox is not null)
         {
             await _sandbox.DisposeAsync();
+        }
+
+        if (_bridgeHost is not null)
+        {
+            await _bridgeHost.DisposeAsync();
         }
 
         try
@@ -121,6 +168,13 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
     // published workspace is read off the mount rather than written here; this is only where the
     // host directory is attached.
     public const string ContainerWorkspace = "/home/sandbox_user";
+
+    public static uint Uid => geteuid();
+
+    public static uint Gid => getegid();
+
+    public const string PlantedSecretName = "OPENROUTER__APIKEY";
+    public const string PlantedSecret = "sk-planted-never-shown";
 
     [DllImport("libc", SetLastError = true)]
     private static extern uint geteuid();

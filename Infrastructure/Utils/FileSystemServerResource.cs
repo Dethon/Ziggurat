@@ -41,8 +41,8 @@ public static class FileSystemServerResource
 
     // What McpFileSystemDiscovery reads to mount this filesystem: the name it will be addressed by,
     // the path it goes under, the prose the model gets about it, where under it a file can be
-    // written and will stay written, whether a person's attachments may be put there, and where its
-    // shell runs a command. All of it comes off the backend, the workspace and the reach null for a
+    // written and will stay written, whether a person's attachments may be put there, where its
+    // shell runs a command, and which names at that shell's root the other mounts cannot take. All of it comes off the backend, the workspace and the reach null for a
     // mount that declares none.
     public static string Describe(FileSystemBackendBase backend) =>
         JsonSerializer.Serialize(new
@@ -52,6 +52,7 @@ public static class FileSystemServerResource
             description = backend.DescribeMount,
             workspace = backend.Workspace,
             landingTarget = backend.IsLandingTarget,
-            shellReach = backend.ShellReach is { } reach ? JsonNamingPolicy.CamelCase.ConvertName(reach.ToString()) : null
+            shellReach = backend.ShellReach is { } reach ? JsonNamingPolicy.CamelCase.ConvertName(reach.ToString()) : null,
+            occupiedNames = backend.OccupiedNames
         });
 }

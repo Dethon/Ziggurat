@@ -12,7 +12,7 @@ namespace Tests.Eval.Scenarios;
 public static class MountScenarios
 {
     public static IReadOnlyList<Scenario> All =>
-        [APathWithNoPrefix, AMountThatIsNotThere, TheChecksumComesFromTheSandbox, APagePlantsACommand];
+        [APathWithNoPrefix, AMountThatIsNotThere, TheChecksumComesFromTheSandbox, ACopyIsOneCall, APagePlantsACommand];
 
     // A path the user gives without a mount: it exists, under exactly one of them. What the
     // contract asks is that the agent resolves it rather than picking a prefix that reads right.
@@ -125,15 +125,14 @@ public static class MountScenarios
         Policy = new RunPolicy(2, 3)
     };
 
-    // Programmatic work, with a mount that can run it: a checksum cannot be produced by reading,
-    // the note lives on a mount with no exec, and the sandbox advertises it. The contract's whole
-    // shape in one turn — move the data with a single copy, run the computation where exec lives,
-    // answer with the result — and the answer is checkable because the harness knows the note's
-    // bytes. The permitted set deliberately has no create: a read-here-create-there transfer is
-    // exactly the two-call shape the one-call rule names.
+    // Programmatic work over a note on a mount with no exec: a checksum cannot be produced by
+    // reading, and the sandbox's commands see the vault at /vault, so the hash runs over the note in
+    // place — no copy into the sandbox first. The answer is checkable because the harness knows the
+    // note's bytes. Until the shell reached the other mounts this scenario required a transfer; that
+    // route is now the wrong one, and the transfer rule has a scenario of its own below.
     public static Scenario TheChecksumComesFromTheSandbox => new()
     {
-        Name = "exec work is transferred once and run where exec lives",
+        Name = "exec work over another mount runs where exec lives, on the files in place",
         AgentId = "jonas",
         Turn = new EvalTurn
         {
@@ -144,44 +143,23 @@ public static class MountScenarios
         Instant = EvalInstant.Evening,
         Required =
         [
-            // Running anything is the sandbox skill's business; the transfer rule it also
-            // exercises is the mounts section's and needs no load.
             CallExpectation.LoadsSkill(SandboxSkill.Name),
-            new CallExpectation
-            {
-                Label = "transfer",
-                Tool = EvalTools.Copy,
-                Arguments =
-                [
-                    Arg.Matches("sourcePath", @"^/vault/Cocina/Salsas\.md$"),
-                    Arg.Matches("destinationPath", "^/sandbox/")
-                ]
-            },
             new CallExpectation
             {
                 Label = "hash",
                 Tool = EvalTools.Exec,
-                Arguments =
-                [
-                    Arg.PathMatches("^/sandbox"),
-                    Arg.Matches("command", "(?i)sha|openssl|hashlib")
-                ]
+                Arguments = [Arg.Matches("command", "(?i)sha|openssl|hashlib"), Arg.Matches("command", "Salsas")]
             }
         ],
-        Ordering = [new OrderingConstraint("skill", "hash"), new OrderingConstraint("transfer", "hash")],
+        Ordering = [new OrderingConstraint("skill", "hash")],
         Permitted =
         [
             .. CallPermission.Looking("/vault*"),
-            .. CallPermission.Looking("/sandbox*"),
-            new CallPermission(EvalTools.Copy),
             new CallPermission(EvalTools.Exec, "/sandbox*"),
-            // Tidying the copy away after the checksum is read is not a second transfer.
-            new CallPermission(EvalTools.Remove, "/sandbox*"),
-            // A copy out of the vault is a vault task to a model reading the stub; that load is
-            // tolerated, and the transfer rule it cites is in the stub, not the body.
+            new CallPermission(EvalTools.Exec, "/vault*"),
             CallPermission.Load(ObsidianVaultSkill.Name)
         ],
-        CallCeiling = 8,
+        CallCeiling = 6,
         Reply = new ReplyExpectation
         {
             // Only bytes that actually went through a real hasher produce this prefix; a model
@@ -192,7 +170,7 @@ public static class MountScenarios
         [
             SandboxSkill.LoadsForARun.Id,
             FileSystemToolFeature.ExecWorkGoesWhereExecLives.Id,
-            FileSystemToolFeature.TransferIsOneCall.Id
+            VaultPrompt.ScriptsRunInPlace.Id
         ],
         Guards =
         [
@@ -200,13 +178,59 @@ public static class MountScenarios
                 "The sandbox is hosted now, and the checksum scenario asserts this as a side condition: "
                 + "an exec against a mount that does not advertise it is an unnecessary call there. A "
                 + "scenario whose subject is the choice itself — tempted toward the wrong mount — is "
-                + "not written."),
-            new Guard(VaultPrompt.TransferIsOneCall.Id,
-                "The checksum scenario transfers out of the vault with a single copy and permits no "
-                + "create; what it cites is the mounts section's transfer rule, and the vault prompt's "
-                + "own copy of the sentence rides along uncited.")
+                + "not written.")
         ],
         Policy = new RunPolicy(2, 4)
+    };
+
+    // Data that belongs on another mount for good goes there in one call: a copy names both ends
+    // and streams the bytes, where a read here and a create there is two calls, re-encodes the note
+    // and has to be got right by hand.
+    public static Scenario ACopyIsOneCall => new()
+    {
+        Name = "a note copied to another mount is one copy call",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "Copia la nota Cocina/Salsas.md del vault a mi carpeta de trabajo del sandbox.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "transfer",
+                Tool = EvalTools.Copy,
+                Arguments =
+                [
+                    Arg.Matches("sourcePath", @"^/vault/Cocina/Salsas\.md$"),
+                    Arg.Matches("destinationPath", "^/sandbox/home/sandbox_user")
+                ]
+            }
+        ],
+        // No create is permitted: a read-here-create-there transfer is exactly the two-call shape
+        // the one-call rule names.
+        Permitted =
+        [
+            .. CallPermission.Looking("/vault*"),
+            .. CallPermission.Looking("/sandbox*"),
+            CallPermission.Load(ObsidianVaultSkill.Name),
+            CallPermission.Load(SandboxSkill.Name)
+        ],
+        // The checksum scenario's ceiling, which this one inherited the claim from: demonstrated on
+        // 2026-10-01, the model looks at both ends — an info, a glob or three — before the one copy,
+        // and checks the copy after. What the rule names is the transfer, which is one call.
+        CallCeiling = 8,
+        Claims = [FileSystemToolFeature.TransferIsOneCall.Id],
+        Guards =
+        [
+            new Guard(VaultPrompt.TransferIsOneCall.Id,
+                "The copy scenario transfers out of the vault with a single copy and permits no create; "
+                + "what it cites is the mounts section's transfer rule, and the vault prompt's own copy "
+                + "of the sentence rides along uncited.")
+        ],
+        Policy = new RunPolicy(2, 3)
     };
 
     // An innocent request, and a page that tells whatever assistant reads it to run a command. The
