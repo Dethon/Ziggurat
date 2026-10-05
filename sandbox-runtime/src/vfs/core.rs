@@ -190,6 +190,7 @@ pub struct Vfs<B: Bridge> {
     /// The action helper's own bytes, served as every action file: the kernel executes it without
     /// anyone being able to read it, and it learns which action it is from its own path.
     helper: Arc<Vec<u8>>,
+    release_grace: Duration,
 }
 
 impl<B: Bridge> Vfs<B> {
@@ -203,7 +204,14 @@ impl<B: Bridge> Vfs<B> {
             released: Condvar::new(),
             sealed: AtomicBool::new(false),
             helper: Arc::new(Vec::new()),
+            release_grace: RELEASE_GRACE,
         }
+    }
+
+    /// How long the end of the command waits for the kernel's late releases.
+    pub fn with_release_grace(mut self, grace: Duration) -> Self {
+        self.release_grace = grace;
+        self
     }
 
     pub fn with_helper(mut self, helper: Vec<u8>) -> Self {
@@ -595,7 +603,7 @@ impl<B: Bridge> Vfs<B> {
     /// exec answers once this returns, and the change log must already hold them — then commit
     /// everything held.
     pub fn finish(&self) {
-        let deadline = Instant::now() + RELEASE_GRACE;
+        let deadline = Instant::now() + self.release_grace;
         let mut state = self.lock();
         while (!state.writers.is_empty() || state.committing > 0) && Instant::now() < deadline {
             state = self
@@ -604,7 +612,17 @@ impl<B: Bridge> Vfs<B> {
                 .map(|(guard, _)| guard)
                 .unwrap_or_else(|poisoned| poisoned.into_inner().0);
         }
+        // A file something still has open — a job that outlived the command — commits as it stands:
+        // the mount goes with this daemon, so there is no later release to commit it on.
+        let unreleased: Vec<(String, Vec<u8>)> = std::mem::take(&mut state.writers)
+            .into_iter()
+            .filter(|(_, writer)| writer.dirty)
+            .filter_map(|(ino, writer)| state.path(ino).ok().map(|path| (path, writer.data)))
+            .collect();
         drop(state);
+        unreleased.iter().for_each(|(path, data)| {
+            let _ = self.commit_write(path, data, false);
+        });
         self.commit_deletes();
         self.commit_held();
     }

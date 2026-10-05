@@ -239,21 +239,22 @@ fn a_mode_or_time_change_is_accepted_and_commits_nothing() {
 // end of the command waits for them before committing what it holds.
 #[test]
 fn the_end_of_the_command_waits_for_a_late_release() {
-    let vfs = std::sync::Arc::new(vault());
+    let vfs = Arc::new(vault());
     let note = ino(&vfs, NOTE);
     let opened = vfs.open(note, true, true).unwrap();
     vfs.write(opened.fh, 0, b"late\n").unwrap();
 
-    let releaser = {
-        let vfs = vfs.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            vfs.release(opened.fh);
-        })
+    let finishing = {
+        let vfs = Arc::clone(&vfs);
+        thread::spawn(move || vfs.finish())
     };
-    vfs.finish();
-    releaser.join().unwrap();
+    // An absence is bought with time: long enough for a finish that does not wait to return.
+    thread::sleep(Duration::from_millis(300));
+    let finished_early = finishing.is_finished();
+    vfs.release(opened.fh);
+    finishing.join().unwrap();
 
+    assert!(!finished_early, "finish returned while the command's file was still open");
     assert_eq!(vfs.bridge().mutations(), [format!("write {NOTE} overwrite late\n")]);
 }
 
@@ -395,4 +396,29 @@ fn a_new_file_still_open_when_renamed_goes_on_being_written_at_its_new_path() {
         vfs.bridge().mutations(),
         ["write /vault/notes/done.md create one\n", "write /vault/notes/done.md overwrite one\ntwo\n"]
     );
+}
+
+// `tail -f in >> /vault/notes/todo.md &` with its output redirected: the job outlives the command
+// and never releases the file. What it had written by the end is committed with everything else
+// the command left, and listed — not dropped without a word when the mount goes away.
+#[test]
+fn what_was_written_to_a_file_still_open_at_the_end_is_committed() {
+    let vfs = vault().with_release_grace(Duration::from_millis(20));
+    let opened = vfs.open(ino(&vfs, NOTE), true, false).unwrap();
+    vfs.write(opened.fh, 4, b"more\n").unwrap();
+
+    vfs.finish();
+
+    assert_eq!(vfs.bridge().mutations(), [format!("write {NOTE} overwrite old\nmore\n")]);
+}
+
+// A file opened for writing and never written is not a change, at the end as at a release.
+#[test]
+fn a_file_open_and_unwritten_at_the_end_commits_nothing() {
+    let vfs = vault().with_release_grace(Duration::from_millis(20));
+    vfs.open(ino(&vfs, NOTE), true, false).unwrap();
+
+    vfs.finish();
+
+    assert!(vfs.bridge().mutations().is_empty());
 }
