@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.Security;
 using Domain.Tools.FileSystem.Bridge;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace Agent.App;
 
@@ -33,12 +34,11 @@ public static class VfsBridgeApi
 
         // The body is the whole file; `new` says nothing was at the path when the command made it.
         bridge.MapPost("/write", (HttpContext http, IVfsBridge vfs, string path, CancellationToken ct, bool @new = false) =>
-            WithCall(http, vfs, async call =>
-            {
-                using var body = new MemoryStream();
-                await http.Request.Body.CopyToAsync(body, ct);
-                return Json(await call.WriteAsync(path, body.ToArray(), @new, ct), _ => new { });
-            }));
+            WithCall(http, vfs, async call => Json(
+                await BodyWithinAsync(http, call.MaxFileBytes, ct) is { } content
+                    ? await call.WriteAsync(path, content, @new, ct)
+                    : call.WriteTooLarge(path, @new),
+                _ => new { })));
 
         bridge.MapPost("/delete", (HttpContext http, IVfsBridge vfs, string path, CancellationToken ct) =>
             WithCall(http, vfs, async call => Json(await call.DeleteAsync(path, ct), _ => new { })));
@@ -74,6 +74,38 @@ public static class VfsBridgeApi
     }
 
     public sealed record ActionRequest(IReadOnlyList<string>? Argv);
+
+    // The request's body, or null where it is longer than `ceiling`: refused on the length it
+    // declares where it declares one, and otherwise read no further than one byte past, so a body
+    // this is about to refuse is never held. The server's own request limit is moved to match —
+    // its default is below the ceiling, and would answer a file that fits with a 413 instead.
+    private static async Task<byte[]?> BodyWithinAsync(HttpContext http, long ceiling, CancellationToken ct)
+    {
+        if (http.Request.ContentLength > ceiling)
+        {
+            return null;
+        }
+
+        if (http.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+        {
+            limit.MaxRequestBodySize = ceiling + 1;
+        }
+
+        using var body = new MemoryStream();
+        var buffer = new byte[81920];
+        int read;
+        while ((read = await http.Request.Body.ReadAsync(buffer, ct)) > 0)
+        {
+            if (body.Length + read > ceiling)
+            {
+                return null;
+            }
+
+            body.Write(buffer, 0, read);
+        }
+
+        return body.ToArray();
+    }
 
     private static async Task<IResult> WithCall(HttpContext http, IVfsBridge vfs, Func<VfsCall, Task<IResult>> answer) =>
         SharedSecret.Bearer(http.Request.Headers.Authorization.ToString()) is { } token && vfs.Find(token) is { } call

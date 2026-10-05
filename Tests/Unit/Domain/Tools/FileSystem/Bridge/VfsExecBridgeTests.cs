@@ -14,7 +14,7 @@ namespace Tests.Unit.Domain.Tools.FileSystem.Bridge;
 // caller observes: the bridge's answers and the exec result.
 public class VfsExecBridgeTests
 {
-    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow));
+    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow), new VfsBridgeSettings());
 
     private readonly MemoryDisk _vault = new("vault", new Dictionary<string, string>
     {

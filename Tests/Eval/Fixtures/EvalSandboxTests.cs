@@ -38,7 +38,7 @@ public class EvalSandboxTests
     {
         Skip.IfNot(OperatingSystem.IsLinux(), "The sandbox pairing needs Linux.");
         Skip.IfNot(await DockerIsRunningAsync(), "Docker is not running.");
-        var bridge = new VfsBridge(TimeProvider.System);
+        var bridge = new VfsBridge(TimeProvider.System, new VfsBridgeSettings());
         var (url, host, port) = await EvalBridgeHost.StartAsync(bridge);
         try
         {

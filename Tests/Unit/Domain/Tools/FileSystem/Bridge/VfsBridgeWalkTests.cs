@@ -13,7 +13,7 @@ namespace Tests.Unit.Domain.Tools.FileSystem.Bridge;
 // directory must say so: the exec result names every directory whose listing stopped early.
 public class VfsBridgeWalkTests
 {
-    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow));
+    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow), new VfsBridgeSettings());
 
     private VfsExecTool Tool(FileSystemBackendBase mount, Func<VfsCall, CancellationToken, Task> script) =>
         new(BridgeFixtures.Registry(

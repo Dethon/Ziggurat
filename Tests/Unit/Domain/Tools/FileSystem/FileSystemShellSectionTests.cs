@@ -48,7 +48,7 @@ public class FileSystemShellSectionTests
     {
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.GetMounts()).Returns(_mounts);
-        var bridged = new FileSystemToolFeature(registry.Object, bridge: new VfsBridge(new FakeTimeProvider()));
+        var bridged = new FileSystemToolFeature(registry.Object, bridge: new VfsBridge(new FakeTimeProvider(), new VfsBridgeSettings()));
         var plain = new FileSystemToolFeature(registry.Object);
         var execOnly = new FeatureConfig(EnabledTools: new HashSet<string>([VfsExecTool.Key]));
 

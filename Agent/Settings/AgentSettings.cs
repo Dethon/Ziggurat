@@ -4,6 +4,7 @@ using Domain.DTOs.Channel;
 using Domain.Security;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
+using Domain.Tools.FileSystem.Bridge;
 using Infrastructure.Judgments;
 using JetBrains.Annotations;
 
@@ -34,6 +35,7 @@ public record AgentSettings
     public TypeSafeOptions TypeSafe { get; init; } = new();
     public SkillPreloadSettings SkillPreload { get; init; } = new();
     public ExecScreenSettings ExecScreen { get; init; } = new();
+    public VfsBridgeSettings VfsBridge { get; init; } = new();
 }
 
 // The Lemonade chat host: somebody's own box on the local network, outside the compose stack, and

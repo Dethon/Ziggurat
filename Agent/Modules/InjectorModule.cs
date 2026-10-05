@@ -72,7 +72,7 @@ public static class InjectorModule
                 .AddSingleton<ChatThreadResolver>()
                 // One per host: the exec tool mints a call token on it for each sandbox command and
                 // the bridge endpoint answers that command's file operations from it.
-                .AddSingleton<IVfsBridge>(sp => new VfsBridge(sp.GetRequiredService<TimeProvider>()))
+                .AddSingleton<IVfsBridge>(sp => new VfsBridge(sp.GetRequiredService<TimeProvider>(), settings.VfsBridge))
                 .AddSingleton<IDomainToolRegistry, DomainToolRegistry>()
                 .AddSingleton<CustomAgentRegistry>()
                 .AddSingleton<IAgentDefinitionProvider, AgentDefinitionProvider>()

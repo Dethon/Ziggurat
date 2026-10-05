@@ -114,7 +114,7 @@ public sealed class EvalStack : IAsyncDisposable
     // it for every file operation a command makes on the other mounts. One instance, registered
     // into the agent's services over the one AddAgent made, so the tokens the exec tool mints are
     // the ones this endpoint answers.
-    public VfsBridge Bridge { get; } = new(TimeProvider.System);
+    public VfsBridge Bridge { get; } = new(TimeProvider.System, new VfsBridgeSettings());
 
     public static async Task<EvalStack> StartAsync(
         Scenario scenario, string redisConnectionString, Recording recording)

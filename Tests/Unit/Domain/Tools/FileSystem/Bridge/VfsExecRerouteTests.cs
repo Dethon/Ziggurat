@@ -14,7 +14,7 @@ namespace Tests.Unit.Domain.Tools.FileSystem.Bridge;
 // one, and on the mount's own catalog when it does not — so `./dismiss` works for every agent.
 public class VfsExecRerouteTests
 {
-    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow));
+    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow), new VfsBridgeSettings());
     private readonly CatalogMount _timers = new();
     private readonly List<(string Path, string Command)> _sandboxRan = [];
 

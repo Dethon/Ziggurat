@@ -50,6 +50,7 @@ public static class Errnos
     public const string NotSupported = "ENOTSUP";
     public const string TimedOut = "ETIMEDOUT";
     public const string Io = "EIO";
+    public const string TooLarge = "EFBIG";
 
     public static string Of(ToolErrorResult error) => error.ErrorCode switch
     {

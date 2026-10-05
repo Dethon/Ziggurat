@@ -28,7 +28,7 @@ public class VfsBridgeApiTests
 
     public VfsBridgeApiTests()
     {
-        _bridge = new VfsBridge(_time);
+        _bridge = new VfsBridge(_time, new VfsBridgeSettings { MaxFileBytes = 1024 });
     }
 
     private VfsCall Mint(Func<string, bool>? permits = null) => _bridge.Mint(
@@ -188,6 +188,26 @@ public class VfsBridgeApiTests
         agentRoutes.ShouldNotBeEmpty("the proxy routes the registration API to the agent, so this proves something");
         agentRoutes.ShouldAllBe(matcher => !VfsBridgeApi.Route.StartsWith(matcher.TrimEnd('*'), StringComparison.Ordinal));
         Regex.IsMatch(caddyfile, @"handle\s*\{\s*reverse_proxy\s+agent:").ShouldBeFalse("a catch-all to the agent would route it");
+    }
+
+    // A body past the call's ceiling is refused as too large, whatever length it claimed: the
+    // endpoint stops reading at the ceiling rather than buffer what it is about to refuse.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AWriteBodyPastTheCeiling_IsRefusedAsTooLarge(bool declaresItsLength)
+    {
+        var call = Mint();
+        await using var app = await StartAsync();
+        using var client = app.GetTestClient();
+        var request = Request("write", "/vault/notes/a.md", call.Token);
+        var body = new byte[4096];
+        request.Content = declaresItsLength ? new ByteArrayContent(body) : new StreamContent(new MemoryStream(body));
+
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        JsonNode.Parse(await response.Content.ReadAsStringAsync())!["errno"]!.GetValue<string>().ShouldBe(Errnos.TooLarge);
     }
 
     private static HttpRequestMessage Request(string op, string path, string token)

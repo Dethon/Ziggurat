@@ -19,7 +19,7 @@ namespace Infrastructure.Agents;
 // registry, its approval context and the mounts it serves; it is revoked when exec returns, is
 // cancelled or times out. Minting, revocation and lookup are explicit calls: there is no ambient
 // "current call" anywhere on this path.
-public sealed class VfsBridge(TimeProvider time) : IVfsBridge
+public sealed class VfsBridge(TimeProvider time, VfsBridgeSettings settings) : IVfsBridge
 {
     // A backstop, not the bound: every exec completes its token in a finally. This only reclaims a
     // token whose exec never returned, and outlasts the longest timeout a sandbox accepts.
@@ -32,7 +32,8 @@ public sealed class VfsBridge(TimeProvider time) : IVfsBridge
     public VfsCall Mint(IVirtualFileSystemRegistry registry, Func<string, bool> permits, ConversationContext? caller)
     {
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        var call = new VfsCall(token, registry, permits, [.. registry.GetMounts().Where(VfsCall.IsServed)], caller);
+        var call = new VfsCall(
+            token, registry, permits, [.. registry.GetMounts().Where(VfsCall.IsServed)], caller, settings.MaxFileBytes);
         _calls[token] = (call, time.GetUtcNow() + Lifetime);
         return call;
     }

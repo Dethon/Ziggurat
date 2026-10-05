@@ -26,8 +26,10 @@ public sealed class VfsCall
         IVirtualFileSystemRegistry registry,
         Func<string, bool> permits,
         IReadOnlyList<FileSystemMount> served,
-        ConversationContext? caller)
+        ConversationContext? caller,
+        long maxFileBytes)
     {
+        MaxFileBytes = maxFileBytes;
         Token = token;
         _registry = registry;
         _permits = permits;
@@ -36,6 +38,9 @@ public sealed class VfsCall
     }
 
     public string Token { get; }
+
+    // The largest file this call reads or writes through a mount (VfsBridgeSettings).
+    public long MaxFileBytes { get; }
 
     // The names the daemon puts at /vfs/<name>, the mount identity without its slash.
     public IReadOnlyList<string> ServedNames => [.. _served.Keys.Order(StringComparer.Ordinal)];
@@ -140,8 +145,10 @@ public sealed class VfsCall
         return new BridgeAnswer<BridgeListing>.Ok(new BridgeListing(entries, truncated));
     }
 
-    // The whole file. Bytes where the mount has them — a disk root's blob read — and otherwise the
-    // text the mount renders, which is what a rendered status file is.
+    // The whole file, up to the call's ceiling. Bytes where the mount has them — a disk root's blob
+    // read — and otherwise the text the mount renders, which is what a rendered status file is. A
+    // file past the ceiling is refused the moment the read passes it: what was read so far is let
+    // go and the rest is never asked for.
     public async Task<BridgeAnswer<byte[]>> ReadAsync(string path, CancellationToken ct)
     {
         if (Resolve<byte[]>(path, VfsFileReadTool.Name, out var resolution) is { } refused)
@@ -154,6 +161,11 @@ public sealed class VfsCall
             using var bytes = new MemoryStream();
             await foreach (var chunk in resolution.Backend.ReadChunksAsync(resolution.RelativePath, ct))
             {
+                if (bytes.Length + chunk.Length > MaxFileBytes)
+                {
+                    return TooLarge<byte[]>(path);
+                }
+
                 bytes.Write(chunk.Span);
             }
 
@@ -161,11 +173,11 @@ public sealed class VfsCall
         }
         catch (NotSupportedException)
         {
-            return await ReadTextAsync(resolution, ct);
+            return Within(path, await ReadTextAsync(resolution, ct));
         }
         catch (FileSystemOperationException ex) when (ex.Error.ErrorCode == ToolError.Codes.UnsupportedOperation)
         {
-            return await ReadTextAsync(resolution, ct);
+            return Within(path, await ReadTextAsync(resolution, ct));
         }
         catch (FileSystemOperationException ex)
         {
@@ -179,10 +191,23 @@ public sealed class VfsCall
     // `isNew` is the daemon's knowledge that nothing was at the path, which only names the change.
     public async Task<BridgeAnswer<bool>> WriteAsync(string path, byte[] content, bool isNew, CancellationToken ct)
     {
+        if (content.Length > MaxFileBytes)
+        {
+            return WriteTooLarge(path, isNew);
+        }
+
         var operation = isNew ? VfsChange.Operations.Create : VfsChange.Operations.Write;
         return Revoked
             ? Dropped<bool>(path, operation)
             : Logged(await WriteCoreAsync(path, content, ct), path, operation);
+    }
+
+    // A write whose content passed the ceiling. Its own call because the endpoint stops reading a
+    // body there: it has no content to hand over, only a refusal for the change log.
+    public BridgeAnswer<bool> WriteTooLarge(string path, bool isNew)
+    {
+        var operation = isNew ? VfsChange.Operations.Create : VfsChange.Operations.Write;
+        return Revoked ? Dropped<bool>(path, operation) : Logged(TooLarge<bool>(path), path, operation);
     }
 
     // The remove tool's call. A directory goes whole: `rm -r` reaches here as the directory's one
@@ -435,6 +460,19 @@ public sealed class VfsCall
     private static string MountName(string path) => path.Trim('/').Split('/')[0];
 
     private static string NameOf(string entry) => entry.TrimEnd('/')[(entry.TrimEnd('/').LastIndexOf('/') + 1)..];
+
+    private BridgeAnswer<byte[]> Within(string path, BridgeAnswer<byte[]> answer) =>
+        answer is BridgeAnswer<byte[]>.Ok { Value.LongLength: var length } && length > MaxFileBytes
+            ? TooLarge<byte[]>(path)
+            : answer;
+
+    private BridgeAnswer<T> TooLarge<T>(string path) =>
+        new BridgeAnswer<T>.Refused(Errnos.TooLarge, new ToolErrorResult
+        {
+            ErrorCode = ToolError.Codes.InvalidArgument,
+            Message = $"{path} is larger than {MaxFileBytes} bytes, the most a command can read or write "
+                      + "through a mount. The file tools are not bound by this."
+        });
 
     private static BridgeAnswer<T> NotFound<T>(string path) =>
         new BridgeAnswer<T>.Refused(Errnos.NotFound, new ToolErrorResult

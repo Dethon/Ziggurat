@@ -13,7 +13,7 @@ namespace Tests.Unit.Domain.Tools.FileSystem.Bridge;
 // whether the path may leave before anything is copied.
 public class VfsBridgeMoveTests
 {
-    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow));
+    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow), new VfsBridgeSettings());
 
     private readonly MemoryDisk _vault = new("vault", new Dictionary<string, string>
     {

@@ -14,7 +14,7 @@ namespace Tests.Unit.Domain.Tools.FileSystem.Bridge;
 // blob write a copy streams through — allowed only where that call would be, and logged.
 public class VfsBridgeWriteTests
 {
-    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow));
+    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow), new VfsBridgeSettings());
 
     private readonly MemoryDisk _vault = new("vault", new Dictionary<string, string> { ["notes/todo.md"] = "old\n" });
 

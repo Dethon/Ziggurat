@@ -13,7 +13,7 @@ namespace Tests.Unit.Domain.Tools.FileSystem.Bridge;
 // files — arrive revoked and are dropped, and the exec result says so.
 public class VfsBridgeRevocationTests
 {
-    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow));
+    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow), new VfsBridgeSettings());
 
     private readonly MemoryDisk _vault = new("vault", new Dictionary<string, string> { ["a.md"] = "old\n" });
 

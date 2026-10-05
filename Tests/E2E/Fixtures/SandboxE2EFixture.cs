@@ -31,7 +31,7 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
 
     // The bridge the container's daemons call: a test mints a call on it over a registry of its own
     // and hands the token to fs_exec on the call's `_meta`, as the agent's exec tool does.
-    public VfsBridge Bridge { get; } = new(TimeProvider.System);
+    public VfsBridge Bridge { get; } = new(TimeProvider.System, new VfsBridgeSettings());
 
     public string McpEndpoint { get; private set; } = "";
 

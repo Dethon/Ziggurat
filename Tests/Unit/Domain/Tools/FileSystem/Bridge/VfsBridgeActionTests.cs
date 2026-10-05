@@ -13,7 +13,7 @@ namespace Tests.Unit.Domain.Tools.FileSystem.Bridge;
 // exit code, and listed among the command's changes.
 public class VfsBridgeActionTests
 {
-    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow));
+    private readonly VfsBridge _bridge = new(new FakeTimeProvider(DateTimeOffset.UtcNow), new VfsBridgeSettings());
 
     private readonly ActionMount _timers = new();
 
