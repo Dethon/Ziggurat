@@ -62,7 +62,7 @@ public class VfsBridgeMoveTests
     public async Task AMoveInsideAMountSeenThroughACallerView_IsStillThatMountsOwnMove()
     {
         var disk = new ViewedDisk("vault", new Dictionary<string, string> { ["a.md"] = "alpha\n" });
-        var call = _bridge.Mint(BridgeFixtures.Registry((disk, "/vault", null)), _ => true, null);
+        var call = _bridge.Mint(BridgeFixtures.Registry((disk, "/vault", null)), BridgeFixtures.Everything, null, null);
 
         var answer = await call.RenameAsync("/vault/a.md", "/vault/c.md", overwrite: false, CancellationToken.None);
 
@@ -81,7 +81,7 @@ public class VfsBridgeMoveTests
         {
             RefusesMoveOutOf = "live"
         };
-        var call = _bridge.Mint(BridgeFixtures.Registry((disk, "/media", null)), _ => true, null);
+        var call = _bridge.Mint(BridgeFixtures.Registry((disk, "/media", null)), BridgeFixtures.Everything, null, null);
 
         var answer = await call.RenameAsync("/media/live/a.txt", "/media/live/b.txt", overwrite: true, CancellationToken.None);
 

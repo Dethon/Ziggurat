@@ -20,7 +20,7 @@ public class SandboxActionsE2ETests(SandboxE2EFixture fixture)
 {
     private readonly JobsMount _jobs = new();
 
-    private VfsCall Mint() => fixture.Bridge.Mint(BridgeFixtures.Registry((_jobs, "/jobs", null)), _ => true, null);
+    private VfsCall Mint() => fixture.Bridge.Mint(BridgeFixtures.Registry((_jobs, "/jobs", null)), BridgeFixtures.Everything, null, null);
 
     [SkippableFact]
     public async Task AnActionRunFromBash_PassesItsOutputAndExitCodeThrough()

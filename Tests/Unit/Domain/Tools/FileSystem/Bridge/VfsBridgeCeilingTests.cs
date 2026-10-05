@@ -19,7 +19,7 @@ public class VfsBridgeCeilingTests
         ["film.bin"] = "0123456789abcdef"
     });
 
-    private VfsCall Mint() => _bridge.Mint(BridgeFixtures.Registry((_vault, "/vault", null)), _ => true, null);
+    private VfsCall Mint() => _bridge.Mint(BridgeFixtures.Registry((_vault, "/vault", null)), BridgeFixtures.Everything, null, null);
 
     [Fact]
     public async Task AFileAtTheCeiling_IsRead()

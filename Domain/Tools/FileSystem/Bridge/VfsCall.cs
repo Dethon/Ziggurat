@@ -14,7 +14,8 @@ namespace Domain.Tools.FileSystem.Bridge;
 public sealed class VfsCall
 {
     private readonly IVirtualFileSystemRegistry _registry;
-    private readonly Func<string, bool> _permits;
+    private readonly ToolPermission _permission;
+    private readonly Func<string, bool>? _offered;
     private readonly ConversationContext? _caller;
     private readonly IReadOnlyDictionary<string, FileSystemMount> _served;
     private readonly ConcurrentQueue<VfsChange> _changes = new();
@@ -30,7 +31,8 @@ public sealed class VfsCall
     public VfsCall(
         string token,
         IVirtualFileSystemRegistry registry,
-        Func<string, bool> permits,
+        ToolPermission permission,
+        Func<string, bool>? offered,
         IReadOnlyList<FileSystemMount> served,
         ConversationContext? caller,
         long maxFileBytes)
@@ -38,7 +40,8 @@ public sealed class VfsCall
         MaxFileBytes = maxFileBytes;
         Token = token;
         _registry = registry;
-        _permits = permits;
+        _permission = permission;
+        _offered = offered;
         _caller = caller;
         _served = served.ToDictionary(m => m.MountPoint.TrimStart('/'), StringComparer.OrdinalIgnoreCase);
     }
@@ -454,7 +457,9 @@ public sealed class VfsCall
             return NotFound<T>(path);
         }
 
-        if (!_permits(toolName))
+        // A command may do through the mounts only what the session's own tools could: a tool the
+        // agent was never given is refused to the shell too.
+        if (!(_offered?.Invoke(toolName) ?? true) || !_permission.RunsUnasked(FileSystemToolFeature.Callable(toolName)))
         {
             return new BridgeAnswer<T>.Refused(Errnos.Denied, new ToolErrorResult
             {

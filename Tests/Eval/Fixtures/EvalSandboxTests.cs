@@ -46,7 +46,7 @@ public class EvalSandboxTests
             await using var client = await McpClient.CreateAsync(McpTestSecret.Transport(sandbox.Endpoint));
             var call = bridge.Mint(Unit.Domain.Tools.FileSystem.Bridge.BridgeFixtures.Registry(
                 (new Unit.Domain.Tools.FileSystem.Bridge.MemoryDisk(
-                    "vault", new Dictionary<string, string> { ["hello.md"] = "served\n" }), "/vault", null)), _ => true, null);
+                    "vault", new Dictionary<string, string> { ["hello.md"] = "served\n" }), "/vault", null)), Unit.Domain.Tools.FileSystem.Bridge.BridgeFixtures.Everything, null, null);
 
             var result = await client.CallToolAsync(new CallToolRequestParams
             {

@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Domain.Tools.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
 
 namespace Domain.Contracts;
@@ -9,10 +10,14 @@ namespace Domain.Contracts;
 // state, so it lives in Infrastructure (VfsBridge); what a call means is VfsCall's, here.
 public interface IVfsBridge
 {
+    // `permission`: what the conversation's tools may do unasked, as the approval client decides it
+    // — read live, so an approval remembered mid-command counts. `offered`: whether the session
+    // offers a file tool by its name at all; null offers every tool.
     // `caller`: the conversation the command serves, so a mount that answers by who is calling —
     // the Home Assistant watches record their author — sees the same caller through the shell as
     // through a tool call. Null where the call carried none — said, never left out.
-    VfsCall Mint(IVirtualFileSystemRegistry registry, Func<string, bool> permits, ConversationContext? caller);
+    VfsCall Mint(
+        IVirtualFileSystemRegistry registry, ToolPermission permission, Func<string, bool>? offered, ConversationContext? caller);
 
     // Null for a token never minted, completed or expired: all three are a caller with no call.
     VfsCall? Find(string token);

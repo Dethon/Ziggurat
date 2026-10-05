@@ -42,7 +42,7 @@ public class VfsBridgeOverTheWireTests
             server.Client, "timers",
             McpFileSystemDiscovery.AdvertisedOperations(FileSystemServerTools.SupportedToolNames(typeof(RenderedMount))));
         var call = new VfsBridge(new FakeTimeProvider(), new VfsBridgeSettings())
-            .Mint(BridgeFixtures.Registry((new WireMount(backend), "/timers", null)), _ => true, null);
+            .Mint(BridgeFixtures.Registry((new WireMount(backend), "/timers", null)), BridgeFixtures.Everything, null, null);
 
         var read = await call.ReadAsync("/timers/pasta/status.json", CancellationToken.None);
 
@@ -70,7 +70,7 @@ public class VfsBridgeOverTheWireTests
         // Mounted as discovery mounts it: the proxy itself, not a stand-in.
         var registry = new VirtualFileSystemRegistry();
         registry.Mount(new FileSystemMount("watches", "/watches", "Watches."), backend);
-        var call = new VfsBridge(new FakeTimeProvider(), new VfsBridgeSettings()).Mint(registry, _ => true, caller);
+        var call = new VfsBridge(new FakeTimeProvider(), new VfsBridgeSettings()).Mint(registry, BridgeFixtures.Everything, null, caller);
 
         await call.WriteAsync("/watches/w1/watch.json", "{}"u8.ToArray(), isNew: true, CancellationToken.None);
 

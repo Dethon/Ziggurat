@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Tools.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
 using global::Agent.App;
 using Infrastructure.Agents;
@@ -31,12 +32,12 @@ public class VfsBridgeApiTests
         _bridge = new VfsBridge(_time, new VfsBridgeSettings { MaxFileBytes = 1024 });
     }
 
-    private VfsCall Mint(Func<string, bool>? permits = null) => _bridge.Mint(
+    private VfsCall Mint(ToolPermission? permission = null) => _bridge.Mint(
         BridgeFixtures.Registry((new MemoryDisk("vault", new Dictionary<string, string>
         {
             ["notes/a.md"] = "alpha\n"
         }), "/vault", null)),
-        permits ?? (_ => true), null);
+        permission ?? BridgeFixtures.Everything, null, null);
 
     public static TheoryData<string> Operations => ["attr", "list", "read", "write", "delete"];
 
@@ -162,7 +163,7 @@ public class VfsBridgeApiTests
     [Fact]
     public async Task ARefusal_AnswersItsErrnoAndTheEnvelope()
     {
-        var call = Mint(_ => false);
+        var call = Mint(ToolPermission.None);
         await using var app = await StartAsync();
         using var client = app.GetTestClient();
 

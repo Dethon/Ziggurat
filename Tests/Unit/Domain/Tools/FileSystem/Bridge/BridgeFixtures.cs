@@ -259,7 +259,9 @@ internal static class BridgeFixtures
     }
 
     // Every file tool runs unasked: an agent whose whitelist covers the filesystem feature.
-    public static AIFunctionArgumentsWithPermission Whitelisted => new(new ToolPermission(_ => true));
+    public static AIFunctionArgumentsWithPermission Whitelisted => new(Everything);
+
+    public static ToolPermission Everything => new(_ => true);
 
     public static AIFunctionArgumentsWithPermission Allowing(params string[] toolNames) =>
         new(new ToolPermission(name => toolNames.Contains(name)));

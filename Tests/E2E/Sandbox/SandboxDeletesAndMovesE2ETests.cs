@@ -37,7 +37,7 @@ public class SandboxDeletesAndMovesE2ETests(SandboxE2EFixture fixture)
     });
 
     private VfsCall Mint() => fixture.Bridge.Mint(
-        BridgeFixtures.Registry((_vault, "/vault", null), (_media, "/media", null), (_timers, "/timers", null)), _ => true, null);
+        BridgeFixtures.Registry((_vault, "/vault", null), (_media, "/media", null), (_timers, "/timers", null)), BridgeFixtures.Everything, null, null);
 
     private static IReadOnlyList<(string, string, string, string?)> Changes(VfsCall call) =>
         [.. call.Changes.Select(c => (c.Path, c.Operation, c.Status, c.Destination))];

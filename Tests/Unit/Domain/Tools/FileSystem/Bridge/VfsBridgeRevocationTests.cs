@@ -71,7 +71,7 @@ public class VfsBridgeRevocationTests
     [Fact]
     public void ARevokedToken_StillAnswersUntilTheExecCompletesIt()
     {
-        var call = _bridge.Mint(BridgeFixtures.Registry((_vault, "/vault", null)), _ => true, null);
+        var call = _bridge.Mint(BridgeFixtures.Registry((_vault, "/vault", null)), BridgeFixtures.Everything, null, null);
 
         _bridge.Revoke(call.Token);
 

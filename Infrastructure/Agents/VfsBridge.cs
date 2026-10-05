@@ -5,6 +5,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Outposts;
+using Domain.Tools.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
 
 namespace Infrastructure.Agents;
@@ -29,11 +30,12 @@ public sealed class VfsBridge(TimeProvider time, VfsBridgeSettings settings) : I
     private readonly ConcurrentDictionary<string, (VfsCall Call, DateTimeOffset Expires)> _calls =
         new(StringComparer.Ordinal);
 
-    public VfsCall Mint(IVirtualFileSystemRegistry registry, Func<string, bool> permits, ConversationContext? caller)
+    public VfsCall Mint(
+        IVirtualFileSystemRegistry registry, ToolPermission permission, Func<string, bool>? offered, ConversationContext? caller)
     {
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         var call = new VfsCall(
-            token, registry, permits, [.. registry.GetMounts().Where(VfsCall.IsServed)], caller, settings.MaxFileBytes);
+            token, registry, permission, offered, [.. registry.GetMounts().Where(VfsCall.IsServed)], caller, settings.MaxFileBytes);
         _calls[token] = (call, time.GetUtcNow() + Lifetime);
         return call;
     }

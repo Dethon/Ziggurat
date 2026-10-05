@@ -36,7 +36,7 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         var (vault, timers) = Mounts();
         var registry = BridgeFixtures.Registry(
             [(vault, "/vault", null), (timers, "/timers", null), .. extra]);
-        return fixture.Bridge.Mint(registry, _ => true, null);
+        return fixture.Bridge.Mint(registry, BridgeFixtures.Everything, null, null);
     }
 
     [SkippableFact]
@@ -204,9 +204,9 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         await using var client = await fixture.ConnectAsync(cts.Token);
         var first = fixture.Bridge.Mint(BridgeFixtures.Registry(
-            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "first\n" }), "/vault", null)), _ => true, null);
+            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "first\n" }), "/vault", null)), BridgeFixtures.Everything, null, null);
         var second = fixture.Bridge.Mint(BridgeFixtures.Registry(
-            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "second\n" }), "/vault", null)), _ => true, null);
+            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "second\n" }), "/vault", null)), BridgeFixtures.Everything, null, null);
 
         var results = await Task.WhenAll(
             ExecAsync(client, "sleep 1; cat /vault/who.txt", first, cts.Token),
@@ -226,9 +226,9 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         await using var client = await fixture.ConnectAsync(cts.Token);
         var owner = fixture.Bridge.Mint(BridgeFixtures.Registry(
-            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "the owner's\n" }), "/vault", null)), _ => true, null);
+            (new MemoryDisk("vault", new Dictionary<string, string> { ["who.txt"] = "the owner's\n" }), "/vault", null)), BridgeFixtures.Everything, null, null);
         var stranger = fixture.Bridge.Mint(BridgeFixtures.Registry(
-            (new MemoryDisk("scratch", new Dictionary<string, string> { ["x.txt"] = "x\n" }), "/scratch", null)), _ => true, null);
+            (new MemoryDisk("scratch", new Dictionary<string, string> { ["x.txt"] = "x\n" }), "/scratch", null)), BridgeFixtures.Everything, null, null);
         // The bracket keeps the stranger's own command line from matching itself.
         const string Reach = "sleep 1; for p in /proc/[0-9]*; do "
                              + "if grep -qa '4\\.3133[7]' $p/cmdline 2>/dev/null; then cat $p/root/vfs/vault/who.txt; ls $p/root/vfs/vault; fi; "
@@ -255,9 +255,9 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         var (vault, _) = Mounts();
         var registry = BridgeFixtures.Registry((vault, "/vault", null));
 
-        var first = await ExecAsync(client, "cat /vault/inbox.md", fixture.Bridge.Mint(registry, _ => true, null), cts.Token);
+        var first = await ExecAsync(client, "cat /vault/inbox.md", fixture.Bridge.Mint(registry, BridgeFixtures.Everything, null, null), cts.Token);
         vault.Files["inbox.md"] = "changed by a tool\n";
-        var second = await ExecAsync(client, "cat /vault/inbox.md", fixture.Bridge.Mint(registry, _ => true, null), cts.Token);
+        var second = await ExecAsync(client, "cat /vault/inbox.md", fixture.Bridge.Mint(registry, BridgeFixtures.Everything, null, null), cts.Token);
 
         Stdout(first).ShouldBe("nothing to see\n");
         Stdout(second).ShouldBe("changed by a tool\n");
@@ -273,7 +273,7 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         var files = Enumerable.Range(0, 40)
             .SelectMany(d => Enumerable.Range(0, 25).Select(f => (Path: $"d{d}/n{f}.md", Text: f == 0 ? "TODO here\n" : "nothing\n")))
             .ToDictionary(x => x.Path, x => x.Text);
-        var call = fixture.Bridge.Mint(BridgeFixtures.Registry((new MemoryDisk("vault", files), "/vault", null)), _ => true, null);
+        var call = fixture.Bridge.Mint(BridgeFixtures.Registry((new MemoryDisk("vault", files), "/vault", null)), BridgeFixtures.Everything, null, null);
         var started = System.Diagnostics.Stopwatch.StartNew();
 
         var result = await ExecAsync(client, "grep -rl TODO /vault | wc -l", call, cts.Token);
