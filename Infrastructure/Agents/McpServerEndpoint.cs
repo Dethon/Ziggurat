@@ -24,8 +24,13 @@ public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
     // server for the one deployment secret, because a tool believes whatever conversation context a
     // call claims and the network is not a boundary worth trusting that to; an outpost for its own,
     // because it is a port on somebody's own computer offering their whole filesystem, fs_exec
-    // included. Null presents nothing, which a gated server refuses.
-    public string? Secret { get; init; }
+    // included. Null presents nothing, which a gated server refuses — and a secret set to nothing is
+    // null here, so no dial sends a bearer header with nothing behind it.
+    public string? Secret
+    {
+        get;
+        init => field = string.IsNullOrEmpty(value) ? null : value;
+    }
 
     public static McpServerEndpoint Configured(string address, string? secret = null) =>
         new(address, McpEndpointOrigin.Configured) { Secret = secret };
