@@ -12,7 +12,19 @@ use std::io;
 const NR: u32 = 0;
 const ARCH: u32 = 4;
 const ARG0_LOW: u32 = 16;
-const AUDIT_ARCH_X86_64: u32 = 0xc000_003e;
+// The ABI this binary was built for, which is the one whose syscall numbers `libc::SYS_*` are. The
+// image builds the launcher for the machine it is built on (`$(uname -m)` in the Dockerfile), so a
+// filter that named one architecture answered ENOSYS to every syscall — execve first — on the
+// other. A third architecture does not build, rather than build a filter that refuses everything.
+#[cfg(target_arch = "x86_64")]
+const AUDIT_ARCH_NATIVE: u32 = 0xc000_003e;
+#[cfg(target_arch = "aarch64")]
+const AUDIT_ARCH_NATIVE: u32 = 0xc000_00b7;
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+compile_error!("seccomp.rs names the syscall ABI it filters; add this architecture's AUDIT_ARCH to it");
+
+// x86_64's second ABI in the same architecture word. No aarch64 syscall number reaches it, so the
+// check is inert there and the filter keeps one shape.
 const X32_SYSCALL_BIT: u32 = 0x4000_0000;
 
 const fn statement(code: u32, k: u32) -> libc::sock_filter {
@@ -29,13 +41,13 @@ const JGE: u32 = libc::BPF_JMP | libc::BPF_JGE | libc::BPF_K;
 const JSET: u32 = libc::BPF_JMP | libc::BPF_JSET | libc::BPF_K;
 const RET: u32 = libc::BPF_RET | libc::BPF_K;
 
-// Jumps count the statements they skip. Another ABI (i386 by `int 0x80`, x32) is ENOSYS whole:
-// its numbers differ, and the image ships no binary that uses one. clone3 is ENOSYS too, as
+// Jumps count the statements they skip. Another ABI (i386 by `int 0x80`, x32, 32-bit arm) is
+// ENOSYS whole: its numbers differ, and the image ships no binary that uses one. clone3 is ENOSYS too, as
 // Docker answers it on a container without SYS_ADMIN, because its flags sit behind a pointer the
 // filter cannot follow; glibc then falls back to clone, whose flags it can read.
 static FILTER: [libc::sock_filter; 12] = [
     /* 0 */ statement(LOAD, ARCH),
-    /* 1 */ jump(JEQ, AUDIT_ARCH_X86_64, 0, 9),
+    /* 1 */ jump(JEQ, AUDIT_ARCH_NATIVE, 0, 9),
     /* 2 */ statement(LOAD, NR),
     /* 3 */ jump(JGE, X32_SYSCALL_BIT, 7, 0),
     /* 4 */ jump(JEQ, libc::SYS_clone3 as u32, 6, 0),
