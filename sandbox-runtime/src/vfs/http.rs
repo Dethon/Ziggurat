@@ -17,7 +17,7 @@ pub struct HttpBridge {
 /// A revocation is one small request ahead of a kill. It gets a bound of its own, well inside the
 /// unit's wait for it, so an agent that is slow to answer is one the daemon seals itself against
 /// rather than one the unit gives up on.
-const REVOKE_WITHIN: Duration = Duration::from_secs(10);
+pub const REVOKE_WITHIN: Duration = Duration::from_secs(10);
 
 impl HttpBridge {
     pub fn new(url: &str, token: &str) -> Self {

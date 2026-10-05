@@ -191,6 +191,31 @@ public class VfsBridgeApiTests
         Regex.IsMatch(caddyfile, @"handle\s*\{\s*reverse_proxy\s+agent:").ShouldBeFalse("a catch-all to the agent would route it");
     }
 
+    // Two numbers on this side are only right while they stand in order with one kept elsewhere,
+    // and nothing else would say so when one of them moved: a token must outlast the longest
+    // command the sandbox accepts, or a long command's last writes arrive unauthorized; and the
+    // ceiling is the policy only while it sits below what the daemon refuses to hold.
+    [Fact]
+    public void ATokensBackstop_OutlastsTheLongestCommandTheSandboxAccepts()
+    {
+        var sandbox = JsonNode.Parse(File.ReadAllText(
+            Path.Combine(TestHelpers.FindSolutionRoot(), "McpServerSandbox", "appsettings.json")))!;
+
+        VfsBridge.Lifetime.ShouldBeGreaterThan(TimeSpan.FromSeconds(sandbox["MaxTimeoutSeconds"]!.GetValue<int>()));
+    }
+
+    [Fact]
+    public void TheShippedCeiling_SitsBelowWhatTheDaemonWillHold()
+    {
+        var root = TestHelpers.FindSolutionRoot();
+        var agent = JsonNode.Parse(File.ReadAllText(Path.Combine(root, "Agent", "appsettings.json")))!;
+        var daemon = File.ReadAllText(Path.Combine(root, "sandbox-runtime", "src", "vfs", "bridge.rs"));
+        var held = Regex.Match(daemon, @"pub const MAX_FILE: u64 = 1 << (?<shift>\d+);");
+
+        held.Success.ShouldBeTrue("the daemon's bound is read from its source, so this proves something");
+        agent["vfsBridge"]!["maxFileBytes"]!.GetValue<long>().ShouldBeLessThan(1L << int.Parse(held.Groups["shift"].Value));
+    }
+
     // A body past the call's ceiling is refused as too large, whatever length it claimed: the
     // endpoint stops reading at the ceiling rather than buffer what it is about to refuse.
     [Theory]

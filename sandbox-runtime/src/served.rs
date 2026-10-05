@@ -25,6 +25,10 @@ const READY_WITHIN: Duration = Duration::from_secs(20);
 /// margin past it.
 const REVOKED_WITHIN: Duration = Duration::from_secs(15);
 
+// The unit must still be waiting when the daemon gives up on the bridge and seals itself: a wait
+// that ended first would kill a daemon still inside the one request it is allowed.
+const _: () = assert!(crate::vfs::http::REVOKE_WITHIN.as_secs() < REVOKED_WITHIN.as_secs());
+
 /// The final commits of a command's held files go through the bridge before the daemon answers.
 const DONE_WITHIN: Duration = Duration::from_secs(120);
 
