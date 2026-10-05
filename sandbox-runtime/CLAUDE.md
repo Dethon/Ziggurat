@@ -21,7 +21,7 @@ One per exec, started by the unit as root inside the exec's namespace when the r
 
 ## The action helper (`vfs-action`, `src/vfs/actions.rs`)
 
-Served by the daemon as every action file's content (it reads its sibling binary at start), mode 0111. Run by the kernel as PUID, it maps its own executable path back to the action's virtual path, sends `{path, argv}` to `/run/vfs/action.sock` — the exec's own tmpfs, mounted by the unit before the daemon starts — and prints the action's stdout and stderr and exits with its code; anything else (run as itself, outside an exec, refused) is exit 126 with a line on stderr. The daemon answers a connection only from a descendant of its own parent, the unit.
+Served by the daemon as every action file's content (it reads its sibling binary at start), mode 0111. Run by the kernel as PUID, it maps its own executable path back to the action's virtual path, sends `{path, argv}` (an argument that is not UTF-8 is refused, never rewritten) to `/run/vfs/action.sock` — the exec's own tmpfs, mounted by the unit before the daemon starts — and prints the action's stdout and stderr and exits with its code; anything else (run as itself, outside an exec, refused) is exit 126 with a line on stderr. The daemon answers a connection only from a descendant of the unit — the parent it had when it started, asked once, since a daemon whose unit died is adopted by something every command descends from — and reads one bounded request line from it (`MAX_REQUEST`).
 
 ## Invariants
 
