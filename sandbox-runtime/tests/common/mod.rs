@@ -22,6 +22,8 @@ pub struct FakeBridge {
     /// Paths whose writes the mount refuses, as a mount refusing them would.
     pub refusing: Mutex<Vec<String>>,
     pub revoked: Mutex<bool>,
+    /// The agent cannot be reached when the revocation is sent: it never learns of it.
+    pub revocation_fails: Mutex<bool>,
     /// Writes wait while it holds, so a test can catch a commit mid-flight.
     pub hold: Mutex<Hold>,
     pub hold_changed: Condvar,
@@ -221,6 +223,9 @@ impl Bridge for FakeBridge {
 
     fn revoke(&self) -> Result<(), Errno> {
         self.record("revoke".into());
+        if *self.revocation_fails.lock().unwrap() {
+            return Err(libc::EIO);
+        }
         *self.revoked.lock().unwrap() = true;
         Ok(())
     }

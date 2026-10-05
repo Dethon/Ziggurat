@@ -46,6 +46,26 @@ public class VfsBridgeRevocationTests
             ]);
     }
 
+    // The call is cancelled from the agent's side — the turn was stopped. The agent is the first to
+    // know, so it revokes the token itself rather than wait for the launcher to ask: what the
+    // dying command flushes after the hang-up arrives revoked whether or not the daemon's own
+    // revocation ever lands.
+    [Fact]
+    public async Task ACancelledCall_IsRevokedByTheAgentItself()
+    {
+        using var cts = new CancellationTokenSource();
+        var run = Tool(async (call, ct) =>
+        {
+            await cts.CancelAsync();
+            await call.WriteAsync("/vault/a.md", "half\n"u8.ToArray(), isNew: false, CancellationToken.None);
+            ct.ThrowIfCancellationRequested();
+            return BridgeFixtures.Ran("");
+        }).RunAsync("/sandbox", "slow", arguments: BridgeFixtures.Whitelisted, cancellationToken: cts.Token);
+
+        await Should.ThrowAsync<OperationCanceledException>(run);
+        _vault.Files["a.md"].ShouldBe("old\n");
+    }
+
     // A revoked token still answers, so what arrives after the kill is recorded rather than lost;
     // only the exec returning ends it.
     [Fact]

@@ -14,6 +14,11 @@ pub struct HttpBridge {
     authorization: String,
 }
 
+/// A revocation is one small request ahead of a kill. It gets a bound of its own, well inside the
+/// unit's wait for it, so an agent that is slow to answer is one the daemon seals itself against
+/// rather than one the unit gives up on.
+const REVOKE_WITHIN: Duration = Duration::from_secs(10);
+
 /// A whole file is read in one answer; a bound keeps a runaway one from exhausting the daemon.
 const MAX_BODY: u64 = 1 << 30;
 
@@ -36,11 +41,26 @@ impl HttpBridge {
     }
 
     fn post_with_type(&self, op: &str, query: &[(&str, &str)], body: &[u8], content_type: &str) -> Result<Vec<u8>, Errno> {
+        self.send(op, query, body, content_type, None)
+    }
+
+    fn send(
+        &self,
+        op: &str,
+        query: &[(&str, &str)],
+        body: &[u8],
+        content_type: &str,
+        within: Option<Duration>,
+    ) -> Result<Vec<u8>, Errno> {
         let request = query
             .iter()
             .fold(self.agent.post(format!("{}/{op}", self.url)), |r, (k, v)| r.query(*k, *v))
             .header("Authorization", &self.authorization)
             .header("Content-Type", content_type);
+        let request = match within {
+            Some(within) => request.config().timeout_global(Some(within)).build(),
+            None => request,
+        };
         let mut response = request.send(body).map_err(|_| libc::EIO)?;
         let status = response.status().as_u16();
         let bytes = response.body_mut().with_config().limit(MAX_BODY).read_to_vec().map_err(|_| libc::EIO)?;
@@ -114,7 +134,7 @@ impl Bridge for HttpBridge {
     }
 
     fn revoke(&self) -> Result<(), Errno> {
-        self.post("revoke", &[], &[]).map(|_| ())
+        self.send("revoke", &[], &[], "application/octet-stream", Some(REVOKE_WITHIN)).map(|_| ())
     }
 
     fn write(&self, path: &str, content: &[u8], new: bool) -> Result<(), Errno> {

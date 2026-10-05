@@ -99,6 +99,10 @@ public class VfsExecTool(
     {
         var call = vfs.Mint(registry, toolName => (offered?.Invoke(toolName) ?? true) && permission.RunsUnasked(
             FileSystemToolFeature.Callable(toolName)), caller);
+        // A call cancelled from this side is revoked from this side, at once: the launcher revokes
+        // too, ahead of its kill, but through a daemon and a request that can each fail, and what
+        // the dying command flushes must arrive revoked either way.
+        using var revokedOnCancel = ct.Register(() => vfs.Revoke(call.Token));
         try
         {
             var exec = await backend.ExecAsync(cwd, command, timeoutSeconds, new VfsBridgeGrant(call.Token), ct);

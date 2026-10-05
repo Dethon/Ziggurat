@@ -284,6 +284,30 @@ fn after_a_revocation_every_commit_still_reaches_the_bridge_to_be_dropped() {
     assert_eq!(vfs.bridge().content(NOTE).unwrap(), "old\n");
 }
 
+// The revocation never reached the agent — it was down, or answered too late. The daemon is then
+// the only one who knows the command was revoked, and an agent that never heard would apply
+// whatever the kill flushes: so the daemon sends nothing more.
+#[test]
+fn a_revocation_the_bridge_never_heard_still_commits_nothing() {
+    let vfs = vault();
+    let note = ino(&vfs, NOTE);
+    let notes = ino(&vfs, "/vault/notes");
+    let opened = vfs.open(note, true, true).unwrap();
+    vfs.write(opened.fh, 0, b"half").unwrap();
+    let (_, held) = vfs.create(notes, "new.md").unwrap();
+    vfs.release(held);
+    *vfs.bridge().revocation_fails.lock().unwrap() = true;
+
+    vfs.revoke();
+    vfs.release(opened.fh);
+    assert_eq!(vfs.rename(notes, "todo.md", notes, "moved.md"), Err(libc::EACCES));
+    assert_eq!(vfs.action("/vault/notes/run", &[]).unwrap_err(), libc::EACCES);
+    vfs.finish();
+
+    assert_eq!(vfs.bridge().mutations(), ["revoke"]);
+    assert_eq!(vfs.bridge().content(NOTE).unwrap(), "old\n");
+}
+
 // The last release commits after it lets go of the writer, and the kernel sends it on its own
 // thread after the command has exited. The command is not over until that commit has reached the
 // bridge: exec answers once finish returns, and a change log read then must already hold it.

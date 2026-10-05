@@ -16,6 +16,7 @@
 //!   the one delete the remove tool makes. At the end, deletes commit before held files.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -152,6 +153,9 @@ pub struct Vfs<B: Bridge> {
     bridge: B,
     state: Mutex<State>,
     released: Condvar,
+    /// The command was revoked and the bridge never heard: nothing more is sent, because an agent
+    /// that does not know would apply it.
+    sealed: AtomicBool,
     /// The action helper's own bytes, served as every action file: the kernel executes it without
     /// anyone being able to read it, and it learns which action it is from its own path.
     helper: Arc<Vec<u8>>,
@@ -162,7 +166,13 @@ impl<B: Bridge> Vfs<B> {
         let mut state = State { next_ino: ROOT + 1, next_fh: 1, ..State::default() };
         state.paths.insert(ROOT, "/".into());
         state.inos.insert("/".into(), ROOT);
-        Self { bridge, state: Mutex::new(state), released: Condvar::new(), helper: Arc::new(Vec::new()) }
+        Self {
+            bridge,
+            state: Mutex::new(state),
+            released: Condvar::new(),
+            sealed: AtomicBool::new(false),
+            helper: Arc::new(Vec::new()),
+        }
     }
 
     pub fn with_helper(mut self, helper: Vec<u8>) -> Self {
@@ -498,7 +508,7 @@ impl<B: Bridge> Vfs<B> {
                     state.held_files.contains_key(&to) || state.is_deleted(&to)
                 };
                 let overwrite = overwrite || self.node_at(&to).is_ok();
-                let result = self.bridge.rename(&from, &to, overwrite);
+                let result = self.unsealed().and_then(|()| self.bridge.rename(&from, &to, overwrite));
                 let mut state = self.lock();
                 state.forget_answers();
                 if result.is_ok() {
@@ -519,15 +529,28 @@ impl<B: Bridge> Vfs<B> {
     pub fn action(&self, path: &str, argv: &[String]) -> Result<ActionOutput, Errno> {
         self.commit_deletes();
         self.commit_held();
-        let output = self.bridge.action(path, argv);
+        let output = self.unsealed().and_then(|()| self.bridge.action(path, argv));
         self.lock().forget_answers();
         output
     }
 
     /// Ahead of the kill. The daemon keeps sending what the kill flushes — the kernel's releases of
     /// the dead command's files, and everything held — so the bridge can record each as dropped.
+    /// Unless the bridge never heard the revocation: then it would apply them, so the daemon seals
+    /// itself and sends nothing more.
     pub fn revoke(&self) {
-        let _ = self.bridge.revoke();
+        if self.bridge.revoke().is_err() {
+            self.sealed.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// The one check every change passes on its way to the bridge.
+    fn unsealed(&self) -> Result<(), Errno> {
+        if self.sealed.load(Ordering::SeqCst) {
+            Err(libc::EACCES)
+        } else {
+            Ok(())
+        }
     }
 
     /// The command is over: wait for the kernel's late releases and the commits they started —
@@ -552,7 +575,7 @@ impl<B: Bridge> Vfs<B> {
     pub fn commit_deletes(&self) {
         let deleted = std::mem::take(&mut self.lock().deleted);
         deleted.iter().for_each(|path| {
-            let _ = self.bridge.delete(path);
+            let _ = self.unsealed().and_then(|()| self.bridge.delete(path));
         });
         self.lock().forget_answers();
     }
@@ -577,7 +600,7 @@ impl<B: Bridge> Vfs<B> {
     }
 
     fn commit_write(&self, path: &str, data: &[u8], new: bool) -> Result<(), Errno> {
-        let result = self.bridge.write(path, data, new);
+        let result = self.unsealed().and_then(|()| self.bridge.write(path, data, new));
         let mut state = self.lock();
         state.forget_answers();
         // The directories the command made above it arrived with it, and are the mount's now.

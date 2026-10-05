@@ -21,6 +21,10 @@ use crate::vfs::MOUNTPOINT;
 /// Mounting is a few syscalls and one listing; this only bounds a bridge that never answers.
 const READY_WITHIN: Duration = Duration::from_secs(20);
 
+/// One request to the bridge, bounded by the daemon itself (`HttpBridge::revoke`); this is the
+/// margin past it.
+const REVOKED_WITHIN: Duration = Duration::from_secs(15);
+
 /// The final commits of a command's held files go through the bridge before the daemon answers.
 const DONE_WITHIN: Duration = Duration::from_secs(120);
 
@@ -85,11 +89,16 @@ impl Served {
     }
 
     /// Before a kill, never after: killing closes the command's files and the kernel's releases
-    /// would commit before a later revocation landed. Waits for the daemon to say the bridge has it.
+    /// would commit before a later revocation landed. Waits for the daemon to say it is revoked —
+    /// told to the bridge, or sealed where the bridge could not be told. A daemon that says nothing
+    /// in time is killed first: with it gone the mount answers nothing, so nothing the command's
+    /// death flushes can reach the agent.
     pub fn revoke(&mut self) {
         let _ = writeln!(self.stdin, "revoke");
         let _ = self.stdin.flush();
-        let _ = self.lines.recv_timeout(READY_WITHIN);
+        if self.lines.recv_timeout(REVOKED_WITHIN).is_err() {
+            let _ = self.child.kill();
+        }
     }
 
     /// The command is over: the daemon commits what it still holds and exits, and the mount goes
