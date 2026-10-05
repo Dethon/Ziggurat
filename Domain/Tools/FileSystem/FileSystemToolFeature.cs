@@ -157,7 +157,7 @@ public class FileSystemToolFeature(
     // snapshots can build it from sample mounts exactly as a session builds it from live ones.
     public static string ShellSection(IReadOnlyList<FileSystemMount> mounts)
     {
-        var sandbox = mounts.FirstOrDefault(m => m.ShellReach == ShellReach.Contained);
+        var sandbox = ExecReach.Sandbox(mounts);
         var served = mounts.Where(VfsCall.IsServed).ToList();
         if (sandbox is null || served.Count == 0)
         {

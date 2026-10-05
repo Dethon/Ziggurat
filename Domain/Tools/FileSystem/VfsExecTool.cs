@@ -132,9 +132,7 @@ public class VfsExecTool(
     // mounts are never served onto it.
     private IBridgedExecBackend? Bridged(FileSystemResolution resolution) =>
         resolution.Backend is IBridgedExecBackend bridged
-        && registry.GetMounts().Any(m =>
-            string.Equals(m.MountPoint, resolution.MountPoint, StringComparison.OrdinalIgnoreCase)
-            && m.ShellReach == ShellReach.Contained)
+        && ExecReach.MountAt(registry.GetMounts(), resolution.MountPoint)?.ShellReach == ShellReach.Contained
             ? bridged
             : null;
 

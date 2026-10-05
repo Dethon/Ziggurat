@@ -29,7 +29,7 @@ public sealed partial class ExecReach(Func<string, string, ShellReach?> reachOf)
         }
 
         var mounts = registry.GetMounts();
-        return mounts.FirstOrDefault(m => At(m, resolution.MountPoint))?.ShellReach
+        return MountAt(mounts, resolution.MountPoint)?.ShellReach
                ?? (reroutes && SandboxFor(mounts, resolution.MountPoint) is not null && !BareAction().IsMatch(command)
                    ? ShellReach.Contained
                    : null);
@@ -40,12 +40,15 @@ public sealed partial class ExecReach(Func<string, string, ShellReach?> reachOf)
     // its own, for an outpost, and for a session with no sandbox. The exec tool routes by this and
     // the screen judges by it, so the two cannot disagree about where a command runs.
     public static FileSystemMount? SandboxFor(IReadOnlyList<FileSystemMount> mounts, string mountPoint) =>
-        mounts.FirstOrDefault(m => At(m, mountPoint)) is { } mount && VfsCall.IsServed(mount)
-            ? mounts.FirstOrDefault(m => m.ShellReach == ShellReach.Contained)
-            : null;
+        MountAt(mounts, mountPoint) is { } mount && VfsCall.IsServed(mount) ? Sandbox(mounts) : null;
 
-    private static bool At(FileSystemMount mount, string mountPoint) =>
-        string.Equals(mount.MountPoint, mountPoint, StringComparison.OrdinalIgnoreCase);
+    // The session's contained shell: the one mount a command is the deployment's own to run on.
+    public static FileSystemMount? Sandbox(IReadOnlyList<FileSystemMount> mounts) =>
+        mounts.FirstOrDefault(m => m.ShellReach == ShellReach.Contained);
+
+    // Matched as the registry matches a mount point, without regard to case.
+    public static FileSystemMount? MountAt(IReadOnlyList<FileSystemMount> mounts, string mountPoint) =>
+        mounts.FirstOrDefault(m => string.Equals(m.MountPoint, mountPoint, StringComparison.OrdinalIgnoreCase));
 
     // `./name args`, one simple command: nothing that chains, pipes, redirects, backgrounds or
     // substitutes, and no second line. Quotes are fine — arguments are data to the action.
