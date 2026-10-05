@@ -1,4 +1,5 @@
 using System.Text;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
@@ -69,6 +70,53 @@ public class VfsBridgeWriteTests
 
         _vault.Writes.ShouldBe(["blob pic.png"]);
         Changes(result).ShouldBe([("/vault/pic.png", VfsChange.Operations.Create, VfsChange.Statuses.Applied)]);
+    }
+
+    // The media library authors no text: its operations hold a blob write and no text create. A
+    // subtitle a command writes there is text by its content, and goes the one way the mount takes
+    // anything — as a copy would put it there, and asked about as a copy is.
+    [Fact]
+    public async Task TextOnAMountThatAuthorsNone_IsABlobWrite()
+    {
+        var library = new BlobOnlyDisk();
+        var registry = BridgeFixtures.Registry(
+            (new ScriptedSandbox(_bridge, async (call, ct) =>
+            {
+                await call.WriteAsync("/media/film.srt", "1\n00:00:01 --> 00:00:02\nHi\n"u8.ToArray(), isNew: true, ct);
+                return BridgeFixtures.Ran("");
+            }), ScriptedSandbox.Mount, ShellReach.Contained));
+        registry.Mount(
+            new FileSystemMount("media", "/media", library.DescribeMount) { Capabilities = [VfsGlobFilesTool.Name, VfsCopyTool.Name] },
+            library);
+
+        var result = await new VfsExecTool(registry, _bridge).RunAsync("/sandbox", "cp film.srt /media/",
+            arguments: BridgeFixtures.Allowing(FileSystemToolFeature.Callable(VfsCopyTool.Name)));
+
+        library.Written.ShouldBe(["film.srt"]);
+        Changes(result).ShouldBe([("/media/film.srt", VfsChange.Operations.Create, VfsChange.Statuses.Applied)]);
+    }
+
+    // A disk root that reads no file as text: bytes in, and no text create to override.
+    private sealed class BlobOnlyDisk : FileSystemBackendBase
+    {
+        public List<string> Written { get; } = [];
+
+        public override string FilesystemName => "media";
+
+        public override string DescribeMount => "A library of films.";
+
+        public override async Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+            bool overwrite, bool createDirectories, CancellationToken ct)
+        {
+            long written = 0;
+            await foreach (var chunk in chunks.WithCancellation(ct))
+            {
+                written += chunk.Length;
+            }
+
+            Written.Add(path.Trim('/'));
+            return written;
+        }
     }
 
     // The text tool refuses an extension the mount does not author as text; the shell is refused

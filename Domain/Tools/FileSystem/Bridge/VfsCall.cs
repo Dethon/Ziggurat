@@ -196,7 +196,8 @@ public sealed class VfsCall
 
     // A file the command wrote, whole, as the equivalent tool call would write it: text as a create
     // with overwrite (the text tool, which applies the mount's own rules about what it authors as
-    // text), anything else as the blob write a copy streams through, where the mount offers one.
+    // text) on a mount that authors text at all, anything else as the blob write a copy streams
+    // through, where the mount offers one.
     // `isNew` is the daemon's knowledge that nothing was at the path, which only names the change.
     public async Task<BridgeAnswer<bool>> WriteAsync(string path, byte[] content, bool isNew, CancellationToken ct)
     {
@@ -352,7 +353,7 @@ public sealed class VfsCall
 
     private async Task<BridgeAnswer<bool>> WriteCoreAsync(string path, byte[] content, CancellationToken ct)
     {
-        var text = AsText(content);
+        var text = AuthorsText(path) ? AsText(content) : null;
         if (Resolve<bool>(path, text is null ? VfsCopyTool.Name : VfsTextCreateTool.Name, out var resolution) is { } refused)
         {
             return refused;
@@ -393,6 +394,15 @@ public sealed class VfsCall
         await Task.CompletedTask;
         yield return content;
     }
+
+    // Whether the mount has a text create to hand text to. The media library has none — a subtitle
+    // written there is bytes like everything else it holds — and which tool stands for the write is
+    // settled before the gate asks, so it is read off the mount's operations rather than found out
+    // from a refusal. A mount that published no operations is taken to author text.
+    private bool AuthorsText(string path) =>
+        !_served.TryGetValue(MountName(path), out var mount)
+        || mount.Capabilities.Count == 0
+        || mount.Capabilities.Contains(VfsTextCreateTool.Name);
 
     // Text is what decodes as UTF-8 and holds no NUL: what a person would call a text file, and
     // what the text tool can carry as a string.
