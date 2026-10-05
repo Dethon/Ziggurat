@@ -83,7 +83,7 @@ public class VfsBridgeApiTests
     }
 
     [Fact]
-    public async Task Attr_AnswersKindAndSize()
+    public async Task AnAttr_AnswersKindAndSize()
     {
         var call = Mint();
         await using var app = await StartAsync();
@@ -98,7 +98,7 @@ public class VfsBridgeApiTests
     }
 
     [Fact]
-    public async Task List_AnswersEntriesWithTheirKinds()
+    public async Task AListing_AnswersEntriesWithTheirKinds()
     {
         var call = Mint();
         await using var app = await StartAsync();
@@ -113,7 +113,7 @@ public class VfsBridgeApiTests
     }
 
     [Fact]
-    public async Task Read_AnswersTheBytes()
+    public async Task ARead_AnswersTheBytes()
     {
         var call = Mint();
         await using var app = await StartAsync();
@@ -126,7 +126,7 @@ public class VfsBridgeApiTests
     }
 
     [Fact]
-    public async Task Write_TakesTheWholeFileAsTheBody()
+    public async Task AWrite_TakesTheWholeFileAsTheBody()
     {
         var call = Mint();
         await using var app = await StartAsync();
@@ -145,7 +145,7 @@ public class VfsBridgeApiTests
     }
 
     [Fact]
-    public async Task Revoke_MarksTheCallRevoked()
+    public async Task ARevocation_MarksTheCallRevoked()
     {
         var call = Mint();
         await using var app = await StartAsync();
