@@ -24,6 +24,24 @@ fn check(result: libc::c_int) -> io::Result<()> {
     }
 }
 
+/// The whole capability bounding set, gone.
+///
+/// # Safety
+/// As `become_identity`: raw syscalls, nothing allocated.
+unsafe fn drop_bounding_set() -> io::Result<()> {
+    // Past the kernel's last capability the drop answers EINVAL: the end of the set, not a failure.
+    // Anything else — EPERM, where the caller has no CAP_SETPCAP — is a set that was not dropped.
+    (0..64).try_for_each(|cap| {
+        if unsafe { libc::prctl(libc::PR_CAPBSET_DROP, cap as libc::c_ulong, 0, 0, 0) } == -1 {
+            let refused = io::Error::last_os_error();
+            if refused.raw_os_error() != Some(libc::EINVAL) {
+                return Err(refused);
+            }
+        }
+        Ok(())
+    })
+}
+
 /// Drops to `identity` for good: groups, gid, the whole capability bounding set, then uid, then
 /// no-new-privs. The bounding set is load-bearing, not tidiness: the container holds SYS_ADMIN for
 /// FUSE, and a child keeps the container's bounding set, so a setuid-root binary run later would
@@ -40,10 +58,7 @@ pub unsafe fn become_identity(identity: &Identity) -> io::Result<()> {
     unsafe {
         check(libc::setgroups(identity.groups.len(), identity.groups.as_ptr()))?;
         check(libc::setgid(identity.gid))?;
-        // Capabilities past the kernel's last one answer EINVAL, which is the end of the set.
-        (0..64).for_each(|cap| {
-            libc::prctl(libc::PR_CAPBSET_DROP, cap as libc::c_ulong, 0, 0, 0);
-        });
+        drop_bounding_set()?;
         check(libc::prctl(libc::PR_CAP_AMBIENT, libc::PR_CAP_AMBIENT_CLEAR_ALL as libc::c_ulong, 0, 0, 0))?;
         // From root to anyone else, setuid clears the permitted and effective sets.
         check(libc::setuid(identity.uid))?;
@@ -69,4 +84,22 @@ pub fn kept_groups(pgid: libc::gid_t) -> io::Result<Vec<libc::gid_t>> {
     let mut kept: Vec<libc::gid_t> = groups.into_iter().filter(|&g| g != 0 && g != pgid).collect();
     kept.insert(0, pgid);
     Ok(kept)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The suite runs unprivileged, which is the one caller the launcher never is: without
+    // CAP_SETPCAP the kernel refuses the drop. That refusal must come back as a failure — a child
+    // that went on with the container's bounding set is what the drop exists to prevent — rather
+    // than be read as the end of the set.
+    #[test]
+    fn a_bounding_set_that_could_not_be_dropped_is_a_failure() {
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let refused = unsafe { drop_bounding_set() }.unwrap_err();
+        assert_eq!(refused.raw_os_error(), Some(libc::EPERM));
+    }
 }
