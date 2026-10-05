@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Outposts;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -16,13 +17,16 @@ internal static class McpFileSystemDiscovery
     // out for itself.
     public static async Task<IReadOnlyList<string>> DiscoverAndMountAsync(
         IReadOnlyList<McpClient> clients,
+        IReadOnlySet<McpClient> dynamicClients,
         VirtualFileSystemRegistry registry,
         ILogger logger,
         CancellationToken ct)
     {
         var perClient = await Task.WhenAll(clients
             .Where(c => c.ServerCapabilities.Resources is not null)
-            .Select(client => GatherMountsAsync(client, logger, ct)));
+            .Select(async client => (
+                Mounts: await GatherMountsAsync(client, logger, ct),
+                Registered: dynamicClients.Contains(client))));
 
         // In the order the endpoints were dialled. A mount point already taken is a collision the
         // newcomer loses: it is shadowed, the existing mount is untouched, and the fact is logged,
@@ -30,8 +34,26 @@ internal static class McpFileSystemDiscovery
         // that never appeared. Outposts publish machine addresses, so the newcomer that loses is a
         // machine whose name another machine already has.
         var shadowed = new List<string>();
-        foreach (var (mount, backend) in perClient.SelectMany(m => m))
+        foreach (var (mount, backend, registered) in perClient
+                     .SelectMany(c => c.Mounts.Select(m => (m.Mount, m.Backend, c.Registered))))
         {
+            // What keeps a machine apart from the deployment's mounts — never served into a sandbox
+            // command, listed as a machine — reads its address, and the address is the machine's
+            // own word. Who registered the endpoint is this hub's own knowledge: a mount from a
+            // registered endpoint that is not at a machine address (an outpost binary from before
+            // `outpost:`) would pass for a deployment mount, so it is not mounted. Answered with
+            // the shadowed, which is the one verdict that tells its operator it is not there.
+            if (registered && !OutpostMountPoint.Addresses(mount.MountPoint))
+            {
+                shadowed.Add(mount.Name);
+                logger.LogWarning(
+                    "Filesystem '{Name}' was registered by a machine but publishes '{MountPoint}', which "
+                    + "is not a machine address ({Scheme}<name>), so it was not mounted; the outpost "
+                    + "binary on that machine predates the address and needs updating",
+                    mount.Name, mount.MountPoint, OutpostMountPoint.Scheme);
+                continue;
+            }
+
             if (registry.TryMount(mount, backend))
             {
                 logger.LogInformation("Discovered filesystem '{Name}' at mount point '{MountPoint}'",

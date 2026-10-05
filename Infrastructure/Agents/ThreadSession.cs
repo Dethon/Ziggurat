@@ -115,7 +115,7 @@ internal sealed class ThreadSessionBuilder(
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         var fsRegistry = new VirtualFileSystemRegistry();
         var shadowed = await McpFileSystemDiscovery.DiscoverAndMountAsync(
-            clientManager.Clients, fsRegistry, fsLogger, ct);
+            clientManager.Clients, clientManager.DynamicClients, fsRegistry, fsLogger, ct);
 
         if (fsRegistry.GetMounts().Count > 0)
         {
