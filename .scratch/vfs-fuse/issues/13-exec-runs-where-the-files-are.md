@@ -8,5 +8,5 @@
 
 - [x] For a session with a sandbox, `exec ./dismiss` on `/timers` runs in the sandbox and dismisses the timer
 - [x] For a session without one, the same call runs the timer mount's catalog with the same effect
-- [x] The screen judges a rerouted exec at `Contained` reach; an outpost's exec is still `Host`
+- [x] The screen judges a rerouted exec at `Contained` reach; an outpost's exec is still `Host` (one exception since `9e158b0fa`: an action file run by itself, `./name args` with nothing chained, piped or redirected, is not screened — that is what exec on the mount was before rerouting, and the bridge still gates the action)
 - [x] The descriptions name the reachable mounts, any `/vfs`-only ones, and `vfsChanges`; snapshots cover them

@@ -19,7 +19,7 @@ Writes are not served yet: they fail read-only. The sandbox service gains the FU
 - [x] `ls` of a rendered directory lists what glob lists
 - [x] Outposts are not under `/vfs`, and the sandbox's own disk is not served through FUSE
 - [x] A mount whose identity collides with a non-empty image directory, or `sandbox`, is served only at `/vfs/<name>`; the empty `/media` is removed at image build
-- [x] The bridge refuses an unknown, revoked or expired token, and is not routed by the public proxy
+- [x] The bridge refuses an unknown, completed or expired token, and is not routed by the public proxy ("revoked" in this ticket is criterion 5's revocation when exec returns, which the code calls completing; a token revoked at a kill keeps answering until then, so what the kill flushes is logged as dropped — ticket 10)
 - [x] The token never appears in the command's environment or any file it can read
 - [x] Concurrent execs from two sessions each see only their own session's mounts
 - [x] Tested at the agreed seams: the exec tool with a scripted fake sandbox, the daemon core with a fake bridge, and the real image with a stub bridge

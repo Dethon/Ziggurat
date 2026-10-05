@@ -5,7 +5,7 @@
 1. **Approval parity.** Every bridge operation asks the question the equivalent file tool call would ask, against the agent's whitelist and remembered approvals. One that would prompt a person is refused with `EACCES` and listed, rather than waiting on anyone.
 2. **Kill semantics.** When a command times out or the call is cancelled, the token is revoked at the kill. Commits arriving afterwards, held new files included, are dropped and listed as dropped. Operations already in flight finish and are listed.
 
-FUSE operations are not screened; this ticket changes nothing in the exec screen.
+FUSE operations are not screened; this ticket changes nothing in the exec screen. (The screen's rule did change later on this branch, outside this ticket — `9e158b0fa`: it asks only about a command that is both unrequested and dangerous, on any reach. The PR description declares it.)
 
 **Blocked by:** 08 — The shell writes files on mounts
 
