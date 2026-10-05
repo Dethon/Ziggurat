@@ -26,20 +26,16 @@ public sealed class VfsCall
         IVirtualFileSystemRegistry registry,
         Func<string, bool> permits,
         IReadOnlyList<FileSystemMount> served,
-        ConversationContext? caller,
-        DateTimeOffset expires)
+        ConversationContext? caller)
     {
         Token = token;
         _registry = registry;
         _permits = permits;
         _caller = caller;
         _served = served.ToDictionary(m => m.MountPoint.TrimStart('/'), StringComparer.OrdinalIgnoreCase);
-        Expires = expires;
     }
 
     public string Token { get; }
-
-    public DateTimeOffset Expires { get; }
 
     // The names the daemon puts at /vfs/<name>, the mount identity without its slash.
     public IReadOnlyList<string> ServedNames => [.. _served.Keys.Order(StringComparer.Ordinal)];

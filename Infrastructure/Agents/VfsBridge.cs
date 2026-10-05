@@ -2,9 +2,9 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Outposts;
-using Domain.DTOs.Channel;
 using Domain.Tools.FileSystem.Bridge;
 
 namespace Infrastructure.Agents;
@@ -25,28 +25,28 @@ public sealed class VfsBridge(TimeProvider time) : IVfsBridge
     // token whose exec never returned, and outlasts the longest timeout a sandbox accepts.
     public static readonly TimeSpan Lifetime = TimeSpan.FromHours(1);
 
-    private readonly ConcurrentDictionary<string, VfsCall> _calls = new(StringComparer.Ordinal);
+    // When a token stops answering is the registry's to know, not the call's: a call never reads it.
+    private readonly ConcurrentDictionary<string, (VfsCall Call, DateTimeOffset Expires)> _calls =
+        new(StringComparer.Ordinal);
 
     public VfsCall Mint(IVirtualFileSystemRegistry registry, Func<string, bool> permits, ConversationContext? caller = null)
     {
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        var call = new VfsCall(
-            token, registry, permits, [.. registry.GetMounts().Where(VfsCall.IsServed)], caller,
-            time.GetUtcNow() + Lifetime);
-        _calls[token] = call;
+        var call = new VfsCall(token, registry, permits, [.. registry.GetMounts().Where(VfsCall.IsServed)], caller);
+        _calls[token] = (call, time.GetUtcNow() + Lifetime);
         return call;
     }
 
     public VfsCall? Find(string token)
     {
-        if (!_calls.TryGetValue(token, out var call))
+        if (!_calls.TryGetValue(token, out var held))
         {
             return null;
         }
 
-        if (time.GetUtcNow() < call.Expires)
+        if (time.GetUtcNow() < held.Expires)
         {
-            return call;
+            return held.Call;
         }
 
         _calls.TryRemove(token, out _);
@@ -55,12 +55,14 @@ public sealed class VfsBridge(TimeProvider time) : IVfsBridge
 
     public void Revoke(string token)
     {
-        if (_calls.TryGetValue(token, out var call))
+        if (_calls.TryGetValue(token, out var held))
         {
-            call.Revoke();
+            held.Call.Revoke();
         }
     }
 
     public VfsCallRecord Complete(string token) =>
-        _calls.TryRemove(token, out var call) ? new VfsCallRecord(call.Changes, call.Truncated) : VfsCallRecord.Empty;
+        _calls.TryRemove(token, out var held)
+            ? new VfsCallRecord(held.Call.Changes, held.Call.Truncated)
+            : VfsCallRecord.Empty;
 }
