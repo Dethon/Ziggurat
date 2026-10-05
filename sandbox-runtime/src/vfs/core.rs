@@ -117,6 +117,21 @@ impl State {
         }
     }
 
+    /// A rename of `from` and of everything known under it — the inodes the kernel holds, and what
+    /// the overlay holds there.
+    fn move_tree(&mut self, from: &str, to: &str) {
+        let known: Vec<String> = self.inos.keys().filter(|p| is_within(p, from)).cloned().collect();
+        known.iter().for_each(|p| self.move_ino(p, &rebase(p, from, to)));
+        self.held_dirs = std::mem::take(&mut self.held_dirs)
+            .into_iter()
+            .map(|p| if is_within(&p, from) { rebase(&p, from, to) } else { p })
+            .collect();
+        self.held_files = std::mem::take(&mut self.held_files)
+            .into_iter()
+            .map(|(p, file)| if is_within(&p, from) { (rebase(&p, from, to), file) } else { (p, file) })
+            .collect();
+    }
+
     fn held(&self, path: &str) -> Option<Kind> {
         if self.held_dirs.contains(path) {
             Some(Kind::Dir)
@@ -495,24 +510,7 @@ impl<B: Bridge> Vfs<B> {
                 self.commit_write(&to, &data, new)
             }
             Some(Kind::Dir) => {
-                let mut state = self.lock();
-                let moved_dirs: Vec<String> =
-                    state.held_dirs.iter().filter(|p| is_within(p, &from)).cloned().collect();
-                let moved_files: Vec<String> =
-                    state.held_files.keys().filter(|p| is_within(p, &from)).cloned().collect();
-                moved_dirs.iter().for_each(|p| {
-                    let target = rebase(p, &from, &to);
-                    state.held_dirs.remove(p);
-                    state.held_dirs.insert(target.clone());
-                    state.move_ino(p, &target);
-                });
-                moved_files.iter().for_each(|p| {
-                    let target = rebase(p, &from, &to);
-                    if let Some(file) = state.held_files.remove(p) {
-                        state.held_files.insert(target.clone(), file);
-                        state.move_ino(p, &target);
-                    }
-                });
+                self.lock().move_tree(&from, &to);
                 Ok(())
             }
             Some(Kind::Action) => Err(libc::EACCES),
@@ -532,7 +530,9 @@ impl<B: Bridge> Vfs<B> {
                     // The directories the command made above the target arrived with the move, and
                     // are the mount's now — as for a committed write.
                     state.held_dirs.retain(|dir| !is_within(&to, dir));
-                    state.move_ino(&from, &to);
+                    // What the command made under a directory goes where the directory went: held
+                    // at the old path, it would commit there and bring the directory back.
+                    state.move_tree(&from, &to);
                 }
                 result
             }

@@ -245,3 +245,21 @@ fn a_move_onto_a_deleted_directory_is_a_move_onto_a_free_path() {
 
     assert_eq!(vfs.bridge().mutations(), ["delete /timers/eggs", "rename /vault/sub /timers/eggs"]);
 }
+
+// `echo x > sub/n.md; mv sub moved`: the new file goes where its directory went. Left at the old
+// path, it committed there at the end and brought the directory the command moved back.
+#[test]
+fn a_new_file_follows_the_mount_directory_it_was_made_in() {
+    let vfs = mounts();
+    let vault = ino(&vfs, "/vault");
+    let sub = ino(&vfs, "/vault/sub");
+    let (node, fh) = vfs.create(sub, "n.md").unwrap();
+    vfs.write(fh, 0, b"x\n").unwrap();
+    vfs.release(fh);
+
+    vfs.rename(vault, "sub", vault, "moved").unwrap();
+
+    assert_eq!(vfs.lookup(ino(&vfs, "/vault/moved"), "n.md").unwrap().ino, node.ino);
+    vfs.finish();
+    assert_eq!(vfs.bridge().mutations(), ["rename /vault/sub /vault/moved", "write /vault/moved/n.md create x\n"]);
+}
