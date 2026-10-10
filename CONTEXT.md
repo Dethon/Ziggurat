@@ -754,8 +754,9 @@ _Avoid_: system prompt, standing sections, static prompt, core prompt
 A body of guidance loaded when a request calls for it — by the model, or ahead of
 it by a **preload** — offered by the tool server whose tools it explains and granted
 by the agent definition. Only its name and description sit in the base prompt; the
-body arrives as a tool result and stays in the conversation like any other. A skill teaches how to do a task, never
-which task to do — the choosing rules stay in the base prompt.
+body arrives as a tool result — or, preloaded, in a note from the host — and stays
+in the conversation like any other. A skill teaches how to do a task, never which
+task to do — the choosing rules stay in the base prompt.
 _Avoid_: lazy section, on-demand prompt, guide, playbook
 
 **Trigger claim**:
@@ -768,10 +769,11 @@ _Avoid_: activation, routing rule, skill match
 **Preload**:
 A skill put into the conversation by the host before the model's first call,
 because a typed judgment of the request against the skills' descriptions was
-confident. It leaves the conversation exactly as a load by the model would have,
-together with the reads the body orders in the same turn, is never made twice for
-one skill, and its absence — an unsure, late or missing judgment — is simply the
-model loading for itself.
+confident. The thread records it exactly as a load by the model would have left
+it, together with the reads the body orders in the same turn; the model is sent a
+note from the host in that record's place, never a call it did not make. It is
+never made twice for one skill, and its absence — an unsure, late or missing
+judgment — is simply the model loading for itself.
 _Avoid_: pre-load by channel, skill suggestion, hint, auto-load
 
 ## Behavioural evaluation

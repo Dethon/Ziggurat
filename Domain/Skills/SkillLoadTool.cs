@@ -4,16 +4,17 @@ using Microsoft.Extensions.AI;
 
 namespace Domain.Skills;
 
-// The load tool as the conversation records it: its name, its one argument, how a loaded skill is
+// The load tool as the thread records it: its name, its one argument, how a loaded skill is
 // recognised in a history and how a preload is written into one. The framework owns the tool
 // (Microsoft.Agents.AI's `AgentSkillsProvider`), which Domain does not reference, so the names
 // are spelled here and a test pins them to the framework's.
 //
-// A preload is written exactly as the framework's own load would have left it — an assistant
-// message carrying the call, a tool message carrying the wrapped body — so a model sees one
-// shape for a skill whoever loaded it, and "already loaded" is one question asked of the history
-// with no second record to drift. Every deployed model was shown a pair it never emitted and took
-// it as its own (`.scratch/jev-skill-preload/issues/01`).
+// A preload is recorded as the framework's own load would have left it — an assistant message
+// carrying the call, a tool message carrying the wrapped body — so "already loaded" is one
+// question asked of the history, whoever loaded and whichever build stored it, with no second
+// record to drift. That record is the thread's and never the wire's: a model is sent a note in
+// its place (`SkillPreloadNote`), because a call it did not make is not something every model
+// or provider takes.
 public static class SkillLoadTool
 {
     public const string Name = "load_skill";
@@ -42,69 +43,51 @@ public static class SkillLoadTool
     // The same two messages for a whole preload: the loads first, then the reads the skills
     // declared, on the same pair — the shape a model that loads and reads in one call leaves.
     // The read is the filesystem tool's own call, by its callable name and argument, with what
-    // the tool answered, so nothing downstream can tell it from one the model made.
+    // the tool answered.
     public static IReadOnlyList<ChatMessage> AsPreloaded(SkillPreload preload, string callIdPrefix)
     {
         var loads = preload.Skills
-            .Select((skill, i) => (
-                Call: new FunctionCallContent(
-                    CallId(i + 1, callIdPrefix), Name, new Dictionary<string, object?> { [SkillNameParameter] = skill.Name }),
-                Result: (object)Wrapped(skill)))
-            .ToList();
+            .Select(skill => (
+                Name,
+                Arguments: new Dictionary<string, object?> { [SkillNameParameter] = skill.Name },
+                Result: (object)Wrapped(skill)));
         var reads = preload.Reads
-            .Select((read, i) => (
-                Call: new FunctionCallContent(
-                    CallId(loads.Count + i + 1, callIdPrefix),
-                    ReadToolName,
-                    new Dictionary<string, object?> { [VfsFileReadTool.FilePathParameter] = read.Path }),
-                Result: (object)read.Result))
+            .Select(read => (
+                Name: ReadToolName,
+                Arguments: new Dictionary<string, object?> { [VfsFileReadTool.FilePathParameter] = read.Path },
+                Result: (object)read.Result));
+        var pairs = loads.Concat(reads)
+            .Select((pair, i) => (
+                Call: new FunctionCallContent($"{callIdPrefix}-{i + 1}", pair.Name, pair.Arguments),
+                pair.Result))
             .ToList();
-        var pairs = loads.Concat(reads).ToList();
 
         return
         [
-            new ChatMessage(ChatRole.Assistant, [Reasoning(preload, callIdPrefix), .. pairs.Select(p => p.Call)]),
+            new ChatMessage(ChatRole.Assistant, [.. pairs.Select(p => p.Call)]),
             new ChatMessage(ChatRole.Tool, [.. pairs.Select(p => new FunctionResultContent(p.Call.CallId, p.Result))])
         ];
     }
 
-    // The ordinal leads, because a provider may read only the head of an id: Mistral's are nine
-    // letters and digits, and OpenRouter fits ours to that by dropping the punctuation and keeping
-    // the first nine. With the turn's prefix in front every call of a preload was one id there,
-    // and a load beside its read was refused whole — HTTP 400, "Duplicate tool call id in
-    // assistant message" (2026-10-10). Only calls on one message have to differ.
-    private static string CallId(int ordinal, string callIdPrefix) => $"{ordinal}-{callIdPrefix}";
+    // What marks a call as the host's, and the head of every id this build writes: one prefix
+    // per turn (`preload-1a2b3c4d`), then the call's ordinal.
+    public const string HostCallMark = "preload-";
 
-    // A thinking model leaves its reasoning before its calls, and a host in thinking mode can
-    // demand it back: DeepSeek's own answers an assistant call message without one with HTTP 400
-    // ("The `reasoning_content` in the thinking mode must be passed back to the API"), and
-    // OpenRouter then re-serves the turn elsewhere — a lost attempt, and the prompt cache the
-    // conversation had warmed on that provider. A model's own reasoning survives because
-    // OpenRouter keeps it under the call ids it issued; a call id it never issued has nothing to
-    // recover, so the pair carries what the model would have thought, in plain words and never
-    // empty (empty is the same 400). The id marks the part as the host's, for the wire to write
-    // out in full (`OpenRouterHttpHelpers`) — the adapter alone sends a summary, which no host
-    // takes as the reasoning itself.
-    public const string HostReasoningIdPrefix = "host-reasoning-";
-
-    public static bool IsHostReasoning(string? reasoningItemId) =>
-        reasoningItemId?.StartsWith(HostReasoningIdPrefix, StringComparison.Ordinal) == true;
-
-    public const string ReasoningItemIdKey = "reasoningItemId";
-
-    private static TextReasoningContent Reasoning(SkillPreload preload, string callIdPrefix)
+    // A call the host recorded, under any id it was ever stored with — nothing is migrated, so
+    // all three schemes are in somebody's thread: `preload-<turn>-<n>`, the reads once counted
+    // apart as `preload-<turn>-read-<n>`, and `<n>-preload-<turn>` from the days the pair went to
+    // the wire and Mistral, reading only the first nine letters and digits of an id, refused two
+    // calls that agreed that far. No provider issues an id of either form.
+    public static bool IsHostCall(string? callId)
     {
-        var skills = string.Join(", ", preload.Skills.Select(s => s.Name));
-        var reads = preload.Reads.Count == 0
-            ? ""
-            : $" and reading {string.Join(", ", preload.Reads.Select(r => r.Path))} as it says to";
-        return new TextReasoningContent($"The request needs the {skills} skill: loading it{reads}.")
+        if (callId is null)
         {
-            AdditionalProperties = new AdditionalPropertiesDictionary
-            {
-                [ReasoningItemIdKey] = $"{HostReasoningIdPrefix}{callIdPrefix}"
-            }
-        };
+            return false;
+        }
+
+        var mark = callId.IndexOf(HostCallMark, StringComparison.Ordinal);
+        return mark == 0
+            || (mark > 1 && callId[mark - 1] == '-' && callId[..(mark - 1)].All(char.IsAsciiDigit));
     }
 
     public static readonly string ReadToolName = FileSystemToolFeature.Callable(VfsFileReadTool.Name);

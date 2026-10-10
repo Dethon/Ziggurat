@@ -6,7 +6,7 @@ using Microsoft.Extensions.AI;
 namespace Domain.Skills;
 
 // Asks which skills a request needs before the model's first call, so the ones it is sure of
-// are in the conversation as if loaded. Only ever a head start: below the bar nothing happens
+// are in the conversation already — recorded as a load, sent as a note (SkillPreloadNote). Only ever a head start: below the bar nothing happens
 // and the model loads for itself as it does today (docs/adr/0039, refined 2026-09-18).
 public interface ISkillPreloader
 {

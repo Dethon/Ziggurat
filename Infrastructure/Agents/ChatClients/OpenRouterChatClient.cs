@@ -9,6 +9,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
+using Domain.Skills;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
@@ -156,9 +157,14 @@ public sealed class OpenRouterChatClient : IChatClient
             });
         }
 
+        // Last, on what is left to send: a preload is recorded as a pair and sent as a note, and
+        // everything above — who is speaking, what is pinned, what a group weighs — is asked of
+        // the record, where the last user-role message is still the person's.
+        var sent = SkillPreloadNote.AsSent(truncated);
+
         UsageContent? usage = null;
 
-        await foreach (var update in _client.GetStreamingResponseAsync(truncated, options, ct))
+        await foreach (var update in _client.GetStreamingResponseAsync(sent, options, ct))
         {
             // The Responses adapter leaves MessageId empty where the chat wire stamped the
             // completion id, and everything that reassembles a streamed turn keys on it. The

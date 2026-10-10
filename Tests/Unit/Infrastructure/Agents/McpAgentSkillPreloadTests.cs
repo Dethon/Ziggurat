@@ -66,7 +66,9 @@ public class McpAgentSkillPreloadTests
         var result = withPreload.Messages[2].Contents.OfType<FunctionResultContent>().ShouldHaveSingleItem();
         result.CallId.ShouldBe(call.CallId);
         result.Result!.ToString().ShouldNotBeNull().ShouldContain("Call the house.");
-        withPreload.Messages[1].Contents.OfType<TextReasoningContent>().ShouldHaveSingleItem().Text.ShouldContain(Home);
+        // The record alone: what a model is sent for it is the chat client's (SkillPreloadNote).
+        withPreload.Messages[1].Contents.OfType<TextReasoningContent>().ShouldBeEmpty();
+        SkillLoadTool.IsHostCall(call.CallId).ShouldBeTrue();
 
         without.Messages.Select(m => m.Role.Value).ShouldBe(["user"]);
         withPreload.Options!.Instructions.ShouldBe(without.Options!.Instructions);
