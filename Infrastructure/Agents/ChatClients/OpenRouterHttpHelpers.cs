@@ -40,6 +40,16 @@ internal static class OpenRouterHttpHelpers
         // whether the ~17k static prefix is actually being served from the provider's prompt cache.
         obj["usage"] = new JsonObject { ["include"] = true };
 
+        // Anthropic's models cache only when the request asks them to; every other model here
+        // caches by itself. One top-level directive lets the provider place the breakpoint at the
+        // end of what repeats and move it as the conversation grows — per-block directives are
+        // not exposed on this wire. Sent to nobody else: on GLM and Mistral the second request of
+        // a conversation came back uncached more often with it than without (2026-10-10).
+        if (IsAnthropic(obj["model"]))
+        {
+            obj["cache_control"] = new JsonObject { ["type"] = "ephemeral" };
+        }
+
         // Per-agent provider routing. Omitted entirely when unset: OpenRouter's balanced load
         // balancing has no explicit `sort` value and is only reachable by sending no `sort` and
         // no `order` at all.
@@ -54,6 +64,12 @@ internal static class OpenRouterHttpHelpers
 
         request.Content = new StringContent(obj.ToJsonString(), Encoding.UTF8, "application/json");
     }
+
+    // `anthropic/…`, and OpenRouter's `~anthropic/…-latest` aliases for the same models.
+    private static bool IsAnthropic(JsonNode? model) =>
+        model is JsonValue value
+        && value.TryGetValue<string>(out var id)
+        && id.TrimStart('~').StartsWith("anthropic/", StringComparison.OrdinalIgnoreCase);
 
     internal static JsonObject? BuildProviderNode(ProviderRouting? routing)
     {

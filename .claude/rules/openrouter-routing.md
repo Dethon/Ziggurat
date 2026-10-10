@@ -40,6 +40,16 @@ activation and subagents per spawn, so a tripped advisory repeats for the lifeti
 not once per agent. `MemoryModule` binds `openRouter.providerRouting` for the memory extraction
 and dreaming chat clients directly, so those two models skip the advisories entirely.
 
+**Anthropic's models are asked to cache; nobody else is.** Every other model here caches a
+repeated prefix by itself. Anthropic's cache nothing unless the request carries a directive, so
+`PrepareRequestBodyAsync` stamps one top-level `cache_control: {"type": "ephemeral"}` (five
+minutes) on a request whose model id is `anthropic/…` or its `~anthropic/…` alias, and the
+provider places and moves the breakpoint itself — on Anthropic, Vertex and Bedrock alike. Per-block
+directives are not exposed on the Responses wire. A first request pays 1.25× on what it writes and
+later ones read it at a tenth; `"ttl": "1h"` is accepted and costs 2× on the write. The directive
+is deliberately not sent to other models: in probes it left GLM's and Mistral's second request
+uncached more often than not sending it did.
+
 **Two criteria = one `sort` plus a threshold.** `sort` ranks by exactly one metric; there is no
 composite sort. `preferredMinThroughput` (tokens/s) and `preferredMaxLatency` (seconds) are the
 second criterion, and they *deprioritize* rather than filter — an endpoint that misses one drops
