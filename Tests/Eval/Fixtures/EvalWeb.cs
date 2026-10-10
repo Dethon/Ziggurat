@@ -235,6 +235,7 @@ public sealed class EvalWeb : IAsyncDisposable
 
         // The research family's site within the site: one subject, several pages that disagree.
         SolarCorpus.Map(app);
+        SprainCorpus.Map(app);
 
         await app.StartAsync();
         return site;
@@ -629,7 +630,8 @@ internal sealed class FakeSearch(string baseUrl) : HttpMessageHandler
             $"{baseUrl}/agenda/apuntarse",
             "El formulario para apuntarse a las actividades del barrio: busca la actividad y "
             + "apúntate con tu nombre."),
-        .. SolarCorpus.Search(baseUrl)
+        .. SolarCorpus.Search(baseUrl),
+        .. SprainCorpus.Search(baseUrl)
     ];
 }
 

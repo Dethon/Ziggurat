@@ -96,6 +96,23 @@ public class EvalWebTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TheSprainGuide_LeadsToTheDosesAndTheWarningSigns()
+    {
+        var guide = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-sprain", $"{_web.BaseUrl}/salud/esguince-tobillo") { Caller = JudgmentCaller.None });
+        guide.Content.ShouldNotBeNull().ShouldContain("/salud/analgesicos");
+        guide.Content.ShouldContain("/salud/esguince-senales-alarma");
+
+        var doses = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-doses", $"{_web.BaseUrl}/salud/analgesicos") { Caller = JudgmentCaller.None });
+        doses.Content.ShouldNotBeNull().ShouldContain($"{SprainCorpus.IbuprofenDose} mg");
+
+        var signs = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-signs", $"{_web.BaseUrl}/salud/esguince-senales-alarma") { Caller = JudgmentCaller.None });
+        signs.Content.ShouldNotBeNull().ShouldContain(SprainCorpus.AdviceLine);
+    }
+
+    [Fact]
     public async Task APageNobodyHereServes_CannotBeLoadedAtAll()
     {
         // The family's hard boundary, held by the browser rather than by a rule somebody has to

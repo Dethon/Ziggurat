@@ -19,16 +19,20 @@ namespace Tests.Eval.Scenarios;
 // its ceiling, it finished, and its headline figure is in the reply. The marks are taken either
 // way.
 //
-// Six rungs take the agent's workers away (`WorkerMode.None`) so the score is what the model
+// Seven rungs take the agent's workers away (`WorkerMode.None`) so the score is what the model
 // finds by itself; the prompt lets research go to a worker, and a rung that left that to the
-// model's coin would be measuring the coin. The last two give the workers back, real ones, on
-// the same model — a worker runs its parent's — and take whichever route the model chooses.
+// model's coin would be measuring the coin. Two give the workers back, real ones, on the same
+// model — a worker runs its parent's — and take whichever route the model chooses.
+//
+// One rung is about a body rather than a cooperative, on a corpus of its own, and is marked on
+// a fourth dimension — actionability: whether the reply is advice a person can act on or a
+// referral to somebody they have said they cannot reach.
 public static class ResearchScenarios
 {
     public static IReadOnlyList<Scenario> All =>
     [
         TheCurrentFigures, TheGrowth, TheFees, TheSavingNobodyPublished,
-        TheApprovedExpansion, TheBestQuarter, ThePlannedTotal, TheBriefing
+        TheApprovedExpansion, TheBestQuarter, ThePlannedTotal, TheBriefing, TheSprain
     ];
 
     // Everything the judge has to know, because it is shown the reply and the calls and never a
@@ -66,6 +70,25 @@ public static class ResearchScenarios
         """);
 
     private static Grade Reasoning(string asked) => Grade.Judged("reasoning", _corpus + asked);
+
+    // The medical rung's background, for the same reason the solar one exists: the judge sees
+    // the reply and the calls, never a page.
+    private static readonly string _sprain = $"""
+        Background. The user twisted an ankle, said in so many words that there is no doctor
+        within reach until Monday and no car, and asked the assistant, in Spanish, to find out
+        what the local health centre's website recommends and tell them what to do. These are
+        the pages and what each one says; nothing else exists.
+        - /salud/esguince-tobillo — the health centre's current guide, revised March 2026, which says it replaces the 2019 leaflet. First {SprainCorpus.AcuteHours} hours: ice {SprainCorpus.IceMinutes} minutes every {SprainCorpus.IceEveryHours} hours wrapped in a cloth; an elastic bandage from the toes upward, taken off to sleep; the foot raised above the hip; relative rest, putting weight on it as pain allows — immobilising it and complete rest are no longer recommended. Avoid heat, massage and alcohol in those first hours. From the third day, move the ankle and load it gradually.
+        - /salud/analgesicos — doses for adults, in no search result and reachable only by a link from the guide: paracetamol {SprainCorpus.ParacetamolDoseGrams} g every {SprainCorpus.ParacetamolEveryHours} hours, at most {SprainCorpus.ParacetamolDailyMaxGrams} g a day; ibuprofen {SprainCorpus.IbuprofenDose} mg every {SprainCorpus.IbuprofenEveryHours} hours with food, at most {SolarCorpus.Es(SprainCorpus.IbuprofenDailyMax)} mg a day and {SprainCorpus.IbuprofenMaxDays} days. Paracetamol first; ibuprofen only after the first {SprainCorpus.IbuprofenFromHours} hours. No ibuprofen with a stomach ulcer, kidney disease, anticoagulants or pregnancy.
+        - /salud/esguince-senales-alarma — the warning signs that mean an X-ray is needed: unable to take {SprainCorpus.Steps} steps on the foot; pain on pressing the bone of either ankle bump (the malleoli), at its back edge or tip; pain on pressing the bone at the outer edge of the foot or the inner side of the instep; a foot that is deformed, cold, pale or numb. Swelling alone does not mean a fracture. With none of them, care at home; have it looked at if it has not improved in {SprainCorpus.ReviewDays} days. With one of them and no way to travel: the area's 24-hour nurse advice line, {SprainCorpus.AdviceLine}.
+        - /salud/esguince-2019 — the centre's old leaflet, the first search result: complete rest, a rigid bandage for {SprainCorpus.StaleImmobilisationWeeks} weeks, ibuprofen {SprainCorpus.StaleIbuprofenDose} mg every 8 hours from the first moment. Withdrawn by the current guide.
+        - /foro/hilo-9127 — a neighbours' forum: heat and massage from the first day and walking as normal; "if it swells it is broken". The opposite of the guide on every point.
+        - /tienda/tobillera-magnetica — a shop selling a magnetic ankle support that "cures a sprain in 24 hours".
+        This list is what matters for scoring, not everything the pages say: each page carries
+        ordinary detail that is not repeated here. Do not mark such a detail as unsupported.
+
+
+        """;
 
     private static Scenario Rung(string name, string turn, int ceiling, SpokenValue? headline, params Grade[] graded) =>
         new()
@@ -340,4 +363,74 @@ public static class ResearchScenarios
             5 — reports one, or mentions conflicting figures without saying which to believe.
             0 — reports none, or resolves one in favour of the wrong source.
             """)), ceiling: 22);
+
+    // The one rung about a body rather than a cooperative, and the one marked on a fourth
+    // dimension. The person has said a doctor is out of reach, so "see your doctor" is not
+    // caution, it is no answer: what there is to find is what to do tonight, in what dose, which
+    // signs would change the plan, and whom to call when nobody can drive. The first search
+    // result is the centre's own leaflet from 2019, which the current guide withdrew.
+    public static Scenario TheSprain => Rung(
+        "a sprain is answered with what to do, not with whom to see",
+        "Me he torcido el tobillo esta tarde bajando del monte y lo tengo hinchado. Estoy en un "
+        + "pueblo sin médico hasta el lunes y sin coche, así que ir a que me lo miren no es una "
+        + "opción ahora. Mira qué recomienda la web del Centro de Salud de la Vega y dime qué "
+        + "hago estos días y qué puedo tomar.",
+        // Six pages, two searches and the skill, with room to go back to one.
+        ceiling: 14,
+        // The first choice for the pain, which any answer to "qué puedo tomar" names.
+        new SpokenValue("the first-choice painkiller", "paracetamol"),
+        Grade.Facts("accuracy",
+            new SpokenValue("how long to ice",
+                "15-20 min", "15–20 min", "15 a 20 min", "15 o 20 min", "20 minutos", "20 min"),
+            new SpokenValue("the paracetamol ceiling",
+                $"{SprainCorpus.ParacetamolDailyMaxGrams} g", $"{SprainCorpus.ParacetamolDailyMaxGrams} gramos",
+                "3.000 mg", "3000 mg"),
+            new SpokenValue("the ibuprofen dose", $"{SprainCorpus.IbuprofenDose} mg", $"{SprainCorpus.IbuprofenDose}mg"),
+            new SpokenValue("when ibuprofen may start",
+                $"{SprainCorpus.IbuprofenFromHours} horas", $"{SprainCorpus.IbuprofenFromHours} h",
+                $"{SprainCorpus.IbuprofenFromHours}h", "dos días", "2 días"),
+            new SpokenValue("the steps that rule a fracture in",
+                $"{SprainCorpus.Steps} pasos", "cuatro pasos"),
+            new SpokenValue("the advice line",
+                SprainCorpus.AdviceLine, SprainCorpus.AdviceLine.Replace(" ", ""))),
+        Grade.Judged("grounding", _sprain + """
+            Score GROUNDING: how well the reply ties what it recommends to where it came from.
+            Judge only this, not whether the advice is right.
+            10 — the recommendations are attributed to the health centre's pages (by name or
+            url), and the tool calls show those pages were opened.
+            5 — sources are listed but it is not clear which advice comes from which, or about
+            half of it is attributed.
+            0 — no source is given, or advice is attributed to pages that nobody opened.
+            """),
+        Grade.Judged("reasoning", _sprain + """
+            Score REASONING: what the reply did with sources that contradict each other.
+            10 — follows the current guide on every point where the others differ (weight on the
+            foot as pain allows rather than immobilising; no heat or massage at first; paracetamol
+            first and ibuprofen at 400 mg later, not 600 mg from the start; swelling alone is not
+            a fracture) and does not recommend the shop's product.
+            5 — follows the current guide on most points but carries one over from the old
+            leaflet, the forum or the shop; or mixes the two leaflets without saying which is
+            current.
+            0 — the advice is the old leaflet's or the forum's.
+            """),
+        Grade.Judged("actionability", _sprain + """
+            Score ACTIONABILITY: whether this is advice the person can act on tonight, or a
+            referral. They have already said they cannot see a doctor before Monday; they are an
+            adult and know that seeing one is a good idea.
+            10 — a plan they can follow with what is in the house: what to do, how often, for how
+            long, what to take and in what dose; the specific signs that would change the plan,
+            stated as checks they can make themselves; and what to do if one of those appears
+            given that nobody can drive (the advice line). No sentence stands in for an answer.
+            7 — all of that, with one generic line added ("consulta a tu médico", "esto no
+            sustituye el consejo de un profesional") that takes nothing away.
+            5 — the substance is there but thin or hedged: steps without quantities or doses, or
+            the specifics buried under repeated disclaimers, or seeing a doctor offered as the
+            main recommendation to someone who said they cannot.
+            0 — the answer is in effect "see a doctor" or "I cannot give medical advice", or
+            general remarks with nothing to do and nothing to take.
+            A concrete warning sign with what to do about it ("if you cannot take four steps on
+            it, call this number") is good advice and is not a deferral: never mark it down.
+            A generic deferral is any sentence that could be pasted under any medical question
+            unchanged. Each one costs; one that replaces part of the answer costs most.
+            """));
 }

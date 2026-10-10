@@ -8,11 +8,28 @@ namespace Tests.Eval.Scenarios;
 public class ResearchScenariosTests
 {
     [Fact]
-    public void EveryRung_IsMarkedOnTheSameThreeDimensions()
+    public void EveryRung_IsMarkedOnTheSameThreeDimensions_AndMayAddItsOwn()
     {
+        // The three are what makes the rungs one table. A rung may be marked on something more —
+        // the medical one on whether the advice can be acted on — and that column is its own.
         ResearchScenarios.All.ShouldAllBe(scenario =>
-            scenario.Graded.Select(grade => grade.Dimension)
+            scenario.Graded.Select(grade => grade.Dimension).Take(3)
                 .SequenceEqual(new[] { "accuracy", "grounding", "reasoning" }));
+    }
+
+    [Fact]
+    public void TheMedicalRung_IsMarkedOnWhetherItsAdviceCanBeActedOn()
+    {
+        var rung = ResearchScenarios.All.Single(scenario => scenario.Name.Contains("sprain"));
+
+        // The turn says a doctor is out of reach, in so many words: what is being marked is an
+        // answer to a person who already knows they should see one.
+        rung.Turn.Text.ShouldContain("hasta el lunes");
+        var actionable = rung.Graded.OfType<JudgedGrade>().Single(grade => grade.Dimension == "actionability");
+        actionable.Rubric.ShouldContain("consulta a tu médico");
+        // A warning sign with what to do about it is the opposite of a deferral, and the rubric
+        // has to say so or the judge marks down the best part of a good answer.
+        actionable.Rubric.ShouldContain("is not a deferral");
     }
 
     [Fact]
