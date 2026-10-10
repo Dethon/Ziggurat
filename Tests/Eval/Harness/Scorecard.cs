@@ -21,8 +21,10 @@ public static class Scorecard
 
         var claimRows = Covered(
             Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs, c.Kinds, c.Loaders))), coverage);
-        var scenarioRows = Priced(
-            Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs, s.Kinds, s.Loaders))),
+        var scenarioRows = Addressed(
+            Priced(
+                Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs, s.Kinds, s.Loaders))),
+                scenarios ?? []),
             scenarios ?? []);
 
         var summary = new JsonObject
@@ -48,6 +50,10 @@ public static class Scorecard
             {
                 ["claims"] = Totalled(claimRows),
                 ["scenarios"] = Totalled(scenarioRows),
+                // The same rate once per agent. A model is chosen per agent, and what a voice
+                // agent is asked for is not what a text agent is: the pass's one number says
+                // whether a model is good, these say which agent it is good for.
+                ["byAgent"] = ByAgent(scenarios ?? []),
                 // What the pass cost, in the two numbers a maintainer acts on: the price of an
                 // average run, and how much of the prompt the provider served from cache. The
                 // per-row spend says which scenario is expensive; this says whether the pass is.
@@ -85,6 +91,35 @@ public static class Scorecard
             ["host"] = tally.AskedHost
         }
     };
+
+    private static JsonObject Addressed(JsonObject rows, IEnumerable<ScenarioOutcome> outcomes)
+    {
+        foreach (var outcome in outcomes.Where(o => o.Agent is not null))
+        {
+            if (rows[outcome.Name] is JsonObject row)
+            {
+                row["agent"] = outcome.Agent;
+            }
+        }
+
+        return rows;
+    }
+
+    // Declared and exercised travel with each agent's rate for the reason they travel with the
+    // pass's: a filtered run that touched two of an agent's scenarios must not read as its rate.
+    private static JsonObject ByAgent(IReadOnlyList<ScenarioOutcome> outcomes) =>
+        outcomes
+            .Where(outcome => outcome.Agent is not null)
+            .GroupBy(outcome => outcome.Agent!, StringComparer.Ordinal)
+            .OrderBy(agent => agent.Key, StringComparer.Ordinal)
+            .Aggregate(new JsonObject(), (node, agent) =>
+            {
+                var totals = Totalled(
+                    Tallied(agent.Select(s => (s.Name, s.Passes, s.Runs, s.Kinds, s.Loaders))));
+                totals["spend"] = Spent(agent);
+                node[agent.Key] = totals;
+                return node;
+            });
 
     // A scenario's price beside its rate. Only where something was paid for: a scenario that did
     // not run has no spend key, so "cost nothing" never stands in for "never ran".
@@ -263,6 +298,9 @@ public sealed record ScenarioOutcome(
     string Name, int Passes, int Runs, int SkillNotLoaded = 0, int RuleIgnored = 0, Spend? Spend = null)
 {
     public IReadOnlyList<Loader> Loaders { get; init; } = [];
+
+    // The agent the scenario's turn is addressed to. Null for a row that is nobody's turn.
+    public string? Agent { get; init; }
 
     public IReadOnlyList<FailureKind> Kinds
     {
