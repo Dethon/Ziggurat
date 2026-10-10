@@ -37,7 +37,8 @@ public static class ResearchScenarios
         TheCurrentFigures, TheGrowth, TheFees, TheSavingNobodyPublished,
         TheApprovedExpansion, TheBestQuarter, ThePlannedTotal, TheBriefing, TheSprain, TheSickDay,
         TheCostPerMember, TheTwoNewMembers, TheFallThatWasARise, TheKetonesThatWillNotFall,
-        TheAnkleOnAnAnticoagulant, TheYieldPerKilowatt, TheShareTheExpansionAdds
+        TheAnkleOnAnAnticoagulant, TheYieldPerKilowatt, TheShareTheExpansionAdds,
+        TheYearNobodyTotalled, TheMonthSomethingBegan, TheNoticeThatChangedTheCount, TheBriefingAtScale
     ];
 
     // The two medical turns say there is no doctor until Monday, so they are asked on the
@@ -815,4 +816,133 @@ public static class ResearchScenarios
     {
         Instant = _saturdayEvening
     };
+
+    // The rungs on a site that cannot be read whole: what they ask is which pages to read.
+    private static Scenario Scale(Scenario rung) => rung with { Group = "scale" };
+
+    // The food bank's site for the judge, by what matters on it: sixty pages cannot be listed
+    // and the judge is only asked how the answer was reached.
+    private static readonly string _archive = $"""
+        Background. The assistant was asked, in Spanish and on 17 August 2026, to research the
+        "Banco de Alimentos de la Vega", a neighbourhood food bank, on its website of about
+        sixty pages. What is on the site:
+        - /banco — the home page. Its volunteer count, {ArchiveCorpus.VolunteersOnHomePage}, is two years old.
+        - /banco/boletines — an index of 31 monthly bulletins, /banco/boletines/2024-01 to /banco/boletines/2026-07. Each gives that month's kilos collected, families served ({ArchiveCorpus.FamiliesAtStart} in January 2024, {ArchiveCorpus.FamiliesAtEndOf2025} in December 2025, {ArchiveCorpus.FamiliesLatest} in July 2026) and active volunteers ({ArchiveCorpus.VolunteersInLatestBulletin} in July 2026). No bulletin gives a total for a year.
+        - /banco/memoria-2024 — the only annual report: {SolarCorpus.Es(ArchiveCorpus.Kilos2024)} kg collected in 2024. There is no report for 2025; a notice says it is delayed and the figures are in the bulletins. The twelve bulletins of 2025 add up to {SolarCorpus.Es(ArchiveCorpus.Kilos2025)} kg, {SolarCorpus.Es(ArchiveCorpus.Kilos2025 - ArchiveCorpus.Kilos2024)} kg more than 2024.
+        - Home delivery began in September 2024: /banco/boletines/2024-09 is the first bulletin to mention it and says so; every later one gives its count, {ArchiveCorpus.DeliveryAtYearEnd} families in December 2024. The minutes of the second quarter of 2024 only agree a pilot "after the summer", and a 2026 notice only says "since autumn 2024".
+        - /banco/avisos — an index of fifteen notices. One, /banco/avisos/2026-11, says a premises closed on 5 August 2026 and {ArchiveCorpus.VolunteersNow} active volunteers remain, and that the July bulletin was closed before the change. The rest are about opening hours, campaigns and the like.
+        - /banco/actas — eight quarterly minutes, mostly beside the point.
+        The search returns a bulletin only to a query that names its year, and no more results
+        than it is asked for. A figure worked out from the ones above is derived, not invented.
+
+
+        """;
+
+    private static readonly SpokenValue _kilos2024 = Figure("the 2024 total", ArchiveCorpus.Kilos2024);
+    private static readonly SpokenValue _kilos2025 = Figure("the 2025 total", ArchiveCorpus.Kilos2025);
+    private static readonly SpokenValue _deliveryMonth = new("the month delivery began",
+        "septiembre de 2024", "septiembre 2024", "septiembre del 2024", "sept. de 2024", "sept. 2024");
+    private static readonly SpokenValue _volunteersNow = new("today's volunteers", $"{ArchiveCorpus.VolunteersNow}");
+
+    // One year has a report and the next has twelve bulletins. The total is on no page: it is
+    // thirteen reads and a sum, by the agent or by a worker it hands the reading to — the
+    // ceiling has room for either.
+    public static Scenario TheYearNobodyTotalled => Scale(Delegable(Rung(
+        "a year nobody totalled is added up from its twelve bulletins",
+        "¿Cuántos kilos de alimentos recogió el Banco de Alimentos de la Vega en 2025, y cuántos "
+        + "más que en 2024? Con las fuentes.",
+        ceiling: 30,
+        _kilos2025,
+        Grade.Facts("accuracy",
+            _kilos2025, _kilos2024,
+            Figure("the difference", ArchiveCorpus.Kilos2025 - ArchiveCorpus.Kilos2024)),
+        Grade.Grounded("grounding", ArchiveCorpus.ReportPage),
+        Grade.Judged("reasoning", _archive + """
+            Score REASONING: how the reply reached the 2025 total, which no page prints.
+            10 — the tool calls, the assistant's or its workers', show all twelve bulletins of
+            2025 opened; the reply says the total is their sum, takes 2024 from the annual
+            report, and gives the difference.
+            5 — the right method with a hole in it: fewer than twelve bulletins opened, or 2024
+            summed again instead of read, or the total given with no sign of how.
+            0 — a total from nowhere, an estimate from a few months, or a reply that says the
+            figure is not available.
+            """)), ceiling: 30));
+
+    // The month is in one bulletin of thirty-one and no index says which. The minutes say
+    // "after the summer" and a notice says "since autumn": both point, neither answers.
+    public static Scenario TheMonthSomethingBegan => Scale(Rung(
+        "the month something began is found in the bulletin that says so",
+        "¿En qué mes empezó el reparto a domicilio del Banco de Alimentos de la Vega, y a "
+        + "cuántas familias llegaba al acabar ese año? Con la fuente.",
+        ceiling: 20,
+        _deliveryMonth,
+        Grade.Facts("accuracy",
+            _deliveryMonth,
+            new SpokenValue("the families at the year's end",
+                $"{ArchiveCorpus.DeliveryAtYearEnd} familias", $"{ArchiveCorpus.DeliveryAtYearEnd} hogares",
+                $"{ArchiveCorpus.DeliveryAtYearEnd}")),
+        Grade.Grounded("grounding", ArchiveCorpus.DeliveryBulletin, ArchiveCorpus.YearEndBulletin),
+        Grade.Judged("reasoning", _archive + """
+            Score REASONING: whether the reply established the month and the count from the
+            pages that state them.
+            10 — the month comes from the bulletin in which home delivery first appears, and
+            the count from the December bulletin of the same year.
+            5 — the right month taken from the minutes' plan or the notice's "autumn" without
+            the bulletin that confirms it; or the right month with the count of another month
+            (the first route's, or today's).
+            0 — the wrong month, or no month.
+            """)));
+
+    // The home page says one number, the newest bulletin another, and a notice published after
+    // it a third. The notice is one of fifteen on a board about opening hours.
+    public static Scenario TheNoticeThatChangedTheCount => Scale(Rung(
+        "a count is taken from the notice that changed it",
+        "¿Cuántos voluntarios activos tiene hoy el Banco de Alimentos de la Vega? Con la fuente.",
+        ceiling: 16,
+        _volunteersNow,
+        Grade.Facts("accuracy", _volunteersNow),
+        Grade.Grounded("grounding", ArchiveCorpus.VolunteerNotice),
+        Grade.Judged("reasoning", _archive + """
+            Score REASONING: which of three figures the reply believed, and whether it said why.
+            10 — answers with the notice's figure and says it is later than the July bulletin's.
+            7 — answers with the notice's figure with no sign of the others.
+            4 — answers with the July bulletin's figure, the newest bulletin there is, without
+            having found the notice.
+            0 — answers with the home page's figure.
+            """)));
+
+    // Everything above at once, for somebody who will act on it: two annual totals of which one
+    // has to be added up, three points of a series, a start date and a count a notice changed.
+    public static Scenario TheBriefingAtScale => Scale(Delegable(Rung(
+        "a briefing is assembled from an archive too big to read whole",
+        "Voy a proponer una colaboración al Banco de Alimentos de la Vega y necesito un informe "
+        + "breve: kilos recogidos en 2024 y en 2025; familias atendidas en enero de 2024, en "
+        + "diciembre de 2025 y en el último dato publicado; cuándo empezó el reparto a domicilio; "
+        + "y cuántos voluntarios activos tiene hoy. Indica de qué página sale cada dato.",
+        ceiling: 40,
+        _kilos2024,
+        Grade.Facts("accuracy",
+            _kilos2024, _kilos2025,
+            new SpokenValue("families in January 2024", $"{ArchiveCorpus.FamiliesAtStart}"),
+            new SpokenValue("families in December 2025", $"{ArchiveCorpus.FamiliesAtEndOf2025}"),
+            new SpokenValue("families in the latest bulletin", $"{ArchiveCorpus.FamiliesLatest}"),
+            _deliveryMonth, _volunteersNow),
+        Grade.Grounded("grounding",
+            ArchiveCorpus.ReportPage, ArchiveCorpus.DeliveryBulletin, ArchiveCorpus.LatestBulletin,
+            ArchiveCorpus.VolunteerNotice),
+        Grade.Judged("reasoning", _archive + """
+            Score REASONING: whether each item of the briefing came from the page that settles
+            it. There are five: 2024 from the annual report; 2025 summed from its twelve
+            bulletins; the three family counts from their three bulletins; the start of home
+            delivery from the bulletin that announces it; today's volunteers from the notice
+            rather than the July bulletin.
+            10 — all five, and the reply says the 2025 total is a sum and that the volunteer
+            count postdates the last bulletin.
+            7 — four of the five.
+            4 — three of the five, or 2025 reported as unavailable.
+            0 — two or fewer.
+            """)), ceiling: 40) with
+    {
+        Budget = TimeSpan.FromMinutes(12)
+    });
 }

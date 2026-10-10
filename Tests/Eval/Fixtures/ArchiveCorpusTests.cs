@@ -1,0 +1,81 @@
+using Shouldly;
+
+namespace Tests.Eval.Fixtures;
+
+// The scale rungs' corpus: a food bank's site, too big to read whole. What is pinned is what
+// makes it a test of research rather than of reading — the answers are spread over many pages
+// or sit on one page among sixty, no page prints what a rung asks for, and the search does not
+// hand the archive over.
+public class ArchiveCorpusTests
+{
+    private static IEnumerable<string> Bulletins(int year) =>
+        ArchiveCorpus.Pages.Where(page => page.Key.StartsWith($"/banco/boletines/{year}-")).Select(page => page.Value);
+
+    [Fact]
+    public void TheSite_IsTooBigToReadInOneRungsCalls()
+    {
+        ArchiveCorpus.Pages.Count.ShouldBeGreaterThanOrEqualTo(55);
+        ArchiveCorpus.Pages.Keys.Count(path => path.StartsWith("/banco/boletines/")).ShouldBe(31);
+    }
+
+    [Fact]
+    public void TheYearWithAReport_IsTotalledOnIt_AndTheYearWithout_IsTotalledNowhere()
+    {
+        ArchiveCorpus.Pages["/banco/memoria-2024"].ShouldContain(SolarCorpus.Es(ArchiveCorpus.Kilos2024));
+        // The sum of twelve bulletins, and on none of the site's pages: a reply carrying it
+        // read the twelve.
+        ArchiveCorpus.Pages.Values.ShouldAllBe(page => !page.Contains(SolarCorpus.Es(ArchiveCorpus.Kilos2025)));
+        Bulletins(2025).Count().ShouldBe(12);
+        ArchiveCorpus.Kilos2025.ShouldBe(ArchiveCorpus.MonthlyKilos.Skip(12).Take(12).Sum());
+        ArchiveCorpus.Kilos2024.ShouldBe(ArchiveCorpus.MonthlyKilos.Take(12).Sum());
+    }
+
+    [Fact]
+    public void NoTwoBulletins_ReadAlike()
+    {
+        // Thirty-one copies of one page with a number changed read as a site that was
+        // mispublished, and a reply spends itself on saying so.
+        var bodies = ArchiveCorpus.Pages
+            .Where(page => page.Key.StartsWith("/banco/boletines/"))
+            .Select(page => System.Text.RegularExpressions.Regex.Replace(page.Value, @"\d", "#"))
+            .ToList();
+
+        bodies.Distinct().Count().ShouldBe(bodies.Count);
+    }
+
+    [Fact]
+    public void HomeDelivery_FirstAppearsInTheBulletinOfTheMonthItBegan()
+    {
+        var start = ArchiveCorpus.DeliveryStarted;
+        var mentioning = ArchiveCorpus.Pages
+            .Where(page => page.Key.StartsWith("/banco/boletines/") && page.Value.Contains("eparto a domicilio"))
+            .Select(page => page.Key)
+            .Order()
+            .ToList();
+
+        mentioning.First().ShouldBe($"/banco/boletines/{start.Year}-{start.Month:00}");
+        ArchiveCorpus.Pages[$"/banco/boletines/{start.Year}-12"].ShouldContain($"{ArchiveCorpus.DeliveryAtYearEnd} familias");
+    }
+
+    [Fact]
+    public void TodaysVolunteers_AreOnOneNoticeAmongAllThePages_AndTheLatestBulletinSaysMore()
+    {
+        var carrying = ArchiveCorpus.Pages
+            .Where(page => page.Value.Contains($"{ArchiveCorpus.VolunteersNow} voluntari"))
+            .Select(page => page.Key)
+            .ToList();
+
+        carrying.ShouldHaveSingleItem().ShouldStartWith("/banco/avisos/");
+        ArchiveCorpus.Pages["/banco/boletines/2026-07"].ShouldContain($"{ArchiveCorpus.VolunteersInLatestBulletin} personas");
+        ArchiveCorpus.VolunteersNow.ShouldBeLessThan(ArchiveCorpus.VolunteersInLatestBulletin);
+    }
+
+    [Fact]
+    public void TheSearch_ReturnsABulletinOnlyToAQueryThatNamesItsYear()
+    {
+        // Otherwise one search for the food bank is the whole archive in a list.
+        ArchiveCorpus.Search("http://site")
+            .Where(entry => entry.Url.Contains("/banco/boletines/"))
+            .ShouldAllBe(entry => entry.Requires != null && entry.Requires.Count == 1);
+    }
+}

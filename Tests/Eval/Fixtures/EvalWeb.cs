@@ -237,6 +237,7 @@ public sealed class EvalWeb : IAsyncDisposable
         SolarCorpus.Map(app);
         SprainCorpus.Map(app);
         SickDayCorpus.Map(app);
+        ArchiveCorpus.Map(app);
 
         await app.StartAsync();
         return site;
@@ -569,8 +570,13 @@ internal sealed class FakeSearch(string baseUrl) : HttpMessageHandler
     {
         var query = (request.RequestUri?.Query ?? "").ToLowerInvariant();
 
+        // As many as were asked for and no more, the way the real engine answers its `count`:
+        // returning every match made a sixty-page site one search long.
+        var count = System.Web.HttpUtility.ParseQueryString(request.RequestUri?.Query ?? "")["count"];
         var results = new JsonArray([.. Table(baseUrl)
-            .Where(result => result.Keywords.Any(query.Contains))
+            .Where(result => result.Keywords.Any(query.Contains)
+                             && (result.Requires ?? []).All(query.Contains))
+            .Take(int.TryParse(count, out var asked) ? asked : 20)
             .Select(result => result.ToJson())]);
 
         return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
@@ -633,13 +639,18 @@ internal sealed class FakeSearch(string baseUrl) : HttpMessageHandler
             + "apúntate con tu nombre."),
         .. SolarCorpus.Search(baseUrl),
         .. SprainCorpus.Search(baseUrl),
-        .. SickDayCorpus.Search(baseUrl)
+        .. SickDayCorpus.Search(baseUrl),
+        .. ArchiveCorpus.Search(baseUrl)
     ];
 }
 
 internal sealed record SearchEntry(
     IReadOnlyList<string> Keywords, string Title, string Url, string Description)
 {
+    // What the query must also contain, all of it, for the entry to answer at all: how a page
+    // that is one of many stays out of every search that did not ask for its kind.
+    public IReadOnlyList<string>? Requires { get; init; }
+
     public JsonNode ToJson() => new JsonObject
     {
         ["title"] = Title,

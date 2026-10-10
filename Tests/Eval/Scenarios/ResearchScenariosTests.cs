@@ -58,8 +58,25 @@ public class ResearchScenariosTests
     [Fact]
     public void EveryRung_IsBaseOrHard_AndTheHardOnesAreEnoughToBeAScore()
     {
-        ResearchScenarios.All.ShouldAllBe(scenario => scenario.Group == "base" || scenario.Group == "hard");
+        ResearchScenarios.All.ShouldAllBe(scenario =>
+            scenario.Group == "base" || scenario.Group == "hard" || scenario.Group == "scale");
         ResearchScenarios.All.Count(scenario => scenario.Group == "hard").ShouldBeGreaterThanOrEqualTo(9);
+    }
+
+    // The rungs on the site that cannot be read whole. Traps on a dozen pages left the first
+    // model at nine out of ten; what these ask is which pages to read, and their ceilings have
+    // to leave room for the honest in-place answer — the ceiling counts the agent's own calls,
+    // so a tight one would make handing the reading to a worker the only way to pass.
+    [Fact]
+    public void TheScaleRungs_LeaveRoomToDoTheReadingInPlace_AndOfferWorkersWhereItIsLong()
+    {
+        var scale = ResearchScenarios.All.Where(scenario => scenario.Group == "scale").ToList();
+
+        scale.Count.ShouldBeGreaterThanOrEqualTo(4);
+        scale.ShouldAllBe(scenario => scenario.CallCeiling >= 16);
+        scale.Where(scenario => scenario.Workers == WorkerMode.Real)
+            .ShouldAllBe(scenario => scenario.CallCeiling >= 30 && scenario.Budget >= TimeSpan.FromMinutes(10));
+        scale.Count(scenario => scenario.Workers == WorkerMode.Real).ShouldBe(2);
     }
 
     [Fact]
@@ -81,7 +98,7 @@ public class ResearchScenariosTests
             .ShouldAllBe(scenario => scenario.MayDelegateTo.Count == 0);
         ResearchScenarios.All.Where(scenario => scenario.Workers == WorkerMode.Real)
             .ShouldAllBe(scenario => scenario.MayDelegateTo.Contains("jonas-worker"));
-        ResearchScenarios.All.Count(scenario => scenario.Workers == WorkerMode.Real).ShouldBe(2);
+        ResearchScenarios.All.Count(scenario => scenario.Workers == WorkerMode.Real).ShouldBe(4);
     }
 
     [Fact]

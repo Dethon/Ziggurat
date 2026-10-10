@@ -133,6 +133,31 @@ public class EvalWebTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ASearch_ReturnsNoMoreResultsThanItWasAskedFor()
+    {
+        // Brave caps at the count it is sent and the fake used to return every match: on a
+        // site of sixty pages that made one search the whole archive.
+        var capped = await _web.SearchClient().SearchAsync(new WebSearchQuery("boletín kilos 2025", 5));
+        capped.Results.Count.ShouldBe(5);
+
+        var year = await _web.SearchClient().SearchAsync(new WebSearchQuery("boletín kilos 2025", 20));
+        year.Results.Count(entry => entry.Url.Contains("/banco/boletines/2025-")).ShouldBe(12);
+
+        var unnamed = await _web.SearchClient().SearchAsync(new WebSearchQuery("banco de alimentos boletín kilos", 20));
+        unnamed.Results.ShouldNotContain(entry => entry.Url.Contains("/banco/boletines/20"));
+        unnamed.Results.ShouldContain(entry => entry.Url.EndsWith("/banco/boletines"));
+    }
+
+    [Fact]
+    public async Task ABulletin_IsReadAsThePageItIs()
+    {
+        var page = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-bulletin", $"{_web.BaseUrl}/banco/boletines/2025-05") { Caller = JudgmentCaller.None });
+
+        page.Content.ShouldNotBeNull().ShouldContain(SolarCorpus.Es(ArchiveCorpus.MonthlyKilos[16]));
+    }
+
+    [Fact]
     public async Task APageNobodyHereServes_CannotBeLoadedAtAll()
     {
         // The family's hard boundary, held by the browser rather than by a rule somebody has to
