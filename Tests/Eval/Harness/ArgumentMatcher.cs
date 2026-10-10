@@ -21,8 +21,8 @@ public static class Arg
 
     public static ArgumentMatcher Matches(string name, string pattern) =>
         new($"{name} matches /{pattern}/",
-            args => Read(args, name) is { ValueKind: JsonValueKind.String } element
-                    && Regex.IsMatch(element.GetString() ?? "", pattern, RegexOptions.IgnoreCase));
+            args => Text(Read(args, name)) is { } text
+                    && Regex.IsMatch(text, pattern, RegexOptions.IgnoreCase));
 
     // A question about an argument whatever its shape — a list of edits, a nested object — asked of
     // its JSON text. For the edits an fs_edit carries, where what a scenario wants to know is which
@@ -36,8 +36,19 @@ public static class Arg
     // the agent does not have. Absent argument counts as lacking it.
     public static ArgumentMatcher Lacks(string name, string pattern) =>
         new($"{name} lacks /{pattern}/",
-            args => Read(args, name) is not { ValueKind: JsonValueKind.String } element
-                    || !Regex.IsMatch(element.GetString() ?? "", pattern, RegexOptions.IgnoreCase));
+            args => Text(Read(args, name)) is not { } text
+                    || !Regex.IsMatch(text, pattern, RegexOptions.IgnoreCase));
+
+    // What a text question is asked of: a string argument's value, and for one handed over as
+    // structured JSON the JSON text itself — which is what a create writes when a model passes a
+    // file's body as an object instead of a string. Read as nothing, such a body failed every
+    // `Matches` and passed every `Lacks`.
+    private static string? Text(JsonElement? argument) => argument switch
+    {
+        { ValueKind: JsonValueKind.String } text => text.GetString() ?? "",
+        { ValueKind: JsonValueKind.Object or JsonValueKind.Array } structured => structured.GetRawText(),
+        _ => null
+    };
 
     // A flag, which is a boolean and not a string: `snapshot: true` on a browse is what the web
     // contract asks for, and the string matchers above would silently never match it.
