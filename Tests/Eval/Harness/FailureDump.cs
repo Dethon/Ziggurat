@@ -41,6 +41,13 @@ public static class FailureDump
                 """;
     }
 
+    // Every failed run of one scenario, in the order they were taken, and each gets its file: a
+    // scenario that failed three times has three runs nobody can take again, and the second need
+    // not have failed the way the first did. The message stays the first's, so "the first failure"
+    // names the same run every time.
+    public static string? Describe(string directory, IReadOnlyList<FailedRun> runs, bool passed = false) =>
+        runs.Select(run => Describe(directory, run, passed)).ToList().FirstOrDefault();
+
     public static string Write(string directory, FailedRun run)
     {
         Directory.CreateDirectory(directory);

@@ -95,8 +95,8 @@ public static class EvalSuite
             outcome.Failure ?? $"'{name}' failed with no dump written");
     }
 
-    // One run of one scenario, at whichever threshold the tier asks for, with the dump written by
-    // the run that failed rather than by the last one taken.
+    // One scenario's runs, at whichever threshold the tier asks for, with a dump written by every
+    // run that failed rather than by the last one taken.
     public static async Task<EvalOutcome> RunAsync(Scenario scenario, RunPolicy policy)
     {
         // The runs are in flight together, so what each one saw is filed under its own number and
@@ -147,22 +147,24 @@ public static class EvalSuite
             return new EvalOutcome(result, null, route, preloadModel);
         }
 
-        var (first, failures) = observations.OrderBy(run => run.Key).First();
-        var failed = recordings[first];
-        // The route of the run being explained, not of the last run taken: under k of N they are
-        // different runs and can be different endpoints.
-        var failedRoute = failed.Route;
+        // Every failed run is dumped, in the order the runs were taken, each with the route of the
+        // run being explained rather than of the last run taken: under k of N they are different
+        // runs and can be different endpoints.
+        var failed = await Task.WhenAll(observations.OrderBy(run => run.Key).Select(async run =>
+        {
+            var recording = recordings[run.Key];
+            return new FailedRun(
+                scenario,
+                recording,
+                EvalRun.Decorated(scenario),
+                await ProviderLookup.ResolveAsync(recording.Route, EvalGate.ApiKey ?? ""),
+                [$"passed {result.Passes} of {result.Attempts} runs, needed {policy.K}", .. run.Value],
+                ScenarioChecks.KindOf(scenario, recording, run.Value));
+        }));
 
-        // A pass with a failed run inside it dumps that run under flakes/ and reports nothing;
-        // a failed scenario dumps beside the scorecard and the message is the test's failure.
-        var message = FailureDump.Describe(FailureDump.DefaultDirectory, new FailedRun(
-            scenario,
-            failed,
-            EvalRun.Decorated(scenario),
-            await ProviderLookup.ResolveAsync(failedRoute, EvalGate.ApiKey ?? ""),
-            [$"passed {result.Passes} of {result.Attempts} runs, needed {policy.K}", .. failures],
-            ScenarioChecks.KindOf(scenario, failed, failures)),
-            result.Passed);
+        // A pass with failed runs inside it dumps them under flakes/ and reports nothing; a
+        // failed scenario dumps beside the scorecard and the first run's is the test's failure.
+        var message = FailureDump.Describe(FailureDump.DefaultDirectory, failed, result.Passed);
 
         return new EvalOutcome(result, message, route, preloadModel);
     }
