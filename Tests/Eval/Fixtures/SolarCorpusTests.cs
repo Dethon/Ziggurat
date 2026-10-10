@@ -54,6 +54,17 @@ public class SolarCorpusTests
         SolarCorpus.WelcomeEnded.ShouldBeLessThan(DateOnly.FromDateTime(Harness.EvalInstant.Evening.Date));
     }
 
+    // The two rungs whose inputs are incidental: what each marks against, and what a reply
+    // built on the first search result's power would say instead.
+    [Fact]
+    public void TheFiguresBuiltOnTheCurrentPower_AreNotTheOnesTheStalePageGives()
+    {
+        SolarCorpus.YieldPerKw.ShouldBe(SolarCorpus.Production2025 / SolarCorpus.Power);
+        SolarCorpus.YieldPerKw.ShouldBe(1397);
+        (SolarCorpus.Production2025 / SolarCorpus.StalePower).ShouldNotBe(SolarCorpus.YieldPerKw);
+        (100d * SolarCorpus.ExpansionPower / SolarCorpus.Power).ShouldBe(42.3, 0.05);
+    }
+
     [Fact]
     public void TheBonusesPage_IsTwoLinksFromAnySearchResult()
     {

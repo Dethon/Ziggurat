@@ -33,6 +33,10 @@ public static class SolarCorpus
     public const int Production2025 = 198_400;
     public const int Growth = Production2025 - Production2024;
 
+    // What each installed kW generated in the year: a figure no page prints, and one a reply
+    // gets wrong by dividing by the first search result's power.
+    public const int YieldPerKw = Production2025 / Power;
+
     // The report's year, month by month. The third quarter is the best one and nothing says so.
     public static readonly IReadOnlyList<int> Monthly2025 =
         [8_900, 11_200, 15_600, 18_300, 21_400, 23_100, 24_900, 23_700, 19_800, 14_200, 9_200, 8_100];

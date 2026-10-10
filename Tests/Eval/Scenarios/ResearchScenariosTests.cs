@@ -59,7 +59,7 @@ public class ResearchScenariosTests
     public void EveryRung_IsBaseOrHard_AndTheHardOnesAreEnoughToBeAScore()
     {
         ResearchScenarios.All.ShouldAllBe(scenario => scenario.Group == "base" || scenario.Group == "hard");
-        ResearchScenarios.All.Count(scenario => scenario.Group == "hard").ShouldBeGreaterThanOrEqualTo(6);
+        ResearchScenarios.All.Count(scenario => scenario.Group == "hard").ShouldBeGreaterThanOrEqualTo(9);
     }
 
     [Fact]

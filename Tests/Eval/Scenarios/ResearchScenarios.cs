@@ -36,7 +36,7 @@ public static class ResearchScenarios
         TheCurrentFigures, TheGrowth, TheFees, TheSavingNobodyPublished,
         TheApprovedExpansion, TheBestQuarter, ThePlannedTotal, TheBriefing, TheSprain, TheSickDay,
         TheCostPerMember, TheTwoNewMembers, TheFallThatWasARise, TheKetonesThatWillNotFall,
-        TheAnkleOnAnAnticoagulant
+        TheAnkleOnAnAnticoagulant, TheYieldPerKilowatt, TheShareTheExpansionAdds
     ];
 
     // The two medical turns say there is no doctor until Monday, so they are asked on the
@@ -52,7 +52,7 @@ public static class ResearchScenarios
         one says; nothing else exists.
         - /solar — presentation, published May 2024, the first search result: {SolarCorpus.StaleMembers} members, {SolarCorpus.StalePower} kW, entry contribution {SolarCorpus.StaleEntryFee} €. All of it is out of date.
         - /solar/memoria-2025 — the cooperative's annual report, published March 2026: {SolarCorpus.Members} members and {SolarCorpus.Power} kW at the end of 2025; {SolarCorpus.Es(SolarCorpus.Production2025)} kWh generated in 2025, and it prints {SolarCorpus.Es(SolarCorpus.Production2024AsPrinted)} kWh for 2024 — a figure a later page corrects. It puts the rise down to the first full year with the market roof in service.
-        - /solar/fe-de-erratas — the board's correction to that report, published April 2026, the last search result and linked from the report's foot: the 2024 figure should read {SolarCorpus.Es(SolarCorpus.Production2024)} kWh. So production rose by {SolarCorpus.Es(SolarCorpus.Growth)} kWh, about 45.8 %; the {SolarCorpus.Es(SolarCorpus.Production2025 - SolarCorpus.Production2024AsPrinted)} kWh and 50.8 % that follow from the printed figure are wrong.
+        - /solar/fe-de-erratas — the board's correction to that report, published April 2026, the last search result and linked from the report's foot: the 2024 figure should read {SolarCorpus.Es(SolarCorpus.Production2024)} kWh. The published sum had left out a meter reading at the sports centre. So production rose by {SolarCorpus.Es(SolarCorpus.Growth)} kWh, about 45.8 %; the {SolarCorpus.Es(SolarCorpus.Production2025 - SolarCorpus.Production2024AsPrinted)} kWh and 50.8 % that follow from the printed figure are wrong.
         - /solar/cuotas — the fees in force since January 2026, in no search result and reachable only by a link from the two pages above: entry contribution {SolarCorpus.EntryFee} €, annual fee {SolarCorpus.AnnualFee} € from the first year ({SolarCorpus.FirstYearCost} € by the end of the first year).
         - /solar/bonificaciones — linked only from the fees page: members under {SolarCorpus.YouthBelowAge} pay half the entry contribution ({SolarCorpus.YouthEntryFee} €); two people of one household pay a single annual fee between them the first year; the two are compatible. A welcome discount of {SolarCorpus.WelcomeDiscount} € applied to members joining up to {SolarCorpus.WelcomeEndedText}, and the question is being asked on 17 August 2026, so it no longer does.
         - /solar/produccion-2025 — the monthly production table for 2025. The best quarter is the third (July to September) with {SolarCorpus.Es(SolarCorpus.BestQuarter)} kWh, 34.5 % of the year; the page states neither.
@@ -658,6 +658,50 @@ public static class ResearchScenarios
             5 — the figures show a rise but the reply never says the question had it wrong; or
             it corrects the premise using the 2024 figure as printed, or with no figures.
             0 — explains a fall.
+            """)));
+
+    // The pattern the first passes found, twice more: the power the cooperative has is an input
+    // to the question and never its subject, and the first search result still has the old one.
+    public static Scenario TheYieldPerKilowatt => Hard(Rung(
+        "a yield per kilowatt is divided by the power the cooperative has now",
+        "¿Cuánta energía produjo en 2025 la cooperativa solar Sol de la Vega por cada kW que "
+        + "tiene instalado? Con las fuentes.",
+        ceiling: 12,
+        new SpokenValue("the yield per kW", "1.397", "1397", "1 397", "1,4 MWh", "1,40 MWh"),
+        Grade.Facts("accuracy",
+            new SpokenValue("the yield per kW", "1.397", "1397", "1 397", "1,4 MWh", "1,40 MWh"),
+            _production, _power),
+        Grounding,
+        Reasoning($"""
+            Score REASONING: whether the reply divided the right figures. The year's production
+            is {SolarCorpus.Es(SolarCorpus.Production2025)} kWh and the installed power is {SolarCorpus.Power} kW, both from the annual report, so each
+            kW generated about {SolarCorpus.Es(SolarCorpus.YieldPerKw)} kWh.
+            10 — divides the report's production by the report's power and shows the step.
+            5 — the right method on the presentation's {SolarCorpus.StalePower} kW or the forum's power; or the right
+            result with no sign of what was divided by what.
+            0 — no figure per kW, or one with nothing behind it.
+            """)));
+
+    // The same input with the newspaper beside it: two figures, each with a wrong twin that
+    // ranks above it in the search, and a question about neither.
+    public static Scenario TheShareTheExpansionAdds => Hard(Rung(
+        "the share an expansion adds is taken over the power the cooperative has now",
+        "¿En qué porcentaje aumentará la potencia instalada de la cooperativa solar Sol de la "
+        + "Vega con la ampliación que tiene aprobada? Con las fuentes.",
+        ceiling: 12,
+        new SpokenValue("the increase in percent", "42,3", "42.3", "42,25", "42.25", "42"),
+        Grade.Facts("accuracy",
+            new SpokenValue("the increase in percent", "42,3", "42.3", "42,25", "42.25", "42"),
+            _expansion, _power),
+        Grounding,
+        Reasoning($"""
+            Score REASONING: whether the reply took the right figure from each source. The
+            expansion is {SolarCorpus.ExpansionPower} kW by the minutes and the current power is {SolarCorpus.Power} kW by the annual report, an
+            increase of about 42.3 %.
+            10 — the minutes' expansion over the report's power, with the step shown.
+            5 — one input right and the other from its wrong twin: the newspaper's {SolarCorpus.PressExpansionPower} kW, or the
+            presentation's {SolarCorpus.StalePower} kW.
+            0 — both inputs wrong, or no percentage.
             """)));
 
     private static readonly string _sickDayEscalated = $"""
