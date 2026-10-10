@@ -169,11 +169,8 @@ impl Drop for DuckGuard {
         if let Some(c) = &self.card {
             cmd.arg("-c").arg(c);
         }
-        cmd.args(["sset", &self.control, "100%"])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        let _ = cmd.spawn();
+        cmd.args(["sset", &self.control, "100%"]);
+        crate::audio::run_detached(cmd);
     }
 }
 
