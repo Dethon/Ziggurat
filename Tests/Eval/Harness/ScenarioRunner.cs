@@ -82,6 +82,7 @@ public static class ScenarioRunner
             Loaders = [.. taken.Select(reading => reading.Loader)],
             Spend = Spend.Sum(taken.Select(reading => reading.Spend)),
             Grades = [.. taken.SelectMany(reading => reading.Grades)],
+            DelegatedRuns = taken.Count(reading => reading.Delegated),
             PreloadOutcomes = Summed(taken.Select(reading => reading.PreloadOutcomes)),
             Screens = ExecScreenTally.Sum(taken.Select(reading => reading.Screens))
         };
@@ -144,6 +145,9 @@ public sealed record RunReading(
 
     // The run's score on each graded dimension, whether or not it passed.
     public IReadOnlyList<GradeMark> Grades { get; init; } = [];
+
+    // The run handed work to a worker.
+    public bool Delegated { get; init; }
 }
 
 public sealed record ScenarioResult(
@@ -185,4 +189,7 @@ public sealed record ScenarioResult(
 
     // Every mark of every run taken, in run order.
     public IReadOnlyList<GradeMark> Grades { get; init; } = [];
+
+    // How many of the runs taken handed work to a worker.
+    public int DelegatedRuns { get; init; }
 }

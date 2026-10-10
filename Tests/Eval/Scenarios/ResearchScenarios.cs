@@ -63,7 +63,7 @@ public static class ResearchScenarios
 
     private static Grade Reasoning(string asked) => Grade.Judged("reasoning", _corpus + asked);
 
-    private static Scenario Rung(string name, string turn, int ceiling, SpokenValue headline, params Grade[] graded) =>
+    private static Scenario Rung(string name, string turn, int ceiling, SpokenValue? headline, params Grade[] graded) =>
         new()
         {
             Name = $"research: {name}",
@@ -92,7 +92,9 @@ public static class ResearchScenarios
             CallCeiling = ceiling,
             // Several pages read end to end and an answer written from them: longer than a turn.
             Budget = TimeSpan.FromMinutes(5),
-            Reply = new ReplyExpectation { Mentions = [headline] },
+            // The headline figure where there is one. A rung whose right answer is an absence
+            // has none, and its contract is the search, the ceiling and the finish.
+            Reply = headline is null ? null : new ReplyExpectation { Mentions = [headline] },
             Graded = graded,
             // Every run, always: the marks are a mean, and a mean over two runs on one model and
             // three on another is not a comparison.
@@ -140,7 +142,9 @@ public static class ResearchScenarios
         "a stale page and a forum are set aside for the current report",
         "¿Cuántos socios tiene ahora mismo la cooperativa solar Sol de la Vega y cuánta potencia "
         + "tiene instalada? Dime de dónde sale cada dato.",
-        ceiling: 10,
+        // The first armed pass read eleven on a run that answered perfectly: the skill, two
+        // searches and most of the site. A ceiling under the size of the corpus fails thoroughness.
+        ceiling: 12,
         _members,
         Grade.Facts("accuracy", _members, _power),
         Grounding,
@@ -160,7 +164,7 @@ public static class ResearchScenarios
         "a growth figure is derived from two years' production",
         "¿Cuánto creció la producción de la cooperativa solar Sol de la Vega de 2024 a 2025? Lo "
         + "quiero en kWh y en porcentaje, con la fuente.",
-        ceiling: 10,
+        ceiling: 12,
         Figure("the growth in kWh", SolarCorpus.Growth),
         Grade.Facts("accuracy",
             Figure("the growth in kWh", SolarCorpus.Growth),
@@ -182,7 +186,7 @@ public static class ResearchScenarios
         "a fee is found on a page no search surfaces",
         "Quiero hacerme socio de la cooperativa solar Sol de la Vega. ¿Cuánto me costaría entrar "
         + "y cuánto habría pagado en total al acabar el primer año? Con la fuente.",
-        ceiling: 12,
+        ceiling: 14,
         _entryFee,
         Grade.Facts("accuracy",
             _entryFee, _annualFee,
@@ -206,12 +210,14 @@ public static class ResearchScenarios
         "an anecdote is not reported as a figure",
         "¿Cuánto ahorra de media al año en la factura de la luz un socio de la cooperativa solar "
         + "Sol de la Vega? Necesito un dato fiable, con su fuente.",
-        // Absence is only established by looking, and looking takes more pages than finding.
-        ceiling: 14,
-        // The cooperative by name, so the reply is about the question that was asked; what it
-        // says about the saving is the marks' business. Not the verb: the honest answer is
-        // "no sé cuánto ahorraría", and a headline that wanted "ahorra" measured conjugation.
-        new SpokenValue("the cooperative", "Sol de la Vega"),
+        // Absence is only established by looking, and looking takes more pages than finding:
+        // every page of the site, two searches and the skill is ten calls before a second look
+        // at anything, and the armed runs that concluded correctly took up to sixteen.
+        ceiling: 18,
+        // No headline. The first armed pass asked for the cooperative's name and then for the
+        // verb, and failed "no he encontrado un promedio publicado por la cooperativa" on both:
+        // nothing a correct reply must contain can be listed when what is true is an absence.
+        headline: null,
         Grade.Judged("accuracy", _corpus + """
             Score ACCURACY for a question the corpus cannot answer: the user asked for the
             average yearly saving of a member, with a reliable source, and no page gives one.
@@ -240,7 +246,7 @@ public static class ResearchScenarios
         "the minutes are believed over the newspaper",
         "¿Qué ampliación aprobó la asamblea de la cooperativa solar Sol de la Vega este junio: "
         + "cuánta potencia, con qué presupuesto y con qué resultado en la votación? Con la fuente.",
-        ceiling: 10,
+        ceiling: 12,
         _expansion,
         Grade.Facts("accuracy",
             _expansion, _budget,
@@ -263,7 +269,7 @@ public static class ResearchScenarios
         "a quarter's share is worked out from the monthly table",
         "¿En qué trimestre de 2025 produjo más energía la cooperativa solar Sol de la Vega y qué "
         + "porcentaje del total del año supuso ese trimestre? Con la fuente.",
-        ceiling: 12,
+        ceiling: 14,
         Figure("the best quarter's energy", SolarCorpus.BestQuarter),
         Grade.Facts("accuracy",
             new SpokenValue("the third quarter",
@@ -291,7 +297,7 @@ public static class ResearchScenarios
         "Cuando esté hecha la ampliación que aprobó la cooperativa solar Sol de la Vega, ¿qué "
         + "potencia total tendrá y cuánto tendrá que poner de su bolsillo, descontada la "
         + "subvención? Con las fuentes.",
-        ceiling: 14,
+        ceiling: 16,
         new SpokenValue("the planned total", $"{SolarCorpus.PlannedPower}"),
         Grade.Facts("accuracy",
             new SpokenValue("the planned total", $"{SolarCorpus.PlannedPower}"),
@@ -305,7 +311,7 @@ public static class ResearchScenarios
             input (the presentation's old power, the newspaper's expansion); or both are right
             with no sign of what was added to what.
             0 — both results are built on the wrong inputs, or neither is given.
-            """)), ceiling: 14);
+            """)), ceiling: 16);
 
     // The whole site at once, and the instruction a careful person gives: say where each thing
     // comes from, and say what does not add up.
@@ -316,7 +322,7 @@ public static class ResearchScenarios
         + "produjo en 2025, qué ampliación tiene aprobada y con qué presupuesto, y cuánto cuesta "
         + "entrar. Indica de qué página sale cada dato y avísame de cualquier cifra que no cuadre "
         + "entre fuentes.",
-        ceiling: 20,
+        ceiling: 22,
         _members,
         Grade.Facts("accuracy", _members, _power, _production, _expansion, _budget, _entryFee, _annualFee),
         Grounding,
@@ -329,5 +335,5 @@ public static class ResearchScenarios
             believed and why.
             5 — reports one, or mentions conflicting figures without saying which to believe.
             0 — reports none, or resolves one in favour of the wrong source.
-            """)), ceiling: 20);
+            """)), ceiling: 22);
 }

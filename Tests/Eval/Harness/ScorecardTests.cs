@@ -345,6 +345,23 @@ public class ScorecardTests : IDisposable
     }
 
     [Fact]
+    public void AScenarioWithRealWorkers_SaysHowManyOfItsRunsDelegated()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)],
+        [
+            new ScenarioOutcome("a briefing", 3, 3) { DelegatedRuns = 0 },
+            new ScenarioOutcome("a timer", 1, 1)
+        ]);
+
+        var scenarios = Read(Path.Combine(_output, "scorecard-full.json")).GetProperty("scenarios");
+
+        // Zero is said out loud where a worker could have run: "nobody delegated" is what makes
+        // the scenario's score a score of the in-place route alone.
+        scenarios.GetProperty("a briefing").GetProperty("delegatedRuns").GetInt32().ShouldBe(0);
+        scenarios.GetProperty("a timer").TryGetProperty("delegatedRuns", out _).ShouldBeFalse();
+    }
+
+    [Fact]
     public void APassWithNothingGraded_CarriesNoGrades()
     {
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)],

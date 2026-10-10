@@ -27,6 +27,18 @@ public class ScenarioRunnerTests
     }
 
     [Fact]
+    public async Task TheRunsThatDelegated_AreCounted()
+    {
+        // With real workers either route is honest, so which one a model took is a finding
+        // rather than a failure — and a score over runs that all stayed in place says nothing
+        // about the delegated path.
+        var result = await ScenarioRunner.RunAsync(new RunPolicy(1, 3) { Exhaustive = true }, index =>
+            Task.FromResult(new RunReading([], []) { Delegated = index != 1 }));
+
+        result.DelegatedRuns.ShouldBe(2);
+    }
+
+    [Fact]
     public async Task EveryRunsGrades_ReachTheResult_WhetherTheRunPassedOrNot()
     {
         // A grade is a measurement of the answer, and a run that tripped a side check still gave

@@ -110,6 +110,20 @@ public static class Scorecard
     // as one it answered every time.
     private static JsonObject Marked(JsonObject rows, IEnumerable<ScenarioOutcome> outcomes)
     {
+        outcomes = [.. outcomes];
+
+        // Which route the runs took, where there were two. A zero is written: it is what says
+        // the scenario's score is the in-place route's alone.
+        foreach (var route in outcomes
+                     .Where(outcome => outcome.DelegatedRuns is not null)
+                     .GroupBy(outcome => outcome.Name))
+        {
+            if (rows[route.Key] is JsonObject row)
+            {
+                row["delegatedRuns"] = route.Sum(outcome => outcome.DelegatedRuns ?? 0);
+            }
+        }
+
         foreach (var (name, dimensions) in ByDimension(outcomes))
         {
             if (rows[name] is not JsonObject row)
@@ -417,4 +431,9 @@ public sealed record ScenarioOutcome(
 
     // Every mark of every run the scenario took, in run order.
     public IReadOnlyList<GradeMark> Grades { get; init; } = [];
+
+    // How many of the runs handed work to a worker, for a scenario whose workers really run.
+    // Null everywhere else: a canned delegation is a contract the checks already hold, and a
+    // count of it here would read as a route the scenario offered.
+    public int? DelegatedRuns { get; init; }
 }
