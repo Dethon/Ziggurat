@@ -191,15 +191,24 @@ pub async fn run_connection(
                             // on-device budget check: must stay well under the 80 ms chunk cadence
                             tracing::debug!(us = t0.elapsed().as_micros() as u64, "wake inference");
                             if let Some(score) = fired {
-                                info!("wake word detected");
                                 // ring_rms BEFORE trim_preroll: the trim drops exactly the
                                 // wake-word audio this measures.
-                                let rms = ring_rms(&preroll, cfg.wake_preroll_chunks());
-                                trim_preroll(&mut preroll, cfg.wake_preroll_chunks());
-                                let measured = room.rms();
-                                room.reset();
-                                start_turn(&mut wr, &mut mode, &mut phase, &ctx, &mut preroll,
-                                    Some(WakeSignal { rms, score }), measured).await?;
+                                let wake = WakeSignal { rms: ring_rms(&preroll, cfg.wake_preroll_chunks()), score };
+                                if wake.audible(cfg.wake_min_rms) {
+                                    info!("wake word detected");
+                                    trim_preroll(&mut preroll, cfg.wake_preroll_chunks());
+                                    let measured = room.rms();
+                                    room.reset();
+                                    start_turn(&mut wr, &mut mode, &mut phase, &ctx, &mut preroll,
+                                        Some(wake), measured).await?;
+                                } else {
+                                    // Not a turn, so nothing a turn owns is touched: the ring
+                                    // and the room estimate keep describing idle audio. The
+                                    // detector armed its own refractory when it fired, which is
+                                    // what stops the same sound firing again on the next frame.
+                                    info!(score, rms = wake.rms, floor = cfg.wake_min_rms,
+                                        "wake rejected: quieter than --wake-min-rms");
+                                }
                             }
                         }
                     }
@@ -273,6 +282,12 @@ fn ring_rms(buf: &VecDeque<Vec<u8>>, exclude_newest: usize) -> f32 {
 struct WakeSignal {
     rms: f32,
     score: f32,
+}
+
+impl WakeSignal {
+    /// Whether the audio the classifier fired on was loud enough to have been somebody speaking.
+    /// The score cannot answer this: fires out of a near-silent room carry scores up to 0.98.
+    fn audible(&self, min_rms: f32) -> bool { self.rms >= min_rms }
 }
 
 /// End an active capture: send audio-stop to the hub, transition to Idle, reset the wake detector.
@@ -603,6 +618,24 @@ mod tests {
     fn ring_rms_on_short_ring_is_zero() {
         let ring: VecDeque<Vec<u8>> = VecDeque::from(vec![vec![0u8; 2560]; 2]);
         assert_eq!(ring_rms(&ring, 3), 0.0);
+    }
+
+    /// The fix for wakes fired out of a near-silent room: the classifier scored high, but the
+    /// audio it scored was at the mic's idle floor, so nobody can have said the wake word.
+    #[test]
+    fn a_fire_quieter_than_the_floor_is_not_a_wake() {
+        let quiet = WakeSignal { rms: 349.9, score: 0.97 };
+        assert!(!quiet.audible(350.0), "a confident score does not rescue a silent trigger");
+        assert!(WakeSignal { rms: 350.0, score: 0.51 }.audible(350.0), "the floor itself passes");
+    }
+
+    /// A floor of 0 is the feature switched off, and must stay off even for the 0.0 that
+    /// ring_rms reports on a ring shorter than the detection gap.
+    #[test]
+    fn a_zero_floor_admits_every_fire() {
+        let ring: VecDeque<Vec<u8>> = VecDeque::from(vec![vec![0u8; 2560]; 2]);
+        let silent = WakeSignal { rms: ring_rms(&ring, 3), score: 0.9 };
+        assert!(silent.audible(0.0));
     }
 
     #[tokio::test]

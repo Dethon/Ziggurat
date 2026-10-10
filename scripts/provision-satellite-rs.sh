@@ -18,6 +18,10 @@ set -euo pipefail
 #                    window 1 with a low threshold is what made music itself trigger the wake word
 #                    — retune one knob at a time. Above 3 the added wake latency exceeds the
 #                    240 ms --wake-preroll-ms gap flush, so raise that too.
+#                    WAKE_MIN_RMS=<i16 rms> (default 0 = off) drops a wake whose wake-word audio
+#                    is quieter than that — the fix for wakes fired out of a near-silent room,
+#                    which neither knob above reaches because those fires score as high as real
+#                    ones. A per-microphone number: 350 is the measured figure for the XVF3800.
 #   I2S DAC/amp HAT (e.g. MiniAmp): additionally DAC_OVERLAY=hifiberry-dac — I2S hardware is
 #                    electrically undiscoverable, so the overlay must be declared; the script
 #                    writes it to config.txt, reboots the Pi, waits, and continues (one-shot).
@@ -83,6 +87,8 @@ threshold=${THRESHOLD:-0.7}
 wake_window=${WAKE_WINDOW:-${TRIGGER_LEVEL:-2}}
 [[ $threshold =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "ERROR: THRESHOLD must be a number in 0..1 (got '$threshold')" >&2; exit 1; }
 [[ $wake_window =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: WAKE_WINDOW must be a positive integer (got '$wake_window')" >&2; exit 1; }
+wake_min_rms=${WAKE_MIN_RMS:-0}
+[[ $wake_min_rms =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "ERROR: WAKE_MIN_RMS must be a number >= 0 (got '$wake_min_rms')" >&2; exit 1; }
 
 # Softvol levels, validated here for the same reason: a malformed one fails at `amixer` under
 # `set -e` only AFTER asound.conf and the PipeWire master have already been rewritten, leaving a
@@ -154,10 +160,10 @@ scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/snapclient.service" "$h
 scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-micclock.service" "$host:/tmp/"
 
 # Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME/ALERT_VOLUME/MASTER_VOLUME/THRESHOLD/
-# WAKE_WINDOW env vars: nothing is expanded locally; the remote bash evaluates everything (and
+# WAKE_WINDOW/WAKE_MIN_RMS env vars: nothing is expanded locally; the remote bash evaluates everything (and
 # reads vars from the command-prefix assignments). The volume and tuning vars arrive already
 # defaulted and validated above (WAKE_WINDOW having absorbed any TRIGGER_LEVEL alias).
-ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${tts_volume}" ALERT_VOLUME="${alert_volume}" MASTER_VOLUME="${master_volume}" THRESHOLD="${threshold}" WAKE_WINDOW="${wake_window}" bash -se <<'EOF'
+ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${tts_volume}" ALERT_VOLUME="${alert_volume}" MASTER_VOLUME="${master_volume}" THRESHOLD="${threshold}" WAKE_WINDOW="${wake_window}" WAKE_MIN_RMS="${wake_min_rms}" bash -se <<'EOF'
   set -euo pipefail
 
   if [ -n "${MUSIC_HUB:-}" ] && [ -n "${MIC}" ]; then
@@ -424,7 +430,8 @@ ExecStart=/usr/local/bin/nabu-satellite \\
   --music-mixer Music --music-card ${outctl} \\
   --volume-sink @DEFAULT_AUDIO_SINK@ \\
   --threshold ${THRESHOLD} \\
-  --wake-window ${WAKE_WINDOW}
+  --wake-window ${WAKE_WINDOW} \\
+  --wake-min-rms ${WAKE_MIN_RMS}
 DROPEOF
   else
     # downgrade / voice-only: tear down any prior music install so a re-provisioned Pi returns to
@@ -556,6 +563,7 @@ UNITEOF
            -e "/^[[:space:]]*--snd-command/ s#-D [^ ]*#-D ${playdev}#" \
            -e "/^[[:space:]]*--threshold/ s#--threshold [^ ]*#--threshold ${THRESHOLD}#" \
            -e "/^[[:space:]]*--wake-window/ s#--wake-window [^ ]*#--wake-window ${WAKE_WINDOW}#" \
+           -e "/^[[:space:]]*--wake-min-rms/ s#--wake-min-rms [^ ]*#--wake-min-rms ${WAKE_MIN_RMS}#" \
            "${volsed[@]}" \
            -e "s/%i/$user/g" \
            /tmp/nabu-satellite.service | sudo tee /etc/systemd/system/nabu-satellite.service >/dev/null

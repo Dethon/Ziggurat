@@ -53,7 +53,8 @@ ExecStart=/usr/local/bin/nabu-satellite \
   --volume-mixer Nabu \
   --volume-card sndrpihifiberry \
   --threshold 0.7 \
-  --wake-window 2
+  --wake-window 2 \
+  --wake-min-rms 0
 Environment=RUST_LOG=info
 Restart=always
 RestartSec=2
