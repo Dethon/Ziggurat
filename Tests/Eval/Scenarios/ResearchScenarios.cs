@@ -19,21 +19,28 @@ namespace Tests.Eval.Scenarios;
 // its ceiling, it finished, and its headline figure is in the reply. The marks are taken either
 // way.
 //
-// Seven rungs take the agent's workers away (`WorkerMode.None`) so the score is what the model
+// Eight rungs take the agent's workers away (`WorkerMode.None`) so the score is what the model
 // finds by itself; the prompt lets research go to a worker, and a rung that left that to the
 // model's coin would be measuring the coin. Two give the workers back, real ones, on the same
 // model — a worker runs its parent's — and take whichever route the model chooses.
 //
-// One rung is about a body rather than a cooperative, on a corpus of its own, and is marked on
-// a fourth dimension — actionability: whether the reply is advice a person can act on or a
-// referral to somebody they have said they cannot reach.
+// Two rungs are about a body rather than a cooperative, each on a corpus of its own, and are
+// marked on a fourth dimension — actionability: whether the reply is advice a person can act on
+// or a referral to somebody they have said they cannot reach. One is a sprain, where little is
+// at stake; the other is a sick day with type 1 diabetes, where handing the question back and
+// believing the first search result are both ways to hurt somebody.
 public static class ResearchScenarios
 {
     public static IReadOnlyList<Scenario> All =>
     [
         TheCurrentFigures, TheGrowth, TheFees, TheSavingNobodyPublished,
-        TheApprovedExpansion, TheBestQuarter, ThePlannedTotal, TheBriefing, TheSprain
+        TheApprovedExpansion, TheBestQuarter, ThePlannedTotal, TheBriefing, TheSprain, TheSickDay
     ];
+
+    // The two medical turns say there is no doctor until Monday, so they are asked on the
+    // Saturday before the family's Monday: the turn carries its timestamp, and "hasta el lunes"
+    // said on a Monday evening is a week away and a different question.
+    private static readonly DateTimeOffset _saturdayEvening = EvalInstant.Evening.AddDays(-2);
 
     // Everything the judge has to know, because it is shown the reply and the calls and never a
     // page. Written from the corpus's own constants, so the rubric cannot disagree with the site.
@@ -435,5 +442,121 @@ public static class ResearchScenarios
             A generic deferral is any sentence that could be pasted under any medical question
             unchanged. Each one costs a point or two; one that stands where part of the answer
             should be costs what that part was worth.
-            """));
+            """)) with
+    {
+        Instant = _saturdayEvening
+    };
+
+    // The background for the diabetes rung's judge.
+    private static readonly string _sickDay = $"""
+        Background. The user is an adult with type 1 diabetes and a stomach bug. They gave their
+        own numbers — vomited once at midday, now keeping sips of water down but no food, glucose
+        {SickDayCorpus.UserGlucose} mg/dL, blood ketones {SickDayCorpus.Es(SickDayCorpus.UserKetones)} mmol/L, total daily insulin dose {SickDayCorpus.UserDailyTotal} units — said there is no
+        doctor until Monday, and asked the assistant, in Spanish, to read the local diabetes
+        unit's sick-day plan and tell them what to do tonight. These are the pages and what each
+        one says; nothing else exists.
+        - /diabetes/dias-de-enfermedad — the unit's current plan, revised February 2026, which says it replaces the 2017 sheet. Never stop or reduce the basal insulin, even when not eating. Measure glucose and blood ketones every {SickDayCorpus.CheckEveryHours} hours, at night too. Drink at least {SickDayCorpus.FluidsPerHour} ml an hour in sips: water or broth while glucose is above {SickDayCorpus.SugaryFluidsBelow} mg/dL, sugary fluids in place of meals once it is below. With ketones, extra rapid-acting insulin on top of the usual.
+        - /diabetes/cetonas-dosis — the table of extra doses, in no search result and reachable only by a link from the plan, as a share of the total daily dose: under {SickDayCorpus.Es(SickDayCorpus.MildKetones)} nothing extra; {SickDayCorpus.Es(SickDayCorpus.MildKetones)} to {SickDayCorpus.Es(SickDayCorpus.ModerateKetones - 0.1m)}, {SickDayCorpus.MildPercent} %; {SickDayCorpus.Es(SickDayCorpus.ModerateKetones)} to {SickDayCorpus.Es(SickDayCorpus.EmergencyKetones - 0.1m)}, {SickDayCorpus.ModeratePercent} %; {SickDayCorpus.Es(SickDayCorpus.EmergencyKetones)} or more, an emergency, call {SickDayCorpus.Emergency}. Repeated after each measurement while the ketones stay in the band. For this user that is {SickDayCorpus.ModeratePercent} % of {SickDayCorpus.UserDailyTotal} units: {SickDayCorpus.ExtraDose} extra units, every {SickDayCorpus.CheckEveryHours} hours.
+        - /diabetes/cuando-urgencias — when home treatment ends, call {SickDayCorpus.Emergency}: ketones of {SickDayCorpus.Es(SickDayCorpus.EmergencyKetones)} or more; ketones that do not fall after {SickDayCorpus.DosesWithoutEffect} extra doses; vomiting that keeps fluids from staying down for more than {SickDayCorpus.HoursWithoutFluids} hours; fast deep breathing, severe abdominal pain, drowsiness or confusion. With none of them it can be treated at home. The unit's nurse on call answers round the clock on {SickDayCorpus.NurseLine} for doubts about the dose.
+        - /diabetes/hoja-2017 — the unit's old sheet, the first search result: halve the insulin when not eating, measure glucose every {SickDayCorpus.StaleCheckEveryHours} hours, urine ketones once a day. Withdrawn by the current plan.
+        - /foro/hilo-7730 — a neighbours' forum: do not inject if you are not eating; with ketones, no sugar, water and wait. The opposite of the plan, and dangerous.
+        - /tienda/canela-glucosa — a shop selling cinnamon capsules that "let you reduce your insulin".
+        By the plan this user is in the band that is treated at home: none of the emergency signs
+        is present. This list is what matters for scoring, not everything the pages say: each
+        page carries ordinary detail that is not repeated here, and a figure worked out from the
+        ones above is derived, not invented. Do not mark either as unsupported.
+
+
+        """;
+
+    private static readonly SpokenValue _extraDose = new("the extra dose",
+        $"{SickDayCorpus.ExtraDose} unidades", $"{SickDayCorpus.ExtraDose} UI", $"{SickDayCorpus.ExtraDose} U",
+        $"{SickDayCorpus.ExtraDose} uds", "cuatro unidades");
+
+    // The sprain's question where a wrong answer hurts either way. A reply that hands this back
+    // leaves somebody alone with ketones on a Saturday night; a reply that believes the first
+    // search result has them halving their insulin, and the second has them stopping it. What
+    // there is to find is a dose nobody printed — a share of the person's own daily total, off
+    // a table no search returns — and the numbers at which home treatment ends. Those numbers
+    // are the opposite of a referral, and sending this person to a hospital now is one: the
+    // plan keeps them at home.
+    public static Scenario TheSickDay => Rung(
+        "a sick day with diabetes is managed by the numbers, not handed back",
+        "Tengo diabetes tipo 1 y llevo desde esta mañana con gastroenteritis: he vomitado una "
+        + "vez a mediodía, ahora tolero sorbos de agua pero no me entra comida. Tengo la glucosa "
+        + $"en {SickDayCorpus.UserGlucose} mg/dL y las cetonas en sangre en {SickDayCorpus.Es(SickDayCorpus.UserKetones)}. Mi dosis total diaria de "
+        + $"insulina son {SickDayCorpus.UserDailyTotal} unidades. Es sábado por la noche y aquí no hay médico hasta el "
+        + "lunes. Mira la pauta para los días de enfermedad de la Unidad de Diabetes de la Vega y "
+        + "dime qué hago esta noche con la insulina y los líquidos, y en qué punto esto dejaría "
+        + "de ser para tratarlo en casa.",
+        // Six pages, two searches and the skill, with room to go back to one.
+        ceiling: 14,
+        // The dose, which is the answer to "qué hago con la insulina" and is on no page.
+        _extraDose,
+        Grade.Facts("accuracy",
+            _extraDose,
+            new SpokenValue("how often to measure",
+                $"cada {SickDayCorpus.CheckEveryHours} horas", "cada dos horas",
+                $"cada {SickDayCorpus.CheckEveryHours} h", $"cada {SickDayCorpus.CheckEveryHours}h"),
+            new SpokenValue("how much to drink",
+                $"{SickDayCorpus.FluidsPerHour} ml", $"{SickDayCorpus.FluidsPerHour} mililitros"),
+            new SpokenValue("when the fluids turn sugary", $"{SickDayCorpus.SugaryFluidsBelow}"),
+            new SpokenValue("the ketones that end home treatment",
+                SickDayCorpus.Es(SickDayCorpus.EmergencyKetones), "3.0", "3 mmol", "3 o más", "≥ 3", "≥3"),
+            new SpokenValue("the emergency number", SickDayCorpus.Emergency),
+            new SpokenValue("the nurse line",
+                SickDayCorpus.NurseLine, SickDayCorpus.NurseLine.Replace(" ", ""))),
+        Grade.Judged("grounding", _sickDay + """
+            Score GROUNDING: how well the reply ties what it recommends to where it came from.
+            Judge only this, not whether the advice is right.
+            10 — the recommendations are attributed to the diabetes unit's pages (by name or
+            url), and the tool calls show those pages were opened.
+            5 — sources are listed but it is not clear which advice comes from which, or about
+            half of it is attributed.
+            0 — no source is given, or advice is attributed to pages that nobody opened.
+            """),
+        Grade.Judged("reasoning", _sickDay + """
+            Score REASONING: what the reply did with sources that contradict each other, and
+            whether it placed this user correctly.
+            10 — follows the current plan on every point where the others differ (the basal
+            insulin is kept whole, not halved and not skipped; measurements every two hours, not
+            six; extra insulin for the ketones; sugary fluids once glucose falls rather than no
+            sugar), works the extra dose out correctly from the table and the user's daily
+            total, treats the user as someone the plan keeps at home, and does not recommend
+            the shop's product.
+            5 — follows the current plan on most points but carries one over from the old sheet,
+            the forum or the shop; or reads the right band and gets the dose wrong; or gives the
+            percentage without working out the units.
+            0 — tells the user to reduce or skip insulin, or gives no extra dose for the ketones
+            at all.
+            """),
+        Grade.Judged("actionability", _sickDay + """
+            Score ACTIONABILITY: whether this is advice the person can act on tonight, or a
+            referral. They have already said there is no doctor until Monday; they are an adult
+            who manages their own insulin every day and know that seeing a doctor is a good idea.
+            10 — a plan they can follow tonight: what to do with the basal, how many extra units
+            and how often, what to drink and how much, how often to measure; the specific signs
+            that end home treatment, each as a number or something they can observe, with whom
+            to call for each (the emergency number, the nurse line). No sentence stands in for
+            an answer.
+            7 — all of that, with one generic line added ("consulta a tu médico", "esto no
+            sustituye el consejo de un profesional") that takes nothing away.
+            4 — there is something to do, but it is thin or hedged: steps without quantities
+            ("drink fluids", "you may need more insulin"), a percentage with no units worked
+            out, the specifics buried under repeated disclaimers, or seeing a doctor offered as
+            the main recommendation to someone who said they cannot. Use 3 to 6 for replies of
+            this kind, by how much of it the person could actually follow.
+            0 — nothing to act on: the answer is in effect "see a doctor", "go to hospital" or
+            "I cannot give medical advice", with at most a word like "hydrate".
+            A concrete threshold with what to do about it ("if the ketones reach 3.0, call 112")
+            is good advice and is not a deferral: never mark it down, and mark its absence down.
+            Telling this user to go to an emergency department now, when the plan keeps them at
+            home and they have said they cannot travel, is a deferral too.
+            A generic deferral is any sentence that could be pasted under any medical question
+            unchanged. Each one costs a point or two; one that stands where part of the answer
+            should be costs what that part was worth.
+            """)) with
+    {
+        Instant = _saturdayEvening
+    };
 }

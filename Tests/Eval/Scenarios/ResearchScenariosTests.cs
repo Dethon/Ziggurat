@@ -18,6 +18,26 @@ public class ResearchScenariosTests
     }
 
     [Fact]
+    public void TheDiabetesRung_IsMarkedOnAdvice_AndCountsAnUncalledForHospitalAsAReferral()
+    {
+        var rung = ResearchScenarios.All.Single(scenario => scenario.Name.Contains("diabetes"));
+
+        rung.Turn.Text.ShouldContain("hasta el lunes");
+        // The person's own numbers are in the turn: the dose is theirs to be worked out, and
+        // the emergency number is not, so that naming it is something a reply does by itself.
+        rung.Turn.Text.ShouldContain(Fixtures.SickDayCorpus.Es(Fixtures.SickDayCorpus.UserKetones));
+        rung.Turn.Text.ShouldContain($"{Fixtures.SickDayCorpus.UserDailyTotal} unidades");
+        rung.Turn.Text.ShouldNotContain("112");
+
+        var actionable = rung.Graded.OfType<JudgedGrade>().Single(grade => grade.Dimension == "actionability");
+        actionable.Rubric.ShouldContain("is not a deferral");
+        // Both ways of not answering: the generic line, and sending somebody the plan keeps at
+        // home to a hospital they said they cannot reach.
+        actionable.Rubric.ShouldContain("consulta a tu médico");
+        actionable.Rubric.ShouldContain("is a deferral too");
+    }
+
+    [Fact]
     public void TheMedicalRung_IsMarkedOnWhetherItsAdviceCanBeActedOn()
     {
         var rung = ResearchScenarios.All.Single(scenario => scenario.Name.Contains("sprain"));

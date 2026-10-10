@@ -113,6 +113,26 @@ public class EvalWebTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TheSickDayPlan_LeadsToTheDoseTableAndTheEmergencySigns()
+    {
+        var plan = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-sick-day", $"{_web.BaseUrl}/diabetes/dias-de-enfermedad") { Caller = JudgmentCaller.None });
+        plan.Content.ShouldNotBeNull().ShouldContain("/diabetes/cetonas-dosis");
+        plan.Content.ShouldContain("/diabetes/cuando-urgencias");
+
+        var table = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-dose-table", $"{_web.BaseUrl}/diabetes/cetonas-dosis") { Caller = JudgmentCaller.None });
+        // The row the turn's person is in survives the read as a row: the band and its share.
+        table.Content.ShouldNotBeNull().ShouldContain($"{SickDayCorpus.ModeratePercent} %");
+        table.Content.ShouldContain(SickDayCorpus.Es(SickDayCorpus.ModerateKetones));
+
+        var signs = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-emergency", $"{_web.BaseUrl}/diabetes/cuando-urgencias") { Caller = JudgmentCaller.None });
+        signs.Content.ShouldNotBeNull().ShouldContain(SickDayCorpus.NurseLine);
+        signs.Content.ShouldContain("112");
+    }
+
+    [Fact]
     public async Task APageNobodyHereServes_CannotBeLoadedAtAll()
     {
         // The family's hard boundary, held by the browser rather than by a rule somebody has to
