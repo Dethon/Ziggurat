@@ -28,10 +28,36 @@ public class SolarCorpusTests
     public void TheDerivedFigures_FollowFromThePlantedOnes()
     {
         SolarCorpus.Growth.ShouldBe(SolarCorpus.Production2025 - SolarCorpus.Production2024);
-        (100d * SolarCorpus.Growth / SolarCorpus.Production2024).ShouldBe(50.8, 0.05);
+        (100d * SolarCorpus.Growth / SolarCorpus.Production2024).ShouldBe(45.8, 0.05);
         SolarCorpus.PlannedPower.ShouldBe(SolarCorpus.Power + SolarCorpus.ExpansionPower);
         SolarCorpus.OwnCost.ShouldBe(SolarCorpus.Budget * (100 - SolarCorpus.SubsidyPercent) / 100);
         SolarCorpus.FirstYearCost.ShouldBe(SolarCorpus.EntryFee + SolarCorpus.AnnualFee);
+    }
+
+    // The report prints one figure for 2024 and a later page corrects it. Nothing a scenario
+    // marks against may come from the figure as printed, or the rung about the correction
+    // would be marking the mistake as the answer.
+    [Fact]
+    public void TheCorrectedYear_IsNotTheOneTheReportPrints_AndTheGrowthFollowsTheCorrection()
+    {
+        SolarCorpus.Production2024.ShouldNotBe(SolarCorpus.Production2024AsPrinted);
+        SolarCorpus.Growth.ShouldNotBe(SolarCorpus.Production2025 - SolarCorpus.Production2024AsPrinted);
+    }
+
+    [Fact]
+    public void TwoPeopleJoiningToday_PayTheBonusesThatStillApply_AndNotTheCampaignThatEnded()
+    {
+        // One full entry, one at the young member's half, one annual fee for the household:
+        // the welcome discount ended before the day the family is pinned to.
+        SolarCorpus.TwoMembersFirstYear.ShouldBe(
+            SolarCorpus.EntryFee + SolarCorpus.EntryFee / 2 + SolarCorpus.AnnualFee);
+        SolarCorpus.WelcomeEnded.ShouldBeLessThan(DateOnly.FromDateTime(Harness.EvalInstant.Evening.Date));
+    }
+
+    [Fact]
+    public void TheBonusesPage_IsTwoLinksFromAnySearchResult()
+    {
+        SolarCorpus.Search("http://site").ShouldNotContain(entry => entry.Url.Contains("/bonificaciones"));
     }
 
     [Fact]

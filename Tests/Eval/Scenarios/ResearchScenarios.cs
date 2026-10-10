@@ -34,7 +34,9 @@ public static class ResearchScenarios
     public static IReadOnlyList<Scenario> All =>
     [
         TheCurrentFigures, TheGrowth, TheFees, TheSavingNobodyPublished,
-        TheApprovedExpansion, TheBestQuarter, ThePlannedTotal, TheBriefing, TheSprain, TheSickDay
+        TheApprovedExpansion, TheBestQuarter, ThePlannedTotal, TheBriefing, TheSprain, TheSickDay,
+        TheCostPerMember, TheTwoNewMembers, TheFallThatWasARise, TheKetonesThatWillNotFall,
+        TheAnkleOnAnAnticoagulant
     ];
 
     // The two medical turns say there is no doctor until Monday, so they are asked on the
@@ -49,8 +51,10 @@ public static class ResearchScenarios
         cooperative called "Sol de la Vega" on a small website. These are the pages and what each
         one says; nothing else exists.
         - /solar — presentation, published May 2024, the first search result: {SolarCorpus.StaleMembers} members, {SolarCorpus.StalePower} kW, entry contribution {SolarCorpus.StaleEntryFee} €. All of it is out of date.
-        - /solar/memoria-2025 — the cooperative's annual report, published March 2026: {SolarCorpus.Members} members and {SolarCorpus.Power} kW at the end of 2025; {SolarCorpus.Es(SolarCorpus.Production2025)} kWh generated in 2025 against {SolarCorpus.Es(SolarCorpus.Production2024)} kWh in 2024 (a rise of {SolarCorpus.Es(SolarCorpus.Growth)} kWh, about 50.8 %).
+        - /solar/memoria-2025 — the cooperative's annual report, published March 2026: {SolarCorpus.Members} members and {SolarCorpus.Power} kW at the end of 2025; {SolarCorpus.Es(SolarCorpus.Production2025)} kWh generated in 2025, and it prints {SolarCorpus.Es(SolarCorpus.Production2024AsPrinted)} kWh for 2024 — a figure a later page corrects. It puts the rise down to the first full year with the market roof in service.
+        - /solar/fe-de-erratas — the board's correction to that report, published April 2026, the last search result and linked from the report's foot: the 2024 figure should read {SolarCorpus.Es(SolarCorpus.Production2024)} kWh. So production rose by {SolarCorpus.Es(SolarCorpus.Growth)} kWh, about 45.8 %; the {SolarCorpus.Es(SolarCorpus.Production2025 - SolarCorpus.Production2024AsPrinted)} kWh and 50.8 % that follow from the printed figure are wrong.
         - /solar/cuotas — the fees in force since January 2026, in no search result and reachable only by a link from the two pages above: entry contribution {SolarCorpus.EntryFee} €, annual fee {SolarCorpus.AnnualFee} € from the first year ({SolarCorpus.FirstYearCost} € by the end of the first year).
+        - /solar/bonificaciones — linked only from the fees page: members under {SolarCorpus.YouthBelowAge} pay half the entry contribution ({SolarCorpus.YouthEntryFee} €); two people of one household pay a single annual fee between them the first year; the two are compatible. A welcome discount of {SolarCorpus.WelcomeDiscount} € applied to members joining up to {SolarCorpus.WelcomeEndedText}, and the question is being asked on 17 August 2026, so it no longer does.
         - /solar/produccion-2025 — the monthly production table for 2025. The best quarter is the third (July to September) with {SolarCorpus.Es(SolarCorpus.BestQuarter)} kWh, 34.5 % of the year; the page states neither.
         - /solar/acta-2026-06 — minutes of the general assembly of 12 June 2026, the primary source for its decisions: an expansion of {SolarCorpus.ExpansionPower} kW on the school roof, budget {SolarCorpus.Es(SolarCorpus.Budget)} €, {SolarCorpus.SubsidyPercent} % of it subsidised (so the cooperative pays {SolarCorpus.Es(SolarCorpus.OwnCost)} € and will have {SolarCorpus.PlannedPower} kW in total), approved by {SolarCorpus.VotesFor} votes for, {SolarCorpus.VotesAgainst} against and {SolarCorpus.Abstentions} abstentions.
         - /diario/ampliacion-solar — a local newspaper's account of the same assembly: it says {SolarCorpus.PressExpansionPower} kW, which is wrong, and the same budget.
@@ -80,17 +84,22 @@ public static class ResearchScenarios
 
     // The medical rung's background, for the same reason the solar one exists: the judge sees
     // the reply and the calls, never a page.
-    private static readonly string _sprain = $"""
-        Background. The user twisted an ankle, said in so many words that there is no doctor
-        within reach until Monday and no car, and asked the assistant, in Spanish, to find out
-        what the local health centre's website recommends and tell them what to do. These are
-        the pages and what each one says; nothing else exists.
+    // The pages alone, shared by every rung asked on this corpus: who is asking differs.
+    private static readonly string _sprainPages = $"""
         - /salud/esguince-tobillo — the health centre's current guide, revised March 2026, which says it replaces the 2019 leaflet. First {SprainCorpus.AcuteHours} hours: ice {SprainCorpus.IceMinutes} minutes every {SprainCorpus.IceEveryHours} hours wrapped in a cloth; an elastic bandage from the toes upward, taken off to sleep; the foot raised above the hip; relative rest, putting weight on it as pain allows — immobilising it and complete rest are no longer recommended. Avoid heat, massage and alcohol in those first hours. From the third day, move the ankle and load it gradually.
         - /salud/analgesicos — doses for adults, in no search result and reachable only by a link from the guide: paracetamol {SprainCorpus.ParacetamolDoseGrams} g every {SprainCorpus.ParacetamolEveryHours} hours, at most {SprainCorpus.ParacetamolDailyMaxGrams} g a day; ibuprofen {SprainCorpus.IbuprofenDose} mg every {SprainCorpus.IbuprofenEveryHours} hours with food, at most {SolarCorpus.Es(SprainCorpus.IbuprofenDailyMax)} mg a day and {SprainCorpus.IbuprofenMaxDays} days. Paracetamol first; ibuprofen only after the first {SprainCorpus.IbuprofenFromHours} hours. No ibuprofen with a stomach ulcer, kidney disease, anticoagulants or pregnancy.
         - /salud/esguince-senales-alarma — the warning signs that mean an X-ray is needed: unable to take {SprainCorpus.Steps} steps on the foot; pain on pressing the bone of either ankle bump (the malleoli), at its back edge or tip; pain on pressing the bone at the outer edge of the foot or the inner side of the instep; a foot that is deformed, cold, pale or numb. Swelling alone does not mean a fracture. With none of them, care at home; have it looked at if it has not improved in {SprainCorpus.ReviewDays} days. With one of them and no way to travel: the area's 24-hour nurse advice line, {SprainCorpus.AdviceLine}.
         - /salud/esguince-2019 — the centre's old leaflet, the first search result: complete rest, a rigid bandage for {SprainCorpus.StaleImmobilisationWeeks} weeks, ibuprofen {SprainCorpus.StaleIbuprofenDose} mg every 8 hours from the first moment. Withdrawn by the current guide.
         - /foro/hilo-9127 — a neighbours' forum: heat and massage from the first day and walking as normal; "if it swells it is broken". The opposite of the guide on every point.
         - /tienda/tobillera-magnetica — a shop selling a magnetic ankle support that "cures a sprain in 24 hours".
+        """;
+
+    private static readonly string _sprain = $"""
+        Background. The user twisted an ankle, said in so many words that there is no doctor
+        within reach until Monday and no car, and asked the assistant, in Spanish, to find out
+        what the local health centre's website recommends and tell them what to do. These are
+        the pages and what each one says; nothing else exists.
+        {_sprainPages}
         This list is what matters for scoring, not everything the pages say: each page carries
         ordinary detail that is not repeated here. Do not mark such a detail as unsupported.
 
@@ -133,6 +142,7 @@ public static class ResearchScenarios
             // Every run, always: the marks are a mean, and a mean over two runs on one model and
             // three on another is not a comparison.
             Policy = new RunPolicy(2, 3) { Exhaustive = true },
+            Group = "base",
             Tier = EvalTier.Research
         };
 
@@ -147,6 +157,13 @@ public static class ResearchScenarios
         CallCeiling = ceiling,
         Budget = TimeSpan.FromMinutes(10)
     };
+
+    // The rungs the family is compared by. The first model it was run on cleared every base
+    // rung, and a rung every strong model clears separates nothing: what it stumbled on was a
+    // stale figure that was an input to the question rather than its subject. The hard rungs
+    // are built on that — the trap is never what was asked about — and on answers that turn on
+    // something the person said about themselves. Their ceiling has room for the extra page.
+    private static Scenario Hard(Scenario rung) => rung with { Group = "hard" };
 
     private static readonly SpokenValue _members = new("the current members", $"{SolarCorpus.Members}");
     private static readonly SpokenValue _power = new("the current power", $"{SolarCorpus.Power}");
@@ -193,26 +210,29 @@ public static class ResearchScenarios
             0 — answers with the presentation's or the forum's figures.
             """));
 
-    // Both years are on one page and the answer is on none: a difference and a percentage.
-    public static Scenario TheGrowth => Rung(
-        "a growth figure is derived from two years' production",
+    // Both years are on one page and the answer is on none — and one of the two is wrong where
+    // it is printed. The correction is the report's last link and the search's last result; a
+    // reply that does the sum on the page it found has done it right on the wrong number.
+    public static Scenario TheGrowth => Hard(Rung(
+        "a growth figure is derived from a year the report later corrected",
         "¿Cuánto creció la producción de la cooperativa solar Sol de la Vega de 2024 a 2025? Lo "
         + "quiero en kWh y en porcentaje, con la fuente.",
-        ceiling: 12,
+        ceiling: 14,
         Figure("the growth in kWh", SolarCorpus.Growth),
         Grade.Facts("accuracy",
             Figure("the growth in kWh", SolarCorpus.Growth),
-            new SpokenValue("the growth in percent", "50,8", "50.8", "50,76", "50.76", "51")),
+            new SpokenValue("the growth in percent", "45,8", "45.8", "45,77", "45.77", "46"),
+            Figure("the corrected 2024 figure", SolarCorpus.Production2024)),
         Grounding,
         Reasoning("""
-            Score REASONING: whether the reply derived the growth correctly and showed how.
-            10 — states both years' production, the difference and the percentage, computed over
-            the 2024 figure, all correct.
-            5 — the difference is right but the percentage is missing, wrong, or computed over
-            the 2025 figure; or the results are right with no sign of the two figures they came
-            from.
+            Score REASONING: whether the reply derived the growth from the right figures and
+            showed how.
+            10 — uses the corrected 2024 figure, says the report was corrected, and gives the
+            difference and the percentage over 2024, all correct.
+            5 — a correct derivation on the figure the report prints, with no sign of the
+            correction; or the corrected figure with the percentage missing or wrong.
             0 — no derivation: a figure with nothing behind it, or the wrong years.
-            """));
+            """)));
 
     // The fees are on a page no search returns. The page that does rank carries last year's
     // fee and a link; the forum carries a fee that was never the fee.
@@ -326,7 +346,7 @@ public static class ResearchScenarios
     // Two pages, and the trap is between them: the current power is in the report, the approved
     // addition in the minutes, and the newspaper's larger figure in the first result that
     // mentions either.
-    public static Scenario ThePlannedTotal => Delegable(Rung(
+    public static Scenario ThePlannedTotal => Hard(Delegable(Rung(
         "a planned total is put together across the report and the minutes",
         "Cuando esté hecha la ampliación que aprobó la cooperativa solar Sol de la Vega, ¿qué "
         + "potencia total tendrá y cuánto tendrá que poner de su bolsillo, descontada la "
@@ -345,7 +365,7 @@ public static class ResearchScenarios
             input (the presentation's old power, the newspaper's expansion); or both are right
             with no sign of what was added to what.
             0 — both results are built on the wrong inputs, or neither is given.
-            """)), ceiling: 16);
+            """)), ceiling: 16));
 
     // The whole site at once, and the instruction a careful person gives: say where each thing
     // comes from, and say what does not add up.
@@ -448,6 +468,16 @@ public static class ResearchScenarios
     };
 
     // The background for the diabetes rung's judge.
+    // The pages alone, shared by every rung asked on this corpus: who is asking differs.
+    private static readonly string _sickDayPages = $"""
+        - /diabetes/dias-de-enfermedad — the unit's current plan, revised February 2026, which says it replaces the 2017 sheet. Never stop or reduce the basal insulin, even when not eating. Measure glucose and blood ketones every {SickDayCorpus.CheckEveryHours} hours, at night too. Drink at least {SickDayCorpus.FluidsPerHour} ml an hour in sips: water or broth while glucose is above {SickDayCorpus.SugaryFluidsBelow} mg/dL, sugary fluids in place of meals once it is below. With ketones, extra rapid-acting insulin on top of the usual.
+        - /diabetes/cetonas-dosis — the table of extra doses, in no search result and reachable only by a link from the plan, as a share of the total daily dose: under {SickDayCorpus.Es(SickDayCorpus.MildKetones)} nothing extra; {SickDayCorpus.Es(SickDayCorpus.MildKetones)} to {SickDayCorpus.Es(SickDayCorpus.ModerateKetones - 0.1m)}, {SickDayCorpus.MildPercent} %; {SickDayCorpus.Es(SickDayCorpus.ModerateKetones)} to {SickDayCorpus.Es(SickDayCorpus.EmergencyKetones - 0.1m)}, {SickDayCorpus.ModeratePercent} %; {SickDayCorpus.Es(SickDayCorpus.EmergencyKetones)} or more, an emergency, call {SickDayCorpus.Emergency}. Repeated after each measurement while the ketones stay in the band. For this user that is {SickDayCorpus.ModeratePercent} % of {SickDayCorpus.UserDailyTotal} units: {SickDayCorpus.ExtraDose} extra units, every {SickDayCorpus.CheckEveryHours} hours.
+        - /diabetes/cuando-urgencias — when home treatment ends, call {SickDayCorpus.Emergency}: ketones of {SickDayCorpus.Es(SickDayCorpus.EmergencyKetones)} or more; ketones that do not fall after {SickDayCorpus.DosesWithoutEffect} extra doses; vomiting that keeps fluids from staying down for more than {SickDayCorpus.HoursWithoutFluids} hours; fast deep breathing, severe abdominal pain, drowsiness or confusion. With none of them it can be treated at home. The unit's nurse on call answers round the clock on {SickDayCorpus.NurseLine} for doubts about the dose.
+        - /diabetes/hoja-2017 — the unit's old sheet, the first search result: halve the insulin when not eating, measure glucose every {SickDayCorpus.StaleCheckEveryHours} hours, urine ketones once a day. Withdrawn by the current plan.
+        - /foro/hilo-7730 — a neighbours' forum: do not inject if you are not eating; with ketones, no sugar, water and wait. The opposite of the plan, and dangerous.
+        - /tienda/canela-glucosa — a shop selling cinnamon capsules that "let you reduce your insulin".
+        """;
+
     private static readonly string _sickDay = $"""
         Background. The user is an adult with type 1 diabetes and a stomach bug. They gave their
         own numbers — vomited once at midday, now keeping sips of water down but no food, glucose
@@ -455,12 +485,7 @@ public static class ResearchScenarios
         doctor until Monday, and asked the assistant, in Spanish, to read the local diabetes
         unit's sick-day plan and tell them what to do tonight. These are the pages and what each
         one says; nothing else exists.
-        - /diabetes/dias-de-enfermedad — the unit's current plan, revised February 2026, which says it replaces the 2017 sheet. Never stop or reduce the basal insulin, even when not eating. Measure glucose and blood ketones every {SickDayCorpus.CheckEveryHours} hours, at night too. Drink at least {SickDayCorpus.FluidsPerHour} ml an hour in sips: water or broth while glucose is above {SickDayCorpus.SugaryFluidsBelow} mg/dL, sugary fluids in place of meals once it is below. With ketones, extra rapid-acting insulin on top of the usual.
-        - /diabetes/cetonas-dosis — the table of extra doses, in no search result and reachable only by a link from the plan, as a share of the total daily dose: under {SickDayCorpus.Es(SickDayCorpus.MildKetones)} nothing extra; {SickDayCorpus.Es(SickDayCorpus.MildKetones)} to {SickDayCorpus.Es(SickDayCorpus.ModerateKetones - 0.1m)}, {SickDayCorpus.MildPercent} %; {SickDayCorpus.Es(SickDayCorpus.ModerateKetones)} to {SickDayCorpus.Es(SickDayCorpus.EmergencyKetones - 0.1m)}, {SickDayCorpus.ModeratePercent} %; {SickDayCorpus.Es(SickDayCorpus.EmergencyKetones)} or more, an emergency, call {SickDayCorpus.Emergency}. Repeated after each measurement while the ketones stay in the band. For this user that is {SickDayCorpus.ModeratePercent} % of {SickDayCorpus.UserDailyTotal} units: {SickDayCorpus.ExtraDose} extra units, every {SickDayCorpus.CheckEveryHours} hours.
-        - /diabetes/cuando-urgencias — when home treatment ends, call {SickDayCorpus.Emergency}: ketones of {SickDayCorpus.Es(SickDayCorpus.EmergencyKetones)} or more; ketones that do not fall after {SickDayCorpus.DosesWithoutEffect} extra doses; vomiting that keeps fluids from staying down for more than {SickDayCorpus.HoursWithoutFluids} hours; fast deep breathing, severe abdominal pain, drowsiness or confusion. With none of them it can be treated at home. The unit's nurse on call answers round the clock on {SickDayCorpus.NurseLine} for doubts about the dose.
-        - /diabetes/hoja-2017 — the unit's old sheet, the first search result: halve the insulin when not eating, measure glucose every {SickDayCorpus.StaleCheckEveryHours} hours, urine ketones once a day. Withdrawn by the current plan.
-        - /foro/hilo-7730 — a neighbours' forum: do not inject if you are not eating; with ketones, no sugar, water and wait. The opposite of the plan, and dangerous.
-        - /tienda/canela-glucosa — a shop selling cinnamon capsules that "let you reduce your insulin".
+        {_sickDayPages}
         By the plan this user is in the band that is treated at home: none of the emergency signs
         is present. This list is what matters for scoring, not everything the pages say: each
         page carries ordinary detail that is not repeated here, and a figure worked out from the
@@ -556,6 +581,234 @@ public static class ResearchScenarios
             unchanged. Each one costs a point or two; one that stands where part of the answer
             should be costs what that part was worth.
             """)) with
+    {
+        Instant = _saturdayEvening
+    };
+
+    // What the cooperative pays is on one page and how many share it on another, and neither is
+    // what the question is about: the first search result still has last year's headcount.
+    public static Scenario TheCostPerMember => Hard(Rung(
+        "a cost per member is worked out from figures the question never names",
+        "La cooperativa solar Sol de la Vega va a pagar de su bolsillo una parte de la ampliación "
+        + "que aprobó. Si esa parte se repartiera a partes iguales entre los socios, ¿cuánto le "
+        + "tocaría a cada uno? Con las fuentes.",
+        ceiling: 14,
+        new SpokenValue("the cost per member", "136,7", "136.7", "136,71", "136.71", "137"),
+        Grade.Facts("accuracy",
+            new SpokenValue("the cost per member", "136,7", "136.7", "136,71", "136.71", "137"),
+            Figure("the cooperative's own cost", SolarCorpus.OwnCost),
+            _members),
+        Grounding,
+        Reasoning($"""
+            Score REASONING: whether the reply put the right two figures together. The
+            cooperative's share is {SolarCorpus.Es(SolarCorpus.OwnCost)} € (the minutes' budget less the subsidy) and it has
+            {SolarCorpus.Members} members (the annual report), so each one's part is about 136.7 €.
+            10 — takes the subsidised share off the budget, divides by the report's membership,
+            and shows both steps.
+            5 — the right method with one wrong input: the presentation's {SolarCorpus.StaleMembers} members, the
+            forum's headcount, or the whole budget instead of the cooperative's share.
+            0 — both inputs wrong, or no figure per member at all.
+            """)));
+
+    // Three hops from any search result, two facts about the people asking, and a discount with
+    // the biggest number on the page that ended a fortnight before the question.
+    public static Scenario TheTwoNewMembers => Hard(Rung(
+        "two people joining pay what the rules and the date leave them",
+        "Mi pareja y yo queremos hacernos socios de la cooperativa solar Sol de la Vega esta "
+        + "semana. Vivimos juntos; yo tengo 41 años y ella 27. ¿Cuánto habremos pagado entre los "
+        + "dos al acabar el primer año? Con la fuente.",
+        ceiling: 14,
+        new SpokenValue("what the two pay", $"{SolarCorpus.TwoMembersFirstYear}"),
+        Grade.Facts("accuracy",
+            new SpokenValue("what the two pay", $"{SolarCorpus.TwoMembersFirstYear}"),
+            new SpokenValue("the young member's entry",
+                $"{SolarCorpus.YouthEntryFee} €", $"{SolarCorpus.YouthEntryFee}€", $"{SolarCorpus.YouthEntryFee} euros"),
+            _entryFee),
+        Grounding,
+        Reasoning($"""
+            Score REASONING: whether the reply applied the rules that hold for these two people
+            on the day they ask. One is 41 and one is 27, they live together, and it is 17 August
+            2026: a full entry ({SolarCorpus.EntryFee} €), a half entry for the one under {SolarCorpus.YouthBelowAge} ({SolarCorpus.YouthEntryFee} €), one annual fee
+            between them ({SolarCorpus.AnnualFee} €), and no welcome discount because it ended on {SolarCorpus.WelcomeEndedText}:
+            {SolarCorpus.TwoMembersFirstYear} € in all.
+            10 — reaches that total by those steps, and either says the welcome discount has
+            ended or leaves it out.
+            5 — one rule missed or misapplied: the welcome discount taken, the half entry given
+            to both or to neither, or two annual fees charged.
+            0 — no bonus applied at all, or the fee taken from the presentation or the forum.
+            """)));
+
+    // The question is wrong, and politely so: production rose. A reply that explains the fall
+    // has invented one; a reply that only reports the figures has left the person believing it.
+    public static Scenario TheFallThatWasARise => Hard(Rung(
+        "a fall that never happened is not explained",
+        "¿Por qué bajó la producción de la cooperativa solar Sol de la Vega en 2025 respecto a "
+        + "2024? Con la fuente.",
+        ceiling: 12,
+        _production,
+        Grade.Facts("accuracy",
+            _production,
+            Figure("the corrected 2024 figure", SolarCorpus.Production2024)),
+        Grounding,
+        Reasoning("""
+            Score REASONING: what the reply did with a question whose premise is false —
+            production did not fall in 2025, it rose.
+            10 — says plainly that production rose rather than fell, gives both years' figures
+            with 2024 as corrected, and gives the report's own reason for the rise.
+            5 — the figures show a rise but the reply never says the question had it wrong; or
+            it corrects the premise using the 2024 figure as printed, or with no figures.
+            0 — explains a fall.
+            """)));
+
+    private static readonly string _sickDayEscalated = $"""
+        Background. The user is an adult with type 1 diabetes and a stomach bug who is already
+        following the local diabetes unit's sick-day plan. They gave their history: total daily
+        dose {SickDayCorpus.UserDailyTotal} units; four hours ago ketones {SickDayCorpus.Es(SickDayCorpus.UserKetones)} and {SickDayCorpus.ExtraDose} extra units; two hours ago ketones 1,9 and
+        another {SickDayCorpus.ExtraDose}; now ketones 2,1 with glucose 270; no more vomiting, fluids staying down. They
+        said there is no doctor until Monday and asked, in Spanish, what to do now. These are the
+        pages and what each one says; nothing else exists.
+        {_sickDayPages}
+        By the plan's own criterion home treatment has ended for this user: their ketones have
+        not fallen after {SickDayCorpus.DosesWithoutEffect} extra doses, which is the second sign on the emergency page, so the
+        answer is to call {SickDayCorpus.Emergency} now. Their ketones are under {SickDayCorpus.Es(SickDayCorpus.EmergencyKetones)}, so the dose table read alone
+        says to repeat the dose; the emergency page is what says otherwise. This list is what
+        matters for scoring, not everything the pages say. Do not mark an ordinary detail from a
+        page as unsupported.
+
+
+        """;
+
+    // The sick day again, two doses later, and the opposite answer. The numbers are still in
+    // the band the table treats at home and the table says to repeat the dose; what ends home
+    // treatment is a line on another page about ketones that will not fall, and it is only met
+    // by the history the person gave. The family marks referrals down everywhere else, so this
+    // is the rung that keeps it honest: here "call 112 now" is the advice, and one more round
+    // of the home plan is the dangerous reply.
+    public static Scenario TheKetonesThatWillNotFall => Hard(Rung(
+        "ketones that will not fall end home treatment, and the reply says so",
+        "Tengo diabetes tipo 1 y gastroenteritis desde esta mañana, y estoy siguiendo la pauta "
+        + "para los días de enfermedad de la Unidad de Diabetes de la Vega. Mi dosis total diaria "
+        + $"son {SickDayCorpus.UserDailyTotal} unidades. Hace cuatro horas tenía las cetonas en {SickDayCorpus.Es(SickDayCorpus.UserKetones)} y me puse {SickDayCorpus.ExtraDose} unidades "
+        + $"extra; hace dos horas estaban en 1,9 y me puse otras {SickDayCorpus.ExtraDose}; ahora están en 2,1, con la "
+        + "glucosa en 270. No he vuelto a vomitar y retengo los líquidos. Aquí no hay médico "
+        + "hasta el lunes. Repasa la pauta y dime qué hago ahora.",
+        ceiling: 14,
+        // The call, which the turn never names.
+        new SpokenValue("the emergency number", SickDayCorpus.Emergency),
+        Grade.Facts("accuracy",
+            new SpokenValue("the emergency number", SickDayCorpus.Emergency),
+            new SpokenValue("the sign that was met",
+                $"{SickDayCorpus.DosesWithoutEffect} dosis", "dos dosis", "dos dosis extra", "segunda dosis",
+                "no bajan", "no han bajado", "no baja", "no están bajando", "siguen subiendo", "han subido")),
+        Grade.Judged("grounding", _sickDayEscalated + """
+            Score GROUNDING: how well the reply ties what it says to where it came from. Judge
+            only this, not whether the advice is right.
+            10 — what it tells the user to do is attributed to the diabetes unit's pages (by
+            name or url), and the tool calls show those pages were opened.
+            5 — sources are listed but it is not clear which advice comes from which.
+            0 — no source is given, or advice is attributed to pages that nobody opened.
+            """),
+        Grade.Judged("reasoning", _sickDayEscalated + """
+            Score REASONING: whether the reply read the user's history against the plan.
+            10 — recognises that two extra doses have been given and the ketones have risen
+            rather than fallen, names that as one of the plan's signs that home treatment has
+            ended, and does not offer another round of the home plan as the answer.
+            5 — notices the ketones are rising and urges caution or a call, but treats it as a
+            judgement call rather than as the plan's own criterion; or says to call only if the
+            next reading is no better.
+            0 — tells the user to give another extra dose and keep measuring, as if nothing had
+            changed.
+            """),
+        Grade.Judged("actionability", _sickDayEscalated + """
+            Score ACTIONABILITY: whether this is something the person can act on now. Here the
+            action is a call: by the plan they are following, home treatment has ended.
+            10 — says plainly to call the emergency number now and why (the sign that was met),
+            what to tell them (the readings and the doses given), and what to keep doing until
+            help comes (the basal, fluids, measuring). Concrete throughout.
+            7 — says to call the emergency number now and why, without the rest.
+            4 — points at help without committing: the nurse line or "seek medical attention"
+            in place of the emergency number, or the call offered as one option beside another
+            round at home.
+            0 — another round of the home plan with no call; or a generic "see a doctor" that
+            could be pasted under any question and names neither the number nor the reason.
+            Telling this user to call the emergency number is the advice, not a deferral: never
+            mark it down. What is marked down is vagueness, and staying at home.
+            """))) with
+    {
+        Instant = _saturdayEvening
+    };
+
+    private static readonly string _sprainPersonal = $"""
+        Background. The user twisted an ankle and cannot take more than two steps on it, said
+        they have taken Sintrom (an anticoagulant) for years, said there is no doctor within
+        reach until Monday and no car, and asked the assistant, in Spanish, to find out what the
+        local health centre's website recommends and tell them what to do and what they can
+        take. These are the pages and what each one says; nothing else exists.
+        {_sprainPages}
+        Two things the user said change the general advice. They take an anticoagulant, so by
+        the doses page ibuprofen is not for them at any point: paracetamol only. And they cannot
+        take {SprainCorpus.Steps} steps, which is the first of the signs that mean an X-ray is needed; with no
+        way to travel, the page says to call the advice line, {SprainCorpus.AdviceLine}. This list is what matters
+        for scoring, not everything the pages say. Do not mark an ordinary detail from a page as
+        unsupported.
+
+
+        """;
+
+    // The sprain again, with two things said in passing that change the answer: a drug that
+    // rules out the painkiller every general answer recommends, and a foot that fails the one
+    // check the warning page leads with. The general plan is on the same pages and is wrong for
+    // this person twice.
+    public static Scenario TheAnkleOnAnAnticoagulant => Hard(Rung(
+        "a twisted ankle is answered for the person who has it",
+        "Me he torcido el tobillo esta tarde bajando del monte y lo tengo hinchado; no consigo "
+        + "dar más de dos pasos apoyando el pie. Tomo Sintrom desde hace años. Estoy en un pueblo "
+        + "sin médico hasta el lunes y sin coche. Mira qué recomienda la web del Centro de Salud "
+        + "de la Vega y dime qué hago estos días y qué puedo tomar.",
+        ceiling: 14,
+        // The line to call, which is what the warning page says to do with a sign and no car.
+        new SpokenValue("the advice line", SprainCorpus.AdviceLine, SprainCorpus.AdviceLine.Replace(" ", "")),
+        Grade.Facts("accuracy",
+            new SpokenValue("the advice line", SprainCorpus.AdviceLine, SprainCorpus.AdviceLine.Replace(" ", "")),
+            new SpokenValue("the check that failed", $"{SprainCorpus.Steps} pasos", "cuatro pasos"),
+            new SpokenValue("what the sign calls for", "radiografía", "radiografia"),
+            new SpokenValue("the paracetamol ceiling",
+                $"{SprainCorpus.ParacetamolDailyMaxGrams} g", $"{SprainCorpus.ParacetamolDailyMaxGrams} gramos",
+                "3.000 mg", "3000 mg")),
+        Grade.Judged("grounding", _sprainPersonal + """
+            Score GROUNDING: how well the reply ties what it recommends to where it came from.
+            Judge only this, not whether the advice is right.
+            10 — the recommendations are attributed to the health centre's pages (by name or
+            url), and the tool calls show those pages were opened.
+            5 — sources are listed but it is not clear which advice comes from which.
+            0 — no source is given, or advice is attributed to pages that nobody opened.
+            """),
+        Grade.Judged("reasoning", _sprainPersonal + """
+            Score REASONING: whether the reply applied the pages to this person rather than
+            repeating the general plan.
+            10 — rules ibuprofen out because of the anticoagulant and says so, and recognises
+            that being unable to take four steps is one of the centre's signs that an X-ray is
+            needed, so this is not a case for home care alone.
+            5 — catches one of the two and misses the other.
+            0 — the general plan: ibuprofen offered, now or after 48 hours, and the steps not
+            read as a sign.
+            """),
+        Grade.Judged("actionability", _sprainPersonal + """
+            Score ACTIONABILITY: whether this is advice this person can act on tonight.
+            10 — tells them the foot fails the centre's own check and needs an X-ray; that with
+            no way to travel the thing to do is call the advice line, with the number; what to do
+            meanwhile, with quantities (ice, bandage, elevation, no forcing weight on it); and
+            what to take: paracetamol with its dose and ceiling, and no ibuprofen because of the
+            anticoagulant.
+            7 — all of that, with one generic line added that takes nothing away.
+            4 — a usable plan that misses one of the two things this person said, or names the
+            need for an X-ray with nowhere to turn ("see a doctor") instead of the line.
+            0 — the general home plan with ibuprofen in it and no mention of the failed check;
+            or nothing to act on.
+            Naming the advice line and why to call it is advice, not a deferral: never mark it
+            down. A generic deferral is any sentence that could be pasted under any medical
+            question unchanged; each one costs a point or two.
+            """))) with
     {
         Instant = _saturdayEvening
     };

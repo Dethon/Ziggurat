@@ -227,7 +227,7 @@ public class WebScenarioTests2(EvalScorecard scorecard) : IClassFixture<EvalScor
 [Trait("Tier", "Research")]
 public class ResearchScenarioTests(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
 {
-    public static TheoryData<string> Scenarios => EvalSuite.Named(ResearchScenarios.All, 0, of: 2);
+    public static TheoryData<string> Scenarios => EvalSuite.Named(ResearchScenarios.All, 0, of: 3);
 
     [SkippableTheory]
     [MemberData(nameof(Scenarios))]
@@ -239,7 +239,19 @@ public class ResearchScenarioTests(EvalScorecard scorecard) : IClassFixture<Eval
 [Trait("Tier", "Research")]
 public class ResearchScenarioTests2(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
 {
-    public static TheoryData<string> Scenarios => EvalSuite.Named(ResearchScenarios.All, 1, of: 2);
+    public static TheoryData<string> Scenarios => EvalSuite.Named(ResearchScenarios.All, 1, of: 3);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task ARung_OverEveryRunItDeclares_IsMarked(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Research, scenario => scenario.Policy, scorecard);
+}
+
+[Trait("Category", "Eval")]
+[Trait("Tier", "Research")]
+public class ResearchScenarioTests3(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(ResearchScenarios.All, 2, of: 3);
 
     [SkippableTheory]
     [MemberData(nameof(Scenarios))]

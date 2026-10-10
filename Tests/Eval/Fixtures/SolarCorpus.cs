@@ -26,7 +26,10 @@ public static class SolarCorpus
     // What the 2025 annual report says: the figures that are current.
     public const int Members = 237;
     public const int Power = 142;
-    public const int Production2024 = 131_600;
+    // The year before, twice: as the report prints it, and as a later correction puts it. The
+    // report still shows the first; everything derived from 2024 follows the second.
+    public const int Production2024AsPrinted = 131_600;
+    public const int Production2024 = 136_100;
     public const int Production2025 = 198_400;
     public const int Growth = Production2025 - Production2024;
 
@@ -40,6 +43,16 @@ public static class SolarCorpus
     public const int EntryFee = 120;
     public const int AnnualFee = 18;
     public const int FirstYearCost = EntryFee + AnnualFee;
+
+    // The bonuses page, two links from any search result. A member under thirty pays half the
+    // entry, a household pays one annual fee the first year, and the welcome discount ended
+    // before the day the family is asked on.
+    public const int YouthBelowAge = 30;
+    public const int YouthEntryFee = EntryFee / 2;
+    public const int WelcomeDiscount = 30;
+    public static readonly DateOnly WelcomeEnded = new(2026, 7, 31);
+    public const string WelcomeEndedText = "31 de julio de 2026";
+    public const int TwoMembersFirstYear = EntryFee + YouthEntryFee + AnnualFee;
 
     // What the assembly approved, by its own minutes — and what the newspaper printed instead.
     public const int ExpansionPower = 60;
@@ -75,6 +88,8 @@ public static class SolarCorpus
         app.MapGet("/solar", () => EvalWeb.Html(Presentation()));
         app.MapGet("/solar/memoria-2025", () => EvalWeb.Html(Report()));
         app.MapGet("/solar/cuotas", () => EvalWeb.Html(Fees()));
+        app.MapGet("/solar/bonificaciones", () => EvalWeb.Html(Bonuses()));
+        app.MapGet("/solar/fe-de-erratas", () => EvalWeb.Html(Erratum()));
         app.MapGet("/solar/produccion-2025", () => EvalWeb.Html(Production()));
         app.MapGet("/solar/acta-2026-06", () => EvalWeb.Html(Minutes()));
         app.MapGet("/diario/ampliacion-solar", () => EvalWeb.Html(Press()));
@@ -112,7 +127,13 @@ public static class SolarCorpus
         new(["producci", "mensual", "trimestr", "kwh", "generad", "vega"],
             "Producción mensual 2025 — Sol de la Vega",
             $"{baseUrl}/solar/produccion-2025",
-            "La energía generada por la cooperativa mes a mes durante 2025.")
+            "La energía generada por la cooperativa mes a mes durante 2025."),
+        // Last, and with nothing in its snippet: the correction is found by a reader who
+        // follows the report's last link or asks whether the report was ever corrected.
+        new(["erratas", "correcci", "rectifica"],
+            "Fe de erratas de la memoria anual 2025 — Sol de la Vega",
+            $"{baseUrl}/solar/fe-de-erratas",
+            "Corrección publicada a la memoria anual 2025.")
     ];
 
     private static string Presentation() =>
@@ -138,13 +159,14 @@ public static class SolarCorpus
             del mercado municipal.</p>
             <h2>Producción</h2>
             <p>En 2025 la cooperativa generó {Es(Production2025)} kWh, frente a los
-            {Es(Production2024)} kWh de 2024, el primer año completo con la cubierta del mercado en
+            {Es(Production2024AsPrinted)} kWh de 2024, el primer año completo con la cubierta del mercado en
             servicio.</p>
             <h2>Más información</h2>
             <ul>
               <li><a href="/solar/produccion-2025">Producción mes a mes en 2025</a></li>
               <li><a href="/solar/cuotas">Cuotas y cómo asociarse</a></li>
               <li><a href="/solar/acta-2026-06">Última acta de la asamblea general</a></li>
+              <li><a href="/solar/fe-de-erratas">Fe de erratas (abril de 2026)</a></li>
             </ul>
             """);
 
@@ -157,6 +179,35 @@ public static class SolarCorpus
               <li>Cuota anual de mantenimiento: {AnnualFee} €, que se paga desde el primer año.</li>
             </ul>
             <p>Hasta 2025 la aportación inicial era de {StaleEntryFee} € y no había cuota anual.</p>
+            <p>Consulte también las <a href="/solar/bonificaciones">bonificaciones y campañas</a>.</p>
+            """);
+
+    // Three rules, and the one with the biggest number on it is over: whether it applies is a
+    // matter of the date the question is asked on, which no page knows.
+    private static string Bonuses() =>
+        EvalWeb.Page("Bonificaciones y campañas — Sol de la Vega", $"""
+            <h1>Bonificaciones y campañas</h1>
+            <ul>
+              <li><strong>Bonificación joven</strong>: los menores de {YouthBelowAge} años pagan
+              la mitad de la aportación inicial.</li>
+              <li><strong>Bonificación de hogar</strong>: cuando se asocian dos personas del
+              mismo hogar, el primer año se paga una sola cuota anual entre las dos.</li>
+              <li><strong>Campaña de bienvenida</strong>: {WelcomeDiscount} € de descuento en la
+              aportación inicial para las altas formalizadas hasta el {WelcomeEndedText}.</li>
+            </ul>
+            <p>Las bonificaciones joven y de hogar son compatibles entre sí.</p>
+            """);
+
+    // The report is not edited: it goes on printing the first figure, and this is the only
+    // place the second one is.
+    private static string Erratum() =>
+        EvalWeb.Page("Fe de erratas de la memoria anual 2025 — Sol de la Vega", $"""
+            <h1>Fe de erratas de la memoria anual 2025</h1>
+            <p><em>Publicada en abril de 2026 por la junta rectora.</em></p>
+            <p>En la memoria anual 2025 la producción de 2024 figura como
+            {Es(Production2024AsPrinted)} kWh. La cifra correcta es {Es(Production2024)} kWh: la
+            suma publicada omitía una lectura del contador del polideportivo. Las demás cifras de
+            la memoria no cambian.</p>
             """);
 
     private static string Production()

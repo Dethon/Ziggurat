@@ -20,7 +20,7 @@ public class ResearchScenariosTests
     [Fact]
     public void TheDiabetesRung_IsMarkedOnAdvice_AndCountsAnUncalledForHospitalAsAReferral()
     {
-        var rung = ResearchScenarios.All.Single(scenario => scenario.Name.Contains("diabetes"));
+        var rung = ResearchScenarios.TheSickDay;
 
         rung.Turn.Text.ShouldContain("hasta el lunes");
         // The person's own numbers are in the turn: the dose is theirs to be worked out, and
@@ -40,7 +40,7 @@ public class ResearchScenariosTests
     [Fact]
     public void TheMedicalRung_IsMarkedOnWhetherItsAdviceCanBeActedOn()
     {
-        var rung = ResearchScenarios.All.Single(scenario => scenario.Name.Contains("sprain"));
+        var rung = ResearchScenarios.TheSprain;
 
         // The turn says a doctor is out of reach, in so many words: what is being marked is an
         // answer to a person who already knows they should see one.
@@ -50,6 +50,16 @@ public class ResearchScenariosTests
         // A warning sign with what to do about it is the opposite of a deferral, and the rubric
         // has to say so or the judge marks down the best part of a good answer.
         actionable.Rubric.ShouldContain("is not a deferral");
+    }
+
+    // The first model the family was run on cleared every rung but one, and a family every
+    // strong model clears compares nothing. The hard rungs are what is left to compare by, so
+    // they are a group with a score of their own, and there have to be enough of them to be one.
+    [Fact]
+    public void EveryRung_IsBaseOrHard_AndTheHardOnesAreEnoughToBeAScore()
+    {
+        ResearchScenarios.All.ShouldAllBe(scenario => scenario.Group == "base" || scenario.Group == "hard");
+        ResearchScenarios.All.Count(scenario => scenario.Group == "hard").ShouldBeGreaterThanOrEqualTo(6);
     }
 
     [Fact]

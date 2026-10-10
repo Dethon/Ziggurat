@@ -113,6 +113,10 @@ public sealed record Scenario
     // number two models can be compared along. Nothing here fails a run.
     public IReadOnlyList<Grade> Graded { get; init; } = [];
 
+    // Which part of a graded family this scenario belongs to, where the family has parts: the
+    // scorecard gives each group a score of its own beside the pass's. Null everywhere else.
+    public string? Group { get; init; }
+
     // Who answers a delegation. Canned everywhere a scenario's subject is the parent's decision
     // to delegate — a real worker puts a second answer between that decision and its assertion,
     // and costs a run to do it. The other two are for a scenario whose subject is the answer

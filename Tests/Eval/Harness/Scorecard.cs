@@ -112,6 +112,14 @@ public static class Scorecard
     {
         outcomes = [.. outcomes];
 
+        foreach (var grouped in outcomes.Where(outcome => outcome.Group is not null))
+        {
+            if (rows[grouped.Name] is JsonObject row)
+            {
+                row["group"] = grouped.Group;
+            }
+        }
+
         // Which route the runs took, where there were two. A zero is written: it is what says
         // the scenario's score is the in-place route's alone.
         foreach (var route in outcomes
@@ -169,6 +177,36 @@ public static class Scorecard
     // dimension across the scenarios that have it: a scenario that took more runs, or was marked
     // on more dimensions, must not outvote the rest.
     private static JsonObject? Graded(IEnumerable<ScenarioOutcome> outcomes)
+    {
+        var all = outcomes.ToList();
+        var graded = Scored(all);
+        if (graded is null)
+        {
+            return null;
+        }
+
+        // Once more per group, where the scenarios say which they are in: a mean over rungs
+        // every strong model clears and rungs few do is held up by the first kind.
+        var groups = all
+            .Where(outcome => outcome.Group is not null)
+            .GroupBy(outcome => outcome.Group!, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .Select(group => (group.Key, Score: Scored(group)))
+            .Where(group => group.Score is not null)
+            .ToList();
+        if (groups.Count > 0)
+        {
+            graded["byGroup"] = groups.Aggregate(new JsonObject(), (node, group) =>
+            {
+                node[group.Key] = group.Score;
+                return node;
+            });
+        }
+
+        return graded;
+    }
+
+    private static JsonObject? Scored(IEnumerable<ScenarioOutcome> outcomes)
     {
         var scenarios = ByDimension(outcomes).ToList();
         if (scenarios.Count == 0)
@@ -431,6 +469,10 @@ public sealed record ScenarioOutcome(
 
     // Every mark of every run the scenario took, in run order.
     public IReadOnlyList<GradeMark> Grades { get; init; } = [];
+
+    // The scenario's group within a graded family, where the family has any: its score is
+    // reported once per group as well as once for the pass.
+    public string? Group { get; init; }
 
     // How many of the runs handed work to a worker, for a scenario whose workers really run.
     // Null everywhere else: a canned delegation is a contract the checks already hold, and a

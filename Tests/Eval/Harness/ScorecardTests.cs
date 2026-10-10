@@ -361,6 +361,28 @@ public class ScorecardTests : IDisposable
         scenarios.GetProperty("a timer").TryGetProperty("delegatedRuns", out _).ShouldBeFalse();
     }
 
+    // A family that mixes rungs every strong model clears with rungs few do has one mean that
+    // says little: the easy ones hold it up and the spread between two models is whatever the
+    // hard ones leave of it. The score once per group is what a comparison reads.
+    [Fact]
+    public void GradedScenariosInGroups_AreScoredOncePerGroup()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)],
+        [
+            new ScenarioOutcome("an easy one", 3, 3) { Group = "base", Grades = [new GradeMark("accuracy", 10)] },
+            new ScenarioOutcome("another easy one", 3, 3) { Group = "base", Grades = [new GradeMark("accuracy", 9)] },
+            new ScenarioOutcome("a hard one", 1, 3) { Group = "hard", Grades = [new GradeMark("accuracy", 4)] }
+        ]);
+
+        var card = Read(Path.Combine(_output, "scorecard-full.json"));
+        var groups = card.GetProperty("summary").GetProperty("grades").GetProperty("byGroup");
+
+        groups.GetProperty("base").GetProperty("score").GetDouble().ShouldBe(9.5, 0.001);
+        groups.GetProperty("base").GetProperty("scenarios").GetInt32().ShouldBe(2);
+        groups.GetProperty("hard").GetProperty("score").GetDouble().ShouldBe(4, 0.001);
+        card.GetProperty("scenarios").GetProperty("a hard one").GetProperty("group").GetString().ShouldBe("hard");
+    }
+
     [Fact]
     public void APassWithNothingGraded_CarriesNoGrades()
     {
