@@ -62,7 +62,6 @@ public sealed class DeploymentSecretDialTests : IAsyncLifetime
         {
             Id = "worker",
             Name = "Worker",
-            Model = "test-model",
             McpServerEndpoints = [_server.Endpoint]
         });
         var session = await worker.CreateSessionAsync();

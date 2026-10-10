@@ -102,11 +102,10 @@ public sealed class SubAgentConversationContextWiringTests : IDisposable
                 {
                     Id = "worker",
                     Name = "Worker",
-                    Model = "test-model",
                     McpServerEndpoints = []
                 },
                 approvalHandler,
-                new SpawnContext("conv-1", "fran", [], UsesOutposts: false));
+                new SpawnContext("conv-1", "fran", [], UsesOutposts: false, "test-model"));
         }
         else
         {

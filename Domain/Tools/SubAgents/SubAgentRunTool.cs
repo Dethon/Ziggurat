@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Microsoft.Extensions.AI;
 
@@ -71,7 +72,17 @@ public class SubAgentRunTool(
             // file_search issued by the parent and a file_download issued by the subagent it
             // spawned have to resolve to the same scope. A subagent acts on the parent's
             // behalf, which makes parent attribution the correct one, not a shortcut.
-            userMessage.SetConversationContext(featureConfig.ConversationContextProvider?.Invoke());
+            var context = featureConfig.ConversationContextProvider?.Invoke();
+            userMessage.SetConversationContext(context);
+            // A worker runs its parent's model, and on a turn the person moved to another one
+            // that is the model the turn asked for. The worker's request is new and carries no
+            // patch, so the turn's is written onto it; the worker resolves it against the same
+            // whitelist its parent did.
+            if (context?.ConfigPatchModel is { } turnModel)
+            {
+                userMessage.SetConfigPatch(new AgentConfigPatch { Model = turnModel });
+            }
+
             var response = await agent.RunAsync(
                 [userMessage], cancellationToken: timeoutCts.Token);
 

@@ -17,7 +17,6 @@ public class SubAgentRunToolTests
         Id = "summarizer",
         Name = "Summarizer",
         Description = "Summarizes content",
-        Model = "test-model",
         McpServerEndpoints = []
     };
 
@@ -131,6 +130,37 @@ public class SubAgentRunToolTests
         stubAgent.LastMessages.ShouldNotBeNull();
         var userMessage = stubAgent.LastMessages.Single(m => m.Role == ChatRole.User);
         userMessage.GetConversationContext().ShouldBe(parentContext);
+    }
+
+    [Fact]
+    public async Task RunAsync_ATurnMovedToAnotherModel_AsksTheWorkerForThatModel()
+    {
+        // A worker runs its parent's model, and on a turn the person moved elsewhere the parent's
+        // model is the one the turn asked for. The worker's request carries no patch of its own,
+        // so the tool writes the turn's onto it and the worker resolves it as the parent did.
+        var parentContext = new ConversationContext(
+            "jack", "conv-7", "fran", new ReplyTarget("signalr", "conv-7"), ConfigPatchModel: "model-b");
+        var stubAgent = new StubDisposableAgent("Summary result");
+        var config = CreateConfig(factory: _ => stubAgent, conversationContextProvider: () => parentContext);
+
+        await CreateTool(config, _testProfile).RunAsync("summarizer", "summarize this");
+
+        stubAgent.LastMessages.ShouldNotBeNull()
+            .Single(m => m.Role == ChatRole.User).GetConfigPatch().ShouldNotBeNull().Model.ShouldBe("model-b");
+    }
+
+    [Fact]
+    public async Task RunAsync_ATurnOnTheConfiguredModel_HandsTheWorkerNoPatch()
+    {
+        var parentContext = new ConversationContext(
+            "jack", "conv-7", "fran", new ReplyTarget("signalr", "conv-7"));
+        var stubAgent = new StubDisposableAgent("Summary result");
+        var config = CreateConfig(factory: _ => stubAgent, conversationContextProvider: () => parentContext);
+
+        await CreateTool(config, _testProfile).RunAsync("summarizer", "summarize this");
+
+        stubAgent.LastMessages.ShouldNotBeNull()
+            .Single(m => m.Role == ChatRole.User).GetConfigPatch().ShouldBeNull();
     }
 
     [Fact]

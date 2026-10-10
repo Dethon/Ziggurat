@@ -212,12 +212,13 @@ public class OutpostMountingTests(OutpostMachinesFixture machines, McpVaultServe
             {
                 Id = "worker",
                 Name = "Worker",
-                Model = "test-model",
                 McpServerEndpoints = [vault.McpEndpoint],
                 UsesOutposts = ownDefinitionUsesOutposts
             },
-            new SpawnContext("conv-1", "test-user", [], parentUsesOutposts),
+            new SpawnContext("conv-1", "test-user", [], parentUsesOutposts, "test-model"),
             new OpenRouterConfig { ApiUrl = "http://test", ApiKey = "test-key" },
+            FixedPatchableModelSource.None,
+            lemonadeHostAddress: null,
             mcpSecret: McpTestSecret.Value,
             logger: null);
 

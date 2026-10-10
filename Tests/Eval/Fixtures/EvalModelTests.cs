@@ -19,12 +19,13 @@ public class EvalModelTests
     }
 
     [Fact]
-    public void Apply_AModel_ReachesEveryAgentAndSubagent()
+    // Every agent is every model there is to set: a worker runs its parent's, so an override
+    // reaches it through whichever agent spawns it and the two can never be on different ones.
+    public void Apply_AModel_ReachesEveryAgent()
     {
         var applied = EvalModel.Apply(Shipped(), model: "openai/gpt-5.6-luna", provider: null);
 
         applied.Agents.Select(a => a.Model).ShouldAllBe(m => m == "openai/gpt-5.6-luna");
-        applied.SubAgents.Select(s => s.Model).ShouldAllBe(m => m == "openai/gpt-5.6-luna");
     }
 
     [Fact]
@@ -43,17 +44,15 @@ public class EvalModelTests
         nabu.Ignore.ShouldBe(["azure"]);
 
         applied.Agents.Single(a => a.Id == "jack").ProviderRouting.ShouldBeNull();
-        applied.SubAgents.Single().ProviderRouting.ShouldNotBeNull().Only.ShouldBeNull();
     }
 
     [Fact]
-    public void Apply_AProvider_PinsEveryAgentAndSubagentToIt()
+    public void Apply_AProvider_PinsEveryAgentToIt()
     {
         var applied = EvalModel.Apply(Shipped(), model: "openai/gpt-5.6-luna", provider: "openai");
 
         applied.Agents.Select(a => a.ProviderRouting?.Only)
             .ShouldAllBe(only => only != null && only.SequenceEqual(new[] { "openai" }));
-        applied.SubAgents.Single().ProviderRouting.ShouldNotBeNull().Only.ShouldBe(["openai"]);
         applied.Agents.Single(a => a.Id == "nabu").ProviderRouting!.Sort.ShouldBe(ProviderSort.Latency);
     }
 
@@ -94,9 +93,8 @@ public class EvalModelTests
         [
             new SubAgentDefinition
             {
-                Id = "jonas-worker", Name = "Jonas Worker", Model = "z-ai/glm-5.3-flash",
-                McpServerEndpoints = [],
-                ProviderRouting = new ProviderRouting { Only = ["z-ai"], Sort = ProviderSort.Throughput }
+                Id = "jonas-worker", Name = "Jonas Worker",
+                McpServerEndpoints = []
             }
         ]
     };

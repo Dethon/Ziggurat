@@ -41,7 +41,7 @@ public class ExecScreenRequestSourceTests
         var tool = new SubAgentRunTool(
             new SubAgentRegistryOptions
             {
-                SubAgents = [new SubAgentDefinition { Id = "worker", Name = "Worker", Model = "m", McpServerEndpoints = [] }]
+                SubAgents = [new SubAgentDefinition { Id = "worker", Name = "Worker", McpServerEndpoints = [] }]
             },
             new FeatureConfig(SubAgentFactory: _ => worker, UserId: "fran", ConversationContextProvider: () => parent));
 

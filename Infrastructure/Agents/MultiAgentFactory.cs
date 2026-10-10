@@ -50,6 +50,8 @@ public sealed class MultiAgentFactory(
     private readonly IPatchableModelSource _patchableModels = new PatchableModelWhitelist(
         openRouterConfig.PatchableModelIds ?? [], LemonadeModelsOf(serviceProvider));
 
+    private string? LemonadeHostAddress => _lemonadeHost is { IsConfigured: true } host ? host.Address : null;
+
     private static ILemonadeModelSource LemonadeModelsOf(IServiceProvider? serviceProvider) =>
         serviceProvider?.GetService<ILemonadeModelSource>() ?? FixedLemonadeModelSource.None;
 
@@ -78,7 +80,8 @@ public sealed class MultiAgentFactory(
         IToolApprovalHandler approvalHandler,
         SpawnContext spawn)
     {
-        var spec = AgentSpecProjection.ForSubAgent(definition, spawn, openRouterConfig, _mcpSecret, _logger);
+        var spec = AgentSpecProjection.ForSubAgent(
+            definition, spawn, openRouterConfig, _patchableModels, LemonadeHostAddress, _mcpSecret, _logger);
 
         return Build(spec, approvalHandler);
     }
@@ -90,7 +93,7 @@ public sealed class MultiAgentFactory(
         var deployment = new DeploymentEndpoints(definitionProvider.GetAll().SelectMany(a => a.McpServerEndpoints));
         var spec = AgentSpecProjection.ForAgent(
             definition, agentKey, userId, openRouterConfig, _patchableModels,
-            _lemonadeHost is { IsConfigured: true } host ? host.Address : null, _mcpSecret, deployment, _logger);
+            LemonadeHostAddress, _mcpSecret, deployment, _logger);
 
         return Build(spec, approvalHandler);
     }
@@ -111,7 +114,8 @@ public sealed class MultiAgentFactory(
         // Composed from the spec this build is already running against, so the parent's values
         // reach the projection with no second source of truth for any of them.
         var spawn = new SpawnContext(
-            spec.ConversationId, spec.UserId, spec.WhitelistPatterns, spec.UsesOutposts);
+            spec.ConversationId, spec.UserId, spec.WhitelistPatterns, spec.UsesOutposts,
+            spec.Model, spec.ProviderRouting);
 
         // The spawner is absent in every deployment, so the factory builds its own workers; when
         // one is registered it stands in for them whole, which is the only way a scenario about
