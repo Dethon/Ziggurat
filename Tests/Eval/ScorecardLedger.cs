@@ -45,6 +45,7 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
                 scenario.Name, result.Passes, result.Attempts, result.SkillNotLoaded, result.RuleIgnored,
                 result.Spend)
             {
+                Agent = scenario.AgentId,
                 Kinds = result.Kinds,
                 Loaders = result.Loaders,
                 PreloadOutcomes = result.PreloadOutcomes,
@@ -103,7 +104,7 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
                 // Scenarios the same way as claims: one that did not run appears at a null rate
                 // rather than being absent, so a filtered pass is legible as a filtered pass.
                 var scenarios = Suite
-                    .Select(scenario => new ScenarioOutcome(scenario.Name, 0, 0))
+                    .Select(scenario => new ScenarioOutcome(scenario.Name, 0, 0) { Agent = scenario.AgentId })
                     .Concat(state.Scenarios)
                     .ToList();
 

@@ -21,6 +21,29 @@ public class ArgumentMatcherTests
         byRoom.Matches(Args("""{"content":"{\"target\":{\"satelliteId\":\"kitchen-01\"}}"}""")).ShouldBeTrue();
     }
 
+    // A file body handed over as structured JSON is written as its JSON text — the create tool
+    // says so in its result — so a question about the body is asked of that text. glm-5.3-flash on
+    // CoreWeave wrote every watch this way on 2026-10-10: the watches were created and correct,
+    // and 29 runs were failed for a `content` that was not a string.
+    [Fact]
+    public void ABodyHandedOverAsStructuredJson_IsMatchedAsTheTextThatGetsWritten()
+    {
+        var announces = Arg.Matches("content", "\"kind\"\\s*:\\s*\"announce\"");
+
+        announces.Matches(Args("""{"content":{"effects":[{"kind":"announce"}]}}""")).ShouldBeTrue();
+        announces.Matches(Args("""{"content":"{\"effects\":[{\"kind\": \"announce\"}]}"}""")).ShouldBeTrue();
+        announces.Matches(Args("""{"content":{"effects":[{"kind":"prompt"}]}}""")).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ABodyHandedOverAsStructuredJson_CannotHideWhatItMustLack()
+    {
+        var namesNoTelegram = Arg.Lacks("content", "telegram");
+
+        namesNoTelegram.Matches(Args("""{"content":{"deliverTo":"telegram"}}""")).ShouldBeFalse();
+        namesNoTelegram.Matches(Args("""{"content":{"deliverTo":"voice"}}""")).ShouldBeTrue();
+    }
+
     [Fact]
     public void ATargetThatIsNeitherSpelling_FailsTheExpectation()
     {

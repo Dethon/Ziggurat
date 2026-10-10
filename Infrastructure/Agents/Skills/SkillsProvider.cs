@@ -4,6 +4,7 @@ using Domain.Extensions;
 using Domain.Judgments;
 using Domain.Prompts;
 using Domain.Skills;
+using Domain.Tools;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
@@ -110,7 +111,9 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     // the caller handed in — over the session's skills minus those the history already holds,
     // and what it is sure of is returned as the pair a load leaves, after the user message so
     // the cached prefix is untouched. The history provider persists it with the turn, so the
-    // next turn's already-loaded check finds it. The preloader bounds its own deadline, so
+    // next turn's already-loaded check finds it. The pair is the thread's record: the chat
+    // client sends a note in its place (`SkillPreloadNote`), so no model is shown a call it did
+    // not make. The preloader bounds its own deadline, so
     // awaiting it here waits no longer than what is left of it; nothing it answers late is
     // applied, because the turn has moved on. The judge's own failures never reach here as
     // throws — every one is an absence — so this is a head start and never a way to lose a turn.
@@ -154,7 +157,7 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
 
         // One prefix per turn, so two skills' call ids differ from a later turn's.
         return preload.Skills.Count > 0
-            ? SkillLoadTool.AsPreloaded(preload, $"preload-{Guid.NewGuid().ToString("N")[..8]}")
+            ? SkillLoadTool.AsPreloaded(preload, $"{SkillLoadTool.HostCallMark}{Guid.NewGuid().ToString("N")[..8]}")
             : null;
     }
 #pragma warning restore MAAI001
@@ -162,7 +165,16 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     // The framework's load, invoked as the framework wrote it, behind a face of our own.
     private sealed class LoadSkillFunction(AIFunction inner, IReadOnlyList<string> names) : DelegatingAIFunction(inner)
     {
+        // A load reads prose this repo ships and changes nothing a sibling call could see, so it
+        // runs beside whatever else the message asked for.
+        private static readonly FootprintDeclaration _footprint = FootprintDeclaration.Always(CallFootprint.Nothing);
+
         public override string Description => LoadToolDescription;
+
+        public override object? GetService(Type serviceType, object? serviceKey = null) =>
+            serviceKey is null && serviceType == typeof(FootprintDeclaration)
+                ? _footprint
+                : base.GetService(serviceType, serviceKey);
 
         public override JsonElement JsonSchema { get; } = SchemaOver(names);
 

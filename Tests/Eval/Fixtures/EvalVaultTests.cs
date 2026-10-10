@@ -19,6 +19,7 @@ public class EvalVaultTests
     [InlineData(289)] // words with hyphenated compounds as one, frontmatter included
     [InlineData(271)] // \w+ over the bodies
     [InlineData(268)] // words with hyphenated compounds as one, over the bodies
+    [InlineData(323)] // cat *.md | wc -w: a note with no final newline runs into the next one
     public void ACountUnderAnyDefinitionAScriptUses_IsTheFoldersWordCount(int count) =>
         Answering($"Las 9 notas de la carpeta Cocina suman {count} palabras en total.").ShouldBeEmpty();
 

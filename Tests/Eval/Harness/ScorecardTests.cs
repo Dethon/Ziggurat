@@ -254,6 +254,57 @@ public class ScorecardTests : IDisposable
         scenarios.GetProperty("rate").GetDouble().ShouldBe(2d / 3, 0.001);
     }
 
+    // A model is picked per agent, and a voice agent's scenarios ask for different things than a
+    // text agent's: one rate over both hides which of them a model suits. Haiku 5.5 on 2026-10-10
+    // read 94.9% overall, and only a hand-written split showed voice and text apart.
+    [Fact]
+    public void TheSummary_RatesEachAgentsScenariosOnTheirOwn()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)],
+        [
+            new ScenarioOutcome("a spoken timer", 2, 3, Spend: Spend.Of("m", new ModelSpend(0.3m, 1_000, null, 10, 3)))
+            {
+                Agent = "nabu"
+            },
+            new ScenarioOutcome("a spoken search", 4, 4) { Agent = "nabu" },
+            new ScenarioOutcome("a written note", 0, 0) { Agent = "jonas" },
+            new ScenarioOutcome("a written note", 1, 3) { Agent = "jonas" },
+            new ScenarioOutcome("a note nothing ran", 0, 0) { Agent = "jonas" }
+        ]);
+
+        var card = Read(Path.Combine(_output, "scorecard-full.json"));
+        var byAgent = card.GetProperty("summary").GetProperty("byAgent");
+
+        var nabu = byAgent.GetProperty("nabu");
+        nabu.GetProperty("declared").GetInt32().ShouldBe(2);
+        nabu.GetProperty("exercised").GetInt32().ShouldBe(2);
+        nabu.GetProperty("passes").GetInt32().ShouldBe(6);
+        nabu.GetProperty("runs").GetInt32().ShouldBe(7);
+        nabu.GetProperty("rate").GetDouble().ShouldBe(6d / 7, 0.001);
+        nabu.GetProperty("spend").GetProperty("cost").GetDecimal().ShouldBe(0.3m);
+
+        var jonas = byAgent.GetProperty("jonas");
+        jonas.GetProperty("declared").GetInt32().ShouldBe(2);
+        jonas.GetProperty("exercised").GetInt32().ShouldBe(1);
+        jonas.GetProperty("passes").GetInt32().ShouldBe(1);
+        jonas.GetProperty("runs").GetInt32().ShouldBe(3);
+        jonas.GetProperty("rate").GetDouble().ShouldBe(1d / 3, 0.001);
+
+        card.GetProperty("scenarios").GetProperty("a spoken timer").GetProperty("agent").GetString().ShouldBe("nabu");
+    }
+
+    [Fact]
+    public void AScenarioThatNamesNoAgent_IsInNoAgentsRate()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)],
+            [new ScenarioOutcome("a harness row", 1, 1)]);
+
+        var card = Read(Path.Combine(_output, "scorecard-full.json"));
+
+        card.GetProperty("summary").GetProperty("byAgent").EnumerateObject().ShouldBeEmpty();
+        card.GetProperty("scenarios").GetProperty("a harness row").TryGetProperty("agent", out _).ShouldBeFalse();
+    }
+
     [Fact]
     public void ARunWhereNothingRan_SummarisesAtANullRate()
     {

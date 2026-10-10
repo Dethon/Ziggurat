@@ -27,6 +27,40 @@ public class OpenRouterHttpHelpersTests
         obj["usage"]!["include"]!.GetValue<bool>().ShouldBeTrue();
     }
 
+    // Anthropic's models cache nothing unless the request asks: with no directive, haiku-5.5 read
+    // 0 of 18.5M input tokens from cache over a whole eval pass (2026-10-10), and with the one
+    // top-level field the second request of a conversation read 12,225 of 12,278 on Anthropic,
+    // Vertex and Bedrock alike. Per-block directives are not exposed on the Responses wire.
+    [Theory]
+    [InlineData("anthropic/claude-haiku-5.5")]
+    [InlineData("~anthropic/claude-haiku-latest")]
+    public async Task PrepareRequestBody_AnAnthropicModel_IsAskedToCache(string model)
+    {
+        var request = CreateRequest($"{{\"model\":\"{model}\",\"input\":[]}}");
+
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, "s", null, CancellationToken.None);
+
+        var obj = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject();
+        obj["cache_control"]!["type"]!.GetValue<string>().ShouldBe("ephemeral");
+        obj["cache_control"]!.AsObject().Count.ShouldBe(1);
+    }
+
+    // Every other model caches by itself, and the directive is not theirs: sent to GLM and
+    // Mistral it left the second request uncached in 5 of 9 probes against 1 of 8 without it.
+    [Theory]
+    [InlineData("deepseek/deepseek-v4.1-flash")]
+    [InlineData("z-ai/glm-5.3-flash")]
+    [InlineData("lemonade/qwen3")]
+    public async Task PrepareRequestBody_AnyOtherModel_CarriesNoCacheDirective(string model)
+    {
+        var request = CreateRequest($"{{\"model\":\"{model}\",\"input\":[]}}");
+
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, "s", null, CancellationToken.None);
+
+        var obj = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject();
+        obj.ContainsKey("cache_control").ShouldBeFalse();
+    }
+
     [Fact]
     public async Task PrepareRequestBody_WithSessionId_AddsTopLevelSessionId()
     {

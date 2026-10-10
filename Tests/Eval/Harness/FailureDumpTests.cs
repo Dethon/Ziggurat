@@ -100,6 +100,60 @@ public class FailureDumpTests : IDisposable
         Directory.GetFiles(_output).ShouldHaveSingleItem();
     }
 
+    // A scenario that fails three of its runs has three runs nobody can take again, and the second
+    // is not bound to have failed the way the first did: Haiku's 22 failed runs on 2026-10-10 left
+    // 13 dumps, and what the other nine did had to be assumed.
+    [Fact]
+    public async Task EveryFailedRunOfAFailedScenario_IsDumped_AndTheMessageIsTheFirsts()
+    {
+        var recording = await ScriptedTurn.RunAsync("listo");
+        var scenario = Scenario();
+
+        var message = FailureDump
+            .Describe(_output,
+            [
+                new FailedRun(scenario, recording, "turn", recording.Route, ["the first run's failure"]),
+                new FailedRun(scenario, recording, "turn", recording.Route, ["the second run's failure"]),
+                new FailedRun(scenario, recording, "turn", recording.Route, ["the third run's failure"])
+            ], passed: false)
+            .ShouldNotBeNull();
+
+        message.ShouldContain("the first run's failure");
+        message.ShouldNotContain("the second run's failure");
+        var named = message.Split('\n').First(l => l.Contains(_output)).Trim();
+        (await File.ReadAllTextAsync(named)).ShouldContain("the first run's failure");
+        var dumps = await Task.WhenAll(Directory.GetFiles(_output).Select(f => File.ReadAllTextAsync(f)));
+        dumps.Length.ShouldBe(3);
+        dumps.ShouldContain(d => d.Contains("the second run's failure"));
+        dumps.ShouldContain(d => d.Contains("the third run's failure"));
+    }
+
+    [Fact]
+    public async Task EveryFailedRunInsideAPass_IsKeptUnderFlakes()
+    {
+        var recording = await ScriptedTurn.RunAsync("listo");
+        var scenario = Scenario();
+
+        FailureDump
+            .Describe(_output,
+            [
+                new FailedRun(scenario, recording, "turn", recording.Route, ["one"]),
+                new FailedRun(scenario, recording, "turn", recording.Route, ["two"])
+            ], passed: true)
+            .ShouldBeNull();
+
+        Directory.GetFiles(_output).ShouldBeEmpty();
+        Directory.GetFiles(Path.Combine(_output, "flakes")).Length.ShouldBe(2);
+    }
+
+    [Fact]
+    public void NoFailedRuns_WriteNothing()
+    {
+        FailureDump.Describe(_output, Array.Empty<FailedRun>(), passed: false).ShouldBeNull();
+
+        Directory.GetFiles(_output).ShouldBeEmpty();
+    }
+
     [Fact]
     public void TheOutputDirectory_IsGitIgnored()
     {

@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Prompts;
 using Domain.Skills;
+using Domain.Tools;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Skills;
@@ -96,6 +97,24 @@ public class McpAgentSkillsTests
         skillName.GetProperty("type").GetString().ShouldBe("string");
         skillName.GetProperty("enum").EnumerateArray().Select(e => e.GetString()).ShouldBe([Skill, "other-skill"]);
         load.JsonSchema.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ShouldBe([SkillsProvider.SkillNameParameter]);
+    }
+
+    // A load reads prose and changes nothing a sibling call could see, and the tool says so: it
+    // is the call most often written beside another, and one that said nothing would wait its
+    // turn behind every one of them.
+    [Fact]
+    public async Task TheLoadTool_DeclaresThatALoadTouchesNothing()
+    {
+        await using var server = await StartAsync(new SkillText(Skill, "Does test things.", "# Test\n\nDo the thing."));
+        var (chatClient, captured) = Capturing();
+        await using var agent = Agent(chatClient, server.Endpoint);
+
+        await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hi")]).ToListAsync();
+
+        var load = captured.ShouldHaveSingleItem().ShouldNotBeNull().Tools.ShouldNotBeNull()
+            .OfType<AIFunction>().Where(t => t.Name == SkillsProvider.LoadToolName).ShouldHaveSingleItem();
+        FootprintDeclaration.Of(load, new Dictionary<string, object?> { [SkillsProvider.SkillNameParameter] = Skill })
+            .ConflictsWith(CallFootprint.Everything).ShouldBeFalse();
     }
 
     [Fact]

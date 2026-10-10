@@ -51,13 +51,17 @@ public static class EvalVault
             try
             {
                 var notes = Directory.EnumerateFiles(Path.Combine(root, "Cocina"), "*.md")
+                    .Order(StringComparer.Ordinal)
                     .Select(File.ReadAllText)
                     .ToArray();
+                // `cat *.md | wc -w` counts one stream: a note with no final newline runs into
+                // the next, and the two words at the seam are one.
+                var stream = string.Concat(notes);
 
                 return
                 [
                     .. _wordDefinitions
-                        .SelectMany(count => new[] { notes.Sum(count), notes.Select(Body).Sum(count) })
+                        .SelectMany(count => new[] { notes.Sum(count), notes.Select(Body).Sum(count), count(stream) })
                         .Distinct()
                 ];
             }

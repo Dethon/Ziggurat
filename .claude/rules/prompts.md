@@ -46,9 +46,9 @@ request calls for it; only its name and one-line description stand in the base p
 claim** is what that description asserts: a request of a named kind gets it loaded. A **preload**
 is the host loading first: before the model's first call, `SkillsProvider` asks Jev (`ISkillPreloader`,
 `Domain/Skills/`) which skills the request needs, judged on the same descriptions, and a confident
-answer puts the body into the conversation as the pair a `load_skill` call leaves — after the user
-message, persisted with the turn, never twice. ADR 0039 (refined 2026-09-18) is the decision;
-these are the rules the next section lands on. A turn addressed to the Lemonade chat host asks
+answer puts the body into the conversation — after the user message, persisted with the turn,
+never twice. ADR 0039 (refined 2026-09-18) is the decision; these are the rules the next section
+lands on. A turn addressed to the Lemonade chat host asks
 nothing, and neither does a worker it spawns. The Jev client holds that rule
 (`.claude/rules/mcp-hosting.md`); the group and the provider only name the model on
 `SkillPreloadRequest.Caller` (`JudgmentCaller.TurnModel`) — from the request's own patch, or for a worker, which has
@@ -57,10 +57,27 @@ none, from the parent turn's `ConversationContext` its request carries.
 - **A skill may already be in the conversation when a turn starts, and one that is, is loaded.**
   The `skills` section says so to the model; `SkillLoadTool.LoadedIn` says so to the preloader,
   reading every load off the history whoever made it. There is no second record of what is loaded.
+- **A preload is recorded as a load and sent as a note.** The thread keeps the pair a `load_skill`
+  call leaves (`SkillLoadTool.AsPreloaded`, its call ids marked as the host's), which is what
+  `LoadedIn`, the truncator and every reader of a thread see. The model is never sent that pair:
+  `OpenRouterChatClient` writes it, last and on the copy that goes out, as one user-role message
+  after the request (`SkillPreloadNote`) — "[Loaded for this request before your first call, by
+  the host: …]" and the wrapped body, then a part per read. A call the model did not make is an
+  assistant turn it never took, and each model and provider made something different of one:
+  Anthropic's were handed it with the host's reasoning dropped and carried on mid-turn (Haiku 5.5
+  opened slow spoken work with its word on 0 of 10, gpt-6-luna on 4; every model on 10 of 10 with
+  the note), DeepSeek's own host refused it without reasoning to take back, Mistral cut its call
+  ids to nine characters. So there is no host-made reasoning and no rule about ids any more, and
+  nothing per model. A `developer` or `system` item is not an alternative — OpenRouter hoists it
+  to the head of the conversation for chat-completions hosts, which moves the cached prefix —
+  and neither is the pair placed before the request. Pairs stored by earlier builds are sent as
+  the same note and never migrated. The note's wording was measured as written; changing it is a
+  new measurement on every model, not an edit.
 - **A preload makes the reads the body's first line orders.** `SkillDeclaration.PreloadReads`
   names the files a body says to read in the same turn as the skill (the home skill: the setup
-  index), and a preload reads them through the session's own `file_read` and writes the pair
-  beside the load, so the model's first call after a head start is the action. A read that fails
+  index), and a preload reads them through the session's own `file_read` and records the pair
+  beside the load — sent in the same note, under its own line — so the model's first call after a
+  head start is the action. A read that fails
   is left out and the body tells the model to read. The event names the reads; the eval counts
   each as a preloaded `file_read`, so the read every home scenario requires is met by either
   reader.

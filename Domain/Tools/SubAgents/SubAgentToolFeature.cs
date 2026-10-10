@@ -17,9 +17,15 @@ public class SubAgentToolFeature(
     public IEnumerable<AIFunction> GetTools(FeatureConfig config)
     {
         var runTool = new SubAgentRunTool(registryOptions, config);
-        yield return AIFunctionFactory.Create(
-            runTool.RunAsync,
-            name: $"domain__{Feature}__{SubAgentRunTool.Name}",
-            description: runTool.Description);
+        // A worker can read anything the calls written before it changed, so it waits for
+        // those, and a change written after it waits for the worker. Workers handed out in one
+        // message are parts the model has already called independent: they run side by side,
+        // and what each does inside its own task is ordered by its own client.
+        yield return FootprintDeclaration.Declared(
+            AIFunctionFactory.Create(
+                runTool.RunAsync,
+                name: $"domain__{Feature}__{SubAgentRunTool.Name}",
+                description: runTool.Description),
+            CallFootprint.Reading(SharedResource.Everything));
     }
 }

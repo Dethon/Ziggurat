@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.Tools;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -18,8 +19,17 @@ internal sealed class QualifiedMcpTool(
 
     public override string Name { get; } = $"{McpPrefix}{Separator}{serverName}{Separator}{innerTool.Name}";
 
+    // What the server said a call to this tool touches, for whoever orders the calls of one
+    // message; null where it said nothing.
+    private readonly FootprintDeclaration? _footprint = McpFootprint.Of(serverName, innerTool.ProtocolTool);
+
     public override string Description => innerTool.Description;
     public override JsonElement JsonSchema => innerTool.JsonSchema;
+
+    public override object? GetService(Type serviceType, object? serviceKey = null) =>
+        serviceKey is null && serviceType == typeof(FootprintDeclaration)
+            ? _footprint
+            : base.GetService(serviceType, serviceKey);
 
     public QualifiedMcpTool WithProgress(IProgress<ProgressNotificationValue> progress)
     {

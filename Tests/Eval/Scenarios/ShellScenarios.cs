@@ -38,7 +38,13 @@ public static class ShellScenarios
             {
                 Label = "count",
                 Tool = EvalTools.Exec,
-                Arguments = [Arg.Matches("command", "(?i)wc|split\\(|len\\("), Arg.Matches("command", "Cocina")]
+                // The folder is named by the command or is where it runs — a `wc -w *.md` from
+                // inside Cocina is as much a count of it as one that spells the path.
+                Arguments =
+                [
+                    Arg.Matches("command", "(?i)wc|split\\(|len\\("),
+                    Arg.Any(Arg.Matches("command", "Cocina"), Arg.Matches("path", "Cocina"))
+                ]
             }
         ],
         Ordering = [new OrderingConstraint("skill", "count")],

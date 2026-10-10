@@ -260,6 +260,39 @@ public class EvalWebTests : IAsyncLifetime
             .ShouldContain(EvalWeb.Raffle2025Total);
     }
 
+    // The path an armed run takes and the test above does not: it reads the edition by browsing
+    // the url the click landed on — the action's own next step tells it to — and then acts on the
+    // refs the back handed over, with no snapshot in between. Haiku and gpt-6-luna both lost runs
+    // of the back scenario on 2026-10-10 to a back that answered with the archive and its refs
+    // and a next click told they were out of date, the tab by then on the edition again. This
+    // holds the path; it did not reproduce that failure, here or under forty parallel sessions.
+    [Fact]
+    public async Task AnEditionReadByBrowsingIt_ThenBack_HandsOverRefsThatStillAct()
+    {
+        const string session = "proof-archive-browsed";
+        await _browsing.NavigateAsync(
+            new BrowseRequest(session, _web.ArchiveUrl, UseReadability: true) { Caller = JudgmentCaller.None });
+        var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
+        var opened = await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(snapshot, "button", "La rifa de 2024"), WebActionType.Click,
+            WaitForNavigation: true));
+        opened.Status.ShouldBe(WebActionStatus.Success);
+        var edition = await _browsing.NavigateAsync(
+            new BrowseRequest(session, opened.Url!, UseReadability: true) { Caller = JudgmentCaller.None });
+        edition.Content.ShouldNotBeNull().ShouldContain(EvalWeb.Raffle2024Total);
+
+        var back = await _browsing.ActionAsync(new WebActionRequest(session, Action: WebActionType.Back));
+        back.Status.ShouldBe(WebActionStatus.Success);
+        back.Url.ShouldBe(_web.ArchiveUrl);
+
+        var second = await _browsing.ActionAsync(new WebActionRequest(
+            session, RefBy(back.Snapshot!, "button", "La rifa de 2025"), WebActionType.Click,
+            WaitForNavigation: true));
+        second.Status.ShouldBe(WebActionStatus.Success, $"{second.ErrorMessage} {second.RefUrl}");
+        (await _browsing.GetCurrentPageAsync(session)).Content.ShouldNotBeNull()
+            .ShouldContain(EvalWeb.Raffle2025Total);
+    }
+
     [Fact]
     public async Task TheMaterialsForm_TakesFourFieldsAndAnswersWithTheCode()
     {
@@ -314,7 +347,10 @@ public class EvalWebTests : IAsyncLifetime
     // A ref by role AND accessible name: the tree names a listitem after the button inside it, so
     // a name-only lookup picks the wrapper and a click on it never reaches the button's handler.
     private static string RefBy(SnapshotResult snapshot, string role, string name) =>
-        snapshot.Snapshot!
+        RefBy(snapshot.Snapshot!, role, name);
+
+    private static string RefBy(string snapshot, string role, string name) =>
+        snapshot
             .Split('\n')
             .Where(line => line.Contains($"{role} \"{name}\"", StringComparison.OrdinalIgnoreCase)
                            && line.Contains("[ref=", StringComparison.Ordinal))
