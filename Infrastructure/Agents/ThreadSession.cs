@@ -142,12 +142,23 @@ internal sealed class ThreadSessionBuilder(
         // Channel-protocol tools are always stripped; raw fs_* tools are stripped when their
         // domain filesystem wrappers are active, to avoid exposing duplicate functionality to the LLM.
         var mcpTools = FilterMcpTools(clientManager.Tools, fileSystemTools.Count > 0);
-        var tools = mcpTools.Concat(domainTools).Concat(fileSystemTools).ToList();
+        var tools = Offered(mcpTools, domainTools, fileSystemTools);
 
         return new ThreadSessionData(
             clientManager, tools, registry, fileSystemPrompts,
             [.. fsRegistry.GetMounts().Select(m => m.Name)], shadowed);
     }
+
+    // The filesystem tools lead; the rest keep the order they had. The list is read in order, and
+    // a model batching a read beside another call takes an early tool that sounds right: with the
+    // web tools first, Haiku 5.5 browsed or searched for /ha/setup-index.md in a quarter of the
+    // turns that should have read it; with these first, never (2026-10-10). A server's own tools
+    // still come before the subagent's, so a throwaway first call lands where it always did.
+    internal static IReadOnlyList<AITool> Offered(
+        IReadOnlyList<AITool> mcpTools,
+        IReadOnlyList<AITool> domainTools,
+        IReadOnlyList<AITool> fileSystemTools) =>
+        [.. fileSystemTools, .. mcpTools, .. domainTools];
 
     internal static IReadOnlyList<AITool> FilterMcpTools(IReadOnlyList<AITool> mcpTools, bool filesystemToolsActive)
     {
