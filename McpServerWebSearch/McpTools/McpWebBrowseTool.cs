@@ -15,6 +15,7 @@ public class McpWebBrowseTool(IWebBrowser browser)
     : WebBrowseTool(browser)
 {
     [McpServerTool(Name = Name)]
+    [McpMeta(FootprintTemplate.MetaKey, JsonValue = BrowserFootprint.Page)]
     [Description(Description)]
     public async Task<CallToolResult> Run(
         RequestContext<CallToolRequestParams> context,

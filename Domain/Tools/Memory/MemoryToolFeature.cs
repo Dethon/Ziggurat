@@ -16,9 +16,11 @@ public class MemoryToolFeature(IMemoryStore store, IEmbeddingService embeddingSe
     public IEnumerable<AIFunction> GetTools(FeatureConfig config)
     {
         var forgetTool = new MemoryForgetTool(store, embeddingService, config);
-        yield return AIFunctionFactory.Create(
-            forgetTool.Run,
-            name: $"domain__{Feature}__{MemoryForgetTool.Name}",
-            description: MemoryForgetTool.Description);
+        yield return FootprintDeclaration.Declared(
+            AIFunctionFactory.Create(
+                forgetTool.Run,
+                name: $"domain__{Feature}__{MemoryForgetTool.Name}",
+                description: MemoryForgetTool.Description),
+            MemoryForgetTool.Footprint);
     }
 }

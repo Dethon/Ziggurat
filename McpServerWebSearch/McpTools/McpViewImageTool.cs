@@ -13,6 +13,7 @@ namespace McpServerWebSearch.McpTools;
 public class McpViewImageTool(IWebBrowser browser) : ViewImageTool(browser)
 {
     [McpServerTool(Name = Name)]
+    [McpMeta(FootprintTemplate.MetaKey, JsonValue = BrowserFootprint.Session)]
     [Description(Description)]
     public async Task<CallToolResult> Run(
         RequestContext<CallToolRequestParams> context,

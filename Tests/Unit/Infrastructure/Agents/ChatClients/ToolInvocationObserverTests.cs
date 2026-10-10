@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Tools;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 using Shouldly;
@@ -115,16 +116,23 @@ public class ToolInvocationObserverTests
     {
         var recording = new Recording();
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var slow = AIFunctionFactory.Create(async () =>
-        {
-            await gate.Task;
-            return "slow";
-        }, "domain__filesystem_read");
-        var fast = AIFunctionFactory.Create(() =>
-        {
-            gate.TrySetResult();
-            return "fast";
-        }, "domain__filesystem_glob");
+        // Two reads, declared as such: calls run at once only where their tools say they share
+        // nothing a sibling could change, and a tool that says nothing would wait its turn.
+        var vault = CallFootprint.Reading(SharedResource.Of("filesystem", "/vault"));
+        var slow = FootprintDeclaration.Declared(
+            AIFunctionFactory.Create(async () =>
+            {
+                await gate.Task;
+                return "slow";
+            }, "domain__filesystem_read"),
+            vault);
+        var fast = FootprintDeclaration.Declared(
+            AIFunctionFactory.Create(() =>
+            {
+                gate.TrySetResult();
+                return "fast";
+            }, "domain__filesystem_glob"),
+            vault);
 
         var fakeClient = new FakeChatClient();
         fakeClient.SetNextResponse(CreateMultiToolCallResponse(

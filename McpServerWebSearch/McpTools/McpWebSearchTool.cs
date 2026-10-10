@@ -11,7 +11,7 @@ namespace McpServerWebSearch.McpTools;
 public class McpWebSearchTool(IWebSearchClient searchClient)
     : WebSearchTool(searchClient)
 {
-    [McpServerTool(Name = Name)]
+    [McpServerTool(Name = Name, ReadOnly = true)]
     [Description(Description)]
     public async Task<CallToolResult> Run(
         [Description("The search query. Be specific for better results.")]

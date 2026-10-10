@@ -4,6 +4,7 @@ using Domain.Extensions;
 using Domain.Judgments;
 using Domain.Prompts;
 using Domain.Skills;
+using Domain.Tools;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
@@ -162,7 +163,16 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     // The framework's load, invoked as the framework wrote it, behind a face of our own.
     private sealed class LoadSkillFunction(AIFunction inner, IReadOnlyList<string> names) : DelegatingAIFunction(inner)
     {
+        // A load reads prose this repo ships and changes nothing a sibling call could see, so it
+        // runs beside whatever else the message asked for.
+        private static readonly FootprintDeclaration _footprint = FootprintDeclaration.Always(CallFootprint.Nothing);
+
         public override string Description => LoadToolDescription;
+
+        public override object? GetService(Type serviceType, object? serviceKey = null) =>
+            serviceKey is null && serviceType == typeof(FootprintDeclaration)
+                ? _footprint
+                : base.GetService(serviceType, serviceKey);
 
         public override JsonElement JsonSchema { get; } = SchemaOver(names);
 

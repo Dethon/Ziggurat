@@ -15,6 +15,19 @@ public class MemoryForgetTool(
 
     public const string Name = "memory_forget";
 
+    private static readonly SharedResource _memories = SharedResource.Of("memory");
+
+    // The memories a call names, each by its id. A call that forgets by description can reach
+    // any of them, so it claims them all.
+    public static CallFootprint Footprint(IReadOnlyDictionary<string, object?> call)
+    {
+        string?[] named = [CallArguments.Text(call, "memoryId"), .. CallArguments.Texts(call, "memoryIds")];
+        var ids = named.Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => id!).ToArray();
+        return ids.Length == 0 || !string.IsNullOrWhiteSpace(CallArguments.Text(call, "query"))
+            ? CallFootprint.Changing(_memories)
+            : CallFootprint.Changing([.. ids.Select(id => _memories.Under(id))]);
+    }
+
     // Four filters (categories, tags, olderThan, maxImportance) used to widen this schema for a
     // sweep nobody made through them: the recall block spells each memory's id and importance,
     // so a sweep names ids. What is left is what a forget needs, re-sent on every request.

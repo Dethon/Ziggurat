@@ -10,6 +10,7 @@ using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Judgments;
 using Domain.Metrics;
+using Domain.Tools;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Agents.Skills;
@@ -32,6 +33,11 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly IExecScreen? _execScreen;
     private readonly string? _agentId;
     private int _observed;
+
+    // One line per request, found by the history the request's calls are all handed. Per request
+    // rather than per client because a call can open a request of its own on a client like this
+    // one — a worker — and its calls must not queue behind the call that is waiting for them.
+    private readonly ConditionalWeakTable<IList<ChatMessage>, WrittenOrder> _writtenOrders = new();
 
     // Approved for every agent without a whitelist entry: loading a skill reads prose this repo
     // ships and changes nothing, and a load that stalled a turn on a prompt nobody sees would cost
@@ -63,6 +69,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 
         IncludeDetailedErrors = true;
         MaximumIterationsPerRequest = 50;
+        // Every call of a message is handed over at once; which of them actually run at once is
+        // decided call by call, by what each says it touches (WrittenOrder).
         AllowConcurrentInvocation = true;
         MaximumConsecutiveErrorsPerRequest = 3;
     }
@@ -70,6 +78,26 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     protected override async ValueTask<object?> InvokeFunctionAsync(
         FunctionInvocationContext context,
         CancellationToken cancellationToken)
+    {
+        // Before anything is awaited: a place in line is taken in the order calls are handed
+        // over, and that is only the order they were written until the first of them waits.
+        var place = _writtenOrders
+            .GetValue(context.Messages, _ => new WrittenOrder())
+            .Take(FootprintDeclaration.Of(context.Function, context.Arguments));
+        try
+        {
+            return await DecideAsync(context, place, cancellationToken);
+        }
+        finally
+        {
+            // However the call ended — returned, threw, refused, cancelled — or the calls written
+            // after it would wait for something that is never coming.
+            place.GiveUp();
+        }
+    }
+
+    private async ValueTask<object?> DecideAsync(
+        FunctionInvocationContext context, WrittenOrder.Place place, CancellationToken cancellationToken)
     {
         var toolName = context.Function.Name;
         var request = new ToolApprovalRequest(
@@ -84,7 +112,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             // not a refusal: it is the prompt a tool nobody whitelisted gets, saying why.
             if (await ScreenAsync(context, cancellationToken) is { Asks: true } flagged)
             {
-                return await AskAsync(context, request with { Screen = flagged.Codes }, cancellationToken);
+                return await AskAsync(context, request with { Screen = flagged.Codes }, place, cancellationToken);
             }
 
             // The notification is display-only; overlapping it with the invocation keeps a
@@ -92,16 +120,21 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             // surfaces, but no longer prevents the tool from executing.
             var notifyTask = _approvalHandler.NotifyAutoApprovedAsync(
                 _conversationId, [request], cancellationToken);
-            var invokeTask = InvokeWithMetricsAsync(context, toolName, cancellationToken).AsTask();
+            var invokeTask = InvokeInTurnAsync(context, toolName, place, cancellationToken).AsTask();
             await Task.WhenAll(notifyTask, invokeTask);
             return await invokeTask;
         }
 
-        return await AskAsync(context, request, cancellationToken);
+        return await AskAsync(context, request, place, cancellationToken);
     }
 
+    // A person is asked the moment the model wrote the call; what waits for the calls ahead is
+    // the running, so the questions of one message still arrive together.
     private async ValueTask<object?> AskAsync(
-        FunctionInvocationContext context, ToolApprovalRequest request, CancellationToken cancellationToken)
+        FunctionInvocationContext context,
+        ToolApprovalRequest request,
+        WrittenOrder.Place place,
+        CancellationToken cancellationToken)
     {
         var toolName = request.ToolName;
         var result = await _approvalHandler.RequestApprovalAsync(
@@ -111,11 +144,11 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         {
             case ToolApprovalResult.ApprovedAndRemember:
                 _dynamicallyApproved.TryAdd(toolName, 0);
-                return await InvokeWithMetricsAsync(context, toolName, cancellationToken);
+                return await InvokeInTurnAsync(context, toolName, place, cancellationToken);
 
             case ToolApprovalResult.Approved:
             case ToolApprovalResult.AutoApproved:
-                return await InvokeWithMetricsAsync(context, toolName, cancellationToken);
+                return await InvokeInTurnAsync(context, toolName, place, cancellationToken);
 
             case ToolApprovalResult.Rejected:
             default:
@@ -136,8 +169,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     {
         if (_execScreen is null
             || context.Function.GetService<ExecReach>() is not { } reach
-            || ArgumentText(context.Arguments, "path") is not { } path
-            || reach.Of(path, ArgumentText(context.Arguments, "command") ?? "") is not { } shellReach)
+            || CallArguments.Text(context.Arguments, "path") is not { } path
+            || reach.Of(path, CallArguments.Text(context.Arguments, "command") ?? "") is not { } shellReach)
         {
             return null;
         }
@@ -146,23 +179,12 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 
         return await _execScreen.ScreenAsync(
             new ExecScreenRequest(
-                shellReach, ArgumentText(context.Arguments, "command") ?? "", path, context.Messages)
+                shellReach, CallArguments.Text(context.Arguments, "command") ?? "", path, context.Messages)
             {
                 Caller = new JudgmentCaller(asking?.GetTurnModel(), asking?.GetSenderId(), _agentId, _conversationId)
             },
             ct);
     }
-
-    private static string? ArgumentText(AIFunctionArguments arguments, string name) =>
-        arguments.TryGetValue(name, out var value)
-            ? value switch
-            {
-                string text => text,
-                JsonElement { ValueKind: JsonValueKind.String } element => element.GetString(),
-                null => null,
-                _ => value.ToString()
-            }
-            : null;
 
     // Pass-through in both directions: what the observer is handed is the option set the agent
     // built and the route the inner client ends up reporting, and nothing about the turn changes
@@ -246,6 +268,18 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             // observation must never be the thing that takes a turn down.
             return "{}";
         }
+    }
+
+    // Outside the measurement: the time a call spends behind another is that call's, not this
+    // tool's.
+    private async ValueTask<object?> InvokeInTurnAsync(
+        FunctionInvocationContext context,
+        string toolName,
+        WrittenOrder.Place place,
+        CancellationToken cancellationToken)
+    {
+        await place.TurnAsync(cancellationToken);
+        return await InvokeWithMetricsAsync(context, toolName, cancellationToken);
     }
 
     private async ValueTask<object?> InvokeWithMetricsAsync(
