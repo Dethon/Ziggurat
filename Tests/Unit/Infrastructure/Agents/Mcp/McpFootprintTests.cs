@@ -1,9 +1,13 @@
 using Domain.Tools;
+using Domain.Tools.Web;
 using Infrastructure.Agents.Mcp;
 using McpServerWebSearch.McpTools;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
+using Tests.Integration.McpServers;
 
 namespace Tests.Unit.Infrastructure.Agents.Mcp;
 
@@ -80,6 +84,37 @@ public class McpFootprintTests
         McpFootprint.Of("library", new Tool { Name = "download" }).ShouldBeNull();
         McpFootprint.Of("library", new Tool { Name = "download", Annotations = new ToolAnnotations { ReadOnlyHint = false } })
             .ShouldBeNull();
+    }
+
+    // The declaration is only worth anything if it survives the listing: over a real connection,
+    // through the wrapper the agent offers the model, the browse tools still say what they said.
+    [Fact]
+    public async Task OverTheWire_TheAgentsOwnWrapperCarriesWhatTheServerDeclared()
+    {
+        await using var server = await InMemoryMcpServer.StartAsync(services => services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<McpWebBrowseTool>()
+            .WithTools<McpWebActionTool>()
+            .WithTools<McpWebSearchTool>()
+            .WithTools<FailingTools>());
+
+        var offered = (await server.Client.ListToolsAsync())
+            .ToDictionary(tool => tool.Name, tool => (AIFunction)new QualifiedMcpTool("websearch", tool));
+        CallFootprint Footprint(string tool, IReadOnlyDictionary<string, object?> call) =>
+            FootprintDeclaration.Of(offered[tool], call);
+
+        var archive = Footprint(WebBrowseTool.Name, Call(("url", "https://example.com/archive")));
+        var click = Footprint(WebActionTool.Name, Call(("ref", "e-1"), ("action", "Click")));
+        var search = Footprint(WebSearchTool.Name, Call(("query", "pasta")));
+
+        click.ConflictsWith(click).ShouldBeTrue();
+        archive.ConflictsWith(click).ShouldBeTrue();
+        archive.ConflictsWith(Footprint(WebBrowseTool.Name, Call(("url", "https://example.com/edition/7")))).ShouldBeFalse();
+        search.ConflictsWith(click).ShouldBeFalse();
+        search.ConflictsWith(search).ShouldBeFalse();
+        // And a tool that declared nothing is still ordered against all of them.
+        Footprint("throws", _none).ConflictsWith(search).ShouldBeTrue();
     }
 
     private static CallFootprint Of<TTool>(IReadOnlyDictionary<string, object?> call)
