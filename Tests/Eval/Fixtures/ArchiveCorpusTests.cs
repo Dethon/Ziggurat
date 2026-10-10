@@ -15,7 +15,8 @@ public class ArchiveCorpusTests
     public void TheSite_IsTooBigToReadInOneRungsCalls()
     {
         ArchiveCorpus.Pages.Count.ShouldBeGreaterThanOrEqualTo(55);
-        ArchiveCorpus.Pages.Keys.Count(path => path.StartsWith("/banco/boletines/")).ShouldBe(31);
+        // Fifty-five months and one of them twice: the bulletin that was republished corrected.
+        ArchiveCorpus.Pages.Keys.Count(path => path.StartsWith("/banco/boletines/")).ShouldBe(56);
     }
 
     [Fact]
@@ -68,6 +69,55 @@ public class ArchiveCorpusTests
         carrying.ShouldHaveSingleItem().ShouldStartWith("/banco/avisos/");
         ArchiveCorpus.Pages["/banco/boletines/2026-07"].ShouldContain($"{ArchiveCorpus.VolunteersInLatestBulletin} personas");
         ArchiveCorpus.VolunteersNow.ShouldBeLessThan(ArchiveCorpus.VolunteersInLatestBulletin);
+    }
+
+    // The older half of the archive is where reading everything stops being enough: what is
+    // on the pages has to be converted, and one page has to be left out.
+    [Fact]
+    public void TheFirstHalfOf2022_IsCountedInBoxes_AndTheRestInKilos()
+    {
+        Enumerable.Range(1, 6).Select(month => ArchiveCorpus.Pages[$"/banco/boletines/2022-{month:00}"])
+            .ShouldAllBe(page => page.Contains("cajas") && !page.Contains(" kg"));
+        ArchiveCorpus.Pages["/banco/boletines/2022-07"].ShouldContain(" kg");
+        ArchiveCorpus.Pages["/banco/boletines/2022-07"].ShouldContain($"{ArchiveCorpus.BoxKilos} kg");
+        ArchiveCorpus.EarlyKilos.Take(6).ShouldAllBe(kilos => kilos % ArchiveCorpus.BoxKilos == 0);
+    }
+
+    [Fact]
+    public void OneBulletin_WasRepublishedCorrected_AndTheYearCountsItOnceAtTheCorrectedFigure()
+    {
+        var corrected = ArchiveCorpus.EarlyKilos[16];
+        ArchiveCorpus.Pages["/banco/boletines/2023-05-corregido"].ShouldContain(SolarCorpus.Es(corrected));
+        ArchiveCorpus.Pages["/banco/boletines/2023-05"].ShouldContain(SolarCorpus.Es(ArchiveCorpus.May2023AsFirstPublished));
+        ArchiveCorpus.Pages["/banco/boletines/2023-05"].ShouldNotContain(SolarCorpus.Es(corrected));
+        ArchiveCorpus.Kilos2023.ShouldBe(ArchiveCorpus.EarlyKilos.Skip(12).Sum());
+        ArchiveCorpus.Kilos2022.ShouldBe(ArchiveCorpus.EarlyKilos.Take(12).Sum());
+    }
+
+    [Fact]
+    public void TheFourYearTotal_IsOnNoPage()
+    {
+        ArchiveCorpus.KilosSince2022.ShouldBe(
+            ArchiveCorpus.Kilos2022 + ArchiveCorpus.Kilos2023 + ArchiveCorpus.Kilos2024 + ArchiveCorpus.Kilos2025);
+        new[] { ArchiveCorpus.KilosSince2022, ArchiveCorpus.Kilos2022, ArchiveCorpus.Kilos2023 }
+            .ShouldAllBe(total => ArchiveCorpus.Pages.Values.All(page => !page.Contains(SolarCorpus.Es(total))));
+    }
+
+    [Fact]
+    public void TheFirstMonthOverTheLine_IsADecemberLongBeforeTheTrendGetsThere()
+    {
+        // The series rises slowly and jumps every December. The first month over the line is a
+        // campaign month two winters before an ordinary one reaches it: halving the archive to
+        // find where the trend crosses lands eighteen months late.
+        var all = ArchiveCorpus.EarlyKilos.Concat(ArchiveCorpus.MonthlyKilos).ToList();
+        var first = all.FindIndex(kilos => kilos > ArchiveCorpus.Line);
+        var firstOrdinary = all.Select((kilos, index) => (kilos, index))
+            .First(month => month.kilos > ArchiveCorpus.Line && month.index % 12 != 11).index;
+
+        first.ShouldBe(11);
+        ArchiveCorpus.FirstOverTheLine.ShouldBe((2022, 12));
+        ArchiveCorpus.KilosFirstOverTheLine.ShouldBe(all[11]);
+        firstOrdinary.ShouldBeGreaterThan(first + 12);
     }
 
     [Fact]

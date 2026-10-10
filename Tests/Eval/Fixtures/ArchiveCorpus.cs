@@ -9,7 +9,8 @@ namespace Tests.Eval.Fixtures;
 // site cannot ask is what research mostly is — deciding what to read when not everything can
 // be. So here:
 //
-//   - thirty-one monthly bulletins, each with its own figures and no totals;
+//   - fifty-five monthly bulletins, each with its own figures and no totals — the oldest six
+//     counted in boxes, and one republished in a corrected version beside the original;
 //   - an annual report for one year and none yet for the next, so one year's total is printed
 //     and the other is twelve pages added up;
 //   - a programme whose start is in the bulletin of the month it began and announced nowhere
@@ -49,6 +50,41 @@ public static class ArchiveCorpus
     public static readonly int Kilos2024 = MonthlyKilos.Take(12).Sum();
     public static readonly int Kilos2025 = MonthlyKilos.Skip(12).Take(12).Sum();
 
+    // The two years before, which the scale rungs that reach back have to read: slower, smaller,
+    // and less tidy. Until June 2022 the bank counted in boxes; one bulletin of 2023 was
+    // republished with a different figure; and neither year ever got a report.
+    private const int EarlyYear = 2022;
+    private const int EarlyBulletins = 24;
+    public const int BoxKilos = 12;
+
+    private static (int Year, int Month) EarlyAt(int index) => (EarlyYear + index / 12, index % 12 + 1);
+
+    public static readonly IReadOnlyList<int> EarlyKilos =
+    [
+        .. Enumerable.Range(0, EarlyBulletins).Select(index => index < 6
+            ? BoxKilos * (103 + 5 * index + (index * 7 % 11))
+            : 1_240 + 61 * index + (index * 37 % 97)
+              + EarlyAt(index).Month switch { 12 => 2_150, 8 => -310, _ => 0 })
+    ];
+
+    // May 2023 as it first went out, with the market's donations counted twice.
+    private const int CorrectedIndex = 16;
+    public static readonly int May2023AsFirstPublished = EarlyKilos[CorrectedIndex] + 640;
+
+    public static readonly int Kilos2022 = EarlyKilos.Take(12).Sum();
+    public static readonly int Kilos2023 = EarlyKilos.Skip(12).Sum();
+    public static readonly int KilosSince2022 = Kilos2022 + Kilos2023 + Kilos2024 + Kilos2025;
+
+    // The line a monthly collection first crossed in a campaign December, two winters before
+    // an ordinary month did.
+    public const int Line = 4_000;
+    public static readonly (int Year, int Month) FirstOverTheLine = EarlyAt(11);
+    public static readonly int KilosFirstOverTheLine = EarlyKilos[11];
+
+    private static int EarlyFamilies(int index) => 96 + 3 * index + index / 2;
+
+    private static int EarlyVolunteers(int index) => 34 + index;
+
     public static int Families(int index) => 180 + 4 * index;
 
     public static int Volunteers(int index) => 58 + index;
@@ -76,6 +112,8 @@ public static class ArchiveCorpus
     public static readonly Source YearEndBulletin = new("/banco/boletines/2024-12", "Boletín de diciembre de 2024");
     public static readonly Source LatestBulletin = new("/banco/boletines/2026-07", "Boletín de julio de 2026");
     public static readonly Source VolunteerNotice = new("/banco/avisos/2026-11", "Cierre del local de la calle Mayor");
+    public static readonly Source CorrectedBulletin = new("/banco/boletines/2023-05-corregido", "versión corregida");
+    public static readonly Source FirstOverTheLineBulletin = new("/banco/boletines/2022-12", "Boletín de diciembre de 2022");
 
     private static readonly string[] _donors =
     [
@@ -121,6 +159,31 @@ public static class ArchiveCorpus
             <p>Lo que más falta hace para el mes que viene: {_needs[index % _needs.Length]}.</p>
             <p>{_notes[index % _notes.Length]}</p>
             <p><em>Boletín cerrado el último día de {Named(index)}.</em></p>
+            """);
+
+    private static string EarlySlug(int index) => $"{EarlyAt(index).Year}-{EarlyAt(index).Month:00}";
+
+    private static string EarlyNamed(int index) => $"{_months[EarlyAt(index).Month - 1]} de {EarlyAt(index).Year}";
+
+    // An older bulletin. `kilos` is what this version of the page says was collected, which for
+    // one month is not what was.
+    private static string EarlyBulletin(int index, int kilos, string version = "") =>
+        EvalWeb.Page($"Boletín de {EarlyNamed(index)}{version} — Banco de Alimentos de la Vega", $"""
+            <h1>Boletín de {EarlyNamed(index)}{version}</h1>
+            {(version.Length > 0
+                ? $"<p><em>Esta versión sustituye a la publicada en su día: las donaciones del mercado municipal se habían contado dos veces.</em></p>"
+                : "")}
+            {(index < 6
+                ? $"<p>Recogido este mes: {kilos / BoxKilos} cajas. La mayor aportación llegó de {_donors[(index + 3) % _donors.Length]}.</p>"
+                : $"<p>Kilos recogidos este mes: {SolarCorpus.Es(kilos)} kg. La mayor aportación llegó de {_donors[(index + 3) % _donors.Length]}.</p>")}
+            {(index == 6
+                ? $"<p>Desde este mes contamos en kilos y no en cajas. Cada caja de las que contábamos hasta junio pesaba {BoxKilos} kg.</p>"
+                : "")}
+            <p>Familias atendidas: {EarlyFamilies(index)}.</p>
+            <p>Voluntariado activo: {EarlyVolunteers(index)} personas.</p>
+            <p>Lo que más falta hace para el mes que viene: {_needs[(index + 2) % _needs.Length]}.</p>
+            <p>{_notes[(index + 5) % _notes.Length]}</p>
+            <p><em>Boletín cerrado el último día de {EarlyNamed(index)}.</em></p>
             """);
 
     // Fifteen notices, in the order they were published and each with its date — on the board
@@ -201,8 +264,23 @@ public static class ArchiveCorpus
             <p>El detalle de cada mes está en los boletines.</p>
             """)),
         new("/banco/boletines", EvalWeb.Page("Boletines mensuales — Banco de Alimentos de la Vega",
-            Listed("Boletines mensuales", Enumerable.Range(0, Bulletins)
-                .Select(index => ($"/banco/boletines/{Slug(index)}", $"Boletín de {Named(index)}"))))),
+            Listed("Boletines mensuales",
+            [
+                .. Enumerable.Range(0, EarlyBulletins).SelectMany<int, (string, string)>(index => index == CorrectedIndex
+                    ?
+                    [
+                        ($"/banco/boletines/{EarlySlug(index)}", $"Boletín de {EarlyNamed(index)}"),
+                        ($"/banco/boletines/{EarlySlug(index)}-corregido", $"Boletín de {EarlyNamed(index)} (versión corregida)")
+                    ]
+                    : [($"/banco/boletines/{EarlySlug(index)}", $"Boletín de {EarlyNamed(index)}")]),
+                .. Enumerable.Range(0, Bulletins)
+                    .Select(index => ($"/banco/boletines/{Slug(index)}", $"Boletín de {Named(index)}"))
+            ]))),
+        .. Enumerable.Range(0, EarlyBulletins).Select(index => new KeyValuePair<string, string>(
+            $"/banco/boletines/{EarlySlug(index)}",
+            EarlyBulletin(index, index == CorrectedIndex ? May2023AsFirstPublished : EarlyKilos[index]))),
+        new($"/banco/boletines/{EarlySlug(CorrectedIndex)}-corregido",
+            EarlyBulletin(CorrectedIndex, EarlyKilos[CorrectedIndex], " (versión corregida)")),
         .. Enumerable.Range(0, Bulletins)
             .Select(index => new KeyValuePair<string, string>($"/banco/boletines/{Slug(index)}", Bulletin(index))),
         new("/banco/avisos", EvalWeb.Page("Tablón de avisos — Banco de Alimentos de la Vega",
@@ -234,7 +312,7 @@ public static class ArchiveCorpus
         new(["alimentos"],
             "Boletines mensuales — Banco de Alimentos de la Vega",
             $"{baseUrl}/banco/boletines",
-            "Todos los boletines mensuales del Banco de Alimentos, desde enero de 2024."),
+            "Todos los boletines mensuales del Banco de Alimentos, desde enero de 2022."),
         new(["alimentos"],
             "Tablón de avisos — Banco de Alimentos de la Vega",
             $"{baseUrl}/banco/avisos",
@@ -254,6 +332,14 @@ public static class ArchiveCorpus
             "Resumen del mes: kilos recogidos, familias atendidas y voluntariado.")
         {
             Requires = [$"{At(index).Year}"]
+        }),
+        .. Enumerable.Range(0, EarlyBulletins).Select(index => new SearchEntry(
+            ["boletin", "bolet%c3%adn", "kilos", "alimentos"],
+            $"Boletín de {EarlyNamed(index)} — Banco de Alimentos de la Vega",
+            $"{baseUrl}/banco/boletines/{EarlySlug(index)}",
+            "Resumen del mes: lo recogido, familias atendidas y voluntariado.")
+        {
+            Requires = [$"{EarlyAt(index).Year}"]
         })
     ];
 }

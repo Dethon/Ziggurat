@@ -71,11 +71,11 @@ public class ResearchScenariosTests
     {
         var scale = ResearchScenarios.All.Where(scenario => scenario.Group == "scale").ToList();
 
-        scale.Count.ShouldBeGreaterThanOrEqualTo(4);
+        scale.Count.ShouldBeGreaterThanOrEqualTo(6);
         scale.ShouldAllBe(scenario => scenario.CallCeiling >= 16);
         scale.Where(scenario => scenario.Workers == WorkerMode.Real)
             .ShouldAllBe(scenario => scenario.CallCeiling >= 30 && scenario.Budget >= TimeSpan.FromMinutes(10));
-        scale.Count(scenario => scenario.Workers == WorkerMode.Real).ShouldBe(2);
+        scale.Count(scenario => scenario.Workers == WorkerMode.Real).ShouldBe(3);
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public class ResearchScenariosTests
             .ShouldAllBe(scenario => scenario.MayDelegateTo.Count == 0);
         ResearchScenarios.All.Where(scenario => scenario.Workers == WorkerMode.Real)
             .ShouldAllBe(scenario => scenario.MayDelegateTo.Contains("jonas-worker"));
-        ResearchScenarios.All.Count(scenario => scenario.Workers == WorkerMode.Real).ShouldBe(4);
+        ResearchScenarios.All.Count(scenario => scenario.Workers == WorkerMode.Real).ShouldBe(5);
     }
 
     [Fact]

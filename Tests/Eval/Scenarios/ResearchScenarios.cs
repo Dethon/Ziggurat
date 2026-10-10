@@ -38,7 +38,8 @@ public static class ResearchScenarios
         TheApprovedExpansion, TheBestQuarter, ThePlannedTotal, TheBriefing, TheSprain, TheSickDay,
         TheCostPerMember, TheTwoNewMembers, TheFallThatWasARise, TheKetonesThatWillNotFall,
         TheAnkleOnAnAnticoagulant, TheYieldPerKilowatt, TheShareTheExpansionAdds,
-        TheYearNobodyTotalled, TheMonthSomethingBegan, TheNoticeThatChangedTheCount, TheBriefingAtScale
+        TheYearNobodyTotalled, TheMonthSomethingBegan, TheNoticeThatChangedTheCount, TheBriefingAtScale,
+        TheFourYearTotal, TheFirstMonthOverTheLine
     ];
 
     // The two medical turns say there is no doctor until Monday, so they are asked on the
@@ -824,9 +825,11 @@ public static class ResearchScenarios
         "Banco de Alimentos de la Vega", a neighbourhood food bank, on its website of about
         sixty pages. What is on the site:
         - /banco — the home page. Its volunteer count, {ArchiveCorpus.VolunteersOnHomePage}, is two years old.
-        - /banco/boletines — an index of 31 monthly bulletins, /banco/boletines/2024-01 to /banco/boletines/2026-07. Each gives that month's kilos collected, families served ({ArchiveCorpus.FamiliesAtStart} in January 2024, {ArchiveCorpus.FamiliesAtEndOf2025} in December 2025, {ArchiveCorpus.FamiliesLatest} in July 2026) and active volunteers ({ArchiveCorpus.VolunteersInLatestBulletin} in July 2026). No bulletin gives a total for a year.
+        - /banco/boletines — an index of 55 monthly bulletins, /banco/boletines/2022-01 to /banco/boletines/2026-07, plus a second, corrected version of one of them. Each gives that month's kilos collected, families served ({ArchiveCorpus.FamiliesAtStart} in January 2024, {ArchiveCorpus.FamiliesAtEndOf2025} in December 2025, {ArchiveCorpus.FamiliesLatest} in July 2026) and active volunteers ({ArchiveCorpus.VolunteersInLatestBulletin} in July 2026). No bulletin gives a total for a year.
         - /banco/memoria-2024 — the only annual report: {SolarCorpus.Es(ArchiveCorpus.Kilos2024)} kg collected in 2024. There is no report for 2025; a notice says it is delayed and the figures are in the bulletins. The twelve bulletins of 2025 add up to {SolarCorpus.Es(ArchiveCorpus.Kilos2025)} kg, {SolarCorpus.Es(ArchiveCorpus.Kilos2025 - ArchiveCorpus.Kilos2024)} kg more than 2024.
         - Home delivery began in September 2024: /banco/boletines/2024-09 is the first bulletin to mention it and says so; every later one gives its count, {ArchiveCorpus.DeliveryAtYearEnd} families in December 2024. The minutes of the second quarter of 2024 only agree a pilot "after the summer", and a 2026 notice only says "since autumn 2024".
+        - The bulletins of 2022 and 2023 have three hazards. From January to June 2022 they count boxes, not kilos; the July 2022 bulletin says each box weighed {ArchiveCorpus.BoxKilos} kg. The May 2023 bulletin exists twice: as first published ({SolarCorpus.Es(ArchiveCorpus.May2023AsFirstPublished)} kg) and at /banco/boletines/2023-05-corregido ({SolarCorpus.Es(ArchiveCorpus.EarlyKilos[16])} kg), which says it replaces the other. Neither year has a report. Done right, 2022 comes to {SolarCorpus.Es(ArchiveCorpus.Kilos2022)} kg and 2023 to {SolarCorpus.Es(ArchiveCorpus.Kilos2023)} kg, and the four years 2022 to 2025 to {SolarCorpus.Es(ArchiveCorpus.KilosSince2022)} kg.
+        - Collections rise slowly and jump every December. The first month over {SolarCorpus.Es(ArchiveCorpus.Line)} kg was December 2022 ({SolarCorpus.Es(ArchiveCorpus.KilosFirstOverTheLine)} kg); the next was December 2023, and no ordinary month passed it until July 2024.
         - /banco/avisos — an index of fifteen notices. One, /banco/avisos/2026-11, says a premises closed on 5 August 2026 and {ArchiveCorpus.VolunteersNow} active volunteers remain, and that the July bulletin was closed before the change. The rest are about opening hours, campaigns and the like.
         - /banco/actas — eight quarterly minutes, mostly beside the point.
         The search returns a bulletin only to a query that names its year, and no more results
@@ -945,5 +948,64 @@ public static class ResearchScenarios
             """)), ceiling: 50) with
     {
         Budget = TimeSpan.FromMinutes(12)
+    });
+
+    // Four years, each kept differently: one counted in boxes for half of it, one with a month
+    // published twice, one with a report, one with nothing but its bulletins. Reading every page
+    // is not enough — the first comparison's best model read everything and cleared every rung —
+    // because three of the pages cannot be added as they stand.
+    public static Scenario TheFourYearTotal => Scale(Delegable(Rung(
+        "four years are totalled across boxes, a corrected bulletin and a report",
+        "¿Cuántos kilos de alimentos ha recogido en total el Banco de Alimentos de la Vega desde "
+        + "enero de 2022 hasta diciembre de 2025? Desglósalo por años. Con las fuentes.",
+        ceiling: 60,
+        Figure("the four-year total", ArchiveCorpus.KilosSince2022),
+        Grade.Facts("accuracy",
+            Figure("the four-year total", ArchiveCorpus.KilosSince2022),
+            Figure("the 2022 total", ArchiveCorpus.Kilos2022),
+            Figure("the 2023 total", ArchiveCorpus.Kilos2023),
+            _kilos2024, _kilos2025),
+        Grade.Grounded("grounding", ArchiveCorpus.ReportPage, ArchiveCorpus.CorrectedBulletin),
+        Grade.Judged("reasoning", _archive + """
+            Score REASONING: whether the reply handled the three things that cannot be added as
+            they stand.
+            10 — converts the boxes of early 2022 at the weight the July 2022 bulletin gives,
+            counts May 2023 once and at the corrected figure, and says so for each; 2024 from
+            the report or a correct sum, 2025 from its bulletins.
+            6 — two of the three hazards handled and the other missed (boxes added as kilos or
+            left out; May 2023 counted twice or at the first figure).
+            3 — one handled.
+            0 — none, or no total.
+            """)), ceiling: 60) with
+    {
+        Budget = TimeSpan.FromMinutes(12)
+    });
+
+    // The series rises slowly and jumps every December, so the first month over the line is a
+    // campaign month eighteen months before an ordinary one. Halving the archive to find the
+    // crossing answers July 2024; reading backwards from today stops at December 2023.
+    public static Scenario TheFirstMonthOverTheLine => Scale(Rung(
+        "the first month over a line is a December long before the trend gets there",
+        $"¿Cuál fue el primer mes en que el Banco de Alimentos de la Vega recogió más de {SolarCorpus.Es(ArchiveCorpus.Line)} "
+        + "kilos en un solo mes, y cuántos fueron? Con la fuente.",
+        ceiling: 40,
+        new SpokenValue("the first month over the line",
+            "diciembre de 2022", "diciembre 2022", "diciembre del 2022", "dic. de 2022", "dic. 2022"),
+        Grade.Facts("accuracy",
+            new SpokenValue("the first month over the line",
+                "diciembre de 2022", "diciembre 2022", "diciembre del 2022", "dic. de 2022", "dic. 2022"),
+            Figure("what was collected that month", ArchiveCorpus.KilosFirstOverTheLine)),
+        Grade.Grounded("grounding", ArchiveCorpus.FirstOverTheLineBulletin),
+        Grade.Judged("reasoning", _archive + """
+            Score REASONING: whether the reply found the first month and showed it was the first.
+            10 — December 2022, with some sign that the months before it were checked and are
+            under the line (the tool calls show the 2022 bulletins opened, or the reply says so).
+            7 — December 2022 with no sign of having ruled out earlier months.
+            3 — a later month that is over the line but is not the first: December 2023, or the
+            first ordinary month, July 2024.
+            0 — a month that is not over the line, or none.
+            """)) with
+    {
+        Budget = TimeSpan.FromMinutes(8)
     });
 }
