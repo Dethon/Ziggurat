@@ -120,41 +120,45 @@ public static class ArchiveCorpus
                     : "")}
             <p>Lo que más falta hace para el mes que viene: {_needs[index % _needs.Length]}.</p>
             <p>{_notes[index % _notes.Length]}</p>
+            <p><em>Boletín cerrado el último día de {Named(index)}.</em></p>
             """);
 
-    // Fifteen notices, in the order they were published. One of them changes a figure; the
-    // rest are what a notice board is mostly made of.
-    private static readonly (string Slug, string Title, string Body)[] _notices =
+    // Fifteen notices, in the order they were published and each with its date — on the board
+    // and on the notice. One of them changes a figure and its title does not say so: what says
+    // it is worth opening is that it is dated after the last bulletin was closed. The first
+    // armed run had no dates on the board, and the model read fifteen titles about opening
+    // hours and reasonably opened none.
+    private static readonly (string Slug, string Date, string Title, string Body)[] _notices =
     [
-        ("2025-01", "Horario de invierno del almacén",
-            "Del 1 de noviembre al 31 de marzo el almacén abre de 10:00 a 13:00, de lunes a viernes."),
-        ("2025-02", "Campaña de Navidad: puntos de recogida",
-            "Los puntos de recogida de la campaña de Navidad estarán en el mercado, el polideportivo y los dos colegios."),
-        ("2025-03", "Curso de manipulación de alimentos",
-            "El curso para voluntariado nuevo será los dos primeros sábados de febrero."),
-        ("2025-04", "Cambio de número de cuenta para donativos",
-            "Desde marzo los donativos se ingresan en la cuenta de la caja rural; la anterior deja de usarse."),
-        ("2025-05", "Recogida en los colegios",
+        ("2025-01", "8 de enero de 2025", "Horario de invierno del almacén",
+            "Hasta el 31 de marzo el almacén abre de 10:00 a 13:00, de lunes a viernes."),
+        ("2025-02", "20 de febrero de 2025", "Campaña de primavera: puntos de recogida",
+            "Los puntos de recogida de la campaña de primavera estarán en el mercado, el polideportivo y los dos colegios."),
+        ("2025-03", "3 de marzo de 2025", "Curso de manipulación de alimentos",
+            "El curso para voluntariado nuevo será los dos primeros sábados de abril."),
+        ("2025-04", "17 de marzo de 2025", "Cambio de número de cuenta para donativos",
+            "Desde abril los donativos se ingresan en la cuenta de la caja rural; la anterior deja de usarse."),
+        ("2025-05", "7 de abril de 2025", "Recogida en los colegios",
             "La recogida de primavera en los colegios será la última semana de abril."),
-        ("2025-06", "Horario de verano del almacén",
+        ("2025-06", "20 de junio de 2025", "Horario de verano del almacén",
             "Del 1 de julio al 31 de agosto el almacén abre de 9:00 a 12:00."),
-        ("2025-07", "Avería de la furgoneta",
+        ("2025-07", "9 de septiembre de 2025", "Avería de la furgoneta",
             "La furgoneta estará en el taller dos semanas; las rutas se harán con vehículos particulares."),
-        ("2025-08", "Asamblea anual de socios",
+        ("2025-08", "1 de octubre de 2025", "Asamblea anual de socios",
             "La asamblea anual se celebrará el último viernes de octubre en el centro cívico."),
-        ("2026-01", "Campaña de Navidad: resultados",
+        ("2026-01", "12 de enero de 2026", "Campaña de Navidad: resultados",
             "Gracias a todas las personas que participaron en la campaña de Navidad; el detalle, en el boletín de diciembre."),
-        ("2026-03", "Reparto a domicilio: nuevo horario",
+        ("2026-03", "2 de marzo de 2026", "Reparto a domicilio: nuevo horario",
             "El reparto a domicilio, en marcha desde el otoño de 2024, pasa a hacerse los martes y los jueves por la mañana."),
-        ("2026-05", "Recogida en los colegios",
+        ("2026-05", "20 de abril de 2026", "Recogida en los colegios",
             "La recogida de primavera en los colegios será la primera semana de mayo."),
-        ("2026-07", "Horario de verano del almacén",
+        ("2026-07", "22 de junio de 2026", "Horario de verano del almacén",
             "Del 1 de julio al 31 de agosto el almacén abre de 9:00 a 12:00."),
-        ("2026-09", "La memoria de 2025 se retrasa",
+        ("2026-09", "6 de julio de 2026", "La memoria de 2025 se retrasa",
             "La memoria anual de 2025 se publicará en otoño; hasta entonces, los datos de 2025 están en los boletines de cada mes."),
-        ("2026-11", "Cierre del local de la calle Mayor",
+        ("2026-11", "6 de agosto de 2026", "Cierre del local de la calle Mayor",
             $"El 5 de agosto de 2026 cerró el local de la calle Mayor y con él el turno de tarde. Tras las bajas, quedan {VolunteersNow} voluntarios activos; el boletín de julio se cerró antes del cambio."),
-        ("2026-12", "Se buscan conductores",
+        ("2026-12", "12 de agosto de 2026", "Se buscan conductores",
             "Hacen falta personas con carné para las rutas de reparto de los jueves.")
     ];
 
@@ -202,10 +206,11 @@ public static class ArchiveCorpus
         .. Enumerable.Range(0, Bulletins)
             .Select(index => new KeyValuePair<string, string>($"/banco/boletines/{Slug(index)}", Bulletin(index))),
         new("/banco/avisos", EvalWeb.Page("Tablón de avisos — Banco de Alimentos de la Vega",
-            Listed("Tablón de avisos", _notices.Select(notice => ($"/banco/avisos/{notice.Slug}", notice.Title))))),
+            Listed("Tablón de avisos", _notices.Select(notice =>
+                ($"/banco/avisos/{notice.Slug}", $"{notice.Date} — {notice.Title}"))))),
         .. _notices.Select(notice => new KeyValuePair<string, string>(
             $"/banco/avisos/{notice.Slug}",
-            EvalWeb.Page($"{notice.Title} — Banco de Alimentos de la Vega", $"<h1>{notice.Title}</h1><p>{notice.Body}</p>"))),
+            EvalWeb.Page($"{notice.Title} — Banco de Alimentos de la Vega", $"<h1>{notice.Title}</h1><p><em>Publicado el {notice.Date}.</em></p><p>{notice.Body}</p>"))),
         new("/banco/actas", EvalWeb.Page("Actas de la junta — Banco de Alimentos de la Vega",
             Listed("Actas de la junta", _minutes.Select(minute => ($"/banco/actas/{minute.Slug}", minute.Title))))),
         .. _minutes.Select(minute => new KeyValuePair<string, string>(

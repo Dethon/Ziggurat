@@ -71,6 +71,15 @@ public class ArchiveCorpusTests
     }
 
     [Fact]
+    public void TheBoard_DatesEveryNotice_SoALaterOneCanBeSeenToBeLater()
+    {
+        // The notice that matters is not about volunteers by its title. What tells a reader to
+        // open it is its date beside the date the last bulletin was closed.
+        ArchiveCorpus.Pages["/banco/avisos"].ShouldContain("6 de agosto de 2026 — Cierre del local de la calle Mayor");
+        ArchiveCorpus.Pages["/banco/boletines/2026-07"].ShouldContain("cerrado el último día de julio de 2026");
+    }
+
+    [Fact]
     public void TheSearch_ReturnsABulletinOnlyToAQueryThatNamesItsYear()
     {
         // Otherwise one search for the food bank is the whole archive in a list.

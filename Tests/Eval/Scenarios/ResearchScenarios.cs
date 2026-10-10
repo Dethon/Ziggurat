@@ -874,7 +874,9 @@ public static class ResearchScenarios
         "the month something began is found in the bulletin that says so",
         "¿En qué mes empezó el reparto a domicilio del Banco de Alimentos de la Vega, y a "
         + "cuántas familias llegaba al acabar ese año? Con la fuente.",
-        ceiling: 20,
+        // Reading a year of bulletins one after another until the one that says so is an
+        // honest way to find it: the first armed run did exactly that and took twenty-one.
+        ceiling: 26,
         _deliveryMonth,
         Grade.Facts("accuracy",
             _deliveryMonth,
@@ -919,7 +921,9 @@ public static class ResearchScenarios
         + "breve: kilos recogidos en 2024 y en 2025; familias atendidas en enero de 2024, en "
         + "diciembre de 2025 y en el último dato publicado; cuándo empezó el reparto a domicilio; "
         + "y cuántos voluntarios activos tiene hoy. Indica de qué página sale cada dato.",
-        ceiling: 40,
+        // A correct in-place run took forty-four: the twelve bulletins, the indexes, the
+        // report, the notices and the three months asked for by name.
+        ceiling: 50,
         _kilos2024,
         Grade.Facts("accuracy",
             _kilos2024, _kilos2025,
@@ -941,7 +945,7 @@ public static class ResearchScenarios
             7 — four of the five.
             4 — three of the five, or 2025 reported as unavailable.
             0 — two or fewer.
-            """)), ceiling: 40) with
+            """)), ceiling: 50) with
     {
         Budget = TimeSpan.FromMinutes(12)
     });
