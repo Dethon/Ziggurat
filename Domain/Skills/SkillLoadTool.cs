@@ -48,13 +48,13 @@ public static class SkillLoadTool
         var loads = preload.Skills
             .Select((skill, i) => (
                 Call: new FunctionCallContent(
-                    $"{callIdPrefix}-{i + 1}", Name, new Dictionary<string, object?> { [SkillNameParameter] = skill.Name }),
+                    CallId(i + 1, callIdPrefix), Name, new Dictionary<string, object?> { [SkillNameParameter] = skill.Name }),
                 Result: (object)Wrapped(skill)))
             .ToList();
         var reads = preload.Reads
             .Select((read, i) => (
                 Call: new FunctionCallContent(
-                    $"{callIdPrefix}-read-{i + 1}",
+                    CallId(loads.Count + i + 1, callIdPrefix),
                     ReadToolName,
                     new Dictionary<string, object?> { [VfsFileReadTool.FilePathParameter] = read.Path }),
                 Result: (object)read.Result))
@@ -67,6 +67,13 @@ public static class SkillLoadTool
             new ChatMessage(ChatRole.Tool, [.. pairs.Select(p => new FunctionResultContent(p.Call.CallId, p.Result))])
         ];
     }
+
+    // The ordinal leads, because a provider may read only the head of an id: Mistral's are nine
+    // letters and digits, and OpenRouter fits ours to that by dropping the punctuation and keeping
+    // the first nine. With the turn's prefix in front every call of a preload was one id there,
+    // and a load beside its read was refused whole — HTTP 400, "Duplicate tool call id in
+    // assistant message" (2026-10-10). Only calls on one message have to differ.
+    private static string CallId(int ordinal, string callIdPrefix) => $"{ordinal}-{callIdPrefix}";
 
     // A thinking model leaves its reasoning before its calls, and a host in thinking mode can
     // demand it back: DeepSeek's own answers an assistant call message without one with HTTP 400

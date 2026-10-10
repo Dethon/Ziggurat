@@ -50,8 +50,8 @@ public class OpenRouterChatClientPreloadWireTests
         text["type"]!.GetValue<string>().ShouldBe("reasoning_text");
         text["text"]!.GetValue<string>().ShouldContain("home-assistant");
         reasoning["summary"]!.AsArray().ShouldBeEmpty();
-        input[2]["call_id"]!.GetValue<string>().ShouldBe("preload-abc-1");
-        input[3]["call_id"]!.GetValue<string>().ShouldBe("preload-abc-read-1");
+        input[2]["call_id"]!.GetValue<string>().ShouldBe("1-preload-abc");
+        input[3]["call_id"]!.GetValue<string>().ShouldBe("2-preload-abc");
     }
 
     [Fact]

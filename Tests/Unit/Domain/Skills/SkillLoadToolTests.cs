@@ -30,12 +30,12 @@ public class SkillLoadToolTests
         SkillLoadTool.IsHostReasoning(reasoning.AdditionalProperties![SkillLoadTool.ReasoningItemIdKey]!.ToString()).ShouldBeTrue();
         var calls = messages[0].Contents.OfType<FunctionCallContent>().ToList();
         calls.Select(c => c.Name).ShouldBe([SkillLoadTool.Name, FileSystemToolFeature.Callable(VfsFileReadTool.Name)]);
-        calls[0].CallId.ShouldBe("preload-abc-1");
-        calls[1].CallId.ShouldBe("preload-abc-read-1");
+        calls[0].CallId.ShouldBe("1-preload-abc");
+        calls[1].CallId.ShouldBe("2-preload-abc");
         calls[1].Arguments!.ShouldContainKeyAndValue(VfsFileReadTool.FilePathParameter, "/ha/setup-index.md");
 
         var results = messages[1].Contents.OfType<FunctionResultContent>().ToList();
-        results.Select(r => r.CallId).ShouldBe(["preload-abc-1", "preload-abc-read-1"]);
+        results.Select(r => r.CallId).ShouldBe(["1-preload-abc", "2-preload-abc"]);
         results[0].Result!.ToString().ShouldNotBeNull().ShouldContain("Read the index, then call the house.");
         results[1].Result.ShouldBeSameAs(index);
     }
@@ -53,6 +53,34 @@ public class SkillLoadToolTests
         var reasoning = messages[0].Contents.OfType<TextReasoningContent>().ShouldHaveSingleItem();
         reasoning.Text.ShouldContain("countdown-timers");
         reasoning.Text.ShouldNotContain("reading");
+    }
+
+    // Mistral takes a call id as nine letters and digits, and OpenRouter cuts ours down to fit:
+    // punctuation dropped, the first nine kept. Calls on one message that agree that far are one
+    // id to it — HTTP 400, "Duplicate tool call id in assistant message" (mistral-large-4-0,
+    // 2026-10-10) — so what tells a preload's calls apart has to lead the id. The same ids on
+    // two different messages are taken.
+    [Fact]
+    public void AsPreloaded_EveryCallOnTheMessage_DiffersWithinItsFirstNineLettersAndDigits()
+    {
+        var preload = new SkillPreload(SkillPreloadOutcome.Preloaded, [TestSkills.HomeWithIndex, TestSkills.Timers])
+        {
+            Reads =
+            [
+                new SkillPreloadRead("home-assistant", "/ha/setup-index.md", new JsonObject()),
+                new SkillPreloadRead("countdown-timers", "/timers/index.md", new JsonObject())
+            ]
+        };
+
+        var messages = SkillLoadTool.AsPreloaded(preload, "preload-1a2b3c4d");
+
+        var asMistralReadsThem = messages[0].Contents.OfType<FunctionCallContent>()
+            .Select(c => string.Concat(c.CallId.Where(char.IsAsciiLetterOrDigit).Take(9)))
+            .ToList();
+        asMistralReadsThem.Count.ShouldBe(4);
+        asMistralReadsThem.ShouldBeUnique();
+        messages[1].Contents.OfType<FunctionResultContent>().Select(r => r.CallId)
+            .ShouldBe(messages[0].Contents.OfType<FunctionCallContent>().Select(c => c.CallId));
     }
 
     [Fact]
