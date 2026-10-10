@@ -12,14 +12,10 @@ namespace Tests.Eval.Harness;
 public class GradeTests
 {
     private static readonly Grade _facts = Grade.Facts("accuracy",
-        carries:
-        [
-            new SpokenValue("the 2024 total", "1.316", "1316"),
-            new SpokenValue("the 2025 total", "1.577", "1577"),
-            new SpokenValue("the difference", "261"),
-            new SpokenValue("the year it rose", "2025")
-        ],
-        never: [new SpokenValue("the snippet's stale total", "1.200", "1200")]);
+        new SpokenValue("the 2024 total", "1.316", "1316"),
+        new SpokenValue("the 2025 total", "1.577", "1577"),
+        new SpokenValue("the difference", "261"),
+        new SpokenValue("the year it rose", "2025"));
 
     private static Scenario TheScenario(params Grade[] graded) => new()
     {
@@ -41,13 +37,13 @@ public class GradeTests
     }
 
     [Fact]
-    public void Facts_AValueThatIsWrong_CancelsOneThatIsRight()
+    public void Facts_AWrongValueBesideARightOne_CostsNothingHere()
     {
-        // A reply carrying the stale number beside a true one has been half fooled, and a score
-        // that counted only what was found would rate it with a reply that was never fooled.
-        ((FactGrade)_facts).Score("En 2025 fueron 1.577, frente a los 1.200 de antes.")
-            .ShouldBe(2.5, 0.001);
-        ((FactGrade)_facts).Score("Fueron 1.200.").ShouldBe(0);
+        // "Antes 1.200, ahora 1.577" is a good answer, and a reply that names the stale figure to
+        // set it aside must not be marked with one that believed it. Whether a reply was fooled
+        // is the judged dimension's question; this one only counts what is true and present.
+        ((FactGrade)_facts).Score("En 2025 fueron 1.577, no los 1.200 que dice el buscador.")
+            .ShouldBe(5, 0.001);
     }
 
     [Fact]

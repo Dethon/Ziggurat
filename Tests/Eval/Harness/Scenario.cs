@@ -113,12 +113,11 @@ public sealed record Scenario
     // number two models can be compared along. Nothing here fails a run.
     public IReadOnlyList<Grade> Graded { get; init; } = [];
 
-    // Workers that really run, on the stack's own servers and on the parent's model, instead of
-    // answering WorkerAnswer. Off everywhere a scenario's subject is the parent's decision to
-    // delegate — a real worker puts a second answer between that decision and its assertion, and
-    // costs a run to do it. On where the subject is the answer itself: research that is correctly
-    // handed to a worker would otherwise come back as a canned line and be marked as no research.
-    public bool RealWorkers { get; init; }
+    // Who answers a delegation. Canned everywhere a scenario's subject is the parent's decision
+    // to delegate — a real worker puts a second answer between that decision and its assertion,
+    // and costs a run to do it. The other two are for a scenario whose subject is the answer
+    // itself, where a stub's one line would be marked as no research.
+    public WorkerMode Workers { get; init; } = WorkerMode.Canned;
 
     // What one run may take before it is recorded as never having finished. The default is a
     // turn's worth; work that is long by design declares its own.
@@ -183,6 +182,19 @@ public sealed record RunPolicy(int K, int N)
         get => _width ?? (Exhaustive ? N : K);
         init => _width = value;
     }
+}
+
+public enum WorkerMode
+{
+    // Every worker answers the scenario's WorkerAnswer and runs nothing.
+    Canned,
+    // Workers really run: built by the deployment's own factory, on the parent's model and the
+    // stack's servers. What was delegated is read off the parent's calls, answer included.
+    Real,
+    // The agent has no workers at all — the one feature a scenario may take away from the
+    // shipped definition, and it says so here. The prompt lets research go to a worker, so a
+    // rung that measures what a model finds by itself cannot leave that to the model's coin.
+    None
 }
 
 public enum EvalTier

@@ -81,7 +81,7 @@ public static class EvalRun
         }
         recording.StateAfter = stack.Home.Snapshot();
         recording.FilesAfter = EvalVault.Read(stack.VaultPath);
-        recording.Delegations = scenario.RealWorkers
+        recording.Delegations = scenario.Workers == WorkerMode.Real
             ? Delegation.Heard(recording.Calls)
             : stack.Workers.Delegations;
         recording.MemoriesAfter = stack.Memory.Remaining;

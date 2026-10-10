@@ -233,6 +233,9 @@ public sealed class EvalWeb : IAsyncDisposable
                 ? Html(Page("Sin inscripción", "<h1>Todavía no hay ninguna inscripción</h1>"))
                 : Html(MaterialsConfirmation(site.Materials[^1])));
 
+        // The research family's site within the site: one subject, several pages that disagree.
+        SolarCorpus.Map(app);
+
         await app.StartAsync();
         return site;
     }
@@ -261,7 +264,7 @@ public sealed class EvalWeb : IAsyncDisposable
         }
     }
 
-    private static IResult Html(string body) =>
+    internal static IResult Html(string body) =>
         Results.Content(body, "text/html; charset=utf-8", Encoding.UTF8);
 
     private static string Index() =>
@@ -511,7 +514,7 @@ public sealed class EvalWeb : IAsyncDisposable
             <p>Tu código de reserva es <strong>{CodeFor(booking.Slot)}</strong>. Guárdalo.</p>
             """);
 
-    private static string Page(string title, string body) =>
+    internal static string Page(string title, string body) =>
         $"""
          <!doctype html>
          <html lang="es"><head><meta charset="utf-8"><title>{title}</title></head>
@@ -625,17 +628,18 @@ internal sealed class FakeSearch(string baseUrl) : HttpMessageHandler
             "Apuntarse a una actividad — Cuaderno de barrio",
             $"{baseUrl}/agenda/apuntarse",
             "El formulario para apuntarse a las actividades del barrio: busca la actividad y "
-            + "apúntate con tu nombre.")
+            + "apúntate con tu nombre."),
+        .. SolarCorpus.Search(baseUrl)
     ];
+}
 
-    private sealed record SearchEntry(
-        IReadOnlyList<string> Keywords, string Title, string Url, string Description)
+internal sealed record SearchEntry(
+    IReadOnlyList<string> Keywords, string Title, string Url, string Description)
+{
+    public JsonNode ToJson() => new JsonObject
     {
-        public JsonNode ToJson() => new JsonObject
-        {
-            ["title"] = Title,
-            ["url"] = Url,
-            ["description"] = Description
-        };
-    }
+        ["title"] = Title,
+        ["url"] = Url,
+        ["description"] = Description
+    };
 }

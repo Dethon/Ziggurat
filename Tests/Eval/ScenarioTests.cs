@@ -220,6 +220,33 @@ public class WebScenarioTests2(EvalScorecard scorecard) : IClassFixture<EvalScor
         EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
 }
 
+// The research tier: the graded family, by name and never as part of a full pass. Run once per
+// model — `ZIGGURAT_EVAL_MODEL=<id>` — and each pass leaves a scorecard filed under the model that
+// served it, so two of them are a comparison.
+[Trait("Category", "Eval")]
+[Trait("Tier", "Research")]
+public class ResearchScenarioTests(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(ResearchScenarios.All, 0, of: 2);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task ARung_OverEveryRunItDeclares_IsMarked(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Research, scenario => scenario.Policy, scorecard);
+}
+
+[Trait("Category", "Eval")]
+[Trait("Tier", "Research")]
+public class ResearchScenarioTests2(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(ResearchScenarios.All, 1, of: 2);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task ARung_OverEveryRunItDeclares_IsMarked(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Research, scenario => scenario.Policy, scorecard);
+}
+
 // The seam the split opened: a family added to EvalSuite.All without a class here would report
 // its claims as covered while nothing executes them, and a scenario wired into two classes would
 // be recorded twice. Deterministic, so a bare run catches both before any money is spent.
@@ -235,7 +262,23 @@ public class ScenarioWiringTests
     {
         var wired = Classes("Tier", "Full").SelectMany(Named).ToList();
 
-        wired.ShouldBe(EvalSuite.All.Select(s => s.Name).ToList(), ignoreOrder: true);
+        wired.ShouldBe(
+            EvalSuite.All.Where(s => s.Tier != EvalTier.Research).Select(s => s.Name).ToList(),
+            ignoreOrder: true);
+    }
+
+    // The research family is the one the full tier leaves out, so it needs classes of its own
+    // or nothing runs it at all — and a research scenario in a full-tier class would put its
+    // bill on every routine pass.
+    [Fact]
+    public void EveryResearchScenario_IsWiredIntoExactlyOneResearchTierClass()
+    {
+        var wired = Classes("Tier", "Research").SelectMany(Named).ToList();
+
+        wired.ShouldBe(ResearchScenarios.All.Select(s => s.Name).ToList(), ignoreOrder: true);
+        ResearchScenarios.All.ShouldAllBe(s => s.Tier == EvalTier.Research);
+        EvalSuite.All.Where(s => s.Tier == EvalTier.Research).Select(s => s.Name)
+            .ShouldBe(ResearchScenarios.All.Select(s => s.Name), ignoreOrder: true);
     }
 
     [Fact]

@@ -57,6 +57,45 @@ public class EvalWebTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SearchingForTheCooperative_ShowsTheStalePageFirst_AndNeverTheFeesPage()
+    {
+        var result = await _web.SearchClient().SearchAsync(
+            new WebSearchQuery("cooperativa solar Sol de la Vega socios", 10));
+
+        // The oldest page ranks first and its snippet carries the old headcount: answering from
+        // the top of the list is the easy, wrong path the research family is about.
+        result.Results[0].Url.ShouldBe($"{_web.BaseUrl}/solar");
+        result.Results[0].Snippet.ShouldContain(SolarCorpus.StaleMembers.ToString());
+        result.Results.ShouldContain(entry => entry.Url.EndsWith("/solar/memoria-2025"));
+        result.Results.ShouldNotContain(entry => entry.Url.Contains("/cuotas"));
+    }
+
+    [Fact]
+    public async Task TheReport_CarriesTheCurrentFigures_AndTheWayToTheFeesPage()
+    {
+        var page = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-report", $"{_web.BaseUrl}/solar/memoria-2025") { Caller = JudgmentCaller.None });
+
+        var content = page.Content.ShouldNotBeNull();
+        content.ShouldContain(SolarCorpus.Members.ToString());
+        content.ShouldContain(SolarCorpus.Es(SolarCorpus.Production2025));
+        // The link survives the read as something a reader can follow: the fees are on a page no
+        // search returns, and this is the way there.
+        content.ShouldContain("/solar/cuotas");
+    }
+
+    [Fact]
+    public async Task TheFeesPage_CarriesTheFeesTheOldPageNoLongerDoes()
+    {
+        var page = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-fees", $"{_web.BaseUrl}/solar/cuotas") { Caller = JudgmentCaller.None });
+
+        var content = page.Content.ShouldNotBeNull();
+        content.ShouldContain($"{SolarCorpus.EntryFee} €");
+        content.ShouldContain($"{SolarCorpus.AnnualFee} €");
+    }
+
+    [Fact]
     public async Task APageNobodyHereServes_CannotBeLoadedAtAll()
     {
         // The family's hard boundary, held by the browser rather than by a rule somebody has to

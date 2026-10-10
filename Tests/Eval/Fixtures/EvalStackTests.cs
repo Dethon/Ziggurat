@@ -45,6 +45,27 @@ public class EvalStackTests
     }
 
     [Fact]
+    public void Alone_TheScenariosAgent_LosesItsWorkers_AndNobodyElseDoes()
+    {
+        // The one departure from the shipped definition a scenario may ask for, and it asks by
+        // name: a rung that measures what the model researches by itself cannot leave the
+        // delegation to the model's own coin.
+        var settings = _shipped with
+        {
+            Agents =
+            [
+                _shipped.Agents[0] with { EnabledFeatures = ["filesystem", "subagents", "memory"] },
+                _shipped.Agents[0] with { Id = "nabu", EnabledFeatures = ["subagents"] }
+            ]
+        };
+
+        var alone = EvalStack.Alone(settings, "jonas");
+
+        alone.Agents.Single(a => a.Id == "jonas").EnabledFeatures.ShouldBe(["filesystem", "memory"]);
+        alone.Agents.Single(a => a.Id == "nabu").EnabledFeatures.ShouldBe(["subagents"]);
+    }
+
+    [Fact]
     public void Rehosted_AWorkersEndpoints_PointAtTheStackToo()
     {
         // Left at the compose host names, a real worker dials a configured endpoint nothing

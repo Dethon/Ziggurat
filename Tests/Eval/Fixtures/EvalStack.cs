@@ -143,7 +143,7 @@ public sealed class EvalStack : IAsyncDisposable
         // option is not one.
         stack.Sandbox = await EvalSandbox.StartAsync(await stack.StartBridgeAsync());
 
-        stack.BuildAgentServices(shipped, recording, scenario.RealWorkers, new Dictionary<string, string>
+        stack.BuildAgentServices(shipped, recording, scenario, new Dictionary<string, string>
         {
             ["mcp-timers"] = await stack.StartTimersAsync(scenario),
             ["mcp-scheduling"] = await stack.StartSchedulingAsync(shipped, redisConnectionString),
@@ -395,10 +395,12 @@ public sealed class EvalStack : IAsyncDisposable
     // The agent itself, built by the real factory. Only the configured endpoint urls are rewritten,
     // to the servers this stack hosts.
     private void BuildAgentServices(
-        AgentSettings shipped, Recording recording, bool realWorkers,
+        AgentSettings shipped, Recording recording, Scenario scenario,
         IReadOnlyDictionary<string, string> hosted)
     {
-        var settings = Rehosted(shipped, hosted);
+        var settings = scenario.Workers == WorkerMode.None
+            ? Alone(Rehosted(shipped, hosted), scenario.AgentId)
+            : Rehosted(shipped, hosted);
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -412,7 +414,7 @@ public sealed class EvalStack : IAsyncDisposable
         // Absent where a scenario asks for workers that really run: the factory then builds
         // them itself, as it does in every deployment, on the parent's model and this stack's
         // servers, and what was delegated is read off the parent's own calls.
-        if (!realWorkers)
+        if (scenario.Workers == WorkerMode.Canned)
         {
             services.AddSingleton<ISubAgentSpawner>(Workers);
         }
@@ -442,6 +444,27 @@ public sealed class EvalStack : IAsyncDisposable
         [.. endpoints
             .Select(endpoint => hosted.FirstOrDefault(h => endpoint.Contains(h.Key)).Value)
             .Where(rewritten => rewritten is not null)];
+
+    // One agent without the feature that gives it workers: no tool to call them with and no
+    // section telling it they exist. Everything else about it, and everything about every other
+    // agent, is the shipped definition.
+    public static AgentSettings Alone(AgentSettings settings, string agentId) =>
+        settings with
+        {
+            Agents =
+            [
+                .. settings.Agents.Select(a => a.Id == agentId
+                    ? a with
+                    {
+                        EnabledFeatures =
+                        [
+                            .. a.EnabledFeatures.Where(feature =>
+                                !feature.Equals("subagents", StringComparison.OrdinalIgnoreCase))
+                        ]
+                    }
+                    : a)
+            ]
+        };
 
     // A worker's endpoints as much as an agent's. A canned worker dials nothing and never
     // noticed; one that really runs dials what its own profile names.
