@@ -51,8 +51,8 @@ never twice. ADR 0039 (refined 2026-09-18) is the decision; these are the rules 
 lands on. A turn addressed to the Lemonade chat host asks
 nothing, and neither does a worker it spawns. The Jev client holds that rule
 (`.claude/rules/mcp-hosting.md`); the group and the provider only name the model on
-`SkillPreloadRequest.Caller` (`JudgmentCaller.TurnModel`) — from the request's own patch, or for a worker, which has
-none, from the parent turn's `ConversationContext` its request carries.
+`SkillPreloadRequest.Caller` (`JudgmentCaller.TurnModel`) — from the request's own patch, which for a worker is the
+parent turn's, written onto its request by the run tool from the `ConversationContext` it also carries.
 
 - **A skill may already be in the conversation when a turn starts, and one that is, is loaded.**
   The `skills` section says so to the model; `SkillLoadTool.LoadedIn` says so to the preloader,

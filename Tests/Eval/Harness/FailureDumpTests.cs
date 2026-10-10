@@ -1,4 +1,6 @@
+using Infrastructure.Agents.ChatClients;
 using Shouldly;
+using Tests.Eval.Fixtures;
 
 namespace Tests.Eval.Harness;
 
@@ -33,6 +35,34 @@ public class FailureDumpTests : IDisposable
         dump.ShouldContain("/schedules/pasta/task.json");
         dump.ShouldContain("Listo, ocho minutos.");
         dump.ShouldContain("unnecessary call: /schedules");
+    }
+
+    [Fact]
+    public async Task ARunWithRealWorkers_DumpsWhatEachAnsweredAndWhatItDid()
+    {
+        // A wrong answer from a run that delegated is explained by the worker as often as by the
+        // parent, and the worker's side of it exists nowhere else once the run is over.
+        var recording = new Recording { Parent = "Jonas", Reply = "Fueron 1.200." };
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 0,
+            ToolName = "mcp__web__web_search",
+            Arguments = """{"query":"total rifa"}""",
+            Result = "un resultado",
+            Outcome = ToolInvocationOutcome.Completed,
+            AgentId = "Jonas Worker"
+        });
+        recording.Delegations =
+            [new Delegation("jonas-worker", "Averigua el total") { Answer = "Unos 1.200, creo." }];
+        var scenario = Scenario();
+
+        var dump = await File.ReadAllTextAsync(FailureDump.Write(_output, new FailedRun(
+            scenario, recording, TurnText(scenario), recording.Route, ["the reply is wrong"])));
+
+        dump.ShouldContain("Unos 1.200, creo.");
+        dump.ShouldContain("## Worker calls");
+        dump.ShouldContain("total rifa");
+        dump.ShouldContain("un resultado");
     }
 
     [Fact]

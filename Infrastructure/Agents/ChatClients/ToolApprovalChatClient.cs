@@ -215,7 +215,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 
     private void ObserveTurn(ChatOptions? options) =>
         _observer?.OnTurn(new TurnObservation(
-            options?.Instructions, GetService(typeof(ServedRoute)) as ServedRoute));
+            options?.Instructions, GetService(typeof(ServedRoute)) as ServedRoute)
+        { AgentId = _agentId });
 
     // Every call of one iteration passes through here, including the two that never reach
     // InvokeFunctionAsync: a call whose tool threw, and a call naming a tool nothing serves. That
@@ -228,7 +229,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         {
             foreach (var result in results)
             {
-                _observer.OnInvoked(Describe(result, Interlocked.Increment(ref _observed) - 1));
+                _observer.OnInvoked(
+                    Describe(result, Interlocked.Increment(ref _observed) - 1) with { AgentId = _agentId });
             }
         }
 

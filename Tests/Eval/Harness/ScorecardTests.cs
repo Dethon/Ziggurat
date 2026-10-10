@@ -294,6 +294,82 @@ public class ScorecardTests : IDisposable
     }
 
     [Fact]
+    public void AGradedScenario_CarriesEachDimensionsMean_AndThePassCarriesTheScore()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)],
+        [
+            new ScenarioOutcome("two totals", 2, 2)
+            {
+                Agent = "jonas",
+                Grades =
+                [
+                    new GradeMark("accuracy", 10), new GradeMark("attribution", 6, "one figure unsourced"),
+                    new GradeMark("accuracy", 5), new GradeMark("attribution", 8, "sourced")
+                ]
+            },
+            new ScenarioOutcome("an absent answer", 1, 1)
+            {
+                Agent = "jonas",
+                Grades = [new GradeMark("accuracy", 0)]
+            },
+            new ScenarioOutcome("an ungraded scenario", 1, 1) { Agent = "nabu" }
+        ]);
+
+        var card = Read(Path.Combine(_output, "scorecard-full.json"));
+
+        var row = card.GetProperty("scenarios").GetProperty("two totals").GetProperty("grades");
+        row.GetProperty("accuracy").GetProperty("mean").GetDouble().ShouldBe(7.5, 0.001);
+        row.GetProperty("accuracy").GetProperty("runs").GetInt32().ShouldBe(2);
+        row.GetProperty("attribution").GetProperty("mean").GetDouble().ShouldBe(7, 0.001);
+        row.GetProperty("attribution").GetProperty("reasons").EnumerateArray()
+            .Select(r => r.GetString()).ShouldBe(["6: one figure unsourced", "8: sourced"]);
+        // The scenario's score is the mean of its dimensions, not of its marks: a dimension the
+        // judge skipped once must not weigh less than one it answered every time.
+        card.GetProperty("scenarios").GetProperty("two totals").GetProperty("score").GetDouble()
+            .ShouldBe(7.25, 0.001);
+        card.GetProperty("scenarios").GetProperty("an ungraded scenario").TryGetProperty("grades", out _)
+            .ShouldBeFalse();
+
+        // The pass's score is the mean of its scenarios' scores: one long scenario with many
+        // runs must not outvote the rest.
+        var grades = card.GetProperty("summary").GetProperty("grades");
+        grades.GetProperty("score").GetDouble().ShouldBe((7.25 + 0) / 2, 0.001);
+        grades.GetProperty("scenarios").GetInt32().ShouldBe(2);
+        grades.GetProperty("byDimension").GetProperty("accuracy").GetDouble().ShouldBe((7.5 + 0) / 2, 0.001);
+        grades.GetProperty("byDimension").GetProperty("attribution").GetDouble().ShouldBe(7, 0.001);
+
+        card.GetProperty("summary").GetProperty("byAgent").GetProperty("jonas")
+            .GetProperty("grades").GetProperty("score").GetDouble().ShouldBe(3.625, 0.001);
+        card.GetProperty("summary").GetProperty("byAgent").GetProperty("nabu")
+            .TryGetProperty("grades", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void APassWithNothingGraded_CarriesNoGrades()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)],
+            [new ScenarioOutcome("a timer", 1, 1)]);
+
+        Read(Path.Combine(_output, "scorecard-full.json")).GetProperty("summary")
+            .TryGetProperty("grades", out _).ShouldBeFalse();
+    }
+
+    // The research tier's diff is across models, where every other tier's is across time: one
+    // file per model is what lets two of them sit side by side, and what stops the second
+    // model's pass from overwriting the first's.
+    [Fact]
+    public void AResearchPass_IsFiledUnderTheModelThatServedIt()
+    {
+        var path = Scorecard.Write(
+            _output, EvalTier.Research, new ServedRoute("anthropic/claude-haiku-5.5", "Anthropic"),
+            [new ClaimOutcome("c", 1, 1)]);
+
+        Path.GetFileName(path).ShouldBe("scorecard-research-anthropic-claude-haiku-5.5.json");
+        Path.GetFileName(Scorecard.Write(_output, EvalTier.Research, null, [new ClaimOutcome("c", 1, 1)]))
+            .ShouldBe("scorecard-research.json");
+    }
+
+    [Fact]
     public void AScenarioThatNamesNoAgent_IsInNoAgentsRate()
     {
         Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)],

@@ -1,9 +1,12 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.DTOs;
 using Infrastructure.Agents;
+using Infrastructure.Agents.ChatClients;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Tests.Eval.Harness;
 
 namespace Tests.Eval.Fixtures;
 
@@ -81,4 +84,40 @@ public sealed class CannedSubAgents(string result) : ISubAgentSpawner
 }
 
 // One delegation: the profile the parent named and the prompt it wrote.
-public sealed record Delegation(string ProfileId, string Prompt);
+public sealed record Delegation(string ProfileId, string Prompt)
+{
+    // What a real worker came back with. Null for a canned one, whose answer is the scenario's
+    // own string and says nothing about the run.
+    public string? Answer { get; init; }
+
+    // The delegations of a run with real workers, read off the parent's own calls: nothing stands
+    // where the worker would have been, so the profile and the prompt are the call's arguments
+    // and the answer is its result — the tool's envelope whole where the worker never answered,
+    // because a timeout is what the parent read and had to act on.
+    public static IReadOnlyList<Delegation> Heard(IEnumerable<ToolInvocation> calls) =>
+    [
+        .. calls
+            .Where(call => call.ToolName == EvalTools.Subagent)
+            .Select(call => new Delegation(Text(call.Arguments, "subAgentId") ?? "", Text(call.Arguments, "prompt") ?? "")
+            {
+                Answer = Text(call.Result, "result") ?? call.Result ?? call.Error
+            })
+    ];
+
+    private static string? Text(string? json, string property)
+    {
+        try
+        {
+            return json is not null
+                   && JsonNode.Parse(json) is JsonObject node
+                   && node[property] is JsonValue value
+                   && value.TryGetValue<string>(out var text)
+                ? text
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+}

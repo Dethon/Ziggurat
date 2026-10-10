@@ -136,8 +136,22 @@ public static class FailureDump
         {
             dump.AppendLine("## Delegated")
                 .AppendLine()
-                .AppendJoin("\n", recording.Delegations.Select(d =>
-                    $"- {d.ProfileId}: \"{d.Prompt}\""))
+                .AppendJoin("\n", recording.Delegations.Select(d => d.Answer is null
+                    ? $"- {d.ProfileId}: \"{d.Prompt}\""
+                    : $"- {d.ProfileId}: \"{d.Prompt}\"\n\n  Answered:\n\n  ```\n  {d.Answer}\n  ```"))
+                .AppendLine()
+                .AppendLine();
+        }
+
+        // Only a run with real workers has any: what each did with what it was handed, which is
+        // where a delegated answer that came back wrong is explained.
+        if (recording.WorkerCalls.Count > 0)
+        {
+            dump.AppendLine("## Worker calls")
+                .AppendLine()
+                .AppendJoin("\n", recording.WorkerCalls.Select(call =>
+                    $"- {call.ToolName} ({call.Outcome}) `{call.Arguments}` → " +
+                    $"{Brief(call.Error ?? call.Result ?? "none")}"))
                 .AppendLine()
                 .AppendLine();
         }
@@ -160,6 +174,14 @@ public static class FailureDump
     private static string Slug(string name) =>
         string.Join("-", name.ToLowerInvariant().Split(
             [' ', '/', '\\', ':'], StringSplitOptions.RemoveEmptyEntries));
+
+    // A worker's page read is the whole page, and the dump is about the parent's run: enough of
+    // each result to see what came back, never all of it.
+    private const int WorkerResultCap = 600;
+
+    private static string Brief(string text) =>
+        (text.Length <= WorkerResultCap ? text : text[..WorkerResultCap] + "…(truncated)")
+        .ReplaceLineEndings(" ");
 }
 
 // One failed run, whole. The route is carried beside the recording rather than read off it: under

@@ -42,7 +42,8 @@ public static class Judge
         var verdicts = new List<string>();
         foreach (var check in ScenarioChecks.JudgedNow(scenario, recording))
         {
-            var verdict = await AskAsync(client, Material(scenario, recording, check), recording);
+            var verdict = await AskAsync(
+                client, SystemPrompt, Material(scenario, recording, check), recording, ParseVerdict);
             if (verdict is null)
             {
                 // Never a pass: a judge outage grading everything green would hide a regression
@@ -58,22 +59,68 @@ public static class Judge
         return verdicts;
     }
 
+    // The graded question: the same material, a number instead of a verdict. The anchors are in
+    // the instruction because a judge left to its own scale puts everything between six and
+    // eight, and a scale nobody uses the ends of cannot separate two models.
+    private const string GradePrompt =
+        "You are grading one recorded run of an assistant on one dimension of quality. Score ONLY "
+        + "what the rubric asks — not style, not other qualities, not what you would have done. "
+        + "The score is an integer from 0 to 10: 0 is nothing the rubric asks for, 5 is about half "
+        + "of it or all of it with a serious flaw, 10 is all of it with nothing wrong. Use the "
+        + "whole scale. Answer with exactly one JSON object: "
+        + "{\"score\": 0-10, \"reason\": \"one sentence\"}. If the material does not contain "
+        + "what the rubric needs, score what is there and say what is missing.";
+
+    // One dimension of one run. Null where the judge could not answer after a retry — never a
+    // zero: an outage scored as nothing would make a network blip a model's research score.
+    public static async Task<GradeMark?> GradeAsync(
+        Scenario scenario, Recording recording, JudgedGrade grade, string apiKey,
+        HttpMessageHandler? transport = null)
+    {
+        using var client = new HttpClient(
+            transport ?? new SocketsHttpHandler(), disposeHandler: transport is null)
+        {
+            BaseAddress = new Uri("https://openrouter.ai/api/v1/")
+        };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        var score = await AskAsync(
+            client, GradePrompt, Material(scenario, recording, grade.Rubric), recording, ParseScore);
+
+        return score is null ? null : new GradeMark(grade.Dimension, score.Value, score.Reason);
+    }
+
     // Everything the judge is shown, in one string a test can pin. The material is the whole
     // world: the judge knows nothing about the suite, so a fact the rubric needs and the material
     // lacks is a fail by instruction.
-    public static string Material(Scenario scenario, Recording recording, JudgedCheck check)
+    public static string Material(Scenario scenario, Recording recording, JudgedCheck check) =>
+        Material(scenario, recording, check.Rubric);
+
+    public static string Material(Scenario scenario, Recording recording, string rubric)
     {
         var calls = recording.Calls.Count == 0
             ? "- none"
             : string.Join("\n", recording.Calls.Select(call =>
                 $"- {call.ToolName} {Capped(call.Arguments, ArgumentCap)}"));
 
+        // A real worker is shown by its own answer; a canned one by the one line every stub gave.
         var delegations = recording.Delegations.Count == 0
             ? ""
             : "\n## Work handed to workers\n"
-              + string.Join("\n", recording.Delegations.Select(d =>
-                  $"- {d.ProfileId} was told: \"{d.Prompt}\""))
-              + $"\n(every worker answered: \"{scenario.WorkerAnswer}\")\n";
+              + string.Join("\n", recording.Delegations.Select(d => d.Answer is null
+                  ? $"- {d.ProfileId} was told: \"{d.Prompt}\""
+                  : $"- {d.ProfileId} was told: \"{d.Prompt}\"\n  and answered: \"{Capped(d.Answer, FileCap)}\""))
+              + (recording.Delegations.Any(d => d.Answer is null)
+                  ? $"\n(every worker answered: \"{scenario.WorkerAnswer}\")\n"
+                  : "\n");
+
+        // Whether a delegated answer was read off a page or made up is in what the worker did.
+        var workerCalls = recording.WorkerCalls.Count == 0
+            ? ""
+            : "\n## Tool calls the workers made\n"
+              + string.Join("\n", recording.WorkerCalls.Select(call =>
+                  $"- {call.ToolName} {Capped(call.Arguments, ArgumentCap)}"))
+              + "\n";
 
         var changed = recording.FilesAfter.Keys.Union(recording.FilesBefore.Keys)
             .Where(path => recording.FilesBefore.GetValueOrDefault(path)
@@ -88,7 +135,7 @@ public static class Judge
 
         return $"""
                 ## Rubric
-                {check.Rubric}
+                {rubric}
 
                 ## The user's turn
                 {scenario.Turn.Text}
@@ -98,7 +145,7 @@ public static class Judge
 
                 ## Tool calls, in order
                 {calls}
-                {delegations}{files}
+                {delegations}{workerCalls}{files}
                 """;
     }
 
@@ -111,7 +158,9 @@ public static class Judge
     private const int RateLimitAttempts = 4;
     private static readonly TimeSpan _rateLimitDelay = TimeSpan.FromSeconds(2);
 
-    private static async Task<Verdict?> AskAsync(HttpClient client, string material, Recording recording)
+    private static async Task<T?> AskAsync<T>(
+        HttpClient client, string instruction, string material, Recording recording,
+        Func<string?, T?> parse) where T : class
     {
         var misses = 0;
         var rateLimited = 0;
@@ -127,7 +176,7 @@ public static class Judge
                     // breakdown only arrives when asked for, and the recording is where it lands.
                     ["usage"] = new JsonObject { ["include"] = true },
                     ["messages"] = new JsonArray(
-                        new JsonObject { ["role"] = "system", ["content"] = SystemPrompt },
+                        new JsonObject { ["role"] = "system", ["content"] = instruction },
                         new JsonObject { ["role"] = "user", ["content"] = material })
                 };
 
@@ -146,17 +195,17 @@ public static class Judge
                     continue;
                 }
 
-                using var answer = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-                Charge(answer.RootElement, recording);
-                var content = answer.RootElement
+                using var answered = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                Charge(answered.RootElement, recording);
+                var content = answered.RootElement
                     .GetProperty("choices")[0]
                     .GetProperty("message")
                     .GetProperty("content")
                     .GetString();
 
-                if (Parse(content) is { } verdict)
+                if (parse(content) is { } answer)
                 {
-                    return verdict;
+                    return answer;
                 }
 
                 misses++;
@@ -208,7 +257,7 @@ public static class Judge
 
     // The verdict out of whatever prose the model wrapped it in: the first JSON object carrying a
     // boolean `pass`. A model that answered anything else has not answered.
-    private static Verdict? Parse(string? content)
+    private static Verdict? ParseVerdict(string? content)
     {
         var start = content?.IndexOf('{') ?? -1;
         var end = content?.LastIndexOf('}') ?? -1;
@@ -235,8 +284,40 @@ public static class Judge
         }
     }
 
+    // A whole number on the scale, or nothing. Off the scale is not clamped onto it: a judge
+    // that answered fourteen did not read the instruction, and what it meant is not ours to say.
+    private static Score? ParseScore(string? content)
+    {
+        var start = content?.IndexOf('{') ?? -1;
+        var end = content?.LastIndexOf('}') ?? -1;
+        if (content is null || start < 0 || end <= start)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var answer = JsonDocument.Parse(content[start..(end + 1)]);
+            return answer.RootElement.TryGetProperty("score", out var score)
+                   && score.ValueKind == JsonValueKind.Number
+                   && score.GetDouble() is >= 0 and <= Grade.Scale and var value
+                ? new Score(
+                    value,
+                    answer.RootElement.TryGetProperty("reason", out var reason)
+                        ? reason.GetString() ?? "no reason given"
+                        : "no reason given")
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private static string Capped(string text, int cap) =>
         text.Length <= cap ? text : text[..cap] + "…(truncated)";
 
     private sealed record Verdict(bool Pass, string Reason);
+
+    private sealed record Score(double Value, string Reason);
 }

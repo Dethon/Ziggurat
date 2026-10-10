@@ -17,13 +17,15 @@ public static class Scorecard
         string? preloadModel = null)
     {
         Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, $"scorecard-{tier.ToString().ToLowerInvariant()}.json");
+        var path = Path.Combine(directory, $"scorecard-{Filed(tier, route)}.json");
 
         var claimRows = Covered(
             Tallied(claims.Select(c => (c.Claim, c.Passes, c.Runs, c.Kinds, c.Loaders))), coverage);
-        var scenarioRows = Addressed(
-            Priced(
-                Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs, s.Kinds, s.Loaders))),
+        var scenarioRows = Marked(
+            Addressed(
+                Priced(
+                    Tallied((scenarios ?? []).Select(s => (s.Name, s.Passes, s.Runs, s.Kinds, s.Loaders))),
+                    scenarios ?? []),
                 scenarios ?? []),
             scenarios ?? []);
 
@@ -78,8 +80,104 @@ public static class Scorecard
             ["scenarios"] = scenarioRows
         };
 
+        // How good the answers were, where anything was graded: the one number a pass on one
+        // model is compared with a pass on another by, and each dimension's beside it. Absent
+        // rather than null on a pass that graded nothing, which is every pass but the research
+        // tier's — a null here would read as a score nobody earned.
+        if (Graded(scenarios ?? []) is { } grades)
+        {
+            ((JsonObject)summary["summary"]!)["grades"] = grades;
+        }
+
         File.WriteAllText(path, summary.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         return path;
+    }
+
+    // Every tier's diff is across time but the research tier's, which is across models: one file
+    // per model served is what lets two passes sit side by side, and what keeps the second
+    // model's pass from overwriting the first's.
+    private static string Filed(EvalTier tier, ServedRoute? route)
+    {
+        var name = tier.ToString().ToLowerInvariant();
+        return tier == EvalTier.Research && route?.Model is { Length: > 0 } model
+            ? $"{name}-{string.Concat(model.Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' ? c : '-'))}"
+            : name;
+    }
+
+    // A scenario's marks, one dimension at a time: the mean, how many runs it is over, the
+    // judge's sentences where it gave any, and one score for the scenario — the mean of its
+    // dimensions rather than of its marks, so a dimension the judge skipped once weighs the same
+    // as one it answered every time.
+    private static JsonObject Marked(JsonObject rows, IEnumerable<ScenarioOutcome> outcomes)
+    {
+        foreach (var (name, dimensions) in ByDimension(outcomes))
+        {
+            if (rows[name] is not JsonObject row)
+            {
+                continue;
+            }
+
+            row["score"] = dimensions.Average(dimension => dimension.Average(mark => mark.Score));
+            row["grades"] = dimensions.Aggregate(new JsonObject(), (node, dimension) =>
+            {
+                var marked = new JsonObject
+                {
+                    ["mean"] = dimension.Average(mark => mark.Score),
+                    ["runs"] = dimension.Count(),
+                    ["scores"] = new JsonArray([.. dimension.Select(mark => JsonValue.Create(mark.Score))])
+                };
+
+                var reasons = dimension.Where(mark => mark.Reason is not null).ToList();
+                if (reasons.Count > 0)
+                {
+                    marked["reasons"] = new JsonArray(
+                        [.. reasons.Select(mark => JsonValue.Create($"{mark.Score:0.#}: {mark.Reason}"))]);
+                }
+
+                node[dimension.Key] = marked;
+                return node;
+            });
+        }
+
+        return rows;
+    }
+
+    private static IEnumerable<(string Name, List<IGrouping<string, GradeMark>> Dimensions)> ByDimension(
+        IEnumerable<ScenarioOutcome> outcomes) =>
+        outcomes
+            .GroupBy(outcome => outcome.Name)
+            .Select(scenario => (
+                scenario.Key,
+                scenario.SelectMany(outcome => outcome.Grades).GroupBy(mark => mark.Dimension).ToList()))
+            .Where(scenario => scenario.Item2.Count > 0);
+
+    // The pass's score is the mean of its scenarios' scores, and a dimension's the mean of that
+    // dimension across the scenarios that have it: a scenario that took more runs, or was marked
+    // on more dimensions, must not outvote the rest.
+    private static JsonObject? Graded(IEnumerable<ScenarioOutcome> outcomes)
+    {
+        var scenarios = ByDimension(outcomes).ToList();
+        if (scenarios.Count == 0)
+        {
+            return null;
+        }
+
+        return new JsonObject
+        {
+            ["score"] = scenarios.Average(scenario =>
+                scenario.Dimensions.Average(dimension => dimension.Average(mark => mark.Score))),
+            ["scenarios"] = scenarios.Count,
+            ["byDimension"] = scenarios
+                .SelectMany(scenario => scenario.Dimensions
+                    .Select(dimension => (dimension.Key, Mean: dimension.Average(mark => mark.Score))))
+                .GroupBy(dimension => dimension.Key, StringComparer.Ordinal)
+                .OrderBy(dimension => dimension.Key, StringComparer.Ordinal)
+                .Aggregate(new JsonObject(), (node, dimension) =>
+                {
+                    node[dimension.Key] = dimension.Average(scenario => scenario.Mean);
+                    return node;
+                })
+        };
     }
 
     private static JsonObject Screened(ExecScreenTally tally) => new()
@@ -117,6 +215,11 @@ public static class Scorecard
                 var totals = Totalled(
                     Tallied(agent.Select(s => (s.Name, s.Passes, s.Runs, s.Kinds, s.Loaders))));
                 totals["spend"] = Spent(agent);
+                if (Graded(agent) is { } grades)
+                {
+                    totals["grades"] = grades;
+                }
+
                 node[agent.Key] = totals;
                 return node;
             });
@@ -311,4 +414,7 @@ public sealed record ScenarioOutcome(
     public IReadOnlyDictionary<string, int> PreloadOutcomes { get; init; } = new Dictionary<string, int>();
 
     public ExecScreenTally Screens { get; init; } = ExecScreenTally.None;
+
+    // Every mark of every run the scenario took, in run order.
+    public IReadOnlyList<GradeMark> Grades { get; init; } = [];
 }

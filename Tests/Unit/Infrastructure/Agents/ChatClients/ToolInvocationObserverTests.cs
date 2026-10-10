@@ -182,6 +182,39 @@ public class ToolInvocationObserverTests
         recording.SystemPrompt.ShouldBe("## Timers");
     }
 
+    // One observer hears every agent a host builds, a worker's beside its parent's, and each
+    // client numbers its own calls from zero — so who made a call has to travel on the call.
+    [Fact]
+    public async Task AnInvocationAndItsTurn_SayWhichAgentTheyBelongTo()
+    {
+        var heard = new Listener();
+        var function = AIFunctionFactory.Create(() => "listed", "domain__filesystem_glob");
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("domain__filesystem_glob", "call1"));
+
+        var client = new ToolApprovalChatClient(
+            fakeClient, new TestApprovalHandler(ToolApprovalResult.Approved), "conv",
+            whitelistPatterns: ["domain__*"], observer: heard, agentId: "Jonas Worker");
+
+        await client.GetResponseAsync(
+            [new ChatMessage(ChatRole.User, "test")], new ChatOptions { Tools = [function] });
+
+        heard.Calls.ShouldHaveSingleItem().AgentId.ShouldBe("Jonas Worker");
+        heard.Turns.ShouldNotBeEmpty();
+        heard.Turns.ShouldAllBe(turn => turn.AgentId == "Jonas Worker");
+    }
+
+    private sealed class Listener : IToolInvocationObserver
+    {
+        public List<ToolInvocation> Calls { get; } = [];
+
+        public List<TurnObservation> Turns { get; } = [];
+
+        public void OnInvoked(ToolInvocation invocation) => Calls.Add(invocation);
+
+        public void OnTurn(TurnObservation turn) => Turns.Add(turn);
+    }
+
     private static ToolApprovalChatClient Approving(IChatClient inner, IToolInvocationObserver observer) =>
         new(inner, new TestApprovalHandler(ToolApprovalResult.Approved), "conv",
             whitelistPatterns: ["domain__*", "mcp__*"], observer: observer);

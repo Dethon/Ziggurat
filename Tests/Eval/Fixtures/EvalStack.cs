@@ -143,7 +143,7 @@ public sealed class EvalStack : IAsyncDisposable
         // option is not one.
         stack.Sandbox = await EvalSandbox.StartAsync(await stack.StartBridgeAsync());
 
-        stack.BuildAgentServices(shipped, recording, new Dictionary<string, string>
+        stack.BuildAgentServices(shipped, recording, scenario.RealWorkers, new Dictionary<string, string>
         {
             ["mcp-timers"] = await stack.StartTimersAsync(scenario),
             ["mcp-scheduling"] = await stack.StartSchedulingAsync(shipped, redisConnectionString),
@@ -395,13 +395,10 @@ public sealed class EvalStack : IAsyncDisposable
     // The agent itself, built by the real factory. Only the configured endpoint urls are rewritten,
     // to the servers this stack hosts.
     private void BuildAgentServices(
-        AgentSettings shipped, Recording recording,
+        AgentSettings shipped, Recording recording, bool realWorkers,
         IReadOnlyDictionary<string, string> hosted)
     {
-        var settings = shipped with
-        {
-            Agents = [.. shipped.Agents.Select(a => a with { McpServerEndpoints = Rewrite(a, hosted) })]
-        };
+        var settings = Rehosted(shipped, hosted);
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -412,7 +409,14 @@ public sealed class EvalStack : IAsyncDisposable
         // client reports as usage is the run's bill, and the recording is where the scorecard
         // reads it from.
         services.AddSingleton<IMetricsPublisher>(recording);
-        services.AddSingleton<ISubAgentSpawner>(Workers);
+        // Absent where a scenario asks for workers that really run: the factory then builds
+        // them itself, as it does in every deployment, on the parent's model and this stack's
+        // servers, and what was delegated is read off the parent's own calls.
+        if (!realWorkers)
+        {
+            services.AddSingleton<ISubAgentSpawner>(Workers);
+        }
+
         services.AddSingleton<IVfsBridge>(Bridge);
         // The scenario's instant, so the prompt's "today is" is the day the turn is stamped with.
         services.Replace(ServiceDescriptor.Singleton<TimeProvider>(new PinnedClock(Clock)));
@@ -434,10 +438,25 @@ public sealed class EvalStack : IAsyncDisposable
     // the alternative is a scenario that cannot run at all. The agent under test therefore has a
     // smaller toolset than the shipped one until every family's servers are hosted, and which
     // sections it actually got is readable in the dump's assembled prompt.
-    private static string[] Rewrite(AgentDefinition agent, IReadOnlyDictionary<string, string> hosted) =>
-        [.. agent.McpServerEndpoints
+    private static string[] Rewrite(IEnumerable<string> endpoints, IReadOnlyDictionary<string, string> hosted) =>
+        [.. endpoints
             .Select(endpoint => hosted.FirstOrDefault(h => endpoint.Contains(h.Key)).Value)
             .Where(rewritten => rewritten is not null)];
+
+    // A worker's endpoints as much as an agent's. A canned worker dials nothing and never
+    // noticed; one that really runs dials what its own profile names.
+    public static AgentSettings Rehosted(AgentSettings shipped, IReadOnlyDictionary<string, string> hosted) =>
+        shipped with
+        {
+            Agents =
+            [
+                .. shipped.Agents.Select(a => a with { McpServerEndpoints = Rewrite(a.McpServerEndpoints, hosted) })
+            ],
+            SubAgents =
+            [
+                .. shipped.SubAgents.Select(w => w with { McpServerEndpoints = Rewrite(w.McpServerEndpoints, hosted) })
+            ]
+        };
 
     public async ValueTask DisposeAsync()
     {

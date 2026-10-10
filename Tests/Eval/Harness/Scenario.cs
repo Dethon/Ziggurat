@@ -108,6 +108,22 @@ public sealed record Scenario
     // grade a run that already failed.
     public IReadOnlyList<JudgedCheck> Judged { get; init; } = [];
 
+    // How good the answer was, beside whether the run was acceptable: dimensions scored from 0
+    // to Grade.Scale on every run that answered, green or not, and carried to the scorecard as a
+    // number two models can be compared along. Nothing here fails a run.
+    public IReadOnlyList<Grade> Graded { get; init; } = [];
+
+    // Workers that really run, on the stack's own servers and on the parent's model, instead of
+    // answering WorkerAnswer. Off everywhere a scenario's subject is the parent's decision to
+    // delegate — a real worker puts a second answer between that decision and its assertion, and
+    // costs a run to do it. On where the subject is the answer itself: research that is correctly
+    // handed to a worker would otherwise come back as a canned line and be marked as no research.
+    public bool RealWorkers { get; init; }
+
+    // What one run may take before it is recorded as never having finished. The default is a
+    // turn's worth; work that is long by design declares its own.
+    public TimeSpan Budget { get; init; } = TimeSpan.FromSeconds(180);
+
     public RunPolicy Policy { get; init; } = RunPolicy.Once;
 
     // Which tier this scenario is a canary for, not which tier is running: the smoke tier takes
@@ -176,7 +192,11 @@ public enum EvalTier
     Full,
     // The scenarios a diff touched, at their declared thresholds. No scenario declares this one:
     // it is a tier that runs, never a tier a scenario is a canary for.
-    Changed
+    Changed,
+    // The graded research family, and the one tier the full pass does not take: its scenarios
+    // measure a model rather than guard a prompt, run real workers and cost several times a
+    // turn's worth each, so a routine pass must not pay for them.
+    Research
 }
 
 // A call the scenario requires, matched by tool and by whatever its arguments have to say. The

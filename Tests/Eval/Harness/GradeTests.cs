@@ -1,0 +1,155 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using Shouldly;
+
+namespace Tests.Eval.Harness;
+
+// The half of a scenario that is a measurement rather than a contract. A pass says a run stayed
+// inside what the scenario tolerates; a grade says how good the answer was, on a scale two models
+// can be compared along. Facts are counted — the corpus is planted, so what is true is a list —
+// and only what a list cannot say is put to the judge.
+public class GradeTests
+{
+    private static readonly Grade _facts = Grade.Facts("accuracy",
+        carries:
+        [
+            new SpokenValue("the 2024 total", "1.316", "1316"),
+            new SpokenValue("the 2025 total", "1.577", "1577"),
+            new SpokenValue("the difference", "261"),
+            new SpokenValue("the year it rose", "2025")
+        ],
+        never: [new SpokenValue("the snippet's stale total", "1.200", "1200")]);
+
+    private static Scenario TheScenario(params Grade[] graded) => new()
+    {
+        Name = "a graded scenario",
+        AgentId = "jonas",
+        Turn = new EvalTurn { Text = "¿cuánto subió la rifa?", Sender = "fran" },
+        Instant = new DateTimeOffset(2026, 8, 17, 20, 0, 0, TimeSpan.FromHours(2)),
+        CallCeiling = 12,
+        Graded = graded
+    };
+
+    [Theory]
+    [InlineData("Fueron 1.316 en 2024 y 1.577 en 2025: 261 más.", 10)]
+    [InlineData("En 2025 se recaudaron 1577 euros.", 5)]
+    [InlineData("No lo he encontrado.", 0)]
+    public void Facts_ScoreTheShareOfPlantedValuesTheReplyCarries(string reply, double expected)
+    {
+        ((FactGrade)_facts).Score(reply).ShouldBe(expected, 0.001);
+    }
+
+    [Fact]
+    public void Facts_AValueThatIsWrong_CancelsOneThatIsRight()
+    {
+        // A reply carrying the stale number beside a true one has been half fooled, and a score
+        // that counted only what was found would rate it with a reply that was never fooled.
+        ((FactGrade)_facts).Score("En 2025 fueron 1.577, frente a los 1.200 de antes.")
+            .ShouldBe(2.5, 0.001);
+        ((FactGrade)_facts).Score("Fueron 1.200.").ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ARunThatNeverAnswered_ScoresNothingOnEveryDimension()
+    {
+        // A deadline is the model's own: an answer that did not arrive is the worst answer, and
+        // leaving it out of the mean would rate a model on the runs it happened to finish.
+        var recording = new Recording { TimedOut = true };
+        var scenario = TheScenario(_facts, Grade.Judged("attribution", "Judge the sources."));
+        var judge = new CannedJudge("""{"score": 9, "reason": "unused"}""");
+
+        var marks = await Grading.MarksAsync(scenario, recording, "key", judge);
+
+        marks.Select(m => (m.Dimension, m.Score)).ShouldBe([("accuracy", 0d), ("attribution", 0d)]);
+        judge.Requests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ARunTheProviderRefused_IsNotGradedAtAll()
+    {
+        // Not the model's answer and not its fault: a 5xx scored as zero would make a provider's
+        // bad afternoon a model's research score.
+        var recording = new Recording { ProviderError = "502 Bad Gateway" };
+
+        var marks = await Grading.MarksAsync(TheScenario(_facts), recording, "key", new CannedJudge("{}"));
+
+        marks.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AJudgedDimension_IsTheJudgesScore_WithItsReason()
+    {
+        var recording = new Recording { Reply = "Fueron 1.577 según la crónica de 2025." };
+        var judge = new CannedJudge("""{"score": 7, "reason": "one figure has no source"}""");
+
+        var marks = await Grading.MarksAsync(
+            TheScenario(Grade.Judged("attribution", "Judge whether each figure names its page.")),
+            recording, "key", judge);
+
+        var mark = marks.ShouldHaveSingleItem();
+        mark.Dimension.ShouldBe("attribution");
+        mark.Score.ShouldBe(7);
+        mark.Reason.ShouldBe("one figure has no source");
+        judge.Requests.ShouldHaveSingleItem().ShouldContain("Judge whether each figure names its page.");
+        JsonDocument.Parse(judge.Requests[0]).RootElement.GetProperty("messages")[0]
+            .GetProperty("content").GetString().ShouldNotBeNull().ShouldContain("\"score\": 0-10");
+    }
+
+    [Theory]
+    [InlineData("""{"score": 14, "reason": "generous"}""")]
+    [InlineData("""{"score": -1, "reason": "harsh"}""")]
+    [InlineData("""{"pass": true, "reason": "the other question's answer"}""")]
+    [InlineData("not a score")]
+    public async Task AScoreOffTheScale_IsNoScore_AndTheDimensionIsLeftOut(string answer)
+    {
+        // Never a zero and never a clamp: a judge that did not answer the question asked has
+        // said nothing about the model, and the mean must not move on it.
+        var recording = new Recording { Reply = "Fueron 1.577." };
+        var judge = new CannedJudge(answer);
+
+        var marks = await Grading.MarksAsync(
+            TheScenario(Grade.Judged("attribution", "Judge the sources.")), recording, "key", judge);
+
+        marks.ShouldBeEmpty();
+        judge.Requests.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task TheGradersUsage_LandsOnTheRecordingItGraded()
+    {
+        var recording = new Recording { Reply = "Fueron 1.577." };
+        var judge = new CannedJudge("""{"score": 8, "reason": "fine"}""")
+        {
+            Usage = new { prompt_tokens = 900, completion_tokens = 20, cost = 0.003 }
+        };
+
+        await Grading.MarksAsync(
+            TheScenario(Grade.Judged("attribution", "Judge the sources.")), recording, "key", judge);
+
+        recording.Spend.ShouldBe(Spend.Of(Judge.Model, new ModelSpend(0.003m, 900, null, 20, Requests: 1)));
+    }
+
+    private sealed class CannedJudge(string answer) : HttpMessageHandler
+    {
+        public List<string> Requests { get; } = [];
+
+        public object? Usage { get; init; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken ct)
+        {
+            Requests.Add(await request.Content!.ReadAsStringAsync(ct));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(new
+                    {
+                        choices = new[] { new { message = new { content = answer } } },
+                        usage = Usage
+                    }),
+                    Encoding.UTF8, "application/json")
+            };
+        }
+    }
+}

@@ -48,6 +48,7 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
                 Agent = scenario.AgentId,
                 Kinds = result.Kinds,
                 Loaders = result.Loaders,
+                Grades = result.Grades,
                 PreloadOutcomes = result.PreloadOutcomes,
                 Screens = result.Screens
             });

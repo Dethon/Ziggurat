@@ -65,6 +65,32 @@ public class JudgeTests
     }
 
     [Fact]
+    public void Material_ARealWorker_IsShownByWhatItAnsweredAndWhatItDid()
+    {
+        // The canned line says what every stub answered; a real worker answered something of its
+        // own, and whether it read a page or made the answer up is in its calls.
+        var check = new JudgedCheck("web.steps-are-not-reported", "Judge the reply.");
+        var recording = new Recording { Parent = "Jonas", Reply = "El taller es el sábado." };
+        recording.OnInvoked(new ToolInvocation
+        {
+            Sequence = 0,
+            ToolName = "web_browse",
+            Arguments = """{"url":"http://127.0.0.1:1234/taller"}""",
+            Outcome = ToolInvocationOutcome.Completed,
+            AgentId = "Jonas Worker"
+        });
+        recording.Delegations =
+            [new Delegation("jonas-worker", "Averigua el día del taller") { Answer = "Sábado, según la página." }];
+
+        var material = Judge.Material(TheScenario(check), recording, check);
+
+        material.ShouldContain("Sábado, según la página.");
+        material.ShouldNotContain("every worker answered");
+        material.ShouldContain("## Tool calls the workers made");
+        material.ShouldContain("/taller");
+    }
+
+    [Fact]
     public void Material_CarriesOnlyTheFilesTheTurnChanged()
     {
         var check = new JudgedCheck("vault.edits-are-surgical", "Judge the diff.");

@@ -27,6 +27,20 @@ public class ScenarioRunnerTests
     }
 
     [Fact]
+    public async Task EveryRunsGrades_ReachTheResult_WhetherTheRunPassedOrNot()
+    {
+        // A grade is a measurement of the answer, and a run that tripped a side check still gave
+        // one: a mean over the green runs alone is a mean over the runs that flattered the model.
+        var result = await ScenarioRunner.RunAsync(new RunPolicy(1, 2) { Exhaustive = true }, index =>
+            Task.FromResult(new RunReading(index == 0 ? ["over the ceiling"] : [], [])
+            {
+                Grades = [new GradeMark("accuracy", index == 0 ? 4 : 9)]
+            }));
+
+        result.Grades.Select(mark => mark.Score).ShouldBe([4d, 9d]);
+    }
+
+    [Fact]
     public async Task AFailedRunInTheFirstWave_IsReplaced_UntilTheThresholdIsMet()
     {
         var result = await ScenarioRunner.RunAsync(new RunPolicy(2, 3), index =>

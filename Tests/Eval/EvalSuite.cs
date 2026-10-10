@@ -53,7 +53,9 @@ public static class EvalSuite
 
     private static IEnumerable<Scenario> OfTier(EvalTier tier) => tier switch
     {
-        EvalTier.Full => All,
+        // Everything but the research family, which measures a model rather than guards a
+        // prompt and is paid for only when asked for by name.
+        EvalTier.Full => All.Where(s => s.Tier != EvalTier.Research),
         EvalTier.Changed => EvalChanges.Selected,
         _ => All.Where(s => s.Tier == tier)
     };
@@ -122,11 +124,16 @@ public static class EvalSuite
                 observations[index] = observed;
             }
 
+            // Marked whether or not the run passed, and before the spend is read: the graders
+            // are paid for out of the run's key and their bill is the run's.
+            var grades = await Grading.MarksAsync(scenario, recording, EvalGate.ApiKey ?? "");
+
             return new RunReading(
                 observed, ScenarioChecks.Exercised(scenario, recording),
                 ScenarioChecks.KindOf(scenario, recording, observed))
             {
                 Spend = recording.Spend,
+                Grades = grades,
                 Loader = ScenarioChecks.LoaderOf(scenario, recording),
                 PreloadOutcomes = recording.PreloadOutcomes,
                 Screens = recording.Screens
