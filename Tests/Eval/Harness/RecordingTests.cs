@@ -1,3 +1,4 @@
+using Domain.DTOs.Metrics;
 using Infrastructure.Agents.ChatClients;
 using Shouldly;
 
@@ -21,7 +22,7 @@ public class RecordingTests
     [Fact]
     public void AWorkersCalls_AreKeptApartFromItsParents()
     {
-        var recording = new Recording { Parent = "Jonas" };
+        var recording = new Recording { Parent = ["Jonas", "Jonas-eval:1"] };
 
         recording.OnInvoked(Call("domain__subagents__run_subagent", 0, "Jonas"));
         recording.OnInvoked(Call("mcp__web__web_search", 0, "Jonas Worker"));
@@ -34,7 +35,7 @@ public class RecordingTests
     [Fact]
     public void AWorkersTurn_DoesNotReplaceTheParentsPromptOrRoute()
     {
-        var recording = new Recording { Parent = "Jonas" };
+        var recording = new Recording { Parent = ["Jonas", "Jonas-eval:1"] };
         var served = new ServedRoute("parent/model", "p", null);
 
         recording.OnTurn(new TurnObservation("the parent's prompt", served) { AgentId = "Jonas" });
@@ -42,6 +43,28 @@ public class RecordingTests
 
         recording.SystemPrompt.ShouldBe("the parent's prompt");
         recording.Route.ShouldBe(served);
+    }
+
+    // A preload is published by the judge's own client, which names the agent as its session
+    // does — "Jonas-<conversation>", "subagent-<profile>" — where a call names it as its metrics
+    // do. Both spellings of the parent have to be the parent, or every host preload of an armed
+    // run is filed as a worker's and the load a scenario requires is reported as never made.
+    [Fact]
+    public void AHostPreload_IsTheTurns_UnderTheNameItsSessionCarries_AndAWorkersIsNot()
+    {
+        var recording = new Recording { Parent = ["Jonas", "Jonas-eval:1"] };
+
+        recording.Publish(new SkillPreloadEvent
+        {
+            AgentId = "Jonas-eval:1", Outcome = "preloaded", Skills = ["web-browsing"], Reads = []
+        });
+        recording.Publish(new SkillPreloadEvent
+        {
+            AgentId = "subagent-jonas-worker", Outcome = "preloaded", Skills = ["sandbox"], Reads = []
+        });
+
+        recording.Preloads.ShouldHaveSingleItem().Arguments.ShouldContain("web-browsing");
+        recording.Calls.ShouldHaveSingleItem();
     }
 
     // Every scenario with canned workers, and every harness test that builds a recording by hand:

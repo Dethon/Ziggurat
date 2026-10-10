@@ -70,7 +70,7 @@ public class JudgeTests
         // The canned line says what every stub answered; a real worker answered something of its
         // own, and whether it read a page or made the answer up is in its calls.
         var check = new JudgedCheck("web.steps-are-not-reported", "Judge the reply.");
-        var recording = new Recording { Parent = "Jonas", Reply = "El taller es el sábado." };
+        var recording = new Recording { Parent = ["Jonas"], Reply = "El taller es el sábado." };
         recording.OnInvoked(new ToolInvocation
         {
             Sequence = 0,

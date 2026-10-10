@@ -42,7 +42,7 @@ public class FailureDumpTests : IDisposable
     {
         // A wrong answer from a run that delegated is explained by the worker as often as by the
         // parent, and the worker's side of it exists nowhere else once the run is over.
-        var recording = new Recording { Parent = "Jonas", Reply = "Fueron 1.200." };
+        var recording = new Recording { Parent = ["Jonas"], Reply = "Fueron 1.200." };
         recording.OnInvoked(new ToolInvocation
         {
             Sequence = 0,

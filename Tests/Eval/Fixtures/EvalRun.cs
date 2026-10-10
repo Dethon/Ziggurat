@@ -28,17 +28,22 @@ public static class EvalRun
 
     public static async Task<Recording> ExecuteAsync(Scenario scenario, string redisConnectionString)
     {
+        var conversationId = $"eval:{Guid.NewGuid():N}";
+
         // Named so the recording can tell this agent's calls from a real worker's: both are built
-        // by the one factory and heard by the one observer.
+        // by the one factory and heard by the one observer. Both of its names — the one its
+        // metrics carry and the one its session does, which is the display name the factory
+        // composes from the definition's name and the conversation.
         var recording = new Recording
         {
             Parent = ShippedDefinition.Repository.Settings.Agents
-                .FirstOrDefault(agent => agent.Id == scenario.AgentId)?.Name
+                .Where(agent => agent.Id == scenario.AgentId)
+                .SelectMany(agent => new[] { agent.Name, $"{agent.Name}-{conversationId}" })
+                .ToList()
         };
         await using var stack = await EvalStack.StartAsync(
             scenario, redisConnectionString, recording);
 
-        var conversationId = $"eval:{Guid.NewGuid():N}";
         await using var agent = stack.Factory.Create(
             new AgentKey(conversationId, scenario.AgentId),
             userId: UserId,

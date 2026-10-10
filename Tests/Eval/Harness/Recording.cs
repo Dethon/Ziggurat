@@ -26,15 +26,17 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
     // conversation, not on this recording, and the dump has to say who put it there.
     public const string PreloadedResult = "(preloaded by the host: the body was inserted before the model's first call)";
 
-    // The agent the scenario's turn is addressed to, as its metrics name it, set by the stack
-    // that built it. With real workers the same observer hears the worker too, and everything a
-    // scenario declares — the permitted set, the ceiling, the prompt the dump shows — is about
-    // this agent alone. Null where nobody named one: then nothing is a worker's, which is every
-    // canned run and every recording a test builds by hand.
-    public string? Parent { get; init; }
+    // The agent the scenario's turn is addressed to, under every name it is heard by, set by the
+    // run that built it. Two names, because two things speak for it: a call and a turn name the
+    // agent as its metrics do ("Jonas"), and a preload — published by the judge's own client —
+    // names it as its session does ("Jonas-<conversation>"). With real workers the same observer
+    // hears the worker too, and everything a scenario declares — the permitted set, the ceiling,
+    // the prompt the dump shows — is about this agent alone. Empty where nobody named one: then
+    // nothing is a worker's, which is every recording a test builds by hand.
+    public IReadOnlyList<string> Parent { get; init; } = [];
 
     private bool IsWorkers(string? agentId) =>
-        Parent is not null && agentId is not null && !string.Equals(agentId, Parent, StringComparison.Ordinal);
+        Parent.Count > 0 && agentId is not null && !Parent.Contains(agentId, StringComparer.Ordinal);
 
     // What the workers did with what they were handed, in the order it was heard. Never checked
     // against the scenario's contract: it is what the dump and the judge read to see whether a

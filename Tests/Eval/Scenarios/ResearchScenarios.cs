@@ -53,10 +53,10 @@ public static class ResearchScenarios
         Score GROUNDING: how well the reply ties what it states to where it came from. Judge only
         this, not whether the figures are right.
         10 — every figure the reply states is attributed to a specific page (by its name or its
-        url), and the tool calls show that page was opened.
+        url), and the tool calls — the assistant's own or its workers' — show that page was opened.
         5 — sources are listed but not tied to particular figures, or about half of the figures
         are attributed.
-        0 — no source is given, or figures are attributed to pages that were never opened.
+        0 — no source is given, or figures are attributed to pages that nobody opened.
         A reply that states no figure because it found none is scored on whether it says where it
         looked.
         """);
@@ -208,9 +208,10 @@ public static class ResearchScenarios
         + "Sol de la Vega? Necesito un dato fiable, con su fuente.",
         // Absence is only established by looking, and looking takes more pages than finding.
         ceiling: 14,
-        // The subject, so the reply is about the question that was asked; what it says about
-        // it is the marks' business.
-        new SpokenValue("the subject", "ahorro", "ahorra", "ahorran", "ahorrar"),
+        // The cooperative by name, so the reply is about the question that was asked; what it
+        // says about the saving is the marks' business. Not the verb: the honest answer is
+        // "no sé cuánto ahorraría", and a headline that wanted "ahorra" measured conjugation.
+        new SpokenValue("the cooperative", "Sol de la Vega"),
         Grade.Judged("accuracy", _corpus + """
             Score ACCURACY for a question the corpus cannot answer: the user asked for the
             average yearly saving of a member, with a reliable source, and no page gives one.
@@ -225,8 +226,8 @@ public static class ResearchScenarios
         Reasoning("""
             Score REASONING: whether the reply told an anecdote from a datum and looked far
             enough before concluding.
-            10 — the tool calls show the cooperative's own pages were opened (the report at
-            least), and the reply distinguishes what the cooperative publishes from what one
+            10 — the tool calls, the assistant's or its workers', show the cooperative's own pages
+            were opened (the report at least), and the reply distinguishes what the cooperative publishes from what one
             forum poster claims.
             5 — reaches the right conclusion after opening only the forum or only one page; or
             opens the right pages and still treats the forum figure as indicative of the average.
