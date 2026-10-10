@@ -215,11 +215,13 @@ public static class DelegationScenarios
         ],
         Reply = new ReplyExpectation
         {
-            // Ten, not five: the canned chronicle carries seven facts, the user asked for something
-            // to forward, and the sentence counter counts each bullet — so a faithful list is an
-            // intro, seven facts and a sign-off. The judged synthesis check below fails padding;
-            // this cap only bounds a wall of text.
-            MaxSentences = 10,
+            // Twelve, not five: the canned chronicle carries seven facts, the user asked for
+            // something to forward, and the sentence counter counts each bullet — so a faithful
+            // list is an intro, seven facts and a sign-off. Ten left no room for a bullet that
+            // takes two sentences or for the source line: Haiku's and DeepSeek's eleven-sentence
+            // summaries on 2026-10-10 were correct ones. The judged synthesis check below fails
+            // padding; this cap only bounds a wall of text.
+            MaxSentences = 12,
             Mentions = [new SpokenValue("the raffle total", "1.842", "1842", "1 842")],
             // Which worker did what is nobody's business, in any of the words the model reaches
             // for when it starts explaining its help.
