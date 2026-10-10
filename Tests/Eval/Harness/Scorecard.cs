@@ -89,6 +89,27 @@ public static class Scorecard
             ((JsonObject)summary["summary"]!)["grades"] = grades;
         }
 
+        // What the answers cost, where calls are counted rather than capped: the mean per run
+        // over the pass and per group, and how many runs went over their scenario's yardstick.
+        var counted = (scenarios ?? []).Where(s => s is { CallCeiling: not null, Calls.Count: > 0 }).ToList();
+        if (counted.Count > 0)
+        {
+            ((JsonObject)summary["summary"]!)["calls"] = new JsonObject
+            {
+                ["perRun"] = counted.SelectMany(s => s.Calls).Average(),
+                ["overCeiling"] = counted.Sum(s => s.Calls.Count(calls => calls > s.CallCeiling)),
+                ["byGroup"] = counted
+                    .Where(s => s.Group is not null)
+                    .GroupBy(s => s.Group!, StringComparer.Ordinal)
+                    .OrderBy(group => group.Key, StringComparer.Ordinal)
+                    .Aggregate(new JsonObject(), (node, group) =>
+                    {
+                        node[group.Key] = group.SelectMany(s => s.Calls).Average();
+                        return node;
+                    })
+            };
+        }
+
         File.WriteAllText(path, summary.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         return path;
     }
@@ -111,6 +132,19 @@ public static class Scorecard
     private static JsonObject Marked(JsonObject rows, IEnumerable<ScenarioOutcome> outcomes)
     {
         outcomes = [.. outcomes];
+
+        foreach (var counted in outcomes.Where(outcome => outcome is { CallCeiling: not null, Calls.Count: > 0 }))
+        {
+            if (rows[counted.Name] is JsonObject row)
+            {
+                row["calls"] = new JsonObject
+                {
+                    ["perRun"] = counted.Calls.Average(),
+                    ["ceiling"] = counted.CallCeiling,
+                    ["over"] = counted.Calls.Count(calls => calls > counted.CallCeiling)
+                };
+            }
+        }
 
         foreach (var grouped in outcomes.Where(outcome => outcome.Group is not null))
         {
@@ -469,6 +503,12 @@ public sealed record ScenarioOutcome(
 
     // Every mark of every run the scenario took, in run order.
     public IReadOnlyList<GradeMark> Grades { get; init; } = [];
+
+    // What each run cost in calls, and the ceiling they are set against, for a scenario whose
+    // ceiling is reported rather than enforced. Empty and null everywhere else.
+    public IReadOnlyList<int> Calls { get; init; } = [];
+
+    public int? CallCeiling { get; init; }
 
     // The scenario's group within a graded family, where the family has any: its score is
     // reported once per group as well as once for the pass.

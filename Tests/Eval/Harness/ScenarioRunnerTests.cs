@@ -39,6 +39,15 @@ public class ScenarioRunnerTests
     }
 
     [Fact]
+    public async Task EveryRunsCallCount_ReachesTheResult()
+    {
+        var result = await ScenarioRunner.RunAsync(new RunPolicy(1, 2) { Exhaustive = true }, index =>
+            Task.FromResult(new RunReading([], []) { Calls = index == 0 ? 9 : 31 }));
+
+        result.Calls.ShouldBe([9, 31]);
+    }
+
+    [Fact]
     public async Task EveryRunsGrades_ReachTheResult_WhetherTheRunPassedOrNot()
     {
         // A grade is a measurement of the answer, and a run that tripped a side check still gave

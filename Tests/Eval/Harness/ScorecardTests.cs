@@ -383,6 +383,31 @@ public class ScorecardTests : IDisposable
         card.GetProperty("scenarios").GetProperty("a hard one").GetProperty("group").GetString().ShouldBe("hard");
     }
 
+    // What an answer cost in calls, beside what it scored: two models with the same marks are
+    // not the same model if one of them read the whole site to get there.
+    [Fact]
+    public void AScenarioWithAReportedCeiling_CarriesItsCallsPerRun_AndThePassCarriesTheMean()
+    {
+        Scorecard.Write(_output, EvalTier.Full, new ServedRoute("m", "p"), [new ClaimOutcome("c", 1, 1)],
+        [
+            new ScenarioOutcome("a thorough one", 3, 3) { Group = "scale", Calls = [12, 40, 44], CallCeiling = 30 },
+            new ScenarioOutcome("a quick one", 3, 3) { Group = "base", Calls = [6, 6, 6], CallCeiling = 12 },
+            new ScenarioOutcome("a timer", 1, 1)
+        ]);
+
+        var card = Read(Path.Combine(_output, "scorecard-full.json"));
+        var row = card.GetProperty("scenarios").GetProperty("a thorough one").GetProperty("calls");
+        row.GetProperty("perRun").GetDouble().ShouldBe(32, 0.001);
+        row.GetProperty("ceiling").GetInt32().ShouldBe(30);
+        row.GetProperty("over").GetInt32().ShouldBe(2);
+        card.GetProperty("scenarios").GetProperty("a timer").TryGetProperty("calls", out _).ShouldBeFalse();
+
+        var calls = card.GetProperty("summary").GetProperty("calls");
+        calls.GetProperty("perRun").GetDouble().ShouldBe(19, 0.001);
+        calls.GetProperty("overCeiling").GetInt32().ShouldBe(2);
+        calls.GetProperty("byGroup").GetProperty("scale").GetDouble().ShouldBe(32, 0.001);
+    }
+
     [Fact]
     public void APassWithNothingGraded_CarriesNoGrades()
     {

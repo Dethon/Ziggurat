@@ -381,8 +381,13 @@ public static class ScenarioChecks
                    + "what follows is a partial turn"]
                 : [];
 
+    // What a run cost in calls: everything the agent answered for, and everything its workers
+    // did with what they were handed.
+    public static int Calls(Recording recording) =>
+        Considered(recording).Count() + recording.WorkerCalls.Count;
+
     private static IEnumerable<string> OverCeiling(Scenario scenario, Recording recording) =>
-        Considered(recording).Count() > scenario.CallCeiling
+        !scenario.CeilingReported && Considered(recording).Count() > scenario.CallCeiling
             ? [$"call ceiling exceeded: {Considered(recording).Count()} calls against a ceiling of " +
                $"{scenario.CallCeiling}. Seen: {Seen(recording)}"]
             : [];

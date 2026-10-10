@@ -136,6 +136,7 @@ public static class EvalSuite
                 Spend = recording.Spend,
                 Grades = grades,
                 Delegated = recording.Delegations.Count > 0,
+                Calls = ScenarioChecks.Calls(recording),
                 Loader = ScenarioChecks.LoaderOf(scenario, recording),
                 PreloadOutcomes = recording.PreloadOutcomes,
                 Screens = recording.Screens

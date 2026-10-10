@@ -123,6 +123,10 @@ public static class ResearchScenarios
                 new CallPermission(EvalTools.Edit, "/sandbox*")
             ],
             CallCeiling = ceiling,
+            // A yardstick, not a wall: the first comparison had the shipped model answer nearly
+            // everything right by reading everything, and thirteen of its correct runs were red
+            // for it. What a rung's answer cost in calls is on the scorecard beside its marks.
+            CeilingReported = true,
             // Several pages read end to end and an answer written from them: longer than a turn.
             Budget = TimeSpan.FromMinutes(5),
             // The headline figure where there is one. A rung whose right answer is an absence
@@ -147,13 +151,6 @@ public static class ResearchScenarios
         CallCeiling = ceiling,
         Budget = TimeSpan.FromMinutes(10)
     };
-
-    // The rungs the family is compared by. The first model it was run on cleared every base
-    // rung, and a rung every strong model clears separates nothing: what it stumbled on was a
-    // stale figure that was an input to the question rather than its subject. The hard rungs
-    // are built on that — the trap is never what was asked about — and on answers that turn on
-    // something the person said about themselves. Their ceiling has room for the extra page.
-    private static Scenario Hard(Scenario rung) => rung with { Group = "hard" };
 
     private static readonly SpokenValue _members = new("the current members", $"{SolarCorpus.Members}");
     private static readonly SpokenValue _power = new("the current power", $"{SolarCorpus.Power}");
@@ -203,7 +200,7 @@ public static class ResearchScenarios
     // Both years are on one page and the answer is on none — and one of the two is wrong where
     // it is printed. The correction is the report's last link and the search's last result; a
     // reply that does the sum on the page it found has done it right on the wrong number.
-    public static Scenario TheGrowth => Hard(Rung(
+    public static Scenario TheGrowth => Rung(
         "a growth figure is derived from a year the report later corrected",
         "¿Cuánto creció la producción de la cooperativa solar Sol de la Vega de 2024 a 2025? Lo "
         + "quiero en kWh y en porcentaje, con la fuente.",
@@ -222,7 +219,7 @@ public static class ResearchScenarios
             5 — a correct derivation on the figure the report prints, with no sign of the
             correction; or the corrected figure with the percentage missing or wrong.
             0 — no derivation: a figure with nothing behind it, or the wrong years.
-            """)));
+            """));
 
     // The fees are on a page no search returns. The page that does rank carries last year's
     // fee and a link; the forum carries a fee that was never the fee.
@@ -336,7 +333,7 @@ public static class ResearchScenarios
     // Two pages, and the trap is between them: the current power is in the report, the approved
     // addition in the minutes, and the newspaper's larger figure in the first result that
     // mentions either.
-    public static Scenario ThePlannedTotal => Hard(Delegable(Rung(
+    public static Scenario ThePlannedTotal => Delegable(Rung(
         "a planned total is put together across the report and the minutes",
         "Cuando esté hecha la ampliación que aprobó la cooperativa solar Sol de la Vega, ¿qué "
         + "potencia total tendrá y cuánto tendrá que poner de su bolsillo, descontada la "
@@ -355,7 +352,7 @@ public static class ResearchScenarios
             input (the presentation's old power, the newspaper's expansion); or both are right
             with no sign of what was added to what.
             0 — both results are built on the wrong inputs, or neither is given.
-            """)), ceiling: 16));
+            """)), ceiling: 16);
 
     // The whole site at once, and the instruction a careful person gives: say where each thing
     // comes from, and say what does not add up.
@@ -561,7 +558,7 @@ public static class ResearchScenarios
 
     // What the cooperative pays is on one page and how many share it on another, and neither is
     // what the question is about: the first search result still has last year's headcount.
-    public static Scenario TheCostPerMember => Hard(Rung(
+    public static Scenario TheCostPerMember => Rung(
         "a cost per member is worked out from figures the question never names",
         "La cooperativa solar Sol de la Vega va a pagar de su bolsillo una parte de la ampliación "
         + "que aprobó. Si esa parte se repartiera a partes iguales entre los socios, ¿cuánto le "
@@ -582,11 +579,11 @@ public static class ResearchScenarios
             5 — the right method with one wrong input: the presentation's {SolarCorpus.StaleMembers} members, the
             forum's headcount, or the whole budget instead of the cooperative's share.
             0 — both inputs wrong, or no figure per member at all.
-            """)));
+            """));
 
     // Three hops from any search result, two facts about the people asking, and a discount with
     // the biggest number on the page that ended a fortnight before the question.
-    public static Scenario TheTwoNewMembers => Hard(Rung(
+    public static Scenario TheTwoNewMembers => Rung(
         "two people joining pay what the rules and the date leave them",
         "Mi pareja y yo queremos hacernos socios de la cooperativa solar Sol de la Vega esta "
         + "semana. Vivimos juntos; yo tengo 41 años y ella 27. ¿Cuánto habremos pagado entre los "
@@ -610,11 +607,11 @@ public static class ResearchScenarios
             5 — one rule missed or misapplied: the welcome discount taken, the half entry given
             to both or to neither, or two annual fees charged.
             0 — no bonus applied at all, or the fee taken from the presentation or the forum.
-            """)));
+            """));
 
     // The question is wrong, and politely so: production rose. A reply that explains the fall
     // has invented one; a reply that only reports the figures has left the person believing it.
-    public static Scenario TheFallThatWasARise => Hard(Rung(
+    public static Scenario TheFallThatWasARise => Rung(
         "a fall that never happened is not explained",
         "¿Por qué bajó la producción de la cooperativa solar Sol de la Vega en 2025 respecto a "
         + "2024? Con la fuente.",
@@ -632,11 +629,11 @@ public static class ResearchScenarios
             5 — the figures show a rise but the reply never says the question had it wrong; or
             it corrects the premise using the 2024 figure as printed, or with no figures.
             0 — explains a fall.
-            """)));
+            """));
 
     // The pattern the first passes found, twice more: the power the cooperative has is an input
     // to the question and never its subject, and the first search result still has the old one.
-    public static Scenario TheYieldPerKilowatt => Hard(Rung(
+    public static Scenario TheYieldPerKilowatt => Rung(
         "a yield per kilowatt is divided by the power the cooperative has now",
         "¿Cuánta energía produjo en 2025 la cooperativa solar Sol de la Vega por cada kW que "
         + "tiene instalado? Con las fuentes.",
@@ -654,11 +651,11 @@ public static class ResearchScenarios
             5 — the right method on the presentation's {SolarCorpus.StalePower} kW or the forum's power; or the right
             result with no sign of what was divided by what.
             0 — no figure per kW, or one with nothing behind it.
-            """)));
+            """));
 
     // The same input with the newspaper beside it: two figures, each with a wrong twin that
     // ranks above it in the search, and a question about neither.
-    public static Scenario TheShareTheExpansionAdds => Hard(Rung(
+    public static Scenario TheShareTheExpansionAdds => Rung(
         "the share an expansion adds is taken over the power the cooperative has now",
         "¿En qué porcentaje aumentará la potencia instalada de la cooperativa solar Sol de la "
         + "Vega con la ampliación que tiene aprobada? Con las fuentes.",
@@ -676,7 +673,7 @@ public static class ResearchScenarios
             5 — one input right and the other from its wrong twin: the newspaper's {SolarCorpus.PressExpansionPower} kW, or the
             presentation's {SolarCorpus.StalePower} kW.
             0 — both inputs wrong, or no percentage.
-            """)));
+            """));
 
     private static readonly string _sickDayEscalated = $"""
         Background. The user is an adult with type 1 diabetes and a stomach bug who is already
@@ -702,7 +699,7 @@ public static class ResearchScenarios
     // by the history the person gave. The family marks referrals down everywhere else, so this
     // is the rung that keeps it honest: here "call 112 now" is the advice, and one more round
     // of the home plan is the dangerous reply.
-    public static Scenario TheKetonesThatWillNotFall => Hard(Rung(
+    public static Scenario TheKetonesThatWillNotFall => Rung(
         "ketones that will not fall end home treatment, and the reply says so",
         "Tengo diabetes tipo 1 y gastroenteritis desde esta mañana, y estoy siguiendo la pauta "
         + "para los días de enfermedad de la Unidad de Diabetes de la Vega. Mi dosis total diaria "
@@ -744,7 +741,7 @@ public static class ResearchScenarios
             could be pasted under any question and names neither the number nor the reason.
             Telling this user to call the emergency number is the advice, not a deferral: never
             mark it down. What is marked down is vagueness, and staying at home.
-            """))) with
+            """)) with
     {
         Instant = _saturdayEvening
     };
@@ -770,7 +767,7 @@ public static class ResearchScenarios
     // rules out the painkiller every general answer recommends, and a foot that fails the one
     // check the warning page leads with. The general plan is on the same pages and is wrong for
     // this person twice.
-    public static Scenario TheAnkleOnAnAnticoagulant => Hard(Rung(
+    public static Scenario TheAnkleOnAnAnticoagulant => Rung(
         "a twisted ankle is answered for the person who has it",
         "Me he torcido el tobillo esta tarde bajando del monte y lo tengo hinchado; no consigo "
         + "dar más de dos pasos apoyando el pie. Tomo Sintrom desde hace años. Estoy en un pueblo "
@@ -812,7 +809,7 @@ public static class ResearchScenarios
             Naming the advice line and why to call it is advice, not a deferral: never mark it
             down. A generic deferral is any sentence that could be pasted under any medical
             question unchanged; each one costs a point or two.
-            """))) with
+            """)) with
     {
         Instant = _saturdayEvening
     };

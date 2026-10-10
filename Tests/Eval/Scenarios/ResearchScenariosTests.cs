@@ -52,15 +52,14 @@ public class ResearchScenariosTests
         actionable.Rubric.ShouldContain("is not a deferral");
     }
 
-    // The first model the family was run on cleared every rung but one, and a family every
-    // strong model clears compares nothing. The hard rungs are what is left to compare by, so
-    // they are a group with a score of their own, and there have to be enough of them to be one.
+    // Two groups, by the one distinction the first comparison bore out: whether the site can
+    // be read whole. A third, "hard", was built from what the first model stumbled on and
+    // troubled nobody else — four of five models cleared it at 9.5 or better — so it measured
+    // that model and is gone.
     [Fact]
-    public void EveryRung_IsBaseOrHard_AndTheHardOnesAreEnoughToBeAScore()
+    public void EveryRung_IsOnASiteThatCanBeReadWhole_OrOneThatCannot()
     {
-        ResearchScenarios.All.ShouldAllBe(scenario =>
-            scenario.Group == "base" || scenario.Group == "hard" || scenario.Group == "scale");
-        ResearchScenarios.All.Count(scenario => scenario.Group == "hard").ShouldBeGreaterThanOrEqualTo(9);
+        ResearchScenarios.All.ShouldAllBe(scenario => scenario.Group == "base" || scenario.Group == "scale");
     }
 
     // The rungs on the site that cannot be read whole. Traps on a dozen pages left the first

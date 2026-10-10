@@ -50,6 +50,8 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
                 Loaders = result.Loaders,
                 Grades = result.Grades,
                 Group = scenario.Group,
+                Calls = scenario.CeilingReported ? result.Calls : [],
+                CallCeiling = scenario.CeilingReported ? scenario.CallCeiling : null,
                 DelegatedRuns = scenario.Workers == WorkerMode.Real ? result.DelegatedRuns : null,
                 PreloadOutcomes = result.PreloadOutcomes,
                 Screens = result.Screens

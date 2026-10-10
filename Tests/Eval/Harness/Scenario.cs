@@ -50,6 +50,12 @@ public sealed record Scenario
     // passing, so the ceiling is part of the contract rather than a safety net.
     public required int CallCeiling { get; init; }
 
+    // The ceiling as a yardstick: a run over it is counted on the scorecard and fails nothing.
+    // For a scenario that marks an answer rather than guards a habit — where reading more than
+    // was needed is a cost to set beside the score, and reddening a correct answer for its
+    // thoroughness would say the opposite of what the marks say.
+    public bool CeilingReported { get; init; }
+
     // Everything in the home that this turn is allowed to move. The declaration is exhaustive:
     // an entity that changed and is not named here fails the scenario, which is the only way to
     // catch a permitted call that did more than it was asked to.
