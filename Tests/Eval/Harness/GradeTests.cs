@@ -46,6 +46,89 @@ public class GradeTests
             .ShouldBe(5, 0.001);
     }
 
+    private static readonly Source _presentation = new("/solar", "Sol de la Vega: la cooperativa solar del vecindario");
+    private static readonly Source _report = new("/solar/memoria-2025", "Memoria anual 2025");
+    private static readonly GroundedGrade _grounded =
+        (GroundedGrade)Grade.Grounded("grounding", _presentation, _report);
+
+    private static Recording Having(string reply, params string[] browsed)
+    {
+        var recording = new Recording { Parent = ["Jonas"], Reply = reply };
+        browsed
+            .Select((url, index) => new Infrastructure.Agents.ChatClients.ToolInvocation
+            {
+                Sequence = index,
+                ToolName = "mcp__web__web_browse",
+                Arguments = $$"""{"url":"{{url}}","maxLength":10000}""",
+                Outcome = Infrastructure.Agents.ChatClients.ToolInvocationOutcome.Completed,
+                // The second one is a worker's: a page a worker opened was opened.
+                AgentId = index == 1 ? "Jonas Worker" : "Jonas"
+            })
+            .ToList()
+            .ForEach(recording.OnInvoked);
+        return recording;
+    }
+
+    // Grounding counted, not judged: a page a right answer rests on is grounded when the reply
+    // names it and somebody opened it. The judge gave nine or ten to every reply it was shown,
+    // which is a third of the judge's bill for a column that separated nothing.
+    [Fact]
+    public void Grounded_APageCitedAndOpened_Counts_AndEachOfTheTwoAloneDoesNot()
+    {
+        var both = Having(
+            "Son 237 socios ([memoria](http://127.0.0.1:4000/solar/memoria-2025)); antes 184 ([presentación](http://127.0.0.1:4000/solar)).",
+            "http://127.0.0.1:4000/solar", "http://127.0.0.1:4000/solar/memoria-2025");
+        _grounded.Score(both).ShouldBe(10);
+
+        // Cited from the search snippet, never opened.
+        var unopened = Having(
+            "Son 237 ([memoria](http://127.0.0.1:4000/solar/memoria-2025)); antes 184 ([presentación](http://127.0.0.1:4000/solar)).",
+            "http://127.0.0.1:4000/solar/memoria-2025");
+        _grounded.Score(unopened).ShouldBe(5);
+
+        // Opened and left out of the reply.
+        var uncited = Having(
+            "Son 237 socios.", "http://127.0.0.1:4000/solar", "http://127.0.0.1:4000/solar/memoria-2025");
+        _grounded.Score(uncited).ShouldBe(0);
+    }
+
+    [Fact]
+    public void Grounded_APathInsideALongerOne_IsNotThatPage()
+    {
+        // "/solar" is the start of every page on the site: a reply that cites the report has
+        // not cited the presentation, and a browse of the report has not opened it.
+        var recording = Having(
+            "Son 237 socios ([memoria](http://127.0.0.1:4000/solar/memoria-2025)).",
+            "http://127.0.0.1:4000/solar/memoria-2025");
+
+        _grounded.Score(recording).ShouldBe(5);
+    }
+
+    [Fact]
+    public void Grounded_APageNamedByItsTitle_IsCited()
+    {
+        // A spoken-style reply names the page instead of linking it, and that is a citation.
+        var recording = Having(
+            "Según la Memoria anual 2025 son 237 socios; la presentación de 2024 decía 184.",
+            "http://127.0.0.1:4000/solar", "http://127.0.0.1:4000/solar/memoria-2025");
+
+        _grounded.Score(recording).ShouldBe(5);
+    }
+
+    [Fact]
+    public async Task AGroundedDimension_IsMarkedWithoutTheJudge()
+    {
+        var recording = Having(
+            "Son 237 ([memoria](http://127.0.0.1:4000/solar/memoria-2025)).",
+            "http://127.0.0.1:4000/solar/memoria-2025");
+        var judge = new CannedJudge("{}");
+
+        var marks = await Grading.MarksAsync(TheScenario(_grounded), recording, "key", judge);
+
+        marks.ShouldHaveSingleItem().ShouldBe(new GradeMark("grounding", 5));
+        judge.Requests.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task ARunThatNeverAnswered_ScoresNothingOnEveryDimension()
     {

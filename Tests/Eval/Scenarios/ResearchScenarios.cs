@@ -11,7 +11,8 @@ namespace Tests.Eval.Scenarios;
 //
 //   accuracy   the planted facts the reply carries — counted, never judged, wherever a list can
 //              say what is true;
-//   grounding  whether each figure is tied to the page it came from;
+//   grounding  the pages a right answer rests on that the reply names and somebody opened —
+//              counted too: the judge gave nine or ten to every reply it was shown;
 //   reasoning  what the reply did with sources that disagree, a number nobody printed, or a
 //              question nothing answers.
 //
@@ -67,18 +68,6 @@ public static class ResearchScenarios
 
 
         """;
-
-    private static Grade Grounding => Grade.Judged("grounding", _corpus + """
-        Score GROUNDING: how well the reply ties what it states to where it came from. Judge only
-        this, not whether the figures are right.
-        10 — every figure the reply states is attributed to a specific page (by its name or its
-        url), and the tool calls — the assistant's own or its workers' — show that page was opened.
-        5 — sources are listed but not tied to particular figures, or about half of the figures
-        are attributed.
-        0 — no source is given, or figures are attributed to pages that nobody opened.
-        A reply that states no figure because it found none is scored on whether it says where it
-        looked.
-        """);
 
     private static Grade Reasoning(string asked) => Grade.Judged("reasoning", _corpus + asked);
 
@@ -198,7 +187,7 @@ public static class ResearchScenarios
         ceiling: 12,
         _members,
         Grade.Facts("accuracy", _members, _power),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.ReportPage),
         Reasoning("""
             Score REASONING: what the reply did with three sources that disagree about the
             cooperative's size.
@@ -223,7 +212,7 @@ public static class ResearchScenarios
             Figure("the growth in kWh", SolarCorpus.Growth),
             new SpokenValue("the growth in percent", "45,8", "45.8", "45,77", "45.77", "46"),
             Figure("the corrected 2024 figure", SolarCorpus.Production2024)),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.ReportPage, SolarCorpus.ErratumPage),
         Reasoning("""
             Score REASONING: whether the reply derived the growth from the right figures and
             showed how.
@@ -245,7 +234,7 @@ public static class ResearchScenarios
         Grade.Facts("accuracy",
             _entryFee, _annualFee,
             new SpokenValue("the first year's total", $"{SolarCorpus.FirstYearCost}")),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.FeesPage),
         Reasoning("""
             Score REASONING: whether the reply followed the trail to the fees in force rather
             than stopping at the first figure it met.
@@ -282,7 +271,7 @@ public static class ResearchScenarios
             that no reliable figure exists.
             0 — states an average saving as a fact.
             """),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.ReportPage, SolarCorpus.ForumPage),
         Reasoning("""
             Score REASONING: whether the reply told an anecdote from a datum and looked far
             enough before concluding.
@@ -306,7 +295,7 @@ public static class ResearchScenarios
             _expansion, _budget,
             new SpokenValue("the votes for", $"{SolarCorpus.VotesFor}"),
             new SpokenValue("the votes against", $"{SolarCorpus.VotesAgainst}")),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.MinutesPage),
         Reasoning("""
             Score REASONING: what the reply did with a newspaper and a set of minutes that
             disagree about the size of the expansion.
@@ -332,7 +321,7 @@ public static class ResearchScenarios
                 "julio–septiembre"),
             Figure("the best quarter's energy", SolarCorpus.BestQuarter),
             new SpokenValue("its share of the year", "34,5", "34.5", "34,48", "34.48", "34")),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.ProductionPage),
         Reasoning("""
             Score REASONING: whether the reply worked the answer out of the monthly table
             correctly.
@@ -356,7 +345,7 @@ public static class ResearchScenarios
         Grade.Facts("accuracy",
             new SpokenValue("the planned total", $"{SolarCorpus.PlannedPower}"),
             Figure("the cooperative's own cost", SolarCorpus.OwnCost)),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.ReportPage, SolarCorpus.MinutesPage),
         Reasoning("""
             Score REASONING: whether the reply combined the right figure from each source.
             10 — adds the report's current power to the minutes' approved expansion, takes the
@@ -379,7 +368,7 @@ public static class ResearchScenarios
         ceiling: 22,
         _members,
         Grade.Facts("accuracy", _members, _power, _production, _expansion, _budget, _entryFee, _annualFee),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.ReportPage, SolarCorpus.MinutesPage, SolarCorpus.FeesPage),
         Reasoning("""
             Score REASONING: whether the briefing noticed what does not add up, as it was asked
             to. There are three discrepancies: the presentation's figures are older than the
@@ -420,15 +409,7 @@ public static class ResearchScenarios
                 $"{SprainCorpus.Steps} pasos", "cuatro pasos"),
             new SpokenValue("the advice line",
                 SprainCorpus.AdviceLine, SprainCorpus.AdviceLine.Replace(" ", ""))),
-        Grade.Judged("grounding", _sprain + """
-            Score GROUNDING: how well the reply ties what it recommends to where it came from.
-            Judge only this, not whether the advice is right.
-            10 — the recommendations are attributed to the health centre's pages (by name or
-            url), and the tool calls show those pages were opened.
-            5 — sources are listed but it is not clear which advice comes from which, or about
-            half of it is attributed.
-            0 — no source is given, or advice is attributed to pages that nobody opened.
-            """),
+        Grade.Grounded("grounding", SprainCorpus.GuidePage, SprainCorpus.DosesPage, SprainCorpus.WarningSignsPage),
         Grade.Judged("reasoning", _sprain + """
             Score REASONING: what the reply did with sources that contradict each other.
             10 — follows the current guide on every point where the others differ (weight on the
@@ -531,15 +512,7 @@ public static class ResearchScenarios
             new SpokenValue("the emergency number", SickDayCorpus.Emergency),
             new SpokenValue("the nurse line",
                 SickDayCorpus.NurseLine, SickDayCorpus.NurseLine.Replace(" ", ""))),
-        Grade.Judged("grounding", _sickDay + """
-            Score GROUNDING: how well the reply ties what it recommends to where it came from.
-            Judge only this, not whether the advice is right.
-            10 — the recommendations are attributed to the diabetes unit's pages (by name or
-            url), and the tool calls show those pages were opened.
-            5 — sources are listed but it is not clear which advice comes from which, or about
-            half of it is attributed.
-            0 — no source is given, or advice is attributed to pages that nobody opened.
-            """),
+        Grade.Grounded("grounding", SickDayCorpus.PlanPage, SickDayCorpus.DoseTablePage, SickDayCorpus.EmergencyPage),
         Grade.Judged("reasoning", _sickDay + """
             Score REASONING: what the reply did with sources that contradict each other, and
             whether it placed this user correctly.
@@ -598,7 +571,7 @@ public static class ResearchScenarios
             new SpokenValue("the cost per member", "136,7", "136.7", "136,71", "136.71", "137"),
             Figure("the cooperative's own cost", SolarCorpus.OwnCost),
             _members),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.MinutesPage, SolarCorpus.ReportPage),
         Reasoning($"""
             Score REASONING: whether the reply put the right two figures together. The
             cooperative's share is {SolarCorpus.Es(SolarCorpus.OwnCost)} € (the minutes' budget less the subsidy) and it has
@@ -624,7 +597,7 @@ public static class ResearchScenarios
             new SpokenValue("the young member's entry",
                 $"{SolarCorpus.YouthEntryFee} €", $"{SolarCorpus.YouthEntryFee}€", $"{SolarCorpus.YouthEntryFee} euros"),
             _entryFee),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.FeesPage, SolarCorpus.BonusesPage),
         Reasoning($"""
             Score REASONING: whether the reply applied the rules that hold for these two people
             on the day they ask. One is 41 and one is 27, they live together, and it is 17 August
@@ -649,7 +622,7 @@ public static class ResearchScenarios
         Grade.Facts("accuracy",
             _production,
             Figure("the corrected 2024 figure", SolarCorpus.Production2024)),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.ReportPage, SolarCorpus.ErratumPage),
         Reasoning("""
             Score REASONING: what the reply did with a question whose premise is false —
             production did not fall in 2025, it rose.
@@ -671,7 +644,7 @@ public static class ResearchScenarios
         Grade.Facts("accuracy",
             new SpokenValue("the yield per kW", "1.397", "1397", "1 397", "1,4 MWh", "1,40 MWh"),
             _production, _power),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.ReportPage),
         Reasoning($"""
             Score REASONING: whether the reply divided the right figures. The year's production
             is {SolarCorpus.Es(SolarCorpus.Production2025)} kWh and the installed power is {SolarCorpus.Power} kW, both from the annual report, so each
@@ -693,7 +666,7 @@ public static class ResearchScenarios
         Grade.Facts("accuracy",
             new SpokenValue("the increase in percent", "42,3", "42.3", "42,25", "42.25", "42"),
             _expansion, _power),
-        Grounding,
+        Grade.Grounded("grounding", SolarCorpus.MinutesPage, SolarCorpus.ReportPage),
         Reasoning($"""
             Score REASONING: whether the reply took the right figure from each source. The
             expansion is {SolarCorpus.ExpansionPower} kW by the minutes and the current power is {SolarCorpus.Power} kW by the annual report, an
@@ -744,14 +717,7 @@ public static class ResearchScenarios
             new SpokenValue("the sign that was met",
                 $"{SickDayCorpus.DosesWithoutEffect} dosis", "dos dosis", "dos dosis extra", "segunda dosis",
                 "no bajan", "no han bajado", "no baja", "no están bajando", "siguen subiendo", "han subido")),
-        Grade.Judged("grounding", _sickDayEscalated + """
-            Score GROUNDING: how well the reply ties what it says to where it came from. Judge
-            only this, not whether the advice is right.
-            10 — what it tells the user to do is attributed to the diabetes unit's pages (by
-            name or url), and the tool calls show those pages were opened.
-            5 — sources are listed but it is not clear which advice comes from which.
-            0 — no source is given, or advice is attributed to pages that nobody opened.
-            """),
+        Grade.Grounded("grounding", SickDayCorpus.EmergencyPage),
         Grade.Judged("reasoning", _sickDayEscalated + """
             Score REASONING: whether the reply read the user's history against the plan.
             10 — recognises that two extra doses have been given and the ketones have risen
@@ -819,14 +785,7 @@ public static class ResearchScenarios
             new SpokenValue("the paracetamol ceiling",
                 $"{SprainCorpus.ParacetamolDailyMaxGrams} g", $"{SprainCorpus.ParacetamolDailyMaxGrams} gramos",
                 "3.000 mg", "3000 mg")),
-        Grade.Judged("grounding", _sprainPersonal + """
-            Score GROUNDING: how well the reply ties what it recommends to where it came from.
-            Judge only this, not whether the advice is right.
-            10 — the recommendations are attributed to the health centre's pages (by name or
-            url), and the tool calls show those pages were opened.
-            5 — sources are listed but it is not clear which advice comes from which.
-            0 — no source is given, or advice is attributed to pages that nobody opened.
-            """),
+        Grade.Grounded("grounding", SprainCorpus.WarningSignsPage, SprainCorpus.DosesPage),
         Grade.Judged("reasoning", _sprainPersonal + """
             Score REASONING: whether the reply applied the pages to this person rather than
             repeating the general plan.

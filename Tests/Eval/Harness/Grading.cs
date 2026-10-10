@@ -25,6 +25,8 @@ public static class Grading
         {
             FactGrade facts => Task.FromResult<GradeMark?>(
                 new GradeMark(facts.Dimension, facts.Score(recording.Reply))),
+            GroundedGrade grounded => Task.FromResult<GradeMark?>(
+                new GradeMark(grounded.Dimension, grounded.Score(recording))),
             JudgedGrade judged => Judge.GradeAsync(scenario, recording, judged, apiKey, transport),
             _ => throw new InvalidOperationException($"No way to mark a {grade.GetType().Name}.")
         }));

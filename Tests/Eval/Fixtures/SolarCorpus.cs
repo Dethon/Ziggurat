@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Builder;
+using Tests.Eval.Harness;
 
 namespace Tests.Eval.Fixtures;
 
@@ -86,6 +87,16 @@ public static class SolarCorpus
         "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
         "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
     ];
+
+    // The pages a right answer can rest on, by path and by the title a reply would name them by.
+    public static readonly Source PresentationPage = new("/solar", "Sol de la Vega: la cooperativa solar del vecindario");
+    public static readonly Source ReportPage = new("/solar/memoria-2025", "Memoria anual 2025", "memoria anual de 2025");
+    public static readonly Source ErratumPage = new("/solar/fe-de-erratas", "Fe de erratas");
+    public static readonly Source FeesPage = new("/solar/cuotas", "Cuotas y cómo asociarse");
+    public static readonly Source BonusesPage = new("/solar/bonificaciones", "Bonificaciones y campañas");
+    public static readonly Source ProductionPage = new("/solar/produccion-2025", "Producción mensual 2025");
+    public static readonly Source MinutesPage = new("/solar/acta-2026-06", "Acta de la asamblea");
+    public static readonly Source ForumPage = new("/foro/hilo-8841", "Foro de vecinos");
 
     public static void Map(WebApplication app)
     {

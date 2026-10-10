@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Tests.Eval.Harness;
 
 namespace Tests.Eval.Fixtures;
 
@@ -46,6 +47,10 @@ public static class SprainCorpus
     // The 2019 leaflet: a prescription dose from the first hour and a fortnight without moving.
     public const int StaleIbuprofenDose = 600;
     public const int StaleImmobilisationWeeks = 2;
+
+    public static readonly Source GuidePage = new("/salud/esguince-tobillo", "Esguince de tobillo: cuidados en casa");
+    public static readonly Source DosesPage = new("/salud/analgesicos", "Analgésicos sin receta");
+    public static readonly Source WarningSignsPage = new("/salud/esguince-senales-alarma", "Esguince de tobillo: señales de alarma");
 
     public static void Map(WebApplication app)
     {

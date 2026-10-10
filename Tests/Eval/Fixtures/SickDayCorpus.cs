@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Builder;
+using Tests.Eval.Harness;
 
 namespace Tests.Eval.Fixtures;
 
@@ -57,6 +58,10 @@ public static class SickDayCorpus
 
     public static string Es(decimal value) =>
         value.ToString("0.0", CultureInfo.InvariantCulture).Replace('.', ',');
+
+    public static readonly Source PlanPage = new("/diabetes/dias-de-enfermedad", "pauta para los días de enfermedad");
+    public static readonly Source DoseTablePage = new("/diabetes/cetonas-dosis", "Dosis extra de insulina");
+    public static readonly Source EmergencyPage = new("/diabetes/cuando-urgencias", "Cuándo dejar de tratarlo en casa");
 
     public static void Map(WebApplication app)
     {
