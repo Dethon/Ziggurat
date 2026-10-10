@@ -45,6 +45,10 @@ public static class ResearchScenarios
         - /diario/ampliacion-solar — a local newspaper's account of the same assembly: it says {SolarCorpus.PressExpansionPower} kW, which is wrong, and the same budget.
         - /foro/hilo-8841 — a neighbours' forum thread: "more than {SolarCorpus.ForumMembers} members", "about {SolarCorpus.ForumPower} kW", "the fee is {SolarCorpus.ForumFee} €", and one neighbour who "saves about {SolarCorpus.ForumSaving} € a year". Unverified impressions, all of them wrong where they can be checked.
         No page gives an average saving per member, and no page says the newspaper is wrong.
+        This list is what matters for scoring, not everything the pages say: each page carries
+        ordinary detail that is not repeated here (where the panels are, who signed, the months
+        of the table), and a figure worked out from the ones above — a sum, a difference, a
+        share — is derived, not invented. Do not mark either as unsupported.
 
 
         """;
