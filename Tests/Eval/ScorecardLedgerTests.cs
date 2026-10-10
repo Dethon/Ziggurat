@@ -49,6 +49,26 @@ public class ScorecardLedgerTests : IDisposable
         spend.GetProperty("cacheShare").GetDouble().ShouldBe(0.75, 0.001);
     }
 
+    // A scorecard seeds what its tier could have run, so that what did not run shows at a null
+    // rate. The research tier runs its own family and cites no claim; seeded with the whole
+    // suite it declared ninety scenarios and every prompt claim, none of which it can exercise.
+    [Fact]
+    public void AResearchPass_DeclaresItsOwnRungsAndNoClaims_AndAFullPassDeclaresNoneOfThem()
+    {
+        var rung = EvalSuite.All.First(s => s.Tier == EvalTier.Research);
+        _ledger.Record(EvalTier.Research, rung, new ScenarioResult(true, 3, 3, []));
+        _ledger.Record(EvalTier.Full, _first, new ScenarioResult(true, 1, 1, []));
+        _ledger.WriteAll(_output, Unresolved);
+
+        var research = Read("scorecard-research.json");
+        research.GetProperty("summary").GetProperty("scenarios").GetProperty("declared").GetInt32()
+            .ShouldBe(EvalSuite.All.Count(s => s.Tier == EvalTier.Research));
+        research.GetProperty("claims").EnumerateObject().ShouldBeEmpty();
+        research.GetProperty("scenarios").TryGetProperty(_first.Name, out _).ShouldBeFalse();
+
+        Read("scorecard-full.json").GetProperty("scenarios").TryGetProperty(rung.Name, out _).ShouldBeFalse();
+    }
+
     [Fact]
     public void NothingRecorded_WritesNoFile()
     {
