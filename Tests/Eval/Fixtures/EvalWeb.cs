@@ -233,6 +233,12 @@ public sealed class EvalWeb : IAsyncDisposable
                 ? Html(Page("Sin inscripción", "<h1>Todavía no hay ninguna inscripción</h1>"))
                 : Html(MaterialsConfirmation(site.Materials[^1])));
 
+        // The research family's site within the site: one subject, several pages that disagree.
+        SolarCorpus.Map(app);
+        SprainCorpus.Map(app);
+        SickDayCorpus.Map(app);
+        ArchiveCorpus.Map(app);
+
         await app.StartAsync();
         return site;
     }
@@ -261,7 +267,7 @@ public sealed class EvalWeb : IAsyncDisposable
         }
     }
 
-    private static IResult Html(string body) =>
+    internal static IResult Html(string body) =>
         Results.Content(body, "text/html; charset=utf-8", Encoding.UTF8);
 
     private static string Index() =>
@@ -511,7 +517,7 @@ public sealed class EvalWeb : IAsyncDisposable
             <p>Tu código de reserva es <strong>{CodeFor(booking.Slot)}</strong>. Guárdalo.</p>
             """);
 
-    private static string Page(string title, string body) =>
+    internal static string Page(string title, string body) =>
         $"""
          <!doctype html>
          <html lang="es"><head><meta charset="utf-8"><title>{title}</title></head>
@@ -564,8 +570,13 @@ internal sealed class FakeSearch(string baseUrl) : HttpMessageHandler
     {
         var query = (request.RequestUri?.Query ?? "").ToLowerInvariant();
 
+        // As many as were asked for and no more, the way the real engine answers its `count`:
+        // returning every match made a sixty-page site one search long.
+        var count = System.Web.HttpUtility.ParseQueryString(request.RequestUri?.Query ?? "")["count"];
         var results = new JsonArray([.. Table(baseUrl)
-            .Where(result => result.Keywords.Any(query.Contains))
+            .Where(result => result.Keywords.Any(query.Contains)
+                             && (result.Requires ?? []).All(query.Contains))
+            .Take(int.TryParse(count, out var asked) ? asked : 20)
             .Select(result => result.ToJson())]);
 
         return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
@@ -625,17 +636,25 @@ internal sealed class FakeSearch(string baseUrl) : HttpMessageHandler
             "Apuntarse a una actividad — Cuaderno de barrio",
             $"{baseUrl}/agenda/apuntarse",
             "El formulario para apuntarse a las actividades del barrio: busca la actividad y "
-            + "apúntate con tu nombre.")
+            + "apúntate con tu nombre."),
+        .. SolarCorpus.Search(baseUrl),
+        .. SprainCorpus.Search(baseUrl),
+        .. SickDayCorpus.Search(baseUrl),
+        .. ArchiveCorpus.Search(baseUrl)
     ];
+}
 
-    private sealed record SearchEntry(
-        IReadOnlyList<string> Keywords, string Title, string Url, string Description)
+internal sealed record SearchEntry(
+    IReadOnlyList<string> Keywords, string Title, string Url, string Description)
+{
+    // What the query must also contain, all of it, for the entry to answer at all: how a page
+    // that is one of many stays out of every search that did not ask for its kind.
+    public IReadOnlyList<string>? Requires { get; init; }
+
+    public JsonNode ToJson() => new JsonObject
     {
-        public JsonNode ToJson() => new JsonObject
-        {
-            ["title"] = Title,
-            ["url"] = Url,
-            ["description"] = Description
-        };
-    }
+        ["title"] = Title,
+        ["url"] = Url,
+        ["description"] = Description
+    };
 }

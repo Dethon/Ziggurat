@@ -17,11 +17,6 @@ public static class EvalRun
     // that carries no identity — so it is one constant rather than a string repeated per fixture.
     public const string UserId = "eval-user";
 
-    // A stalled provider costs the run rather than the suite. The budget is generous: a voice turn
-    // that reads a prompt, calls a tool and answers takes seconds, and a run cut off at its own
-    // deadline would be reported as a behavioural failure it is not.
-    private static readonly TimeSpan _budget = TimeSpan.FromSeconds(180);
-
     // One run in a slot of its own. The gate is what bounds how many stacks stand at once now
     // that a scenario's runs go out together, and the lease is the database this run is alone on.
     public static Task<Recording> ExecuteAsync(Scenario scenario) =>
@@ -33,11 +28,22 @@ public static class EvalRun
 
     public static async Task<Recording> ExecuteAsync(Scenario scenario, string redisConnectionString)
     {
-        var recording = new Recording();
+        var conversationId = $"eval:{Guid.NewGuid():N}";
+
+        // Named so the recording can tell this agent's calls from a real worker's: both are built
+        // by the one factory and heard by the one observer. Both of its names — the one its
+        // metrics carry and the one its session does, which is the display name the factory
+        // composes from the definition's name and the conversation.
+        var recording = new Recording
+        {
+            Parent = ShippedDefinition.Repository.Settings.Agents
+                .Where(agent => agent.Id == scenario.AgentId)
+                .SelectMany(agent => new[] { agent.Name, $"{agent.Name}-{conversationId}" })
+                .ToList()
+        };
         await using var stack = await EvalStack.StartAsync(
             scenario, redisConnectionString, recording);
 
-        var conversationId = $"eval:{Guid.NewGuid():N}";
         await using var agent = stack.Factory.Create(
             new AgentKey(conversationId, scenario.AgentId),
             userId: UserId,
@@ -49,7 +55,10 @@ public static class EvalRun
         recording.StateBefore = stack.Home.Snapshot();
         recording.FilesBefore = EvalVault.Read(stack.VaultPath);
 
-        using var cancellation = new CancellationTokenSource(_budget);
+        // A stalled provider costs the run rather than the suite. The scenario's own budget, and
+        // generous by default: a run cut off at its deadline is reported as never having
+        // finished, which is a behavioural failure only if the time was enough.
+        using var cancellation = new CancellationTokenSource(scenario.Budget);
         var thread = await agent.CreateSessionAsync(cancellation.Token);
 
         // A deadline reached is a result, not an accident: the scenario keeps its row and says
@@ -77,7 +86,9 @@ public static class EvalRun
         }
         recording.StateAfter = stack.Home.Snapshot();
         recording.FilesAfter = EvalVault.Read(stack.VaultPath);
-        recording.Delegations = stack.Workers.Delegations;
+        recording.Delegations = scenario.Workers == WorkerMode.Real
+            ? Delegation.Heard(recording.Calls)
+            : stack.Workers.Delegations;
         recording.MemoriesAfter = stack.Memory.Remaining;
         return recording;
     }

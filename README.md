@@ -265,7 +265,7 @@ Agents are defined as configuration data, each with:
 
 #### Subagents
 
-Agents with the `subagents` feature enabled can delegate work to ephemeral subagents via the `run_subagent` tool. Subagents are configured per-agent in `appsettings.json` under the `subAgents` array, each with its own model, MCP server endpoints, and execution timeout. Subagents use ephemeral state (no Redis persistence) and cannot spawn further subagents.
+Agents with the `subagents` feature enabled can delegate work to ephemeral subagents via the `run_subagent` tool. Subagents are configured per-agent in `appsettings.json` under the `subAgents` array, each with its own MCP server endpoints and execution timeout. A subagent has no model of its own: it runs the model of the agent that spawned it, with that agent's provider routing. Subagents use ephemeral state (no Redis persistence) and cannot spawn further subagents.
 
 Agent routing:
 - **Telegram**: Each bot token maps to one agent (configured per channel)
@@ -361,7 +361,6 @@ AGENTS__0__CUSTOMINSTRUCTIONS=You are Jack, a media library assistant...
 SUBAGENTS__0__ID=jonas-worker
 SUBAGENTS__0__NAME=Jonas Worker
 SUBAGENTS__0__DESCRIPTION=A worker subagent with the same toolset as Jonas
-SUBAGENTS__0__MODEL=openai/gpt-6-luna
 SUBAGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-vault:8080/mcp
 SUBAGENTS__0__MAXEXECUTIONSECONDS=600
 

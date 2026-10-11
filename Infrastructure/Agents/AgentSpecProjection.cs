@@ -65,6 +65,8 @@ internal static class AgentSpecProjection
         SubAgentDefinition definition,
         SpawnContext spawn,
         OpenRouterConfig openRouterConfig,
+        IPatchableModelSource patchableModels,
+        string? lemonadeHostAddress,
         string? mcpSecret,
         ILogger? logger)
     {
@@ -88,12 +90,14 @@ internal static class AgentSpecProjection
             // so its metrics answer "which conversation was this slow subagent running in".
             ConversationId = spawn.ConversationId,
             UserId = spawn.UserId,
-            Model = definition.Model,
+            // The parent's, both of them. A worker's own model made a delegated task a different
+            // model's answer inside the parent's turn — which nobody choosing a model for an agent
+            // was choosing — and its own routing named providers for a model it no longer names.
+            // Already resolved, advisories included, where the parent's spec was built.
+            Model = spawn.Model,
             MaxContextTokens = definition.MaxContextTokens ?? openRouterConfig.MaxContextTokens,
             ReasoningEffort = definition.ReasoningEffort,
-            ProviderRouting = ProviderRoutingResolver.Resolve(
-                definition.ProviderRouting, openRouterConfig.ProviderRouting,
-                definition.Model, identity, logger),
+            ProviderRouting = spawn.ProviderRouting,
             // A worker's endpoints are the deployment's servers as much as its parent's are.
             // A worker's definition is the deployment's own — nothing registers one — so every
             // endpoint it names is a deployment server.
@@ -120,12 +124,12 @@ internal static class AgentSpecProjection
             // the same machine, and writing it would report a collision inside somebody's
             // delegated task as the operator's name being taken.
             RecordsOutpostVerdicts = false,
-            // A config patch names a model from the parent's whitelist and an effort chosen for
-            // the parent's job; a subagent runs the model its own definition configures, which
-            // is the point of having one. No patch reaches a subagent today, so this is the
-            // second line of defence: if a future change ever copies the parent's message
-            // properties down, the patch is rejected and logged instead of silently winning.
-            PatchableModels = FixedPatchableModelSource.None
+            // The parent's whitelist, because the parent's model on a turn the person moved
+            // elsewhere is the model that turn asked for. The run tool writes that model onto the
+            // worker's request and the worker resolves it here exactly as the parent did, so the
+            // two cannot disagree — including for the local box, whose refusal names the address.
+            PatchableModels = patchableModels,
+            LemonadeHostAddress = lemonadeHostAddress
         };
     }
 

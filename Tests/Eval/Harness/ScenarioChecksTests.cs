@@ -34,6 +34,25 @@ public class ScenarioChecksTests
         ]
     };
 
+    // A research rung's ceiling is a yardstick rather than a wall. The first comparison had one
+    // model answer every question right by reading everything, and thirteen of its correct
+    // runs were red for it: thoroughness is a cost to report beside the score, not a failure.
+    [Fact]
+    public async Task AReportedCeiling_IsCounted_AndFailsNothing()
+    {
+        var recording = await ScriptedTurn.RunAsync(
+            "listo",
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"),
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"),
+            ScriptedTurn.Call(Create, "/timers/pasta/timer.json"));
+        var scenario = Timer() with { CallCeiling = 2, CeilingReported = true };
+
+        ScenarioChecks.Failures(scenario, recording).ShouldNotContain(failure => failure.Contains("ceiling"));
+        ScenarioChecks.Failures(scenario with { CeilingReported = false }, recording)
+            .ShouldContain(failure => failure.Contains("call ceiling exceeded"));
+        ScenarioChecks.Calls(recording).ShouldBe(3);
+    }
+
     [Fact]
     public async Task ACallOutsideRequiredPlusPermitted_FailsAndNamesIt()
     {

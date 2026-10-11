@@ -59,7 +59,6 @@ public class AgentAppSettingsTests
         var settings = BindSettings(
             ("subAgents:0:id", "worker"),
             ("subAgents:0:name", "Worker"),
-            ("subAgents:0:model", "openai/gpt-5"),
             ("subAgents:0:mcpServerEndpoints:0", "http://localhost"));
 
         settings.SubAgents.Single().UsesOutposts.ShouldBeFalse();
@@ -109,13 +108,24 @@ public class AgentAppSettingsTests
 
     // The migration exists to remove the dual-idiom problem; a pasted suffix would bring it back.
     [Fact]
-    public void Model_NoAgentOrSubAgent_CarriesARoutingSuffix()
+    public void Model_NoAgent_CarriesARoutingSuffix()
     {
         var models = Root()["agents"]!.AsArray()
-            .Concat(Root()["subAgents"]!.AsArray())
             .Select(a => a!["model"]!.GetValue<string>());
 
         models.ShouldAllBe(m => !m.Contains(":nitro") && !m.Contains(":floor"));
+    }
+
+    // A worker runs its parent's model, served by whoever serves its parent. A key naming either
+    // here would bind to nothing and read as a setting that works.
+    [Fact]
+    public void SubAgents_NameNoModelAndNoRoutingOfTheirOwn()
+    {
+        var declared = Root()["subAgents"]!.AsArray()
+            .SelectMany(a => a!.AsObject().Select(key => key.Key));
+
+        declared.ShouldNotContain("model");
+        declared.ShouldNotContain("providerRouting");
     }
 
     // Neighboring binding style (see ProviderRoutingBindingTests): an in-memory IConfiguration

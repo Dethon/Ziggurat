@@ -37,13 +37,12 @@ public sealed class AgentSpecProjectionTests
         ProviderRouting = _declaredRouting
     };
 
-    // Declares no routing, so it inherits the global default that the agent above overrides.
+    // Names no model and no routing: a worker has neither to name. Both are its parent's.
     private static readonly SubAgentDefinition _subAgentDefinition = new()
     {
         Id = "worker",
         Name = "Worker",
         Description = "The subagent",
-        Model = "z-ai/glm-5.2",
         McpServerEndpoints = ["http://tools"],
         CustomInstructions = "Be brief",
         Language = "es",
@@ -54,12 +53,18 @@ public sealed class AgentSpecProjectionTests
 
     private static AgentSpec AgentSpec() => AgentSpecProjection.ForAgent(
         _agentDefinition, new AgentKey("conv-1", "jack"), "fran", _openRouter,
-        new FixedPatchableModelSource(["model-a", "model-b"]), lemonadeHostAddress: null,
+        _patchable, lemonadeHostAddress: null,
         mcpSecret: McpSecret, new DeploymentEndpoints(_agentDefinition.McpServerEndpoints), logger: null);
 
+    // What the parent above resolves to, handed down the way the factory hands it: off the
+    // parent's own spec, so a worker can never be spawned on a model its parent is not running.
+    private static SpawnContext Spawn(bool usesOutposts = false) =>
+        new("conv-1", "fran", ["allow-*"], usesOutposts, AgentSpec().Model, AgentSpec().ProviderRouting);
+
     private static AgentSpec SubAgentSpec() => AgentSpecProjection.ForSubAgent(
-        _subAgentDefinition, new SpawnContext("conv-1", "fran", ["allow-*"], UsesOutposts: false),
-        _openRouter, McpSecret, null);
+        _subAgentDefinition, Spawn(), _openRouter, _patchable, lemonadeHostAddress: null, McpSecret, null);
+
+    private static readonly FixedPatchableModelSource _patchable = new(["model-a", "model-b"]);
 
     private const string McpSecret = "deployment-secret";
 
@@ -80,10 +85,12 @@ public sealed class AgentSpecProjectionTests
         // A mount verdict answers "did the agent you registered with mount you", so a delegated
         // task's collision set is nobody's business at the machine.
         Row("records outpost verdicts", s => s.RecordsOutpostVerdicts, true, false),
-        // The agent's list is whatever source the factory hands it; a subagent's is empty by
-        // construction, so no patch copied down from a parent's message ever wins there.
+        // A worker names no model: it runs the one its parent runs, whoever the parent is.
+        Row("model", s => s.Model, "z-ai/glm-5.2", "z-ai/glm-5.2"),
+        // The parent's list, so a turn the person moved to another model moves its workers with
+        // it — the worker resolves the same patch against the same whitelist the parent did.
         Row("patchable model ids", s => s.PatchableModels.Ids,
-            new[] { "model-a", "model-b" }, Array.Empty<string>()),
+            new[] { "model-a", "model-b" }, new[] { "model-a", "model-b" }),
         Row("enabled features", s => s.EnabledFeatures,
             new[] { "memory", "subagents", "filesystem.text_read" },
             new[] { "memory", "filesystem.text_read" }),
@@ -91,9 +98,9 @@ public sealed class AgentSpecProjectionTests
             new[] { "text_read" }, new[] { "text_read" }),
         Row("whitelist patterns", s => s.WhitelistPatterns,
             new[] { "allow-*" }, new[] { "allow-*" }),
-        // The agent declares its own routing wholesale; the subagent declares none and inherits
-        // the global default. Both arrive on the spec already resolved.
-        Row("provider routing", s => s.ProviderRouting, _declaredRouting, _globalRouting),
+        // Routing says who serves a model, so it travels with the model: the worker gets what
+        // its parent resolved, not the global default it would fall back to on its own.
+        Row("provider routing", s => s.ProviderRouting, _declaredRouting, _declaredRouting),
         // An endpoint stops being a bare string here. Everything the projection reads came out of
         // appsettings.json, so everything it composes is marked configured; a dynamic one is
         // contributed later, by the registry of live outposts, and never by a definition. Every
@@ -127,8 +134,8 @@ public sealed class AgentSpecProjectionTests
     {
         AgentSpecProjection.ForSubAgent(
                 _subAgentDefinition with { UsesOutposts = ownDefinition },
-                new SpawnContext("conv-1", "fran", ["allow-*"], UsesOutposts: parent),
-                _openRouter, McpSecret, null)
+                Spawn(usesOutposts: parent), _openRouter, _patchable, lemonadeHostAddress: null,
+                McpSecret, null)
             .UsesOutposts.ShouldBe(expected);
     }
 

@@ -21,6 +21,11 @@ public sealed record ToolInvocation
     public string? Error { get; init; }
 
     public required ToolInvocationOutcome Outcome { get; init; }
+
+    // Whose call this was, as the agent's metrics name it. One observer hears every agent a host
+    // builds — a worker's client beside its parent's, each numbering its own calls from zero —
+    // so without this a delegated task's calls read as the parent's.
+    public string? AgentId { get; init; }
 }
 
 public enum ToolInvocationOutcome

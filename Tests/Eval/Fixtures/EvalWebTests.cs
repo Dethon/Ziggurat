@@ -57,6 +57,107 @@ public class EvalWebTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SearchingForTheCooperative_ShowsTheStalePageFirst_AndNeverTheFeesPage()
+    {
+        var result = await _web.SearchClient().SearchAsync(
+            new WebSearchQuery("cooperativa solar Sol de la Vega socios", 10));
+
+        // The oldest page ranks first and its snippet carries the old headcount: answering from
+        // the top of the list is the easy, wrong path the research family is about.
+        result.Results[0].Url.ShouldBe($"{_web.BaseUrl}/solar");
+        result.Results[0].Snippet.ShouldContain(SolarCorpus.StaleMembers.ToString());
+        result.Results.ShouldContain(entry => entry.Url.EndsWith("/solar/memoria-2025"));
+        result.Results.ShouldNotContain(entry => entry.Url.Contains("/cuotas"));
+    }
+
+    [Fact]
+    public async Task TheReport_CarriesTheCurrentFigures_AndTheWayToTheFeesPage()
+    {
+        var page = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-report", $"{_web.BaseUrl}/solar/memoria-2025") { Caller = JudgmentCaller.None });
+
+        var content = page.Content.ShouldNotBeNull();
+        content.ShouldContain(SolarCorpus.Members.ToString());
+        content.ShouldContain(SolarCorpus.Es(SolarCorpus.Production2025));
+        // The link survives the read as something a reader can follow: the fees are on a page no
+        // search returns, and this is the way there.
+        content.ShouldContain("/solar/cuotas");
+    }
+
+    [Fact]
+    public async Task TheFeesPage_CarriesTheFeesTheOldPageNoLongerDoes()
+    {
+        var page = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-fees", $"{_web.BaseUrl}/solar/cuotas") { Caller = JudgmentCaller.None });
+
+        var content = page.Content.ShouldNotBeNull();
+        content.ShouldContain($"{SolarCorpus.EntryFee} €");
+        content.ShouldContain($"{SolarCorpus.AnnualFee} €");
+    }
+
+    [Fact]
+    public async Task TheSprainGuide_LeadsToTheDosesAndTheWarningSigns()
+    {
+        var guide = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-sprain", $"{_web.BaseUrl}/salud/esguince-tobillo") { Caller = JudgmentCaller.None });
+        guide.Content.ShouldNotBeNull().ShouldContain("/salud/analgesicos");
+        guide.Content.ShouldContain("/salud/esguince-senales-alarma");
+
+        var doses = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-doses", $"{_web.BaseUrl}/salud/analgesicos") { Caller = JudgmentCaller.None });
+        doses.Content.ShouldNotBeNull().ShouldContain($"{SprainCorpus.IbuprofenDose} mg");
+
+        var signs = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-signs", $"{_web.BaseUrl}/salud/esguince-senales-alarma") { Caller = JudgmentCaller.None });
+        signs.Content.ShouldNotBeNull().ShouldContain(SprainCorpus.AdviceLine);
+    }
+
+    [Fact]
+    public async Task TheSickDayPlan_LeadsToTheDoseTableAndTheEmergencySigns()
+    {
+        var plan = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-sick-day", $"{_web.BaseUrl}/diabetes/dias-de-enfermedad") { Caller = JudgmentCaller.None });
+        plan.Content.ShouldNotBeNull().ShouldContain("/diabetes/cetonas-dosis");
+        plan.Content.ShouldContain("/diabetes/cuando-urgencias");
+
+        var table = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-dose-table", $"{_web.BaseUrl}/diabetes/cetonas-dosis") { Caller = JudgmentCaller.None });
+        // The row the turn's person is in survives the read as a row: the band and its share.
+        table.Content.ShouldNotBeNull().ShouldContain($"{SickDayCorpus.ModeratePercent} %");
+        table.Content.ShouldContain(SickDayCorpus.Es(SickDayCorpus.ModerateKetones));
+
+        var signs = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-emergency", $"{_web.BaseUrl}/diabetes/cuando-urgencias") { Caller = JudgmentCaller.None });
+        signs.Content.ShouldNotBeNull().ShouldContain(SickDayCorpus.NurseLine);
+        signs.Content.ShouldContain("112");
+    }
+
+    [Fact]
+    public async Task ASearch_ReturnsNoMoreResultsThanItWasAskedFor()
+    {
+        // Brave caps at the count it is sent and the fake used to return every match: on a
+        // site of sixty pages that made one search the whole archive.
+        var capped = await _web.SearchClient().SearchAsync(new WebSearchQuery("boletín kilos 2025", 5));
+        capped.Results.Count.ShouldBe(5);
+
+        var year = await _web.SearchClient().SearchAsync(new WebSearchQuery("boletín kilos 2025", 20));
+        year.Results.Count(entry => entry.Url.Contains("/banco/boletines/2025-")).ShouldBe(12);
+
+        var unnamed = await _web.SearchClient().SearchAsync(new WebSearchQuery("banco de alimentos boletín kilos", 20));
+        unnamed.Results.ShouldNotContain(entry => entry.Url.Contains("/banco/boletines/20"));
+        unnamed.Results.ShouldContain(entry => entry.Url.EndsWith("/banco/boletines"));
+    }
+
+    [Fact]
+    public async Task ABulletin_IsReadAsThePageItIs()
+    {
+        var page = await _browsing.NavigateAsync(
+            new BrowseRequest("proof-bulletin", $"{_web.BaseUrl}/banco/boletines/2025-05") { Caller = JudgmentCaller.None });
+
+        page.Content.ShouldNotBeNull().ShouldContain(SolarCorpus.Es(ArchiveCorpus.MonthlyKilos[16]));
+    }
+
+    [Fact]
     public async Task APageNobodyHereServes_CannotBeLoadedAtAll()
     {
         // The family's hard boundary, held by the browser rather than by a rule somebody has to

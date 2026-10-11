@@ -112,10 +112,13 @@ public static class ReplyChecks
     // model's business and the value surviving at all is the contract's.
     private static IEnumerable<string> Missing(ReplyExpectation expectation, string reply) =>
         expectation.Mentions
-            .Where(value => !value.Spellings.Any(spelling => Carries(reply, spelling)))
+            .Where(value => !Mentions(reply, value))
             .Select(value =>
                 $"the reply does not carry {value.Name} (any of {string.Join(", ", value.Spellings)}): " +
                 $"\"{reply}\"");
+
+    public static bool Mentions(string reply, SpokenValue value) =>
+        value.Spellings.Any(spelling => Carries(reply, spelling));
 
     // At a word boundary, because half of these values are numbers: a reply that said fifteen
     // minutes were left would otherwise satisfy a scenario asking for five, and the check would be

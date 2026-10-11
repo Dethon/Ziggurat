@@ -25,7 +25,8 @@ public static class EvalSuite
         .. DelegationScenarios.All,
         .. MemoryScenarios.All,
         .. MusicScenarios.All,
-        .. WebScenarios.All
+        .. WebScenarios.All,
+        .. ResearchScenarios.All
     ];
 
     public static Scenario ByName(string name) =>
@@ -53,7 +54,9 @@ public static class EvalSuite
 
     private static IEnumerable<Scenario> OfTier(EvalTier tier) => tier switch
     {
-        EvalTier.Full => All,
+        // Everything but the research family, which measures a model rather than guards a
+        // prompt and is paid for only when asked for by name.
+        EvalTier.Full => All.Where(s => s.Tier != EvalTier.Research),
         EvalTier.Changed => EvalChanges.Selected,
         _ => All.Where(s => s.Tier == tier)
     };
@@ -122,11 +125,24 @@ public static class EvalSuite
                 observations[index] = observed;
             }
 
+            // Marked whether or not the run passed, and before the spend is read: the graders
+            // are paid for out of the run's key and their bill is the run's.
+            var grades = await Grading.MarksAsync(scenario, recording, EvalGate.ApiKey ?? "");
+            if (scenario.Graded.Count > 0)
+            {
+                // What was marked, kept beside the marks: a graded run rarely fails its
+                // contract, so nothing else would hold its reply.
+                ReplyLog.Write(FailureDump.DefaultDirectory, scenario, recording, grades, index);
+            }
+
             return new RunReading(
                 observed, ScenarioChecks.Exercised(scenario, recording),
                 ScenarioChecks.KindOf(scenario, recording, observed))
             {
                 Spend = recording.Spend,
+                Grades = grades,
+                Delegated = recording.Delegations.Count > 0,
+                Calls = ScenarioChecks.Calls(recording),
                 Loader = ScenarioChecks.LoaderOf(scenario, recording),
                 PreloadOutcomes = recording.PreloadOutcomes,
                 Screens = recording.Screens

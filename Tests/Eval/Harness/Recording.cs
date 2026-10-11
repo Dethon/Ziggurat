@@ -17,6 +17,7 @@ namespace Tests.Eval.Harness;
 public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
 {
     private readonly List<ToolInvocation> _calls = [];
+    private readonly List<ToolInvocation> _workerCalls = [];
     private readonly List<ToolInvocation> _preloads = [];
     private readonly List<Spend> _spends = [];
     private readonly Lock _gate = new();
@@ -24,6 +25,32 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
     // What a preloaded skill's call says where a load's result would be: the body is in the
     // conversation, not on this recording, and the dump has to say who put it there.
     public const string PreloadedResult = "(preloaded by the host: the body was inserted before the model's first call)";
+
+    // The agent the scenario's turn is addressed to, under every name it is heard by, set by the
+    // run that built it. Two names, because two things speak for it: a call and a turn name the
+    // agent as its metrics do ("Jonas"), and a preload — published by the judge's own client —
+    // names it as its session does ("Jonas-<conversation>"). With real workers the same observer
+    // hears the worker too, and everything a scenario declares — the permitted set, the ceiling,
+    // the prompt the dump shows — is about this agent alone. Empty where nobody named one: then
+    // nothing is a worker's, which is every recording a test builds by hand.
+    public IReadOnlyList<string> Parent { get; init; } = [];
+
+    private bool IsWorkers(string? agentId) =>
+        Parent.Count > 0 && agentId is not null && !Parent.Contains(agentId, StringComparer.Ordinal);
+
+    // What the workers did with what they were handed, in the order it was heard. Never checked
+    // against the scenario's contract: it is what the dump and the judge read to see whether a
+    // delegated answer was researched or made up.
+    public IReadOnlyList<ToolInvocation> WorkerCalls
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _workerCalls];
+            }
+        }
+    }
 
     // Sorted by the position the seam stamped, not by the order the observations arrived:
     // concurrent invocations complete in whichever order they finish, and the contract a
@@ -99,6 +126,11 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
 
     public void OnTurn(TurnObservation turn)
     {
+        if (IsWorkers(turn.AgentId))
+        {
+            return;
+        }
+
         lock (_gate)
         {
             SystemPrompt = turn.SystemPrompt ?? SystemPrompt;
@@ -110,7 +142,7 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
     {
         lock (_gate)
         {
-            _calls.Add(invocation);
+            (IsWorkers(invocation.AgentId) ? _workerCalls : _calls).Add(invocation);
         }
     }
 
@@ -197,7 +229,9 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
                 }
 
                 break;
-            case SkillPreloadEvent preload:
+            // A worker's preload sat before the worker's first call, not the turn's: the money
+            // above is the run's whoever spent it, the calls a scenario asserts on are not.
+            case SkillPreloadEvent preload when !IsWorkers(preload.AgentId):
                 lock (_gate)
                 {
                     PreloadModel = preload.Model ?? PreloadModel;

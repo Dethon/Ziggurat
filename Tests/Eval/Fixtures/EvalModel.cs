@@ -7,8 +7,9 @@ namespace Tests.Eval.Fixtures;
 //
 // A parity run compares two models against one definition, and the only way to switch used to be
 // editing Agent/appsettings.json — a working-tree change that a `git add -A` swept into a commit
-// once already. Two variables instead: the model, applied to every agent and subagent so the
-// workers run on the same one as the parent, and optionally the provider to pin it to.
+// once already. Two variables instead: the model, applied to every agent, and optionally the
+// provider to pin it to. A worker names neither and runs whatever its parent does, so the
+// override reaches it through the agent that spawns it.
 public static class EvalModel
 {
     public const string Variable = "ZIGGURAT_EVAL_MODEL";
@@ -38,14 +39,6 @@ public static class EvalModel
                 {
                     Model = chosen ?? agent.Model,
                     ProviderRouting = Repinned(agent.ProviderRouting, chosen, pinned)
-                })
-            ],
-            SubAgents =
-            [
-                .. shipped.SubAgents.Select(worker => worker with
-                {
-                    Model = chosen ?? worker.Model,
-                    ProviderRouting = Repinned(worker.ProviderRouting, chosen, pinned)
                 })
             ]
         };

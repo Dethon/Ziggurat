@@ -81,6 +81,9 @@ public static class ScenarioRunner
             Kinds = [.. taken.Select(reading => reading.Kind).OfType<FailureKind>()],
             Loaders = [.. taken.Select(reading => reading.Loader)],
             Spend = Spend.Sum(taken.Select(reading => reading.Spend)),
+            Grades = [.. taken.SelectMany(reading => reading.Grades)],
+            DelegatedRuns = taken.Count(reading => reading.Delegated),
+            Calls = [.. taken.Select(reading => reading.Calls)],
             PreloadOutcomes = Summed(taken.Select(reading => reading.PreloadOutcomes)),
             Screens = ExecScreenTally.Sum(taken.Select(reading => reading.Screens))
         };
@@ -140,6 +143,15 @@ public sealed record RunReading(
 
     // What the exec screen was asked over the run, and what it put to the (auto-approving) person.
     public ExecScreenTally Screens { get; init; } = ExecScreenTally.None;
+
+    // The run's score on each graded dimension, whether or not it passed.
+    public IReadOnlyList<GradeMark> Grades { get; init; } = [];
+
+    // The run handed work to a worker.
+    public bool Delegated { get; init; }
+
+    // What the run cost in calls, the agent's and its workers'.
+    public int Calls { get; init; }
 }
 
 public sealed record ScenarioResult(
@@ -178,4 +190,13 @@ public sealed record ScenarioResult(
 
     // Over every run taken.
     public ExecScreenTally Screens { get; init; } = ExecScreenTally.None;
+
+    // Every mark of every run taken, in run order.
+    public IReadOnlyList<GradeMark> Grades { get; init; } = [];
+
+    // How many of the runs taken handed work to a worker.
+    public int DelegatedRuns { get; init; }
+
+    // One count per run taken, in run order.
+    public IReadOnlyList<int> Calls { get; init; } = [];
 }

@@ -8,7 +8,7 @@ paths:
 
 # OpenRouter Provider Routing
 
-Each `agents[]` / `subAgents[]` entry may carry a `providerRouting` object (`sort` ∈
+Each `agents[]` entry may carry a `providerRouting` object (`sort` ∈
 `price`|`throughput`|`latency`, plus `order`, `only`, `ignore`, `allowFallbacks`,
 `preferredMinThroughput`, `preferredMaxLatency`, `maxPrice`), overriding
 `openRouter.providerRouting` **wholesale** — never field-by-field. It reaches the wire through
@@ -23,6 +23,14 @@ binds to a real object that shadows the global wholesale while leaving `sort`/`o
 and `allow_fallbacks: true` is OpenRouter's default anyway (pinned by
 `ProviderRoutingBindingTests`).
 
+**A subagent names no model and no routing.** It runs the model its parent runs, served by
+whoever serves its parent: `SpawnContext` carries the parent spec's `Model` and its resolved
+`ProviderRouting` down, and `AgentSpecProjection.ForSubAgent` reads nothing else. A
+`subAgents[]` entry keeps its own `reasoningEffort` — how hard that profile's kind of task is
+thought about, whichever model does it. On a turn the person moved to another model the worker
+moves too: `SubAgentRunTool` writes the turn's `ConfigPatchModel` onto the worker's request and
+the worker resolves it against the parent's whitelist, as the parent did.
+
 **Balanced routing is the absence of the object.** OpenRouter has no `sort` value for its
 default load balancing (uptime filter, then inverse-square price weighting) — it is only
 reachable by sending neither `sort` nor `order`, so the global default ships unset and
@@ -34,10 +42,10 @@ the cheapest provider, not a weighted spread.
 re-sent uncached every turn. `sort` does *not* disable it. Prefer `only` + `sort` to restrict
 the provider set. `ProviderRoutingAdvisories` logs a warning for this and for a `:nitro`/`:floor`
 model suffix fighting an explicit `sort`; both are warnings, never throws, because the same path
-serves runtime-created agents. The advisories run at agent/subagent construction
+serves runtime-created agents. The advisories run at agent construction
 (`ProviderRoutingResolver.Resolve`) with no dedupe — agents are constructed per conversation
-activation and subagents per spawn, so a tripped advisory repeats for the lifetime of the config,
-not once per agent. `MemoryModule` binds `openRouter.providerRouting` for the memory extraction
+activation, so a tripped advisory repeats for the lifetime of the config, not once per agent. A
+subagent inherits the value already resolved and trips none of its own. `MemoryModule` binds `openRouter.providerRouting` for the memory extraction
 and dreaming chat clients directly, so those two models skip the advisories entirely.
 
 **Anthropic's models are asked to cache; nobody else is.** Every other model here caches a

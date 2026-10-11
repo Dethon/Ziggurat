@@ -50,6 +50,12 @@ public sealed record Scenario
     // passing, so the ceiling is part of the contract rather than a safety net.
     public required int CallCeiling { get; init; }
 
+    // The ceiling as a yardstick: a run over it is counted on the scorecard and fails nothing.
+    // For a scenario that marks an answer rather than guards a habit — where reading more than
+    // was needed is a cost to set beside the score, and reddening a correct answer for its
+    // thoroughness would say the opposite of what the marks say.
+    public bool CeilingReported { get; init; }
+
     // Everything in the home that this turn is allowed to move. The declaration is exhaustive:
     // an entity that changed and is not named here fails the scenario, which is the only way to
     // catch a permitted call that did more than it was asked to.
@@ -107,6 +113,25 @@ public sealed record Scenario
     // judged. Graded only on runs the deterministic checks pass, so a judge is never paid to
     // grade a run that already failed.
     public IReadOnlyList<JudgedCheck> Judged { get; init; } = [];
+
+    // How good the answer was, beside whether the run was acceptable: dimensions scored from 0
+    // to Grade.Scale on every run that answered, green or not, and carried to the scorecard as a
+    // number two models can be compared along. Nothing here fails a run.
+    public IReadOnlyList<Grade> Graded { get; init; } = [];
+
+    // Which part of a graded family this scenario belongs to, where the family has parts: the
+    // scorecard gives each group a score of its own beside the pass's. Null everywhere else.
+    public string? Group { get; init; }
+
+    // Who answers a delegation. Canned everywhere a scenario's subject is the parent's decision
+    // to delegate — a real worker puts a second answer between that decision and its assertion,
+    // and costs a run to do it. The other two are for a scenario whose subject is the answer
+    // itself, where a stub's one line would be marked as no research.
+    public WorkerMode Workers { get; init; } = WorkerMode.Canned;
+
+    // What one run may take before it is recorded as never having finished. The default is a
+    // turn's worth; work that is long by design declares its own.
+    public TimeSpan Budget { get; init; } = TimeSpan.FromSeconds(180);
 
     public RunPolicy Policy { get; init; } = RunPolicy.Once;
 
@@ -169,6 +194,19 @@ public sealed record RunPolicy(int K, int N)
     }
 }
 
+public enum WorkerMode
+{
+    // Every worker answers the scenario's WorkerAnswer and runs nothing.
+    Canned,
+    // Workers really run: built by the deployment's own factory, on the parent's model and the
+    // stack's servers. What was delegated is read off the parent's calls, answer included.
+    Real,
+    // The agent has no workers at all — the one feature a scenario may take away from the
+    // shipped definition, and it says so here. The prompt lets research go to a worker, so a
+    // rung that measures what a model finds by itself cannot leave that to the model's coin.
+    None
+}
+
 public enum EvalTier
 {
     // One canary per family at a single run: what a prompt author runs while editing one section.
@@ -176,7 +214,11 @@ public enum EvalTier
     Full,
     // The scenarios a diff touched, at their declared thresholds. No scenario declares this one:
     // it is a tier that runs, never a tier a scenario is a canary for.
-    Changed
+    Changed,
+    // The graded research family, and the one tier the full pass does not take: its scenarios
+    // measure a model rather than guard a prompt, run real workers and cost several times a
+    // turn's worth each, so a routine pass must not pay for them.
+    Research
 }
 
 // A call the scenario requires, matched by tool and by whatever its arguments have to say. The

@@ -23,6 +23,9 @@ public class SubAgentTests(RedisFixture redisFixture)
         .AddUserSecrets<SubAgentTests>()
         .Build();
 
+    // What the parent would be running: a worker names no model of its own.
+    private const string WorkerModel = "~deepseek/deepseek-v4-flash-latest:nitro";
+
     private static OpenRouterConfig CreateOpenRouterConfig()
     {
         var apiKey = _configuration["openRouter:apiKey"]
@@ -54,7 +57,6 @@ public class SubAgentTests(RedisFixture redisFixture)
             Id = "echo-agent",
             Name = "Echo",
             Description = "Echoes back what you say",
-            Model = "~deepseek/deepseek-v4-flash-latest:nitro",
             McpServerEndpoints = [],
             CustomInstructions = "You are a simple echo agent. Repeat back exactly what the user says, nothing more."
         };
@@ -67,7 +69,7 @@ public class SubAgentTests(RedisFixture redisFixture)
         var featureConfig = new FeatureConfig(
             SubAgentFactory: def => factory.CreateSubAgent(
                 def, approvalHandler,
-                new SpawnContext("conv-1", "test-user", ["domain__subagents__*"], UsesOutposts: false)));
+                new SpawnContext("conv-1", "test-user", ["domain__subagents__*"], UsesOutposts: false, WorkerModel)));
 
         var toolFeature = new SubAgentToolFeature(registryOptions);
 
@@ -116,7 +118,6 @@ public class SubAgentTests(RedisFixture redisFixture)
         {
             Id = "test-ephemeral",
             Name = "TestEphemeral",
-            Model = "~deepseek/deepseek-v4-flash-latest:nitro",
             McpServerEndpoints = [],
             CustomInstructions = "Reply with exactly the word 'done'."
         };
@@ -130,7 +131,7 @@ public class SubAgentTests(RedisFixture redisFixture)
 
         await using var agent = factory.CreateSubAgent(
             subAgentDef, approvalHandler,
-            new SpawnContext("conv-1", "test-user", [], UsesOutposts: false));
+            new SpawnContext("conv-1", "test-user", [], UsesOutposts: false, WorkerModel));
         var userMessage = new ChatMessage(ChatRole.User, "Say done");
 
         // Two different provider failures, and each has its own retry here. WithinAsync covers a

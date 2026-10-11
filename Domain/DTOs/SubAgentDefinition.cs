@@ -8,7 +8,6 @@ public record SubAgentDefinition
     public required string Id { get; init; }
     public required string Name { get; init; }
     public string? Description { get; init; }
-    public required string Model { get; init; }
     public required string[] McpServerEndpoints { get; init; }
     public string? CustomInstructions { get; init; }
 
@@ -29,6 +28,9 @@ public record SubAgentDefinition
     public bool UsesOutposts { get; init; }
     public int MaxExecutionSeconds { get; init; } = 120;
     public int? MaxContextTokens { get; init; }
+
+    // No model and no provider routing: a worker runs the model its parent runs, served by
+    // whoever serves its parent (`SpawnContext`). The effort stays its own — it is how hard this
+    // profile's kind of task should be thought about, whichever model does the thinking.
     public string? ReasoningEffort { get; init; }
-    public ProviderRouting? ProviderRouting { get; init; }
 }

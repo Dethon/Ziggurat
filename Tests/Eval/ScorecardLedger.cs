@@ -48,6 +48,11 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
                 Agent = scenario.AgentId,
                 Kinds = result.Kinds,
                 Loaders = result.Loaders,
+                Grades = result.Grades,
+                Group = scenario.Group,
+                Calls = scenario.CeilingReported ? result.Calls : [],
+                CallCeiling = scenario.CeilingReported ? scenario.CallCeiling : null,
+                DelegatedRuns = scenario.Workers == WorkerMode.Real ? result.DelegatedRuns : null,
                 PreloadOutcomes = result.PreloadOutcomes,
                 Screens = result.Screens
             });
@@ -96,19 +101,26 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
                 // Every declared claim, seeded at nothing, so a claim no scenario exercised
                 // appears with a null rate rather than being absent — absent reads as "there is
                 // no such claim", which is the one thing the file must not say.
-                var seeded = PromptManifest.Claims
+                // The research tier cites none of them and can exercise none of them: a hundred
+                // null rows there would say the family is missing coverage it was never after.
+                var seeded = (tier == EvalTier.Research ? [] : PromptManifest.Claims)
                     .Select(claim => new ClaimOutcome(claim.Id, 0, 0))
                     .Concat(state.Outcomes)
                     .ToList();
 
                 // Scenarios the same way as claims: one that did not run appears at a null rate
                 // rather than being absent, so a filtered pass is legible as a filtered pass.
+                // What this tier could have run, and no more: the research family belongs to its
+                // own tier's file and to no other.
                 var scenarios = Suite
+                    .Where(scenario => (scenario.Tier == EvalTier.Research) == (tier == EvalTier.Research))
                     .Select(scenario => new ScenarioOutcome(scenario.Name, 0, 0) { Agent = scenario.AgentId })
                     .Concat(state.Scenarios)
                     .ToList();
 
-                Scorecard.Write(directory, tier, _route, seeded, scenarios, Coverage(), preloadModel: _preloadModel);
+                Scorecard.Write(
+                    directory, tier, _route, seeded, scenarios,
+                    tier == EvalTier.Research ? null : Coverage(), preloadModel: _preloadModel);
             }
         }
     }

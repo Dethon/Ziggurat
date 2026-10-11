@@ -25,7 +25,6 @@ public sealed class SubAgentOutpostInheritanceTests
     {
         Id = "worker",
         Name = "Worker",
-        Model = "test-model",
         McpServerEndpoints = [],
         UsesOutposts = true
     };
