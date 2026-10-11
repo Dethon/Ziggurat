@@ -128,6 +128,12 @@ public static class EvalSuite
             // Marked whether or not the run passed, and before the spend is read: the graders
             // are paid for out of the run's key and their bill is the run's.
             var grades = await Grading.MarksAsync(scenario, recording, EvalGate.ApiKey ?? "");
+            if (scenario.Graded.Count > 0)
+            {
+                // What was marked, kept beside the marks: a graded run rarely fails its
+                // contract, so nothing else would hold its reply.
+                ReplyLog.Write(FailureDump.DefaultDirectory, scenario, recording, grades, index);
+            }
 
             return new RunReading(
                 observed, ScenarioChecks.Exercised(scenario, recording),

@@ -171,7 +171,7 @@ public static class FailureDump
             .ToString();
     }
 
-    private static string Slug(string name) =>
+    internal static string Slug(string name) =>
         string.Join("-", name.ToLowerInvariant().Split(
             [' ', '/', '\\', ':'], StringSplitOptions.RemoveEmptyEntries));
 
