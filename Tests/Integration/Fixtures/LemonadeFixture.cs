@@ -57,6 +57,10 @@ public class LemonadeFixture : IAsyncLifetime
     // into OpenAiSttConfig.BaseUrl / OpenAiTtsConfig.BaseUrl.
     public string BaseUrl { get; private set; } = null!;
 
+    // The host side of the config.json the entrypoint writes, inside the one mount that holds
+    // lemond's persistent state.
+    public string ConfigFile { get; private set; } = null!;
+
     public async Task InitializeAsync()
     {
         var volumesDir = LocateProvisionedVolumes();
@@ -67,6 +71,8 @@ public class LemonadeFixture : IAsyncLifetime
                 + "and Qwen3 embedding models)";
             return;
         }
+
+        ConfigFile = Path.Combine(volumesDir, "lemonade-recipe", "config.json");
 
         var imageSkipReason = await LemonadeImageFixture.EnsureAsync();
         if (imageSkipReason is not null)
