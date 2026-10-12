@@ -678,9 +678,11 @@ services:
     # from the target host: getent group render | cut -d: -f3
     group_add:
       - "${RENDER_GID:-993}"
-    # v11 runs as unprivileged UID 10001 with HOME=/opt/lemonade — these are the real cache
-    # paths. (Pre-v11 /root/.cache/* mounts are silently dead: the server still runs but
-    # writes land in the container layer and every model re-downloads on recreate.)
+    # Since v11 the image runs as unprivileged UID 10001 with HOME=/opt/lemonade — these are the
+    # real cache paths, and lemonade-recipe is also where the entrypoint points lemond's config
+    # directory, so nothing it persists lives outside a mount. (Pre-v11 /root/.cache/* mounts are
+    # silently dead: the server still runs but writes land in the container layer and every model
+    # re-downloads on recreate.)
     volumes:
       - ./volumes/lemonade-hf-cache:/opt/lemonade/.cache/huggingface
       - ./volumes/lemonade-recipe:/opt/lemonade/.cache/lemonade

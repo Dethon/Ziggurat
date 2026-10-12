@@ -62,6 +62,12 @@ case "$BACKEND" in
   *)    echo "Unknown STT_BACKEND '$BACKEND' (expected cpu|gpu)" >&2; exit 1 ;;
 esac
 
+# One directory for lemond's cache and its config, and it is the mounted one. lemond has kept
+# them apart since v11.8 — JSON state in ~/.config/lemonade, which nothing mounts — and on boot it
+# moves a config.json it finds in the cache directory over there, but only when none is there
+# yet. Left to that, the config written below is read on a container's first boot and ignored on
+# every restart of it, and user_models.json is gone on a recreate. Both are named on lemond's
+# command line at the bottom so neither happens.
 CONFIG_DIR="${LEMONADE_CONFIG_DIR:-$HOME/.cache/lemonade}"
 mkdir -p "$CONFIG_DIR"
 
@@ -205,4 +211,5 @@ fi
   done
 ) &
 
-exec ./lemond --host 0.0.0.0 --port 13305
+# The positionals are [cache_dir] [config_dir]; see CONFIG_DIR above for why they are the same.
+exec ./lemond "$CONFIG_DIR" "$CONFIG_DIR" --host 0.0.0.0 --port 13305
