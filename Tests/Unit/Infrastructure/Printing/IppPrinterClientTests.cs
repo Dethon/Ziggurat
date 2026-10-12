@@ -74,7 +74,10 @@ public class IppPrinterClientTests
                 new JobDescriptionAttributes { JobId = 2, JobName = "pending.txt", JobState = JobState.Pending },
                 new JobDescriptionAttributes { JobId = 3, JobName = "done.txt", JobState = JobState.Completed },
                 new JobDescriptionAttributes { JobId = 4, JobName = "canceled.txt", JobState = JobState.Canceled },
-                new JobDescriptionAttributes { JobId = 5, JobName = "stateless.txt", JobState = null }
+                new JobDescriptionAttributes { JobId = 5, JobName = "stateless.txt", JobState = null },
+                // IPP's out-of-band no-value tag: the attribute is present and says nothing.
+                new JobDescriptionAttributes { JobId = 6, JobName = NoValue.Instance, JobState = NoValue.Instance },
+                new JobDescriptionAttributes { JobId = NoValue.Instance, JobName = "idless.txt", JobState = JobState.Processing }
             ]
         };
 
@@ -87,7 +90,9 @@ public class IppPrinterClientTests
 
         var active = await printer.GetActiveJobsAsync(CancellationToken.None);
 
-        active.Select(j => j.JobId).ShouldBe([1, 2, 5]);
+        active.Select(j => j.JobId).ShouldBe([1, 2, 5, 6]);
         active.Single(j => j.JobId == 5).State.ShouldBe(PrintJobState.Processing);
+        active.Single(j => j.JobId == 6).State.ShouldBe(PrintJobState.Processing);
+        active.Single(j => j.JobId == 6).JobName.ShouldBe(string.Empty);
     }
 }

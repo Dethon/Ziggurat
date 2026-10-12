@@ -24,7 +24,7 @@ public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri, str
                 PrinterUri = printerUri,
                 JobName = jobName,
                 DocumentName = jobName,
-                DocumentFormat = documentFormat
+                DocumentFormat = new DocumentFormat(documentFormat)
             },
             // Images otherwise default to print-scaling=auto, which this printer renders as a
             // borderless fill; request scaling (default "fit") so they size within the page margins.
@@ -47,7 +47,7 @@ public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri, str
                 // Without an explicit request many printers (e.g. HP) return only job-id/job-uri and
                 // omit job-state, which would make every active job look stateless and get pruned
                 // from the queue mid-print. Ask for the attributes we actually need.
-                RequestedAttributes = ["job-id", "job-state", "job-name"]
+                RequestedAttributes = new[] { "job-id", "job-state", "job-name" }
             }
         };
 
@@ -56,16 +56,21 @@ public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri, str
         // and return finished jobs too — which would keep those jobs "active" forever and stop the
         // queue from ever pruning them. Defensively drop any job whose reported state isn't active.
         // A printer that omits job-state entirely is kept (mapped to Processing) since we asked for
-        // not-completed jobs and have nothing better to go on.
+        // not-completed jobs and have nothing better to go on. IPP's out-of-band no-value counts as
+        // omitted: read through the implicit conversion it would be job 0 in state 0, and pruned.
         return (response.JobsAttributes ?? [])
-            .Where(j => j.JobId is not null)
-            .Where(j => j.JobState is null || IppJobStateMapper.IsActive(j.JobState.Value))
+            .Select(j => (Id: Known(j.JobId), j.JobName, State: Known(j.JobState)))
+            .Where(j => j.Id is not null)
+            .Where(j => j.State is null || IppJobStateMapper.IsActive(j.State.Value))
             .Select(j => new PrintJobStatus(
-                j.JobId!.Value,
-                j.JobName ?? string.Empty,
-                j.JobState is not null ? IppJobStateMapper.Map(j.JobState.Value) : PrintJobState.Processing))
+                j.Id!.Value,
+                j.JobName?.Value ?? string.Empty,
+                j.State is not null ? IppJobStateMapper.Map(j.State.Value) : PrintJobState.Processing))
             .ToList();
     }
+
+    private static T? Known<T>(IppValue<T>? attribute) where T : struct =>
+        attribute is { IsValue: true } known ? known.Value : null;
 
     public async Task CancelAsync(int jobId, CancellationToken ct)
     {
