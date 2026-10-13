@@ -117,6 +117,7 @@ impl Default for Config {
 impl Config {
     /// Flags: --listen --mic-command --snd-command --alert-snd-command --threshold --no-wake
     ///        --wake-window <n> (alias: --trigger-level) --wake-min-rms <i16 rms, 0 = off>
+    ///        --wake-quiet-rms <i16 rms, 0 = off> --wake-quiet-threshold <f> --wake-quiet-window <n>
     ///        --button-gpio <pin> | --button-evdev <device>:<keycode> | --no-button
     ///        --no-led
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
@@ -152,6 +153,20 @@ impl Config {
         if let Some(v) = pa.opt_value_from_str::<_, f32>("--wake-min-rms")? {
             anyhow::ensure!(v.is_finite() && v >= 0.0, "--wake-min-rms must be a number >= 0 (got {v})");
             c.wake_min_rms = v;
+        }
+        // The quiet-room rule (DetectorConfig::quiet_below_rms): under this room level the two
+        // flags after it replace --threshold / --wake-window.
+        if let Some(v) = pa.opt_value_from_str::<_, f32>("--wake-quiet-rms")? {
+            anyhow::ensure!(v.is_finite() && v >= 0.0, "--wake-quiet-rms must be a number >= 0 (got {v})");
+            c.detector.quiet_below_rms = v;
+        }
+        if let Some(v) = pa.opt_value_from_str::<_, f32>("--wake-quiet-threshold")? {
+            anyhow::ensure!(v > 0.0 && v <= 1.0, "--wake-quiet-threshold must be in (0, 1] (got {v})");
+            c.detector.quiet_threshold = v;
+        }
+        if let Some(v) = pa.opt_value_from_str::<_, u32>("--wake-quiet-window")? {
+            anyhow::ensure!(v >= 1, "--wake-quiet-window must be at least 1 (got {v})");
+            c.detector.quiet_window = v;
         }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--preroll-ms")? { c.preroll_ms = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--wake-preroll-ms")? { c.wake_preroll_ms = v; }
@@ -279,6 +294,36 @@ mod tests {
         assert!(Config::parse(args(&["--wake-min-rms", "-1"])).is_err());
         assert!(Config::parse(args(&["--wake-min-rms", "NaN"])).is_err());
         assert!(Config::parse(args(&["--wake-min-rms", "inf"])).is_err());
+    }
+
+    /// Off unless asked for, like the floor: the level that separates "quiet" from "something
+    /// is playing" is one microphone's number.
+    #[test]
+    fn quiet_room_rule_defaults_to_off_and_flags_parse() {
+        let d = Config::default().detector;
+        assert_eq!((d.quiet_below_rms, d.quiet_threshold, d.quiet_window), (0.0, 0.9, 2));
+        let c = Config::parse(args(&[
+            "--wake-quiet-rms", "200", "--wake-quiet-threshold", "0.85", "--wake-quiet-window", "3",
+        ]))
+        .unwrap();
+        let d = c.detector;
+        assert_eq!((d.quiet_below_rms, d.quiet_threshold, d.quiet_window), (200.0, 0.85, 3));
+    }
+
+    /// A threshold above 1 can never be met: every wake out of a quiet room would vanish with
+    /// nothing in the log to say why. NaN fails the same range check.
+    #[test]
+    fn nonsense_quiet_room_rule_is_rejected() {
+        for bad in [
+            ["--wake-quiet-rms", "-1"],
+            ["--wake-quiet-rms", "NaN"],
+            ["--wake-quiet-threshold", "0"],
+            ["--wake-quiet-threshold", "1.5"],
+            ["--wake-quiet-threshold", "NaN"],
+            ["--wake-quiet-window", "0"],
+        ] {
+            assert!(Config::parse(args(&bad)).is_err(), "{bad:?} must be rejected");
+        }
     }
 
     /// A zero window would average nothing and fire on every frame; provisioning's own regex

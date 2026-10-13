@@ -54,7 +54,10 @@ ExecStart=/usr/local/bin/nabu-satellite \
   --volume-card sndrpihifiberry \
   --threshold 0.7 \
   --wake-window 2 \
-  --wake-min-rms 0
+  --wake-min-rms 0 \
+  --wake-quiet-rms 0 \
+  --wake-quiet-threshold 0.9 \
+  --wake-quiet-window 2
 Environment=RUST_LOG=info
 Restart=always
 RestartSec=2

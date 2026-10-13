@@ -22,6 +22,13 @@ set -euo pipefail
 #                    is quieter than that — the fix for wakes fired out of a near-silent room,
 #                    which neither knob above reaches because those fires score as high as real
 #                    ones. A per-microphone number: 350 is the measured figure for the XVF3800.
+#                    WAKE_QUIET_RMS=<i16 rms> (default 0 = off) holds a QUIET room to a stricter
+#                    rule: while the room's median level over the last 30 s is under it,
+#                    WAKE_QUIET_THRESHOLD (default 0.9) and WAKE_QUIET_WINDOW (default 2) replace
+#                    THRESHOLD / WAKE_WINDOW. False fires are one-frame score blips that the
+#                    lenient rule TV and music need lets through; nothing jitters a real wake in
+#                    a quiet room, so the strict rule costs nothing there. Per-microphone too:
+#                    200 is the measured figure for the XVF3800.
 #   I2S DAC/amp HAT (e.g. MiniAmp): additionally DAC_OVERLAY=hifiberry-dac — I2S hardware is
 #                    electrically undiscoverable, so the overlay must be declared; the script
 #                    writes it to config.txt, reboots the Pi, waits, and continues (one-shot).
@@ -89,6 +96,13 @@ wake_window=${WAKE_WINDOW:-${TRIGGER_LEVEL:-2}}
 [[ $wake_window =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: WAKE_WINDOW must be a positive integer (got '$wake_window')" >&2; exit 1; }
 wake_min_rms=${WAKE_MIN_RMS:-0}
 [[ $wake_min_rms =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "ERROR: WAKE_MIN_RMS must be a number >= 0 (got '$wake_min_rms')" >&2; exit 1; }
+wake_quiet_rms=${WAKE_QUIET_RMS:-0}
+wake_quiet_threshold=${WAKE_QUIET_THRESHOLD:-0.9}
+wake_quiet_window=${WAKE_QUIET_WINDOW:-2}
+[[ $wake_quiet_rms =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "ERROR: WAKE_QUIET_RMS must be a number >= 0 (got '$wake_quiet_rms')" >&2; exit 1; }
+# Strictly above 0, unlike THRESHOLD: the binary refuses a quiet threshold of 0.
+[[ $wake_quiet_threshold =~ ^(0\.[0-9]*[1-9][0-9]*|1(\.0+)?)$ ]] || { echo "ERROR: WAKE_QUIET_THRESHOLD must be a number in (0, 1] (got '$wake_quiet_threshold')" >&2; exit 1; }
+[[ $wake_quiet_window =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: WAKE_QUIET_WINDOW must be a positive integer (got '$wake_quiet_window')" >&2; exit 1; }
 
 # Softvol levels, validated here for the same reason: a malformed one fails at `amixer` under
 # `set -e` only AFTER asound.conf and the PipeWire master have already been rewritten, leaving a
@@ -160,10 +174,10 @@ scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/snapclient.service" "$h
 scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-micclock.service" "$host:/tmp/"
 
 # Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME/ALERT_VOLUME/MASTER_VOLUME/THRESHOLD/
-# WAKE_WINDOW/WAKE_MIN_RMS env vars: nothing is expanded locally; the remote bash evaluates everything (and
+# WAKE_WINDOW/WAKE_MIN_RMS/WAKE_QUIET_* env vars: nothing is expanded locally; the remote bash evaluates everything (and
 # reads vars from the command-prefix assignments). The volume and tuning vars arrive already
 # defaulted and validated above (WAKE_WINDOW having absorbed any TRIGGER_LEVEL alias).
-ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${tts_volume}" ALERT_VOLUME="${alert_volume}" MASTER_VOLUME="${master_volume}" THRESHOLD="${threshold}" WAKE_WINDOW="${wake_window}" WAKE_MIN_RMS="${wake_min_rms}" bash -se <<'EOF'
+ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${tts_volume}" ALERT_VOLUME="${alert_volume}" MASTER_VOLUME="${master_volume}" THRESHOLD="${threshold}" WAKE_WINDOW="${wake_window}" WAKE_MIN_RMS="${wake_min_rms}" WAKE_QUIET_RMS="${wake_quiet_rms}" WAKE_QUIET_THRESHOLD="${wake_quiet_threshold}" WAKE_QUIET_WINDOW="${wake_quiet_window}" bash -se <<'EOF'
   set -euo pipefail
 
   if [ -n "${MUSIC_HUB:-}" ] && [ -n "${MIC}" ]; then
@@ -431,7 +445,10 @@ ExecStart=/usr/local/bin/nabu-satellite \\
   --volume-sink @DEFAULT_AUDIO_SINK@ \\
   --threshold ${THRESHOLD} \\
   --wake-window ${WAKE_WINDOW} \\
-  --wake-min-rms ${WAKE_MIN_RMS}
+  --wake-min-rms ${WAKE_MIN_RMS} \\
+  --wake-quiet-rms ${WAKE_QUIET_RMS} \\
+  --wake-quiet-threshold ${WAKE_QUIET_THRESHOLD} \\
+  --wake-quiet-window ${WAKE_QUIET_WINDOW}
 DROPEOF
   else
     # downgrade / voice-only: tear down any prior music install so a re-provisioned Pi returns to
@@ -564,6 +581,9 @@ UNITEOF
            -e "/^[[:space:]]*--threshold/ s#--threshold [^ ]*#--threshold ${THRESHOLD}#" \
            -e "/^[[:space:]]*--wake-window/ s#--wake-window [^ ]*#--wake-window ${WAKE_WINDOW}#" \
            -e "/^[[:space:]]*--wake-min-rms/ s#--wake-min-rms [^ ]*#--wake-min-rms ${WAKE_MIN_RMS}#" \
+           -e "/^[[:space:]]*--wake-quiet-rms/ s#--wake-quiet-rms [^ ]*#--wake-quiet-rms ${WAKE_QUIET_RMS}#" \
+           -e "/^[[:space:]]*--wake-quiet-threshold/ s#--wake-quiet-threshold [^ ]*#--wake-quiet-threshold ${WAKE_QUIET_THRESHOLD}#" \
+           -e "/^[[:space:]]*--wake-quiet-window/ s#--wake-quiet-window [^ ]*#--wake-quiet-window ${WAKE_QUIET_WINDOW}#" \
            "${volsed[@]}" \
            -e "s/%i/$user/g" \
            /tmp/nabu-satellite.service | sudo tee /etc/systemd/system/nabu-satellite.service >/dev/null
