@@ -40,6 +40,15 @@ Verified working toolchain:
 | cargo-zigbuild | 0.22.3 (`python3 -m pip install --user cargo-zigbuild`) |
 | zig | 0.16.0, provided by the `ziglang` pip package (`python3 -m ziglang version`) |
 
+**If the build stops at `Failed to find zig`:** cargo-zigbuild locates zig through
+`python3 -m ziglang`, which breaks when the system Python moves on from the version pip installed
+`ziglang` into (the package then sits under an orphaned `~/.local/lib/python3.X/`). Reinstall it
+for the current Python, or point at the binary that is already there:
+
+```sh
+CARGO_ZIGBUILD_ZIG_PATH=~/.local/lib/python3.10/site-packages/ziglang/zig satellite/scripts/build-release.sh
+```
+
 **Caveat — tract-linalg vs zig cc:** `tract-linalg` 0.23 compiles its SVE f16 C kernels with
 `-march=armv8.2-a+sve+fp16`. zig cc rejects GCC's `fp16` extension name
 (`error: unknown CPU feature: 'fp16'`) because LLVM/zig spell it `fullfp16`. A plain
@@ -98,6 +107,49 @@ The default audio commands carry latency-tuned ALSA flags — keep them when ove
   buffer, so a streamed TTS reply wasn't audible until 500 ms of audio had been
   synthesized+delivered; playback now starts at ~100 ms queued (the 500 ms buffer stays for
   underrun headroom).
+
+## Deploying the office unit (speaker-fran-office)
+
+The one deployed satellite: Pi 4 + XVF3800 + MiniAmp at `dethon@192.168.5.11`, a music unit. Run
+from the repo root; it builds, installs the binary and rewrites the unit and its drop-in:
+
+```sh
+MUSIC_HUB=192.168.5.45 MUSIC_ROOM=fran_s_office \
+THRESHOLD=0.5 WAKE_WINDOW=3 WAKE_MIN_RMS=350 WAKE_QUIET_RMS=200 \
+scripts/provision-satellite-rs.sh dethon@192.168.5.11
+```
+
+Every variable is load-bearing, because provisioning installs its defaults for whatever is left out:
+
+- Without `MUSIC_HUB` / `MUSIC_ROOM` the unit is torn down to voice-only (no snapclient, no PipeWire).
+- Without `THRESHOLD` / `WAKE_WINDOW` wake tuning returns to 0.7 / 2.
+- Without `WAKE_MIN_RMS` / `WAKE_QUIET_RMS` the loudness floor and the quiet-room rule are off.
+  `WAKE_QUIET_THRESHOLD` / `WAKE_QUIET_WINDOW` are left at their 0.9 / 2 defaults on purpose.
+- `MASTER_VOLUME` is omitted, so the master returns to 50%; pass the current level to keep it
+  (`ssh dethon@192.168.5.11 XDG_RUNTIME_DIR=/run/user/1000 wpctl get-volume @DEFAULT_AUDIO_SINK@`).
+- `TTS_VOLUME` / `ALERT_VOLUME` are at their 100% defaults on this unit.
+- `DAC_OVERLAY=hifiberry-dac` is only for a fresh Pi; the overlay is already in its `config.txt`.
+
+It ends in these wake flags on the running process (`pgrep -af nabu-satellite`):
+`--threshold 0.5 --wake-window 3 --wake-min-rms 350 --wake-quiet-rms 200 --wake-quiet-threshold 0.9 --wake-quiet-window 2`.
+
+**Binary-only update** — what the 2026-10-14 deploy of the floor and the quiet-room rule actually
+ran, because a full provision wipes `nabu-satellite.service.d/` and a temporary mic capture was
+living there. It reaches the same wake flags without touching audio routing or volumes:
+
+```sh
+satellite/scripts/build-release.sh
+scp satellite/target/aarch64-unknown-linux-musl/release/nabu-satellite dethon@192.168.5.11:/tmp/nabu-satellite.new
+ssh dethon@192.168.5.11 'sudo cp -p /usr/local/bin/nabu-satellite /usr/local/bin/nabu-satellite.bak.$(date +%Y%m%d) \
+  && sudo install -m 755 /tmp/nabu-satellite.new /usr/local/bin/nabu-satellite'
+# Wake flags live at the end of the LAST drop-in's ExecStart (pipewire.conf, or whichever sorts after it):
+ssh dethon@192.168.5.11 'sudoedit /etc/systemd/system/nabu-satellite.service.d/pipewire.conf'
+ssh dethon@192.168.5.11 'sudo systemctl daemon-reload && sudo systemctl restart nabu-satellite \
+  && sleep 8 && systemctl is-active nabu-satellite && pgrep -af "nabu-satellite --listen"'
+```
+
+Roll back with the `.bak.<date>` binary and a restart. An unknown flag makes the binary exit at
+startup, so remove the new flags from the drop-in before restoring an older binary.
 
 ## Status LED
 

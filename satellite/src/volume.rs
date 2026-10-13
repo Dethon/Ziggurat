@@ -431,12 +431,9 @@ impl VolumeControl {
 fn spawn_detached(cmdline: &str) {
     let mut argv = cmdline.split_whitespace();
     let Some(program) = argv.next() else { return };
-    let _ = std::process::Command::new(program)
-        .args(argv)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(argv);
+    crate::audio::run_detached(cmd);
 }
 
 async fn run_capture(cmdline: &str) -> anyhow::Result<String> {

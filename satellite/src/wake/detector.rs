@@ -34,10 +34,84 @@ pub struct DetectorConfig {
     /// gap flush, so bump that too.
     pub window: u32,
     pub refractory: Duration,
+    /// Room level under which `quiet_threshold` / `quiet_window` replace `threshold` / `window`
+    /// (see `Ambient` for the statistic). 0 = never: one rule at every level.
+    ///
+    /// It exists because the classifier's false fires and its real ones only differ in shape:
+    /// a false fire is a one-frame blip (0.07 0.66 0.79 0.44 on the deployed XVF3800 unit, out
+    /// of a room at RMS 25), a real wake holds ~0.98 for four frames. A window mean lenient
+    /// enough to ride through the jittery trace TV or music gives a real wake also fires on the
+    /// blip. In a quiet room nothing jitters a real wake, so it can be held to the strict shape
+    /// there for free, while a room with something playing keeps the lenient rule it needs.
+    /// Measured on 77.5 h of that unit's mic (2026-10-10..13): 0.9 over 2 frames below 200 kept
+    /// 16 of 16 real wakes — 15 on the very frame the lenient rule fired — and dropped 3 of 4
+    /// false ones. 200 is that mic's number, as `--wake-min-rms`'s 350 is.
+    pub quiet_below_rms: f32,
+    pub quiet_threshold: f32,
+    pub quiet_window: u32,
 }
 impl Default for DetectorConfig {
     fn default() -> Self {
-        Self { threshold: 0.5, window: 1, refractory: Duration::from_secs_f32(2.0) }
+        Self {
+            threshold: 0.5,
+            window: 1,
+            refractory: Duration::from_secs_f32(2.0),
+            quiet_below_rms: 0.0,
+            quiet_threshold: 0.9,
+            quiet_window: 2,
+        }
+    }
+}
+
+/// One operating point of the wake decision: fire when the mean of the last `window` scores
+/// reaches `threshold`.
+#[derive(Clone, Copy)]
+struct Rule {
+    threshold: f32,
+    window: usize,
+}
+
+const AMBIENT_CHUNKS: usize = 375;        // 30 s of 80 ms chunks
+const AMBIENT_RECENT_CHUNKS: usize = 188; // the newest 15 s of those
+const AMBIENT_MIN_CHUNKS: usize = 63;     // ~5 s heard before the reading means anything
+
+/// Whether something is playing in the room: the louder of two MEDIANS of chunk RMS, over the
+/// last 30 s the detector heard and over the last 15 s.
+///
+/// Deliberately not `audio::room::RoomLevel`. That one answers "what does silence sound like
+/// here" for the hub's end-of-utterance gate, so it is a minimum and reads through to the room
+/// behind whatever is playing. This one must do the opposite: TV dialog with its lulls, or
+/// music with its gaps, has to read as a loud room, and a second of somebody speaking the wake
+/// word into a silent one has to read as quiet. A median does both.
+///
+/// Two windows because the two mistakes are not equally cheap. Calling a loud room quiet loses
+/// a real wake; calling a quiet room loud only leaves the lenient rule it already had. So the
+/// reading rises fast and falls slowly: the 15 s median notices sound within ~8 s of it
+/// starting (a wake spoken 12 s after background sound began went unanswered on the 30 s median alone),
+/// and the 30 s median holds the room loud through a pause that the short one would forget (a
+/// 15 s median on its own lost a wake spoken into such a pause).
+struct Ambient {
+    levels: VecDeque<f32>,
+}
+
+impl Ambient {
+    fn new() -> Self { Self { levels: VecDeque::with_capacity(AMBIENT_CHUNKS + 1) } }
+
+    fn push(&mut self, rms: f32) {
+        self.levels.push_back(rms);
+        while self.levels.len() > AMBIENT_CHUNKS { self.levels.pop_front(); }
+    }
+
+    /// `None` until ~5 s have been heard: a detector that cannot tell yet keeps the lenient rule.
+    fn level(&self) -> Option<f32> {
+        if self.levels.len() < AMBIENT_MIN_CHUNKS { return None; }
+        let median_of_newest = |n: usize| {
+            let skip = self.levels.len().saturating_sub(n);
+            let mut sorted: Vec<f32> = self.levels.iter().skip(skip).copied().collect();
+            let mid = sorted.len() / 2;
+            *sorted.select_nth_unstable_by(mid, f32::total_cmp).1
+        };
+        Some(median_of_newest(AMBIENT_CHUNKS).max(median_of_newest(AMBIENT_RECENT_CHUNKS)))
     }
 }
 
@@ -52,42 +126,54 @@ impl Default for DetectorConfig {
 /// the old level 1, and `window` n is strictly more permissive than the old level n (that
 /// required every frame at or above threshold; the mean only needs them to average it).
 ///
+///
+/// It holds two operating points and is told on every frame which one the room calls for (see
+/// `DetectorConfig::quiet_below_rms`). Both read the same score history, so a room that crosses
+/// the line mid-utterance is judged on the frames it actually produced.
+///
 /// Deliberately model-free so the rule is testable with plain numbers, no ONNX inference.
 struct WindowTrigger {
     scores: VecDeque<f32>,
-    window: usize,
-    threshold: f32,
+    rule: Rule,
+    quiet_rule: Rule,
     refractory: Duration,
     refractory_until: Option<Instant>,
 }
 
 impl WindowTrigger {
     fn new(cfg: &DetectorConfig) -> Self {
+        let rule = Rule { threshold: cfg.threshold, window: (cfg.window as usize).max(1) };
+        let quiet_rule =
+            Rule { threshold: cfg.quiet_threshold, window: (cfg.quiet_window as usize).max(1) };
         Self {
-            scores: VecDeque::with_capacity(cfg.window as usize),
-            window: (cfg.window as usize).max(1),
-            threshold: cfg.threshold,
+            scores: VecDeque::with_capacity(rule.window.max(quiet_rule.window)),
+            rule,
+            quiet_rule,
             refractory: cfg.refractory,
             refractory_until: None,
         }
     }
 
-    /// Feed one classifier score. Returns `(fired, mean)`, where `mean` is over the scores
-    /// currently buffered — diagnostic only, and 0.0 while the refractory is suppressing input.
+    /// Feed one classifier score, judged by the quiet-room rule when `quiet`. Returns
+    /// `(fired, mean)`, where `mean` is over the scores that rule looks at — diagnostic only,
+    /// and 0.0 while the refractory is suppressing input.
     ///
     /// A partial window never fires: after a fire or a reset the next `window - 1` frames carry
     /// no decision. Firing clears the buffer, so the stale high scores that produced it cannot
     /// immediately re-fire once the refractory expires.
-    fn push(&mut self, score: f32) -> (bool, f32) {
+    fn push(&mut self, score: f32, quiet: bool) -> (bool, f32) {
         if let Some(until) = self.refractory_until {
             if Instant::now() < until { return (false, 0.0); }
             self.refractory_until = None;
         }
+        let rule = if quiet { self.quiet_rule } else { self.rule };
         self.scores.push_back(score);
-        while self.scores.len() > self.window { self.scores.pop_front(); }
-        let mean = self.scores.iter().sum::<f32>() / self.scores.len() as f32;
-        if self.scores.len() < self.window { return (false, mean); }
-        if mean >= self.threshold {
+        while self.scores.len() > self.rule.window.max(self.quiet_rule.window) { self.scores.pop_front(); }
+        // The newest `rule.window` scores; the buffer is as long as the longer of the two rules.
+        let n = self.scores.len().min(rule.window);
+        let mean = self.scores.iter().skip(self.scores.len() - n).sum::<f32>() / n as f32;
+        if n < rule.window { return (false, mean); }
+        if mean >= rule.threshold {
             self.scores.clear();
             self.refractory_until = Some(Instant::now() + self.refractory);
             return (true, mean);
@@ -145,6 +231,8 @@ pub struct WakeDetector {
     mel_buf: VecDeque<[f32; 32]>,      // last 76 mel frames, ones-seeded (mirrors openwakeword)
     emb_buf: VecDeque<[f32; EMB_DIM]>, // last 16 embeddings
     trigger: WindowTrigger,
+    ambient: Ambient,
+    quiet_below_rms: f32,
 }
 
 impl WakeDetector {
@@ -157,6 +245,8 @@ impl WakeDetector {
             mel_buf: (0..MEL_FRAMES).map(|_| [1f32; 32]).collect(),
             emb_buf: VecDeque::new(),
             trigger: WindowTrigger::new(&cfg),
+            ambient: Ambient::new(),
+            quiet_below_rms: cfg.quiet_below_rms,
         })
     }
 
@@ -166,6 +256,8 @@ impl WakeDetector {
     /// embedding per chunk from the last 76 frames, classify the last 16 embeddings.
     pub fn push_chunk(&mut self, chunk: &[i16]) -> Option<f32> {
         assert_eq!(chunk.len(), CHUNK, "push_chunk requires exactly {CHUNK} samples");
+        let rms = chunk_rms(chunk);
+        self.ambient.push(rms);
         // Stage 1: mel over lookback + chunk -> 8 new frames (x/10 + 2)
         let mut input = vec![0f32; LOOKBACK + CHUNK];
         input[..LOOKBACK].copy_from_slice(&self.tail);
@@ -204,21 +296,25 @@ impl WakeDetector {
                 tract_ndarray::Array3::from_shape_vec((1, CLF_FRAMES, EMB_DIM), c).unwrap().into();
             let co = self.clf.run(tvec!(ct.into())).expect("clf run");
             let score = co[0].to_plain_array_view::<f32>().unwrap()[[0, 0]];
+            // 0 switches the quiet-room rule off, and then the median is never taken.
+            let ambient = if self.quiet_below_rms > 0.0 { self.ambient.level() } else { None };
+            let quiet = ambient.is_some_and(|level| level < self.quiet_below_rms);
             // The trigger must see EVERY frame, so push before the log gate below.
-            let (fired, mean) = self.trigger.push(score);
+            let (fired, mean) = self.trigger.push(score, quiet);
             // Diagnostic (tuning): per-chunk wake score, the window mean the rule actually acts
-            // on, and mic level — for setting threshold / window from real on-device data. At
-            // debug so it's silent in production (RUST_LOG=info) but available via
-            // RUST_LOG=...=debug when tuning; gated at a low score floor so even at debug idle
-            // silence doesn't flood, and rms (and the macro fields) are only evaluated when the
-            // level is enabled — the steady path pays nothing.
-            if score >= 0.05 { tracing::debug!(score, mean, rms = chunk_rms(chunk), "wake score"); }
+            // on, which rule that was and the room level that chose it, and mic level — for
+            // setting threshold / window from real on-device data. At debug so it's silent in
+            // production (RUST_LOG=info) but available via RUST_LOG=...=debug when tuning; gated
+            // at a low score floor so even at debug idle silence doesn't flood.
+            if score >= 0.05 { tracing::debug!(score, mean, quiet, ambient, rms, "wake score"); }
             if fired { return Some(score); }
         }
         None
     }
 
-    /// Clear streaming state when re-arming after a turn.
+    /// Clear streaming state when re-arming after a turn. The ambient level is kept: the capture
+    /// itself never reaches the detector, so what it holds is still the room before the turn,
+    /// and dropping it would hand the ~5 s after every turn to the lenient rule.
     pub fn reset(&mut self) {
         self.tail.fill(0.0);
         self.mel_buf = (0..MEL_FRAMES).map(|_| [1f32; 32]).collect();
@@ -299,6 +395,7 @@ mod tests {
             threshold,
             window,
             refractory: Duration::from_millis(refractory_ms),
+            ..DetectorConfig::default()
         })
     }
 
@@ -307,16 +404,16 @@ mod tests {
     #[test]
     fn window_mean_fires_through_a_single_frame_dip() {
         let mut t = trigger(3, 0.7, 0);
-        assert!(!t.push(0.75).0);
-        assert!(!t.push(0.68).0, "second frame dips below threshold");
-        assert!(t.push(0.78).0, "mean 0.7367 clears 0.7 despite the dip");
+        assert!(!t.push(0.75, false).0);
+        assert!(!t.push(0.68, false).0, "second frame dips below threshold");
+        assert!(t.push(0.78, false).0, "mean 0.7367 clears 0.7 despite the dip");
     }
 
     #[test]
     fn window_mean_stays_silent_on_a_plateau_below_threshold() {
         let mut t = trigger(3, 0.7, 0);
         for s in [0.60, 0.62, 0.64, 0.63, 0.61] {
-            assert!(!t.push(s).0, "mean never reaches 0.7, so {s} must not fire");
+            assert!(!t.push(s, false).0, "mean never reaches 0.7, so {s} must not fire");
         }
     }
 
@@ -325,9 +422,9 @@ mod tests {
     #[test]
     fn partial_window_never_fires() {
         let mut t = trigger(3, 0.7, 0);
-        assert!(!t.push(0.99).0);
-        assert!(!t.push(0.99).0);
-        assert!(t.push(0.99).0, "fires only once the window is full");
+        assert!(!t.push(0.99, false).0);
+        assert!(!t.push(0.99, false).0);
+        assert!(t.push(0.99, false).0, "fires only once the window is full");
     }
 
     /// Firing clears the buffer. Without this the stale high scores still in it would re-fire
@@ -335,17 +432,17 @@ mod tests {
     #[test]
     fn firing_clears_the_window() {
         let mut t = trigger(3, 0.7, 0);
-        let fires = (0..6).filter(|_| t.push(0.8).0).count();
+        let fires = (0..6).filter(|_| t.push(0.8, false).0).count();
         assert_eq!(fires, 2, "6 frames at window 3 = 2 fires, not 4");
     }
 
     #[test]
     fn refractory_suppresses_then_expires() {
         let mut t = trigger(1, 0.7, 40);
-        assert!(t.push(0.9).0, "first frame fires");
-        assert!(!t.push(0.9).0, "second is inside the refractory");
+        assert!(t.push(0.9, false).0, "first frame fires");
+        assert!(!t.push(0.9, false).0, "second is inside the refractory");
         std::thread::sleep(Duration::from_millis(60));
-        assert!(t.push(0.9).0, "fires again once the refractory has expired");
+        assert!(t.push(0.9, false).0, "fires again once the refractory has expired");
     }
 
     /// window 1 is the default and must behave exactly like the old trigger_level 1: the
@@ -353,32 +450,190 @@ mod tests {
     #[test]
     fn window_of_one_fires_on_any_frame_at_threshold() {
         let mut t = trigger(1, 0.7, 0);
-        assert!(t.push(0.8).0);
-        assert!(!t.push(0.6).0);
-        assert!(t.push(0.71).0);
+        assert!(t.push(0.8, false).0);
+        assert!(!t.push(0.6, false).0);
+        assert!(t.push(0.71, false).0);
     }
 
     #[test]
     fn reset_clears_window_and_refractory() {
         let mut t = trigger(3, 0.7, 60_000);
-        assert!(!t.push(0.8).0);
-        assert!(!t.push(0.8).0);
+        assert!(!t.push(0.8, false).0);
+        assert!(!t.push(0.8, false).0);
         t.reset();
-        assert!(!t.push(0.8).0, "reset dropped the two buffered frames");
-        assert!(!t.push(0.8).0);
-        assert!(t.push(0.8).0, "a fresh full window fires");
+        assert!(!t.push(0.8, false).0, "reset dropped the two buffered frames");
+        assert!(!t.push(0.8, false).0);
+        assert!(t.push(0.8, false).0, "a fresh full window fires");
         t.reset();
-        assert!(!t.push(0.8).0, "reset also cleared the 60 s refractory");
-        assert!(!t.push(0.8).0);
-        assert!(t.push(0.8).0, "so a full window fires instead of being suppressed");
+        assert!(!t.push(0.8, false).0, "reset also cleared the 60 s refractory");
+        assert!(!t.push(0.8, false).0);
+        assert!(t.push(0.8, false).0, "so a full window fires instead of being suppressed");
     }
 
     #[test]
     fn push_reports_the_mean_it_evaluated() {
         let mut t = trigger(2, 0.9, 0);
-        assert_eq!(t.push(0.4).1, 0.4, "partial window reports what it has");
-        let (fired, mean) = t.push(0.6);
+        assert_eq!(t.push(0.4, false).1, 0.4, "partial window reports what it has");
+        let (fired, mean) = t.push(0.6, false);
         assert!(!fired);
         assert!((mean - 0.5).abs() < 1e-6, "mean of 0.4 and 0.6, got {mean}");
+    }
+
+    // ---- the quiet-room rule ----
+
+    /// The deployed pairing: 0.5 over 3 frames with something playing, 0.9 over 2 in a quiet room.
+    fn two_rule_trigger() -> WindowTrigger {
+        WindowTrigger::new(&DetectorConfig {
+            threshold: 0.5,
+            window: 3,
+            refractory: Duration::ZERO,
+            quiet_below_rms: 200.0,
+            quiet_threshold: 0.9,
+            quiet_window: 2,
+        })
+    }
+
+    fn fires(t: &mut WindowTrigger, trace: &[f32], quiet: bool) -> usize {
+        trace.iter().filter(|&&s| t.push(s, quiet).0).count()
+    }
+
+    // Score traces lifted from the office unit's mic capture (2026-10-10..13).
+    const BLIP: [f32; 7] = [0.00, 0.07, 0.66, 0.79, 0.44, 0.07, 0.00]; // room at RMS 25, nobody spoke
+    const LOUD_BLIP: [f32; 7] = [0.00, 0.01, 0.66, 0.95, 0.58, 0.06, 0.00];
+    const REAL_WAKE: [f32; 7] = [0.00, 0.04, 0.98, 0.99, 0.99, 0.99, 0.91];
+
+    /// Why the rule exists: the lenient mean fires on a single high frame with two mediocre
+    /// neighbours, which is all a false fire is.
+    #[test]
+    fn one_frame_blip_fires_the_lenient_rule_but_not_the_quiet_one() {
+        for blip in [BLIP, LOUD_BLIP] {
+            assert_eq!(fires(&mut two_rule_trigger(), &blip, false), 1, "lenient rule on {blip:?}");
+            assert_eq!(fires(&mut two_rule_trigger(), &blip, true), 0, "quiet rule on {blip:?}");
+        }
+    }
+
+    /// And why it is free in a quiet room: a real wake has two frames at 0.98 before the lenient
+    /// rule's third frame has even arrived, so the quiet rule fires on the same frame.
+    #[test]
+    fn real_wake_fires_both_rules_on_the_same_frame() {
+        let first_fire = |quiet| {
+            let mut t = two_rule_trigger();
+            REAL_WAKE.iter().position(|&s| t.push(s, quiet).0)
+        };
+        assert_eq!(first_fire(false), Some(3));
+        assert_eq!(first_fire(true), Some(3));
+    }
+
+    /// The two rules share one history. Were each to keep its own, a room crossing the line
+    /// mid-utterance would restart the window and lose the wake.
+    #[test]
+    fn rule_switch_mid_utterance_keeps_the_frames_already_heard() {
+        let mut t = two_rule_trigger();
+        assert!(!t.push(0.95, true).0, "one frame is not the quiet rule's two");
+        assert!(!t.push(0.20, false).0, "lenient rule: only two of its three frames so far");
+        assert!(t.push(0.50, false).0, "mean of 0.95 0.20 0.50 reaches 0.5 across the switch");
+    }
+
+    /// The quiet rule looks at its own, shorter window — not at whatever the longer rule buffered.
+    #[test]
+    fn quiet_rule_averages_only_its_own_window() {
+        let mut t = two_rule_trigger();
+        assert!(!t.push(0.10, true).0);
+        assert!(!t.push(0.92, true).0);
+        let (fired, mean) = t.push(0.94, true);
+        assert!(fired, "0.92 and 0.94 average 0.93; the 0.10 before them is not in the window");
+        assert!((mean - 0.93).abs() < 1e-6, "got {mean}");
+    }
+
+    fn ambient_of(levels: &[(f32, usize)]) -> Ambient {
+        let mut a = Ambient::new();
+        for &(level, chunks) in levels {
+            for _ in 0..chunks { a.push(level); }
+        }
+        a
+    }
+
+    #[test]
+    fn ambient_has_no_reading_until_five_seconds_are_heard() {
+        assert_eq!(ambient_of(&[(30.0, AMBIENT_MIN_CHUNKS - 1)]).level(), None);
+        assert_eq!(ambient_of(&[(30.0, AMBIENT_MIN_CHUNKS)]).level(), Some(30.0));
+    }
+
+    /// The wake word is the loudest second in the window and must not make its own room loud.
+    #[test]
+    fn ambient_reads_a_quiet_room_through_the_wake_word() {
+        let a = ambient_of(&[(30.0, 300), (4000.0, 13)]);
+        assert_eq!(a.level(), Some(30.0));
+    }
+
+    /// The opposite of `RoomLevel`, which reports the room behind the TV: here dialog with
+    /// lulls between phrases has to read as a room with something playing.
+    #[test]
+    fn ambient_reads_tv_dialog_as_loud_despite_the_lulls() {
+        let mut a = Ambient::new();
+        for _ in 0..40 {
+            for _ in 0..6 { a.push(900.0); } // phrase
+            for _ in 0..3 { a.push(30.0); }  // 240 ms lull
+        }
+        assert_eq!(a.level(), Some(900.0));
+    }
+
+    /// Sound that has just started is already a loud room: on the 30 s median alone this reads
+    /// 30 until the TV has been on for 15 s, and a wake spoken before then meets the strict rule.
+    #[test]
+    fn ambient_notices_sound_that_started_ten_seconds_ago() {
+        let a = ambient_of(&[(30.0, 300), (2000.0, 125)]);
+        assert_eq!(a.level(), Some(2000.0));
+    }
+
+    /// And a pause does not make it quiet again: the 15 s median alone reads 30 here.
+    #[test]
+    fn ambient_holds_a_loud_room_through_a_ten_second_pause() {
+        let a = ambient_of(&[(900.0, 300), (30.0, 125)]);
+        assert_eq!(a.level(), Some(900.0));
+    }
+
+    #[test]
+    fn ambient_forgets_what_is_older_than_the_window() {
+        let a = ambient_of(&[(900.0, 400), (30.0, AMBIENT_CHUNKS)]);
+        assert_eq!(a.level(), Some(30.0), "30 s of quiet have pushed the TV out");
+    }
+
+    // Detector-level: the room really does select the rule. A quiet rule nothing can satisfy
+    // (threshold above 1) makes the selection visible as fire / no fire on the same utterance.
+    fn fires_after_lead_in(quiet_below_rms: f32, lead_in_level: i16) -> usize {
+        let models = WakeModels::load_with_classifier(STOCK_CLF_MODEL).unwrap();
+        let cfg = DetectorConfig { quiet_below_rms, quiet_threshold: 1.5, ..DetectorConfig::default() };
+        let mut d = WakeDetector::new(&models, cfg).unwrap();
+        // 8 s of room before the utterance: alternating sign, so the level is the amplitude.
+        let room: Vec<i16> = (0..CHUNK).map(|i| if i % 2 == 0 { lead_in_level } else { -lead_in_level }).collect();
+        let mut fires = (0..100).filter(|_| d.push_chunk(&room).is_some()).count();
+        fires += wav("tests/fixtures/ok_nabu.wav").chunks_exact(CHUNK).filter(|c| d.push_chunk(c).is_some()).count();
+        fires
+    }
+
+    #[test]
+    fn quiet_room_puts_the_utterance_under_the_quiet_rule() {
+        assert_eq!(fires_after_lead_in(200.0, 30), 0, "room at 30 is under 200: the unsatisfiable rule applies");
+    }
+
+    #[test]
+    fn loud_room_keeps_the_lenient_rule() {
+        assert_eq!(fires_after_lead_in(200.0, 900), 1, "room at 900 is over 200");
+    }
+
+    #[test]
+    fn quiet_rule_is_off_at_zero() {
+        assert_eq!(fires_after_lead_in(0.0, 30), 1, "0 = one rule at every level");
+    }
+
+    /// reset() re-arms after a turn; the room did not change because a turn happened.
+    #[test]
+    fn reset_keeps_the_ambient_level() {
+        let models = WakeModels::load_with_classifier(STOCK_CLF_MODEL).unwrap();
+        let mut d = WakeDetector::new(&models, DetectorConfig::default()).unwrap();
+        for _ in 0..AMBIENT_MIN_CHUNKS { d.push_chunk(&[40i16; CHUNK]); }
+        d.reset();
+        assert_eq!(d.ambient.level(), Some(40.0));
     }
 }
