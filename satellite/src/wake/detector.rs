@@ -71,17 +71,25 @@ struct Rule {
     window: usize,
 }
 
-const AMBIENT_CHUNKS: usize = 375;    // 30 s of 80 ms chunks
-const AMBIENT_MIN_CHUNKS: usize = 63; // ~5 s heard before the reading means anything
+const AMBIENT_CHUNKS: usize = 375;        // 30 s of 80 ms chunks
+const AMBIENT_RECENT_CHUNKS: usize = 188; // the newest 15 s of those
+const AMBIENT_MIN_CHUNKS: usize = 63;     // ~5 s heard before the reading means anything
 
-/// Whether something is playing in the room: the MEDIAN chunk RMS over the last 30 s the
-/// detector heard.
+/// Whether something is playing in the room: the louder of two MEDIANS of chunk RMS, over the
+/// last 30 s the detector heard and over the last 15 s.
 ///
 /// Deliberately not `audio::room::RoomLevel`. That one answers "what does silence sound like
 /// here" for the hub's end-of-utterance gate, so it is a minimum and reads through to the room
 /// behind whatever is playing. This one must do the opposite: TV dialog with its lulls, or
 /// music with its gaps, has to read as a loud room, and a second of somebody speaking the wake
-/// word into a silent one has to read as quiet. The median of half a minute does both.
+/// word into a silent one has to read as quiet. A median does both.
+///
+/// Two windows because the two mistakes are not equally cheap. Calling a loud room quiet loses
+/// a real wake; calling a quiet room loud only leaves the lenient rule it already had. So the
+/// reading rises fast and falls slowly: the 15 s median notices sound within ~8 s of it
+/// starting (a wake spoken 12 s after background sound began went unanswered on the 30 s median alone),
+/// and the 30 s median holds the room loud through a pause that the short one would forget (a
+/// 15 s median on its own lost a wake spoken into such a pause).
 struct Ambient {
     levels: VecDeque<f32>,
 }
@@ -97,9 +105,13 @@ impl Ambient {
     /// `None` until ~5 s have been heard: a detector that cannot tell yet keeps the lenient rule.
     fn level(&self) -> Option<f32> {
         if self.levels.len() < AMBIENT_MIN_CHUNKS { return None; }
-        let mut sorted: Vec<f32> = self.levels.iter().copied().collect();
-        let mid = sorted.len() / 2;
-        Some(*sorted.select_nth_unstable_by(mid, f32::total_cmp).1)
+        let median_of_newest = |n: usize| {
+            let skip = self.levels.len().saturating_sub(n);
+            let mut sorted: Vec<f32> = self.levels.iter().skip(skip).copied().collect();
+            let mid = sorted.len() / 2;
+            *sorted.select_nth_unstable_by(mid, f32::total_cmp).1
+        };
+        Some(median_of_newest(AMBIENT_CHUNKS).max(median_of_newest(AMBIENT_RECENT_CHUNKS)))
     }
 }
 
@@ -563,6 +575,21 @@ mod tests {
             for _ in 0..6 { a.push(900.0); } // phrase
             for _ in 0..3 { a.push(30.0); }  // 240 ms lull
         }
+        assert_eq!(a.level(), Some(900.0));
+    }
+
+    /// Sound that has just started is already a loud room: on the 30 s median alone this reads
+    /// 30 until the TV has been on for 15 s, and a wake spoken before then meets the strict rule.
+    #[test]
+    fn ambient_notices_sound_that_started_ten_seconds_ago() {
+        let a = ambient_of(&[(30.0, 300), (2000.0, 125)]);
+        assert_eq!(a.level(), Some(2000.0));
+    }
+
+    /// And a pause does not make it quiet again: the 15 s median alone reads 30 here.
+    #[test]
+    fn ambient_holds_a_loud_room_through_a_ten_second_pause() {
+        let a = ambient_of(&[(900.0, 300), (30.0, 125)]);
         assert_eq!(a.level(), Some(900.0));
     }
 

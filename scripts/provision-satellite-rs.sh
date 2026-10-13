@@ -23,7 +23,7 @@ set -euo pipefail
 #                    which neither knob above reaches because those fires score as high as real
 #                    ones. A per-microphone number: 350 is the measured figure for the XVF3800.
 #                    WAKE_QUIET_RMS=<i16 rms> (default 0 = off) holds a QUIET room to a stricter
-#                    rule: while the room's median level over the last 30 s is under it,
+#                    rule: while the room's median level (last 30 s AND last 15 s) is under it,
 #                    WAKE_QUIET_THRESHOLD (default 0.9) and WAKE_QUIET_WINDOW (default 2) replace
 #                    THRESHOLD / WAKE_WINDOW. False fires are one-frame score blips that the
 #                    lenient rule TV and music need lets through; nothing jitters a real wake in
