@@ -58,7 +58,7 @@ public sealed class SugaryServer : IAsyncDisposable
     // would make an agent polling in real time look gone.
     public static async Task<SugaryServer> StartAsync(
         string homeZone = "Europe/Madrid", string accessCode = AccessCode, string? openFoodFacts = null,
-        string? webRoot = null, TimeProvider? turnClock = null)
+        string? webRoot = null, TimeProvider? turnClock = null, TimeProvider? estimateClock = null)
     {
         var directory = Path.Combine(Path.GetTempPath(), "sugary-tests", Guid.NewGuid().ToString("N"));
         System.IO.Directory.CreateDirectory(directory);
@@ -79,6 +79,13 @@ public sealed class SugaryServer : IAsyncDisposable
                 if (turnClock is not null)
                 {
                     services.AddSingleton(sp => ActivatorUtilities.CreateInstance<SugaryChannel>(sp, turnClock));
+                }
+
+                // How long her answers may follow an estimate, on a clock of its own for the same
+                // reason: nothing else may see time jump.
+                if (estimateClock is not null)
+                {
+                    services.AddSingleton(sp => ActivatorUtilities.CreateInstance<OpenEstimates>(sp, estimateClock));
                 }
             },
             map: app => app.MapSugaryApp(), webRoot: webRoot);

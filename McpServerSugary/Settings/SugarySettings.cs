@@ -29,6 +29,11 @@ public record SugarySettings : IMcpHostSettings
     // and the turn is cancelled. The standalone app's estimates took up to about half a minute.
     public int TurnTimeoutSeconds { get; init; } = 120;
 
+    // How long after the last estimate of a meal her answers may still continue its conversation. A
+    // meal is answered at the table; a draft found again the next day is a meal long eaten, and the
+    // app estimates it afresh instead.
+    public int FollowUpHours { get; init; } = 24;
+
     // The agent the app's turns are answered by: agentDefaults.byChannel.sugary in the agent's own
     // settings, spelled again here because the message names no agent and routing is the agent
     // host's. Asked about only to refuse a photo its model cannot see; a test keeps the two equal.

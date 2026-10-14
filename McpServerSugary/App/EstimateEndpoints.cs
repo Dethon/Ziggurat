@@ -72,7 +72,7 @@ public static class EstimateEndpoints
         string conversation, IReadOnlyList<IFormFile> photos, Func<string, string?> field, SugaryChannel channel,
         OpenEstimates estimates, CancellationToken ct)
     {
-        if (!estimates.IsOpen(conversation))
+        if (!estimates.TryContinue(conversation))
         {
             return Problem(StatusCodes.Status410Gone,
                 "This estimate is no longer open, so the meal has to be estimated again.");

@@ -8,6 +8,7 @@ using Domain.DTOs.Channel;
 using Domain.Tools.Sugary.Estimation;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -441,6 +442,46 @@ public class SugaryEstimateApiTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.Gone);
         (await DetailAsync(response)).ShouldContain("estimated again");
+    }
+
+    // A meal is answered at the table, minutes after its first estimate. A draft found again the next
+    // day is a meal long eaten, and its conversation is closed rather than kept for ever.
+    [Fact]
+    public async Task AnAnswerPastTheWindow_IsRefusedAsGone_BeforeAnythingIsSent()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var server = await SugaryServer.StartAsync(estimateClock: clock);
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+        var conversation = await EstimateAsync(app, agent);
+
+        clock.Advance(TimeSpan.FromHours(server.Settings.FollowUpHours));
+        var response = await app.PostAsync("/api/estimates", FollowUp(conversation, Answer));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Gone);
+        (await DetailAsync(response)).ShouldContain("estimated again");
+    }
+
+    // The window runs from her last answer, not from the first estimate.
+    [Fact]
+    public async Task EachAnswer_KeepsTheConversationOpenForAnotherWindow()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var server = await SugaryServer.StartAsync(estimateClock: clock);
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+        var conversation = await EstimateAsync(app, agent);
+        var almost = TimeSpan.FromHours(server.Settings.FollowUpHours) - TimeSpan.FromMinutes(1);
+
+        foreach (var _ in Enumerable.Range(0, 2))
+        {
+            clock.Advance(almost);
+            var answer = app.PostAsync("/api/estimates", FollowUp(conversation, Answer));
+            var turn = await NextTurnAsync(agent);
+            turn.ConversationId.ShouldBe(conversation);
+            await ReplyAsync(agent, turn, AnsweredEstimate);
+            (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
     }
 
     // A follow-up answers the estimate already made, whose photos the agent already has.
