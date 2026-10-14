@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Domain.Tools.Sugary.Estimation;
 using Shouldly;
 
@@ -58,37 +57,7 @@ public class MealEstimateReplyTests
     [Fact]
     public void TheSchema_IsOneStrictModeAccepts()
     {
-        AssertStrict(MealEstimateSchema.Format.Schema);
+        StrictSchema.Assert(MealEstimateSchema.Format.Schema);
         MealEstimateSchema.Format.Name.ShouldBe("meal_estimate");
-    }
-
-    private static void AssertStrict(JsonElement schema)
-    {
-        if (schema.ValueKind != JsonValueKind.Object)
-        {
-            return;
-        }
-
-        if (schema.TryGetProperty("properties", out var properties))
-        {
-            schema.GetProperty("additionalProperties").GetBoolean().ShouldBeFalse();
-            var required = schema.GetProperty("required").EnumerateArray().Select(r => r.GetString()).ToList();
-            properties.EnumerateObject().Select(p => p.Name).ShouldBe(required, ignoreOrder: true);
-        }
-
-        foreach (var child in schema.EnumerateObject())
-        {
-            if (child.Value.ValueKind == JsonValueKind.Object)
-            {
-                AssertStrict(child.Value);
-            }
-            else if (child.Value.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var element in child.Value.EnumerateArray())
-                {
-                    AssertStrict(element);
-                }
-            }
-        }
     }
 }
