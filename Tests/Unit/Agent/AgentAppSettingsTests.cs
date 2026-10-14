@@ -234,6 +234,21 @@ public class AgentAppSettingsTests
         server["Agent"]!.GetValue<string>().ShouldBe(settings.AgentDefaults.For("sugary"));
     }
 
+    // A label turn's patch is honoured only for a model on the patchable list; off it, the agent
+    // would read the label on its own cheaper model and the server would refuse every label.
+    [Fact]
+    public void TheSugaryServersLabelModel_IsOneTheAgentMaySwitchTo()
+    {
+        var settings = BoundConfig().Get<AgentSettings>()!;
+        var server = JsonNode.Parse(
+            File.ReadAllText(Path.Combine(RepoRoot(), "McpServerSugary", "appsettings.json")))!;
+
+        var labelModel = server["LabelModel"]!.GetValue<string>();
+        labelModel.ShouldBe("anthropic/claude-opus-5.5");
+        settings.PatchableModels.Select(m => m.Id).ShouldContain(labelModel);
+        new global::McpServerSugary.Settings.SugarySettings().LabelModel.ShouldBe(labelModel);
+    }
+
     private static AgentSettings BindSettings(params (string Key, string? Value)[] entries)
     {
         var config = new Dictionary<string, string?>

@@ -59,10 +59,10 @@ public static class EstimateEndpoints
         // The photos cross to the agent as references to this store, never as bytes on the turn, so
         // the conversation's history stays the size of its words (ADR-0020).
         var opened = estimates.Open();
-        var attachments = await StoreAsync(opened, photos, uploads, ct);
+        var attachments = await PhotoUpload.StoreAsync(opened, photos, uploads, ct);
         var turn = MealTurn.Text(new MealInput(
             attachments.Count, description, Field("clarifications"), Field("language"), Field("counted")));
-        return Answer(await channel.AskAsync(opened, turn, MealEstimateSchema.Format, attachments, ct), opened);
+        return Answer(await channel.AskAsync(opened, turn, MealEstimateSchema.Format, attachments, patch: null, ct), opened);
     }
 
     // Her answers continue the conversation the first estimate opened, whose first message the agent
@@ -85,7 +85,7 @@ public static class EstimateEndpoints
         }
 
         var turn = MealTurn.FollowUp(new MealFollowUp(field("clarifications"), field("counted"), field("language")));
-        return Answer(await channel.AskAsync(conversation, turn, MealEstimateSchema.Format, [], ct), conversation);
+        return Answer(await channel.AskAsync(conversation, turn, MealEstimateSchema.Format, [], patch: null, ct), conversation);
     }
 
     // Every way of not getting an estimate is said, and none of them is shown as one. A 503 would
@@ -101,21 +101,6 @@ public static class EstimateEndpoints
             "The estimate took too long. Try again, or count this meal by hand."),
         _ => throw new InvalidOperationException($"No answer for a turn that ended as {reply}.")
     };
-
-    // One at a time and in the order she took them, so the references keep the order of the photos.
-    private static async Task<IReadOnlyList<AttachmentReference>> StoreAsync(
-        string conversationId, IReadOnlyList<IFormFile> photos, UploadStore uploads, CancellationToken ct)
-    {
-        var stored = new List<AttachmentReference>(photos.Count);
-        foreach (var photo in photos)
-        {
-            using var buffer = new MemoryStream();
-            await photo.CopyToAsync(buffer, ct);
-            stored.Add(await uploads.SaveAsync(conversationId, photo.FileName, photo.ContentType, buffer.ToArray(), ct));
-        }
-
-        return stored;
-    }
 
     private static IResult Read(string reply, string conversation)
     {

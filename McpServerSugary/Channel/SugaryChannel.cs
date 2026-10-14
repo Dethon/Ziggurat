@@ -6,7 +6,8 @@ namespace McpServerSugary.Channel;
 
 // The app's side of a turn: send her words to the agent as a channel message, and wait for the
 // whole reply to the turn it opened. Which agent answers is left to the deployment's routing
-// (agentDefaults), so the message names none.
+// (agentDefaults), so the message names none; a patch may still move that one turn to another of the
+// agent's models, as a label's does.
 public sealed class SugaryChannel(
     ChannelNotificationEmitter emitter, AgentTurns turns, TimeProvider clock, SugarySettings settings)
 {
@@ -15,7 +16,7 @@ public sealed class SugaryChannel(
 
     public async Task<TurnReply> AskAsync(
         string conversationId, string content, ResponseFormat format,
-        IReadOnlyList<AttachmentReference> attachments, CancellationToken ct)
+        IReadOnlyList<AttachmentReference> attachments, AgentConfigPatch? patch, CancellationToken ct)
     {
         using var turn = turns.Open();
         var delivered = await emitter.EmitAsync(new ChannelMessageNotification
@@ -24,6 +25,7 @@ public sealed class SugaryChannel(
             Sender = Sender,
             Content = content,
             ResponseFormat = format,
+            ConfigPatch = patch,
             Attachments = attachments.Count > 0 ? attachments : null,
             TurnKey = turn.TurnKey,
             Timestamp = clock.GetUtcNow()

@@ -91,8 +91,7 @@ public static class SugaryApp
         guarded.MapProductEndpoints();
         guarded.MapExportEndpoints();
         guarded.MapEstimateEndpoints();
-
-        guarded.MapUnavailableEndpoints();
+        guarded.MapLabelEndpoints();
 
         api.MapFallback(() => Results.NotFound());
         // Any other path without a file name is one of the app's own screens.

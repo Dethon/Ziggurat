@@ -53,6 +53,8 @@ public class SugaryEstimateApiTests
         turn.Attachments.ShouldBeNull();
         // Which agent answers is the deployment's routing (agentDefaults), not the channel's to say.
         turn.AgentId.ShouldBeNull();
+        // A meal runs on the agent's own model; only a label switches.
+        turn.ConfigPatch.ShouldBeNull();
 
         await ReplyAsync(agent, turn, Estimate[..40], Estimate[40..200], Estimate[200..]);
 

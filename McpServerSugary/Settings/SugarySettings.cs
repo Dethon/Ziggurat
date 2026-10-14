@@ -39,6 +39,12 @@ public record SugarySettings : IMcpHostSettings
     // host's. Asked about only to refuse a photo its model cannot see; a test keeps the two equal.
     public string Agent { get; init; } = "sugary";
 
+    // The model a nutrition label is read on, switched to for that turn alone by the turn's config
+    // patch. A stronger one than meals use: a cheaper model read a protein row as carbs. The agent
+    // honours a patch only for a model on its patchableModels list, so this must be one of them (a
+    // test keeps it so), and a label is refused when the agent's catalogue says it is not.
+    public string LabelModel { get; init; } = "anthropic/claude-opus-5.5";
+
     // Where the photos of a meal being estimated rest while the agent may still ask for them.
     public UploadSettings Uploads { get; init; } = new();
 
