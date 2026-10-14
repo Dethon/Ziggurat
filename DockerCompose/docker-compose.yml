@@ -615,6 +615,9 @@ services:
       # Assistant container runs on, so a meal lines up with the glucose history /ha serves.
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      # Her app is served on this port too (every route but /mcp), behind the code she types once
+      # per phone. Installing it and scanning with the live camera need HTTPS in front.
+      SUGARYAPP__ACCESSCODE: ${SUGARYAPP__ACCESSCODE}
     networks:
       - jackbot
     depends_on:

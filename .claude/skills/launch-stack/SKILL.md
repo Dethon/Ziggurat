@@ -42,6 +42,10 @@ Caddy (port 443, Let's Encrypt TLS) is the entry point: `/hubs/*` → McpChannel
 
 The dashboard (an installable PWA) is at `https://assistants.herfluffness.com/dashboard/` or `http://localhost:5003/dashboard/` direct.
 
+## The Sugary app
+
+`mcp-sugary` serves her carb-counting PWA (`Sugary.Client`, built into the image) on every route but `/mcp`: `http://localhost:6017/`. It asks for `SUGARYAPP__ACCESSCODE` from `DockerCompose/.env` once per browser and keeps a cookie; unset, every sign-in is refused. No Caddy site fronts it yet, so installing it to a phone and live barcode scanning (both need HTTPS) work only on `localhost`. For frontend work, `npm run dev` in `Sugary.Client` proxies `/api` to that port; `npm run build` writes into `McpServerSugary/wwwroot`, which `dotnet run` serves when started from the project directory.
+
 ## Debugging with Playwright
 
 Use `ignoreHTTPSErrors: true` for the browser context locally (the certificate is valid for `assistants.herfluffness.com`, not `localhost`). You must select a user identity from the avatar picker in the header before sending messages, or sends are silently rejected with a toast error.

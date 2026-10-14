@@ -3,6 +3,14 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 USER $APP_UID
 WORKDIR /app
 
+# Her app (Sugary.Client), built into the web root the server serves it from.
+FROM node:22-alpine AS web
+WORKDIR /src/Sugary.Client
+COPY ["Sugary.Client/package.json", "Sugary.Client/package-lock.json", "./"]
+RUN npm ci
+COPY ["Sugary.Client/", "./"]
+RUN npm run build
+
 FROM base-sdk:latest AS dependencies
 COPY ["McpServerSugary/McpServerSugary.csproj", "McpServerSugary/"]
 RUN dotnet restore "McpServerSugary/McpServerSugary.csproj"
@@ -15,5 +23,8 @@ RUN dotnet publish "./McpServerSugary.csproj" -c $BUILD_CONFIGURATION -o /app/pu
 
 FROM base AS final
 WORKDIR /app
+# TLS ends at the reverse proxy; trusting its X-Forwarded-Proto is what marks the app's cookie Secure.
+ENV ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
 COPY --from=publish /app/publish .
+COPY --from=web /src/McpServerSugary/wwwroot ./wwwroot
 ENTRYPOINT ["dotnet", "McpServerSugary.dll"]
