@@ -61,6 +61,8 @@ The agent's settings gain:
 - a `sugary` channel endpoint;
 - `hostsReviewCopies: true` on the WebChat endpoint.
 
+Every WebChat collection now sees a third agent, Sugary, in the rail. No sibling test was found to
+count the agents or work out positions from them, but nothing has been run against three agents yet.
 Jev's skill preload is on, as in the deployment. Checked by hand, with no model involved: the image
 builds; the container starts on the tmpfs as the app user, signs in with the test code and lists
 meals; with no agent connected an estimate is answered 502 with the "not connected" detail the retry
