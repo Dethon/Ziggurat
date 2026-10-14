@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace McpServerSugary.App;
 
@@ -19,6 +20,7 @@ public static class SugaryApp
     public static IServiceCollection AddSugaryApp(this IServiceCollection services, SugarySettings settings)
     {
         services.AddSingleton(settings.SugaryApp);
+        services.TryAddSingleton(TimeProvider.System);
         services.ConfigureHttpJsonOptions(json =>
             json.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
 
@@ -71,6 +73,7 @@ public static class SugaryApp
 
         var guarded = api.MapGroup("").RequireAuthorization();
         guarded.MapMealEndpoints();
+        guarded.MapFoodEndpoints();
 
         api.MapFallback(() => Results.NotFound());
         return app;
