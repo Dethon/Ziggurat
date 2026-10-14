@@ -14,7 +14,8 @@ public sealed class SugaryChannel(
     public const string Sender = "sugary-app";
 
     public async Task<TurnReply> AskAsync(
-        string conversationId, string content, ResponseFormat format, CancellationToken ct)
+        string conversationId, string content, ResponseFormat format,
+        IReadOnlyList<AttachmentReference> attachments, CancellationToken ct)
     {
         using var turn = turns.Open();
         var delivered = await emitter.EmitAsync(new ChannelMessageNotification
@@ -23,6 +24,7 @@ public sealed class SugaryChannel(
             Sender = Sender,
             Content = content,
             ResponseFormat = format,
+            Attachments = attachments.Count > 0 ? attachments : null,
             TurnKey = turn.TurnKey,
             Timestamp = clock.GetUtcNow()
         }, ct);

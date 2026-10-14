@@ -1,3 +1,4 @@
+using Domain.DTOs;
 using Domain.Security;
 using Mcp.Hosting;
 
@@ -27,6 +28,19 @@ public record SugarySettings : IMcpHostSettings
     // How long the app's request waits on the sugary agent's turn before she is told it took too long
     // and the turn is cancelled. The standalone app's estimates took up to about half a minute.
     public int TurnTimeoutSeconds { get; init; } = 120;
+
+    // Where the photos of a meal being estimated rest while the agent may still ask for them.
+    public UploadSettings Uploads { get; init; } = new();
+
+    // The deployment's retention policy, read from Domain's retention.json like every host's: the
+    // upload store keeps a photo as long as an attachment is kept anywhere (ADR-0020).
+    public RetentionSettings Retention { get; init; } = new();
+}
+
+public record UploadSettings
+{
+    // Inside the server's own volume, beside the database but never in it.
+    public string StoragePath { get; init; } = "/data/uploads";
 }
 
 public record SugaryAppSettings

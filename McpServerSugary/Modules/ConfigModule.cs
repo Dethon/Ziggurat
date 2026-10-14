@@ -24,6 +24,9 @@ public static class ConfigModule
             .AddSingleton<ISugaryLog, SqliteSugaryLog>()
             .AddSingleton(sp => new SugaryFileSystem(sp.GetRequiredService<ISugaryLog>(), homeZone))
             .AddHostedService<SugaryDatabaseMigrator>()
+            .AddSingleton(settings.Uploads)
+            .AddSingleton(settings.Retention)
+            .AddSingleton<UploadStore>()
             .AddSingleton<AgentTurns>()
             .AddSingleton<SugaryChannel>()
             .AddSugaryApp(settings);
@@ -32,6 +35,7 @@ public static class ConfigModule
             .AddToolServer(settings, ToolResponse.Create)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
+            .WithTools<FetchAttachmentTool>()
             // Gate-on-live: the app waits on its own request, so an estimate nobody is polling for
             // is answered as an error at once rather than buffered for an agent that may never come.
             .AddChannelServer(DeliveryPolicy.GateOnLive)

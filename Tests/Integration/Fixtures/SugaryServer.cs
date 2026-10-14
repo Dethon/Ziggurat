@@ -17,6 +17,7 @@ using Shouldly;
 using Tests.Integration.McpServers;
 using SugaryAppSettings = McpServerSugary.Settings.SugaryAppSettings;
 using SugarySettings = McpServerSugary.Settings.SugarySettings;
+using UploadSettings = McpServerSugary.Settings.UploadSettings;
 
 namespace Tests.Integration.Fixtures;
 
@@ -67,7 +68,8 @@ public sealed class SugaryServer : IAsyncDisposable
             HomeZone = homeZone,
             Mcp = McpTestSecret.Gate,
             SugaryApp = new SugaryAppSettings { AccessCode = accessCode },
-            OpenFoodFactsUrl = openFoodFacts ?? "http://127.0.0.1:9/"
+            OpenFoodFactsUrl = openFoodFacts ?? "http://127.0.0.1:9/",
+            Uploads = new UploadSettings { StoragePath = Path.Combine(directory, "uploads") }
         };
 
         var server = await InMemoryMcpServer.StartAsync(

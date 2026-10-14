@@ -1,10 +1,12 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Tools.Sugary.Estimation;
+using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -205,20 +207,74 @@ public class SugaryEstimateApiTests
         cancel.Sender.ShouldBe(ChannelProtocol.SystemSender);
     }
 
-    // Photos reach the estimate in a later ticket; until then one is refused with a reason rather
-    // than dropped, which would estimate the meal from words she did not mean to be the whole of it.
+    // A photo with no words, as she takes most of them. The turn carries a reference, never the
+    // bytes, and the agent gets the bytes back the way it does for every channel: asking the channel
+    // through its own attachment source, which is what hydration calls on the way to the model.
     [Fact]
-    public async Task APhoto_IsRefusedRatherThanIgnored()
+    public async Task OnePhoto_ReachesTheTurnAsAReference_AndItsBytesAreFetchedAsTheAgentFetchesThem()
     {
         await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
         var app = await server.SignedInAsync();
-        var form = Form("paella");
-        form.Add(new ByteArrayContent([1, 2, 3]), "photos", "meal-0.jpg");
+        var photo = Photo(1, 2_000);
 
-        var response = await app.PostAsync("/api/estimates", form);
+        var answer = app.PostAsync("/api/estimates", Form("", photos: [photo]));
+        var turn = await NextTurnAsync(agent);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
-        (await DetailAsync(response)).ShouldContain("photo");
+        turn.Content.ShouldStartWith("One photo of the meal is attached.");
+        turn.Content.ShouldNotContain("The person's description");
+        var reference = turn.Attachments.ShouldHaveSingleItem();
+        reference.MediaType.ShouldBe("image/jpeg");
+        reference.SizeBytes.ShouldBe(photo.Length);
+        reference.Stills.ShouldBeNull();
+        // The history keeps what the turn carries, so what it carries must not be the photo.
+        turn.Content.ShouldNotContain(Convert.ToBase64String(photo)[..40]);
+
+        (await FetchAsync(agent, reference)).ShouldBe(photo);
+
+        await ReplyAsync(agent, turn, Estimate);
+        (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // Several photos of one plate, with her words beside them: each a reference of its own, each
+    // fetched back as what was sent, and the text says how many there are.
+    [Fact]
+    public async Task SeveralPhotosOfOneMeal_EachReachTheTurn_AndTheTextSaysHowMany()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+        byte[][] photos = [Photo(1, 3_000), Photo(2, 4_000), Photo(3, 5_000)];
+
+        var answer = app.PostAsync("/api/estimates", Form("the sauce is cream", photos: photos));
+        var turn = await NextTurnAsync(agent);
+
+        turn.Content.ShouldStartWith("3 photos of the same meal are attached.");
+        turn.Content.ShouldContain("The person's description:\nthe sauce is cream");
+        turn.Attachments.ShouldNotBeNull();
+        turn.Attachments.Count.ShouldBe(3);
+        turn.Attachments.Select(a => a.Id).Distinct().Count().ShouldBe(3);
+        for (var i = 0; i < photos.Length; i++)
+        {
+            (await FetchAsync(agent, turn.Attachments[i])).ShouldBe(photos[i]);
+        }
+
+        await ReplyAsync(agent, turn, Estimate);
+        (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // A reference the store does not hold — swept, or never one of its own — reads back as nothing,
+    // which hydration turns into a placeholder naming the file. Never another file, never an error.
+    [Theory]
+    [InlineData("nobody/nothing")]
+    [InlineData("../sugary.db")]
+    [InlineData("..")]
+    public async Task AReferenceTheStoreDoesNotHold_IsFetchedAsNothing(string id)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+
+        (await agent.FetchAttachmentAsync(id, CancellationToken.None)).ShouldBeNull();
     }
 
     [Fact]
@@ -233,14 +289,35 @@ public class SugaryEstimateApiTests
         (await DetailAsync(response)).ShouldContain("describe the meal");
     }
 
-    // The app's own form, field for field as Sugary.Client's api.estimate builds it.
-    private static MultipartFormDataContent Form(string description, string language = "en") => new()
+    // The app's own form, field for field as Sugary.Client's api.estimate builds it: each photo a
+    // `photos` part named meal-<n>.jpg, typed as the browser types the JPEG blob it shrank.
+    private static MultipartFormDataContent Form(
+        string description, string language = "en", IReadOnlyList<byte[]>? photos = null,
+        string mediaType = "image/jpeg")
     {
-        { new StringContent(description), "description" },
-        { new StringContent(""), "clarifications" },
-        { new StringContent(""), "counted" },
-        { new StringContent(language), "language" }
-    };
+        var form = new MultipartFormDataContent();
+        foreach (var (photo, index) in (photos ?? []).Select((p, i) => (p, i)))
+        {
+            var part = new ByteArrayContent(photo);
+            part.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+            form.Add(part, "photos", $"meal-{index}.jpg");
+        }
+
+        form.Add(new StringContent(description), "description");
+        form.Add(new StringContent(""), "clarifications");
+        form.Add(new StringContent(""), "counted");
+        form.Add(new StringContent(language), "language");
+        return form;
+    }
+
+    // Bytes no other photo in the test shares, so a fetch that answered with the wrong one fails.
+    private static byte[] Photo(byte seed, int length) =>
+        [.. Enumerable.Range(0, length).Select(i => (byte)(i * 31 + seed))];
+
+    // The agent's own IAttachmentSource over its own connection to this channel: what
+    // AttachmentHydration asks when the turn goes to the model.
+    private static Task<byte[]?> FetchAsync(McpChannelConnection agent, AttachmentReference reference) =>
+        new ChannelAttachmentSource([agent]).FetchAsync("sugary", reference.Id, CancellationToken.None);
 
     private static async Task<ChannelMessage> NextTurnAsync(McpChannelConnection agent)
     {
