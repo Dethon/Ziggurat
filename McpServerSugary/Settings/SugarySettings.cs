@@ -41,6 +41,14 @@ public record UploadSettings
 {
     // Inside the server's own volume, beside the database but never in it.
     public string StoragePath { get; init; } = "/data/uploads";
+
+    // The most any model the sugary agent may run on takes in one image: Anthropic's API refuses an
+    // image over 5 MB, and the label model and Haiku are among its patchable models. The app shrinks
+    // a photo to 1568 px before sending, which lands far below this; the standalone app allowed 8 MB.
+    public long MaxPhotoBytes { get; init; } = 5L * 1024 * 1024;
+
+    // The standalone app's limit, kept: more angles of one plate stop adding anything.
+    public int MaxPhotos { get; init; } = 4;
 }
 
 public record SugaryAppSettings

@@ -277,6 +277,45 @@ public class SugaryEstimateApiTests
         (await agent.FetchAttachmentAsync(id, CancellationToken.None)).ShouldBeNull();
     }
 
+    // Refused before anything is sent, with no agent even connected: a refusal that came after the
+    // send would answer "not connected" instead. Nothing is kept of a photo that was refused.
+    [Fact]
+    public async Task APhotoTooLargeForTheModel_IsRefusedBeforeItIsSent_WithAReasonTheAppShows()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var app = await server.SignedInAsync();
+        var tooLarge = Photo(1, (int)server.Settings.Uploads.MaxPhotoBytes + 1);
+
+        var response = await app.PostAsync("/api/estimates", Form("paella", photos: [Photo(2, 10), tooLarge]));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await DetailAsync(response)).ShouldBe("Each photo must be under 5 MB, the most the estimating models take.");
+        StoredFiles(server).ShouldBeEmpty();
+    }
+
+    public static TheoryData<string, IReadOnlyList<byte[]>, string, string> RefusedPhotos => new()
+    {
+        { "not a picture", [Photo(1, 10)], "image/heic", "Photos must be JPEG, PNG or WebP." },
+        { "empty", [[]], "image/jpeg", "A photo arrived empty. Take it again." },
+        { "five of one meal", [.. Enumerable.Range(1, 5).Select(i => Photo((byte)i, 10))], "image/jpeg",
+            "At most 4 photos per meal." }
+    };
+
+    [Theory]
+    [MemberData(nameof(RefusedPhotos))]
+    public async Task PhotosTheEstimateCannotTake_AreRefusedBeforeTheyAreSent(
+        string what, IReadOnlyList<byte[]> photos, string mediaType, string reason)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var app = await server.SignedInAsync();
+
+        var response = await app.PostAsync("/api/estimates", Form("paella", photos: photos, mediaType: mediaType));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest, what);
+        (await DetailAsync(response)).ShouldBe(reason, what);
+        StoredFiles(server).ShouldBeEmpty(what);
+    }
+
     [Fact]
     public async Task NeitherPhotoNorDescription_IsRefused()
     {
@@ -313,6 +352,11 @@ public class SugaryEstimateApiTests
     // Bytes no other photo in the test shares, so a fetch that answered with the wrong one fails.
     private static byte[] Photo(byte seed, int length) =>
         [.. Enumerable.Range(0, length).Select(i => (byte)(i * 31 + seed))];
+
+    private static IReadOnlyList<string> StoredFiles(SugaryServer server) =>
+        Directory.Exists(server.Settings.Uploads.StoragePath)
+            ? Directory.GetFiles(server.Settings.Uploads.StoragePath, "*", SearchOption.AllDirectories)
+            : [];
 
     // The agent's own IAttachmentSource over its own connection to this channel: what
     // AttachmentHydration asks when the turn goes to the model.

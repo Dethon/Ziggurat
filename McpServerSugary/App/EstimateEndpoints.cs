@@ -1,6 +1,7 @@
 using Domain.DTOs.Channel;
 using Domain.Tools.Sugary.Estimation;
 using McpServerSugary.Channel;
+using McpServerSugary.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -24,7 +25,8 @@ public static class EstimateEndpoints
     // cookie gate answers first: a bound form would make a JSON post not match at all, and a phone
     // that has not signed in would be told the route does not exist.
     private static async Task<IResult> EstimateAsync(
-        HttpRequest request, SugaryChannel channel, UploadStore uploads, CancellationToken ct)
+        HttpRequest request, SugaryChannel channel, UploadStore uploads, UploadSettings limits,
+        CancellationToken ct)
     {
         if (!request.HasFormContentType)
         {
@@ -39,6 +41,13 @@ public static class EstimateEndpoints
         if (photos.Count == 0 && string.IsNullOrWhiteSpace(description))
         {
             return Problem(StatusCodes.Status400BadRequest, "Add a photo or describe the meal.");
+        }
+
+        // Refused before anything is kept or sent, so a photo the model would choke on costs neither
+        // a turn nor a file.
+        if (PhotoUpload.Refusal(photos, limits) is { } refusal)
+        {
+            return Problem(StatusCodes.Status400BadRequest, refusal);
         }
 
         // The photos cross to the agent as references to this store, never as bytes on the turn, so
