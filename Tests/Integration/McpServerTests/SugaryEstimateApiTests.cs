@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Prompts;
 using Domain.Tools.Sugary.Estimation;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
@@ -482,6 +483,110 @@ public class SugaryEstimateApiTests
             await ReplyAsync(agent, turn, AnsweredEstimate);
             (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
         }
+    }
+
+    // An amount she picked from the options is her rough judgement, so the model keeps it at medium
+    // and its range is widened like any judged by eye; an amount she typed is a fact, marked high and
+    // kept as given. Both reach the turn as she said them, and the prompt says how to read each and
+    // not to ask again what she answered.
+    [Fact]
+    public async Task AfterHerAnswers_APickedAmountKeepsItsRange_AndATypedOneIsKeptAsGiven()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+        var conversation = await EstimateAsync(app, agent);
+        const string typed = "Correction: \"white toast\" weighs 80 g.";
+
+        var answer = app.PostAsync("/api/estimates", FollowUp(conversation, $"{Answer}\n{typed}"));
+        var turn = await NextTurnAsync(agent);
+
+        turn.Content.ShouldContain($"Their answers to your earlier questions:\n{Answer}\n{typed}");
+        SugaryPrompt.Prompt.ShouldContain("An amount they picked from options you offered is their rough judgement");
+        SugaryPrompt.Prompt.ShouldContain("Stated weights, counts and answers about what a food is are facts");
+        SugaryPrompt.Prompt.ShouldContain("never repeat a question that has already been answered");
+
+        await ReplyAsync(agent, turn, AnsweredEstimate.Replace(
+            "\"gramsLow\":60,\"grams\":60,\"gramsHigh\":60", "\"gramsLow\":80,\"grams\":80,\"gramsHigh\":80"));
+        var items = (await ReadAsync(await answer))["items"]!.AsArray();
+
+        ShouldBeInterval(items[0]!["grams"], 80, 80, 80);
+        items[0]!["confidence"]!.GetValue<string>().ShouldBe("high");
+        ShouldBeInterval(items[1]!["grams"], 180, 300, 480);
+        items[1]!["confidence"]!.GetValue<string>().ShouldBe("medium");
+    }
+
+    // What she counted herself never comes back from the server: it is only text on the turn, and
+    // the app keeps her items apart from the model's. When the model lists one of them anyway, the
+    // server does not try to recognise it — her names and the model's rarely match word for word,
+    // across two languages, and a food dropped on a wrong match would vanish from the meal unseen.
+    // It comes back as an estimated item like any other, on the screen where she can remove it.
+    [Fact]
+    public async Task AFoodSheCountedThatTheModelListsAgain_ComesBackAsAnEstimatedItem_NeverDroppedUnseen()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+
+        var answer = app.PostAsync("/api/estimates", Form("toast and juice", counted: Bread));
+        var turn = await NextTurnAsync(agent);
+        turn.Content.ShouldContain(Bread);
+        await ReplyAsync(agent, turn, Estimate.Replace(
+            "\"items\":[",
+            "\"items\":[{\"name\":\"Pan de molde\",\"portion\":\"2 slices\",\"gramsLow\":64,\"grams\":64,\"gramsHigh\":64,\"carbsPer100g\":46,\"confidence\":\"high\",\"note\":null},"));
+
+        var estimate = await ReadAsync(await answer);
+        estimate["items"]!.AsArray().Select(i => i!["name"]!.GetValue<string>())
+            .ShouldBe(["Pan de molde", "white toast", "orange juice"]);
+        ShouldBeInterval(estimate["total"], 68.4, 76.4, 88.4);
+    }
+
+    // The first estimate is what the model is judged by later, so the meal she saves after answering
+    // carries the first answer's total, not the one her answers produced. The app keeps it from the
+    // first reply; the log stores and serves it as sent.
+    [Fact]
+    public async Task AMealSavedAfterHerAnswers_KeepsItsFirstEstimate()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+
+        var first = app.PostAsync("/api/estimates", Form("toast and juice", counted: Yoghurt));
+        await ReplyAsync(agent, await NextTurnAsync(agent), Estimate);
+        var firstEstimate = await ReadAsync(await first);
+        var second = app.PostAsync("/api/estimates", FollowUp(
+            firstEstimate["conversationId"]!.GetValue<string>(), Answer, Yoghurt));
+        await ReplyAsync(agent, await NextTurnAsync(agent), AnsweredEstimate);
+        var answered = await ReadAsync(await second);
+
+        var items = answered["items"]!.AsArray().Select(item => (JsonNode)new JsonObject
+        {
+            ["name"] = item!["name"]!.GetValue<string>(),
+            ["portion"] = item["portion"]!.GetValue<string>(),
+            ["grams"] = item["grams"]!["best"]!.GetValue<double>(),
+            ["carbsPer100g"] = item["carbsPer100g"]!.GetValue<double>(),
+            ["carbsLow"] = item["carbs"]!["low"]!.GetValue<double>(),
+            ["carbs"] = item["carbs"]!["best"]!.GetValue<double>(),
+            ["carbsHigh"] = item["carbs"]!["high"]!.GetValue<double>(),
+            ["source"] = "estimate"
+        }).Append(new JsonObject
+        {
+            ["name"] = "yoghurt", ["carbsLow"] = 12, ["carbs"] = 12, ["carbsHigh"] = 12, ["source"] = "manual"
+        });
+        var saved = await app.PostAsJsonAsync("/api/meals", new JsonObject
+        {
+            ["eatenAt"] = "2026-10-15T13:30:00+02:00",
+            ["outcome"] = "unknown",
+            ["firstEstimate"] = firstEstimate["total"]!.DeepClone(),
+            ["items"] = new JsonArray([.. items])
+        });
+        saved.StatusCode.ShouldBe(HttpStatusCode.Created);
+
+        var meal = (await app.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray().ShouldHaveSingleItem()!;
+        ShouldBeInterval(meal["firstEstimate"], 39, 47, 59);
+        meal["items"]!.AsArray().Sum(i => i!["carbs"]!.GetValue<double>()).ShouldBe(57 + 12);
+        var row = (await server.ReadAsync("/meals/2026-10.csv")).Split('\n')[1].Split(',');
+        row[2..9].ShouldBe(["69", "57", "87", "47", "39", "59", "unknown"]);
     }
 
     // A follow-up answers the estimate already made, whose photos the agent already has.
