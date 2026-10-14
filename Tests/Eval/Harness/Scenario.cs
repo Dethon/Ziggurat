@@ -99,6 +99,10 @@ public sealed record Scenario
     // would fail on wording rather than on behaviour.
     public ReplyExpectation? Reply { get; init; }
 
+    // What a structured meal estimate must hold, for a turn asked in the meal_estimate format.
+    // Read by the server's own parse, so an answer the app could not show fails here too.
+    public EstimateExpectation? Estimate { get; init; }
+
     public IReadOnlyList<string> Claims { get; init; } = [];
 
     // Claims this scenario asserts without evidencing: the demonstrated-red bar was tried and
@@ -175,6 +179,13 @@ public sealed record EvalTurn
     // Files the channel holds for this turn, in the order the person sent them. They reach the
     // agent as references of the turn's channel, and the stack answers the fetch hydration makes.
     public IReadOnlyList<EvalAttachment> Attachments { get; init; } = [];
+}
+
+// What the estimate's items may not include: a food the turn says is already counted. Matched
+// against item names alone, case-insensitively, so a note saying it was left out still passes.
+public sealed record EstimateExpectation
+{
+    public IReadOnlyList<string> NeverListed { get; init; } = [];
 }
 
 // A file on disk standing in for one the channel took from the person.

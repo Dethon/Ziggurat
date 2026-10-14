@@ -4,6 +4,7 @@ using Shouldly;
 using Tests.Eval.Fixtures;
 using Tests.Eval.Harness;
 using Tests.Eval.Scenarios;
+using Tests.Eval.Sugary;
 
 namespace Tests.Eval;
 
@@ -26,6 +27,7 @@ public static class EvalSuite
         .. MemoryScenarios.All,
         .. MusicScenarios.All,
         .. WebScenarios.All,
+        .. SugaryScenarios.All,
         .. ResearchScenarios.All
     ];
 
@@ -60,7 +62,7 @@ public static class EvalSuite
         EvalTier.Changed => EvalChanges.Selected,
         // The sugary agent's own scenarios, which a full pass also takes: the Sugary tier runs
         // them again on the model it is scoring, beside the benchmark meals.
-        EvalTier.Sugary => All.Where(s => s.AgentId == Sugary.SugaryBenchmark.Agent),
+        EvalTier.Sugary => All.Where(s => s.AgentId == SugaryBenchmark.Agent),
         _ => All.Where(s => s.Tier == tier)
     };
 
@@ -89,6 +91,11 @@ public static class EvalSuite
         Skip.If(EvalGate.ApiKey is null, "openRouter:apiKey is not set in user secrets");
         Skip.If(name == EvalChanges.NothingSelected,
             $"the changed tier runs what a diff touched: set {EvalChanges.Variable}=<ref> (or 1 for master)");
+        // The Sugary tier scores a model by name, its scenarios as much as its benchmark meals.
+        var unnamed = tier == EvalTier.Sugary
+            ? SugaryBenchmark.WhyNot(true, EvalGate.ApiKey, Environment.GetEnvironmentVariable(EvalModel.Variable), 0)
+            : null;
+        Skip.If(unnamed is not null, unnamed);
 
         var scenario = ByName(name);
         var outcome = await RunAsync(scenario, EvalRuns.Applied(policy(scenario)));

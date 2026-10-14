@@ -220,6 +220,32 @@ public class WebScenarioTests2(EvalScorecard scorecard) : IClassFixture<EvalScor
         EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
 }
 
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
+public class SugaryScenarioTests(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(SugaryScenarios.All);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task AScenario_AtItsDeclaredThreshold_Holds(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
+}
+
+// The Sugary tier's half that is scenarios: the sugary agent's own, again, on the model the pass
+// names and filed under it beside the benchmark meals (Tests/Eval/Sugary/SugaryBenchmarkEvalTests).
+[Trait("Category", "Eval")]
+[Trait("Tier", "Sugary")]
+public class SugaryTierScenarioTests(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(EvalTier.Sugary);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task AScenario_OnTheNamedModel_Holds(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Sugary, scenario => scenario.Policy, scorecard);
+}
+
 // The research tier: the graded family, by name and never as part of a full pass. Run once per
 // model — `ZIGGURAT_EVAL_MODEL=<id>` — and each pass leaves a scorecard filed under the model that
 // served it, so two of them are a comparison.
@@ -305,6 +331,22 @@ public class ScenarioWiringTests
             .ShouldBe(ResearchScenarios.All.Select(s => s.Name), ignoreOrder: true);
     }
 
+    // The sugary agent's scenarios guard its prompt in every full pass and run again in the Sugary
+    // tier on the model that tier is scoring — every one of them, and nobody else's.
+    [Fact]
+    public void EverySugaryAgentScenario_IsWiredIntoTheSugaryTier()
+    {
+        var wired = Classes("Tier", "Sugary").Where(HoldsScenarios).SelectMany(Named).ToList();
+
+        wired.ShouldBe(
+            EvalSuite.All.Where(s => s.AgentId == Sugary.SugaryBenchmark.Agent).Select(s => s.Name).ToList(),
+            ignoreOrder: true);
+        wired.ShouldNotBeEmpty();
+    }
+
+    private static bool HoldsScenarios(Type type) =>
+        type.GetProperty("Scenarios", BindingFlags.Public | BindingFlags.Static) is not null;
+
     [Fact]
     public void NoScenarioClass_HoldsMoreThanTheShardCeiling()
     {
@@ -314,7 +356,7 @@ public class ScenarioWiringTests
         // together under the run gate rather than as a class's serial rows.
         var longest = Classes("Category", "Eval")
             .Except(Classes("Tier", "Changed"))
-            .Where(type => type.GetProperty("Scenarios", BindingFlags.Public | BindingFlags.Static) is not null)
+            .Where(HoldsScenarios)
             .Select(type => (Class: type.Name, Count: Named(type).Count()))
             .Where(held => held.Count > ShardCeiling)
             .ToList();
