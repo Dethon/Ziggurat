@@ -28,6 +28,7 @@ public static class ConfigModule
             .AddSingleton(settings.Uploads)
             .AddSingleton(settings.Retention)
             .AddSingleton<UploadStore>()
+            .AddHostedService<UploadSweeper>()
             // What each model accepts, from the catalogue the agent registers on connect: the one
             // thing this channel needs to know about models, to refuse a photo one cannot see.
             .AddSingleton<MutableAgentCatalog>()
