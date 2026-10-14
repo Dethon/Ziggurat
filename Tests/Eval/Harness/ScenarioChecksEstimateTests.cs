@@ -5,7 +5,7 @@ namespace Tests.Eval.Harness;
 // A sugary turn's answer, checked the way the server reads it: parsed whole against the schema,
 // then held to what the scenario says the estimate must leave out. Deterministic, because whether
 // a food is on the list is a fact about the parsed items and not a judgement.
-public class EstimateChecksTests
+public class ScenarioChecksEstimateTests
 {
     private static Scenario Counted() => new()
     {

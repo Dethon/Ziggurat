@@ -30,6 +30,7 @@ using McpServerWebSearch.Modules;
 using McpServerWebSearch.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -602,6 +603,9 @@ public sealed class EvalStack : IAsyncDisposable
 
         if (_sugaryPath is not null && Directory.Exists(_sugaryPath))
         {
+            // The server's pooled connections would otherwise stay open on a deleted file, one set
+            // per stack, for the rest of a pass that stands up a stack per meal.
+            SqliteConnection.ClearAllPools();
             Directory.Delete(_sugaryPath, recursive: true);
         }
 

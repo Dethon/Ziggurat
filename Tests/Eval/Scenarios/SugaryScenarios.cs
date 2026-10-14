@@ -141,7 +141,9 @@ public static class SugaryScenarios
             Mentions =
             [
                 new SpokenValue("the day of the last paella",
-                    "9 de agosto", "9/8", "09/08", "2026-08-09", "domingo 9", "domingo, 9")
+                    "9 de agosto", "9/8", "09/08", "2026-08-09", "domingo 9", "domingo, 9",
+                    // Asked on the 17th, so a relative answer is as right as a date.
+                    "hace ocho días", "hace 8 días", "domingo pasado", "semana pasada")
             ]
         },
         Claims = [SugarySkill.LoadsForAQuestionAboutHerLog.Id],
