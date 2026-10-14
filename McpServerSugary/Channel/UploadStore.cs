@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using McpServerSugary.Settings;
 using Microsoft.Extensions.Logging;
 
@@ -24,7 +25,9 @@ public sealed class UploadStore(
     public async Task<AttachmentReference> SaveAsync(
         string conversationId, string fileName, string mediaType, byte[] bytes, CancellationToken ct)
     {
-        var conversation = SafeSegment(conversationId)
+        // Laid out as WebChat lays the same conversation out, so the copy WebChat keeps for a review
+        // sits where deleting that topic removes its files.
+        var conversation = SafeSegment(AttachmentEndpointPaths.ConversationDirectory(conversationId))
             ?? throw new ArgumentException($"'{conversationId}' cannot name a directory.", nameof(conversationId));
         var attachmentId = Guid.NewGuid().ToString("N");
         var directory = Path.Combine(settings.StoragePath, conversation, attachmentId);

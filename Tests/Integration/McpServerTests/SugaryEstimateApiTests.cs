@@ -3,8 +3,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using Domain.Tools.Sugary.Estimation;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
@@ -205,6 +207,65 @@ public class SugaryEstimateApiTests
         var cancel = await NextTurnAsync(agent);
         cancel.ConversationId.ShouldBe(turn.ConversationId);
         cancel.Sender.ShouldBe(ChannelProtocol.SystemSender);
+    }
+
+    // Every estimate is read back in WebChat, under the sugary agent. The channel asks for that on
+    // each turn and names the topic; the conversation it opens is spelled as WebChat spells one, so a
+    // topic can be shown over it and read the history the agent writes there (ADR 0046).
+    [Fact]
+    public async Task AnEstimateTurn_AsksForAReviewCopy_OnAConversationWebChatCanShow()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+
+        var answer = app.PostAsync("/api/estimates", Form("two slices of toast and a glass of orange juice"));
+        var turn = await NextTurnAsync(agent);
+
+        turn.ReviewCopy.ShouldNotBeNull().Title.ShouldBe("Meal: two slices of toast and a glass of orange juice");
+        ConversationIdentity.Parse(turn.ConversationId).ShouldNotBeNull();
+
+        await ReplyAsync(agent, turn, Estimate);
+        (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // A photo with no words has nothing to name the meal by but that it was photographed. Long words
+    // are cut, so the sidebar stays a line.
+    [Theory]
+    [InlineData("", "Meal photo")]
+    [InlineData("a very long description of a mixed plate with rice, chicken and a salad on the side", "Meal: a very long description of a mixed plate with…")]
+    public async Task TheReviewTopic_IsNamedAfterHerWords(string description, string title)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+
+        var answer = app.PostAsync("/api/estimates", Form(description, photos: [Photo(1, 2_000)]));
+        var turn = await NextTurnAsync(agent);
+
+        turn.ReviewCopy.ShouldNotBeNull().Title.ShouldBe(title);
+
+        await ReplyAsync(agent, turn, Estimate);
+        (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // The photos are kept under the directory WebChat lays the same conversation out by, so the copy
+    // WebChat keeps for the review sits where deleting the topic removes its files.
+    [Fact]
+    public async Task APhotosReference_IsFiledUnderTheConversationAsWebChatFilesIt()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+
+        var answer = app.PostAsync("/api/estimates", Form("", photos: [Photo(1, 2_000)]));
+        var turn = await NextTurnAsync(agent);
+
+        turn.Attachments.ShouldHaveSingleItem().Id
+            .ShouldStartWith($"{AttachmentEndpointPaths.ConversationDirectory(turn.ConversationId)}/");
+
+        await ReplyAsync(agent, turn, Estimate);
+        (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
     // A photo with no words, as she takes most of them. The turn carries a reference, never the

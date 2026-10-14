@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs.Channel;
 using Domain.Tools.Sugary.Estimation;
 using McpServerSugary.Channel;
@@ -54,11 +55,14 @@ public static class EstimateEndpoints
 
         // The photos cross to the agent as references to this store, never as bytes on the turn, so
         // the conversation's history stays the size of its words (ADR-0020).
-        var conversationId = Guid.NewGuid().ToString("N");
+        // Spelled as WebChat spells a conversation, so the review copy can be shown as a topic over
+        // this very conversation and read the history the agent writes under it (ADR 0046).
+        var conversationId = ConversationIdGenerator.CreateFor(ConversationIdGenerator.NewTopicId()).ConversationId;
         var attachments = await StoreAsync(conversationId, photos, uploads, ct);
         var turn = MealTurn.Text(new MealInput(
             attachments.Count, description, Field("clarifications"), Field("language"), Field("counted")));
-        var reply = await channel.AskAsync(conversationId, turn, MealEstimateSchema.Format, attachments, ct);
+        var reply = await channel.AskAsync(
+            conversationId, turn, MealEstimateSchema.Format, attachments, ReviewOf(description), ct);
 
         // Every way of not getting an estimate is said, and none of them is shown as one. A 503
         // would read in the app as "the model is not set up", so a missing agent is a bad gateway.
@@ -88,6 +92,28 @@ public static class EstimateEndpoints
         }
 
         return stored;
+    }
+
+    private const int ReviewTitleLength = 48;
+
+    // Every estimate is read back in WebChat, named after her words: the sidebar shows the meal, not
+    // the prompt the turn's text is. Cut at a word, so the row stays one line.
+    private static ReviewCopy ReviewOf(string? description)
+    {
+        var words = string.Join(' ', (description ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (words.Length == 0)
+        {
+            return new ReviewCopy { Title = "Meal photo" };
+        }
+
+        if (words.Length > ReviewTitleLength)
+        {
+            var cut = words[..ReviewTitleLength];
+            var space = cut.LastIndexOf(' ');
+            words = $"{(space > 0 ? cut[..space] : cut)}\u2026";
+        }
+
+        return new ReviewCopy { Title = $"Meal: {words}" };
     }
 
     private static IResult Read(string reply)
