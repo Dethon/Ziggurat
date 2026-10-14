@@ -162,3 +162,30 @@ public class SugaryBenchmarkTests
         tiers.ShouldBe([("Category", "Eval"), ("Tier", "Sugary")], ignoreOrder: true);
     }
 }
+// A paid pass is the scorecard, so one meal's run throwing — a refusal at the send, a harness
+// fault — costs that meal, never the 63 readings beside it.
+public class SugaryBenchmarkRunTests
+{
+    private static readonly SugaryCase[] _meals =
+    [
+        new() { Name = "n5k 1: rice", Set = "n5k", Photos = ["photos/n5k-1.jpg"], Carbs = 20, Grams = 200 },
+        new() { Name = "n5k 2: pasta", Set = "n5k", Photos = ["photos/n5k-2.jpg"], Carbs = 40, Grams = 300 }
+    ];
+
+    [Fact]
+    public async Task AMealWhoseRunThrows_IsAFailedMeal_AndTheOthersAreRead()
+    {
+        var pass = await SugaryBenchmark.RunAsync(_meals, 1, scenario =>
+            scenario.Name.Contains("pasta")
+                ? throw new InvalidOperationException("refused at the send")
+                : Task.FromResult(new Recording
+                {
+                    Answer = """{"items":[],"questions":[],"notes":[]}""",
+                    AttachmentsServed = ["eval-attachment-1"]
+                }));
+
+        pass.Readings.Select(reading => reading.Case.Name).ShouldBe(["n5k 1: rice", "n5k 2: pasta"]);
+        pass.Readings[0].Failure.ShouldBeNull();
+        pass.Readings[1].Failure.ShouldBe("the run threw InvalidOperationException: refused at the send");
+    }
+}

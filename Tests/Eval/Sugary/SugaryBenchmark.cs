@@ -95,16 +95,28 @@ public static class SugaryBenchmark
 
     // Every meal at once, each in a stack of its own: the gate EvalRun holds bounds how many stand
     // at a time (ZIGGURAT_EVAL_PARALLELISM), as it does for the scenarios. Read back in the cases'
-    // order, so two passes list their meals the same way.
-    public static async Task<SugaryPass> RunAsync(IReadOnlyList<SugaryCase> cases, int photosPerCase)
+    // order, so two passes list their meals the same way. A meal whose run throws is a failed meal
+    // with the exception as its reason: one refusal must not lose the rest of a paid pass.
+    public static async Task<SugaryPass> RunAsync(
+        IReadOnlyList<SugaryCase> cases, int photosPerCase, Func<Scenario, Task<Recording>>? execute = null)
     {
+        execute ??= EvalRun.ExecuteAsync;
         var recordings = new ConcurrentDictionary<int, Recording>();
         var readings = await Task.WhenAll(cases.Select(async (meal, index) =>
         {
             var scenario = ScenarioOf(meal, photosPerCase);
-            var recording = await EvalRun.ExecuteAsync(scenario);
-            recordings[index] = recording;
-            return Read(meal, scenario, recording);
+            try
+            {
+                var recording = await execute(scenario);
+                recordings[index] = recording;
+                return Read(meal, scenario, recording);
+            }
+            catch (Exception e)
+            {
+                return SugaryReading.Failed(
+                    meal, $"the run threw {e.GetType().Name}: {e.Message.ReplaceLineEndings(" ")}",
+                    TimeSpan.Zero, Spend.Nothing, scenario.Turn.Attachments.Count);
+            }
         }));
 
         var ordered = recordings.OrderBy(run => run.Key).Select(run => run.Value).ToList();
