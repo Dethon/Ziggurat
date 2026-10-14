@@ -108,6 +108,16 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
     // observed on its way past.
     public string Reply { get; set; } = "";
 
+    // The reply as a channel reads it: the last message that said anything, where Reply joins
+    // every message the turn wrote. A structured answer is parsed from this one.
+    public string? Answer { get; set; }
+
+    // How long the turn took, from the request going out to the answer, without the stack.
+    public TimeSpan Elapsed { get; set; }
+
+    // The attachments of the turn whose bytes the model was sent at least once.
+    public IReadOnlyList<string> AttachmentsServed { get; set; } = [];
+
     // The run hit its own deadline. Kept on the recording rather than thrown, so a scenario that
     // times out lands on the scorecard as a failure with a reason instead of vanishing from it.
     public bool TimedOut { get; set; }

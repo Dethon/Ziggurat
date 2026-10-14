@@ -22,6 +22,7 @@ using McpServerHomeAssistant.Modules;
 using McpServerHomeAssistant.Settings;
 using McpServerScheduling.Modules;
 using McpServerScheduling.Settings;
+using McpServerSugary.Modules;
 using McpServerTimers.Modules;
 using McpServerTimers.Settings;
 using McpServerVault.Modules;
@@ -110,6 +111,15 @@ public sealed class EvalStack : IAsyncDisposable
 
     public IAgentFactory Factory { get; private set; } = null!;
 
+    // The files the turn's channel holds, answered at the fetch hydration makes (EvalAttachments).
+    public EvalAttachments Attachments { get; private set; } = null!;
+
+    // Sugary's server, by the compose host name the sugary agent dials.
+    public const string Sugary = "mcp-sugary";
+
+    // Where Sugary's database and uploads rest for this run, deleted with the stack.
+    private string? _sugaryPath;
+
     // The agent's exec bridge, hosted the way the deployment hosts it: the sandbox's daemons call
     // it for every file operation a command makes on the other mounts. One instance, registered
     // into the agent's services over the one AddAgent made, so the tokens the exec tool mints are
@@ -134,26 +144,74 @@ public sealed class EvalStack : IAsyncDisposable
         // once the zone is. The provider carries it so every server and the turn decoration agree.
         stack.Clock.SetLocalTimeZone(TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"));
         stack.VoiceHub.Ringing = scenario.Turn.Ringing;
+        stack.Attachments = new EvalAttachments(scenario.Turn);
 
         var shipped = ShippedSettings(redisConnectionString);
 
-        // All three mounts, on every scenario, because what the timer contract discriminates is
-        // *which* of them a request belongs in. A stack that hosted only the mount the answer
-        // lands in would leave the model no wrong place to put it, and a discrimination with one
-        // option is not one.
-        stack.Sandbox = await EvalSandbox.StartAsync(await stack.StartBridgeAsync());
-
-        stack.BuildAgentServices(shipped, recording, scenario, new Dictionary<string, string>
+        // Every mount the agent dials, on every scenario, because what the timer contract
+        // discriminates is *which* of them a request belongs in. A stack that hosted only the mount
+        // the answer lands in would leave the model no wrong place to put it, and a discrimination
+        // with one option is not one. What the agent does not dial is not started: its endpoint
+        // would be dropped from the definition anyway, so it could only cost the run its time.
+        var dialled = Dialled(shipped, scenario.AgentId);
+        var hosted = new Dictionary<string, string>();
+        if (dialled.Contains("mcp-sandbox"))
         {
-            ["mcp-timers"] = await stack.StartTimersAsync(scenario),
-            ["mcp-scheduling"] = await stack.StartSchedulingAsync(shipped, redisConnectionString),
-            ["mcp-homeassistant"] = await stack.StartHomeAssistantAsync(),
-            ["mcp-vault"] = await stack.StartVaultAsync(),
-            ["mcp-websearch"] = await stack.StartWebSearchAsync(),
-            ["mcp-sandbox"] = stack.Sandbox.Endpoint
-        });
+            stack.Sandbox = await EvalSandbox.StartAsync(await stack.StartBridgeAsync());
+            hosted["mcp-sandbox"] = stack.Sandbox.Endpoint;
+        }
+
+        if (dialled.Contains("mcp-timers"))
+        {
+            hosted["mcp-timers"] = await stack.StartTimersAsync(scenario);
+        }
+
+        if (dialled.Contains("mcp-scheduling"))
+        {
+            hosted["mcp-scheduling"] = await stack.StartSchedulingAsync(shipped, redisConnectionString);
+        }
+
+        if (dialled.Contains("mcp-homeassistant"))
+        {
+            hosted["mcp-homeassistant"] = await stack.StartHomeAssistantAsync();
+        }
+
+        if (dialled.Contains("mcp-vault"))
+        {
+            hosted["mcp-vault"] = await stack.StartVaultAsync();
+        }
+
+        if (dialled.Contains("mcp-websearch"))
+        {
+            hosted["mcp-websearch"] = await stack.StartWebSearchAsync();
+        }
+
+        if (dialled.Contains(Sugary))
+        {
+            hosted[Sugary] = await stack.StartSugaryAsync();
+        }
+
+        stack.BuildAgentServices(shipped, recording, scenario, hosted);
 
         return stack;
+    }
+
+    // The compose hosts a run of this agent can reach: its own servers, and its workers' when it
+    // has any. By host name, the way Rewrite matches an endpoint to the server standing in for it.
+    public static IReadOnlyList<string> Dialled(AgentSettings settings, string agentId)
+    {
+        var agent = settings.Agents.Single(a => a.Id == agentId);
+        var workers = agent.EnabledFeatures.Any(feature =>
+            feature.Equals("subagents", StringComparison.OrdinalIgnoreCase))
+            ? settings.SubAgents.SelectMany(worker => worker.McpServerEndpoints)
+            : [];
+
+        return
+        [
+            .. agent.McpServerEndpoints.Concat(workers)
+                .Select(endpoint => new Uri(endpoint).Host)
+                .Distinct(StringComparer.Ordinal)
+        ];
     }
 
     private async Task<string> StartBridgeAsync()
@@ -323,6 +381,26 @@ public sealed class EvalStack : IAsyncDisposable
         return _browser;
     }
 
+    // Sugary's own server, module and all, on a database and an upload directory of this run's
+    // own: the sugary agent's estimating prompt and its skill are served from here, so a stack
+    // without it would measure the agent with neither. Her log is seeded through the server's
+    // store, so /sugary renders it as it renders hers.
+    private async Task<string> StartSugaryAsync()
+    {
+        _sugaryPath = Path.Combine(Path.GetTempPath(), $"eval-sugary-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_sugaryPath);
+
+        var port = TestPort.GetAvailable();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.Services.ConfigureSugary(EvalSugaryLog.Settings(_sugaryPath));
+
+        var endpoint = await StartAsync(builder, port);
+        await EvalSugaryLog.SeedAsync(_servers[^1].Services);
+
+        return endpoint;
+    }
+
     // The scheduling server, on the same Redis the agent uses. Its keys are fixed names rather
     // than a per-run prefix, so the slate is wiped on the way in: a schedule left behind by the
     // previous run would show up in this one's listing and count against its ceiling.
@@ -420,6 +498,9 @@ public sealed class EvalStack : IAsyncDisposable
         }
 
         services.AddSingleton<IVfsBridge>(Bridge);
+        // After the agent's own source, so it wins the resolution: the channel's fetch, answered
+        // from the scenario's files because nothing here dials the channel that would hold them.
+        services.AddSingleton<IAttachmentSource>(Attachments);
         // The scenario's instant, so the prompt's "today is" is the day the turn is stamped with.
         services.Replace(ServiceDescriptor.Singleton<TimeProvider>(new PinnedClock(Clock)));
 
@@ -498,10 +579,31 @@ public sealed class EvalStack : IAsyncDisposable
             await _agentServices.DisposeAsync();
         }
 
-        await Music.DisposeAsync();
-        await HomeSocket.DisposeAsync();
-        await Web.DisposeAsync();
-        await Sandbox.DisposeAsync();
+        // Only what this run started: a stack stands up the servers its agent dials and no more.
+        if (Music is not null)
+        {
+            await Music.DisposeAsync();
+        }
+
+        if (HomeSocket is not null)
+        {
+            await HomeSocket.DisposeAsync();
+        }
+
+        if (Web is not null)
+        {
+            await Web.DisposeAsync();
+        }
+
+        if (Sandbox is not null)
+        {
+            await Sandbox.DisposeAsync();
+        }
+
+        if (_sugaryPath is not null && Directory.Exists(_sugaryPath))
+        {
+            Directory.Delete(_sugaryPath, recursive: true);
+        }
 
         if (_browser is not null)
         {

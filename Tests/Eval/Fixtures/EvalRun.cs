@@ -64,6 +64,9 @@ public static class EvalRun
         // A deadline reached is a result, not an accident: the scenario keeps its row and says
         // the turn never finished. Throwing here dropped the scenario off the scorecard entirely,
         // which reads as a scenario nobody ran rather than one the model could not finish.
+        // The turn alone, as the standalone benchmark timed an estimate: the stack standing up is
+        // the harness's time, not the person's wait.
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var response = await agent.RunAsync(
@@ -71,6 +74,7 @@ public static class EvalRun
                 cancellationToken: cancellation.Token);
 
             recording.Reply = response.Text;
+            recording.Answer = Answer(response.Messages);
         }
         catch (Exception ex) when (ex is OperationCanceledException or TaskCanceledException
                                    && cancellation.IsCancellationRequested)
@@ -84,6 +88,8 @@ public static class EvalRun
         {
             recording.ProviderError = ex.Message.ReplaceLineEndings(" ").Trim();
         }
+        recording.Elapsed = clock.Elapsed;
+        recording.AttachmentsServed = stack.Attachments.Served;
         recording.StateAfter = stack.Home.Snapshot();
         recording.FilesAfter = EvalVault.Read(stack.VaultPath);
         recording.Delegations = scenario.Workers == WorkerMode.Real
@@ -118,18 +124,32 @@ public static class EvalRun
         var message = Decorate(
             new ChatMessage(ChatRole.User, scenario.Turn.Text), scenario, scenario.Instant);
         message.SetDismissedAlert(scenario.Turn.DismissedAlert);
+        // As ConversationGroup stamps a channel's message: the format for this turn alone, and the
+        // files as references of the channel that holds them — never bytes on the turn (ADR-0020).
+        message.SetResponseFormat(scenario.Turn.ResponseFormat);
+        var attachments = EvalAttachments.References(scenario.Turn);
+        message.SetAttachments(attachments.Count > 0 ? attachments : null);
+        message.SetAttachmentChannelId(attachments.Count > 0 ? EvalAttachments.Channel(scenario.Turn) : null);
         // Set on the message the recall hook would have set it on, so the block reaches the model
         // through the decoration that renders it in production rather than through a second path.
         message.SetMemoryContext(memories);
         message.SetConversationContext(new ConversationContext(
             scenario.AgentId, conversationId, UserId,
             new ReplyTarget(
-                scenario.Turn.Channel ?? (scenario.Turn.SatelliteId is null ? "signalr" : "voice"),
+                EvalAttachments.Channel(scenario.Turn),
                 conversationId,
                 scenario.Turn.SatelliteId)));
 
         return message;
     }
+
+    // What a channel reads as the answer: the last message that said anything. The Sugary channel
+    // collects text per message and parses the last one, so a line written before a tool call is
+    // never read as the estimate — and the benchmark reads the same message the app would.
+    public static string? Answer(IEnumerable<ChatMessage> messages) =>
+        messages
+            .LastOrDefault(message => message.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(message.Text))
+            ?.Text;
 
     private static ChatMessage Decorate(ChatMessage message, Scenario scenario, DateTimeOffset at)
     {

@@ -61,3 +61,78 @@ public class EvalRunTests
         single.ShouldHaveSingleItem().Text.ShouldBe("resúmemelo en una frase");
     }
 }
+// A channel's turn, as ConversationGroup builds it from the channel's message: the format the
+// answer must take and the attachments as references the channel still holds, never bytes.
+public class EvalRunChannelTurnTests
+{
+    private static Scenario Formatted(params EvalAttachment[] attachments) => new()
+    {
+        Name = "a formatted turn with photos",
+        AgentId = "sugary",
+        Turn = new EvalTurn
+        {
+            Text = "One photo of the meal is attached.",
+            Sender = "sugary-app",
+            Channel = "sugary",
+            ResponseFormat = Domain.Tools.Sugary.Estimation.MealEstimateSchema.Format,
+            Attachments = attachments
+        },
+        Instant = new DateTimeOffset(2026, 10, 15, 14, 0, 0, TimeSpan.FromHours(2)),
+        CallCeiling = 1
+    };
+
+    [Fact]
+    public void Turn_CarriesTheFormat_AndTheAttachmentsAsReferencesOfItsChannel()
+    {
+        var photo = Path.GetTempFileName();
+        File.WriteAllBytes(photo, [1, 2, 3, 4, 5]);
+        try
+        {
+            var turn = EvalRun.Turn(Formatted(new EvalAttachment(photo, "image/jpeg")), "eval:test");
+
+            turn.GetResponseFormat()!.Name.ShouldBe("meal_estimate");
+            var reference = turn.GetAttachments().ShouldHaveSingleItem();
+            reference.Id.ShouldBe(EvalAttachments.References(Formatted(new EvalAttachment(photo, "image/jpeg")).Turn)[0].Id);
+            reference.FileName.ShouldBe(Path.GetFileName(photo));
+            reference.MediaType.ShouldBe("image/jpeg");
+            reference.SizeBytes.ShouldBe(5);
+            turn.GetAttachmentChannelId().ShouldBe("sugary");
+            turn.Contents.ShouldAllBe(content => content is TextContent);
+            turn.GetConversationContext()!.Origin.ChannelId.ShouldBe("sugary");
+        }
+        finally
+        {
+            File.Delete(photo);
+        }
+    }
+
+    [Fact]
+    public void ATurnWithNothingAttached_NamesNoChannelAndNoFormat()
+    {
+        var plain = Formatted() with { Turn = Formatted().Turn with { ResponseFormat = null } };
+
+        var turn = EvalRun.Turn(plain, "eval:test");
+
+        turn.GetAttachments().ShouldBeNull();
+        turn.GetAttachmentChannelId().ShouldBeNull();
+        turn.GetResponseFormat().ShouldBeNull();
+    }
+
+    // The channel's own rule: the reply is the last message that said anything. A turn that
+    // writes a line, calls a tool and then answers sends two messages, and only the last is read.
+    [Fact]
+    public void Answer_IsTheLastAssistantMessageWithText()
+    {
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, "let me look"),
+            new(ChatRole.Assistant, [new FunctionCallContent("1", "domain__filesystem__file_read")]),
+            new(ChatRole.Tool, [new FunctionResultContent("1", "ok")]),
+            new(ChatRole.Assistant, "{\"items\":[]}"),
+            new(ChatRole.Assistant, [new FunctionCallContent("2", "x")])
+        };
+
+        EvalRun.Answer(messages).ShouldBe("{\"items\":[]}");
+        EvalRun.Answer([new ChatMessage(ChatRole.Tool, [new FunctionResultContent("1", "ok")])]).ShouldBeNull();
+    }
+}

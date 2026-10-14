@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Voice;
 using Infrastructure.Agents.Skills;
 
@@ -166,7 +167,18 @@ public sealed record EvalTurn
     // back. Null means the chat, or voice when a satellite is named — the two every other scenario
     // already implies.
     public string? Channel { get; init; }
+
+    // The schema a channel asked the answer in, honoured for this turn alone (ADR-0044). Null is a
+    // turn answered in prose, which is every channel but Sugary's.
+    public ResponseFormat? ResponseFormat { get; init; }
+
+    // Files the channel holds for this turn, in the order the person sent them. They reach the
+    // agent as references of the turn's channel, and the stack answers the fetch hydration makes.
+    public IReadOnlyList<EvalAttachment> Attachments { get; init; } = [];
 }
+
+// A file on disk standing in for one the channel took from the person.
+public sealed record EvalAttachment(string Path, string MediaType);
 
 // How many of how many runs must pass. Never a retry-until-green: half the assertions in this
 // suite are negative, and retrying past a failure hides exactly the regression being hunted.
