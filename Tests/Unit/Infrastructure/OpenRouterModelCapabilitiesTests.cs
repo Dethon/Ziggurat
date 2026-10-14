@@ -45,6 +45,20 @@ public sealed class OpenRouterModelCapabilitiesTests : IDisposable
         _capabilities.GetAcceptedAttachmentKinds("openai/sees-only").ShouldBe([AttachmentKind.Image]);
     }
 
+    // A model that watches a clip is told apart from one that only looks at pictures by the same
+    // list, so the send can pick the clip or its stills without anyone keeping a list of either.
+    [Fact]
+    public async Task AModelTheProviderListsAsTakingVideo_AcceptsVideo()
+    {
+        StubModels(200, Catalogue());
+
+        await _capabilities.RefreshAsync(CancellationToken.None);
+
+        _capabilities.GetAcceptedAttachmentKinds("google/watches")
+            .ShouldBe([AttachmentKind.Image, AttachmentKind.Video], ignoreOrder: true);
+        _capabilities.GetAcceptedAttachmentKinds("openai/sees-only").ShouldNotContain(AttachmentKind.Video);
+    }
+
     [Fact]
     public async Task AModelIdWrittenAsAnAlias_ResolvesToTheModelItNames()
     {
@@ -126,6 +140,11 @@ public sealed class OpenRouterModelCapabilitiesTests : IDisposable
             {
                 id = "openai/sees-only",
                 architecture = new { input_modalities = new[] { "text", "image" } }
+            },
+            new
+            {
+                id = "google/watches",
+                architecture = new { input_modalities = new[] { "text", "image", "video" } }
             }
         }
     });

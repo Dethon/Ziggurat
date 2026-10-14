@@ -2,20 +2,21 @@ using JetBrains.Annotations;
 
 namespace Domain.DTOs.Channel;
 
-// What a model has to accept for an attachment of that kind to be worth sending. Two kinds, not a
+// What a model has to accept for an attachment of that kind to be worth sending. A few kinds, not a
 // media type list: capability belongs to the model, and providers describe it at this width.
 [PublicAPI]
 public enum AttachmentKind
 {
     Image,
-    Document
+    Document,
+    Video
 }
 
 [PublicAPI]
 public static class AttachmentKinds
 {
     public static IReadOnlyList<AttachmentKind> All { get; } =
-        [AttachmentKind.Image, AttachmentKind.Document];
+        [AttachmentKind.Image, AttachmentKind.Document, AttachmentKind.Video];
 
     public static bool IsImage(string? mediaType) => ForMediaType(mediaType) == AttachmentKind.Image;
 
