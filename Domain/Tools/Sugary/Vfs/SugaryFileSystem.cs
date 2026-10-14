@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -172,7 +173,7 @@ public sealed class SugaryFileSystem(
     private async Task<IReadOnlyList<LoggedMeal>> MealsInAsync(string month, CancellationToken ct)
     {
         var first = DateTimeOffset.ParseExact(
-            month + "-01T00:00:00Z", "yyyy-MM-dd'T'HH:mm:ssK", System.Globalization.CultureInfo.InvariantCulture);
+            month + "-01T00:00:00Z", "yyyy-MM-dd'T'HH:mm:ssK", CultureInfo.InvariantCulture);
         var meals = await log.MealsAsync(first.AddDays(-1), first.AddMonths(1).AddDays(1), ct);
         return meals.Where(meal => SugaryTables.Month(meal.EatenAt, homeZone) == month).ToList();
     }
