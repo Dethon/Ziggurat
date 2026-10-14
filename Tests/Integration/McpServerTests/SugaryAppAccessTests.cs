@@ -20,7 +20,8 @@ public class SugaryAppAccessTests
         { "GET", "/api/foods" },
         { "POST", "/api/foods" },
         { "PUT", $"/api/foods/{Guid.NewGuid()}" },
-        { "DELETE", $"/api/foods/{Guid.NewGuid()}" }
+        { "DELETE", $"/api/foods/{Guid.NewGuid()}" },
+        { "GET", "/api/products/8410188012092" }
     };
 
     [Theory]

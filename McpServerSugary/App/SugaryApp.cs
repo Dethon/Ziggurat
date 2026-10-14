@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
@@ -28,6 +29,14 @@ public static class SugaryApp
         services.AddDataProtection()
             .SetApplicationName("Sugary")
             .PersistKeysToFileSystem(new DirectoryInfo(KeysDirectory(settings)));
+
+        services.AddHttpClient<OpenFoodFactsClient>(http =>
+        {
+            http.BaseAddress = new Uri(settings.OpenFoodFactsUrl);
+            http.Timeout = TimeSpan.FromSeconds(15);
+            // Open Food Facts asks every client to identify itself.
+            http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Sugary", "1.0"));
+        });
 
         services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(cookie =>
         {
@@ -74,6 +83,7 @@ public static class SugaryApp
         var guarded = api.MapGroup("").RequireAuthorization();
         guarded.MapMealEndpoints();
         guarded.MapFoodEndpoints();
+        guarded.MapProductEndpoints();
 
         api.MapFallback(() => Results.NotFound());
         return app;
