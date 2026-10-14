@@ -2,7 +2,8 @@
 
 The cases the Sugary eval tier scores the `sugary` agent on. `cases.json` is the standalone Sugary
 app's `eval/external/cases.json`, copied unchanged, so a score here and a score there are measured
-against the same truth.
+against the same truth. `video-cases.json` films its 14 Nutrition5k dishes again (see "The video
+cases" below).
 
 `carbs` in every case is what an estimate is scored against: available carbohydrate, excluding
 fibre, the number a European label shows.
@@ -54,6 +55,37 @@ Without it, fetch each dataset from the link above and save the photo each case 
 file name: Nutrition5k's overhead RGB image of the dish id, NutritionVerse-Real's four images of
 the dish id as `a` to `d`, SNAPMe's image whose file name starts with the id.
 
+## The video cases
+
+`video-cases.json` is the 14 `n5k` dishes again, each named `n5k <dish> (video): …` with the same
+truth as its photographed case, sending a clip and no photo. They are what the standalone benchmark
+measured video on (2026-10-12), and the scorecard keeps them apart from the photos (`byInput`,
+`bySetAndInput`).
+
+- **The clip** is Nutrition5k's side-angle videos of the dish: up to four fixed cameras on a rig
+  circling the plate, every frame played at 4 a second, one camera after another, made 960x540
+  H.264 with no sound. About 30 to 50 s each (one dish has two cameras and 14 s).
+- **The stills** are two frames per camera, at a quarter and three quarters of it, 1568 px wide:
+  eight per dish, four for the two-camera one. The clip names them, so a model that only sees
+  pictures is sent the stills instead of the clip, as the Sugary channel's own stills would be
+  (ADR-0045). A model that watches video gets the clip alone.
+- **These are cafeteria plates filmed by a rig, not her meals filmed by a phone**, and Gemini may
+  have seen this Google dataset. Her own weighed clips remain the real test.
+- **They are longer than the app allows.** The Sugary server refuses a clip over 20 s. These were
+  kept at the standalone's length so that the first pass compares like with like (8.3 g below); they
+  are sent as files, as every case is, and do not pass through the server's own reading of a clip.
+
+The clips and stills are not in git. `fetch-clips.sh` makes them, the standalone's way, into
+`clips/` (about 30 MB, ignored) from Nutrition5k's public bucket (CC BY 4.0), keeping the raw camera
+files (about 300 MB) in `~/.cache/ziggurat/nutrition5k`. It needs curl, ffmpeg and ffprobe, and
+calls no model:
+
+```bash
+Tests/Eval/Sugary/fetch-clips.sh
+```
+
+A missing clip or still skips the tier like a missing photo.
+
 ## Running
 
 The tier is never part of a bare run, the full tier, the smoke tier or the changed tier, and it
@@ -64,7 +96,7 @@ ZIGGURAT_EVAL=1 ZIGGURAT_EVAL_MODEL=google/gemini-3.8-flash \
   dotnet test --filter "Category=Eval&Tier=Sugary"
 ```
 
-One pass is the 64 meals, one estimate each, plus the sugary agent's four scenarios
+One pass is the 78 meals (64 photographed, 14 filmed), one estimate each, plus the sugary agent's four scenarios
 (`Tests/Eval/Scenarios/SugaryScenarios.cs`) on the same model. Each meal is sent as the Sugary
 channel sends an estimate (the standalone app's words for one photo, the `meal_estimate` format, the
 photo as an attachment) and its answer is read by the server's own parse and arithmetic. The
@@ -92,7 +124,19 @@ The comparison a first pass is written against: the standalone app's own benchma
 | snap | 32 | 14.8 g | -11.1 g | 16 of 32 | 23 s |
 | all | 64 | 12.3 g | -8.3 g | 32 of 64 | 23 s |
 
-Every model tried there scored about 13–14 g from a photo. The Gemini row above was written about
+Every model tried there scored about 13–14 g from a photo.
+
+On the 14 `n5k` dishes, video against photo (2026-10-12/13, medium effort, the clips above):
+
+| Model | Input | Runs | Mean abs. error | Bias |
+|---|---|---|---|---|
+| Gemini 3.8 Flash | overhead photo | 3 | 11.2 g (12.2 / 9.9 / 11.5) | −6 to −8 g |
+| Gemini 3.8 Flash | clip | 3 | 8.3 g (8.4 / 7.5 / 9.0) | −1 to −2 g |
+| Gemini 3.8 Flash | the eight stills | 1 | 9.2 g | |
+| Haiku 5.5 | overhead photo | 1 | 13.5 g | |
+| Haiku 5.5 | the eight stills | 1 | 16.6 g (weights 1.5× too high) | |
+
+The gain came from meals of 30 g or more. A video estimate cost about $0.008 on Gemini. The Gemini row above was written about
 half an hour before the standalone's estimate gained its range floor (0.6× to 1.6× of the best
 weight on every item not marked high), which the server applies and this tier scores; the
 standalone's last Haiku 5.5 pass, with the floor, held the truth in 39 of 64 at 14.2 g. So read the

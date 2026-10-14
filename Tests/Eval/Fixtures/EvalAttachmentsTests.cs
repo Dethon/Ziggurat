@@ -60,4 +60,27 @@ public sealed class EvalAttachmentsTests : IDisposable
         references.Select(r => r.MediaType).ShouldBe(["image/jpeg", "image/png"]);
         references.Select(r => r.Id).Distinct().Count().ShouldBe(2);
     }
+
+    // A clip names its stills by the paths of attachments of the same turn, and the references name
+    // them by the ids those attachments are given, as the Sugary channel names its stills.
+    [Fact]
+    public void AClipsStills_AreNamedByTheIdsOfTheTurnsOwnAttachments()
+    {
+        var turn = Turn with
+        {
+            Attachments =
+            [
+                new EvalAttachment(_photo, "image/jpeg"),
+                new EvalAttachment("clip.mp4", "video/mp4", Stills: ["still-1.jpg", "still-2.jpg"]),
+                new EvalAttachment("still-1.jpg", "image/jpeg"),
+                new EvalAttachment("still-2.jpg", "image/jpeg")
+            ]
+        };
+
+        var references = EvalAttachments.References(turn);
+
+        references[1].Stills.ShouldBe([references[2].Id, references[3].Id]);
+        references[0].Stills.ShouldBeNull();
+        references[2].Stills.ShouldBeNull();
+    }
 }

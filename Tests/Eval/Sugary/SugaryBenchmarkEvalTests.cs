@@ -4,7 +4,8 @@ using Tests.Eval.Fixtures;
 namespace Tests.Eval.Sugary;
 
 // The Sugary tier's benchmark: the shipped sugary agent, on the model the pass names, estimating
-// the 64 benchmark meals from their photos, each scored against its known carbs. Never part of a
+// the 64 benchmark meals from their photos and 14 of them again from a clip, each scored against its
+// known carbs. Never part of a
 // full, smoke or changed pass, and never run without a model named:
 //
 //   ZIGGURAT_EVAL=1 ZIGGURAT_EVAL_MODEL=<openrouter id> dotnet test --filter "Category=Eval&Tier=Sugary"

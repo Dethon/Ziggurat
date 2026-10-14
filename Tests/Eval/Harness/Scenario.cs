@@ -188,8 +188,9 @@ public sealed record EstimateExpectation
     public IReadOnlyList<string> NeverListed { get; init; } = [];
 }
 
-// A file on disk standing in for one the channel took from the person.
-public sealed record EvalAttachment(string Path, string MediaType);
+// A file on disk standing in for one the channel took from the person. A clip names its stills by
+// the paths of other attachments of the same turn, as a channel names them by their references.
+public sealed record EvalAttachment(string Path, string MediaType, IReadOnlyList<string>? Stills = null);
 
 // How many of how many runs must pass. Never a retry-until-green: half the assertions in this
 // suite are negative, and retrying past a failure hides exactly the regression being hunted.

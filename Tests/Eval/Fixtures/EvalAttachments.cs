@@ -48,17 +48,26 @@ public sealed class EvalAttachments(EvalTurn turn) : IAttachmentSource
         return bytes;
     }
 
-    // The references the turn carries, built here so the turn and the fetch agree on every id.
-    public static IReadOnlyList<AttachmentReference> References(EvalTurn turn) =>
-    [
-        .. turn.Attachments.Select((attachment, index) => new AttachmentReference
-        {
-            Id = $"eval-attachment-{index + 1}",
-            FileName = Path.GetFileName(attachment.Path),
-            MediaType = attachment.MediaType,
-            SizeBytes = File.Exists(attachment.Path) ? new FileInfo(attachment.Path).Length : 0
-        })
-    ];
+    // The references the turn carries, built here so the turn and the fetch agree on every id. A
+    // clip's stills are named by the ids of the attachments at those paths.
+    public static IReadOnlyList<AttachmentReference> References(EvalTurn turn)
+    {
+        var ids = turn.Attachments
+            .Select((attachment, index) => (attachment.Path, Id: $"eval-attachment-{index + 1}"))
+            .DistinctBy(pair => pair.Path, StringComparer.Ordinal)
+            .ToDictionary(pair => pair.Path, pair => pair.Id, StringComparer.Ordinal);
+        return
+        [
+            .. turn.Attachments.Select((attachment, index) => new AttachmentReference
+            {
+                Id = $"eval-attachment-{index + 1}",
+                FileName = Path.GetFileName(attachment.Path),
+                MediaType = attachment.MediaType,
+                SizeBytes = File.Exists(attachment.Path) ? new FileInfo(attachment.Path).Length : 0,
+                Stills = attachment.Stills is { } stills ? [.. stills.Where(ids.ContainsKey).Select(still => ids[still])] : null
+            })
+        ];
+    }
 
     // The channel that holds the files is the one the turn came in on.
     public static string Channel(EvalTurn turn) =>

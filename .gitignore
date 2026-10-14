@@ -23,3 +23,5 @@ temp
 # The Sugary benchmark's photos: large, and under licences that restrict redistribution
 # (Tests/Eval/Sugary/README.md says where they come from)
 /Tests/Eval/Sugary/photos
+# ...and the clips and stills of its video cases, made from Nutrition5k by Tests/Eval/Sugary/fetch-clips.sh
+/Tests/Eval/Sugary/clips

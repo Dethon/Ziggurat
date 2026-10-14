@@ -13,7 +13,8 @@ public enum SugaryInput
 }
 
 // One benchmark meal with known carbs, as the standalone Sugary benchmark wrote it
-// (eval/external/cases.json there, copied here unchanged). `Carbs` is the truth the estimate is
+// (eval/external/cases.json there, copied here unchanged; video-cases.json films its 14 Nutrition5k
+// dishes again, from the same dataset, with the same truth). `Carbs` is the truth the estimate is
 // scored against: available carbohydrate with fibre excluded. The README beside the file says how
 // each set's truth was obtained and what that means for its score.
 public sealed record SugaryCase
@@ -25,8 +26,12 @@ public sealed record SugaryCase
     // Relative to the cases file. Not in git: the photos are fetched and placed by hand.
     public IReadOnlyList<string> Photos { get; init; } = [];
 
-    // A short film around the plate, relative to the cases file, for the video cases ticket 10 adds.
+    // A short film around the plate, relative to the cases file (video-cases.json's cases).
     public string? Clip { get; init; }
+
+    // Stills of the same plate the clip stands for, sent instead of it to a model that only sees
+    // pictures, as the Sugary channel sends the stills it takes from a clip.
+    public IReadOnlyList<string> Stills { get; init; } = [];
 
     // What the person typed. Null on every public case: the photo is what is measured.
     public string? Description { get; init; }
@@ -56,8 +61,13 @@ public static class SugaryCases
 
     public static string PhotoDirectory => Path.Combine(Directory, "photos");
 
+    // The photographed meals, then the filmed ones.
     private static readonly Lazy<IReadOnlyList<SugaryCase>> _shipped =
-        new(() => Parse(File.ReadAllText(Path.Combine(Directory, "cases.json"))));
+        new(() =>
+        [
+            .. Parse(File.ReadAllText(Path.Combine(Directory, "cases.json"))),
+            .. Parse(File.ReadAllText(Path.Combine(Directory, "video-cases.json")))
+        ]);
 
     public static IReadOnlyList<SugaryCase> Shipped => _shipped.Value;
 
@@ -85,6 +95,7 @@ public static class SugaryCases
                 Set = row.Set!,
                 Photos = row.Photos ?? [],
                 Clip = row.Clip,
+                Stills = row.Stills ?? [],
                 Description = row.Description,
                 Hint = row.Hint,
                 Carbs = row.Carbs!.Value,
@@ -96,6 +107,7 @@ public static class SugaryCases
     }
 
     private sealed record Row(
-        string? Name, string? Set, IReadOnlyList<string>? Photos, string? Clip, string? Description,
+        string? Name, string? Set, IReadOnlyList<string>? Photos, string? Clip, IReadOnlyList<string>? Stills,
+        string? Description,
         string? Hint, double? Carbs, double? TotalCarbs, double? Grams, string? Truth);
 }

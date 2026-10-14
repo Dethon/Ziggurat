@@ -50,13 +50,32 @@ public class SugaryBenchmarkTests
         turn.Text.ShouldContain("The person's description:\ntwo pieces of roast chicken");
     }
 
-    // A filmed meal (ticket 10) sends its clip after the photos.
+    // A filmed meal is sent as the Sugary channel sends one: the clip after her photos, naming its
+    // stills, and the stills as pictures of the same turn, so the send can give a model that only
+    // sees pictures the stills instead (ADR-0045).
     [Fact]
-    public void AFilmedMeal_SendsItsClipAfterThePhotos()
+    public void AFilmedMeal_SendsItsClipNamingItsStills_AfterThePhotos()
     {
-        var turn = SugaryBenchmark.ScenarioOf(_plate with { Clip = "clips/nvr-41.mp4" }, 1).Turn;
+        var turn = SugaryBenchmark.ScenarioOf(
+            _plate with { Clip = "clips/nvr-41.mp4", Stills = ["clips/nvr-41-A1.jpg", "clips/nvr-41-B1.jpg"] }, 1).Turn;
 
-        turn.Attachments.Last().ShouldBe(new EvalAttachment(Path.Combine(SugaryCases.Directory, "clips/nvr-41.mp4"), "video/mp4"));
+        turn.Text.ShouldBe(MealTurn.Text(new MealInput(1, null, null, "en", Filmed: true)));
+        turn.Attachments.Select(a => (Path.GetRelativePath(SugaryCases.Directory, a.Path), a.MediaType)).ShouldBe(
+        [
+            ("photos/nvr-41a.jpg", "image/jpeg"), ("clips/nvr-41.mp4", "video/mp4"),
+            ("clips/nvr-41-A1.jpg", "image/jpeg"), ("clips/nvr-41-B1.jpg", "image/jpeg")
+        ]);
+        turn.Attachments[1].Stills.ShouldBe([turn.Attachments[2].Path, turn.Attachments[3].Path]);
+    }
+
+    // The standalone's video figures were measured from the clip alone, with no photo beside it.
+    [Fact]
+    public void AMealFilmedAndNotPhotographed_SaysItIsAVideo_NeverAMealWithNoPhoto()
+    {
+        var turn = SugaryBenchmark.ScenarioOf(_plate with { Photos = [], Clip = "clips/n5k-1.mp4" }, 1).Turn;
+
+        turn.Text.ShouldStartWith("A video of the meal is attached, filmed while moving around the plate.");
+        turn.Attachments.ShouldHaveSingleItem().MediaType.ShouldBe("video/mp4");
     }
 
     [Fact]
@@ -102,7 +121,7 @@ public class SugaryBenchmarkTests
         SugaryBenchmark.WhyNot(armed: true, apiKey: null, model: "m", missingPhotos: 0)
             .ShouldNotBeNull().ShouldContain("openRouter:apiKey");
         SugaryBenchmark.WhyNot(armed: true, apiKey: "k", model: "m", missingPhotos: 3)
-            .ShouldNotBeNull().ShouldContain("3 of the benchmark's photos");
+            .ShouldNotBeNull().ShouldContain("3 of the benchmark's photos and clips");
     }
 
     [Fact]
@@ -117,6 +136,15 @@ public class SugaryBenchmarkTests
 
         SugaryBenchmark.MissingPhotos(cases, photosPerCase: 1).ShouldBe(1);
         SugaryBenchmark.MissingPhotos(cases, photosPerCase: 2).ShouldBe(2);
+    }
+
+    // A filmed meal whose clip or stills are not on disk would be estimated from less than it says.
+    [Fact]
+    public void AMissingClipOrStill_CountsAsMissing()
+    {
+        var cases = new[] { _plate with { Photos = [], Clip = "clips/missing.mp4", Stills = ["clips/missing-A1.jpg"] } };
+
+        SugaryBenchmark.MissingPhotos(cases, photosPerCase: 1).ShouldBe(2);
     }
 
     [Fact]
@@ -147,6 +175,28 @@ public class SugaryBenchmarkTests
         reading.Elapsed.ShouldBe(TimeSpan.FromSeconds(7));
         SugaryBenchmark.Read(_plate, scenario, new Recording { Answer = "{}" }).Failure
             .ShouldBe("only 0 of 1 photos reached the model");
+    }
+
+    // A filmed meal reaches a model as its clip or as its stills, never both (ADR-0045), so it was
+    // seen whole when every photo was served and either the clip or every still was.
+    [Theory]
+    [InlineData("the clip, on a model that watches video", new[] { "eval-attachment-1", "eval-attachment-2" }, null)]
+    [InlineData("the stills, on a model that only sees pictures",
+        new[] { "eval-attachment-1", "eval-attachment-3", "eval-attachment-4" }, null)]
+    [InlineData("one still short", new[] { "eval-attachment-1", "eval-attachment-3" },
+        "only 1 of 2 photos reached the model")]
+    [InlineData("the clip but not the photo", new[] { "eval-attachment-2" }, "only 1 of 2 photos reached the model")]
+    public void AFilmedMeal_WasSeenWhole_WhenItsPhotosAndEitherItsClipOrEveryStillWereServed(
+        string what, string[] served, string? failure)
+    {
+        var filmed = _plate with { Clip = "clips/nvr-41.mp4", Stills = ["clips/nvr-41-A1.jpg", "clips/nvr-41-B1.jpg"] };
+        var scenario = SugaryBenchmark.ScenarioOf(filmed, 1);
+
+        SugaryBenchmark.Read(filmed, scenario, new Recording
+        {
+            Answer = """{"items":[],"questions":[],"notes":[]}""",
+            AttachmentsServed = served
+        }).Failure.ShouldBe(failure, what);
     }
 
     // The tier runs only when its filter asks for it: never in the full tier, the smoke tier or
