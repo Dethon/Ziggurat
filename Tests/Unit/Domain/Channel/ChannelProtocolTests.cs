@@ -125,6 +125,35 @@ public class ChannelProtocolTests
         JsonElement.DeepEquals(parsed.ResponseFormat.Schema, schema).ShouldBeTrue();
     }
 
+    // A clip names its stills on the wire; every other reference reads exactly as it did before.
+    [Fact]
+    public void Serialize_MessageNotificationWithAClip_CarriesItsStillsAndNothingNewOnAPhoto()
+    {
+        var notification = new ChannelMessageNotification
+        {
+            ConversationId = "conv-1",
+            Sender = "app",
+            Content = "my lunch",
+            Attachments =
+            [
+                new AttachmentReference
+                {
+                    Id = "clip", FileName = "plate.mp4", MediaType = "video/mp4", SizeBytes = 9,
+                    Stills = ["still-1", "still-2"]
+                },
+                new AttachmentReference { Id = "still-1", FileName = "s1.jpg", MediaType = "image/jpeg", SizeBytes = 4 }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(notification, ChannelProtocol.SerializerOptions);
+        var parsed = JsonSerializer.Deserialize<ChannelMessageNotification>(json, ChannelProtocol.SerializerOptions);
+
+        json.ShouldContain("\"stills\":[\"still-1\",\"still-2\"]");
+        json.Split("\"stills\"").Length.ShouldBe(2);
+        parsed!.Attachments![0].Stills.ShouldBe(["still-1", "still-2"]);
+        parsed.Attachments[1].Stills.ShouldBeNull();
+    }
+
     [Fact]
     public void Serialize_WidenedAgentCatalogEntry_RoundTrips()
     {

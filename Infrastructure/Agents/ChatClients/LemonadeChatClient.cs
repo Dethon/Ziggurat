@@ -35,7 +35,8 @@ public sealed class LemonadeChatClient : IChatClient
         int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
-        Func<string, int?>? contextWindowFor = null)
+        Func<string, int?>? contextWindowFor = null,
+        Func<string, bool>? modelAcceptsVideo = null)
     {
         _address = host.Address;
         var hasKey = !string.IsNullOrWhiteSpace(host.ApiKey);
@@ -61,7 +62,8 @@ public sealed class LemonadeChatClient : IChatClient
             contextWindowFor: contextWindowFor,
             // A timed-out turn is one the SDK would otherwise send again; the box must never see
             // a turn twice, so the wire's own failures are the only ones and each is thrown once.
-            maxRetries: 0);
+            maxRetries: 0,
+            modelAcceptsVideo: modelAcceptsVideo);
     }
 
     public async Task<ChatResponse> GetResponseAsync(

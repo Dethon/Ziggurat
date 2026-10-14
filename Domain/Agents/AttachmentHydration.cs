@@ -26,7 +26,8 @@ public static class AttachmentHydration
         IAttachmentSource? source,
         ReadImageContext readImages,
         int depthMessages,
-        CancellationToken ct)
+        CancellationToken ct,
+        ModelInputs? inputs = null)
     {
         // Parsed once for the whole send. Recognising an image read means serializing every tool
         // result in a message, so asking twice would make every send pay it again for every tool
@@ -58,7 +59,7 @@ public static class AttachmentHydration
             hydrated.Add(message switch
             {
                 _ when source is not null && NeedsHydrating(message) =>
-                    await HydrateAsync(message, source, withinDepth, ct),
+                    await HydrateAsync(message, source, inputs, withinDepth, ct),
                 _ when imageReads[index].Count > 0 =>
                     await ReadImageHydration.ExpandAsync(
                         message, imageReads[index], readImages, withinDepth, ct),
@@ -97,7 +98,7 @@ public static class AttachmentHydration
         || message.GetLandingFailures() is { Count: > 0 };
 
     private static async Task<ChatMessage> HydrateAsync(
-        ChatMessage message, IAttachmentSource source, bool withinDepth, CancellationToken ct)
+        ChatMessage message, IAttachmentSource source, ModelInputs? inputs, bool withinDepth, CancellationToken ct)
     {
         var contents = new List<AIContent>();
 
@@ -117,7 +118,10 @@ public static class AttachmentHydration
             contents.Add(new TextContent(AttachmentLanding.DescribeFailures(failed)));
         }
 
-        var attachments = message.GetAttachments() ?? [];
+        // Decided before any byte is fetched, so a still the model will not be sent is never asked
+        // for and a refused turn costs the channel nothing.
+        var attachments = ClipSelection.For(
+            message.GetAttachments() ?? [], inputs ?? ModelInputs.Everything("The model"), withinDepth);
         var channelId = message.GetAttachmentChannelId();
         if (attachments.Count > 0 && string.IsNullOrWhiteSpace(channelId))
         {

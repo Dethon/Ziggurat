@@ -20,6 +20,11 @@ internal static class MessageTruncator
     // make the truncator drop every earlier message to make room for it. ADR 0020 puts a heavy
     // PDF at about 50,000 tokens, so that is where an attachment's estimate stops.
     private const int ImageTokens = 1_500;
+
+    // A clip is billed by how long it runs, at roughly 260 tokens a second for the models that take
+    // video; the one channel that sends clips cuts them at 20 seconds, so this is that clip's bill
+    // with a margin. Flat for the reason an image is: the encoder's byte count says nothing about it.
+    private const int VideoTokens = 6_000;
     private const int DocumentBytesPerToken = 50;
     private const int MaxAttachmentTokens = 50_000;
 
@@ -179,13 +184,17 @@ internal static class MessageTruncator
     };
 
     // Without a case here an attachment counts as a fixed handful of tokens and truncation goes
-    // blind on a large document. The two kinds do not scale the same way: a provider resizes an
-    // image into its own tile scheme before billing, so the file's size says almost nothing, while
-    // a document is billed on what it parses to, which does track its size — up to the ceiling.
+    // blind on a large document. The kinds do not scale the same way: a provider resizes an image
+    // into its own tile scheme and bills a clip by its running time, so neither file's size says
+    // much, while a document is billed on what it parses to, which does track its size — up to
+    // the ceiling.
     private static int EstimateAttachmentTokens(DataContent content)
     {
-        return AttachmentKinds.IsImage(content.MediaType)
-            ? ImageTokens
-            : (int)Math.Min(MaxAttachmentTokens, content.Data.Length / (long)DocumentBytesPerToken);
+        return AttachmentKinds.ForMediaType(content.MediaType) switch
+        {
+            AttachmentKind.Image => ImageTokens,
+            AttachmentKind.Video => VideoTokens,
+            _ => (int)Math.Min(MaxAttachmentTokens, content.Data.Length / (long)DocumentBytesPerToken)
+        };
     }
 }
