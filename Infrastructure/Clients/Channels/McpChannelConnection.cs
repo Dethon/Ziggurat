@@ -95,6 +95,8 @@ public sealed class McpChannelConnection(
 
     public bool AttachOnly { get; } = attachOnly;
 
+    public bool HostsReviewCopies { get; init; }
+
     public IAsyncEnumerable<ChannelMessage> Messages => _messageChannel.Reader.ReadAllAsync();
 
     // Connect, register the catalog, watch health, reconnect, re-register — for as long as the
@@ -428,6 +430,7 @@ public sealed class McpChannelConnection(
             DismissedAlert = notification.DismissedAlert,
             ConfigPatch = notification.ConfigPatch,
             ResponseFormat = notification.ResponseFormat,
+            ReviewCopy = notification.ReviewCopy,
             TurnKey = notification.TurnKey,
             Attachments = notification.Attachments
         };

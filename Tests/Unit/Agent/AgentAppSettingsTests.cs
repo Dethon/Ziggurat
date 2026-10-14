@@ -234,6 +234,19 @@ public class AgentAppSettingsTests
         server["Agent"]!.GetValue<string>().ShouldBe(settings.AgentDefaults.For("sugary"));
     }
 
+    // Her estimates are read back in WebChat. A review copy names no channel, so the deployment
+    // declares the one that shows them: one, so a turn cannot be shown twice, and one that owns its
+    // topics, since an attach-only channel has nothing to show a conversation in.
+    [Fact]
+    public void ReviewCopies_AreHostedByWebChatAlone()
+    {
+        var hosts = BoundConfig().Get<AgentSettings>()!.ChannelEndpoints.Where(e => e.HostsReviewCopies).ToList();
+
+        var host = hosts.ShouldHaveSingleItem();
+        host.ChannelId.ShouldBe("signalr");
+        host.AttachOnly.ShouldBeFalse();
+    }
+
     private static AgentSettings BindSettings(params (string Key, string? Value)[] entries)
     {
         var config = new Dictionary<string, string?>

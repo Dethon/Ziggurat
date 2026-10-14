@@ -14,6 +14,11 @@ public interface IChannelConnection : IToolApprovalHandler
     // topic, so delivery fan-out must never let them anchor the shared conversation id.
     bool AttachOnly { get; }
 
+    // The review host (declared per endpoint in config, WebChat in the shipped one): where a
+    // conversation goes when the channel that sent its message asks for a review copy. It attaches
+    // to that conversation as a later target of the fan-out, never as the first (ADR 0046).
+    bool HostsReviewCopies { get; }
+
     IAsyncEnumerable<ChannelMessage> Messages { get; }
 
     // The record rather than its fields spread out: it is already the wire shape every channel

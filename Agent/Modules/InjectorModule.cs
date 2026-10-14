@@ -159,12 +159,16 @@ public static class InjectorModule
             {
                 var channelId = endpoint.ChannelId;
                 var attachOnly = endpoint.AttachOnly;
+                var hostsReviewCopies = endpoint.HostsReviewCopies;
                 // A channel server's /mcp is gated like every other deployment server's, so each
                 // connection — and every reconnect it makes — presents the deployment secret.
                 services = services.AddSingleton<IChannelConnection>(sp =>
                     new McpChannelConnection(
                         channelId, attachOnly, sp.GetService<ILogger<McpChannelConnection>>(),
-                        mcpSecret: settings.Mcp.SharedSecret));
+                        mcpSecret: settings.Mcp.SharedSecret)
+                    {
+                        HostsReviewCopies = hostsReviewCopies
+                    });
             }
 
             return services

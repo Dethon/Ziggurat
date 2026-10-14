@@ -12,11 +12,30 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
         IChannelConnection originChannel,
         CancellationToken ct)
     {
-        if (message.ReplyTo is not { Count: > 0 })
+        if (message.ReplyTo is { Count: > 0 } replyTo)
         {
-            return [new DeliveryTarget(originChannel, message.ConversationId)];
+            return await FanOutAsync(message, replyTo, ct);
         }
 
+        // A review copy is the same fan-out with the sending channel as its first target: the
+        // conversation it already has anchors, and the review host attaches to that id on every
+        // turn — showing it as a topic the first time, announcing the turn on it after. So the
+        // channel's own conversation is the one the history, the approvals and the context name,
+        // and nothing the channel waits on depends on the host being there (ADR 0046).
+        var host = message.ReviewCopy is null
+            ? null
+            : channels.FirstOrDefault(c => c.HostsReviewCopies && c.ChannelId != message.ChannelId);
+        return host is null
+            ? [new DeliveryTarget(originChannel, message.ConversationId)]
+            : await FanOutAsync(
+                message,
+                [new ReplyTarget(message.ChannelId, message.ConversationId), new ReplyTarget(host.ChannelId, null)],
+                ct);
+    }
+
+    private async Task<IReadOnlyList<DeliveryTarget>> FanOutAsync(
+        ChannelMessage message, IReadOnlyList<ReplyTarget> replyTargets, CancellationToken ct)
+    {
         var targets = new List<DeliveryTarget>();
         // The first resolved conversation anchors a shared id for the whole fan-out. A
         // schedule delivering to both a WebChat channel and voice should surface as ONE
@@ -30,7 +49,7 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
         // also makes targets[0] — the chat-history persistence + approval-routing anchor — a
         // channel that actually displays the conversation. OrderBy is stable, so the
         // author's ordering is otherwise preserved.
-        var replyTo = message.ReplyTo
+        var replyTo = replyTargets
             .OrderBy(t => channels.FirstOrDefault(c => c.ChannelId == t.ChannelId)?.AttachOnly == true ? 1 : 0)
             .ToList();
         string? shared = null;
@@ -72,9 +91,12 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
     }
 
     // The sidebar label of a conversation minted for an unprompted fire. A watch carries its human
-    // name on the origin; a schedule never had one and keeps the label it always had.
+    // name on the origin; a schedule never had one and keeps the label it always had. A review copy
+    // is named by the channel that asked for it.
     private static string TopicName(ChannelMessage message) =>
-        message.Origin?.Title is { Length: > 0 } title ? title : "Scheduled task";
+        message.ReviewCopy?.Title is { Length: > 0 } review ? review
+        : message.Origin?.Title is { Length: > 0 } title ? title
+        : "Scheduled task";
 
     public async Task AnnounceTurnStartAsync(
         IReadOnlyList<DeliveryTarget> targets,
