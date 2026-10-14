@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
@@ -130,6 +131,54 @@ public sealed class OpenRouterChatClientVideoTests
         wire.Bodies.ShouldBeEmpty();
     }
 
+    // An answer to a question the estimate asked is a further turn of the same conversation, and the
+    // clip has to reach it too. The history is kept as the Redis store keeps it, as JSON, so the
+    // clip's stills have to survive being written down and read back.
+    [Theory]
+    [InlineData(Watches)]
+    [InlineData(SeesPictures)]
+    public async Task AClipWithinTheDistance_IsSentAgainOnAFollowUpTurn(string model)
+    {
+        var wire = new RecordingResponsesHandler();
+        var store = new JsonThreadStore();
+        await using var agent = CreateAgent(wire, model, store.Object);
+        var session = await agent.CreateSessionAsync();
+
+        await agent.RunStreamingAsync([MealMessage()], session).ToListAsync();
+        await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "about 200 g of rice")], session).ToListAsync();
+
+        var followUp = UserParts(wire.Bodies[1]);
+        followUp.Any(IsVideo).ShouldBe(model == Watches);
+        ImageUrls(followUp).Count.ShouldBe(model == Watches ? 1 : 3);
+    }
+
+    // Past the distance only placeholders go, and one naming the clip says what one per frame
+    // would — nor is a turn refused over a clip its model is no longer being shown.
+    [Theory]
+    [InlineData(Watches)]
+    [InlineData(SeesPictures)]
+    [InlineData(TextOnly)]
+    public async Task AClipPastTheDistance_BecomesOnePlaceholderNamingIt(string model)
+    {
+        var wire = new RecordingResponsesHandler();
+        var store = new JsonThreadStore();
+        await using var agent = CreateAgent(wire, Watches, store.Object, hydrationDepthMessages: 1);
+        var session = await agent.CreateSessionAsync();
+        await agent.RunStreamingAsync([MealMessage()], session).ToListAsync();
+        var followUp = new ChatMessage(ChatRole.User, "and the bread?");
+        followUp.SetConfigPatch(new AgentConfigPatch { Model = model });
+
+        await agent.RunStreamingAsync([followUp], session).ToListAsync();
+
+        var parts = UserParts(wire.Bodies[1]);
+        parts.Any(IsVideo).ShouldBeFalse();
+        ImageUrls(parts).ShouldBeEmpty();
+        var text = string.Join("\n", parts.Select(p => p["text"]?.GetValue<string>()));
+        text.ShouldContain("plate.mp4");
+        text.ShouldContain("plate.jpg");
+        text.ShouldNotContain("still-1.jpg");
+    }
+
     private static ChatMessage MealMessage(params AttachmentReference[] attachments)
     {
         var message = new ChatMessage(ChatRole.User, "my lunch");
@@ -189,6 +238,35 @@ public sealed class OpenRouterChatClientVideoTests
             TimeProvider.System,
             [],
             []);
+    }
+
+    // A conversation's history written and read back as JSON, the way RedisThreadStateStore does.
+    private sealed class JsonThreadStore
+    {
+        private readonly Dictionary<string, List<string>> _threads = [];
+
+        public JsonThreadStore()
+        {
+            var store = new Mock<IThreadStateStore>();
+            store.Setup(s => s.GetMessagesAsync(It.IsAny<string>()))
+                .ReturnsAsync((string key) => _threads.TryGetValue(key, out var thread)
+                    ? thread.Select(json => JsonSerializer.Deserialize<ChatMessage>(json)!).ToArray()
+                    : null);
+            store.Setup(s => s.AppendMessagesAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<ChatMessage>>()))
+                .Callback((string key, IReadOnlyList<ChatMessage> messages) =>
+                {
+                    if (!_threads.TryGetValue(key, out var thread))
+                    {
+                        _threads[key] = thread = [];
+                    }
+
+                    thread.AddRange(messages.Select(m => JsonSerializer.Serialize(m)));
+                })
+                .Returns(Task.CompletedTask);
+            Object = store.Object;
+        }
+
+        public IThreadStateStore Object { get; }
     }
 
     private sealed class IdBytesAttachmentSource : IAttachmentSource
