@@ -32,4 +32,35 @@ public class ChatMessageConfigPatchExtensionTests
 
         message.AdditionalProperties.ShouldBeNull();
     }
+
+    // What a history read hands back: the persisted message's format as a JSON element.
+    [Fact]
+    public void GetResponseFormat_FromJsonElement_Deserializes()
+    {
+        var schema = JsonSerializer.Deserialize<JsonElement>("""{"type":"object","properties":{}}""");
+        var message = new ChatMessage(ChatRole.User, "hi")
+        {
+            AdditionalProperties = new AdditionalPropertiesDictionary
+            {
+                ["ResponseFormat"] = JsonSerializer.SerializeToElement(
+                    new ResponseFormat { Name = "meal_estimate", Schema = schema }, ChannelProtocol.SerializerOptions)
+            }
+        };
+
+        var format = message.GetResponseFormat();
+
+        format.ShouldNotBeNull();
+        format.Name.ShouldBe("meal_estimate");
+        JsonElement.DeepEquals(format.Schema, schema).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void SetResponseFormat_Null_LeavesPropertiesUntouched()
+    {
+        var message = new ChatMessage(ChatRole.User, "hi");
+
+        message.SetResponseFormat(null);
+
+        message.AdditionalProperties.ShouldBeNull();
+    }
 }

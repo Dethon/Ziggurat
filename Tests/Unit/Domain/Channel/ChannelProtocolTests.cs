@@ -99,6 +99,32 @@ public class ChannelProtocolTests
         parsed.ConfigPatch.ShouldBe(new AgentConfigPatch { Model = "z-ai/glm-5.2", ReasoningEffort = "high" });
     }
 
+    // The schema is the channel's own JSON and must arrive as written: a keyword lost between the
+    // channel and the agent is a constraint the model was never given.
+    [Fact]
+    public void Serialize_MessageNotificationWithResponseFormat_RoundTripsTheSchemaVerbatim()
+    {
+        var schema = JsonSerializer.Deserialize<JsonElement>("""
+            {"type":"object","properties":{"carbs":{"type":"number","minimum":0}},"required":["carbs"],"additionalProperties":false}
+            """);
+        var notification = new ChannelMessageNotification
+        {
+            ConversationId = "conv-1",
+            Sender = "app",
+            Content = "a plate of paella",
+            ResponseFormat = new ResponseFormat { Name = "meal_estimate", Schema = schema }
+        };
+
+        var json = JsonSerializer.Serialize(notification, ChannelProtocol.SerializerOptions);
+        var parsed = JsonSerializer.Deserialize<ChannelMessageNotification>(json, ChannelProtocol.SerializerOptions);
+
+        json.ShouldContain("\"responseFormat\"");
+        parsed.ShouldNotBeNull();
+        parsed.ResponseFormat.ShouldNotBeNull();
+        parsed.ResponseFormat.Name.ShouldBe("meal_estimate");
+        JsonElement.DeepEquals(parsed.ResponseFormat.Schema, schema).ShouldBeTrue();
+    }
+
     [Fact]
     public void Serialize_WidenedAgentCatalogEntry_RoundTrips()
     {

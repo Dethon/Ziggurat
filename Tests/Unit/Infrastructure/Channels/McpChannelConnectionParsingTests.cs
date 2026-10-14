@@ -123,4 +123,38 @@ public class McpChannelConnectionParsingTests
             break;
         }
     }
+
+    [Fact]
+    public async Task HandleChannelMessageNotification_WithResponseFormat_MapsItOntoChannelMessage()
+    {
+        var conn = new McpChannelConnection("sugary");
+        conn.HandleChannelMessageNotification(Json("""
+        {"conversationId":"conv-1","sender":"app","content":"paella","responseFormat":{"name":"meal_estimate","schema":{"type":"object","properties":{"carbs":{"type":"number"}},"required":["carbs"],"additionalProperties":false}}}
+        """));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
+        {
+            msg.ResponseFormat.ShouldNotBeNull();
+            msg.ResponseFormat.Name.ShouldBe("meal_estimate");
+            msg.ResponseFormat.Schema.GetProperty("required")[0].GetString().ShouldBe("carbs");
+            break;
+        }
+    }
+
+    [Fact]
+    public async Task HandleChannelMessageNotification_WithoutResponseFormat_LeavesItNull()
+    {
+        var conn = new McpChannelConnection("signalr");
+        conn.HandleChannelMessageNotification(Json("""
+        {"conversationId":"c1","content":"hi","sender":"user"}
+        """));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
+        {
+            msg.ResponseFormat.ShouldBeNull();
+            break;
+        }
+    }
 }
