@@ -310,8 +310,11 @@ public class ScenarioWiringTests
     {
         // The changed tier is exempt: its rows are whatever the diff selected, on a pass whose
         // point is the bill rather than the wall clock.
+        // So is the Sugary tier's benchmark, which is meals rather than scenarios and runs them
+        // together under the run gate rather than as a class's serial rows.
         var longest = Classes("Category", "Eval")
             .Except(Classes("Tier", "Changed"))
+            .Where(type => type.GetProperty("Scenarios", BindingFlags.Public | BindingFlags.Static) is not null)
             .Select(type => (Class: type.Name, Count: Named(type).Count()))
             .Where(held => held.Count > ShardCeiling)
             .ToList();

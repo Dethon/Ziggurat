@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Domain.DTOs;
 using Infrastructure.Agents.ChatClients;
 using Shouldly;
@@ -431,6 +432,25 @@ public class ScorecardTests : IDisposable
         Path.GetFileName(path).ShouldBe("scorecard-research-anthropic-claude-haiku-5.5.json");
         Path.GetFileName(Scorecard.Write(_output, EvalTier.Research, null, [new ClaimOutcome("c", 1, 1)]))
             .ShouldBe("scorecard-research.json");
+    }
+
+    [Fact]
+    public void ASugaryPass_IsFiledUnderTheModelThatServedIt()
+    {
+        Path.GetFileName(Scorecard.Write(
+                _output, EvalTier.Sugary, new ServedRoute("google/gemini-3.8-flash", "Google"), []))
+            .ShouldBe("scorecard-sugary-google-gemini-3.8-flash.json");
+    }
+
+    [Fact]
+    public void ABenchmark_IsWrittenBesideTheScenarios_AndAbsentWithoutOne()
+    {
+        Scorecard.Write(_output, EvalTier.Sugary, null, [], benchmark: new JsonObject { ["overall"] = new JsonObject { ["meals"] = 64 } });
+        Scorecard.Write(_output, EvalTier.Full, null, []);
+
+        Read(Path.Combine(_output, "scorecard-sugary.json")).GetProperty("benchmark").GetProperty("overall")
+            .GetProperty("meals").GetInt32().ShouldBe(64);
+        Read(Path.Combine(_output, "scorecard-full.json")).TryGetProperty("benchmark", out _).ShouldBeFalse();
     }
 
     [Fact]

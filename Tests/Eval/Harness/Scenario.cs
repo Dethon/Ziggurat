@@ -230,7 +230,11 @@ public enum EvalTier
     // The graded research family, and the one tier the full pass does not take: its scenarios
     // measure a model rather than guard a prompt, run real workers and cost several times a
     // turn's worth each, so a routine pass must not pay for them.
-    Research
+    Research,
+    // The sugary agent on a model named for the pass: the benchmark meals scored against their
+    // known carbs, beside the sugary agent's own scenarios. Like the research tier it compares
+    // models and is filed per model, and a routine pass never pays for its sixty-four meals.
+    Sugary
 }
 
 // A call the scenario requires, matched by tool and by whatever its arguments have to say. The

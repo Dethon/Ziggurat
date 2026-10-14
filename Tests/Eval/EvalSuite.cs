@@ -58,6 +58,9 @@ public static class EvalSuite
         // prompt and is paid for only when asked for by name.
         EvalTier.Full => All.Where(s => s.Tier != EvalTier.Research),
         EvalTier.Changed => EvalChanges.Selected,
+        // The sugary agent's own scenarios, which a full pass also takes: the Sugary tier runs
+        // them again on the model it is scoring, beside the benchmark meals.
+        EvalTier.Sugary => All.Where(s => s.AgentId == Sugary.SugaryBenchmark.Agent),
         _ => All.Where(s => s.Tier == tier)
     };
 

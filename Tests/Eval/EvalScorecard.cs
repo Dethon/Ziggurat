@@ -18,6 +18,8 @@ public sealed class EvalScorecard : IDisposable
     public void Record(EvalTier tier, Scenario scenario, ScenarioResult result) =>
         _ledger.Record(tier, scenario, result);
 
+    public void RecordBenchmark(IReadOnlyList<Sugary.SugaryReading> readings) => _ledger.RecordBenchmark(readings);
+
     public void Observe(ServedRoute? route) => _ledger.Observe(route);
 
     public void ObservePreload(string? model) => _ledger.ObservePreload(model);
