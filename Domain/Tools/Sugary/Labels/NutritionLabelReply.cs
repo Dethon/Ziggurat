@@ -16,7 +16,9 @@ public abstract record LabelReading
     public sealed record Read(PrintedLabel Label) : LabelReading;
 
     // The model declined, or answered with no value that could be printed; the reason is hers to read.
-    public sealed record Unreadable(string Reason) : LabelReading;
+    // None when the model gave none: the app then says so in her language, which a sentence written
+    // here could not.
+    public sealed record Unreadable(string? Reason) : LabelReading;
 }
 
 // Reads a label's answer against the schema its turn asked for, whole or not at all, then applies
@@ -25,8 +27,6 @@ public abstract record LabelReading
 // against. An answer outside the schema is not a refusal but a failure, said the way an estimate's is.
 public static class NutritionLabelReply
 {
-    public const string CouldNotBeRead = "The label could not be read.";
-
     private static readonly string[] _units = ["g", "ml"];
 
     private static readonly JsonSerializerOptions _strict = new()
@@ -62,7 +62,7 @@ public static class NutritionLabelReply
                 label.ServingGrams is > 0 ? label.ServingGrams : null,
                 label.Unit,
                 Blank(label.Note)))
-            : new LabelReading.Unreadable(Blank(label.Note) ?? CouldNotBeRead);
+            : new LabelReading.Unreadable(Blank(label.Note));
     }
 
     private static string? Blank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();

@@ -117,3 +117,16 @@ model change edits that test too.
 this path, under the meal prompt, is unmeasured. So is whether it honours the strict schema with
 `require_parameters` on the Responses wire. Ticket 08's eval or ticket 12's E2E is where that
 first gets checked.
+
+**Fixed (2026-10-15, with ticket 12): a reasonless refusal is now said in her language.** A label the
+model refused with no `note` used to come back as 422 "The label could not be read.", which her
+Spanish screen showed in English. `LabelReading.Unreadable.Reason` is now `null` in that case
+(`NutritionLabelReply.CouldNotBeRead` is gone), and `LabelEndpoints` answers 422 with an **empty**
+`detail`. Empty, not absent: the app's `request` reads `detail ?? title`, so an absent detail would
+have shown the problem's title, "Unprocessable Entity". The app's 422 handling moved out of
+`PackagedSheet` into `labelFailureMessage` (`Sugary.Client/src/errors.ts`): the model's reason as it
+came, or `labelUnreadable` ("No he podido leer esa etiqueta.") when there is none. Pinned by
+`SugaryLabelApiTests.ARefusalWithNoReason_IsAnsweredUnreadable_WithAnEmptyDetail_ForTheAppToWordInHerLanguage`
+(null and blank notes; the body carries no English sentence), `NutritionLabelReplyTests`, and
+`Sugary.Client/src/errors.test.ts` (the problem JSON read through the app's own `api.readLabel`: an
+empty detail gives the Spanish string, a reason is shown as it came, a 502 as every screen shows it).

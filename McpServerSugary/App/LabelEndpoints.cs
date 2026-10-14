@@ -88,9 +88,11 @@ public static class LabelEndpoints
         _ => throw new InvalidOperationException($"No answer for a turn that ended as {reply}.")
     };
 
-    // A label that could not be read is an answer, said as one (422, which the app shows as "I couldn't
-    // read that label" when no reason came); an answer outside the schema is a failure, like an
-    // estimate's.
+    // A label that could not be read is an answer, said as one: 422 with the model's reason, or with an
+    // empty detail when it gave none, which the app answers with its own "I couldn't read that label"
+    // in her language (an English sentence from here would reach her Spanish screen as it is; an
+    // absent detail would show the problem's title instead). An answer outside the schema is a
+    // failure, like an estimate's.
     private static IResult Read(string reply)
     {
         try
@@ -99,7 +101,8 @@ public static class LabelEndpoints
             {
                 LabelReading.Read { Label: var label } => Results.Ok(new PackagedFood(
                     label.Name, label.CarbsPer100g, label.ServingGrams, label.Unit, label.Note)),
-                LabelReading.Unreadable unreadable => Problem(StatusCodes.Status422UnprocessableEntity, unreadable.Reason),
+                LabelReading.Unreadable unreadable =>
+                    Problem(StatusCodes.Status422UnprocessableEntity, unreadable.Reason ?? ""),
                 var other => throw new InvalidOperationException($"No answer for a label read as {other}.")
             };
         }

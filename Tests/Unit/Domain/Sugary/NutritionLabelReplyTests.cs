@@ -61,11 +61,11 @@ public class NutritionLabelReplyTests
     [Theory]
     [InlineData("null")]
     [InlineData("\"  \"")]
-    public void ARefusalWithNoReason_SaysTheLabelCouldNotBeRead(string note)
+    public void ARefusalWithNoReason_GivesNone_ForTheAppToWordInHerLanguage(string note)
     {
         NutritionLabelReply.Read(
                 $$"""{"readable":false,"carbsPer100g":null,"unit":"g","servingGrams":null,"name":null,"note":{{note}}}""")
-            .ShouldBe(new LabelReading.Unreadable("The label could not be read."));
+            .ShouldBe(new LabelReading.Unreadable(null));
     }
 
     public static TheoryData<string, string> Unreadable => new()

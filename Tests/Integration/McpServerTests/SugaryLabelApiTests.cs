@@ -97,12 +97,10 @@ public class SugaryLabelApiTests
     }
 
     // A photo that is not a readable label is refused rather than guessed, with the model's reason in
-    // her language, as a status the app shows as "I couldn't read that label" when no reason came.
+    // her language, shown by the app as it came.
     [Theory]
     [InlineData("""{"readable":false,"carbsPer100g":null,"unit":"g","servingGrams":null,"name":null,"note":"Esto es un plato de paella, no una etiqueta."}""",
         "Esto es un plato de paella, no una etiqueta.")]
-    [InlineData("""{"readable":false,"carbsPer100g":null,"unit":"g","servingGrams":null,"name":null,"note":null}""",
-        "The label could not be read.")]
     [InlineData("""{"readable":true,"carbsPer100g":640,"unit":"g","servingGrams":null,"name":null,"note":"The carbohydrate row is cut off."}""",
         "The carbohydrate row is cut off.")]
     public async Task APhotoThatIsNotAReadableLabel_IsAnsweredUnreadable_WithTheReason(string reply, string reason)
@@ -117,6 +115,32 @@ public class SugaryLabelApiTests
         var response = await answer;
         response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
         (await DetailAsync(response)).ShouldBe(reason);
+    }
+
+    // With no reason from the model the server words none either: an English sentence of its own would
+    // reach her Spanish screen as it is. The detail is there and empty, which the app reads as "no
+    // reason" and answers with its own "I couldn't read that label" in her language (errors.ts,
+    // labelFailureMessage). Present rather than absent, because absent the app would fall back to the
+    // problem's title, "Unprocessable Entity".
+    [Theory]
+    [InlineData("null")]
+    [InlineData("\"  \"")]
+    public async Task ARefusalWithNoReason_IsAnsweredUnreadable_WithAnEmptyDetail_ForTheAppToWordInHerLanguage(
+        string note)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+
+        var answer = app.PostAsync("/api/labels", Form(Photo(1, 10), "es"));
+        await ReplyAsync(agent, await NextTurnAsync(agent),
+            $$"""{"readable":false,"carbsPer100g":null,"unit":"g","servingGrams":null,"name":null,"note":{{note}}}""");
+
+        var response = await answer;
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var problem = (await response.Content.ReadFromJsonAsync<JsonNode>()).ShouldNotBeNull();
+        problem["detail"].ShouldNotBeNull().GetValue<string>().ShouldBeEmpty();
+        problem.ToJsonString().ShouldNotContain("could not be read");
     }
 
     public static TheoryData<string, string> Unreadable => new()

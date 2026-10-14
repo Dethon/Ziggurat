@@ -5,7 +5,7 @@ import { formatGrams, fromPackaged, parseAmount } from "../carbs";
 import { BarcodeScanner, canScanLive, type ScanProblem } from "../components/BarcodeScanner";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
-import { errorMessage } from "../errors";
+import { labelFailureMessage } from "../errors";
 import { keep } from "../foods";
 import { forUpload } from "../images";
 import { useSettings } from "../settings";
@@ -63,11 +63,7 @@ export function PackagedSheet({
     try {
       await work();
     } catch (failure) {
-      setError(
-        failure instanceof ApiError && failure.status === 422
-          ? failure.message || t("labelUnreadable")
-          : errorMessage(failure, t),
-      );
+      setError(labelFailureMessage(failure, t));
     } finally {
       setBusy(false);
     }
