@@ -37,6 +37,13 @@ reachable by sending neither `sort` nor `order`, so the global default ships uns
 `AgentAppSettingsTests` pins it that way. `sort: "price"` is a different thing: deterministically
 the cheapest provider, not a weighted spread.
 
+**A strict schema requires providers that honour it.** A request whose body carries a strict
+`json_schema` text format — a channel message's response format (`docs/adr/0044`) — gets
+`require_parameters: true` added to its `provider` node by `PrepareRequestBodyAsync`, beside the
+configured routing, creating the node when routing is unset. That node still routes balanced: it
+names no `sort` and no `order`. Memory's schemas are not strict and get nothing. The Lemonade
+pipeline removes `provider` before it reaches the box.
+
 **`order` costs the prompt cache.** Sticky routing — the reason every request carries a
 `session_id` — is disabled when `provider.order` is set, so the ~17k-token static prefix is
 re-sent uncached every turn. `sort` does *not* disable it. Prefer `only` + `sort` to restrict
