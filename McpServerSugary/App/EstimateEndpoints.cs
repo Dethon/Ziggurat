@@ -72,16 +72,17 @@ public static class EstimateEndpoints
         string conversation, IReadOnlyList<IFormFile> photos, Func<string, string?> field, SugaryChannel channel,
         OpenEstimates estimates, CancellationToken ct)
     {
-        if (!estimates.TryContinue(conversation))
-        {
-            return Problem(StatusCodes.Status410Gone,
-                "This estimate is no longer open, so the meal has to be estimated again.");
-        }
-
+        // Refused before the conversation is asked for, since continuing it starts its window again.
         if (photos.Count > 0)
         {
             return Problem(StatusCodes.Status400BadRequest,
                 "Answers go without photos: the estimate already has this meal's photos.");
+        }
+
+        if (!estimates.TryContinue(conversation))
+        {
+            return Problem(StatusCodes.Status410Gone,
+                "This estimate is no longer open, so the meal has to be estimated again.");
         }
 
         var turn = MealTurn.FollowUp(new MealFollowUp(field("clarifications"), field("counted"), field("language")));

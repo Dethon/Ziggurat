@@ -609,6 +609,26 @@ public class SugaryEstimateApiTests
         StoredFiles(server).ShouldBe(stored);
     }
 
+    // A refused answer is not a turn of the conversation, so it does not start the window again.
+    [Fact]
+    public async Task AnAnswerWithPhotos_DoesNotKeepTheConversationOpen()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var server = await SugaryServer.StartAsync(estimateClock: clock);
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+        var conversation = await EstimateAsync(app, agent);
+        var window = TimeSpan.FromHours(server.Settings.FollowUpHours);
+
+        clock.Advance(window - TimeSpan.FromMinutes(1));
+        (await app.PostAsync("/api/estimates", FollowUp(conversation, Answer, photos: [Photo(2, 10)])))
+            .StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        clock.Advance(TimeSpan.FromMinutes(2));
+        var response = await app.PostAsync("/api/estimates", FollowUp(conversation, Answer));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Gone);
+    }
+
     private const string Bread = "- Pan de molde, 64 g: 29 g of carbs";
     private const string Yoghurt = "- yoghurt: 12 g of carbs";
     private const string Answer = "Q: How big was the glass?\nA: large (300 ml)";
