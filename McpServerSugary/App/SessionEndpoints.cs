@@ -14,9 +14,9 @@ public record SignInRequest(string? Code);
 // Required is always true here, unlike in the standalone app, which ran open in Development: a code
 // nobody set refuses every sign-in. The field stays because the app reads it.
 //
-// Estimates and Labels say which of the app's model-backed actions this server can answer. Both are
-// off until the sugary agent answers them (spec tickets 04 and 07), and the app shows them as not
-// available yet rather than letting them fail.
+// Estimates and Labels say which of the app's model-backed actions this server can answer. Estimates
+// are turns of the sugary agent; labels are not answered yet (spec ticket 07), and the app shows them
+// as not available yet rather than letting them fail.
 public record SessionState(bool Required, bool Authenticated, bool Estimates, bool Labels);
 
 public static class SessionEndpoints
@@ -27,7 +27,7 @@ public static class SessionEndpoints
     {
         var session = api.MapGroup("/session").AllowAnonymous();
         session.MapGet("/", (HttpContext http) =>
-            new SessionState(true, http.User.Identity?.IsAuthenticated is true, Estimates: false, Labels: false));
+            new SessionState(true, http.User.Identity?.IsAuthenticated is true, Estimates: true, Labels: false));
         session.MapPost("/", SignInAsync).RequireRateLimiting(SignInRateLimit);
         session.MapDelete("/", async (HttpContext http) =>
         {

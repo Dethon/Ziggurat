@@ -60,25 +60,22 @@ public sealed class SugaryAppServingTests : IDisposable
         (await server.Browser().GetAsync("/assets/gone-000000.js")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
-    // Estimating a meal and reading a label are turns of the sugary agent, which this server does
-    // not answer yet. The app is told so up front and shows them as not available; an installed
-    // build that asks anyway gets a sentence, not a failure it cannot explain.
+    // Estimating a meal is a turn of the sugary agent, which this server now answers; reading a
+    // label is not answered yet. The app is told which up front and shows the other as not
+    // available; an installed build that asks anyway gets a sentence, not a failure it cannot explain.
     [Fact]
-    public async Task EstimatesAndLabels_AreNotAvailableYet()
+    public async Task Estimates_AreAnswered_LabelsAreNotAvailableYet()
     {
         await using var server = await SugaryServer.StartAsync(webRoot: _webRoot);
         var client = await server.SignedInAsync();
 
         var session = (await client.GetFromJsonAsync<JsonNode>("/api/session"))!;
-        session["estimates"]!.GetValue<bool>().ShouldBeFalse();
+        session["estimates"]!.GetValue<bool>().ShouldBeTrue();
         session["labels"]!.GetValue<bool>().ShouldBeFalse();
 
-        foreach (var path in new[] { "/api/estimates", "/api/labels" })
-        {
-            var response = await client.PostAsync(path, new MultipartFormDataContent());
-            response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable, path);
-            (await response.Content.ReadFromJsonAsync<JsonNode>())!["detail"]!.GetValue<string>()
-                .ShouldContain("not available yet");
-        }
+        var response = await client.PostAsync("/api/labels", new MultipartFormDataContent());
+        response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        (await response.Content.ReadFromJsonAsync<JsonNode>())!["detail"]!.GetValue<string>()
+            .ShouldContain("not available yet");
     }
 }

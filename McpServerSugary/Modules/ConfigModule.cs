@@ -23,6 +23,7 @@ public static class ConfigModule
             .AddSingleton(sp => new SugaryFileSystem(sp.GetRequiredService<ISugaryLog>(), homeZone))
             .AddHostedService<SugaryDatabaseMigrator>()
             .AddSingleton<AgentTurns>()
+            .AddSingleton<SugaryChannel>()
             .AddSugaryApp(settings);
 
         services

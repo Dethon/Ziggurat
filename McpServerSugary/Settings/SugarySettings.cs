@@ -23,6 +23,10 @@ public record SugarySettings : IMcpHostSettings
 
     // Where a barcode none of her saved foods carries is looked up.
     public string OpenFoodFactsUrl { get; init; } = "https://world.openfoodfacts.org/";
+
+    // How long the app's request waits on the sugary agent's turn before she is told it took too long
+    // and the turn is cancelled. The standalone app's estimates took up to about half a minute.
+    public int TurnTimeoutSeconds { get; init; } = 120;
 }
 
 public record SugaryAppSettings

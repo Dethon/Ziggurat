@@ -4,15 +4,14 @@ using Microsoft.AspNetCore.Routing;
 
 namespace McpServerSugary.App;
 
-// Where the app's two model-backed actions will be answered. The standalone app called OpenRouter
-// from here; on this server every model call goes through the sugary agent, which does not answer
-// them yet (spec tickets 04 for estimates, 07 for labels). The app is told so by /api/session and
-// never sends these; an installed build from before that asks anyway is answered with a sentence.
+// Where reading a label will be answered. The standalone app called OpenRouter from here; on this
+// server every model call goes through the sugary agent, which does not read labels yet (spec ticket
+// 07). The app is told so by /api/session and never sends it; an installed build from before that
+// asks anyway is answered with a sentence.
 public static class UnavailableEndpoints
 {
     public static void MapUnavailableEndpoints(this IEndpointRouteBuilder api)
     {
-        api.MapPost("/estimates", () => NotYet("Estimating a meal")).DisableAntiforgery();
         api.MapPost("/labels", () => NotYet("Reading a nutrition label")).DisableAntiforgery();
     }
 
