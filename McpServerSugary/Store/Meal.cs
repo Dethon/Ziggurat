@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Domain.DTOs.Sugary;
 
 namespace McpServerSugary.Store;
@@ -19,7 +20,9 @@ public record MealItem(
     // keeps its own numbers and outlives the food.
     Guid? FoodId = null)
 {
-    // Where the item sits in its meal, from zero.
+    // Where the item sits in its meal, from zero. Set on save from the order the app sent, so it is
+    // not the caller's to give.
+    [JsonIgnore]
     public int Position { get; init; }
 }
 

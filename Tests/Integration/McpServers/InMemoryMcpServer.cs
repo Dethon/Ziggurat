@@ -17,17 +17,21 @@ namespace Tests.Integration.McpServers;
 public static class InMemoryMcpServer
 {
     // A caller may name the port when it needs the address before the server exists — a connection
-    // that must retry until its channel server comes up, say.
+    // that must retry until its channel server comes up, say. A server that also answers on routes
+    // of its own maps them through `map`, after /mcp as its Program.cs does, and one that serves
+    // files is given the directory they are served from.
     public static async Task<RunningServer> StartAsync(
-        Action<IServiceCollection> configure, int? port = null)
+        Action<IServiceCollection> configure, int? port = null, Action<WebApplication>? map = null,
+        string? webRoot = null)
     {
         port ??= TestPort.GetAvailable();
-        var builder = WebApplication.CreateBuilder();
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { WebRootPath = webRoot });
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port.Value));
         configure(builder.Services);
 
         var app = builder.Build();
         app.MapMcp("/mcp");
+        map?.Invoke(app);
         await app.StartAsync();
 
         var endpoint = $"http://localhost:{port}/mcp";

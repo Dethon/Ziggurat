@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.Tools.Sugary.Vfs;
 using Infrastructure.Utils;
 using Mcp.Hosting;
+using McpServerSugary.App;
 using McpServerSugary.Settings;
 using McpServerSugary.Store;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,7 +19,8 @@ public static class ConfigModule
             .AddSugaryStore(settings)
             .AddSingleton<ISugaryLog, SqliteSugaryLog>()
             .AddSingleton(sp => new SugaryFileSystem(sp.GetRequiredService<ISugaryLog>(), homeZone))
-            .AddHostedService<SugaryDatabaseMigrator>();
+            .AddHostedService<SugaryDatabaseMigrator>()
+            .AddSugaryApp(settings);
 
         services
             .AddToolServer(settings, ToolResponse.Create)

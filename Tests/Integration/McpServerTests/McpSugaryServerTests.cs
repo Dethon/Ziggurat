@@ -226,8 +226,11 @@ public class McpSugaryServerTests
 
         (await server.ReadAsync("/meals/2026-10.csv")).ShouldContain("paella");
         (await server.ReadAsync("/items/2026-10.csv")).ShouldContain("paella");
-        // The database file and SQLite's write-ahead log beside it, and nothing else.
+        // The database file and SQLite's write-ahead log beside it, and nothing else — apart from the
+        // app's cookie keys, which the host writes on start and no read touches.
+        var keys = Path.Combine(server.Directory, "keys");
         Directory.EnumerateFileSystemEntries(server.Directory, "*", SearchOption.AllDirectories)
+            .Where(entry => entry != keys && !entry.StartsWith(keys + Path.DirectorySeparatorChar, StringComparison.Ordinal))
             .Select(Path.GetFileName)
             .ShouldAllBe(name => name == "sugary.db" || name == "sugary.db-wal" || name == "sugary.db-shm");
     }
