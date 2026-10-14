@@ -10,9 +10,8 @@ using Microsoft.AspNetCore.Routing;
 namespace McpServerSugary.App;
 
 // The app's estimate, answered by a turn of the sugary agent. The request is the standalone app's
-// form and the answer its estimate, unchanged, so the app did not have to change with it. Each
-// estimate is a conversation of its own for now; follow-up answers on the same conversation are a
-// later ticket (06).
+// form and the answer its estimate, each with one field more: the conversation the first estimate
+// opened, which the app sends back with her answers so they are the next turn of it.
 public static class EstimateEndpoints
 {
     public static void MapEstimateEndpoints(this IEndpointRouteBuilder api)
@@ -26,8 +25,8 @@ public static class EstimateEndpoints
     // cookie gate answers first: a bound form would make a JSON post not match at all, and a phone
     // that has not signed in would be told the route does not exist.
     private static async Task<IResult> EstimateAsync(
-        HttpRequest request, SugaryChannel channel, UploadStore uploads, IAgentCatalog catalog,
-        SugarySettings settings, CancellationToken ct)
+        HttpRequest request, SugaryChannel channel, UploadStore uploads, OpenEstimates estimates,
+        IAgentCatalog catalog, SugarySettings settings, CancellationToken ct)
     {
         if (!request.HasFormContentType)
         {
@@ -36,9 +35,14 @@ public static class EstimateEndpoints
 
         var form = await request.ReadFormAsync(ct);
         string? Field(string name) => form.TryGetValue(name, out var value) ? value.ToString() : null;
-        var description = Field("description");
         var photos = form.Files.GetFiles("photos");
 
+        if (Field("conversationId") is { Length: > 0 } conversation)
+        {
+            return await FollowUpAsync(conversation, photos, Field, channel, estimates, ct);
+        }
+
+        var description = Field("description");
         if (photos.Count == 0 && string.IsNullOrWhiteSpace(description))
         {
             return Problem(StatusCodes.Status400BadRequest, "Add a photo or describe the meal.");
@@ -54,26 +58,49 @@ public static class EstimateEndpoints
 
         // The photos cross to the agent as references to this store, never as bytes on the turn, so
         // the conversation's history stays the size of its words (ADR-0020).
-        var conversationId = Guid.NewGuid().ToString("N");
-        var attachments = await StoreAsync(conversationId, photos, uploads, ct);
+        var opened = estimates.Open();
+        var attachments = await StoreAsync(opened, photos, uploads, ct);
         var turn = MealTurn.Text(new MealInput(
             attachments.Count, description, Field("clarifications"), Field("language"), Field("counted")));
-        var reply = await channel.AskAsync(conversationId, turn, MealEstimateSchema.Format, attachments, ct);
-
-        // Every way of not getting an estimate is said, and none of them is shown as one. A 503
-        // would read in the app as "the model is not set up", so a missing agent is a bad gateway.
-        return reply switch
-        {
-            TurnReply.Answered answered => Read(answered.Text),
-            TurnReply.Failed failed => Problem(StatusCodes.Status502BadGateway, failed.Reason),
-            TurnReply.Unanswered => Problem(StatusCodes.Status502BadGateway, "The model returned no answer."),
-            TurnReply.NotListening => Problem(StatusCodes.Status502BadGateway,
-                "The estimating agent is not connected right now. Try again in a moment, or count this meal by hand."),
-            TurnReply.TimedOut => Problem(StatusCodes.Status504GatewayTimeout,
-                "The estimate took too long. Try again, or count this meal by hand."),
-            _ => throw new InvalidOperationException($"No answer for a turn that ended as {reply}.")
-        };
+        return Answer(await channel.AskAsync(opened, turn, MealEstimateSchema.Format, attachments, ct), opened);
     }
+
+    // Her answers continue the conversation the first estimate opened, whose first message the agent
+    // still holds with her photos and words; hydration puts the photos back on the way to the model,
+    // so they are neither stored nor sent again.
+    private static async Task<IResult> FollowUpAsync(
+        string conversation, IReadOnlyList<IFormFile> photos, Func<string, string?> field, SugaryChannel channel,
+        OpenEstimates estimates, CancellationToken ct)
+    {
+        if (!estimates.IsOpen(conversation))
+        {
+            return Problem(StatusCodes.Status410Gone,
+                "This estimate is no longer open, so the meal has to be estimated again.");
+        }
+
+        if (photos.Count > 0)
+        {
+            return Problem(StatusCodes.Status400BadRequest,
+                "Answers go without photos: the estimate already has this meal's photos.");
+        }
+
+        var turn = MealTurn.FollowUp(new MealFollowUp(field("clarifications"), field("counted"), field("language")));
+        return Answer(await channel.AskAsync(conversation, turn, MealEstimateSchema.Format, [], ct), conversation);
+    }
+
+    // Every way of not getting an estimate is said, and none of them is shown as one. A 503 would
+    // read in the app as "the model is not set up", so a missing agent is a bad gateway.
+    private static IResult Answer(TurnReply reply, string conversation) => reply switch
+    {
+        TurnReply.Answered answered => Read(answered.Text, conversation),
+        TurnReply.Failed failed => Problem(StatusCodes.Status502BadGateway, failed.Reason),
+        TurnReply.Unanswered => Problem(StatusCodes.Status502BadGateway, "The model returned no answer."),
+        TurnReply.NotListening => Problem(StatusCodes.Status502BadGateway,
+            "The estimating agent is not connected right now. Try again in a moment, or count this meal by hand."),
+        TurnReply.TimedOut => Problem(StatusCodes.Status504GatewayTimeout,
+            "The estimate took too long. Try again, or count this meal by hand."),
+        _ => throw new InvalidOperationException($"No answer for a turn that ended as {reply}.")
+    };
 
     // One at a time and in the order she took them, so the references keep the order of the photos.
     private static async Task<IReadOnlyList<AttachmentReference>> StoreAsync(
@@ -90,11 +117,11 @@ public static class EstimateEndpoints
         return stored;
     }
 
-    private static IResult Read(string reply)
+    private static IResult Read(string reply, string conversation)
     {
         try
         {
-            return Results.Ok(MealEstimateReply.Read(reply));
+            return Results.Ok(EstimateResponse.Of(MealEstimateReply.Read(reply), conversation));
         }
         catch (UnreadableEstimateException e)
         {
@@ -103,4 +130,16 @@ public static class EstimateEndpoints
     }
 
     private static IResult Problem(int status, string detail) => Results.Problem(detail, statusCode: status);
+}
+
+// The estimate as the standalone app answered it, and the conversation her answers continue.
+public record EstimateResponse(
+    IReadOnlyList<EstimatedItem> Items,
+    Interval Total,
+    IReadOnlyList<ClarifyingQuestion> Questions,
+    IReadOnlyList<string> Notes,
+    string ConversationId)
+{
+    public static EstimateResponse Of(MealEstimate estimate, string conversation) =>
+        new(estimate.Items, estimate.Total, estimate.Questions, estimate.Notes, conversation);
 }

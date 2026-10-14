@@ -35,6 +35,7 @@ public static class ConfigModule
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<AgentTurns>()
+            .AddSingleton<OpenEstimates>()
             .AddSingleton<SugaryChannel>()
             .AddSugaryApp(settings);
 

@@ -31,6 +31,27 @@ public class MealTurnTests
         text.ShouldContain("The person's description:\ntwo slices of toast");
     }
 
+    // Her answers are the next turn of the conversation whose first message holds the photos and her
+    // words, so the follow-up says nothing about either: "there is no photo" would be false there.
+    [Fact]
+    public void AFollowUp_CarriesHerAnswersAndWhatSheCounted_AndNothingAboutPhotos()
+    {
+        var text = MealTurn.FollowUp(new MealFollowUp(
+            " Q: Sugar-free?\nA: Yes ", "- Pan de molde: 29 g of carbs", "es"));
+
+        text.ShouldContain("Their answers to your earlier questions:\nQ: Sugar-free?\nA: Yes");
+        text.ShouldContain("Already added by the person and counted, so leave these out of your list:\n- Pan de molde: 29 g of carbs");
+        text.ShouldEndWith("Write every name, portion, note and question in Spanish.");
+        text.ShouldNotContain("photo");
+        text.ShouldNotContain("description");
+    }
+
+    [Fact]
+    public void AFollowUpWithNothingCounted_SendsNoSuchSection()
+    {
+        MealTurn.FollowUp(new MealFollowUp("Q: Shared?\nA: No", null, "en")).ShouldNotContain("Already added");
+    }
+
     [Theory]
     [InlineData("es", "Spanish")]
     [InlineData(" ES ", "Spanish")]

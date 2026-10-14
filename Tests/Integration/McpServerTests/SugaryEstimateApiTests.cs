@@ -384,11 +384,118 @@ public class SugaryEstimateApiTests
         (await DetailAsync(response)).ShouldContain("describe the meal");
     }
 
+    // Her answers go back on the conversation that asked the questions, as the next turn of it: the
+    // agent estimates again with its first message — her photo, her words — still in its history,
+    // so the photo is not sent again and the turn does not claim there is none. What she counted
+    // herself travels with this turn too, because she may have added it after the first estimate.
+    [Fact]
+    public async Task HerAnswers_AreTheNextTurnOfTheSameConversation_WithWhatSheCountedAndNoPhotoSentAgain()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+        var photo = Photo(1, 2_000);
+
+        var first = app.PostAsync("/api/estimates", Form("", photos: [photo], counted: Bread));
+        var firstTurn = await NextTurnAsync(agent);
+        firstTurn.Content.ShouldContain($"Already added by the person and counted, so leave these out of your list:\n{Bread}");
+        await ReplyAsync(agent, firstTurn, Estimate);
+        var firstEstimate = await ReadAsync(await first);
+        var conversation = firstEstimate["conversationId"]!.GetValue<string>();
+        conversation.ShouldBe(firstTurn.ConversationId);
+
+        var second = app.PostAsync("/api/estimates", FollowUp(conversation, Answer, $"{Bread}\n{Yoghurt}", "es"));
+        var followUp = await NextTurnAsync(agent);
+
+        followUp.ConversationId.ShouldBe(firstTurn.ConversationId);
+        followUp.TurnKey.ShouldNotBe(firstTurn.TurnKey);
+        followUp.ResponseFormat.ShouldNotBeNull().Name.ShouldBe(MealEstimateSchema.Name);
+        followUp.Content.ShouldContain($"Their answers to your earlier questions:\n{Answer}");
+        followUp.Content.ShouldContain(
+            $"Already added by the person and counted, so leave these out of your list:\n{Bread}\n{Yoghurt}");
+        followUp.Content.ShouldEndWith("Write every name, portion, note and question in Spanish.");
+        followUp.Content.ShouldNotContain("photo");
+        followUp.Attachments.ShouldBeNull();
+        // The photo stays where the first turn left it, for hydration to put back from the history.
+        (await FetchAsync(agent, firstTurn.Attachments.ShouldHaveSingleItem())).ShouldBe(photo);
+
+        await ReplyAsync(agent, followUp, AnsweredEstimate);
+        var secondEstimate = await ReadAsync(await second);
+        secondEstimate["conversationId"]!.GetValue<string>().ShouldBe(conversation);
+        secondEstimate["questions"]!.AsArray().ShouldBeEmpty();
+        ShouldBeInterval(secondEstimate["total"], 45, 57, 75);
+    }
+
+    // A conversation the server never opened is not one the agent can carry on: it would estimate
+    // from her answers alone, with no photo and no words. Refused before anything is sent — there
+    // is no agent even connected here — with a status the app reads as "start this meal again".
+    [Theory]
+    [InlineData("0123456789abcdef0123456789abcdef")]
+    [InlineData("../sugary.db")]
+    public async Task AnAnswerToAConversationTheServerNeverOpened_IsRefusedAsGone_BeforeAnythingIsSent(string conversation)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var app = await server.SignedInAsync();
+
+        var response = await app.PostAsync("/api/estimates", FollowUp(conversation, Answer));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Gone);
+        (await DetailAsync(response)).ShouldContain("estimated again");
+    }
+
+    // A follow-up answers the estimate already made, whose photos the agent already has.
+    [Fact]
+    public async Task AnAnswerWithPhotos_IsRefused_AndNothingIsKept()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+        var conversation = await EstimateAsync(app, agent);
+        var stored = StoredFiles(server);
+
+        var response = await app.PostAsync(
+            "/api/estimates", FollowUp(conversation, Answer, photos: [Photo(2, 10)]));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await DetailAsync(response)).ShouldContain("already");
+        StoredFiles(server).ShouldBe(stored);
+    }
+
+    private const string Bread = "- Pan de molde, 64 g: 29 g of carbs";
+    private const string Yoghurt = "- yoghurt: 12 g of carbs";
+    private const string Answer = "Q: How big was the glass?\nA: large (300 ml)";
+
+    // The juice re-estimated on her answer: a picked amount, so still medium and still widened.
+    private const string AnsweredEstimate =
+        """
+        {"items":[
+          {"name":"white toast","portion":"2 slices","gramsLow":60,"grams":60,"gramsHigh":60,"carbsPer100g":45,"confidence":"high","note":null},
+          {"name":"orange juice","portion":"a large glass","gramsLow":250,"grams":300,"gramsHigh":350,"carbsPer100g":10,"confidence":"medium","note":null}
+        ],
+        "questions":[],
+        "notes":[]}
+        """;
+
+    // A first estimate answered, and the conversation it opened.
+    private static async Task<string> EstimateAsync(
+        HttpClient app, McpChannelConnection agent, string reply = Estimate, IReadOnlyList<byte[]>? photos = null)
+    {
+        var answer = app.PostAsync("/api/estimates", Form("toast and juice", photos: photos ?? [Photo(1, 10)]));
+        await ReplyAsync(agent, await NextTurnAsync(agent), reply);
+        return (await ReadAsync(await answer))["conversationId"]!.GetValue<string>();
+    }
+
+    private static async Task<JsonNode> ReadAsync(HttpResponseMessage response)
+    {
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        return (await response.Content.ReadFromJsonAsync<JsonNode>())!;
+    }
+
     // The app's own form, field for field as Sugary.Client's api.estimate builds it: each photo a
     // `photos` part named meal-<n>.jpg, typed as the browser types the JPEG blob it shrank.
     private static MultipartFormDataContent Form(
         string description, string language = "en", IReadOnlyList<byte[]>? photos = null,
-        string mediaType = "image/jpeg")
+        string mediaType = "image/jpeg", string clarifications = "", string counted = "")
     {
         var form = new MultipartFormDataContent();
         foreach (var (photo, index) in (photos ?? []).Select((p, i) => (p, i)))
@@ -399,9 +506,21 @@ public class SugaryEstimateApiTests
         }
 
         form.Add(new StringContent(description), "description");
-        form.Add(new StringContent(""), "clarifications");
-        form.Add(new StringContent(""), "counted");
+        form.Add(new StringContent(clarifications), "clarifications");
+        form.Add(new StringContent(counted), "counted");
         form.Add(new StringContent(language), "language");
+        return form;
+    }
+
+    // The app's answers to an estimate, as Sugary.Client's estimateForm builds a follow-up: the
+    // conversation it was given, her answers and corrections, what she counted herself, and nothing
+    // of the first turn's photos or words.
+    private static MultipartFormDataContent FollowUp(
+        string conversation, string clarifications, string counted = "", string language = "en",
+        IReadOnlyList<byte[]>? photos = null)
+    {
+        var form = Form("", language, photos, clarifications: clarifications, counted: counted);
+        form.Add(new StringContent(conversation), "conversationId");
         return form;
     }
 
