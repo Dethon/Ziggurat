@@ -73,6 +73,11 @@ public static class SugaryApp
 
     public static WebApplication MapSugaryApp(this WebApplication app)
     {
+        // The built app is the web root's: wwwroot beside the server in the image, filled by the
+        // image's node stage (Sugary.Client).
+        var files = new StaticFileOptions { OnPrepareResponse = context => CacheRule(context.Context) };
+        app.UseDefaultFiles();
+        app.UseStaticFiles(files);
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseRateLimiter();
@@ -86,9 +91,20 @@ public static class SugaryApp
         guarded.MapProductEndpoints();
         guarded.MapExportEndpoints();
 
+        guarded.MapUnavailableEndpoints();
+
         api.MapFallback(() => Results.NotFound());
+        // Any other path without a file name is one of the app's own screens.
+        app.MapFallbackToFile("index.html", files);
         return app;
     }
+
+    // Vite fingerprints everything under assets/; the rest (index.html, the service worker, the
+    // manifest) must be revalidated or a phone keeps running an old build.
+    private static void CacheRule(HttpContext context) =>
+        context.Response.Headers.CacheControl = context.Request.Path.StartsWithSegments("/assets")
+            ? "public, max-age=31536000, immutable"
+            : "no-cache";
 
     private static string KeysDirectory(SugarySettings settings) =>
         Path.Combine(Path.GetDirectoryName(Path.GetFullPath(settings.DatabasePath)) ?? ".", "keys");

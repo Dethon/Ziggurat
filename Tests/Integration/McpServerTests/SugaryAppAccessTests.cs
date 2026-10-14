@@ -24,7 +24,9 @@ public class SugaryAppAccessTests
         { "GET", "/api/products/8410188012092" },
         { "GET", "/api/export/meals.csv" },
         { "GET", "/api/export/items.csv" },
-        { "GET", "/api/export/foods.csv" }
+        { "GET", "/api/export/foods.csv" },
+        { "POST", "/api/estimates" },
+        { "POST", "/api/labels" }
     };
 
     [Theory]
