@@ -2,10 +2,13 @@ using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Tools.Sugary.Estimation;
 using McpServerSugary.Channel;
+using McpServerSugary.Clips;
 using McpServerSugary.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 
 namespace McpServerSugary.App;
 
@@ -26,43 +29,81 @@ public static class EstimateEndpoints
     // that has not signed in would be told the route does not exist.
     private static async Task<IResult> EstimateAsync(
         HttpRequest request, SugaryChannel channel, UploadStore uploads, OpenEstimates estimates,
-        IAgentCatalog catalog, SugarySettings settings, CancellationToken ct)
+        IAgentCatalog catalog, SugarySettings settings, ClipProcessor clips, ILogger<ClipProcessor> logger,
+        CancellationToken ct)
     {
         if (!request.HasFormContentType)
         {
             return Problem(StatusCodes.Status400BadRequest, "Send the meal as a form.");
         }
 
-        var form = await request.ReadFormAsync(ct);
+        // A phone's clip is larger than a web server takes in one request unless told, so this one
+        // route is told how large a meal may be; the clip's own ceiling is checked once it is read.
+        var limit = ClipUpload.MaxRequestBytes(settings.Uploads);
+        if (request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } body)
+        {
+            body.MaxRequestBodySize = limit;
+        }
+
+        var form = await request.ReadFormAsync(new FormOptions { MultipartBodyLengthLimit = limit }, ct);
         string? Field(string name) => form.TryGetValue(name, out var value) ? value.ToString() : null;
         var photos = form.Files.GetFiles("photos");
+        var filmed = form.Files.GetFiles("clip");
 
         if (Field("conversationId") is { Length: > 0 } conversation)
         {
-            return await FollowUpAsync(conversation, photos, Field, channel, estimates, ct);
+            return await FollowUpAsync(conversation, photos, filmed, Field, channel, estimates, ct);
         }
 
         var description = Field("description");
-        if (photos.Count == 0 && string.IsNullOrWhiteSpace(description))
+        if (photos.Count == 0 && filmed.Count == 0 && string.IsNullOrWhiteSpace(description))
         {
-            return Problem(StatusCodes.Status400BadRequest, "Add a photo or describe the meal.");
+            return Problem(StatusCodes.Status400BadRequest, "Add a photo or a clip, or describe the meal.");
         }
 
         // Refused before anything is kept or sent, so a photo the model would choke on costs neither
         // a turn nor a file, and a model that cannot see photos never answers as if none was sent.
         if ((PhotoUpload.Refusal(photos, settings.Uploads)
-             ?? PhotoUpload.ModelRefusal(photos, catalog.Get(settings.Agent))) is { } refusal)
+             ?? ClipUpload.Refusal(filmed, settings.Uploads)
+             ?? PhotoUpload.ModelRefusal(photos, filmed.Count > 0, catalog.Get(settings.Agent))) is { } refusal)
         {
             return Problem(StatusCodes.Status400BadRequest, refusal);
         }
 
+        // The clip is read and made small before anything is kept, so a clip too long or not a clip
+        // at all is refused with nothing stored and nothing sent, like a photo.
+        PreparedClip.Ready? clip = null;
+        if (filmed.Count > 0)
+        {
+            try
+            {
+                switch (await clips.PrepareAsync(filmed[0], ct))
+                {
+                    case PreparedClip.Refused refused:
+                        return Problem(StatusCodes.Status400BadRequest, refused.Reason);
+                    case PreparedClip.Ready ready:
+                        clip = ready;
+                        break;
+                }
+            }
+            catch (ClipToolsUnavailableException e)
+            {
+                logger.LogError(e, "A meal's clip could not be read");
+                return Problem(StatusCodes.Status500InternalServerError,
+                    "Clips cannot be read on this server right now. Take a photo instead, or describe the meal.");
+            }
+        }
+
         // The photos cross to the agent as references to this store, never as bytes on the turn, so
         // the conversation's history stays the size of its words (ADR-0020).
-        var review = ReviewOf(description);
+        var review = ReviewOf(description, photos.Count == 0 && clip is not null);
         var opened = estimates.Open(review);
-        var attachments = await PhotoUpload.StoreAsync(opened, photos, uploads, ct);
+        var attachments = (await PhotoUpload.StoreAsync(opened, photos, uploads, ct))
+            .Concat(clip is null ? [] : await ClipUpload.StoreAsync(opened, clip, uploads, ct))
+            .ToList();
         var turn = MealTurn.Text(new MealInput(
-            attachments.Count, description, Field("clarifications"), Field("language"), Field("counted")));
+            photos.Count, description, Field("clarifications"), Field("language"), Field("counted"),
+            Filmed: clip is not null));
         return Answer(
             await channel.AskAsync(opened, turn, MealEstimateSchema.Format, attachments, patch: null, review, ct),
             opened);
@@ -72,14 +113,15 @@ public static class EstimateEndpoints
     // still holds with her photos and words; hydration puts the photos back on the way to the model,
     // so they are neither stored nor sent again.
     private static async Task<IResult> FollowUpAsync(
-        string conversation, IReadOnlyList<IFormFile> photos, Func<string, string?> field, SugaryChannel channel,
-        OpenEstimates estimates, CancellationToken ct)
+        string conversation, IReadOnlyList<IFormFile> photos, IReadOnlyList<IFormFile> clips,
+        Func<string, string?> field, SugaryChannel channel, OpenEstimates estimates, CancellationToken ct)
     {
         // Refused before the conversation is asked for, since continuing it starts its window again.
-        if (photos.Count > 0)
+        if (photos.Count > 0 || clips.Count > 0)
         {
-            return Problem(StatusCodes.Status400BadRequest,
-                "Answers go without photos: the estimate already has this meal's photos.");
+            return Problem(StatusCodes.Status400BadRequest, photos.Count > 0
+                ? "Answers go without photos: the estimate already has this meal's photos."
+                : "Answers go without a clip: the estimate already has this meal's clip.");
         }
 
         if (estimates.TryContinue(conversation) is not { } review)
@@ -112,12 +154,12 @@ public static class EstimateEndpoints
 
     // Every estimate is read back in WebChat, named after her words: the sidebar shows the meal, not
     // the prompt the turn's text is. Cut at a word, so the row stays one line.
-    private static ReviewCopy ReviewOf(string? description)
+    private static ReviewCopy ReviewOf(string? description, bool filmedOnly)
     {
         var words = string.Join(' ', (description ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         if (words.Length == 0)
         {
-            return new ReviewCopy { Title = "Meal photo" };
+            return new ReviewCopy { Title = filmedOnly ? "Meal video" : "Meal photo" };
         }
 
         if (words.Length > ReviewTitleLength)

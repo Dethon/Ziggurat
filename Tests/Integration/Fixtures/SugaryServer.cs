@@ -58,7 +58,8 @@ public sealed class SugaryServer : IAsyncDisposable
     // would make an agent polling in real time look gone.
     public static async Task<SugaryServer> StartAsync(
         string homeZone = "Europe/Madrid", string accessCode = AccessCode, string? openFoodFacts = null,
-        string? webRoot = null, TimeProvider? turnClock = null, TimeProvider? estimateClock = null)
+        string? webRoot = null, TimeProvider? turnClock = null, TimeProvider? estimateClock = null,
+        Func<SugarySettings, SugarySettings>? configure = null)
     {
         var directory = Path.Combine(Path.GetTempPath(), "sugary-tests", Guid.NewGuid().ToString("N"));
         System.IO.Directory.CreateDirectory(directory);
@@ -71,6 +72,7 @@ public sealed class SugaryServer : IAsyncDisposable
             OpenFoodFactsUrl = openFoodFacts ?? "http://127.0.0.1:9/",
             Uploads = new UploadSettings { StoragePath = Path.Combine(directory, "uploads") }
         };
+        settings = configure?.Invoke(settings) ?? settings;
 
         var server = await InMemoryMcpServer.StartAsync(
             services =>

@@ -27,11 +27,23 @@ public static class PhotoUpload
     // routed to, on the model the turn will run on: the agent's own for a meal, the patched one for a
     // label. Its own sentence ends by telling a person to pick another model, which she cannot do
     // from the app, so only its verdict is taken and the reason is said for her.
-    public static string? ModelRefusal(IReadOnlyList<IFormFile> photos, AgentCatalogEntry? agent) =>
-        BlindModel(photos, agent, patchedModel: null) is { } model
+    //
+    // A clip is refused only by a model that takes neither video nor pictures, since one that sees
+    // pictures alone is sent the clip's stills instead.
+    public static string? ModelRefusal(IReadOnlyList<IFormFile> photos, bool filmed, AgentCatalogEntry? agent)
+    {
+        var model = AttachmentCapability.EffectiveModel(agent, null) ?? "The estimating model";
+        if (filmed && AttachmentCapability.Refusal(agent, null, [ClipUpload.MediaType]) is not null)
+        {
+            return $"{model} can neither watch a clip nor read photos, so this meal cannot be estimated from it. " +
+                   "Describe it in words instead, or count it by hand.";
+        }
+
+        return BlindModel(photos, agent, patchedModel: null) is not null
             ? $"{model} cannot read photos, so this meal cannot be estimated from them. " +
               "Describe it in words instead, or count it by hand."
             : null;
+    }
 
     public static string? LabelModelRefusal(IReadOnlyList<IFormFile> photos, AgentCatalogEntry? agent, string labelModel) =>
         BlindModel(photos, agent, labelModel) is { } model

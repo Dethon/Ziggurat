@@ -6,6 +6,7 @@ using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerSugary.App;
 using McpServerSugary.Channel;
+using McpServerSugary.Clips;
 using McpServerSugary.McpPrompts;
 using McpServerSugary.McpTools;
 using McpServerSugary.Settings;
@@ -28,6 +29,10 @@ public static class ConfigModule
             .AddSingleton(settings.Uploads)
             .AddSingleton(settings.Retention)
             .AddSingleton<UploadStore>()
+            // A meal's clip is read and made small with ffmpeg, in this server's image alone.
+            .AddSingleton(settings.Clips)
+            .AddSingleton<ClipTools>()
+            .AddSingleton<ClipProcessor>()
             .AddHostedService<UploadSweeper>()
             // What each model accepts, from the catalogue the agent registers on connect: the one
             // thing this channel needs to know about models, to refuse a photo one cannot see.

@@ -31,6 +31,29 @@ public class MealTurnTests
         text.ShouldContain("The person's description:\ntwo slices of toast");
     }
 
+    // A filmed meal is said in the standalone benchmark's words for its video. The clip may reach a
+    // model that only sees pictures as stills taken from it, and the text is written before the
+    // send knows which, so it says that too.
+    [Fact]
+    public void AClipAlone_IsAVideoOfTheMeal_NeverAMealWithNoPhoto()
+    {
+        var text = MealTurn.Text(new MealInput(0, null, null, "en", Filmed: true));
+
+        text.ShouldStartWith(
+            "A video of the meal is attached, filmed while moving around the plate. " +
+            "If you are shown still frames instead, they were taken from that video.");
+        text.ShouldNotContain("There is no photo");
+    }
+
+    [Fact]
+    public void PhotosAndAClip_CountHerPhotos_AndAddTheVideo()
+    {
+        MealTurn.Text(new MealInput(2, "paella", null, "en", Filmed: true)).ShouldStartWith(
+            "2 photos of the same meal are attached. " +
+            "A video of the same meal is attached too, filmed while moving around the plate. " +
+            "If you are shown still frames instead, they were taken from that video.");
+    }
+
     // Her answers are the next turn of the conversation whose first message holds the photos and her
     // words, so the follow-up says nothing about either: "there is no photo" would be false there.
     [Fact]

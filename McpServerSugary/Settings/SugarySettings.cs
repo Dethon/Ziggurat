@@ -48,6 +48,9 @@ public record SugarySettings : IMcpHostSettings
     // Where the photos of a meal being estimated rest while the agent may still ask for them.
     public UploadSettings Uploads { get; init; } = new();
 
+    // How a clip of a meal is made into what every model that watches video takes, and its stills.
+    public ClipSettings Clips { get; init; } = new();
+
     // The deployment's retention policy, read from Domain's retention.json like every host's: the
     // upload store keeps a photo as long as an attachment is kept anywhere (ADR-0020).
     public RetentionSettings Retention { get; init; } = new();
@@ -65,6 +68,36 @@ public record UploadSettings
 
     // The standalone app's limit, kept: more angles of one plate stop adding anything.
     public int MaxPhotos { get; init; } = 4;
+
+    // The most a clip may weigh as the phone recorded it, before it is made small. Twenty seconds of
+    // 1080p is 20–50 MB on a phone and of 4K at 60 frames up to about 150 MB; past this the clip is
+    // refused before it is read, and the request is allowed to be this large and no larger.
+    public long MaxClipBytes { get; init; } = 200L * 1024 * 1024;
+}
+
+public record ClipSettings
+{
+    // The tools a clip is read and made with, on the PATH of the server's image.
+    public string Ffmpeg { get; init; } = "ffmpeg";
+
+    public string Ffprobe { get; init; } = "ffprobe";
+
+    // The longest clip sent. A longer one is refused rather than cut, so she knows the end of it
+    // was not seen; a few frames over, the way a phone stops, are cut instead.
+    public double MaxSeconds { get; init; } = 20;
+
+    // The short side of the clip as sent: what the standalone benchmark's clips had, and plenty for
+    // a model that samples about a frame a second.
+    public int MaxLines { get; init; } = 540;
+
+    // How many stills a model that only sees pictures is sent instead of the clip, at most.
+    public int Stills { get; init; } = 8;
+
+    // A still's longest edge: the size the app shrinks a photo to before sending it.
+    public int StillEdge { get; init; } = 1568;
+
+    // How long reading and making one clip may take before the meal is refused.
+    public int TimeoutSeconds { get; init; } = 120;
 }
 
 public record SugaryAppSettings
