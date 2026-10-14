@@ -53,3 +53,47 @@ ln -s ~/repos/sugary/eval/external/photos Tests/Eval/Sugary/photos
 Without it, fetch each dataset from the link above and save the photo each case names under that
 file name: Nutrition5k's overhead RGB image of the dish id, NutritionVerse-Real's four images of
 the dish id as `a` to `d`, SNAPMe's image whose file name starts with the id.
+
+## Running
+
+The tier is never part of a bare run, the full tier, the smoke tier or the changed tier, and it
+needs a model named. It spends money:
+
+```bash
+ZIGGURAT_EVAL=1 ZIGGURAT_EVAL_MODEL=google/gemini-3.8-flash \
+  dotnet test --filter "Category=Eval&Tier=Sugary"
+```
+
+One pass is the 64 meals, one estimate each, plus the sugary agent's four scenarios
+(`Tests/Eval/Scenarios/SugaryScenarios.cs`) on the same model. Each meal is sent as the Sugary
+channel sends an estimate (the standalone app's words for one photo, the `meal_estimate` format, the
+photo as an attachment) and its answer is read by the server's own parse and arithmetic. The
+scorecard is `.eval-output/scorecard-sugary-<model>.json`: its `benchmark` section has the mean
+absolute error, bias, how often the truth is inside the range, estimated against true weight, median
+seconds and cost per estimate, overall, per set, per input (photo or video) and per set and input,
+then every meal with its items.
+
+| Variable | Effect |
+|---|---|
+| `ZIGGURAT_EVAL_MODEL` | The model to score (required) |
+| `ZIGGURAT_EVAL_SUGARY_PHOTOS` | How many of a meal's photos to send (default 1; the `nvr` meals have four) |
+| `ZIGGURAT_EVAL_PROVIDER` | Pin the model to one provider |
+| `ZIGGURAT_EVAL_PARALLELISM` | How many meals are in flight at once |
+
+## What the standalone app scored
+
+The comparison a first pass is written against: the standalone app's own benchmark, 2026-10-12,
+`google/gemini-3.8-flash` at medium effort, one photo per meal, no hints, $0.42 for the 64 meals.
+
+| Set | Meals | Mean abs. error | Bias | In range | Median time |
+|---|---|---|---|---|---|
+| n5k | 14 | 12.2 g | -8.3 g | 8 of 14 | 13 s |
+| nvr | 18 | 8.1 g | -3.3 g | 8 of 18 | 27 s |
+| snap | 32 | 14.8 g | -11.1 g | 16 of 32 | 23 s |
+| all | 64 | 12.3 g | -8.3 g | 32 of 64 | 23 s |
+
+Every model tried there scored about 13–14 g from a photo. The Gemini row above was written about
+half an hour before the standalone's estimate gained its range floor (0.6× to 1.6× of the best
+weight on every item not marked high), which the server applies and this tier scores; the
+standalone's last Haiku 5.5 pass, with the floor, held the truth in 39 of 64 at 14.2 g. So read the
+mean error against the table and expect the in-range count to be higher here.
