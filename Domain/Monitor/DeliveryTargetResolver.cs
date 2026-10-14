@@ -25,12 +25,57 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
         var host = message.ReviewCopy is null
             ? null
             : channels.FirstOrDefault(c => c.HostsReviewCopies && c.ChannelId != message.ChannelId);
-        return host is null
-            ? [new DeliveryTarget(originChannel, message.ConversationId)]
-            : await FanOutAsync(
-                message,
-                [new ReplyTarget(message.ChannelId, message.ConversationId), new ReplyTarget(host.ChannelId, null)],
-                ct);
+        if (host is null)
+        {
+            return [new DeliveryTarget(originChannel, message.ConversationId)];
+        }
+
+        var targets = await FanOutAsync(
+            message,
+            [new ReplyTarget(message.ChannelId, message.ConversationId), new ReplyTarget(host.ChannelId, null)],
+            ct);
+        if (message.Attachments is { Count: > 0 } attachments
+            && targets.FirstOrDefault(t => t.Channel == host) is { Channel: not null } review)
+        {
+            // Started, not awaited: the channel's answer must never wait on the review host.
+            _ = CopyAttachmentsAsync(originChannel, review, attachments, ct);
+        }
+
+        return targets;
+    }
+
+    // The history the channel and the host share names each file by the channel's reference, and
+    // the bytes rest where only the channel and the agent can reach them. So the host is handed a
+    // copy under that same reference — the agent being the one party connected to both — and the
+    // message and the history still carry references alone (ADR 0020, ADR 0046). One at a time, in
+    // the order sent, so at most one photo is held here at once. Never faults: a copy that fails
+    // costs the review a picture and nothing else.
+    private async Task CopyAttachmentsAsync(
+        IChannelConnection origin, DeliveryTarget review, IReadOnlyList<AttachmentReference> attachments,
+        CancellationToken ct)
+    {
+        try
+        {
+            foreach (var attachment in attachments)
+            {
+                var bytes = await origin.FetchAttachmentAsync(attachment.Id, ct);
+                var kept = bytes is not null
+                           && await review.Channel.StoreAttachmentAsync(review.ConversationId, attachment, bytes, ct);
+                if (!kept)
+                {
+                    logger.LogWarning(
+                        "Attachment {AttachmentId} was not copied to {ChannelId}; its review shows a placeholder",
+                        attachment.Id, review.Channel.ChannelId);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Copying attachments to {ChannelId} for review failed", review.Channel.ChannelId);
+        }
     }
 
     private async Task<IReadOnlyList<DeliveryTarget>> FanOutAsync(

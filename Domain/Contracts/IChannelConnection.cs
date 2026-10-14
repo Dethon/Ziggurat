@@ -31,6 +31,13 @@ public interface IChannelConnection : IToolApprovalHandler
     // both hydrate to a placeholder naming the file rather than failing the turn.
     Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct);
 
+    // A copy of another channel's attachment kept on this one under the reference's own id, for a
+    // review copy to show (ADR 0046). False is "not connected", "this channel keeps no copies" and
+    // "it refused this one" alike: the review shows a placeholder for the file and nothing else
+    // depends on it, so the caller only logs.
+    Task<bool> StoreAttachmentAsync(
+        string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct);
+
     Task<string?> CreateConversationAsync(
         string agentId,
         string topicName,

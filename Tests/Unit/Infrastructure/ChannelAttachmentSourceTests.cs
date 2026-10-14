@@ -95,6 +95,10 @@ public class ChannelAttachmentSourceTests
 
         public Task SendReplyAsync(SendReplyParams reply, CancellationToken ct) => Task.CompletedTask;
 
+        public Task<bool> StoreAttachmentAsync(
+            string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct) =>
+            Task.FromResult(false);
+
         public Task<ToolApprovalResult> RequestApprovalAsync(
             string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct) =>
             Task.FromResult(new ToolApprovalResult());

@@ -46,6 +46,20 @@ public class McpChannelConnectionNotConnectedTests
     }
 
     [Fact]
+    public async Task StoreAttachmentAsync_NotConnected_ReturnsFalse()
+    {
+        // A sixth member, on the silent side: its one caller copies a review's files in the
+        // background and can do nothing with a failure but log it, so "not kept" is the answer.
+        var kept = await NeverConnected().StoreAttachmentAsync(
+            "11:22",
+            new AttachmentReference { Id = "11-22/a", FileName = "a.jpg", MediaType = "image/jpeg", SizeBytes = 1 },
+            [1],
+            CancellationToken.None);
+
+        kept.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task CreateConversationAsync_NotConnected_ReturnsNull()
     {
         // The load-bearing one: DeliveryTargetResolver reads null as "this channel minted nothing",

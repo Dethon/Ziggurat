@@ -50,6 +50,23 @@ public sealed class AttachmentService(
             ticket.ExpiresAt);
     }
 
+    // A review copy's file, kept under the reference the shared history names it by, in the space
+    // the conversation's topic is in. The same rules an upload meets, so the store only ever holds
+    // what this chat can show. Null when kept; otherwise why not.
+    public async Task<string?> KeepCopyAsync(
+        string conversationId, string? spaceSlug, string attachmentId, string fileName, string mediaType,
+        byte[] bytes, CancellationToken ct)
+    {
+        if (AttachmentRefusals.For(fileName, mediaType, bytes.LongLength, Limits) is { } refusal)
+        {
+            return refusal;
+        }
+
+        return await store.SaveCopyAsync(attachmentId, conversationId, spaceSlug ?? SpaceDefault, fileName, mediaType, bytes, ct)
+            ? null
+            : $"Attachment '{attachmentId}' cannot be kept here: its id names no file this store could hold, or one it already holds.";
+    }
+
     public Task<byte[]?> ReadBytesAsync(string attachmentId, CancellationToken ct) =>
         store.ReadBytesAsync(attachmentId, ct);
 

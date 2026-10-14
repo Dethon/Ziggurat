@@ -251,6 +251,31 @@ internal sealed class FakeChannelConnection : IChannelConnection
     public Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct)
         => Task.FromResult(Attachments.GetValueOrDefault(attachmentId));
 
+    private readonly List<(string ConversationId, AttachmentReference Attachment, byte[] Bytes)> _stored = [];
+
+    // Read from the test while the copy runs in the background, so a snapshot under the lock.
+    public IReadOnlyList<(string ConversationId, AttachmentReference Attachment, byte[] Bytes)> StoredAttachments
+    {
+        get
+        {
+            lock (_stored)
+            {
+                return [.. _stored];
+            }
+        }
+    }
+
+    public Task<bool> StoreAttachmentAsync(
+        string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct)
+    {
+        lock (_stored)
+        {
+            _stored.Add((conversationId, attachment, bytes));
+        }
+
+        return Task.FromResult(true);
+    }
+
     public Task NotifyAutoApprovedAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
     {
         NotifyAutoApprovedCalls.Add((conversationId, requests));

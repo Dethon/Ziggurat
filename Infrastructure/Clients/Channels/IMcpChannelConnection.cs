@@ -18,6 +18,9 @@ namespace Infrastructure.Clients.Channels;
 //   to continue.
 // - RegisterAgentsAsync returns silently and IsHealthyAsync returns false. Both are called by the
 //   connection's own supervision, which reacts to the answer rather than to an exception.
+// - FetchAttachmentAsync returns null and StoreAttachmentAsync false, the same answers as a file the
+//   channel cannot hand over or will not keep: hydration turns the first into a placeholder, and a
+//   review copy's background copy only logs the second (ADR 0046).
 // - Messages yields forever. The agent's read loop awaits messages for the process lifetime, so a
 //   reconnect is invisible to it; a completed sequence would end the loop.
 //
