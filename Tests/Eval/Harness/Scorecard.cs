@@ -14,7 +14,8 @@ public static class Scorecard
         IReadOnlyList<ScenarioOutcome>? scenarios = null,
         IReadOnlyDictionary<string, string>? coverage = null,
         TimeProvider? clock = null,
-        string? preloadModel = null)
+        string? preloadModel = null,
+        JsonObject? benchmark = null)
     {
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, $"scorecard-{Filed(tier, route)}.json");
@@ -110,17 +111,26 @@ public static class Scorecard
             };
         }
 
+        // The benchmark meals' figures, where the pass scored any: its own section rather than
+        // marks, because grams of carbs off the truth are not a score out of ten.
+        if (benchmark is not null)
+        {
+            summary["benchmark"] = benchmark;
+        }
+
         File.WriteAllText(path, summary.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         return path;
     }
 
-    // Every tier's diff is across time but the research tier's, which is across models: one file
-    // per model served is what lets two passes sit side by side, and what keeps the second
-    // model's pass from overwriting the first's.
+    // Every tier's diff is across time but the research and Sugary tiers', which are across
+    // models: one file per model served is what lets two passes sit side by side, and what keeps
+    // the second model's pass from overwriting the first's.
+    public static bool IsPerModel(EvalTier tier) => tier is EvalTier.Research or EvalTier.Sugary;
+
     private static string Filed(EvalTier tier, ServedRoute? route)
     {
         var name = tier.ToString().ToLowerInvariant();
-        return tier == EvalTier.Research && route?.Model is { Length: > 0 } model
+        return IsPerModel(tier) && route?.Model is { Length: > 0 } model
             ? $"{name}-{string.Concat(model.Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' ? c : '-'))}"
             : name;
     }

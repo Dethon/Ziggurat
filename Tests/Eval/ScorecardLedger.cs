@@ -2,6 +2,7 @@ using Domain.DTOs;
 using Domain.Prompts;
 using Infrastructure.Agents.ChatClients;
 using Tests.Eval.Harness;
+using Tests.Eval.Sugary;
 
 namespace Tests.Eval;
 
@@ -16,18 +17,36 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
     private IReadOnlyList<Scenario> Suite => suite ?? EvalSuite.All;
 
     private readonly Dictionary<EvalTier, TierState> _tiers = [];
+    private readonly List<SugaryReading> _benchmark = [];
     private readonly Lock _gate = new();
     private ServedRoute? _route;
+
+    // The benchmark meals a Sugary pass estimated, filed beside that tier's scenarios.
+    public void RecordBenchmark(IReadOnlyList<SugaryReading> readings)
+    {
+        lock (_gate)
+        {
+            StateOf(EvalTier.Sugary);
+            _benchmark.AddRange(readings);
+        }
+    }
+
+    private TierState StateOf(EvalTier tier)
+    {
+        if (!_tiers.TryGetValue(tier, out var state))
+        {
+            state = new TierState([], []);
+            _tiers[tier] = state;
+        }
+
+        return state;
+    }
 
     public void Record(EvalTier tier, Scenario scenario, ScenarioResult result)
     {
         lock (_gate)
         {
-            if (!_tiers.TryGetValue(tier, out var state))
-            {
-                state = new TierState([], []);
-                _tiers[tier] = state;
-            }
+            var state = StateOf(tier);
 
             // The scenario's own claims ride its rate whole; the conditional ones arrive already
             // tallied over the runs that gave them material, which is a different denominator.
@@ -103,7 +122,8 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
                 // no such claim", which is the one thing the file must not say.
                 // The research tier cites none of them and can exercise none of them: a hundred
                 // null rows there would say the family is missing coverage it was never after.
-                var seeded = (tier == EvalTier.Research ? [] : PromptManifest.Claims)
+                // The Sugary tier can exercise only what the sugary agent's scenarios test.
+                var seeded = Claimable(tier)
                     .Select(claim => new ClaimOutcome(claim.Id, 0, 0))
                     .Concat(state.Outcomes)
                     .ToList();
@@ -113,16 +133,41 @@ public sealed class ScorecardLedger(IReadOnlyList<Scenario>? suite = null)
                 // What this tier could have run, and no more: the research family belongs to its
                 // own tier's file and to no other.
                 var scenarios = Suite
-                    .Where(scenario => (scenario.Tier == EvalTier.Research) == (tier == EvalTier.Research))
+                    .Where(scenario => Runs(tier, scenario))
                     .Select(scenario => new ScenarioOutcome(scenario.Name, 0, 0) { Agent = scenario.AgentId })
                     .Concat(state.Scenarios)
                     .ToList();
 
                 Scorecard.Write(
                     directory, tier, _route, seeded, scenarios,
-                    tier == EvalTier.Research ? null : Coverage(), preloadModel: _preloadModel);
+                    tier == EvalTier.Research ? null : Coverage(), preloadModel: _preloadModel,
+                    benchmark: tier == EvalTier.Sugary && _benchmark.Count > 0 ? SugaryScore.Json(_benchmark) : null);
             }
         }
+    }
+
+    // Which scenarios a tier's file accounts for: the research family its own; the Sugary tier
+    // the sugary agent's, which also guard its prompt in every full pass; every other tier the rest.
+    private static bool Runs(EvalTier tier, Scenario scenario) => tier switch
+    {
+        EvalTier.Research => scenario.Tier == EvalTier.Research,
+        EvalTier.Sugary => scenario.AgentId == SugaryBenchmark.Agent,
+        _ => scenario.Tier != EvalTier.Research
+    };
+
+    private IEnumerable<PromptClaim> Claimable(EvalTier tier)
+    {
+        if (tier != EvalTier.Sugary)
+        {
+            return tier == EvalTier.Research ? [] : PromptManifest.Claims;
+        }
+
+        var tested = Suite.Where(scenario => Runs(tier, scenario))
+            .SelectMany(scenario => scenario.Claims
+                .Concat(scenario.Judged.Select(check => check.Claim))
+                .Concat(scenario.Guards.Select(guard => guard.Claim)))
+            .ToHashSet();
+        return PromptManifest.Claims.Where(claim => tested.Contains(claim.Id));
     }
 
     // How each declared claim is covered, from the same two sources the coverage tests read: a

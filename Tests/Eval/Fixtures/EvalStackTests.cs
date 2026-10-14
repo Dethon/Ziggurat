@@ -74,3 +74,57 @@ public class EvalStackTests
             .ShouldBe(["http://127.0.0.1:5002/mcp"]);
     }
 }
+// A stack stands up what the run can dial and nothing else. A server the agent's definition does
+// not name was always dropped from its endpoints, so starting it bought nothing — and for the
+// sugary agent, whose one server is Sugary's, it was a sandbox container per benchmark meal.
+public class EvalStackDialledTests
+{
+    private static readonly AgentSettings _shipped = new()
+    {
+        OpenRouter = new OpenRouterConfiguration { ApiUrl = "https://openrouter.ai/api/v1/", ApiKey = "" },
+        Redis = new RedisConfiguration { ConnectionString = "localhost" },
+        Agents =
+        [
+            new AgentDefinition
+            {
+                Id = "jonas", Name = "Jonas", Model = "m",
+                McpServerEndpoints = ["http://mcp-vault:8080/mcp", "http://mcp-timers:8080/mcp"],
+                EnabledFeatures = ["subagents"]
+            },
+            new AgentDefinition
+            {
+                Id = "sugary", Name = "Sugary", Model = "m",
+                McpServerEndpoints = ["http://mcp-sugary:8080/mcp"]
+            }
+        ],
+        SubAgents =
+        [
+            new SubAgentDefinition
+            {
+                Id = "jonas-worker", Name = "Jonas Worker",
+                McpServerEndpoints = ["http://mcp-websearch:8080/mcp", "http://mcp-sandbox:8080/mcp"]
+            }
+        ]
+    };
+
+    [Fact]
+    public void AnAgentWithWorkers_DialsItsOwnServersAndTheirs()
+    {
+        EvalStack.Dialled(_shipped, "jonas")
+            .ShouldBe(["mcp-vault", "mcp-timers", "mcp-websearch", "mcp-sandbox"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void AnAgentWithoutWorkers_DialsOnlyItsOwn()
+    {
+        EvalStack.Dialled(_shipped, "sugary").ShouldBe(["mcp-sugary"]);
+    }
+
+    // The definition a scenario runs is the shipped one: the stacks' servers are chosen from it,
+    // so the sugary agent's runs stand up Sugary's server and nothing a turn of it could not reach.
+    [Fact]
+    public void TheShippedSugaryAgent_DialsSugarysServerAlone()
+    {
+        EvalStack.Dialled(ShippedDefinition.Repository.Settings, "sugary").ShouldBe([EvalStack.Sugary]);
+    }
+}

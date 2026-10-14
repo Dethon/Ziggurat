@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Voice;
 using Infrastructure.Agents.Skills;
 
@@ -98,6 +99,10 @@ public sealed record Scenario
     // would fail on wording rather than on behaviour.
     public ReplyExpectation? Reply { get; init; }
 
+    // What a structured meal estimate must hold, for a turn asked in the meal_estimate format.
+    // Read by the server's own parse, so an answer the app could not show fails here too.
+    public EstimateExpectation? Estimate { get; init; }
+
     public IReadOnlyList<string> Claims { get; init; } = [];
 
     // Claims this scenario asserts without evidencing: the demonstrated-red bar was tried and
@@ -166,7 +171,25 @@ public sealed record EvalTurn
     // back. Null means the chat, or voice when a satellite is named — the two every other scenario
     // already implies.
     public string? Channel { get; init; }
+
+    // The schema a channel asked the answer in, honoured for this turn alone (ADR-0044). Null is a
+    // turn answered in prose, which is every channel but Sugary's.
+    public ResponseFormat? ResponseFormat { get; init; }
+
+    // Files the channel holds for this turn, in the order the person sent them. They reach the
+    // agent as references of the turn's channel, and the stack answers the fetch hydration makes.
+    public IReadOnlyList<EvalAttachment> Attachments { get; init; } = [];
 }
+
+// What the estimate's items may not include: a food the turn says is already counted. Matched
+// against item names alone, case-insensitively, so a note saying it was left out still passes.
+public sealed record EstimateExpectation
+{
+    public IReadOnlyList<string> NeverListed { get; init; } = [];
+}
+
+// A file on disk standing in for one the channel took from the person.
+public sealed record EvalAttachment(string Path, string MediaType);
 
 // How many of how many runs must pass. Never a retry-until-green: half the assertions in this
 // suite are negative, and retrying past a failure hides exactly the regression being hunted.
@@ -218,7 +241,11 @@ public enum EvalTier
     // The graded research family, and the one tier the full pass does not take: its scenarios
     // measure a model rather than guard a prompt, run real workers and cost several times a
     // turn's worth each, so a routine pass must not pay for them.
-    Research
+    Research,
+    // The sugary agent on a model named for the pass: the benchmark meals scored against their
+    // known carbs, beside the sugary agent's own scenarios. Like the research tier it compares
+    // models and is filed per model, and a routine pass never pays for its sixty-four meals.
+    Sugary
 }
 
 // A call the scenario requires, matched by tool and by whatever its arguments have to say. The

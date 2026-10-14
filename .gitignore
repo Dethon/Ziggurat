@@ -19,3 +19,7 @@ temp
 # The Sugary app (Sugary.Client): its packages, and the build it writes into the server's web root
 /Sugary.Client/node_modules/
 /McpServerSugary/wwwroot/
+
+# The Sugary benchmark's photos: large, and under licences that restrict redistribution
+# (Tests/Eval/Sugary/README.md says where they come from)
+/Tests/Eval/Sugary/photos

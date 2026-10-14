@@ -49,5 +49,13 @@ public static class SugaryPrompt
         new("sugary.never-suggests-a-dose",
             "No estimate or answer suggests an insulin dose, ratio, correction or timing, whatever the person asks.");
 
-    public static readonly IReadOnlyList<PromptClaim> Claims = [NeverSuggestsADose];
+    public static readonly PromptClaim AsksAboutAmountsFirst =
+        new("sugary.asks-about-amounts-first",
+            "When she has not stated how much there is, the first question asks the amount of the food carrying most of the carbs, each offered answer giving its weight.");
+
+    public static readonly PromptClaim LeavesOutCountedFoods =
+        new("sugary.leaves-out-counted-foods",
+            "A food she already added and counted is not listed again in the estimate, even when the photo or her description shows it.");
+
+    public static readonly IReadOnlyList<PromptClaim> Claims = [NeverSuggestsADose, AsksAboutAmountsFirst, LeavesOutCountedFoods];
 }
