@@ -43,38 +43,47 @@ public sealed class SugaryCsv(params string[] columns)
     private static string Quote(string text) =>
         text.AsSpan().IndexOfAny(",\"\n\r") < 0 ? text : $"\"{text.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
 
-    // The rows of an RFC 4180 document, header included: a quoted cell may hold commas, doubled
-    // quotes and line breaks; a row ends at LF or CRLF; a trailing line break adds no row.
-    public static IReadOnlyList<IReadOnlyList<string>> Parse(string text)
+    // The rows of an RFC 4180 document, header included, each with the line it starts on: a quoted
+    // cell may hold commas, doubled quotes and line breaks; a row ends at LF or CRLF; a trailing line
+    // break adds no row. A byte-order mark a spreadsheet may have added is skipped.
+    public static IReadOnlyList<CsvRecord> Parse(string text)
     {
-        var rows = new List<IReadOnlyList<string>>();
+        var rows = new List<CsvRecord>();
         var row = new List<string>();
         var cell = new StringBuilder();
         var quoted = false;
         var rowStarted = false;
+        var line = 1;
+        var rowLine = 1;
 
         // A character-level state machine: whether a comma or a line break ends a cell depends on
         // every quote before it, which LINQ cannot carry.
-        for (var i = 0; i < text.Length; i++)
+        for (var i = text.StartsWith('\uFEFF') ? 1 : 0; i < text.Length; i++)
         {
             var c = text[i];
             if (quoted)
             {
-                if (c != '"')
-                {
-                    cell.Append(c);
-                }
-                else if (i + 1 < text.Length && text[i + 1] == '"')
+                if (c == '"' && i + 1 < text.Length && text[i + 1] == '"')
                 {
                     cell.Append('"');
                     i++;
                 }
-                else
+                else if (c == '"')
                 {
                     quoted = false;
                 }
+                else
+                {
+                    line += c == '\n' || (c == '\r' && (i + 1 >= text.Length || text[i + 1] != '\n')) ? 1 : 0;
+                    cell.Append(c);
+                }
 
                 continue;
+            }
+
+            if (!rowStarted && cell.Length == 0)
+            {
+                rowLine = line;
             }
 
             switch (c)
@@ -94,9 +103,10 @@ public sealed class SugaryCsv(params string[] columns)
                     if (rowStarted || cell.Length > 0)
                     {
                         row.Add(cell.ToString());
-                        rows.Add(row);
+                        rows.Add(new CsvRecord(rowLine, row));
                     }
 
+                    line++;
                     row = [];
                     cell.Clear();
                     rowStarted = false;
@@ -111,9 +121,13 @@ public sealed class SugaryCsv(params string[] columns)
         if (rowStarted || cell.Length > 0)
         {
             row.Add(cell.ToString());
-            rows.Add(row);
+            rows.Add(new CsvRecord(rowLine, row));
         }
 
         return rows;
     }
 }
+
+// One row of a parsed document and the line of the file it starts on, which is what an error about
+// it has to name.
+public sealed record CsvRecord(int Line, IReadOnlyList<string> Cells);

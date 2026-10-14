@@ -15,26 +15,24 @@ public static class SugaryDatabase
 
     // Creates the file's directory and brings the schema up to date. Run before anything reads or
     // writes; never at registration, which must not touch the disk.
-    public static async Task MigrateAsync(
-        IDbContextFactory<SugaryDbContext> contexts, SugarySettings settings, CancellationToken ct)
+    public static async Task MigrateAsync(IDbContextFactory<SugaryDbContext> contexts, CancellationToken ct)
     {
-        if (Path.GetDirectoryName(Path.GetFullPath(settings.DatabasePath)) is { } directory)
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        if (Path.GetDirectoryName(Path.GetFullPath(db.Database.GetDbConnection().DataSource)) is { Length: > 0 } directory)
         {
             Directory.CreateDirectory(directory);
         }
 
-        await using var db = await contexts.CreateDbContextAsync(ct);
         await db.Database.MigrateAsync(ct);
     }
 }
 
 // Hosted services start before the server takes its first request, so the mount never reads a
 // database whose schema is missing.
-public sealed class SugaryDatabaseMigrator(IDbContextFactory<SugaryDbContext> contexts, SugarySettings settings)
-    : IHostedService
+public sealed class SugaryDatabaseMigrator(IDbContextFactory<SugaryDbContext> contexts) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken) =>
-        SugaryDatabase.MigrateAsync(contexts, settings, cancellationToken);
+        SugaryDatabase.MigrateAsync(contexts, cancellationToken);
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
