@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.Exceptions;
 using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
@@ -63,6 +64,70 @@ public sealed class OpenRouterChatClientVideoTests
         var parts = UserParts(wire.Bodies.ShouldHaveSingleItem());
         parts.Where(IsVideo).ShouldBeEmpty();
         ImageUrls(parts).ShouldBe([DataUrl(_still1), DataUrl(_still2), DataUrl(_photo)], ignoreOrder: true);
+    }
+
+    // A patch moves one turn onto another model, and the wire takes or rejects what that model
+    // takes — so the choice is the patched model's, both ways round.
+    [Theory]
+    [InlineData(Watches, SeesPictures, false)]
+    [InlineData(SeesPictures, Watches, true)]
+    public async Task APatchedTurn_IsDecidedByThePatchedModel(string agentModel, string patched, bool sendsTheClip)
+    {
+        var wire = new RecordingResponsesHandler();
+        await using var agent = CreateAgent(wire, agentModel);
+        var message = MealMessage();
+        message.SetConfigPatch(new AgentConfigPatch { Model = patched });
+
+        await agent.RunStreamingAsync([message]).ToListAsync();
+
+        var body = wire.Bodies.ShouldHaveSingleItem();
+        body["model"]!.GetValue<string>().ShouldBe(patched);
+        UserParts(body).Any(IsVideo).ShouldBe(sendsTheClip);
+        ImageUrls(UserParts(body)).Count.ShouldBe(sendsTheClip ? 1 : 3);
+    }
+
+    // An answer that silently ignores the meal it was shown is worse than none: nothing leaves for
+    // the provider, and what the channel is told names the model and why.
+    [Fact]
+    public async Task AModelThatTakesNeitherVideoNorImages_HasTheTurnRefused()
+    {
+        var wire = new RecordingResponsesHandler();
+        await using var agent = CreateAgent(wire, TextOnly);
+
+        var refusal = await Should.ThrowAsync<AttachmentRefusedException>(
+            () => agent.RunStreamingAsync([MealMessage()]).ToListAsync().AsTask());
+
+        wire.Bodies.ShouldBeEmpty();
+        refusal.Message.ShouldContain(TextOnly);
+        refusal.Message.ShouldContain("plate.mp4");
+    }
+
+    [Fact]
+    public async Task APatchOntoAModelThatTakesNeither_HasTheTurnRefused()
+    {
+        var wire = new RecordingResponsesHandler();
+        await using var agent = CreateAgent(wire, Watches);
+        var message = MealMessage();
+        message.SetConfigPatch(new AgentConfigPatch { Model = TextOnly });
+
+        await Should.ThrowAsync<AttachmentRefusedException>(
+            () => agent.RunStreamingAsync([message]).ToListAsync().AsTask());
+
+        wire.Bodies.ShouldBeEmpty();
+    }
+
+    // With no stills there is nothing a model that only sees pictures could be shown in the clip's
+    // place, and leaving it out would be the silent answer the refusal exists to prevent.
+    [Fact]
+    public async Task AClipWithNoStills_OnAModelThatOnlySeesPictures_HasTheTurnRefused()
+    {
+        var wire = new RecordingResponsesHandler();
+        await using var agent = CreateAgent(wire, SeesPictures);
+
+        await Should.ThrowAsync<AttachmentRefusedException>(
+            () => agent.RunStreamingAsync([MealMessage(_clip with { Stills = null }, _photo)]).ToListAsync().AsTask());
+
+        wire.Bodies.ShouldBeEmpty();
     }
 
     private static ChatMessage MealMessage(params AttachmentReference[] attachments)
