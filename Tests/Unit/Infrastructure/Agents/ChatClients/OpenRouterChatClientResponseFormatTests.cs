@@ -129,6 +129,50 @@ public sealed class OpenRouterChatClientResponseFormatTests
         provider["sort"]!.GetValue<string>().ShouldBe("throughput");
     }
 
+    // The persisted message keeps its format as the record of what that turn asked for, and the
+    // next turn on the same conversation reads that history — so this is the place a format could
+    // leak, and the second request is where it would show.
+    [Fact]
+    public async Task TheNextTurnOfTheSameConversation_CarriesNoFormat()
+    {
+        var wire = new RecordingResponsesHandler();
+        var store = new InMemoryThreadStore();
+        await using var agent = CreateAgent(wire, store.Object, routing: _pinned);
+        var session = await agent.CreateSessionAsync();
+
+        await agent.RunStreamingAsync([UserMessage("a plate of paella", _format)], session).ToListAsync();
+        await agent.RunStreamingAsync([UserMessage("thanks")], session).ToListAsync();
+
+        wire.Bodies.Count.ShouldBe(2);
+        var second = wire.Bodies[1];
+        second["input"]!.ToJsonString().ShouldContain("a plate of paella");
+        TextFormat(second)?["type"]?.GetValue<string>().ShouldNotBe("json_schema");
+        second["provider"]!.AsObject().ContainsKey("require_parameters").ShouldBeFalse();
+    }
+
+    // The format constrains the answer, not the work before it: the model may still call a tool,
+    // and the request that carries the tool's result asks for the same shape again.
+    [Fact]
+    public async Task ATurnWithAFormat_MayStillCallAToolFirst()
+    {
+        var wire = new RecordingResponsesHandler().ThenCalls("lookup_food");
+        var called = 0;
+        var tool = AIFunctionFactory.Create(() =>
+        {
+            Interlocked.Increment(ref called);
+            return "paella: 20 g per 100 g";
+        }, "lookup_food");
+        await using var agent = CreateAgent(wire, tools: [tool]);
+
+        await agent.RunStreamingAsync([UserMessage("paella", _format)]).ToListAsync();
+
+        called.ShouldBe(1);
+        wire.Bodies.Count.ShouldBe(2);
+        wire.Bodies.ShouldAllBe(b => TextFormat(b)!["name"]!.GetValue<string>() == "meal_estimate");
+        wire.Bodies.ShouldAllBe(b => b["tools"]!.AsArray().Count == 1);
+        wire.Bodies[1]["input"]!.ToJsonString().ShouldContain("function_call_output");
+    }
+
     // nabu's shipped routing, the one non-default pin in Agent/appsettings.json.
     private static readonly ProviderRouting _pinned = new()
     {
@@ -166,6 +210,34 @@ public sealed class OpenRouterChatClientResponseFormatTests
             tools ?? [],
             []);
     }
+}
+
+// A conversation's history kept between turns the way the Redis store keeps it: appended after a
+// turn and read back before the next.
+internal sealed class InMemoryThreadStore
+{
+    private readonly Dictionary<string, List<ChatMessage>> _threads = [];
+
+    public InMemoryThreadStore()
+    {
+        var store = new Mock<IThreadStateStore>();
+        store.Setup(s => s.GetMessagesAsync(It.IsAny<string>()))
+            .ReturnsAsync((string key) => _threads.TryGetValue(key, out var messages) ? [.. messages] : null);
+        store.Setup(s => s.AppendMessagesAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<ChatMessage>>()))
+            .Callback((string key, IReadOnlyList<ChatMessage> messages) =>
+            {
+                if (!_threads.TryGetValue(key, out var thread))
+                {
+                    _threads[key] = thread = [];
+                }
+
+                thread.AddRange(messages);
+            })
+            .Returns(Task.CompletedTask);
+        Object = store.Object;
+    }
+
+    public IThreadStateStore Object { get; }
 }
 
 // Records every request body, because a turn that calls a tool is more than one request, and answers
