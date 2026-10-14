@@ -84,6 +84,7 @@ public static class SugaryApp
         guarded.MapMealEndpoints();
         guarded.MapFoodEndpoints();
         guarded.MapProductEndpoints();
+        guarded.MapExportEndpoints();
 
         api.MapFallback(() => Results.NotFound());
         return app;
