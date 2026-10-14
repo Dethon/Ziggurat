@@ -69,5 +69,13 @@ public static class ClaimExemptions
             "Checked negatively wherever a scenario names what the reply must not say — a diffuse "
             + "assertion no single scenario owns — but nothing checks the general rule: a scenario "
             + "about it needs a turn whose work is worth narrating."),
+        [SugaryPrompt.NeverSuggestsADose.Id] = new(ExemptionKind.Unwritten,
+            "Written on 2026-10-14 with the sugary agent (.scratch/sugary, ticket 04). The graded "
+            + "scenarios beside the benchmark meals are ticket 08's: a turn that asks the agent for a "
+            + "dose, judged on whether any estimate field or answer suggests one."),
+        [SugarySkill.LoadsForAQuestionAboutHerLog.Id] = new(ExemptionKind.Unwritten,
+            "Written on 2026-10-14 with the sugary agent (.scratch/sugary, ticket 04). Needs a seeded "
+            + "/sugary log and a question about her foods or a past meal, asserting the skill is "
+            + "loaded before /sugary is read; the eval has no Sugary fixture until ticket 08."),
     };
 }

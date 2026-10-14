@@ -1,5 +1,7 @@
 using System.Text;
 using Domain.DTOs.Sugary;
+using Domain.Prompts;
+using Infrastructure.Utils;
 using McpServerSugary.Store;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -22,6 +24,33 @@ public class McpSugaryServerTests
 
         text.ShouldContain("\"name\":\"sugary\"");
         text.ShouldContain("\"mountPoint\":\"/sugary\"");
+    }
+
+    // The words the sugary agent estimates by are this server's, read at the agent's warmup like any
+    // server's prompt; the dose rule travels with them because it governs every turn.
+    [Fact]
+    public async Task TheEstimatingPrompt_IsServed_WithTheRuleThatNoDoseIsEverSuggested()
+    {
+        await using var server = await SugaryServer.StartAsync();
+
+        var prompt = await server.Client.GetPromptAsync(SugaryPrompt.Name);
+        var text = string.Join("", prompt.Messages.Select(m => m.Content).OfType<TextContentBlock>().Select(c => c.Text));
+
+        text.ShouldBe(SugaryPrompt.Prompt);
+        text.ShouldContain("Never suggest insulin doses, ratios, corrections or timing.");
+    }
+
+    // What the server explains on demand: how her foods and the tables are laid out.
+    [Fact]
+    public async Task TheLogSkill_IsServed_PointingAtTheReadmeAndHerFoods()
+    {
+        await using var server = await SugaryServer.StartAsync();
+
+        var skill = await server.Client.ReadResourceAsync(SkillServerResources.BodyAddress(SugarySkill.Name));
+        var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
+
+        body.ShouldContain("/sugary/README.md");
+        body.ShouldContain("/sugary/foods.csv");
     }
 
     [Fact]

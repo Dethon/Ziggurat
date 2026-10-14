@@ -817,6 +817,8 @@ services:
         condition: service_started
       mcp-channel-voice:
         condition: service_started
+      mcp-sugary:
+        condition: service_started
       redis:
         condition: service_healthy
       base-sdk:

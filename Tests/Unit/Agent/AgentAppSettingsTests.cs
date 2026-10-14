@@ -195,6 +195,31 @@ public class AgentAppSettingsTests
         settings.AgentDefaults.For("telegram").ShouldBe("jonas");
     }
 
+    // Her estimates run on an agent of their own that reaches her log and nothing else: no other
+    // server's tools to wander into, no memory to recall an old meal into a new estimate, and no
+    // workers. That is a rule about her health data, not a setting, so it is read back here.
+    [Fact]
+    public void Sugary_ReachesTheSugaryServerAlone_WithNoMemoryAndNoWorkers()
+    {
+        var sugary = BoundAgents().Single(a => a.Id == "sugary");
+
+        sugary.McpServerEndpoints.ShouldBe(["http://mcp-sugary:8080/mcp"]);
+        sugary.EnabledFeatures.ShouldNotContain(f => f.StartsWith("memory") || f.StartsWith("subagents"));
+    }
+
+    // The app's channel is connected, and a meal sent on it is answered by the agent that estimates:
+    // left to the fallback it would be answered by the general assistant, in prose no schema reads.
+    [Fact]
+    public void TheSugaryChannel_IsConnectedAndAnsweredBySugary()
+    {
+        var settings = BoundConfig().Get<AgentSettings>()!;
+
+        settings.AgentDefaults.For("sugary").ShouldBe("sugary");
+        Root()["channelEndpoints"]!.AsArray()
+            .Single(e => e!["channelId"]!.GetValue<string>() == "sugary")!["endpoint"]!.GetValue<string>()
+            .ShouldBe("http://mcp-sugary:8080/mcp");
+    }
+
     private static AgentSettings BindSettings(params (string Key, string? Value)[] entries)
     {
         var config = new Dictionary<string, string?>

@@ -1,9 +1,11 @@
 using Domain.Contracts;
+using Domain.Prompts;
 using Domain.Tools.Sugary.Vfs;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerSugary.App;
 using McpServerSugary.Channel;
+using McpServerSugary.McpPrompts;
 using McpServerSugary.McpTools;
 using McpServerSugary.Settings;
 using McpServerSugary.Store;
@@ -34,7 +36,9 @@ public static class ConfigModule
             // is answered as an error at once rather than buffered for an agent that may never come.
             .AddChannelServer(DeliveryPolicy.GateOnLive)
             .AddFileSystemTools<SugaryFileSystem>()
-            .AddFileSystemResource<SugaryFileSystem>();
+            .AddFileSystemResource<SugaryFileSystem>()
+            .AddSkills(SugarySkill.Text)
+            .WithPrompts<McpSystemPrompt>();
 
         return services;
     }
