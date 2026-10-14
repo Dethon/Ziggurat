@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Services;
@@ -19,13 +20,8 @@ public sealed class CreateConversationTool
         IServiceProvider services,
         [Description("Text of the originating prompt; rendered as the user-role bubble")] string? initialPrompt = null,
         [Description("Unused on this channel; voice uses it for satellite targeting")] string? address = null,
-        [Description("Existing conversation id: attaches this turn to it (turn-start announce) instead of creating a topic")] string? existingConversationId = null)
+        [Description("Existing conversation id: attaches this turn to it instead of creating a topic. With a topic name it is a later target of a fan-out, and a topic is minted over it if none holds it; without one it is the turn-start announce")] string? existingConversationId = null)
     {
-        if (existingConversationId is not null)
-        {
-            return await AttachTurnAsync(existingConversationId, sender, initialPrompt, services);
-        }
-
         var p = new CreateConversationParams
         {
             AgentId = agentId,
@@ -34,16 +30,49 @@ public sealed class CreateConversationTool
             InitialPrompt = initialPrompt
         };
 
-        // Shared factory generates the conversation identity and persists the topic
-        // to Redis (single source of truth shared with the voice channel).
-        var factory = services.GetRequiredService<IConversationFactory>();
-        var creation = await factory.CreateAsync(p);
+        if (existingConversationId is null)
+        {
+            // Shared factory generates the conversation identity and persists the topic
+            // to Redis (single source of truth shared with the voice channel).
+            var creation = await services.GetRequiredService<IConversationFactory>().CreateAsync(p);
+            return await OpenAsync(creation, p, services);
+        }
 
+        // A later target of a fan-out shows the conversation the first target anchored — a review
+        // copy of another channel's conversation is the one case (ADR 0046). The topic is minted over
+        // that conversation, so it reads the history the agent writes there, and only the first
+        // time: after that the topic holds it, and the turn is announced on it like any other.
+        if (!string.IsNullOrEmpty(topicName)
+            && await ShowAsync(existingConversationId, p, services) is { } shown)
+        {
+            return shown;
+        }
+
+        return await AttachTurnAsync(existingConversationId, sender, initialPrompt, services);
+    }
+
+    private static async Task<string?> ShowAsync(
+        string conversationId, CreateConversationParams p, IServiceProvider services)
+    {
+        // Only a conversation spelled as a topic spells its own has a history a topic can read.
+        if (services.GetRequiredService<SessionService>().GetTopicIdByConversationId(conversationId) is not null
+            || ConversationIdentity.Parse(conversationId) is not { } identity)
+        {
+            return null;
+        }
+
+        var creation = await services.GetRequiredService<IConversationFactory>().CreateOverAsync(identity, p);
+        return creation is null ? null : await OpenAsync(creation, p, services);
+    }
+
+    private static async Task<string> OpenAsync(
+        ConversationCreation creation, CreateConversationParams p, IServiceProvider services)
+    {
         // Register the in-memory session so send_reply/request_approval can resolve it.
         var sessionService = services.GetRequiredService<SessionService>();
         sessionService.StartSession(
-            creation.Topic.TopicId, agentId, creation.Identity.ChatId, creation.Identity.ThreadId,
-            spaceSlug: "default", topicName: topicName);
+            creation.Topic.TopicId, p.AgentId, creation.Identity.ChatId, creation.Identity.ThreadId,
+            spaceSlug: "default", topicName: p.TopicName);
 
         // Notify WebChat clients so the topic appears without refresh.
         var hubSender = services.GetRequiredService<IHubNotificationSender>();
@@ -55,7 +84,7 @@ public sealed class CreateConversationTool
         // currentPrompt seeds the user-role bubble on WebChat, so it must be the
         // originating prompt — falling back to topicName for legacy callers.
         var streamService = services.GetRequiredService<StreamService>();
-        streamService.GetOrCreateStream(creation.Topic.TopicId, initialPrompt ?? topicName, sender, CancellationToken.None);
+        streamService.GetOrCreateStream(creation.Topic.TopicId, p.InitialPrompt ?? p.TopicName, p.Sender, CancellationToken.None);
 
         return creation.Identity.ConversationId;
     }
