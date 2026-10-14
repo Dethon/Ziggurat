@@ -115,5 +115,10 @@ announce them. A flag the deployment resolves is smaller.
   the silent side of ADR 0011's rule: its only caller logs.
 - WebChat's store refuses `video/` types, so a clip (ticket 10) is not copied and shows as a
   placeholder until that store and the client learn to show one.
+- "The app never waits on WebChat" holds for a host that is down or fails, which is skipped. A host
+  that is merely slow is waited on per chunk: `ReplyDispatcher` sends each chunk to every target
+  together and moves on when all have answered. That is the existing fan-out's behaviour, unchanged.
+- The turn-start announce's empty topic name is now load-bearing: given a name, SignalR would read
+  the announce as a later fan-out target and mint a topic.
 - A review copy whose host is down on the first turn has no topic until a later turn of the same
   conversation reaches the host; a single-turn estimate then has none.

@@ -162,6 +162,8 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
             {
                 await target.Channel.CreateConversationAsync(
                     message.AgentId ?? "default",
+                    // Empty, and it has to be: an existing id WITH a name is a later fan-out target,
+                    // which SignalR shows by minting a topic over it when none holds it (ADR 0046).
                     topicName: string.Empty,
                     message.Sender,
                     initialPrompt: message.Content,

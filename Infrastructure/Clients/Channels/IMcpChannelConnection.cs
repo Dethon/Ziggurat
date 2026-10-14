@@ -6,8 +6,8 @@ namespace Infrastructure.Clients.Channels;
 // is one sequence and it belongs to the connection: a caller that could connect, register, check
 // health and reconnect in some other order would be a caller that can get the order wrong.
 //
-// Being **not connected** — before the first connect, and for the whole of a reconnect — is five
-// behaviours, one per member, and they differ because their callers differ
+// Being **not connected** — before the first connect, and for the whole of a reconnect — is a
+// behaviour per member, and they differ because their callers differ
 // (docs/adr/0011-not-connected-is-five-behaviours-and-stays-that-way.md):
 //
 // - SendReplyAsync, RequestApprovalAsync and NotifyAutoApprovedAsync throw. They are called by an

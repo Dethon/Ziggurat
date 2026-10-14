@@ -5,7 +5,7 @@ using Shouldly;
 
 namespace Tests.Unit.Infrastructure;
 
-// Not connected is five behaviours, one per member, and they differ because their callers differ.
+// Not connected is a behaviour per member, and they differ because their callers differ.
 // They are stated on IMcpChannelConnection and pinned here, so a later tidy-up that unifies them
 // fails a test rather than the delivery path.
 // See docs/adr/0011-not-connected-is-five-behaviours-and-stays-that-way.md.
