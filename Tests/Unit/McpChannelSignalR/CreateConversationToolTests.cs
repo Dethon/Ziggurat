@@ -1,6 +1,8 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
+using Infrastructure.Conversations;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +17,7 @@ public class CreateConversationToolTests
     private readonly SessionService _sessionService = new();
     private readonly StreamService _streamService;
     private readonly Mock<IHubNotificationSender> _hubSender = new();
+    private readonly TopicTable _topics = new();
     private readonly IServiceProvider _services;
 
     public CreateConversationToolTests()
@@ -27,6 +30,7 @@ public class CreateConversationToolTests
             .AddSingleton(_sessionService)
             .AddSingleton(_streamService)
             .AddSingleton(_hubSender.Object)
+            .AddSingleton<IConversationFactory>(new ConversationFactory(_topics.Store, TimeProvider.System))
             .BuildServiceProvider();
     }
 
@@ -92,5 +96,100 @@ public class CreateConversationToolTests
             ContentType = ReplyContentType.StreamComplete, IsComplete = true
         });
         _streamService.IsStreaming("topic-1").ShouldBeFalse();
+    }
+    // A later target of a fan-out names the conversation the first target anchored, and a topic name:
+    // the conversation is shown here, so a topic is minted over that very conversation — its history
+    // key is the one the agent writes the turn under — the first time nothing holds it.
+    [Fact]
+    public async Task McpRun_AFanOutTargetOnAConversationNoTopicHolds_MintsATopicOverThatConversation()
+    {
+        var result = await ShowAsync("11:22", "a plate of paella");
+
+        result.ShouldBe("11:22");
+        var topic = _topics.Saved.ShouldHaveSingleItem();
+        (topic.ChatId, topic.ThreadId, topic.AgentId, topic.Name).ShouldBe((11L, 22L, "sugary", "Meal estimate"));
+        _sessionService.GetTopicIdByConversationId("11:22").ShouldBe(topic.TopicId);
+        _streamService.GetStreamState(topic.TopicId).ShouldNotBeNull().CurrentPrompt.ShouldBe("a plate of paella");
+        _hubSender.Verify(s => s.SendToGroupAsync(
+            "space:default", "OnTopicChanged",
+            It.Is<TopicChangedNotification>(n => n.TopicId == topic.TopicId && n.ChangeType == TopicChangeType.Created),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task McpRun_ALaterTurnOnTheSameConversation_AttachesToTheTopicItMinted()
+    {
+        await ShowAsync("11:22", "a plate of paella");
+        var topicId = _topics.Saved.ShouldHaveSingleItem().TopicId;
+        await _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = "11:22", Content = string.Empty,
+            ContentType = ReplyContentType.StreamComplete, IsComplete = true
+        });
+
+        var result = await ShowAsync("11:22", "about 300 g");
+
+        result.ShouldBe("11:22");
+        _topics.Saved.ShouldHaveSingleItem();
+        _streamService.GetStreamState(topicId).ShouldNotBeNull().BufferedMessages
+            .ShouldContain(m => m.Content == "about 300 g" && m.UserMessage != null);
+        _hubSender.Verify(s => s.SendToGroupAsync(
+            "space:default", "OnStreamStarted",
+            It.Is<StreamStartedNotification>(n => n.TopicId == topicId),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // A restart forgets the sessions and keeps the topics. The topic already holds the conversation,
+    // so nothing is minted twice: the turn is delivered by persistence, as any turn with no live
+    // session is (ADR 0035).
+    [Fact]
+    public async Task McpRun_AFanOutTargetOnAConversationATopicAlreadyHolds_MintsNoSecondTopic()
+    {
+        await ShowAsync("11:22", "a plate of paella");
+        _sessionService.EndSession(_topics.Saved.Single().TopicId);
+
+        var result = await ShowAsync("11:22", "about 300 g");
+
+        result.ShouldBe("11:22");
+        _topics.Saved.ShouldHaveSingleItem();
+    }
+
+    // Only a conversation spelled as WebChat spells one has a history a topic can read, so any other
+    // id is attached to exactly as before and shown nowhere.
+    [Fact]
+    public async Task McpRun_AFanOutTargetOnAConversationNoTopicCanHold_MintsNothing()
+    {
+        var result = await ShowAsync("sched-morning-news-1", "a plate of paella");
+
+        result.ShouldBe("sched-morning-news-1");
+        _topics.Saved.ShouldBeEmpty();
+    }
+
+    private Task<string> ShowAsync(string conversationId, string prompt) =>
+        CreateConversationTool.McpRun(
+            "sugary", "Meal estimate", "sugary-app", _services,
+            initialPrompt: prompt, address: null, existingConversationId: conversationId);
+
+    // The two calls the factory makes of the thread store, kept in memory.
+    private sealed class TopicTable
+    {
+        private readonly List<TopicMetadata> _saved = [];
+
+        public TopicTable()
+        {
+            var store = new Mock<IThreadStateStore>();
+            store.Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>(), It.IsAny<bool>()))
+                .Callback((TopicMetadata topic, bool _) => _saved.Add(topic))
+                .Returns(Task.CompletedTask);
+            store.Setup(s => s.GetTopicByChatIdAndThreadIdAsync(
+                    It.IsAny<string>(), It.IsAny<long>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string agentId, long chatId, long threadId, CancellationToken _) =>
+                    _saved.FirstOrDefault(t => t.AgentId == agentId && t.ChatId == chatId && t.ThreadId == threadId));
+            Store = store.Object;
+        }
+
+        public IThreadStateStore Store { get; }
+
+        public IReadOnlyList<TopicMetadata> Saved => _saved;
     }
 }

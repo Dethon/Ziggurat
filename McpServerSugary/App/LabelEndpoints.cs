@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs.Channel;
 using Domain.Tools.Sugary.Estimation;
 using Domain.Tools.Sugary.Labels;
@@ -52,14 +53,19 @@ public static class LabelEndpoints
             return Problem(StatusCodes.Status400BadRequest, refusal);
         }
 
-        // A conversation of its own, never one her answers can continue: a label is read once.
-        var conversation = Guid.NewGuid().ToString("N");
+        // A conversation of its own, never one her answers can continue: a label is read once. Spelled
+        // as WebChat spells one, so its review copy can be shown as a topic over it (ADR 0046).
+        var conversation = ConversationIdGenerator.CreateFor(ConversationIdGenerator.NewTopicId()).ConversationId;
         var attachments = await PhotoUpload.StoreAsync(conversation, photos, uploads, ct);
         var reply = await channel.AskAsync(
             conversation, LabelTurn.Text(form["language"].ToString()), NutritionLabelSchema.Format, attachments,
-            new AgentConfigPatch { Model = settings.LabelModel }, ct);
+            new AgentConfigPatch { Model = settings.LabelModel },
+            new ReviewCopy { Title = ReviewTitle }, ct);
         return Answer(reply);
     }
+
+    // Read back in WebChat as a meal is, so a misread can be traced to what the model was shown.
+    private const string ReviewTitle = "Nutrition label";
 
     // The agent runs a patched model only if it is on its patchable list, and otherwise runs its own
     // with nothing but a log line to say so: a label read on the cheaper model would reach her as a

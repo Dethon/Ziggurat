@@ -102,4 +102,8 @@ public record ChannelEndpoint
     // Attach-only channels (e.g. voice) cannot own a conversation; delivery fan-out
     // orders them last so a topic-owning channel anchors the shared conversation id.
     public bool AttachOnly { get; init; }
+
+    // The review host: a channel that shows another channel's conversation when the message asks
+    // for a review copy (ADR 0046). One per deployment; with none, a review copy is simply not made.
+    public bool HostsReviewCopies { get; init; }
 }

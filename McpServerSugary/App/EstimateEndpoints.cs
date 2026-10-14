@@ -58,11 +58,14 @@ public static class EstimateEndpoints
 
         // The photos cross to the agent as references to this store, never as bytes on the turn, so
         // the conversation's history stays the size of its words (ADR-0020).
-        var opened = estimates.Open();
+        var review = ReviewOf(description);
+        var opened = estimates.Open(review);
         var attachments = await PhotoUpload.StoreAsync(opened, photos, uploads, ct);
         var turn = MealTurn.Text(new MealInput(
             attachments.Count, description, Field("clarifications"), Field("language"), Field("counted")));
-        return Answer(await channel.AskAsync(opened, turn, MealEstimateSchema.Format, attachments, patch: null, ct), opened);
+        return Answer(
+            await channel.AskAsync(opened, turn, MealEstimateSchema.Format, attachments, patch: null, review, ct),
+            opened);
     }
 
     // Her answers continue the conversation the first estimate opened, whose first message the agent
@@ -79,14 +82,16 @@ public static class EstimateEndpoints
                 "Answers go without photos: the estimate already has this meal's photos.");
         }
 
-        if (!estimates.TryContinue(conversation))
+        if (estimates.TryContinue(conversation) is not { } review)
         {
             return Problem(StatusCodes.Status410Gone,
                 "This estimate is no longer open, so the meal has to be estimated again.");
         }
 
         var turn = MealTurn.FollowUp(new MealFollowUp(field("clarifications"), field("counted"), field("language")));
-        return Answer(await channel.AskAsync(conversation, turn, MealEstimateSchema.Format, [], patch: null, ct), conversation);
+        return Answer(
+            await channel.AskAsync(conversation, turn, MealEstimateSchema.Format, [], patch: null, review, ct),
+            conversation);
     }
 
     // Every way of not getting an estimate is said, and none of them is shown as one. A 503 would
@@ -102,6 +107,28 @@ public static class EstimateEndpoints
             "The estimate took too long. Try again, or count this meal by hand."),
         _ => throw new InvalidOperationException($"No answer for a turn that ended as {reply}.")
     };
+
+    private const int ReviewTitleLength = 48;
+
+    // Every estimate is read back in WebChat, named after her words: the sidebar shows the meal, not
+    // the prompt the turn's text is. Cut at a word, so the row stays one line.
+    private static ReviewCopy ReviewOf(string? description)
+    {
+        var words = string.Join(' ', (description ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (words.Length == 0)
+        {
+            return new ReviewCopy { Title = "Meal photo" };
+        }
+
+        if (words.Length > ReviewTitleLength)
+        {
+            var cut = words[..ReviewTitleLength];
+            var space = cut.LastIndexOf(' ');
+            words = $"{(space > 0 ? cut[..space] : cut)}\u2026";
+        }
+
+        return new ReviewCopy { Title = $"Meal: {words}" };
+    }
 
     private static IResult Read(string reply, string conversation)
     {

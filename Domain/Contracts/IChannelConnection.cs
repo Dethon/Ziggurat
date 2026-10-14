@@ -14,6 +14,11 @@ public interface IChannelConnection : IToolApprovalHandler
     // topic, so delivery fan-out must never let them anchor the shared conversation id.
     bool AttachOnly { get; }
 
+    // The review host (declared per endpoint in config, WebChat in the shipped one): where a
+    // conversation goes when the channel that sent its message asks for a review copy. It attaches
+    // to that conversation as a later target of the fan-out, never as the first (ADR 0046).
+    bool HostsReviewCopies { get; }
+
     IAsyncEnumerable<ChannelMessage> Messages { get; }
 
     // The record rather than its fields spread out: it is already the wire shape every channel
@@ -25,6 +30,13 @@ public interface IChannelConnection : IToolApprovalHandler
     // the only way in (ADR 0021). Null is "not connected", and also "the file could not be had":
     // both hydrate to a placeholder naming the file rather than failing the turn.
     Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct);
+
+    // A copy of another channel's attachment kept on this one under the reference's own id, for a
+    // review copy to show (ADR 0046). False is "not connected", "this channel keeps no copies" and
+    // "it refused this one" alike: the review shows a placeholder for the file and nothing else
+    // depends on it, so the caller only logs.
+    Task<bool> StoreAttachmentAsync(
+        string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct);
 
     Task<string?> CreateConversationAsync(
         string agentId,

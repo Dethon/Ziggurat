@@ -95,6 +95,8 @@ public sealed class McpChannelConnection(
 
     public bool AttachOnly { get; } = attachOnly;
 
+    public bool HostsReviewCopies { get; init; }
+
     public IAsyncEnumerable<ChannelMessage> Messages => _messageChannel.Reader.ReadAllAsync();
 
     // Connect, register the catalog, watch health, reconnect, re-register — for as long as the
@@ -428,6 +430,7 @@ public sealed class McpChannelConnection(
             DismissedAlert = notification.DismissedAlert,
             ConfigPatch = notification.ConfigPatch,
             ResponseFormat = notification.ResponseFormat,
+            ReviewCopy = notification.ReviewCopy,
             TurnKey = notification.TurnKey,
             Attachments = notification.Attachments
         };
@@ -579,6 +582,58 @@ public sealed class McpChannelConnection(
             // A reconnect disposed the client under the call. That is "not connected", which here
             // is a missing file rather than a failure the caller has to handle.
             return null;
+        }
+    }
+
+    public async Task<bool> StoreAttachmentAsync(
+        string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct)
+    {
+        var client = _client;
+        if (client is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (!await OffersToolAsync(client, ChannelProtocol.StoreAttachmentTool, ct))
+            {
+                return false;
+            }
+
+            var result = await client.CallToolAsync(
+                ChannelProtocol.StoreAttachmentTool,
+                new Dictionary<string, object?>
+                {
+                    ["conversationId"] = conversationId,
+                    ["attachmentId"] = attachment.Id,
+                    ["fileName"] = attachment.FileName,
+                    ["mediaType"] = attachment.MediaType,
+                    ["content"] = Convert.ToBase64String(bytes)
+                },
+                cancellationToken: ct);
+
+            if (result.IsError == true)
+            {
+                logger?.LogWarning(
+                    "Channel {ChannelId} refused to keep attachment {AttachmentId}: {Reason}",
+                    ChannelId, attachment.Id, result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text);
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is McpException or ObjectDisposedException)
+        {
+            logger?.LogWarning(ex,
+                "Keeping attachment {AttachmentId} on channel {ChannelId} failed",
+                attachment.Id, ChannelId);
+            return false;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // A reconnect disposed the client under the call: not connected, so not kept.
+            return false;
         }
     }
 

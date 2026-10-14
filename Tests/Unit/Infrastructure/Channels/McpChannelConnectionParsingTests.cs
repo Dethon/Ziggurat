@@ -157,4 +157,19 @@ public class McpChannelConnectionParsingTests
             break;
         }
     }
+    [Fact]
+    public async Task HandleChannelMessageNotification_WithAReviewCopy_MapsItOntoChannelMessage()
+    {
+        var conn = new McpChannelConnection("sugary");
+        conn.HandleChannelMessageNotification(Json("""
+        {"conversationId":"11:22","sender":"app","content":"paella","reviewCopy":{"title":"Meal estimate"}}
+        """));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
+        {
+            msg.ReviewCopy.ShouldNotBeNull().Title.ShouldBe("Meal estimate");
+            break;
+        }
+    }
 }

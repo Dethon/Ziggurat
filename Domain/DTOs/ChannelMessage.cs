@@ -20,6 +20,9 @@ public record ChannelMessage
     public AgentConfigPatch? ConfigPatch { get; init; }
     public ResponseFormat? ResponseFormat { get; init; }
 
+    // The channel asks for this conversation to be shown on the review host too (ADR 0046).
+    public ReviewCopy? ReviewCopy { get; init; }
+
     // The turn this message opens, when the channel had one to mint. A channel that must know the
     // value before the reply comes back — voice, which dispatches a transcript and then has to
     // recognise the answer to it — mints it here; everyone else leaves it null and the conversation

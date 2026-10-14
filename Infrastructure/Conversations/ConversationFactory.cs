@@ -10,7 +10,21 @@ public sealed class ConversationFactory(IThreadStateStore store, TimeProvider ti
     public async Task<ConversationCreation> CreateAsync(CreateConversationParams p, CancellationToken ct = default)
     {
         var topicId = ConversationIdGenerator.NewTopicId();
-        var identity = ConversationIdGenerator.CreateFor(topicId);
+        return await SaveAsync(topicId, ConversationIdGenerator.CreateFor(topicId), p);
+    }
+
+    public async Task<ConversationCreation?> CreateOverAsync(
+        ConversationIdentity identity, CreateConversationParams p, CancellationToken ct = default)
+    {
+        var held = await store.GetTopicByChatIdAndThreadIdAsync(p.AgentId, identity.ChatId, identity.ThreadId, ct);
+        return held is not null
+            ? null
+            : await SaveAsync(ConversationIdGenerator.NewTopicId(), identity, p);
+    }
+
+    private async Task<ConversationCreation> SaveAsync(
+        string topicId, ConversationIdentity identity, CreateConversationParams p)
+    {
         var topic = new TopicMetadata(
             topicId,
             identity.ChatId,

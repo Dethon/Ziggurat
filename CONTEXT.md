@@ -166,6 +166,14 @@ runtime counterpart and never outlives the process, so a topic outlives every gr
 ever ran on it.
 _Avoid_: conversation, thread, chat, session
 
+**Review copy**:
+A conversation another channel opened, shown on the review host as well so it can be
+read afterwards: what was sent, with its files, and what came back. The channel that
+opened it stays where the conversation lives — its id is the delivery identity — and
+the review host only shows it, as a topic over that same conversation. The channel
+asks for one per message; it never names where it goes.
+_Avoid_: mirror, review topic, shadow conversation
+
 ## Topic lifecycle
 
 **Topic index**:

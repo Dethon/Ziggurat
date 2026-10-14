@@ -274,4 +274,62 @@ public class DeliveryTargetResolverTests
 
         targets.ShouldHaveSingleItem().Address.ShouldBe("fran-office-01");
     }
+    // A review copy names no channel: it goes to the one the deployment declares as the review
+    // host, and never doubles a turn that was sent from that host in the first place.
+    [Fact]
+    public async Task ResolveDeliveryTargets_AReviewCopyFromTheReviewHostItself_IsOnlyItsOwnTarget()
+    {
+        var webchat = new FakeChannelConnection { ChannelId = "signalr", HostsReviewCopies = true };
+        var msg = new ChannelMessage
+        {
+            ConversationId = "11:22", Content = "x", Sender = "fran", ChannelId = "signalr",
+            ReviewCopy = new ReviewCopy { Title = "t" }
+        };
+
+        var targets = await Resolver(webchat).ResolveAsync(msg, webchat, CancellationToken.None);
+
+        targets.ShouldHaveSingleItem().ConversationId.ShouldBe("11:22");
+        webchat.CreatedConversations.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ResolveDeliveryTargets_AReviewCopyWithNoReviewHost_IsTheChannelAlone()
+    {
+        var sugary = Channel("sugary");
+        var msg = new ChannelMessage
+        {
+            ConversationId = "11:22", Content = "x", Sender = "app", ChannelId = "sugary",
+            ReviewCopy = new ReviewCopy { Title = "t" }
+        };
+
+        var targets = await Resolver(sugary, Channel("signalr")).ResolveAsync(msg, sugary, CancellationToken.None);
+
+        targets.ShouldHaveSingleItem().Channel.ShouldBeSameAs(sugary);
+    }
+
+    // The channel is answered whether or not the host is: a host that is not connected, or whose
+    // call fails, costs the review copy and nothing else.
+    [Fact]
+    public async Task ResolveDeliveryTargets_AReviewHostThatCannotAttach_LeavesTheChannelAsTheOnlyTarget()
+    {
+        var sugary = Channel("sugary");
+        var failing = new Mock<IChannelConnection>();
+        failing.SetupGet(c => c.ChannelId).Returns("signalr");
+        failing.SetupGet(c => c.HostsReviewCopies).Returns(true);
+        failing.Setup(c => c.CreateConversationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("connection reset"));
+        var notConnected = new FakeChannelConnection { ChannelId = "signalr", HostsReviewCopies = true };
+        var msg = new ChannelMessage
+        {
+            ConversationId = "11:22", Content = "x", Sender = "app", ChannelId = "sugary",
+            ReviewCopy = new ReviewCopy { Title = "t" }
+        };
+
+        var whenFailing = await Resolver(sugary, failing.Object).ResolveAsync(msg, sugary, CancellationToken.None);
+        var whenNotConnected = await Resolver(sugary, notConnected).ResolveAsync(msg, sugary, CancellationToken.None);
+
+        whenFailing.ShouldHaveSingleItem().Channel.ShouldBeSameAs(sugary);
+        whenNotConnected.ShouldHaveSingleItem().Channel.ShouldBeSameAs(sugary);
+    }
 }

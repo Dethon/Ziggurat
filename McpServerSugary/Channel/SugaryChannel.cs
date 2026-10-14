@@ -16,7 +16,8 @@ public sealed class SugaryChannel(
 
     public async Task<TurnReply> AskAsync(
         string conversationId, string content, ResponseFormat format,
-        IReadOnlyList<AttachmentReference> attachments, AgentConfigPatch? patch, CancellationToken ct)
+        IReadOnlyList<AttachmentReference> attachments, AgentConfigPatch? patch, ReviewCopy? review,
+        CancellationToken ct)
     {
         using var turn = turns.Open();
         var delivered = await emitter.EmitAsync(new ChannelMessageNotification
@@ -26,6 +27,8 @@ public sealed class SugaryChannel(
             Content = content,
             ResponseFormat = format,
             ConfigPatch = patch,
+            // Shown in WebChat as well, so what was sent and what came back can be read afterwards.
+            ReviewCopy = review,
             Attachments = attachments.Count > 0 ? attachments : null,
             TurnKey = turn.TurnKey,
             Timestamp = clock.GetUtcNow()

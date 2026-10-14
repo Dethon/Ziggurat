@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using Domain.Conversations;
+using Domain.DTOs.Channel;
 using McpServerSugary.Settings;
 
 namespace McpServerSugary.Channel;
@@ -10,35 +12,42 @@ namespace McpServerSugary.Channel;
 // memory: a restart forgets them all, and the app then estimates the meal afresh.
 public sealed class OpenEstimates(TimeProvider clock, SugarySettings settings)
 {
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _lastTurn = new();
+    private sealed record Entry(DateTimeOffset LastTurn, ReviewCopy Review);
+
+    private readonly ConcurrentDictionary<string, Entry> _open = new();
 
     private TimeSpan Window => TimeSpan.FromHours(settings.FollowUpHours);
 
-    public string Open()
+    // The review copy the first turn asked for is kept with the conversation, because her answers
+    // carry no words of the meal to name it by, and each of them asks for the same review again.
+    public string Open(ReviewCopy review)
     {
         var now = clock.GetUtcNow();
         // Closed ones go when a meal starts, so the table holds the meals of one window at most.
-        foreach (var closed in _lastTurn.Where(entry => !IsWithin(entry.Value, now)).Select(entry => entry.Key))
+        foreach (var closed in _open.Where(entry => !IsWithin(entry.Value.LastTurn, now)).Select(entry => entry.Key))
         {
-            _lastTurn.TryRemove(closed, out _);
+            _open.TryRemove(closed, out _);
         }
 
-        var conversation = Guid.NewGuid().ToString("N");
-        _lastTurn[conversation] = now;
+        // Spelled as WebChat spells a conversation, so the review copy can be shown as a topic over
+        // this very conversation and read the history the agent writes under it (ADR 0046).
+        var conversation = ConversationIdGenerator.CreateFor(ConversationIdGenerator.NewTopicId()).ConversationId;
+        _open[conversation] = new Entry(now, review);
         return conversation;
     }
 
-    // Whether her answers may continue this conversation; if they may, the window starts again.
-    public bool TryContinue(string conversation)
+    // The review copy her answers on this conversation ask for, or null when they may not continue
+    // it; if they may, the window starts again.
+    public ReviewCopy? TryContinue(string conversation)
     {
         var now = clock.GetUtcNow();
-        if (!_lastTurn.TryGetValue(conversation, out var last) || !IsWithin(last, now))
+        if (!_open.TryGetValue(conversation, out var entry) || !IsWithin(entry.LastTurn, now))
         {
-            return false;
+            return null;
         }
 
-        _lastTurn[conversation] = now;
-        return true;
+        _open[conversation] = entry with { LastTurn = now };
+        return entry.Review;
     }
 
     private bool IsWithin(DateTimeOffset last, DateTimeOffset now) => now - last < Window;

@@ -3,8 +3,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using Domain.Tools.Sugary.Labels;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
@@ -55,6 +57,28 @@ public class SugaryLabelApiTests
         food["unit"]!.GetValue<string>().ShouldBe("g");
         food["note"].ShouldBeNull();
         food["foodId"].ShouldBeNull();
+    }
+
+    // A label is read back in WebChat as a meal is, so a misread can be traced to what the model was
+    // shown: the turn asks for a review copy, on a conversation spelled as WebChat spells one, with
+    // the photo filed where WebChat files that conversation (ADR 0046).
+    [Fact]
+    public async Task ALabelTurn_AsksForAReviewCopy_OnAConversationWebChatCanShow()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+
+        var answer = app.PostAsync("/api/labels", Form(Photo(1, 10)));
+        var turn = await NextTurnAsync(agent);
+
+        turn.ReviewCopy.ShouldNotBeNull().Title.ShouldBe("Nutrition label");
+        ConversationIdentity.Parse(turn.ConversationId).ShouldNotBeNull();
+        turn.Attachments.ShouldHaveSingleItem().Id
+            .ShouldStartWith($"{AttachmentEndpointPaths.ConversationDirectory(turn.ConversationId)}/");
+
+        await ReplyAsync(agent, turn, Galletas);
+        (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
     [Fact]

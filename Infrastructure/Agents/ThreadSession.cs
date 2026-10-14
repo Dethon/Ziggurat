@@ -96,7 +96,8 @@ internal sealed class ThreadSessionBuilder(
         ChannelProtocol.CreateConversationTool,
         ChannelProtocol.RegisterAgentsTool,
         ChannelProtocol.ReceiveTool,
-        ChannelProtocol.FetchAttachmentTool
+        ChannelProtocol.FetchAttachmentTool,
+        ChannelProtocol.StoreAttachmentTool
     ];
 
     public async Task<ThreadSessionData> BuildAsync(CancellationToken ct)
