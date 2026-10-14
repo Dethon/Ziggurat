@@ -280,6 +280,60 @@ public class OpenRouterHttpHelpersTests
         obj["usage"]!["include"]!.GetValue<bool>().ShouldBeTrue();
     }
 
+    // A strict schema is a contract the answer is parsed against, and a provider that ignores the
+    // parameter answers in prose. OpenRouter routes only to providers that honour every parameter
+    // sent when asked to, so a turn carrying one asks — and nothing else does.
+    [Fact]
+    public async Task PrepareRequestBody_StrictSchemaWithoutRouting_RequiresProvidersThatHonourIt()
+    {
+        var request = CreateRequest(StrictSchemaBodyJson);
+
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
+
+        var provider = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!.AsObject();
+        provider.Count.ShouldBe(1);
+        provider["require_parameters"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    // The deployment's routing is kept whole: the requirement narrows the providers it already
+    // chose among, it does not replace the choice.
+    [Fact]
+    public async Task PrepareRequestBody_StrictSchemaWithRouting_KeepsEveryPinAndRequiresTheParameters()
+    {
+        var request = CreateRequest(StrictSchemaBodyJson);
+        var routing = new ProviderRouting
+        {
+            Sort = ProviderSort.Throughput,
+            Only = ["google-vertex"],
+            PreferredMaxLatency = new ProviderThreshold { P50 = 1 }
+        };
+
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, CancellationToken.None);
+
+        var provider = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!.AsObject();
+        provider["sort"]!.GetValue<string>().ShouldBe("throughput");
+        provider["only"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldBe(["google-vertex"]);
+        provider["preferred_max_latency"]!.GetValue<double>().ShouldBe(1);
+        provider["require_parameters"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    // Memory extraction and consolidation send a schema too, but not strict, and read the answer
+    // leniently on purpose. Their routing stays exactly what it was.
+    [Fact]
+    public async Task PrepareRequestBody_NonStrictSchema_RequiresNothing()
+    {
+        var request = CreateRequest(StrictSchemaBodyJson.Replace("\"strict\":true", "\"strict\":false"));
+
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
+
+        JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject()
+            .ContainsKey("provider").ShouldBeFalse();
+    }
+
+    private const string StrictSchemaBodyJson =
+        "{\"model\":\"google/gemini-3.8-flash\",\"input\":[],\"text\":{\"format\":{\"type\":\"json_schema\"," +
+        "\"name\":\"meal_estimate\",\"strict\":true,\"schema\":{\"type\":\"object\"}}}}";
+
     private const string BodyJson =
         "{\"model\":\"anthropic/claude-sonnet-4\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}";
 

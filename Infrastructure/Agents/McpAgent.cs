@@ -62,10 +62,12 @@ public sealed class McpAgent : DisposableAgent
     public override string? Name => _innerAgent.Name;
     public override string? Description => _innerAgent.Description;
 
-    // Both halves of a per-message config patch, resolved once for a turn. The values ride
-    // that turn's ChatOptions, so nothing per-request lives on the shared chat client and the
-    // model stamped on metrics is by construction the model the request ran on.
-    private sealed record TurnConfig(string? ModelOverride, ReasoningEffort? Effort);
+    // Both halves of a per-message config patch, and the response format the message asked for,
+    // resolved once for a turn. The values ride that turn's ChatOptions, so nothing per-request
+    // lives on the shared chat client and the model stamped on metrics is by construction the
+    // model the request ran on.
+    private sealed record TurnConfig(
+        string? ModelOverride, ReasoningEffort? Effort, ResponseFormat? ResponseFormat = null);
 
     // The spec carries every configured value, so nothing about what this agent is can be
     // expressed by omitting an argument. What is left are the live collaborators, and the
@@ -320,11 +322,15 @@ public sealed class McpAgent : DisposableAgent
                 (suppliedOptions as ChatClientAgentRunOptions)?.ChatOptions?.ModelId, null);
         }
 
-        var patch = messages
-            .LastOrDefault(m => m.Role == ChatRole.User)
-            ?.GetConfigPatch();
+        // The turn's own message only, never the history: a format asked for once is that turn's,
+        // and the persisted message that still carries it must not shape the next answer.
+        var userMessage = messages.LastOrDefault(m => m.Role == ChatRole.User);
+        var patch = userMessage?.GetConfigPatch();
 
-        return new TurnConfig(ResolveModelOverride(patch?.Model), ResolveEffort(patch?.ReasoningEffort));
+        return new TurnConfig(
+            ResolveModelOverride(patch?.Model),
+            ResolveEffort(patch?.ReasoningEffort),
+            userMessage?.GetResponseFormat());
     }
 
     private string? ResolveModelOverride(string? patchedModel)
@@ -411,8 +417,25 @@ public sealed class McpAgent : DisposableAgent
                         ? null
                         : ReasoningOutput.Summary
                 },
-            AdditionalProperties = BuildConversationContextProperties(conversationContext)
+            ResponseFormat = turnConfig.ResponseFormat is { } format
+                ? ChatResponseFormat.ForJsonSchema(format.Schema, format.Name)
+                : null,
+            AdditionalProperties = BuildTurnProperties(conversationContext, turnConfig.ResponseFormat)
         });
+    }
+
+    private AdditionalPropertiesDictionary BuildTurnProperties(
+        ConversationContext? conversationContext, ResponseFormat? format)
+    {
+        var properties = BuildConversationContextProperties(conversationContext);
+        // The format a channel asks for is always strict: it parses the answer, so a hint is not
+        // enough. The chat client reads this to send the schema strict and as written.
+        if (format is not null)
+        {
+            properties[OpenRouterChatClient.StrictResponseFormatKey] = true;
+        }
+
+        return properties;
     }
 
     // The 2026-07-28 protocol dropped MCP sessions: a server may no longer treat connection or

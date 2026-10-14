@@ -57,13 +57,32 @@ internal static class OpenRouterHttpHelpers
         // Routing is a deployment constraint and applies to override turns too — every
         // `patchableModels` entry must be servable under the configured routing, or the
         // config is wrong.
-        if (BuildProviderNode(providerRouting) is { } provider)
+        var provider = BuildProviderNode(providerRouting);
+
+        // A strict schema is a contract the caller parses the answer against, and a provider that
+        // ignores the parameter answers in prose. OpenRouter then routes only among providers that
+        // honour every parameter sent — inside whatever the routing above already narrowed it to,
+        // so the deployment's pins hold. Read off the body because that is where the turn's format
+        // and the client's routing first meet. A non-strict schema is a hint its reader tolerates
+        // missing, and its routing stays as configured.
+        if (AsksForStrictSchema(obj))
+        {
+            provider ??= new JsonObject();
+            provider["require_parameters"] = true;
+        }
+
+        if (provider is not null)
         {
             obj["provider"] = provider;
         }
 
         request.Content = new StringContent(obj.ToJsonString(), Encoding.UTF8, "application/json");
     }
+
+    private static bool AsksForStrictSchema(JsonObject body) =>
+        body["text"]?["format"] is JsonObject format
+        && format["type"] is JsonValue type && type.TryGetValue<string>(out var kind) && kind == "json_schema"
+        && format["strict"] is JsonValue strict && strict.TryGetValue<bool>(out var isStrict) && isStrict;
 
     // `anthropic/…`, and OpenRouter's `~anthropic/…-latest` aliases for the same models.
     private static bool IsAnthropic(JsonNode? model) =>

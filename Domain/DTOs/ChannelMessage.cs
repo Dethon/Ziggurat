@@ -18,6 +18,7 @@ public record ChannelMessage
     public string? SatelliteId { get; init; }
     public string? DismissedAlert { get; init; }
     public AgentConfigPatch? ConfigPatch { get; init; }
+    public ResponseFormat? ResponseFormat { get; init; }
 
     // The turn this message opens, when the channel had one to mint. A channel that must know the
     // value before the reply comes back — voice, which dispatches a transcript and then has to
