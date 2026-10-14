@@ -132,7 +132,7 @@ not in git and each rule is decided by her words:
   `Scenario.Estimate` expectation (`EstimateExpectation.NeverListed`). No item name may contain
   "coca", "coke" or "refresco". A note mentioning the can passes, and an unreadable answer fails.
 - **Her log:** "¿Cuándo comió paella por última vez?" in WebChat, with no format. The `sugary-log`
-  load is required before any `/sugary` read, and the reply must name 9 August. It cites
+  load is required before any `/sugary` read, and the reply must name 9 August, or say "eight days ago" or "last Sunday". It cites
   `sugary-log.loads-for-a-question-about-her-log`.
 
 Ticket 04's two exemptions (`SugaryPrompt.NeverSuggestsADose`,
@@ -153,6 +153,9 @@ so the snapshot is unchanged.
    are copied into the README. The Gemini in-range count there predates the range floor, so compare
    the mean error first.
 4. **Unverified until then:**
+   - that the eval's `EvalAttachments` wins the `IAttachmentSource` resolution over the agent's
+     own (registered after `AddAgent`, as the eval's metrics publisher already is). If it does not,
+     every meal fails loudly as "only 0 of 1 photos reached the model", never as a low score;
    - the per-message format on Gemini through this path (ticket 03 tested only the wire);
    - whether Jev preloads `sugary-log` on estimate turns (the scenarios permit it);
    - how the seconds compare with the standalone's 23 s median.
