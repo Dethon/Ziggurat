@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.Prompts;
 using Domain.Tools.Sugary.Vfs;
@@ -27,6 +28,11 @@ public static class ConfigModule
             .AddSingleton(settings.Uploads)
             .AddSingleton(settings.Retention)
             .AddSingleton<UploadStore>()
+            // What each model accepts, from the catalogue the agent registers on connect: the one
+            // thing this channel needs to know about models, to refuse a photo one cannot see.
+            .AddSingleton<MutableAgentCatalog>()
+            .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
+            .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<AgentTurns>()
             .AddSingleton<SugaryChannel>()
             .AddSugaryApp(settings);
@@ -36,6 +42,7 @@ public static class ConfigModule
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<FetchAttachmentTool>()
+            .WithTools<RegisterAgentsTool>()
             // Gate-on-live: the app waits on its own request, so an estimate nobody is polling for
             // is answered as an error at once rather than buffered for an agent that may never come.
             .AddChannelServer(DeliveryPolicy.GateOnLive)

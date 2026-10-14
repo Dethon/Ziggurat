@@ -29,6 +29,11 @@ public record SugarySettings : IMcpHostSettings
     // and the turn is cancelled. The standalone app's estimates took up to about half a minute.
     public int TurnTimeoutSeconds { get; init; } = 120;
 
+    // The agent the app's turns are answered by: agentDefaults.byChannel.sugary in the agent's own
+    // settings, spelled again here because the message names no agent and routing is the agent
+    // host's. Asked about only to refuse a photo its model cannot see; a test keeps the two equal.
+    public string Agent { get; init; } = "sugary";
+
     // Where the photos of a meal being estimated rest while the agent may still ask for them.
     public UploadSettings Uploads { get; init; } = new();
 

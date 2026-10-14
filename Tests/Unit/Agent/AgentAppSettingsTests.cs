@@ -220,6 +220,20 @@ public class AgentAppSettingsTests
             .ShouldBe("http://mcp-sugary:8080/mcp");
     }
 
+    // The Sugary server refuses a photo for a model that cannot see one, and asks the catalogue about
+    // the agent its turns are answered by. The message names no agent — routing is agentDefaults' —
+    // so the server's setting is a second spelling of that route, and the two must not drift: asked
+    // about any other agent, the refusal would judge the wrong model.
+    [Fact]
+    public void TheSugaryServer_AsksAboutTheAgentItsChannelIsRoutedTo()
+    {
+        var settings = BoundConfig().Get<AgentSettings>()!;
+        var server = JsonNode.Parse(
+            File.ReadAllText(Path.Combine(RepoRoot(), "McpServerSugary", "appsettings.json")))!;
+
+        server["Agent"]!.GetValue<string>().ShouldBe(settings.AgentDefaults.For("sugary"));
+    }
+
     private static AgentSettings BindSettings(params (string Key, string? Value)[] entries)
     {
         var config = new Dictionary<string, string?>

@@ -316,6 +316,62 @@ public class SugaryEstimateApiTests
         StoredFiles(server).ShouldBeEmpty(what);
     }
 
+    // A model that cannot see pictures would answer from her words alone, or from nothing, as if no
+    // photo had been sent. The channel learns what the sugary agent's model takes from the catalogue
+    // the agent registers on connect, and refuses the turn before it is sent; words alone still go.
+    [Fact]
+    public async Task AModelWithoutImageInput_HasAPhotoTurnRefused_NeverAnsweredAsIfNoPhotoWasSent()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        await agent.RegisterAgentsAsync([Sugary("text/only", accepts: [])], CancellationToken.None);
+        var app = await server.SignedInAsync();
+
+        var refused = await app.PostAsync("/api/estimates", Form("paella", photos: [Photo(1, 10)]));
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await DetailAsync(refused)).ShouldBe(
+            "text/only cannot read photos, so this meal cannot be estimated from them. " +
+            "Describe it in words instead, or count it by hand.");
+        StoredFiles(server).ShouldBeEmpty();
+
+        var answer = app.PostAsync("/api/estimates", Form("paella"));
+        var turn = await NextTurnAsync(agent);
+        turn.Content.ShouldContain("paella");
+        turn.Attachments.ShouldBeNull();
+        await ReplyAsync(agent, turn, Estimate);
+        (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // The catalogue names every agent, and only the one the app's turns are routed to is asked about.
+    // Where it is silent — nothing registered yet, or no entry for that agent — photos go, as every
+    // channel's capability check is permissive while discovery has not answered.
+    public static TheoryData<string, AgentCatalogEntry[]> PhotosGo => new()
+    {
+        { "its model sees pictures", [Sugary("sees/pictures", accepts: [AttachmentKind.Image])] },
+        { "only another agent's model is blind",
+            [new AgentCatalogEntry("jonas", "Jonas", null, "text/only", DefaultModelAttachmentKinds: [])] },
+        { "nothing registered", [] }
+    };
+
+    [Theory]
+    [MemberData(nameof(PhotosGo))]
+    public async Task APhotoTurn_GoesWhereTheCatalogueDoesNotSayTheModelIsBlind(
+        string what, AgentCatalogEntry[] catalogue)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        await agent.RegisterAgentsAsync(catalogue, CancellationToken.None);
+        var app = await server.SignedInAsync();
+
+        var answer = app.PostAsync("/api/estimates", Form("", photos: [Photo(1, 10)]));
+        var turn = await NextTurnAsync(agent);
+
+        turn.Attachments.ShouldNotBeNull(what).Count.ShouldBe(1, what);
+        await ReplyAsync(agent, turn, Estimate);
+        (await answer).StatusCode.ShouldBe(HttpStatusCode.OK, what);
+    }
+
     [Fact]
     public async Task NeitherPhotoNorDescription_IsRefused()
     {
@@ -352,6 +408,10 @@ public class SugaryEstimateApiTests
     // Bytes no other photo in the test shares, so a fetch that answered with the wrong one fails.
     private static byte[] Photo(byte seed, int length) =>
         [.. Enumerable.Range(0, length).Select(i => (byte)(i * 31 + seed))];
+
+    // The sugary agent as the agent host registers it: its own model, and what that model accepts.
+    private static AgentCatalogEntry Sugary(string model, IReadOnlyList<AttachmentKind> accepts) =>
+        new("sugary", "Sugary", null, model, DefaultModelAttachmentKinds: accepts);
 
     private static IReadOnlyList<string> StoredFiles(SugaryServer server) =>
         Directory.Exists(server.Settings.Uploads.StoragePath)

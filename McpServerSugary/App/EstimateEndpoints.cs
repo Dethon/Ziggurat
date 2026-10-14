@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Tools.Sugary.Estimation;
 using McpServerSugary.Channel;
@@ -25,8 +26,8 @@ public static class EstimateEndpoints
     // cookie gate answers first: a bound form would make a JSON post not match at all, and a phone
     // that has not signed in would be told the route does not exist.
     private static async Task<IResult> EstimateAsync(
-        HttpRequest request, SugaryChannel channel, UploadStore uploads, UploadSettings limits,
-        CancellationToken ct)
+        HttpRequest request, SugaryChannel channel, UploadStore uploads, IAgentCatalog catalog,
+        SugarySettings settings, CancellationToken ct)
     {
         if (!request.HasFormContentType)
         {
@@ -44,8 +45,9 @@ public static class EstimateEndpoints
         }
 
         // Refused before anything is kept or sent, so a photo the model would choke on costs neither
-        // a turn nor a file.
-        if (PhotoUpload.Refusal(photos, limits) is { } refusal)
+        // a turn nor a file, and a model that cannot see photos never answers as if none was sent.
+        if ((PhotoUpload.Refusal(photos, settings.Uploads)
+             ?? PhotoUpload.ModelRefusal(photos, catalog.Get(settings.Agent))) is { } refusal)
         {
             return Problem(StatusCodes.Status400BadRequest, refusal);
         }
