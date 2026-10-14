@@ -3,6 +3,8 @@ using Domain.Tools.Sugary.Vfs;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerSugary.App;
+using McpServerSugary.Channel;
+using McpServerSugary.McpTools;
 using McpServerSugary.Settings;
 using McpServerSugary.Store;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,10 +22,16 @@ public static class ConfigModule
             .AddSingleton<ISugaryLog, SqliteSugaryLog>()
             .AddSingleton(sp => new SugaryFileSystem(sp.GetRequiredService<ISugaryLog>(), homeZone))
             .AddHostedService<SugaryDatabaseMigrator>()
+            .AddSingleton<AgentTurns>()
             .AddSugaryApp(settings);
 
         services
             .AddToolServer(settings, ToolResponse.Create)
+            .WithTools<SendReplyTool>()
+            .WithTools<RequestApprovalTool>()
+            // Gate-on-live: the app waits on its own request, so an estimate nobody is polling for
+            // is answered as an error at once rather than buffered for an agent that may never come.
+            .AddChannelServer(DeliveryPolicy.GateOnLive)
             .AddFileSystemTools<SugaryFileSystem>()
             .AddFileSystemResource<SugaryFileSystem>();
 

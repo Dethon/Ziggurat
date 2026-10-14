@@ -220,11 +220,14 @@ public static class McpServerRegistrations
             (services, settings) => services.ConfigureMcp(settings)),
 
         // The database is never opened at registration: the context factory opens it per read, and
-        // the schema is applied when the host starts. A tool server for now — the channel the app
-        // estimates through is a later ticket.
-        Row("sugary", "McpServerSugary", McpServerRole.Tool,
+        // the schema is applied when the host starts. Dual-role: the mount, prompt and skill for the
+        // agent, and the channel her app's estimates reach the sugary agent through. Gate-on-live,
+        // because the app waits on its own request: an estimate nobody is polling for is answered
+        // as an error at once rather than buffered for an agent that may never come.
+        Row("sugary", "McpServerSugary", McpServerRole.DualRole,
             new SugarySettings.SugarySettings { DatabasePath = "/data/sugary.db", Mcp = DeploymentGate },
-            (services, settings) => services.ConfigureSugary(settings)),
+            (services, settings) => services.ConfigureSugary(settings),
+            DeliveryPolicy.GateOnLive),
 
         // The voice hub is reached through a named HttpClient, which never dials at registration.
         Row("timers", "McpServerTimers", McpServerRole.Tool,
