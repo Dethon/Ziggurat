@@ -40,6 +40,10 @@ and it shapes that turn's final answer and nothing else.**
 - **The schema goes out as written.** `OpenRouterChatClient` sets the strict text format through
   the adapter's raw options, which the adapter fills only when nobody has, so its strict-mode
   rewrite never runs. A non-strict schema — memory's — keeps the adapter's handling.
+- **Only the answer is strict, never the tools.** The agent marks the turn with a key of its own
+  rather than the adapter's `strict` key, because that key is one switch for the format and every
+  function tool: set, it sent each MCP tool `strict: true` with its parameters rewritten, an
+  optional parameter made required. A formatted turn sends its tools byte for byte as any other.
 - **A strict schema requires providers that honour it.** `OpenRouterHttpHelpers` reads the body and,
   when it carries a strict `json_schema` format, adds `require_parameters: true` to the `provider`
   node — beside the routing the deployment configured, creating the node only when there was none.

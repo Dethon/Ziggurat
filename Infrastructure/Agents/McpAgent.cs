@@ -432,7 +432,7 @@ public sealed class McpAgent : DisposableAgent
         // enough. The chat client reads this to send the schema strict and as written.
         if (format is not null)
         {
-            properties[OpenRouterChatClient.StrictSchemaKey] = true;
+            properties[OpenRouterChatClient.StrictResponseFormatKey] = true;
         }
 
         return properties;

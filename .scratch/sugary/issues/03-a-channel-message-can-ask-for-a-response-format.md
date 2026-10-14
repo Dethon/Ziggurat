@@ -32,7 +32,7 @@ and `openrouter-routing.md` each got a paragraph.
 `McpAgent` over a real `OpenRouterChatClient`, bodies read off the HTTP handler): format sent strict
 and verbatim; none without one; no new top-level field; `require_parameters` beside nabu's shipped
 pin and absent without a format; the next turn on the same conversation, whose history still holds
-the formatted message, asks for none; a formatted turn calls a tool and both requests carry the
+the formatted message, asks for none; the tools go out byte-identical with and without a format; a formatted turn calls a tool and both requests carry the
 format. Plus the helper matrix in `OpenRouterHttpHelpersTests`, a protocol round trip, the connection
 mapping, the monitor stamp, the extension read-back, and a Lemonade case in
 `HostRoutingChatClientTests`.
@@ -43,6 +43,9 @@ mapping, the monitor stamp, the extension read-back, and a Lemonade case in
   instead (the adapter only fills a format nobody set), so ticket 04's schema must already satisfy
   strict mode: every property in `required`, `additionalProperties: false` on every object. The
   standalone Sugary schemas already do.
+- *Strictness is marked with Ziggurat's own options key, not MEAI's `strict`.* MEAI's key is one
+  switch for the format and every tool; set, every MCP tool went out `strict: true` with optional
+  parameters forced into `required`. A test pins that a formatted turn's tools are byte-identical.
 - *`require_parameters` is keyed on a strict schema, not any schema.* Memory extraction and
   consolidation send non-strict schemas through `OpenRouterChatClient` and read leniently; their
   routing is unchanged.

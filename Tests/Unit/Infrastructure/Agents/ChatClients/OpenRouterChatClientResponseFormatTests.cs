@@ -173,6 +173,30 @@ public sealed class OpenRouterChatClientResponseFormatTests
         wire.Bodies[1]["input"]!.ToJsonString().ShouldContain("function_call_output");
     }
 
+    // Strictness is asked of the answer's schema alone. The adapter reads one switch for both the
+    // format and every tool, and a strict tool has its parameters rewritten — an optional parameter
+    // made required — so a formatted turn must send its tools exactly as an unformatted one does.
+    [Fact]
+    public async Task AFormat_LeavesTheToolsExactlyAsTheyAreWithoutOne()
+    {
+        var tool = AIFunctionFactory.Create(
+            (string name, int? grams = null) => $"{name}: {grams}", "lookup_food");
+        var withFormat = new RecordingResponsesHandler();
+        var without = new RecordingResponsesHandler();
+        await using (var agent = CreateAgent(withFormat, tools: [tool]))
+        {
+            await agent.RunStreamingAsync([UserMessage("paella", _format)]).ToListAsync();
+        }
+
+        await using (var agent = CreateAgent(without, tools: [tool]))
+        {
+            await agent.RunStreamingAsync([UserMessage("paella")]).ToListAsync();
+        }
+
+        withFormat.Bodies.Single()["tools"]!.ToJsonString()
+            .ShouldBe(without.Bodies.Single()["tools"]!.ToJsonString());
+    }
+
     // nabu's shipped routing, the one non-default pin in Agent/appsettings.json.
     private static readonly ProviderRouting _pinned = new()
     {

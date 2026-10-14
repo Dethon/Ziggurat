@@ -205,7 +205,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private static ChatOptions? WithVerbatimStrictSchema(ChatOptions? options)
     {
         if (options is not { ResponseFormat: ChatResponseFormatJson { Schema: { } schema } json } ||
-            options.AdditionalProperties?.TryGetValue(StrictSchemaKey, out var strict) != true ||
+            options.AdditionalProperties?.TryGetValue(StrictResponseFormatKey, out var strict) != true ||
             strict is not true)
         {
             return options;
@@ -227,8 +227,11 @@ public sealed class OpenRouterChatClient : IChatClient
         return verbatim;
     }
 
-    // The key the adapter reads strictness from, and the one McpAgent sets for a channel's format.
-    internal const string StrictSchemaKey = "strict";
+    // Set by McpAgent on a turn whose message asked for a format. Deliberately not the adapter's
+    // own `strict` key: that one is a single switch for the format and every tool, and a strict
+    // tool has its parameter schema rewritten — an optional parameter made required. Only the
+    // answer's schema is asked to be strict; the tools go out as they would on any other turn.
+    internal const string StrictResponseFormatKey = "ziggurat.strictResponseFormat";
 
     // Matched on the key name rather than a fixed constant: the provider/SDK spelling of this
     // counter has moved between versions (prompt_tokens_details.cached_tokens ->
