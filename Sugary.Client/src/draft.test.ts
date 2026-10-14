@@ -16,6 +16,7 @@ const estimate = (names: string[], questions: string[] = []): MealEstimate => ({
   total: { low: 20 * names.length, best: 30 * names.length, high: 40 * names.length },
   questions: questions.map((text) => ({ text, options: ["Yes", "No"] })),
   notes: [],
+  conversationId: "c1",
 });
 
 const estimated = (draft: Draft, names: string[], questions: string[] = []) =>

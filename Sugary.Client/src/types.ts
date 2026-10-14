@@ -28,6 +28,8 @@ export interface MealEstimate {
   total: Interval;
   questions: Question[];
   notes: string[];
+  // The conversation this estimate was made on, which her answers continue.
+  conversationId: string;
 }
 
 export type Unit = "g" | "ml";

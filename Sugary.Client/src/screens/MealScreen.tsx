@@ -4,8 +4,9 @@ import { toMealItem, total } from "../carbs";
 import { Icon } from "../components/Icon";
 import { ItemRow } from "../components/ItemRow";
 import { TotalCard } from "../components/TotalCard";
-import { clarifications, counted, reduce, useDraft, type DraftAction } from "../draft";
+import { reduce, useDraft, type DraftAction } from "../draft";
 import { errorMessage } from "../errors";
+import { estimateDraft } from "../estimate";
 import { forUpload, thumbnail } from "../images";
 import { useSettings } from "../settings";
 import { FoodsSheet } from "./FoodsSheet";
@@ -84,15 +85,11 @@ export function MealScreen({
     setRunning(controller);
     setError(null);
     try {
-      const result = await api.estimate(
-        {
-          photos: photos.map((photo) => photo.blob),
-          description: asked.description,
-          clarifications: clarifications(asked),
-          counted: counted(asked),
-          language,
-        },
-        controller.signal,
+      const result = await estimateDraft(
+        asked,
+        photos.map((photo) => photo.blob),
+        language,
+        (input) => api.estimate(input, controller.signal),
       );
       if (result.items.length === 0) {
         setError([t("noFood"), ...result.notes].join(" "));

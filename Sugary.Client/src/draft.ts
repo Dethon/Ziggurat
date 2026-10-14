@@ -17,6 +17,9 @@ export interface Draft {
   firstEstimate: Interval | null;
   // Whether an estimate has been made, so an empty result can be told from a fresh start.
   estimated: boolean;
+  // The conversation the latest estimate was made on, which her answers continue. A draft stored
+  // before conversations existed has none, and its next estimate starts one.
+  conversation?: string | null;
 }
 
 export const emptyDraft: Draft = {
@@ -30,6 +33,7 @@ export const emptyDraft: Draft = {
   thumbnail: null,
   firstEstimate: null,
   estimated: false,
+  conversation: null,
 };
 
 export type DraftAction =
@@ -59,6 +63,7 @@ export function reduce(draft: Draft, action: DraftAction): Draft {
         notes: action.estimate.notes,
         firstEstimate: draft.firstEstimate ?? action.estimate.total,
         estimated: true,
+        conversation: action.estimate.conversationId,
       };
     case "answer":
       return { ...draft, answers: { ...draft.answers, [action.question]: action.answer } };

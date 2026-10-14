@@ -42,6 +42,24 @@ export interface EstimateInput {
   // What the person has already added themselves, so the model leaves it out.
   counted: string;
   language: string;
+  // The conversation the meal's first estimate opened. Set, the request is her answers to it.
+  conversationId: string | null;
+}
+
+// Her answers continue the conversation, whose first message already holds the photos and her
+// words, so a follow-up sends neither again.
+export function estimateForm(input: EstimateInput): FormData {
+  const form = new FormData();
+  if (input.conversationId) {
+    form.append("conversationId", input.conversationId);
+  } else {
+    input.photos.forEach((photo, index) => form.append("photos", photo, `meal-${index}.jpg`));
+    form.append("description", input.description);
+  }
+  form.append("clarifications", input.clarifications);
+  form.append("counted", input.counted);
+  form.append("language", input.language);
+  return form;
 }
 
 export const api = {
@@ -49,15 +67,8 @@ export const api = {
   signIn: (code: string) => request<void>("/session", json("POST", { code })),
   signOut: () => request<void>("/session", { method: "DELETE" }),
 
-  estimate(input: EstimateInput, signal?: AbortSignal) {
-    const form = new FormData();
-    input.photos.forEach((photo, index) => form.append("photos", photo, `meal-${index}.jpg`));
-    form.append("description", input.description);
-    form.append("clarifications", input.clarifications);
-    form.append("counted", input.counted);
-    form.append("language", input.language);
-    return request<MealEstimate>("/estimates", { method: "POST", body: form, signal });
-  },
+  estimate: (input: EstimateInput, signal?: AbortSignal) =>
+    request<MealEstimate>("/estimates", { method: "POST", body: estimateForm(input), signal }),
 
   readLabel(photo: Blob, language: string) {
     const form = new FormData();
