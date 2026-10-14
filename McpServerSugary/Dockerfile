@@ -23,6 +23,13 @@ RUN dotnet publish "./McpServerSugary.csproj" -c $BUILD_CONFIGURATION -o /app/pu
 
 FROM base AS final
 WORKDIR /app
+# A meal's clip is read and made small, and its stills taken, with ffmpeg (McpServerSugary/Clips);
+# the sound is dropped here and never leaves the container.
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
+USER $APP_UID
 # TLS ends at the reverse proxy; trusting its X-Forwarded-Proto is what marks the app's cookie Secure.
 ENV ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
 COPY --from=publish /app/publish .
