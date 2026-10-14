@@ -41,14 +41,19 @@ JSON back), so **`Sugary.Client` did not change** and vitest was not rerun.
      nothing extra.
    - Then it applies the standalone rule. A label that is `readable` with carbs from 0 to 100 →
      200 `PackagedFood` (serving > 0 or none, a blank name or note is none, trimmed).
-   - Anything else → **422** with the model's `note`, or "The label could not be read." The app
-     already shows a 422's `detail`, and falls back to its own "I couldn't read that label".
+   - Anything else → **422** with the model's `note`, or "The label could not be read." when it
+     gave none, as the standalone's endpoint did. The app shows a 422's `detail` as is, so its own
+     localised "I couldn't read that label" is never reached: a reasonless refusal reads in
+     English on a Spanish UI. If that matters, send an empty `detail` for that case and the app
+     localises it (one line either side).
    - A reply outside the schema, an `Error` chunk, no answer, nobody polling → 502. Past the wait →
      504, with label wording ("add the food by hand").
 
 `LabelModel` is a new `SugarySettings` member (`appsettings.json`, default
 `anthropic/claude-opus-5.5`). `AgentAppSettingsTests.TheSugaryServersLabelModel_IsOneTheAgentMaySwitchTo`
-pins it in `Agent/appsettings.json`'s `patchableModels`.
+pins it in `Agent/appsettings.json`'s `patchableModels`, and that the class default and the
+shipped value agree. It also pins the literal Opus 5.5 id, as the ticket names it, so a deliberate
+model change edits that test too.
 
 **Decisions to know about.**
 
