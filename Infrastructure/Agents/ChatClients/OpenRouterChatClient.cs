@@ -164,7 +164,7 @@ public sealed class OpenRouterChatClient : IChatClient
 
         UsageContent? usage = null;
 
-        await foreach (var update in _client.GetStreamingResponseAsync(sent, options, ct))
+        await foreach (var update in _client.GetStreamingResponseAsync(sent, WithVerbatimStrictSchema(options), ct))
         {
             // The Responses adapter leaves MessageId empty where the chat wire stamped the
             // completion id, and everything that reassembles a streamed turn keys on it. The
@@ -195,6 +195,40 @@ public sealed class OpenRouterChatClient : IChatClient
             });
         }
     }
+
+    // A strict schema goes out as it was written. The adapter would otherwise rewrite it into the
+    // subset it assumes strict mode takes — moving `minimum`, `maximum` and their kind into the
+    // description, where nothing enforces them — and the schema a channel asked for is a contract
+    // it parses the answer against, not a hint. Pre-setting the text format through the raw
+    // options is the adapter's own way in; it only fills a format nobody set. A non-strict
+    // schema keeps the adapter's handling, which is what memory's lenient readers were built on.
+    private static ChatOptions? WithVerbatimStrictSchema(ChatOptions? options)
+    {
+        if (options is not { ResponseFormat: ChatResponseFormatJson { Schema: { } schema } json } ||
+            options.AdditionalProperties?.TryGetValue(StrictSchemaKey, out var strict) != true ||
+            strict is not true)
+        {
+            return options;
+        }
+
+        var verbatim = options.Clone();
+        var inner = options.RawRepresentationFactory;
+        verbatim.RawRepresentationFactory = client =>
+        {
+            var raw = inner?.Invoke(client) as CreateResponseOptions ?? new CreateResponseOptions();
+            raw.TextOptions ??= new ResponseTextOptions();
+            raw.TextOptions.TextFormat = ResponseTextFormat.CreateJsonSchemaFormat(
+                json.SchemaName ?? "json_schema",
+                BinaryData.FromString(schema.GetRawText()),
+                json.SchemaDescription,
+                jsonSchemaIsStrict: true);
+            return raw;
+        };
+        return verbatim;
+    }
+
+    // The key the adapter reads strictness from, and the one McpAgent sets for a channel's format.
+    internal const string StrictSchemaKey = "strict";
 
     // Matched on the key name rather than a fixed constant: the provider/SDK spelling of this
     // counter has moved between versions (prompt_tokens_details.cached_tokens ->
